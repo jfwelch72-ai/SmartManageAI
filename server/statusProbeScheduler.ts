@@ -14,6 +14,54 @@ type ComponentRow = {
 };
 
 type ProbeResult = { ok: boolean; statusCode: number | null; responseMs: number; error: string | null };
+type RegionalProbeResult = ProbeResult & { region: string };
+
+type VantagePoint = {
+  region: string;
+  // Returns the URL to fetch in order to probe `targetUrl` from this vantage point.
+  buildUrl: (targetUrl: string) => string;
+};
+
+const LOCAL_VANTAGE: VantagePoint = { region: "local", buildUrl: (u) => u };
+
+// Optional opt-in remote vantage points. These route the probe through public
+// HTTP proxies hosted on different infrastructure/regions so a regional CDN/DNS
+// problem won't be missed. They are off by default because public proxies can
+// themselves be rate-limited or down, which would create false alerts.
+const OPTIONAL_REMOTE_VANTAGES: VantagePoint[] = [
+  { region: "corsproxy-io", buildUrl: (u) => `https://corsproxy.io/?${encodeURIComponent(u)}` },
+  { region: "allorigins-eu", buildUrl: (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}` },
+];
+
+function envBool(name: string): boolean {
+  const v = process.env[name]?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
+function vantagePoints(): VantagePoint[] {
+  // Highest priority: explicit JSON configuration of regions/proxies.
+  const raw = process.env.STATUS_PROBE_REGIONS_JSON?.trim();
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as Array<{ region: string; proxyTemplate?: string }>;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((v) => ({
+          region: v.region,
+          buildUrl: v.proxyTemplate
+            ? (u) => v.proxyTemplate!.replace("{url}", encodeURIComponent(u))
+            : (u) => u,
+        }));
+      }
+    } catch {
+      // fall through
+    }
+  }
+  // Opt-in flag enables the bundled remote vantage points alongside local.
+  if (envBool("STATUS_ENABLE_REMOTE_PROBES")) {
+    return [LOCAL_VANTAGE, ...OPTIONAL_REMOTE_VANTAGES];
+  }
+  return [LOCAL_VANTAGE];
+}
 
 function selfBaseUrl(): string {
   const explicit = process.env.STATUS_SELF_BASE_URL?.trim();
@@ -66,6 +114,21 @@ async function publicWebProbe(timeoutMs: number): Promise<ProbeResult> {
   return strictHttpProbe(publicWebUrl(), timeoutMs);
 }
 
+async function publicWebProbeAllRegions(timeoutMs: number): Promise<RegionalProbeResult[]> {
+  if (publicWebProbeDisabled()) {
+    return [{ ok: true, statusCode: null, responseMs: 0, error: "public web probe disabled via STATUS_DISABLE_PUBLIC_WEB_PROBE", region: "local" }];
+  }
+  const target = publicWebUrl();
+  const points = vantagePoints();
+  const results = await Promise.all(
+    points.map(async (vp) => {
+      const r = await strictHttpProbe(vp.buildUrl(target), timeoutMs);
+      return { ...r, region: vp.region } satisfies RegionalProbeResult;
+    }),
+  );
+  return results;
+}
+
 async function httpProbe(url: string, expectStatus: number, timeoutMs: number): Promise<ProbeResult> {
   const start = Date.now();
   const ctrl = new AbortController();
@@ -115,25 +178,37 @@ async function objectStorageProbe(): Promise<ProbeResult> {
   return { ok: configured, statusCode: null, responseMs: Date.now() - start, error: configured ? null : "object storage not configured" };
 }
 
-async function probeComponent(c: ComponentRow): Promise<ProbeResult> {
+async function probeComponent(c: ComponentRow): Promise<RegionalProbeResult[]> {
   switch (c.probe_kind) {
-    case "http_get":
-      if (!c.probe_url) return { ok: false, statusCode: null, responseMs: 0, error: "probe_url not set" };
-      return httpProbe(c.probe_url, c.probe_expect_status, c.probe_timeout_ms);
-    case "http_self":
-      return httpProbe(selfBaseUrl() + "/healthz", 200, c.probe_timeout_ms);
+    case "http_get": {
+      if (!c.probe_url) return [{ ok: false, statusCode: null, responseMs: 0, error: "probe_url not set", region: "local" }];
+      const r = await httpProbe(c.probe_url, c.probe_expect_status, c.probe_timeout_ms);
+      return [{ ...r, region: "local" }];
+    }
+    case "http_self": {
+      const r = await httpProbe(selfBaseUrl() + "/healthz", 200, c.probe_timeout_ms);
+      return [{ ...r, region: "local" }];
+    }
     case "http_public":
-      return publicWebProbe(c.probe_timeout_ms);
-    case "http_self_health":
-      return httpProbe(selfBaseUrl() + "/readyz", 200, c.probe_timeout_ms);
-    case "db_ping":
-      return dbPingProbe();
-    case "object_storage":
-      return objectStorageProbe();
-    case "config_present":
-      return configProbe(c);
+      return publicWebProbeAllRegions(c.probe_timeout_ms);
+    case "http_self_health": {
+      const r = await httpProbe(selfBaseUrl() + "/readyz", 200, c.probe_timeout_ms);
+      return [{ ...r, region: "local" }];
+    }
+    case "db_ping": {
+      const r = await dbPingProbe();
+      return [{ ...r, region: "local" }];
+    }
+    case "object_storage": {
+      const r = await objectStorageProbe();
+      return [{ ...r, region: "local" }];
+    }
+    case "config_present": {
+      const r = configProbe(c);
+      return [{ ...r, region: "local" }];
+    }
     default:
-      return { ok: false, statusCode: null, responseMs: 0, error: `unknown probe_kind: ${c.probe_kind}` };
+      return [{ ok: false, statusCode: null, responseMs: 0, error: `unknown probe_kind: ${c.probe_kind}`, region: "local" }];
   }
 }
 
@@ -148,12 +223,16 @@ export async function runProbeSweep(): Promise<{ probed: number; failures: numbe
   let failures = 0;
   for (const c of components) {
     try {
-      const result = await probeComponent(c);
-      if (!result.ok) failures++;
-      await db.execute(sql`
-        INSERT INTO "status_probes" (component_id, ok, status_code, response_ms, error)
-        VALUES (${c.id}, ${result.ok}, ${result.statusCode}, ${result.responseMs}, ${result.error})
-      `);
+      const results = await probeComponent(c);
+      // Component is considered failing only when the majority of vantage points agree.
+      const failingCount = results.filter((r) => !r.ok).length;
+      if (results.length > 0 && failingCount > results.length / 2) failures++;
+      for (const result of results) {
+        await db.execute(sql`
+          INSERT INTO "status_probes" (component_id, ok, status_code, response_ms, error, region)
+          VALUES (${c.id}, ${result.ok}, ${result.statusCode}, ${result.responseMs}, ${result.error}, ${result.region})
+        `);
+      }
     } catch (err) {
       failures++;
       logError("Status probe failed", { component: c.key }, err instanceof Error ? err : new Error(String(err)));

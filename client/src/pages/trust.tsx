@@ -242,6 +242,14 @@ type StatusLevel = "operational" | "degraded" | "outage" | "maintenance" | "unkn
 
 type DailyUptime = { date: string; total: number; ok: number };
 
+type RegionStatus = {
+  region: string;
+  ok: boolean;
+  lastCheckedAt: string;
+  lastError: string | null;
+  responseMs: number | null;
+};
+
 type StatusComponent = {
   id: string;
   key: string;
@@ -253,6 +261,7 @@ type StatusComponent = {
   lastCheckedAt: string | null;
   lastError: string | null;
   daily: DailyUptime[];
+  regions?: RegionStatus[];
 };
 
 type IncidentUpdate = { id: string; status: string; body: string; createdAt: string };
@@ -592,6 +601,29 @@ export function StatusPage() {
                 {c.lastError && c.status !== "operational" && (
                   <div className="text-xs text-red-600 dark:text-red-400 mt-1" data-testid={`text-component-error-${c.key}`}>
                     {c.lastError}
+                  </div>
+                )}
+                {c.regions && c.regions.length > 1 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5" data-testid={`regions-${c.key}`}>
+                    {c.regions.map((r) => (
+                      <span
+                        key={r.region}
+                        title={
+                          r.ok
+                            ? `${r.region}: OK${r.responseMs != null ? ` · ${r.responseMs}ms` : ""}`
+                            : `${r.region}: ${r.lastError ?? "failing"}`
+                        }
+                        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                          r.ok
+                            ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30"
+                            : "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30"
+                        }`}
+                        data-testid={`region-pill-${c.key}-${r.region}`}
+                      >
+                        <span className={`inline-block w-1.5 h-1.5 rounded-full ${r.ok ? "bg-emerald-500" : "bg-red-500"}`} />
+                        {r.region}
+                      </span>
+                    ))}
                   </div>
                 )}
               </div>

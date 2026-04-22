@@ -26,10 +26,14 @@ export async function ensureStatusPageTables(): Promise<void> {
       "status_code" integer,
       "response_ms" integer,
       "error" text,
+      "region" text NOT NULL DEFAULT 'local',
       "checked_at" timestamp NOT NULL DEFAULT now()
     )
   `);
+  // Backfill region column on existing installations
+  await db.execute(sql`ALTER TABLE "status_probes" ADD COLUMN IF NOT EXISTS "region" text NOT NULL DEFAULT 'local'`);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "status_probes_component_checked_idx" ON "status_probes" ("component_id","checked_at" DESC)`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS "status_probes_component_region_checked_idx" ON "status_probes" ("component_id","region","checked_at" DESC)`);
 
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS "status_incidents" (

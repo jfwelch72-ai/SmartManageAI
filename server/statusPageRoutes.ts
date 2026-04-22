@@ -20,6 +20,14 @@ type DailyUptime = {
   ok: number;
 };
 
+type RegionStatus = {
+  region: string;
+  ok: boolean;
+  lastCheckedAt: string;
+  lastError: string | null;
+  responseMs: number | null;
+};
+
 type ComponentSummary = {
   id: string;
   key: string;
@@ -31,6 +39,7 @@ type ComponentSummary = {
   lastCheckedAt: string | null;
   lastError: string | null;
   daily: DailyUptime[];
+  regions: RegionStatus[];
 };
 
 async function buildComponentSummaries(): Promise<ComponentSummary[]> {
@@ -43,23 +52,31 @@ async function buildComponentSummaries(): Promise<ComponentSummary[]> {
   const comps = compsRes.rows as Array<{ id: string; key: string; name: string; description: string | null }>;
   if (comps.length === 0) return [];
 
-  // Latest probe per component
+  // Latest probe per (component, region) — only regions that have reported in
+  // the last 30 minutes count, so removing a region stops affecting status.
   const latestRes = await db.execute(sql`
-    SELECT DISTINCT ON (component_id) component_id, ok, error, checked_at
+    SELECT DISTINCT ON (component_id, region) component_id, region, ok, error, response_ms, checked_at
     FROM "status_probes"
-    ORDER BY component_id, checked_at DESC
+    WHERE checked_at >= NOW() - INTERVAL '30 minutes'
+    ORDER BY component_id, region, checked_at DESC
   `);
-  const latestByComp = new Map<string, { ok: boolean; error: string | null; checked_at: Date }>();
+  const regionsByComp = new Map<string, RegionStatus[]>();
   for (const r of latestRes.rows as any[]) {
-    latestByComp.set(r.component_id, { ok: r.ok, error: r.error, checked_at: new Date(r.checked_at) });
+    const arr = regionsByComp.get(r.component_id) || [];
+    arr.push({
+      region: r.region || "local",
+      ok: r.ok,
+      lastCheckedAt: new Date(r.checked_at).toISOString(),
+      lastError: r.ok ? null : r.error,
+      responseMs: r.response_ms ?? null,
+    });
+    regionsByComp.set(r.component_id, arr);
   }
 
-  // Aggregate uptime — last 1h windows for status determination + 24h/30d
+  // Aggregate uptime — last 1h windows for status determination + 24h/30d (across all regions)
   const aggRes = await db.execute(sql`
     SELECT
       component_id,
-      SUM(CASE WHEN checked_at >= NOW() - INTERVAL '1 hour' THEN 1 ELSE 0 END) AS total_1h,
-      SUM(CASE WHEN checked_at >= NOW() - INTERVAL '1 hour' AND ok THEN 1 ELSE 0 END) AS ok_1h,
       SUM(CASE WHEN checked_at >= NOW() - INTERVAL '24 hours' THEN 1 ELSE 0 END) AS total_24h,
       SUM(CASE WHEN checked_at >= NOW() - INTERVAL '24 hours' AND ok THEN 1 ELSE 0 END) AS ok_24h,
       SUM(CASE WHEN checked_at >= NOW() - INTERVAL '30 days' THEN 1 ELSE 0 END) AS total_30d,
@@ -90,21 +107,31 @@ async function buildComponentSummaries(): Promise<ComponentSummary[]> {
   }
 
   return comps.map((c) => {
-    const latest = latestByComp.get(c.id);
+    const regions = (regionsByComp.get(c.id) || []).sort((a, b) => a.region.localeCompare(b.region));
     const agg = aggByComp.get(c.id);
+
+    // Region-consensus status: only flip to outage when a majority of regions agree.
     let status: ComponentSummary["status"] = "unknown";
-    if (latest) {
-      const total1h = Number(agg?.total_1h ?? 0);
-      const ok1h = Number(agg?.ok_1h ?? 0);
-      if (total1h > 0) {
-        const ratio = ok1h / total1h;
-        if (ratio >= 0.95) status = latest.ok ? "operational" : "degraded";
-        else if (ratio >= 0.5) status = "degraded";
-        else status = "outage";
-      } else {
-        status = latest.ok ? "operational" : "outage";
+    let lastCheckedAt: string | null = null;
+    let lastError: string | null = null;
+
+    if (regions.length > 0) {
+      const failing = regions.filter((r) => !r.ok);
+      if (failing.length === 0) status = "operational";
+      else if (failing.length > regions.length / 2) status = "outage";
+      else status = "degraded";
+
+      // Surface the most recent probe time across regions, and an error from a failing region (if any).
+      lastCheckedAt = regions
+        .map((r) => r.lastCheckedAt)
+        .sort()
+        .reverse()[0];
+      if (failing.length > 0) {
+        const firstWithMsg = failing.find((r) => r.lastError) || failing[0];
+        lastError = firstWithMsg.lastError;
       }
     }
+
     const uptime24h = agg && Number(agg.total_24h) > 0 ? Number(agg.ok_24h) / Number(agg.total_24h) : null;
     const uptime30d = agg && Number(agg.total_30d) > 0 ? Number(agg.ok_30d) / Number(agg.total_30d) : null;
     return {
@@ -115,9 +142,10 @@ async function buildComponentSummaries(): Promise<ComponentSummary[]> {
       status,
       uptime24h,
       uptime30d,
-      lastCheckedAt: latest ? latest.checked_at.toISOString() : null,
-      lastError: latest?.ok === false ? latest.error : null,
+      lastCheckedAt,
+      lastError,
       daily: dailyByComp.get(c.id) ?? [],
+      regions,
     };
   });
 }
