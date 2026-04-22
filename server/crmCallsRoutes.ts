@@ -994,7 +994,7 @@ async function persistJobProgress(job: BackfillJobState) {
 
 const BACKFILL_BATCH_SIZE = 100;
 
-async function fetchEligibleRecordingBatch(
+export async function fetchEligibleRecordingBatch(
   orgId: string,
   excludeIds: Set<string>,
   batchSize: number,
@@ -1168,6 +1168,11 @@ const BACKFILL_RESUME_CONCURRENCY = 2;
 //     original id, started_at, started_by_id, and counters so the admin
 //     sees a single continuous progress bar.
 let backfillBootRecoveryStarted = false;
+// Test-only seam: allow the vitest suite to re-run the boot recovery path
+// across multiple scenarios without having to reload the module.
+export function __resetBackfillBootRecoveryStartedForTests() {
+  backfillBootRecoveryStarted = false;
+}
 export async function resumeOrReapBackfillJobsOnBoot() {
   if (backfillBootRecoveryStarted) return;
   backfillBootRecoveryStarted = true;
