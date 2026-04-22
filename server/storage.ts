@@ -2,10 +2,11 @@ import { db } from "./db";
 import {
   executiveDigests,
   crmTranscriptBackfillJobs,
+  users,
   type CrmTranscriptBackfillJob,
   type InsertCrmTranscriptBackfillJob,
 } from "@shared/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 
 export interface ExecutiveDigestInsert {
   organizationId: string;
@@ -85,6 +86,53 @@ export async function getCrmTranscriptBackfillJob(
     )
     .limit(1);
   return row || null;
+}
+
+export type CrmTranscriptBackfillJobWithOperator = CrmTranscriptBackfillJob & {
+  startedByFirstName: string | null;
+  startedByLastName: string | null;
+  startedByEmail: string | null;
+};
+
+export async function listCrmTranscriptBackfillJobs(
+  organizationId: string,
+  opts: { limit?: number; offset?: number } = {},
+): Promise<{ rows: CrmTranscriptBackfillJobWithOperator[]; total: number }> {
+  const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
+  const offset = Math.max(opts.offset ?? 0, 0);
+  const rows = await db
+    .select({
+      id: crmTranscriptBackfillJobs.id,
+      organizationId: crmTranscriptBackfillJobs.organizationId,
+      status: crmTranscriptBackfillJobs.status,
+      total: crmTranscriptBackfillJobs.total,
+      processed: crmTranscriptBackfillJobs.processed,
+      succeeded: crmTranscriptBackfillJobs.succeeded,
+      failed: crmTranscriptBackfillJobs.failed,
+      errors: crmTranscriptBackfillJobs.errors,
+      startedById: crmTranscriptBackfillJobs.startedById,
+      startedAt: crmTranscriptBackfillJobs.startedAt,
+      completedAt: crmTranscriptBackfillJobs.completedAt,
+      heartbeatAt: crmTranscriptBackfillJobs.heartbeatAt,
+      updatedAt: crmTranscriptBackfillJobs.updatedAt,
+      startedByFirstName: users.firstName,
+      startedByLastName: users.lastName,
+      startedByEmail: users.email,
+    })
+    .from(crmTranscriptBackfillJobs)
+    .leftJoin(users, eq(users.id, crmTranscriptBackfillJobs.startedById))
+    .where(eq(crmTranscriptBackfillJobs.organizationId, organizationId))
+    .orderBy(desc(crmTranscriptBackfillJobs.startedAt))
+    .limit(limit)
+    .offset(offset);
+
+  const [{ count: totalRaw }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(crmTranscriptBackfillJobs)
+    .where(eq(crmTranscriptBackfillJobs.organizationId, organizationId));
+  const total = Number(totalRaw) || 0;
+
+  return { rows: rows as CrmTranscriptBackfillJobWithOperator[], total };
 }
 
 export async function getRunningCrmTranscriptBackfillJob(

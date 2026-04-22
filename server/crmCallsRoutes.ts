@@ -35,6 +35,7 @@ import {
   createCrmTranscriptBackfillJob,
   getCrmTranscriptBackfillJob,
   getRunningCrmTranscriptBackfillJob,
+  listCrmTranscriptBackfillJobs,
   updateCrmTranscriptBackfillJob,
 } from "./storage";
 import {
@@ -1332,6 +1333,46 @@ router.post(
       void runTranscriptBackfill(job, eligible, concurrency, maxRecords);
 
       res.status(202).json({ jobId, total: job.total });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #986 — list recent transcript backfill jobs for the current org so
+// admins can see prior runs (status, totals, who started it, error samples)
+// without needing to remember a specific job id.
+router.get(
+  "/api/crm/calls/transcripts/backfill/history",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+
+      const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "20"), 10) || 20, 1), 100);
+      const offset = Math.max(parseInt(String(req.query.offset ?? "0"), 10) || 0, 0);
+
+      const { rows, total } = await listCrmTranscriptBackfillJobs(orgId, { limit, offset });
+
+      res.json({
+        total,
+        limit,
+        offset,
+        jobs: rows.map((row) => ({
+          ...rowToState(row),
+          heartbeatAt: row.heartbeatAt.toISOString(),
+          startedBy: row.startedById
+            ? {
+                id: row.startedById,
+                firstName: row.startedByFirstName,
+                lastName: row.startedByLastName,
+                email: row.startedByEmail,
+              }
+            : null,
+        })),
+      });
     } catch (e) {
       next(e);
     }

@@ -9,8 +9,8 @@ import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Loader2, Mic, Play, AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
-import { format } from "date-fns";
+import { Loader2, Mic, Play, AlertTriangle, CheckCircle2, RefreshCw, ChevronDown, ChevronRight, History } from "lucide-react";
+import { format, formatDistanceStrict } from "date-fns";
 
 interface BackfillJob {
   id: string;
@@ -24,18 +24,36 @@ interface BackfillJob {
   completedAt: string | null;
 }
 
+interface BackfillHistoryEntry extends BackfillJob {
+  startedBy: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    email: string | null;
+  } | null;
+}
+
+interface BackfillHistoryResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  jobs: BackfillHistoryEntry[];
+}
+
 interface BackfillSummary {
   pending: number;
   activeJob: BackfillJob | null;
 }
 
 const SUMMARY_KEY = ["/api/crm/calls/transcripts/backfill"];
+const HISTORY_KEY = ["/api/crm/calls/transcripts/backfill/history"];
 
 export default function AdminTranscriptBackfillPage() {
   const { toast } = useToast();
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [maxRecords, setMaxRecords] = useState<string>("");
   const [concurrency, setConcurrency] = useState<string>("2");
+  const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
 
   const summaryQuery = useQuery<BackfillSummary>({
     queryKey: SUMMARY_KEY,
@@ -59,13 +77,19 @@ export default function AdminTranscriptBackfillPage() {
     },
   });
 
-  // When a job finishes, refresh the pending count.
+  // When a job finishes, refresh the pending count and history list.
   useEffect(() => {
     const status = jobQuery.data?.status;
     if (status && status !== "RUNNING") {
       queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
+      queryClient.invalidateQueries({ queryKey: HISTORY_KEY });
     }
   }, [jobQuery.data?.status]);
+
+  const historyQuery = useQuery<BackfillHistoryResponse>({
+    queryKey: HISTORY_KEY,
+    refetchInterval: activeJobId ? 5_000 : 30_000,
+  });
 
   const startMutation = useMutation({
     mutationFn: async () => {
@@ -84,6 +108,7 @@ export default function AdminTranscriptBackfillPage() {
         description: data.message ?? `Processing ${data.total} recording${data.total === 1 ? "" : "s"}.`,
       });
       queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
+      queryClient.invalidateQueries({ queryKey: HISTORY_KEY });
     },
     onError: (err: Error) => {
       toast({ title: "Failed to start backfill", description: err.message, variant: "destructive" });
@@ -266,8 +291,155 @@ export default function AdminTranscriptBackfillPage() {
           </CardContent>
         </Card>
       )}
+
+      <Card data-testid="card-history">
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <History className="h-5 w-5" />
+                Backfill history
+              </CardTitle>
+              <CardDescription>
+                Recent transcript backfill runs for this organization. Click a row to view error samples.
+              </CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => historyQuery.refetch()}
+              disabled={historyQuery.isFetching}
+              data-testid="button-refresh-history"
+            >
+              {historyQuery.isFetching ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {historyQuery.isLoading ? (
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" data-testid="status-loading-history" />
+          ) : historyQuery.isError ? (
+            <div className="text-sm text-destructive" data-testid="text-history-error">
+              Failed to load backfill history.
+            </div>
+          ) : !historyQuery.data || historyQuery.data.jobs.length === 0 ? (
+            <div className="text-sm text-muted-foreground" data-testid="text-history-empty">
+              No backfill runs yet.
+            </div>
+          ) : (
+            <ul className="divide-y rounded-md border" data-testid="list-history">
+              {historyQuery.data.jobs.map((entry) => {
+                const isExpanded = expandedHistoryId === entry.id;
+                const operatorName = formatOperator(entry.startedBy);
+                const duration = entry.completedAt
+                  ? formatDistanceStrict(new Date(entry.completedAt), new Date(entry.startedAt))
+                  : null;
+                return (
+                  <li key={entry.id} data-testid={`history-row-${entry.id}`}>
+                    <button
+                      type="button"
+                      className="w-full text-left p-3 hover-elevate active-elevate-2 flex items-start gap-3"
+                      onClick={() => setExpandedHistoryId(isExpanded ? null : entry.id)}
+                      data-testid={`button-history-toggle-${entry.id}`}
+                    >
+                      <div className="pt-0.5">
+                        {isExpanded ? (
+                          <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0 space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge
+                            variant={
+                              entry.status === "RUNNING"
+                                ? "secondary"
+                                : entry.status === "COMPLETED"
+                                ? "default"
+                                : "destructive"
+                            }
+                            data-testid={`badge-history-status-${entry.id}`}
+                          >
+                            {entry.status === "RUNNING" && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                            {entry.status === "COMPLETED" && <CheckCircle2 className="h-3 w-3 mr-1" />}
+                            {entry.status === "FAILED" && <AlertTriangle className="h-3 w-3 mr-1" />}
+                            {entry.status}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground" data-testid={`text-history-started-${entry.id}`}>
+                            {format(new Date(entry.startedAt), "PPpp")}
+                          </span>
+                          {entry.completedAt && (
+                            <span className="text-xs text-muted-foreground" data-testid={`text-history-finished-${entry.id}`}>
+                              → {format(new Date(entry.completedAt), "PPpp")}
+                            </span>
+                          )}
+                          {duration && (
+                            <span className="text-xs text-muted-foreground" data-testid={`text-history-duration-${entry.id}`}>
+                              · {duration}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-sm tabular-nums" data-testid={`text-history-totals-${entry.id}`}>
+                          {entry.processed.toLocaleString()} / {entry.total.toLocaleString()} processed ·{" "}
+                          <span className="text-green-600 dark:text-green-500">{entry.succeeded.toLocaleString()} ok</span> ·{" "}
+                          <span className="text-destructive">{entry.failed.toLocaleString()} failed</span>
+                        </div>
+                        <div className="text-xs text-muted-foreground" data-testid={`text-history-operator-${entry.id}`}>
+                          Started by {operatorName} · <code className="text-[10px]">{entry.id}</code>
+                        </div>
+                      </div>
+                    </button>
+                    {isExpanded && (
+                      <div className="px-3 pb-3 pl-10" data-testid={`history-details-${entry.id}`}>
+                        {entry.completedAt && (
+                          <div className="text-xs text-muted-foreground mb-2" data-testid={`text-history-completed-${entry.id}`}>
+                            Finished {format(new Date(entry.completedAt), "PPpp")}
+                          </div>
+                        )}
+                        {entry.errors.length === 0 ? (
+                          <div className="text-xs text-muted-foreground" data-testid={`text-history-no-errors-${entry.id}`}>
+                            No error samples recorded for this run.
+                          </div>
+                        ) : (
+                          <div className="space-y-2">
+                            <Label className="text-xs">Error samples ({entry.errors.length})</Label>
+                            <ScrollArea className="h-[180px] rounded-md border p-3">
+                              <ul className="space-y-2 text-xs font-mono" data-testid={`list-history-errors-${entry.id}`}>
+                                {entry.errors.map((err, i) => (
+                                  <li key={`${err.recordingId}-${i}`} data-testid={`history-error-${entry.id}-${i}`}>
+                                    <span className="text-muted-foreground">{err.recordingId}:</span>{" "}
+                                    <span className="text-destructive">{err.error}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </ScrollArea>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
+}
+
+function formatOperator(
+  startedBy: BackfillHistoryEntry["startedBy"],
+): string {
+  if (!startedBy) return "Unknown";
+  const name = [startedBy.firstName, startedBy.lastName].filter(Boolean).join(" ").trim();
+  return name || startedBy.email || "Unknown";
 }
 
 function Stat({
