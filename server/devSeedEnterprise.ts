@@ -19,8 +19,9 @@ import {
   crmTasks,
   crmQuotes,
   crmQuoteLineItems,
+  tasks,
 } from "@shared/schema";
-import { eq, and, sql } from "drizzle-orm";
+import { eq, and, like, sql } from "drizzle-orm";
 import { logInfo } from "./utils/logger";
 import { FEATURE_FLAG_KEYS } from "@shared/schema";
 import { setAllFeatureFlags } from "./services/featureFlagService";
@@ -513,6 +514,113 @@ router.post("/clear-enterprise", requireAuth, async (req, res, next) => {
     await db.delete(integrationConnections).where(eq(integrationConnections.organizationId, orgId));
 
     res.json({ success: true, message: "Enterprise seed data cleared" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Task #938 — Bulk seed CRM tasks for the calling user so e2e can verify
+// My Work cursor pagination across multiple pages.
+router.post("/seed-my-work-bulk", requireDevSeed, requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    const orgId = user.organizationId;
+    if (!orgId) return res.status(400).json({ error: "Organization required" });
+
+    const requested = Number((req.body && req.body.count) ?? 250);
+    const count = Math.min(Math.max(Math.floor(requested) || 0, 1), 1000);
+
+    const MARKER = "[E2E-PG]";
+    // Wipe any prior runs (CRM tasks + standalone tasks).
+    await db
+      .delete(crmTasks)
+      .where(and(eq(crmTasks.assignedToId, user.id), like(crmTasks.title, `${MARKER}%`)));
+    await db
+      .delete(tasks)
+      .where(and(eq(tasks.assignedToId, user.id), like(tasks.title, `${MARKER}%`)));
+
+    const now = Date.now();
+    const day = 24 * 60 * 60 * 1000;
+    const CRM_PRIORITIES = ["LOW", "NORMAL", "HIGH", "CRITICAL"];
+    const TASK_PRIORITIES = ["LOW", "MEDIUM", "HIGH", "CRITICAL"];
+
+    // Mix sources so this exercises the multi-source merge in /api/me/work,
+    // not just a single table. ~85% CRM_TASK + ~15% TASK keeps the dataset
+    // dominated by one type but with a meaningful second bucket.
+    const taskCount = Math.max(20, Math.floor(count * 0.15));
+    const crmCount = count;
+
+    const crmRows: Array<typeof crmTasks.$inferInsert> = [];
+    for (let i = 0; i < crmCount; i++) {
+      const offsetDays = (i % 30) - 5; // -5..+24 days from today
+      crmRows.push({
+        organizationId: orgId,
+        title: `${MARKER} Pagination CRM task #${String(i + 1).padStart(4, "0")}`,
+        description: `Seeded CRM task for My Work pagination e2e (#${i + 1})`,
+        dueDate: new Date(now + offsetDays * day),
+        status: "PENDING",
+        priority: CRM_PRIORITIES[i % CRM_PRIORITIES.length],
+        assignedToId: user.id,
+        createdById: user.id,
+      });
+    }
+
+    const taskRows: Array<typeof tasks.$inferInsert> = [];
+    for (let i = 0; i < taskCount; i++) {
+      const offsetDays = (i % 25) - 3; // spread across overdue/today/week/later
+      taskRows.push({
+        organizationId: orgId,
+        title: `${MARKER} Pagination task #${String(i + 1).padStart(4, "0")}`,
+        description: `Seeded standalone task for My Work pagination e2e (#${i + 1})`,
+        dueDate: new Date(now + offsetDays * day),
+        status: "PENDING",
+        priority: TASK_PRIORITIES[i % TASK_PRIORITIES.length] as never,
+        assignedToId: user.id,
+        createdById: user.id,
+      });
+    }
+
+    // Chunked insert — Postgres parameter limit safety.
+    const CHUNK = 100;
+    let createdCrm = 0;
+    for (let i = 0; i < crmRows.length; i += CHUNK) {
+      const out = await db
+        .insert(crmTasks)
+        .values(crmRows.slice(i, i + CHUNK))
+        .returning({ id: crmTasks.id });
+      createdCrm += out.length;
+    }
+    let createdTask = 0;
+    for (let i = 0; i < taskRows.length; i += CHUNK) {
+      const out = await db
+        .insert(tasks)
+        .values(taskRows.slice(i, i + CHUNK))
+        .returning({ id: tasks.id });
+      createdTask += out.length;
+    }
+
+    res.json({
+      success: true,
+      created: createdCrm + createdTask,
+      createdByType: { CRM_TASK: createdCrm, TASK: createdTask },
+      marker: MARKER,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/clear-my-work-bulk", requireDevSeed, requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    const MARKER = "[E2E-PG]";
+    await db
+      .delete(crmTasks)
+      .where(and(eq(crmTasks.assignedToId, user.id), like(crmTasks.title, `${MARKER}%`)));
+    await db
+      .delete(tasks)
+      .where(and(eq(tasks.assignedToId, user.id), like(tasks.title, `${MARKER}%`)));
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }
