@@ -49,6 +49,19 @@ export type BackfillNotificationJob = {
   startedAt: string;
   completedAt: string | null;
   parentJobId: string | null;
+  // Task #1070 — populated when the run was cancelled so the formatter can
+  // surface the canceller (and optional reason) in the alert copy. Both
+  // fields stay null on COMPLETED / FAILED runs.
+  cancelledById?: string | null;
+  cancellationReason?: string | null;
+};
+
+// Task #1070 — optional second-actor context passed to the formatter so the
+// run-completed alert can name the admin who clicked Cancel. Operator and
+// canceller share the same shape because both are looked up via the same
+// `getCrmTranscriptBackfillOperatorContact` helper.
+export type BackfillCancellerContext = {
+  canceller: CrmTranscriptBackfillOperatorContact | null;
 };
 
 export type FormattedBackfillNotification = {
@@ -100,6 +113,7 @@ export function describeBackfillOperator(
 export function formatBackfillCompletionNotification(
   job: BackfillNotificationJob,
   operator: CrmTranscriptBackfillOperatorContact | null,
+  cancelContext?: BackfillCancellerContext,
 ): FormattedBackfillNotification {
   const { display: operatorDisplay, email: operatorEmail } =
     describeBackfillOperator(operator);
@@ -113,24 +127,72 @@ export function formatBackfillCompletionNotification(
   const verb = isCancelled ? "cancelled" : isFailure ? "failed" : "completed";
   const kind = isRetry ? "Transcript backfill retry" : "Transcript backfill";
   const title = `${kind} ${verb}`;
-  const emailSubject = `[CRM] ${title} — started by ${operatorDisplay}`;
+
+  // Task #1070 — when the run was cancelled, resolve the canceller's
+  // display string the same way we resolve the operator. Use the user
+  // contact passed in the context; fall back to a "deleted user" string
+  // when the row had a cancelledById but the user record is gone.
+  let cancelledByDisplay: string | null = null;
+  let cancelledByEmail: string | null = null;
+  if (isCancelled) {
+    if (cancelContext?.canceller) {
+      const described = describeBackfillOperator(cancelContext.canceller);
+      cancelledByDisplay = described.display;
+      cancelledByEmail = described.email;
+    } else if (job.cancelledById) {
+      cancelledByDisplay = DELETED_OPERATOR_DISPLAY;
+      cancelledByEmail = NO_EMAIL_DISPLAY;
+    }
+  }
+  const cancellationReason =
+    isCancelled && job.cancellationReason ? job.cancellationReason : null;
+
+  // Task #1070 — name the canceller in the email subject so admins can spot
+  // who stopped a run from their inbox without opening the message. Only
+  // applied to CANCELLED runs; COMPLETED / FAILED keep the original
+  // "started by" subject.
+  const emailSubject = isCancelled && cancelledByDisplay
+    ? `[CRM] ${title} by ${cancelledByDisplay} — started by ${operatorDisplay}`
+    : `[CRM] ${title} — started by ${operatorDisplay}`;
 
   const startedAt = job.startedAt;
   const completedAt = job.completedAt ?? new Date().toISOString();
 
+  const slackCancelLines: string[] = [];
+  if (isCancelled && cancelledByDisplay) {
+    slackCancelLines.push(
+      `*Cancelled by:* ${cancelledByDisplay} <${cancelledByEmail ?? NO_EMAIL_DISPLAY}>`,
+    );
+    if (cancellationReason) {
+      slackCancelLines.push(`*Reason:* ${cancellationReason}`);
+    }
+  }
+
   const slackBody = [
     `*Status:* ${job.status}`,
     `*Started by:* ${operatorDisplay} <${operatorEmail}>`,
+    ...slackCancelLines,
     `*Job:* \`${job.id}\`${isRetry ? ` (retry of \`${job.parentJobId}\`)` : ""}`,
     `*Counts:* ${job.succeeded} succeeded / ${job.failed} failed / ${job.processed} processed of ${job.total}`,
     `*Started:* ${startedAt}`,
     `*Finished:* ${completedAt}`,
   ].join("\n");
 
+  const emailCancelLines: string[] = [];
+  if (isCancelled && cancelledByDisplay) {
+    emailCancelLines.push(
+      `Cancelled by: ${cancelledByDisplay} <${cancelledByEmail ?? NO_EMAIL_DISPLAY}>`,
+    );
+    if (cancellationReason) {
+      emailCancelLines.push(`Reason: ${cancellationReason}`);
+    }
+  }
+
   const emailText = [
     `${title}.`,
     ``,
     `Started by: ${operatorDisplay} <${operatorEmail}>`,
+    ...emailCancelLines,
     `Job id: ${job.id}${isRetry ? ` (retry of ${job.parentJobId})` : ""}`,
     `Status: ${job.status}`,
     `Succeeded: ${job.succeeded}`,
@@ -143,11 +205,19 @@ export function formatBackfillCompletionNotification(
   const escape = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+  const cancelHtmlRows = isCancelled && cancelledByDisplay
+    ? `
+        <tr><td><strong>Cancelled by</strong></td><td>${escape(cancelledByDisplay)} &lt;${escape(cancelledByEmail ?? NO_EMAIL_DISPLAY)}&gt;</td></tr>
+        ${cancellationReason ? `<tr><td><strong>Reason</strong></td><td>${escape(cancellationReason)}</td></tr>` : ""}
+    `
+    : "";
+
   const emailHtml = `
     <div style="font-family: -apple-system, system-ui, sans-serif; font-size: 14px; color: #111;">
       <h2 style="margin:0 0 12px 0;">${escape(title)}</h2>
       <table cellspacing="0" cellpadding="4" style="border-collapse:collapse;">
         <tr><td><strong>Started by</strong></td><td>${escape(operatorDisplay)} &lt;${escape(operatorEmail)}&gt;</td></tr>
+        ${cancelHtmlRows}
         <tr><td><strong>Job id</strong></td><td><code>${escape(job.id)}</code>${isRetry ? ` (retry of <code>${escape(job.parentJobId!)}</code>)` : ""}</td></tr>
         <tr><td><strong>Status</strong></td><td>${escape(job.status)}</td></tr>
         <tr><td><strong>Succeeded</strong></td><td>${job.succeeded}</td></tr>
@@ -517,16 +587,40 @@ export async function notifyOrgAdminsOfAlertDeliveryFailure(
 export async function notifyBackfillCompletion(
   job: BackfillNotificationJob,
   operator: CrmTranscriptBackfillOperatorContact | null,
+  cancelContextOrDestinations?:
+    | BackfillCancellerContext
+    | ResolvedBackfillNotificationDestinations,
   destinationsOverride?: ResolvedBackfillNotificationDestinations,
 ): Promise<void> {
-  const destinations =
-    destinationsOverride ??
+  // Task #1070 — backwards-compatible signature: accept either
+  // `(job, operator, destinationsOverride)` (legacy) or
+  // `(job, operator, cancelContext, destinationsOverride?)` (new). We
+  // disambiguate by sniffing for the cancelContext-shaped property.
+  let cancelContext: BackfillCancellerContext | undefined;
+  let destinations: ResolvedBackfillNotificationDestinations | undefined;
+  if (
+    cancelContextOrDestinations &&
+    "canceller" in (cancelContextOrDestinations as object)
+  ) {
+    cancelContext = cancelContextOrDestinations as BackfillCancellerContext;
+    destinations = destinationsOverride;
+  } else {
+    destinations = cancelContextOrDestinations as
+      | ResolvedBackfillNotificationDestinations
+      | undefined;
+  }
+  const resolved =
+    destinations ??
     (await resolveBackfillNotificationDestinations(job.orgId));
-  const slackWebhook = destinations.slackWebhookUrl ?? "";
-  const recipients = destinations.emailRecipients;
+  const slackWebhook = resolved.slackWebhookUrl ?? "";
+  const recipients = resolved.emailRecipients;
   if (!slackWebhook && recipients.length === 0) return;
 
-  const formatted = formatBackfillCompletionNotification(job, operator);
+  const formatted = formatBackfillCompletionNotification(
+    job,
+    operator,
+    cancelContext,
+  );
 
   const tasks: Array<Promise<unknown>> = [];
 

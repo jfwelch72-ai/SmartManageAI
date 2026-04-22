@@ -986,6 +986,11 @@ export type BackfillJobState = {
   // history list and active-job UI can display them for auditing.
   concurrency: number | null;
   maxRecords: number | null;
+  // Task #1070 — populated when the run transitions to CANCELLED so the UI
+  // and run-completed Slack/email can show who stopped it (and optionally
+  // why). Stays null on COMPLETED / FAILED runs.
+  cancelledById: string | null;
+  cancellationReason: string | null;
 };
 
 const MAX_BACKFILL_ERROR_SAMPLES = 50;
@@ -1020,6 +1025,43 @@ export function __rowToBackfillStateForTests(row: CrmTranscriptBackfillJob): Bac
   return rowToState(row);
 }
 
+// Task #1070 — enrich a base BackfillJobState with the canceller's user
+// profile (firstName/lastName/email) so the active job card can render
+// "Cancelled by Sam Doe" without an extra round-trip from the client. The
+// canceller is looked up via the same operator-contact helper as the
+// run-completed notification path. Returns the input unchanged when the
+// row was not cancelled or the canceller user has been deleted (we still
+// preserve `cancelledById`/`cancellationReason` so the UI can fall back
+// to the "(unknown — user record was deleted)" copy).
+async function enrichWithCanceller<T extends BackfillJobState>(
+  state: T,
+): Promise<T & {
+  cancelledBy: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    email: string | null;
+  } | null;
+}> {
+  if (!state.cancelledById) {
+    return { ...state, cancelledBy: null };
+  }
+  const canceller = await getCrmTranscriptBackfillOperatorContact(
+    state.cancelledById,
+  );
+  return {
+    ...state,
+    cancelledBy: canceller
+      ? {
+          id: canceller.id,
+          firstName: canceller.firstName ?? null,
+          lastName: canceller.lastName ?? null,
+          email: canceller.email ?? null,
+        }
+      : null,
+  };
+}
+
 function rowToState(row: CrmTranscriptBackfillJob): BackfillJobState {
   return {
     id: row.id,
@@ -1037,6 +1079,8 @@ function rowToState(row: CrmTranscriptBackfillJob): BackfillJobState {
     parentJobId: row.parentJobId ?? null,
     concurrency: row.concurrency ?? null,
     maxRecords: row.maxRecords ?? null,
+    cancelledById: row.cancelledById ?? null,
+    cancellationReason: row.cancellationReason ?? null,
   };
 }
 
@@ -1059,6 +1103,11 @@ async function persistJobProgress(job: BackfillJobState) {
       completedAt: job.completedAt ? new Date(job.completedAt) : null,
       heartbeatAt: new Date(),
       updatedAt: new Date(),
+      // Task #1070 — flush the canceller fields too so a CANCELLED row
+      // persists who stopped it (and the optional reason). Both stay NULL
+      // on COMPLETED / FAILED runs since the cancel signal never landed.
+      cancelledById: job.cancelledById,
+      cancellationReason: job.cancellationReason,
     })
     .where(eq(crmTranscriptBackfillJobs.id, job.id));
 }
@@ -1150,6 +1199,12 @@ export interface BackfillSummaryContentInput {
   orgName: string;
   operatorName: string;
   testPrefix?: boolean;
+  // Task #1070 — for CANCELLED runs, identify the admin who clicked Cancel
+  // and (optionally) the free-text reason they typed in the confirm dialog
+  // so the per-admin summary surfaces them too. Both fields are ignored on
+  // COMPLETED / FAILED runs and may be omitted altogether by callers.
+  cancelledByName?: string | null;
+  cancellationReason?: string | null;
 }
 
 export interface BackfillSummaryContent {
@@ -1168,6 +1223,8 @@ export function buildBackfillSummaryContent(
     jobId, status, total, processed, succeeded, failed,
     startedAt, completedAt, parentJobId, orgName, operatorName,
     testPrefix = false,
+    cancelledByName = null,
+    cancellationReason = null,
   } = input;
 
   const duration = formatBackfillDuration(startedAt, completedAt);
@@ -1193,6 +1250,18 @@ export function buildBackfillSummaryContent(
   const testBannerText = testPrefix
     ? "This is a sample summary triggered from your Notification Preferences. No real backfill ran.\n\n"
     : "";
+  // Task #1070 — for CANCELLED runs, append a "Cancelled by" line (and the
+  // optional reason) so admins reading the summary know who stopped it and
+  // why without opening the admin page. Skipped on COMPLETED / FAILED.
+  const cancelledLines: string[] = [];
+  if (status === "CANCELLED") {
+    cancelledLines.push(
+      `Cancelled by: ${cancelledByName || "(unknown — user record was deleted)"}`,
+    );
+    if (cancellationReason) {
+      cancelledLines.push(`Reason:       ${cancellationReason}`);
+    }
+  }
   const text =
     testBannerText +
     [
@@ -1206,6 +1275,7 @@ export function buildBackfillSummaryContent(
       `Started:   ${startedAt.toISOString()}`,
       `Finished:  ${completedAt.toISOString()}`,
       `Operator:  ${operatorName}`,
+      ...cancelledLines,
       `Job ID:    ${jobId}`,
       ``,
       `View history: ${historyUrl}`,
@@ -1232,6 +1302,10 @@ export function buildBackfillSummaryContent(
       <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Started</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(startedAt.toISOString())}</td></tr>
       <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Finished</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(completedAt.toISOString())}</td></tr>
       <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Operator</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(operatorName)}</td></tr>
+      ${status === "CANCELLED" ? `
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Cancelled by</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(cancelledByName || "(unknown — user record was deleted)")}</td></tr>
+      ${cancellationReason ? `<tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Reason</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(cancellationReason)}</td></tr>` : ""}
+      ` : ""}
       <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Job ID</strong></td><td style="border:1px solid #e5e7eb;font-family:monospace;font-size:12px;">${escapeBackfillHtml(jobId)}</td></tr>
     </tbody>
   </table>
@@ -1242,12 +1316,22 @@ export function buildBackfillSummaryContent(
   const testChatFooter = testPrefix
     ? "\n_:test_tube: Sample summary triggered from Notification Preferences. No real backfill ran._"
     : "";
+  const chatCancelLines: string[] = [];
+  if (status === "CANCELLED") {
+    chatCancelLines.push(
+      `*Cancelled by:* ${cancelledByName || "(unknown — user record was deleted)"}`,
+    );
+    if (cancellationReason) {
+      chatCancelLines.push(`*Reason:* ${cancellationReason}`);
+    }
+  }
   const chatBody =
     [
       `*Status:* ${status}`,
       `*Counts:* ${succeeded} succeeded / ${failed} failed / ${processed} of ${total}`,
       `*Duration:* ${duration}`,
       `*Operator:* ${operatorName}`,
+      ...chatCancelLines,
       `*Job ID:* \`${jobId}\``,
     ].join("\n") + testChatFooter;
 
@@ -1274,6 +1358,12 @@ export async function notifyBackfillCompletionToOrgAdmins(jobId: string): Promis
         operatorFirstName: users.firstName,
         operatorLastName: users.lastName,
         operatorEmail: users.email,
+        // Task #1070 — also surface the canceller's identity + reason on
+        // the per-admin run-completed summary. Pulled in the same query
+        // via a separate aliased join on `users` so the existing operator
+        // join keeps its column names.
+        cancelledById: crmTranscriptBackfillJobs.cancelledById,
+        cancellationReason: crmTranscriptBackfillJobs.cancellationReason,
       })
       .from(crmTranscriptBackfillJobs)
       .leftJoin(users, eq(users.id, crmTranscriptBackfillJobs.startedById))
@@ -1386,6 +1476,26 @@ export async function notifyBackfillCompletionToOrgAdmins(jobId: string): Promis
       "an administrator";
     const orgName = orgRow?.name || "your organization";
 
+    // Task #1070 — for CANCELLED runs, resolve the canceller's display name
+    // so the per-admin summary can include "Cancelled by Sam Doe — bad
+    // batch". Falls back to null when the user record was deleted; the
+    // builder renders that as "(unknown — user record was deleted)".
+    let cancelledByName: string | null = null;
+    if (jobRow.status === "CANCELLED" && jobRow.cancelledById) {
+      const canceller = await getCrmTranscriptBackfillOperatorContact(
+        jobRow.cancelledById,
+      );
+      if (canceller) {
+        const first = (canceller.firstName ?? "").trim();
+        const last = (canceller.lastName ?? "").trim();
+        const email = (canceller.email ?? "").trim();
+        cancelledByName =
+          [first, last].filter(Boolean).join(" ").trim() ||
+          email ||
+          null;
+      }
+    }
+
     // Task #1046: Centralized message builder so the "Send test" admin
     // endpoint can produce a sample with identical wording / layout.
     const { subject, text, html, chatTitle, chatBody, historyUrl } =
@@ -1401,6 +1511,8 @@ export async function notifyBackfillCompletionToOrgAdmins(jobId: string): Promis
         parentJobId: jobRow.parentJobId,
         orgName,
         operatorName,
+        cancelledByName,
+        cancellationReason: jobRow.cancellationReason,
       });
 
     const slackTargets = routed.filter((r) => r.channel === "slack").map((r) => r.target);
@@ -1726,14 +1838,27 @@ export async function __runTranscriptBackfillForTests(
 // every backfill worker runs in the same Node process that owns the job
 // (a different process won't see the in-memory active worker either, in
 // which case the cancel endpoint reaps the row directly).
-const cancelRequestedJobIds = new Set<string>();
+// Task #1070 — store the canceller's user id and optional free-text reason
+// alongside the job id so the worker can persist them when it transitions
+// the row to CANCELLED. A Set was sufficient before; a Map keyed by job id
+// keeps the same "is this job cancelling?" semantics while also carrying
+// the bookkeeping the new UI / notification copy needs.
+type BackfillCancelRequest = {
+  cancelledById: string;
+  reason: string | null;
+};
+const cancelRequestedJobs = new Map<string, BackfillCancelRequest>();
 
 export function __resetBackfillCancelRequestsForTests() {
-  cancelRequestedJobIds.clear();
+  cancelRequestedJobs.clear();
 }
 
-export function __requestBackfillCancelForTests(jobId: string) {
-  cancelRequestedJobIds.add(jobId);
+export function __requestBackfillCancelForTests(
+  jobId: string,
+  cancelledById: string = "test-user",
+  reason: string | null = null,
+) {
+  cancelRequestedJobs.set(jobId, { cancelledById, reason });
 }
 
 async function runTranscriptBackfill(
@@ -1764,7 +1889,7 @@ async function runTranscriptBackfill(
       if (maxRecords !== null && job.processed >= maxRecords) return;
       // Task #1036 — cooperative cancel check on every iteration so we stop
       // before kicking off another transcription when an admin clicked Cancel.
-      if (cancelRequestedJobIds.has(job.id)) return;
+      if (cancelRequestedJobs.has(job.id)) return;
       const recordingId = takeNext();
       if (!recordingId) return;
       try {
@@ -1818,11 +1943,11 @@ async function runTranscriptBackfill(
       if (maxRecords !== null && job.processed >= maxRecords) break;
       // Task #1036 — bail out before spawning another batch of workers if a
       // cancel was requested while the previous batch was draining.
-      if (cancelRequestedJobIds.has(job.id)) break;
+      if (cancelRequestedJobs.has(job.id)) break;
       const workers = Array.from({ length: Math.max(1, concurrency) }, () => worker());
       await Promise.all(workers);
       if (maxRecords !== null && job.processed >= maxRecords) break;
-      if (cancelRequestedJobIds.has(job.id)) break;
+      if (cancelRequestedJobs.has(job.id)) break;
 
       // After draining the current queue, look for any newly-discovered or
       // still-eligible recordings. Successful runs flip status to COMPLETED
@@ -1849,16 +1974,28 @@ async function runTranscriptBackfill(
     // Task #1057 — use the dedicated CANCELLED status (instead of FAILED)
     // so the badge, history label, and notification copy can reflect that
     // the run was deliberately stopped rather than crashing.
-    if (cancelRequestedJobIds.has(job.id)) {
-      cancelRequestedJobIds.delete(job.id);
-      job.status = "CANCELLED";
-      logInfo("crmCalls: transcript backfill cancelled by admin", {
-        jobId: job.id,
-        orgId: job.orgId,
-        processed: job.processed,
-      });
-    } else {
-      job.status = "COMPLETED";
+    {
+      const cancelReq = cancelRequestedJobs.get(job.id);
+      if (cancelReq) {
+        cancelRequestedJobs.delete(job.id);
+        job.status = "CANCELLED";
+        // Task #1070 — record who clicked Cancel and the optional free-text
+        // reason so the active-job card / history row / completion email can
+        // surface them. Captured here (not at request time) so a worker that
+        // happens to finish the same iteration as the cancel signal still
+        // persists the canceller info on its way to terminal.
+        job.cancelledById = cancelReq.cancelledById;
+        job.cancellationReason = cancelReq.reason;
+        logInfo("crmCalls: transcript backfill cancelled by admin", {
+          jobId: job.id,
+          orgId: job.orgId,
+          processed: job.processed,
+          cancelledById: cancelReq.cancelledById,
+          hasReason: !!cancelReq.reason,
+        });
+      } else {
+        job.status = "COMPLETED";
+      }
     }
   } catch (e) {
     job.status = "FAILED";
@@ -1871,7 +2008,7 @@ async function runTranscriptBackfill(
     // Task #1036 — ensure the cancellation flag is always cleared on a
     // terminal exit (including the catch path above), so a stale entry
     // can never linger in the in-memory Set after the worker is gone.
-    cancelRequestedJobIds.delete(job.id);
+    cancelRequestedJobs.delete(job.id);
     job.completedAt = new Date().toISOString();
     try {
       await persistJobProgress(job);
@@ -1897,6 +2034,12 @@ async function runTranscriptBackfill(
       const operator = job.startedById
         ? await getCrmTranscriptBackfillOperatorContact(job.startedById)
         : null;
+      // Task #1070 — also resolve the canceller's contact (when the run was
+      // cancelled) so the run-completed Slack/email can name them. Reuses
+      // the same lookup helper as the operator since both join `users`.
+      const canceller = job.cancelledById
+        ? await getCrmTranscriptBackfillOperatorContact(job.cancelledById)
+        : null;
       await notifyBackfillCompletion(
         {
           id: job.id,
@@ -1909,8 +2052,11 @@ async function runTranscriptBackfill(
           startedAt: job.startedAt,
           completedAt: job.completedAt,
           parentJobId: job.parentJobId,
+          cancelledById: job.cancelledById,
+          cancellationReason: job.cancellationReason,
         },
         operator,
+        { canceller },
       );
     } catch (e) {
       logWarn("crmCalls: failed to dispatch transcript backfill notification", {
@@ -2239,8 +2385,12 @@ router.get(
         for (const row of runningRows) {
           const reaped = await reapIfStale(row);
           if (!reaped || reaped.status !== "RUNNING") continue;
+          // Task #1070 — running rows can never have a canceller yet, but
+          // we still pipe through `enrichWithCanceller` so the response
+          // shape stays uniform with the single-org branch below.
+          const enriched = await enrichWithCanceller(rowToState(reaped));
           runningJobs.push({
-            ...rowToState(reaped),
+            ...enriched,
             organization: {
               id: row.organizationId,
               name: row.organizationName,
@@ -2261,13 +2411,25 @@ router.get(
         return;
       }
 
-      let activeJob: BackfillJobState | null = null;
+      let activeJob:
+        | (BackfillJobState & {
+            cancelledBy: {
+              id: string;
+              firstName: string | null;
+              lastName: string | null;
+              email: string | null;
+            } | null;
+          })
+        | null = null;
       const runningRow = await getRunningCrmTranscriptBackfillJob(
         scopedOrgId as string,
       );
       if (runningRow) {
         const reaped = await reapIfStale(runningRow);
-        activeJob = reaped ? rowToState(reaped) : null;
+        // Task #1070 — enrich the active job with the canceller profile so
+        // the active card can render "Cancelled by …" the moment a CANCELLED
+        // run is reaped (the worker also writes cancelledById on the row).
+        activeJob = reaped ? await enrichWithCanceller(rowToState(reaped)) : null;
       }
 
       res.json({
@@ -2920,6 +3082,19 @@ router.get(
                   email: row.startedByEmail,
                 }
               : null,
+            // Task #1070 — surface the canceller (when present) and the
+            // free-text reason captured at cancel time so the history row
+            // can show "Cancelled by Sam Doe — bad batch" without a
+            // second round-trip to the users table.
+            cancelledBy: row.cancelledById
+              ? {
+                  id: row.cancelledById,
+                  firstName: row.cancelledByFirstName ?? null,
+                  lastName: row.cancelledByLastName ?? null,
+                  email: row.cancelledByEmail ?? null,
+                }
+              : null,
+            cancellationReason: row.cancellationReason ?? null,
             organization: {
               id: row.organizationId,
               name: row.organizationName,
@@ -3461,9 +3636,16 @@ router.get(
           completedAt: new Date(),
         });
         scheduleBackfillCompletionEmail(row.id);
-        return res.json(rowToState(reaped ?? { ...row, status: "FAILED", completedAt: new Date() }));
+        // Task #1070 — even on the reap path the row may already carry a
+        // canceller (rare race: cancel landed just before the heartbeat
+        // staleness check), so enrich consistently with the happy path.
+        return res.json(
+          await enrichWithCanceller(
+            rowToState(reaped ?? { ...row, status: "FAILED", completedAt: new Date() }),
+          ),
+        );
       }
-      res.json(rowToState(row));
+      res.json(await enrichWithCanceller(rowToState(row)));
     } catch (e) {
       next(e);
     }
@@ -3661,6 +3843,17 @@ router.post(
         });
       }
 
+      // Task #1070 — accept an optional free-text reason from the confirm
+      // dialog. Trimmed and length-capped so a malicious or accidentally
+      // huge payload can't bloat the row. Empty string means "no reason
+      // given" and is persisted as NULL.
+      const rawReason = (req.body && typeof req.body.reason === "string")
+        ? req.body.reason
+        : "";
+      const trimmedReason = rawReason.trim().slice(0, 500);
+      const reason = trimmedReason.length > 0 ? trimmedReason : null;
+      const cancelledById = req.user!.id;
+
       const heartbeatAgeMs = Date.now() - new Date(row.heartbeatAt).getTime();
       if (heartbeatAgeMs > BACKFILL_HEARTBEAT_STALE_MS) {
         // Worker is dead (process restart since last heartbeat). Mark the
@@ -3668,16 +3861,21 @@ router.post(
         // Task #1057 — surface CANCELLED here too: the admin asked to
         // cancel, so the row should reflect that even when there's no
         // live worker to flip it cooperatively.
+        // Task #1070 — also persist the canceller + reason on this path so
+        // the history row / completion email match the live-worker path.
         const reaped = await updateCrmTranscriptBackfillJob(row.id, {
           status: "CANCELLED",
           completedAt: new Date(),
+          cancelledById,
+          cancellationReason: reason,
         });
         scheduleBackfillCompletionEmail(row.id);
         logInfo("crmCalls: cancelled stale transcript backfill (worker dead)", {
           jobId: row.id,
           orgId: row.organizationId,
           heartbeatAgeMs,
-          cancelledBy: req.user!.id,
+          cancelledBy: cancelledById,
+          hasReason: !!reason,
           superAdmin,
         });
         return res.json({
@@ -3688,13 +3886,15 @@ router.post(
       }
 
       // Worker is alive — signal cooperative cancellation. The worker will
-      // flip the row to FAILED and fire the completion notification on its
-      // next iteration / batch boundary.
-      cancelRequestedJobIds.add(row.id);
+      // flip the row to CANCELLED and fire the completion notification on
+      // its next iteration / batch boundary, picking the canceller +
+      // reason out of the in-memory request map below.
+      cancelRequestedJobs.set(row.id, { cancelledById, reason });
       logInfo("crmCalls: transcript backfill cancellation requested", {
         jobId: row.id,
         orgId: row.organizationId,
-        cancelledBy: req.user!.id,
+        cancelledBy: cancelledById,
+        hasReason: !!reason,
         superAdmin,
       });
       res.status(202).json({

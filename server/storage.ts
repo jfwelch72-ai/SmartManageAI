@@ -19,6 +19,7 @@ import {
   type InsertCrmTranscriptBackfillTestAlert,
 } from "@shared/schema";
 import { eq, and, desc, sql, ilike, or, gte, lte, inArray, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 
 export interface ExecutiveDigestInsert {
   organizationId: string;
@@ -63,6 +64,11 @@ export type CrmTranscriptBackfillJobUpdate = Partial<{
   failedRecordingIds: string[];
   completedAt: Date | null;
   heartbeatAt: Date;
+  // Task #1070 — set when a run transitions to CANCELLED so the UI and
+  // run-completed notification can show who stopped it and (optionally)
+  // why. Stays NULL on COMPLETED/FAILED rows.
+  cancelledById: string | null;
+  cancellationReason: string | null;
 }>;
 
 export async function createCrmTranscriptBackfillJob(
@@ -122,6 +128,12 @@ export type CrmTranscriptBackfillJobWithOperator = CrmTranscriptBackfillJob & {
   startedByEmail: string | null;
   organizationName: string | null;
   organizationSlug: string | null;
+  // Task #1070 — joined attributes for the admin who cancelled the run.
+  // All NULL when the row's `cancelled_by_id` is NULL (e.g. COMPLETED /
+  // FAILED runs, or a CANCELLED row whose canceller's user was deleted).
+  cancelledByFirstName: string | null;
+  cancelledByLastName: string | null;
+  cancelledByEmail: string | null;
 };
 
 export type ListCrmTranscriptBackfillJobsFilters = {
@@ -191,6 +203,10 @@ export async function listCrmTranscriptBackfillJobs(
       ? conditions[0]
       : and(...conditions);
 
+  // Task #1070 — alias the users table for the canceller join so it can
+  // coexist with the existing starter join in the same query without
+  // ambiguous column references.
+  const cancellerUsers = alias(users, "cancelled_by_users");
   const baseRows = db
     .select({
       id: crmTranscriptBackfillJobs.id,
@@ -210,14 +226,20 @@ export async function listCrmTranscriptBackfillJobs(
       updatedAt: crmTranscriptBackfillJobs.updatedAt,
       concurrency: crmTranscriptBackfillJobs.concurrency,
       maxRecords: crmTranscriptBackfillJobs.maxRecords,
+      cancelledById: crmTranscriptBackfillJobs.cancelledById,
+      cancellationReason: crmTranscriptBackfillJobs.cancellationReason,
       startedByFirstName: users.firstName,
       startedByLastName: users.lastName,
       startedByEmail: users.email,
+      cancelledByFirstName: cancellerUsers.firstName,
+      cancelledByLastName: cancellerUsers.lastName,
+      cancelledByEmail: cancellerUsers.email,
       organizationName: organizations.name,
       organizationSlug: organizations.slug,
     })
     .from(crmTranscriptBackfillJobs)
     .leftJoin(users, eq(users.id, crmTranscriptBackfillJobs.startedById))
+    .leftJoin(cancellerUsers, eq(cancellerUsers.id, crmTranscriptBackfillJobs.cancelledById))
     .leftJoin(organizations, eq(organizations.id, crmTranscriptBackfillJobs.organizationId));
 
   const rows = await (whereClause ? baseRows.where(whereClause) : baseRows)

@@ -5,6 +5,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -67,6 +79,17 @@ interface BackfillJob {
   parentJobId?: string | null;
   concurrency: number | null;
   maxRecords: number | null;
+  // Task #1070 — populated when an admin cancelled the run. `cancelledBy`
+  // is null on COMPLETED / FAILED rows or when the user record was
+  // deleted; `cancellationReason` is null when the canceller didn't enter
+  // free-text. Optional so older cached responses don't break the UI.
+  cancelledBy?: {
+    id: string;
+    firstName: string | null;
+    lastName: string | null;
+    email: string | null;
+  } | null;
+  cancellationReason?: string | null;
 }
 
 interface BackfillLineageNode {
@@ -269,6 +292,101 @@ const PAGE_SIZE = 20;
 // deliberately-stopped runs from crashes.
 const STATUS_OPTIONS = ["RUNNING", "COMPLETED", "FAILED", "CANCELLED"] as const;
 type StatusFilter = "ALL" | (typeof STATUS_OPTIONS)[number];
+
+// Task #1070 — reusable Cancel-with-reason button. Wraps the existing
+// `cancelMutation` in an AlertDialog that lets the operator type an
+// optional free-text reason (max 500 chars, enforced server-side too)
+// before confirming. The reason is forwarded to the server so it can be
+// persisted on the job row and surfaced in the active card, history rows,
+// and the run-completed Slack/email summary.
+function CancelBackfillButton(props: {
+  jobId: string;
+  isPending: boolean;
+  isThisJob: boolean;
+  onConfirm: (reason: string) => void;
+  testId: string;
+  title?: string;
+  variant?: "outline" | "destructive";
+}) {
+  const { jobId, isPending, isThisJob, onConfirm, testId, title, variant = "outline" } = props;
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState("");
+  const trimmed = reason.trim();
+  const tooLong = trimmed.length > 500;
+
+  return (
+    <AlertDialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setReason("");
+      }}
+    >
+      <AlertDialogTrigger asChild>
+        <Button
+          variant={variant}
+          size="sm"
+          disabled={isPending && isThisJob}
+          data-testid={testId}
+          title={title}
+        >
+          {isPending && isThisJob ? (
+            <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+          ) : (
+            <X className="h-4 w-4 mr-1.5" />
+          )}
+          Cancel backfill
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent data-testid={`dialog-cancel-backfill-${jobId}`}>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Cancel transcript backfill?</AlertDialogTitle>
+          <AlertDialogDescription>
+            The worker will stop after the current recording finishes. You can
+            optionally record why you're stopping the run — it will be shown
+            on the active job card, in the history row, and in the
+            run-completed Slack/email summary.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="space-y-2">
+          <Label htmlFor={`cancel-reason-${jobId}`} className="text-xs">
+            Reason (optional, max 500 characters)
+          </Label>
+          <Textarea
+            id={`cancel-reason-${jobId}`}
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+            placeholder="e.g. wrong tenant, kicked off too many in parallel, etc."
+            maxLength={600}
+            rows={3}
+            data-testid={`input-cancel-reason-${jobId}`}
+          />
+          {tooLong && (
+            <p className="text-xs text-destructive" data-testid={`text-cancel-reason-too-long-${jobId}`}>
+              Reason must be 500 characters or fewer.
+            </p>
+          )}
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel data-testid={`button-cancel-backfill-dismiss-${jobId}`}>
+            Keep running
+          </AlertDialogCancel>
+          <AlertDialogAction
+            disabled={tooLong}
+            onClick={() => {
+              onConfirm(trimmed);
+              setOpen(false);
+              setReason("");
+            }}
+            data-testid={`button-cancel-backfill-confirm-${jobId}`}
+          >
+            Cancel backfill
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
 
 export default function AdminTranscriptBackfillPage() {
   const { toast } = useToast();
@@ -837,11 +955,15 @@ export default function AdminTranscriptBackfillPage() {
   // to FAILED on its next iteration, so we just refresh the summary/history
   // and let polling pick up the new status.
   const cancelMutation = useMutation({
-    mutationFn: async (jobId: string) => {
+    // Task #1070 — cancel now accepts an optional free-text `reason` so
+    // admins can record why they stopped the run. The reason flows through
+    // to the active job card, history rows, and the run-completed
+    // Slack/email summary.
+    mutationFn: async (vars: { jobId: string; reason?: string }) => {
       const res = await apiRequest(
         "POST",
-        `/api/crm/calls/transcripts/backfill/${jobId}/cancel`,
-        {},
+        `/api/crm/calls/transcripts/backfill/${vars.jobId}/cancel`,
+        vars.reason ? { reason: vars.reason } : {},
       );
       return (await res.json()) as {
         jobId: string;
@@ -1194,25 +1316,16 @@ export default function AdminTranscriptBackfillPage() {
                         Run-a-backfill picker for admins who want to set
                         maxRecords/concurrency before starting. */}
                     <div className="flex flex-wrap items-center gap-2 pt-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => cancelMutation.mutate(rj.id)}
-                        disabled={
-                          cancelMutation.isPending &&
-                          cancelMutation.variables === rj.id
+                      <CancelBackfillButton
+                        jobId={rj.id}
+                        isPending={cancelMutation.isPending}
+                        isThisJob={cancelMutation.variables?.jobId === rj.id}
+                        onConfirm={(reason) =>
+                          cancelMutation.mutate({ jobId: rj.id, reason: reason || undefined })
                         }
-                        data-testid={`button-cross-org-cancel-${rj.id}`}
+                        testId={`button-cross-org-cancel-${rj.id}`}
                         title={`Stop the running transcript backfill in ${orgLabel}`}
-                      >
-                        {cancelMutation.isPending &&
-                        cancelMutation.variables === rj.id ? (
-                          <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                        ) : (
-                          <X className="h-4 w-4 mr-1.5" />
-                        )}
-                        Cancel backfill
-                      </Button>
+                      />
                       <Button
                         variant="outline"
                         size="sm"
@@ -1466,25 +1579,16 @@ export default function AdminTranscriptBackfillPage() {
                   to any admin for their own org's RUNNING job; super admins
                   also get per-row cancel buttons in the cross-org list above. */}
               {job.status === "RUNNING" && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => cancelMutation.mutate(job.id)}
-                  disabled={
-                    cancelMutation.isPending &&
-                    cancelMutation.variables === job.id
+                <CancelBackfillButton
+                  jobId={job.id}
+                  isPending={cancelMutation.isPending}
+                  isThisJob={cancelMutation.variables?.jobId === job.id}
+                  onConfirm={(reason) =>
+                    cancelMutation.mutate({ jobId: job.id, reason: reason || undefined })
                   }
-                  data-testid="button-cancel-active-backfill"
+                  testId="button-cancel-active-backfill"
                   title="Stop this backfill after the current recording finishes"
-                >
-                  {cancelMutation.isPending &&
-                  cancelMutation.variables === job.id ? (
-                    <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
-                  ) : (
-                    <X className="h-4 w-4 mr-1.5" />
-                  )}
-                  Cancel backfill
-                </Button>
+                />
               )}
             </div>
           </CardHeader>
@@ -1514,6 +1618,43 @@ export default function AdminTranscriptBackfillPage() {
                 {job.maxRecords !== null ? job.maxRecords.toLocaleString() : "no cap"}
               </span>
             </div>
+            {/* Task #1070 — surface who cancelled the run (and why) on the
+                active job card. The block stays hidden for COMPLETED /
+                FAILED runs and for legacy CANCELLED rows that pre-date the
+                cancelledById column. */}
+            {job.status === "CANCELLED" && (
+              <div
+                className="rounded-md border border-border bg-muted/40 p-3 text-xs space-y-1"
+                data-testid="text-active-cancellation-summary"
+              >
+                <div>
+                  <span className="text-muted-foreground">Cancelled by: </span>
+                  <span
+                    className="font-medium text-foreground"
+                    data-testid="text-active-cancelled-by"
+                  >
+                    {job.cancelledBy
+                      ? [job.cancelledBy.firstName, job.cancelledBy.lastName]
+                          .filter(Boolean)
+                          .join(" ") ||
+                        job.cancelledBy.email ||
+                        "(unknown)"
+                      : "(unknown — user record was deleted)"}
+                  </span>
+                </div>
+                {job.cancellationReason && (
+                  <div>
+                    <span className="text-muted-foreground">Reason: </span>
+                    <span
+                      className="text-foreground"
+                      data-testid="text-active-cancellation-reason"
+                    >
+                      {job.cancellationReason}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
             {job.errors.length > 0 && (
               <div className="space-y-2">
                 <Label className="text-xs" data-testid="label-job-error-samples">
@@ -1845,6 +1986,36 @@ export default function AdminTranscriptBackfillPage() {
                         <div className="text-xs text-muted-foreground" data-testid={`text-history-operator-${entry.id}`}>
                           Started by {operatorName} · <code className="text-[10px]">{entry.id}</code>
                         </div>
+                        {/* Task #1070 — surface the canceller (and optional
+                            reason) inline on each history row so admins can
+                            see at a glance who stopped a run and why. Only
+                            renders when both fields exist on the row to
+                            stay quiet for legacy CANCELLED rows. */}
+                        {entry.status === "CANCELLED" && (entry.cancelledBy || entry.cancellationReason) && (
+                          <div
+                            className="text-xs text-muted-foreground"
+                            data-testid={`text-history-cancelled-by-${entry.id}`}
+                          >
+                            Cancelled by{" "}
+                            <span className="font-medium text-foreground">
+                              {entry.cancelledBy
+                                ? [entry.cancelledBy.firstName, entry.cancelledBy.lastName]
+                                    .filter(Boolean)
+                                    .join(" ") ||
+                                  entry.cancelledBy.email ||
+                                  "(unknown)"
+                                : "(unknown — user record was deleted)"}
+                            </span>
+                            {entry.cancellationReason && (
+                              <>
+                                {" · "}
+                                <span data-testid={`text-history-cancellation-reason-${entry.id}`}>
+                                  {entry.cancellationReason}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        )}
                         {entry.status !== "RUNNING" && (
                           <div
                             className="text-xs text-muted-foreground flex items-center gap-1"

@@ -1778,6 +1778,13 @@ export const crmTranscriptBackfillJobs = pgTable("crm_transcript_backfill_jobs",
   // and safety cap (maxRecords) instead of silently falling back to defaults.
   concurrency: integer("concurrency"),
   maxRecords: integer("max_records"),
+  // Task #1070 — when a run is cancelled, remember which admin clicked
+  // Cancel and (optionally) the free-text reason they typed in the
+  // confirm dialog. Surfaced on the active job card, history rows, and
+  // the run-completed Slack/email so admins can answer "who stopped this
+  // and why" without grepping logs. NULL on COMPLETED/FAILED runs.
+  cancelledById: varchar("cancelled_by_id").references(() => users.id, { onDelete: "set null" }),
+  cancellationReason: text("cancellation_reason"),
 }, (table) => ({
   orgIdx: index("crm_transcript_backfill_jobs_org_idx").on(table.organizationId),
   statusIdx: index("crm_transcript_backfill_jobs_status_idx").on(table.status),
