@@ -402,6 +402,18 @@ export default function PlatformAdminDashboard() {
           </Card>
         </Link>
 
+        <Link href="/admin/portfolio-pdf">
+          <Card className="hover-elevate cursor-pointer transition-colors" data-testid="link-admin-portfolio-pdf">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Portfolio PDF renderer
+              </CardTitle>
+              <CardDescription>Availability of the Chromium pool that renders portfolio summary PDFs</CardDescription>
+            </CardHeader>
+          </Card>
+        </Link>
+
         <Link href="/admin/job-metrics">
           <Card className="hover-elevate cursor-pointer transition-colors" data-testid="link-admin-job-metrics">
             <CardHeader>

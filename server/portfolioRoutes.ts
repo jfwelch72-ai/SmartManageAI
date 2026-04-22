@@ -13,7 +13,7 @@ import {
   projectKpiSnapshots,
 } from "@shared/schema";
 import { rfiStatusEnum, changeOrderStatusEnum, punchListStatusEnum, projectStatusEnum } from "@shared/schema/enums";
-import { requireAuth, requireAnyFeaturePermission, type AuthRequest } from "./auth";
+import { requireAuth, requireAnyFeaturePermission, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { calculateAllProjectsProfitability } from "./ai/profitabilityEngine";
 import { logError, logWarn } from "./utils/logger";
@@ -21,6 +21,7 @@ import {
   isPortfolioRendererAvailable,
   renderPortfolioSummaryPdf,
   isAllowedAssetUrl,
+  getPortfolioRendererStatus,
 } from "./portfolio-pdf-service";
 import { getOrganizationBranding } from "./organizationBranding";
 
@@ -1002,6 +1003,49 @@ router.get(
       next(err);
     }
   }
+);
+
+/**
+ * @openapi
+ * /api/admin/portfolio-pdf/health:
+ *   get:
+ *     tags: [Admin]
+ *     summary: Get Portfolio PDF renderer health status
+ *     description: |
+ *       Returns the cached availability status of the Portfolio PDF renderer
+ *       (headless Chromium pool). Pass `?check=true` to force a fresh
+ *       availability probe (launches and closes a throwaway browser). Requires
+ *       SUPER_ADMIN.
+ *     parameters:
+ *       - name: check
+ *         in: query
+ *         required: false
+ *         schema: { type: boolean }
+ *     responses:
+ *       200: { description: Renderer status snapshot }
+ */
+router.get(
+  "/api/admin/portfolio-pdf/health",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const force =
+        String(req.query.check ?? "").toLowerCase() === "true" ||
+        req.query.check === "1";
+      if (force) {
+        await isPortfolioRendererAvailable();
+      }
+      const status = getPortfolioRendererStatus();
+      res.json({
+        available: status.available,
+        error: status.error,
+        lastCheckedAt: status.lastCheckedAt,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
 );
 
 export default router;

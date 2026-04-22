@@ -173,6 +173,7 @@ const PlatformOrganizationDetail = lazy(() => import("@/pages/PlatformOrganizati
 const PlatformAnalyticsMonitoring = lazy(() => import("@/pages/PlatformAnalyticsMonitoring"));
 const PlatformTools = lazy(() => import("@/pages/PlatformTools"));
 const GanttPdfHealth = lazy(() => import("@/pages/GanttPdfHealth"));
+const PortfolioPdfHealth = lazy(() => import("@/pages/PortfolioPdfHealth"));
 const JobMetricsHealth = lazy(() => import("@/pages/JobMetricsHealth"));
 const JobMetricsDashboard = lazy(() => import("@/pages/JobMetricsDashboard"));
 const VendorPricingPage = lazy(() => import("@/pages/vendor-pricing"));
@@ -553,6 +554,7 @@ function Router() {
       <Route path="/admin/analytics" component={() => <ProtectedRoute component={PlatformAnalyticsMonitoring} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/tools" component={() => <ProtectedRoute component={PlatformTools} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/gantt-pdf" component={() => <ProtectedRoute component={GanttPdfHealth} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/admin/portfolio-pdf" component={() => <ProtectedRoute component={PortfolioPdfHealth} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/job-metrics" component={() => <ProtectedRoute component={JobMetricsHealth} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/jobs/metrics" component={() => <ProtectedRoute component={JobMetricsDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/subscriptions" component={() => <ProtectedRoute component={() => <Redirect to="/admin/tools" />} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
