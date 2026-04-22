@@ -71,6 +71,9 @@ import { ensureCrmEmailLoggingTables } from "./ensureCrmEmailLoggingTables";
 import { ensureUsersManagerIdColumn } from "./ensureUsersManagerIdColumn";
 import { ensureProjectTemplateTables } from "./ensureProjectTemplateTables";
 import { ensureCrmCallTables } from "./ensureCrmCallTables";
+import { ensureProjectsRollupColumns } from "./ensureProjectsRollupColumns";
+import { ensureGanttPdfAlertTables } from "./ensureGanttPdfAlertTables";
+import { ensureProjectKpiSnapshotsTable } from "./ensureProjectKpiSnapshotsTable";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -151,6 +154,9 @@ const migrations: MigrationStep[] = [
   { name: "users_manager_id_column", category: "ADD_COLUMN", fn: ensureUsersManagerIdColumn },
   { name: "project_template_tables", category: "CREATE_TABLE", fn: ensureProjectTemplateTables },
   { name: "crm_call_tables", category: "CREATE_TABLE", fn: ensureCrmCallTables },
+  { name: "projects_rollup_columns", category: "ADD_COLUMN", fn: ensureProjectsRollupColumns },
+  { name: "gantt_pdf_alert_tables", category: "CREATE_TABLE", fn: ensureGanttPdfAlertTables },
+  { name: "project_kpi_snapshots_table", category: "CREATE_TABLE", fn: ensureProjectKpiSnapshotsTable },
 ];
 
 export async function runStartupMigrations(): Promise<void> {
