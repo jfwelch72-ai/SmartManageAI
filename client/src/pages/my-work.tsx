@@ -195,6 +195,45 @@ function dueLabel(item: MyWorkItem): string {
   return `${format(d, "MMM d")} · ${formatDistanceToNowStrict(d, { addSuffix: true })}`;
 }
 
+function dueDateForBucket(bucket: Bucket): Date | null {
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  switch (bucket) {
+    case "none":
+      return null;
+    case "overdue": {
+      const d = new Date(startOfToday);
+      d.setDate(d.getDate() - 1);
+      d.setHours(17, 0, 0, 0);
+      return d;
+    }
+    case "today": {
+      const d = new Date(startOfToday);
+      d.setHours(17, 0, 0, 0);
+      return d;
+    }
+    case "thisWeek": {
+      // End of the current calendar week — upcoming Saturday at 5pm. If today
+      // is already Saturday, push out 6 days so it still lands in the
+      // "thisWeek" bucket (server defines that as < today + 7 days).
+      const d = new Date(startOfToday);
+      const dow = d.getDay();
+      const targetDow = 6; // Saturday
+      let daysAhead = (targetDow - dow + 7) % 7;
+      if (daysAhead === 0) daysAhead = 6;
+      d.setDate(d.getDate() + daysAhead);
+      d.setHours(17, 0, 0, 0);
+      return d;
+    }
+    case "later": {
+      const d = new Date(startOfToday);
+      d.setDate(d.getDate() + 14);
+      d.setHours(17, 0, 0, 0);
+      return d;
+    }
+  }
+}
+
 function dispatchUpdate(item: MyWorkItem, body: Record<string, unknown>) {
   switch (item.type) {
     case "TASK":
@@ -626,24 +665,16 @@ export default function MyWorkPage() {
           ))}
         </div>
       ) : view === "kanban" ? (
-        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3" data-testid="kanban">
-          {kanbanColumns.map((col) => (
-            <div key={col.key} className="flex flex-col" data-testid={`kanban-col-${col.key}`}>
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-semibold">{col.label}</h3>
-                <Badge variant="outline">{col.items.length}</Badge>
-              </div>
-              <div className="space-y-2 min-h-[100px]">
-                {col.items.map((it) => (
-                  <KanbanCard key={`${it.type}-${it.id}`} item={it} />
-                ))}
-                {col.items.length === 0 && (
-                  <div className="text-xs text-muted-foreground italic px-1">No items</div>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+        <KanbanBoard
+          columns={kanbanColumns}
+          onMove={(item, bucket) => {
+            const dueDate = dueDateForBucket(bucket);
+            updateMutation.mutate({
+              item,
+              patch: { dueDate: dueDate ? dueDate.toISOString() : null },
+            });
+          }}
+        />
       ) : (
         <EntityCalendarView
           items={calendarItems}
@@ -864,10 +895,123 @@ function Row({
   );
 }
 
-function KanbanCard({ item }: { item: MyWorkItem }) {
-  const meta = TYPE_META[item.type];
+function KanbanBoard({
+  columns,
+  onMove,
+}: {
+  columns: { key: Bucket; label: string; items: MyWorkItem[] }[];
+  onMove: (item: MyWorkItem, bucket: Bucket) => void;
+}) {
+  const [draggingKey, setDraggingKey] = useState<string | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<Bucket | null>(null);
+  const draggedRef = useMemo(() => ({ current: null as MyWorkItem | null }), []);
+
+  const handleDrop = (bucket: Bucket) => {
+    const item = draggedRef.current;
+    setDragOverCol(null);
+    setDraggingKey(null);
+    draggedRef.current = null;
+    if (!item) return;
+    if (item.bucket === bucket) return;
+    if (!item.canEditDueDate) return;
+    onMove(item, bucket);
+  };
+
   return (
-    <Card className="hover-elevate cursor-pointer" data-testid={`kanban-card-${item.id}`}>
+    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3" data-testid="kanban">
+      {columns.map((col) => {
+        const isOver = dragOverCol === col.key;
+        return (
+          <div
+            key={col.key}
+            className={cn(
+              "flex flex-col rounded-md border bg-muted/30 p-2 transition-colors",
+              isOver && "ring-2 ring-primary bg-muted/60",
+            )}
+            data-testid={`kanban-col-${col.key}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              if (dragOverCol !== col.key) setDragOverCol(col.key);
+            }}
+            onDragLeave={(e) => {
+              if (e.currentTarget.contains(e.relatedTarget as Node)) return;
+              setDragOverCol((cur) => (cur === col.key ? null : cur));
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              handleDrop(col.key);
+            }}
+          >
+            <div className="flex items-center justify-between mb-2 px-1">
+              <h3 className="text-sm font-semibold">{col.label}</h3>
+              <Badge variant="outline">{col.items.length}</Badge>
+            </div>
+            <div className="space-y-2 min-h-[100px]">
+              {col.items.map((it) => {
+                const key = `${it.type}-${it.id}`;
+                return (
+                  <KanbanCard
+                    key={key}
+                    item={it}
+                    isDragging={draggingKey === key}
+                    onDragStart={(e) => {
+                      if (!it.canEditDueDate) {
+                        e.preventDefault();
+                        return;
+                      }
+                      e.dataTransfer.setData("text/plain", key);
+                      e.dataTransfer.effectAllowed = "move";
+                      draggedRef.current = it;
+                      setDraggingKey(key);
+                    }}
+                    onDragEnd={() => {
+                      setDraggingKey(null);
+                      setDragOverCol(null);
+                      draggedRef.current = null;
+                    }}
+                  />
+                );
+              })}
+              {col.items.length === 0 && (
+                <div className="text-xs text-muted-foreground italic px-1 py-6 text-center">
+                  {isOver ? "Drop to reschedule" : "No items"}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function KanbanCard({
+  item,
+  isDragging,
+  onDragStart,
+  onDragEnd,
+}: {
+  item: MyWorkItem;
+  isDragging?: boolean;
+  onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void;
+  onDragEnd?: (e: React.DragEvent<HTMLDivElement>) => void;
+}) {
+  const meta = TYPE_META[item.type];
+  const draggable = item.canEditDueDate;
+  return (
+    <Card
+      className={cn(
+        "hover-elevate",
+        draggable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer",
+        isDragging && "opacity-50",
+      )}
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      data-testid={`kanban-card-${item.id}`}
+      data-draggable={draggable ? "true" : "false"}
+    >
       <Link href={item.sourceUrl}>
         <CardContent className="p-3 space-y-2">
           <div className="flex items-center justify-between">
