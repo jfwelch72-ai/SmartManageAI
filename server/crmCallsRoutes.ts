@@ -36,6 +36,7 @@ import {
   getCrmTranscriptBackfillJob,
   getRunningCrmTranscriptBackfillJob,
   listCrmTranscriptBackfillJobs,
+  listCrmTranscriptBackfillOperators,
   listMostRecentRunningCrmTranscriptBackfillJobsPerOrg,
   updateCrmTranscriptBackfillJob,
 } from "./storage";
@@ -1475,6 +1476,11 @@ router.get(
       const operatorRaw = typeof req.query.operator === "string" ? req.query.operator.trim() : "";
       const operator = operatorRaw.length > 0 ? operatorRaw.slice(0, 200) : undefined;
 
+      const startedByIdRaw =
+        typeof req.query.startedById === "string" ? req.query.startedById.trim() : "";
+      const startedById =
+        startedByIdRaw.length > 0 ? startedByIdRaw.slice(0, 200) : undefined;
+
       const parseDate = (v: unknown): Date | undefined => {
         if (typeof v !== "string" || v.length === 0) return undefined;
         const d = new Date(v);
@@ -1488,6 +1494,7 @@ router.get(
         offset,
         statuses: statuses.length > 0 ? statuses : undefined,
         operator,
+        startedById,
         startedAfter,
         startedBefore,
       });
@@ -1509,6 +1516,25 @@ router.get(
             : null,
         })),
       });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #1001 — list distinct operators that appear in this org's backfill
+// history. Powers the quick-pick dropdown in the admin UI so admins don't have
+// to remember exact spelling when filtering.
+router.get(
+  "/api/crm/calls/transcripts/backfill/operators",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+      const operators = await listCrmTranscriptBackfillOperators(orgId);
+      res.json({ operators });
     } catch (e) {
       next(e);
     }
@@ -1540,6 +1566,13 @@ router.get(
 
       const operatorRaw = typeof req.query.operator === "string" ? req.query.operator.trim() : "";
       const operator = operatorRaw.length > 0 ? operatorRaw.slice(0, 200) : undefined;
+
+      // Task #1001 — also accept the exact-match operator id so the CSV
+      // export honors the same quick-pick filter the UI uses.
+      const startedByIdRaw =
+        typeof req.query.startedById === "string" ? req.query.startedById.trim() : "";
+      const startedById =
+        startedByIdRaw.length > 0 ? startedByIdRaw.slice(0, 200) : undefined;
 
       const parseDate = (v: unknown): Date | undefined => {
         if (typeof v !== "string" || v.length === 0) return undefined;
@@ -1584,6 +1617,7 @@ router.get(
           offset,
           statuses: statuses.length > 0 ? statuses : undefined,
           operator,
+          startedById,
           startedAfter,
           startedBefore,
         });

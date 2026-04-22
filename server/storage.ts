@@ -101,6 +101,8 @@ export type ListCrmTranscriptBackfillJobsFilters = {
   statuses?: string[];
   /** Substring match on the operator's first name, last name, or email. */
   operator?: string;
+  /** Exact match on the operator's user id (set by the quick-pick dropdown). */
+  startedById?: string;
   /** Inclusive lower bound on `started_at`. */
   startedAfter?: Date;
   /** Inclusive upper bound on `started_at`. */
@@ -118,6 +120,10 @@ export async function listCrmTranscriptBackfillJobs(
 
   if (opts.statuses && opts.statuses.length > 0) {
     conditions.push(inArray(crmTranscriptBackfillJobs.status, opts.statuses));
+  }
+
+  if (opts.startedById) {
+    conditions.push(eq(crmTranscriptBackfillJobs.startedById, opts.startedById));
   }
 
   if (opts.operator && opts.operator.trim().length > 0) {
@@ -177,6 +183,56 @@ export async function listCrmTranscriptBackfillJobs(
   const total = Number(totalRaw) || 0;
 
   return { rows: rows as CrmTranscriptBackfillJobWithOperator[], total };
+}
+
+// Returns the distinct set of operators (users) who have started at least one
+// transcript backfill in the given org. Used by the admin history UI to
+// populate a quick-pick dropdown so admins can filter by an exact user id
+// without having to remember the operator's spelling.
+export type CrmTranscriptBackfillOperator = {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  jobCount: number;
+};
+
+export async function listCrmTranscriptBackfillOperators(
+  organizationId: string,
+): Promise<CrmTranscriptBackfillOperator[]> {
+  const rows = await db
+    .select({
+      id: crmTranscriptBackfillJobs.startedById,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      email: users.email,
+      jobCount: sql<number>`count(*)::int`,
+    })
+    .from(crmTranscriptBackfillJobs)
+    .leftJoin(users, eq(users.id, crmTranscriptBackfillJobs.startedById))
+    .where(
+      and(
+        eq(crmTranscriptBackfillJobs.organizationId, organizationId),
+        sql`${crmTranscriptBackfillJobs.startedById} IS NOT NULL`,
+      ),
+    )
+    .groupBy(
+      crmTranscriptBackfillJobs.startedById,
+      users.firstName,
+      users.lastName,
+      users.email,
+    )
+    .orderBy(users.firstName, users.lastName, users.email);
+
+  return rows
+    .filter((r): r is CrmTranscriptBackfillOperator & { id: string } => !!r.id)
+    .map((r) => ({
+      id: r.id,
+      firstName: r.firstName,
+      lastName: r.lastName,
+      email: r.email,
+      jobCount: Number(r.jobCount) || 0,
+    }));
 }
 
 export async function getRunningCrmTranscriptBackfillJob(

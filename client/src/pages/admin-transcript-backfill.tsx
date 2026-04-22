@@ -70,6 +70,18 @@ interface BackfillSummary {
   activeJob: BackfillJob | null;
 }
 
+interface BackfillOperator {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+  jobCount: number;
+}
+
+interface BackfillOperatorsResponse {
+  operators: BackfillOperator[];
+}
+
 const SUMMARY_KEY = ["/api/crm/calls/transcripts/backfill"];
 const HISTORY_PATH = "/api/crm/calls/transcripts/backfill/history";
 const HISTORY_KEY_BASE = [HISTORY_PATH] as const;
@@ -90,6 +102,10 @@ export default function AdminTranscriptBackfillPage() {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
   const [operatorInput, setOperatorInput] = useState("");
   const [appliedOperator, setAppliedOperator] = useState("");
+  // Quick-pick operator dropdown (Task #1001). When set, we filter by this
+  // user's id (exact match) and ignore the free-text operator input so the
+  // two filters don't fight each other.
+  const [operatorId, setOperatorId] = useState<string>("ALL");
   const [startedAfter, setStartedAfter] = useState<Date | undefined>(undefined);
   const [startedBefore, setStartedBefore] = useState<Date | undefined>(undefined);
   const [page, setPage] = useState(0);
@@ -105,7 +121,7 @@ export default function AdminTranscriptBackfillPage() {
   // total.
   useEffect(() => {
     setPage(0);
-  }, [statusFilter, appliedOperator, startedAfter, startedBefore]);
+  }, [statusFilter, appliedOperator, operatorId, startedAfter, startedBefore]);
 
   const historyFilters = useMemo(() => {
     const params: Record<string, string> = {
@@ -113,7 +129,12 @@ export default function AdminTranscriptBackfillPage() {
       offset: String(page * PAGE_SIZE),
     };
     if (statusFilter !== "ALL") params.status = statusFilter;
-    if (appliedOperator) params.operator = appliedOperator;
+    if (operatorId !== "ALL") {
+      // Exact-match filter wins over the free-text fallback.
+      params.startedById = operatorId;
+    } else if (appliedOperator) {
+      params.operator = appliedOperator;
+    }
     if (startedAfter) params.startedAfter = startedAfter.toISOString();
     if (startedBefore) {
       // Make the upper bound inclusive of the entire selected day.
@@ -122,10 +143,14 @@ export default function AdminTranscriptBackfillPage() {
       params.startedBefore = end.toISOString();
     }
     return params;
-  }, [page, statusFilter, appliedOperator, startedAfter, startedBefore]);
+  }, [page, statusFilter, appliedOperator, operatorId, startedAfter, startedBefore]);
 
   const hasActiveFilters =
-    statusFilter !== "ALL" || !!appliedOperator || !!startedAfter || !!startedBefore;
+    statusFilter !== "ALL" ||
+    !!appliedOperator ||
+    operatorId !== "ALL" ||
+    !!startedAfter ||
+    !!startedBefore;
 
   const summaryQuery = useQuery<BackfillSummary>({
     queryKey: SUMMARY_KEY,
@@ -155,12 +180,21 @@ export default function AdminTranscriptBackfillPage() {
     if (status && status !== "RUNNING") {
       queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
       queryClient.invalidateQueries({ queryKey: HISTORY_KEY_BASE });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/crm/calls/transcripts/backfill/operators"],
+      });
     }
   }, [jobQuery.data?.status]);
 
   const historyQuery = useQuery<BackfillHistoryResponse>({
     queryKey: [HISTORY_PATH, historyFilters],
     refetchInterval: activeJobId ? 5_000 : 30_000,
+  });
+
+  // Quick-pick dropdown source. Refresh whenever a job finishes so newly
+  // appearing operators show up without a manual reload.
+  const operatorsQuery = useQuery<BackfillOperatorsResponse>({
+    queryKey: ["/api/crm/calls/transcripts/backfill/operators"],
   });
 
   const retryMutation = useMutation({
@@ -192,6 +226,9 @@ export default function AdminTranscriptBackfillPage() {
       }
       queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
       queryClient.invalidateQueries({ queryKey: HISTORY_KEY_BASE });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/crm/calls/transcripts/backfill/operators"],
+      });
     },
     onError: (err: Error) => {
       toast({ title: "Failed to retry", description: err.message, variant: "destructive" });
@@ -216,6 +253,9 @@ export default function AdminTranscriptBackfillPage() {
       });
       queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
       queryClient.invalidateQueries({ queryKey: HISTORY_KEY_BASE });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/crm/calls/transcripts/backfill/operators"],
+      });
     },
     onError: (err: Error) => {
       toast({ title: "Failed to start backfill", description: err.message, variant: "destructive" });
@@ -506,13 +546,47 @@ export default function AdminTranscriptBackfillPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="history-operator" className="text-xs">Operator</Label>
+              <Select
+                value={operatorId}
+                onValueChange={(v) => setOperatorId(v)}
+              >
+                <SelectTrigger
+                  id="history-operator-select"
+                  data-testid="select-history-operator"
+                >
+                  <SelectValue placeholder="Any operator" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL" data-testid="select-history-operator-option-ALL">
+                    Any operator
+                  </SelectItem>
+                  {(operatorsQuery.data?.operators ?? []).map((op) => (
+                    <SelectItem
+                      key={op.id}
+                      value={op.id}
+                      data-testid={`select-history-operator-option-${op.id}`}
+                    >
+                      {formatOperatorOption(op)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Input
                 id="history-operator"
                 value={operatorInput}
                 onChange={(e) => setOperatorInput(e.target.value)}
-                placeholder="Name or email"
+                placeholder="Or search name / email"
+                disabled={operatorId !== "ALL"}
                 data-testid="input-history-operator"
               />
+              {operatorId !== "ALL" && (
+                <p
+                  className="text-[11px] text-muted-foreground"
+                  data-testid="text-history-operator-hint"
+                >
+                  Clear the dropdown to use free-text search.
+                </p>
+              )}
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Started after</Label>
@@ -541,6 +615,7 @@ export default function AdminTranscriptBackfillPage() {
                     setStatusFilter("ALL");
                     setOperatorInput("");
                     setAppliedOperator("");
+                    setOperatorId("ALL");
                     setStartedAfter(undefined);
                     setStartedBefore(undefined);
                   }}
@@ -789,6 +864,18 @@ function formatOperator(
   if (!startedBy) return "Unknown";
   const name = [startedBy.firstName, startedBy.lastName].filter(Boolean).join(" ").trim();
   return name || startedBy.email || "Unknown";
+}
+
+function formatOperatorOption(op: BackfillOperator): string {
+  const name = [op.firstName, op.lastName].filter(Boolean).join(" ").trim();
+  const label = name || op.email || op.id;
+  const suffix = op.jobCount > 0 ? ` (${op.jobCount})` : "";
+  // Show the email alongside the name so two operators with the same display
+  // name remain distinguishable.
+  if (name && op.email && op.email !== label) {
+    return `${name} — ${op.email}${suffix}`;
+  }
+  return `${label}${suffix}`;
 }
 
 function Stat({
