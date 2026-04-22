@@ -98,7 +98,15 @@ const NOTIFICATION_TYPE_GROUPS: { label: string; types: string[] }[] = [
     label: "General",
     types: ["GENERAL", "DELAY_SUBMITTED", "DELAY_ACKNOWLEDGED", "MATERIAL_OVERAGE"],
   },
+  {
+    label: "Admin Alerts",
+    types: ["CRM_TRANSCRIPT_BACKFILL_REAPED"],
+  },
 ];
+
+const TYPE_LABEL_OVERRIDES: Record<string, string> = {
+  CRM_TRANSCRIPT_BACKFILL_REAPED: "CRM transcript backfill reaped",
+};
 
 /**
  * Task #753: Compute the next quiet-hours window so admins can see
@@ -1818,7 +1826,7 @@ export default function NotificationPrefsSection() {
                         <p className="text-xs font-semibold text-muted-foreground mb-2">{group.label}</p>
                         <div className="space-y-2">
                           {group.types.map((type) => {
-                            const label = type.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+                            const label = TYPE_LABEL_OVERRIDES[type] ?? type.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
                             const isEnabled = typeChannelOverrides[type]?.emailEnabled ?? channelPrefs.emailEnabled;
                             return (
                               <div key={type} className="flex items-center justify-between py-1" data-testid={`row-type-pref-${type}`}>
