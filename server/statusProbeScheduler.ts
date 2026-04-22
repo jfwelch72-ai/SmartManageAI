@@ -226,11 +226,25 @@ export async function runProbeSweep(): Promise<{ probed: number; failures: numbe
       const results = await probeComponent(c);
       // Component is considered failing only when the majority of vantage points agree.
       const failingCount = results.filter((r) => !r.ok).length;
-      if (results.length > 0 && failingCount > results.length / 2) failures++;
+      const componentFailing = results.length > 0 && failingCount > results.length / 2;
+      if (componentFailing) failures++;
       for (const result of results) {
         await db.execute(sql`
           INSERT INTO "status_probes" (component_id, ok, status_code, response_ms, error, region)
           VALUES (${c.id}, ${result.ok}, ${result.statusCode}, ${result.responseMs}, ${result.error}, ${result.region})
+        `);
+      }
+      // Maintain a daily rollup so the 90-day uptime chart keeps history far
+      // longer than the raw probe retention window. Count one sample per
+      // component sweep using the majority verdict across vantage points.
+      if (results.length > 0) {
+        const okInc = componentFailing ? 0 : 1;
+        await db.execute(sql`
+          INSERT INTO "status_probe_daily" ("component_id","day","total","ok")
+          VALUES (${c.id}, (NOW() AT TIME ZONE 'UTC')::date, 1, ${okInc})
+          ON CONFLICT ("component_id","day") DO UPDATE
+            SET total = "status_probe_daily".total + 1,
+                ok = "status_probe_daily".ok + ${okInc}
         `);
       }
     } catch (err) {
@@ -239,8 +253,11 @@ export async function runProbeSweep(): Promise<{ probed: number; failures: numbe
     }
   }
 
-  // Prune probe rows older than 35 days to keep table bounded
+  // Prune raw probe rows older than 35 days to keep that table bounded. The
+  // long-horizon uptime chart is backed by the daily rollup below.
   await db.execute(sql`DELETE FROM "status_probes" WHERE checked_at < NOW() - INTERVAL '35 days'`);
+  // Keep daily rollup for ~13 months so the 90-day chart always has data.
+  await db.execute(sql`DELETE FROM "status_probe_daily" WHERE day < (NOW() AT TIME ZONE 'UTC')::date - INTERVAL '400 days'`);
 
   // Evaluate alert thresholds and dispatch notifications for any
   // newly-failing or newly-recovered alertable components.

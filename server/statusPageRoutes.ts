@@ -87,16 +87,16 @@ async function buildComponentSummaries(): Promise<ComponentSummary[]> {
   const aggByComp = new Map<string, any>();
   for (const r of aggRes.rows as any[]) aggByComp.set(r.component_id, r);
 
-  // Daily rollup for the last 90 days (UTC)
+  // Daily rollup for the last 90 days (UTC). Sourced from the persistent
+  // status_probe_daily table so the chart isn't capped by raw probe retention.
   const dailyRes = await db.execute(sql`
     SELECT
       component_id,
-      to_char(date_trunc('day', checked_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
-      COUNT(*)::int AS total,
-      SUM(CASE WHEN ok THEN 1 ELSE 0 END)::int AS ok
-    FROM "status_probes"
-    WHERE checked_at >= (NOW() AT TIME ZONE 'UTC')::date - INTERVAL '89 days'
-    GROUP BY component_id, day
+      to_char(day, 'YYYY-MM-DD') AS day,
+      total::int AS total,
+      ok::int AS ok
+    FROM "status_probe_daily"
+    WHERE day >= (NOW() AT TIME ZONE 'UTC')::date - INTERVAL '89 days'
     ORDER BY day ASC
   `);
   const dailyByComp = new Map<string, DailyUptime[]>();

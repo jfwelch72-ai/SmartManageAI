@@ -36,6 +36,34 @@ export async function ensureStatusPageTables(): Promise<void> {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "status_probes_component_region_checked_idx" ON "status_probes" ("component_id","region","checked_at" DESC)`);
 
   await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "status_probe_daily" (
+      "component_id" varchar NOT NULL REFERENCES "status_components"("id") ON DELETE CASCADE,
+      "day" date NOT NULL,
+      "total" integer NOT NULL DEFAULT 0,
+      "ok" integer NOT NULL DEFAULT 0,
+      PRIMARY KEY ("component_id","day")
+    )
+  `);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS "status_probe_daily_day_idx" ON "status_probe_daily" ("day" DESC)`);
+
+  // Backfill rollup from any existing raw probes that are not yet represented.
+  // Safe to run repeatedly: ON CONFLICT keeps whichever counts are larger so we
+  // don't lose data once raw rows have been pruned past 35 days.
+  await db.execute(sql`
+    INSERT INTO "status_probe_daily" ("component_id","day","total","ok")
+    SELECT
+      component_id,
+      (checked_at AT TIME ZONE 'UTC')::date AS day,
+      COUNT(*)::int AS total,
+      SUM(CASE WHEN ok THEN 1 ELSE 0 END)::int AS ok
+    FROM "status_probes"
+    GROUP BY component_id, (checked_at AT TIME ZONE 'UTC')::date
+    ON CONFLICT ("component_id","day") DO UPDATE
+      SET total = GREATEST("status_probe_daily".total, EXCLUDED.total),
+          ok = GREATEST("status_probe_daily".ok, EXCLUDED.ok)
+  `);
+
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS "status_incidents" (
       "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
       "title" text NOT NULL,
