@@ -34,6 +34,8 @@ import {
   type CrmTranscriptBackfillJob,
 } from "@shared/schema";
 import { sendEmail } from "./services/emailService";
+import { sendSlackMessage, isValidSlackWebhookUrl } from "./services/slackService";
+import { sendTeamsMessage, isValidTeamsWebhookUrl } from "./services/teamsService";
 import {
   createCrmTranscriptBackfillJob,
   getCrmTranscriptBackfillJob,
@@ -1120,14 +1122,22 @@ export async function notifyBackfillCompletionToOrgAdmins(jobId: string): Promis
       .where(eq(organizations.id, jobRow.organizationId))
       .limit(1);
 
-    // Pick admins for the org. Left join channel prefs so admins without an
-    // explicit prefs row still receive these (they're a transactional ack
-    // for a run the admin themselves started). Anyone with prefs.email_enabled
-    // explicitly set to false is treated as opted out.
+    // Task #1021: Pick admins for the org and respect each admin's per-event
+    // backfill summary preferences (channel + failure-only filter). Left join
+    // channel prefs to get their Slack/Teams webhook URLs without requiring
+    // a prefs row for the email path. Anyone with the legacy
+    // notification_channel_prefs.email_enabled flag explicitly set to false
+    // continues to be treated as opted out of email (preserves Task #1006
+    // behavior); the new per-event channel="none" or onFailureOnly filter
+    // adds finer-grained controls on top.
     const adminRows = await db
       .select({
         email: users.email,
         emailEnabled: notificationChannelPrefs.emailEnabled,
+        slackWebhookUrl: notificationChannelPrefs.slackWebhookUrl,
+        teamsWebhookUrl: notificationChannelPrefs.teamsWebhookUrl,
+        backfillChannel: users.crmBackfillSummaryChannel,
+        backfillOnFailureOnly: users.crmBackfillSummaryOnFailureOnly,
       })
       .from(users)
       .leftJoin(notificationChannelPrefs, eq(notificationChannelPrefs.userId, users.id))
@@ -1139,22 +1149,57 @@ export async function notifyBackfillCompletionToOrgAdmins(jobId: string): Promis
         ),
       );
 
-    const recipients = Array.from(
-      new Set(
-        adminRows
-          .filter((r) => r.emailEnabled !== false) // null = no prefs row = include
-          .map((r) => r.email)
-          .filter((e): e is string => typeof e === "string" && e.length > 0),
-      ),
-    );
+    const isFailure = jobRow.status === "FAILED";
 
-    if (recipients.length === 0) {
-      logInfo("crmCalls: backfill summary email skipped (no eligible admin recipients)", {
+    type Routed = {
+      channel: "email" | "slack" | "teams";
+      target: string; // email address or webhook URL
+    };
+    const routedSet = new Set<string>();
+    const routed: Routed[] = [];
+    for (const r of adminRows) {
+      // Per-event filter: skip when admin only wants failures.
+      if (r.backfillOnFailureOnly && !isFailure) continue;
+      const channel = (r.backfillChannel ?? "email") as
+        | "email" | "slack" | "teams" | "none";
+      if (channel === "none") continue;
+      if (channel === "email") {
+        if (r.emailEnabled === false) continue; // legacy global opt-out
+        const email = (r.email ?? "").trim();
+        if (!email) continue;
+        const key = `email:${email.toLowerCase()}`;
+        if (routedSet.has(key)) continue;
+        routedSet.add(key);
+        routed.push({ channel: "email", target: email });
+      } else if (channel === "slack") {
+        const url = (r.slackWebhookUrl ?? "").trim();
+        if (!url || !isValidSlackWebhookUrl(url)) continue;
+        const key = `slack:${url}`;
+        if (routedSet.has(key)) continue;
+        routedSet.add(key);
+        routed.push({ channel: "slack", target: url });
+      } else if (channel === "teams") {
+        const url = (r.teamsWebhookUrl ?? "").trim();
+        if (!url || !isValidTeamsWebhookUrl(url)) continue;
+        const key = `teams:${url}`;
+        if (routedSet.has(key)) continue;
+        routedSet.add(key);
+        routed.push({ channel: "teams", target: url });
+      }
+    }
+
+    if (routed.length === 0) {
+      logInfo("crmCalls: backfill summary skipped (no eligible admin recipients)", {
         jobId,
         orgId: jobRow.organizationId,
+        status: jobRow.status,
       });
       return;
     }
+
+    const recipients = routed
+      .filter((r) => r.channel === "email")
+      .map((r) => r.target);
 
     const completedAt = jobRow.completedAt ?? new Date();
     const duration = formatBackfillDuration(jobRow.startedAt, completedAt);
@@ -1214,17 +1259,60 @@ export async function notifyBackfillCompletionToOrgAdmins(jobId: string): Promis
   <p style="margin:16px 0 0;"><a href="${escapeBackfillHtml(historyUrl)}" style="color:#2563eb;">View backfill history</a></p>
 </body></html>`;
 
-    await sendEmail({ to: recipients, subject, html, text });
+    // Slack/Teams use the same headline + a compact mrkdwn-friendly body so
+    // recipients of any channel see the same key counts and a link back to
+    // the admin history page.
+    const chatTitle = subject;
+    const chatBody = [
+      `*Status:* ${jobRow.status}`,
+      `*Counts:* ${jobRow.succeeded} succeeded / ${jobRow.failed} failed / ${jobRow.processed} of ${jobRow.total}`,
+      `*Duration:* ${duration}`,
+      `*Operator:* ${operatorName}`,
+      `*Job ID:* \`${jobRow.id}\``,
+    ].join("\n");
 
-    logInfo("crmCalls: backfill summary email sent", {
+    const slackTargets = routed.filter((r) => r.channel === "slack").map((r) => r.target);
+    const teamsTargets = routed.filter((r) => r.channel === "teams").map((r) => r.target);
+
+    const dispatches: Array<Promise<unknown>> = [];
+
+    if (recipients.length > 0) {
+      dispatches.push(sendEmail({ to: recipients, subject, html, text }));
+    }
+    for (const url of slackTargets) {
+      dispatches.push(
+        sendSlackMessage(url, chatTitle, chatBody, historyUrl).catch((err) => {
+          logWarn("crmCalls: backfill summary slack dispatch failed", {
+            jobId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }),
+      );
+    }
+    for (const url of teamsTargets) {
+      dispatches.push(
+        sendTeamsMessage(url, chatTitle, chatBody, historyUrl).catch((err) => {
+          logWarn("crmCalls: backfill summary teams dispatch failed", {
+            jobId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }),
+      );
+    }
+
+    await Promise.all(dispatches);
+
+    logInfo("crmCalls: backfill summary dispatched", {
       jobId,
       orgId: jobRow.organizationId,
       status: jobRow.status,
-      recipientCount: recipients.length,
+      emailRecipientCount: recipients.length,
+      slackRecipientCount: slackTargets.length,
+      teamsRecipientCount: teamsTargets.length,
     });
   } catch (e) {
     logError(
-      "crmCalls: failed to send backfill summary email",
+      "crmCalls: failed to send backfill summary",
       { jobId },
       e instanceof Error ? e : new Error(String(e)),
     );

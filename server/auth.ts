@@ -213,6 +213,11 @@ export async function authMiddleware(
       jobMetricAlertQuietHoursDigestLocale: user.jobMetricAlertQuietHoursDigestLocale,
       jobMetricAlertQuietHoursDigestTimeFormat: user.jobMetricAlertQuietHoursDigestTimeFormat,
       jobMetricAlertQuietHoursDigestShowWeekday: user.jobMetricAlertQuietHoursDigestShowWeekday,
+      // Task #1021 — per-admin delivery prefs for the CRM transcript backfill
+      // completion summary. Surfaced to the client so Notification Preferences
+      // can render the saved channel + failure-only filter.
+      crmBackfillSummaryChannel: user.crmBackfillSummaryChannel,
+      crmBackfillSummaryOnFailureOnly: user.crmBackfillSummaryOnFailureOnly,
       effectiveRole,
       isHustlerOwner,
     };

@@ -42,6 +42,16 @@ export const jobMetricAlertQuietHoursDigestTimeFormatEnum = pgEnum(
   ["12h", "24h"],
 );
 
+// Task #1021 — Per-admin delivery channel for the CRM transcript backfill
+// completion summary. "email" preserves the legacy behavior added in
+// Task #1006; "slack" / "teams" route to the user's configured webhook
+// (notification_channel_prefs); "none" silences the summary entirely
+// without disabling other email notifications globally.
+export const backfillSummaryChannelEnum = pgEnum(
+  "backfill_summary_channel",
+  ["email", "slack", "teams", "none"],
+);
+
 export const notificationTypeEnum = pgEnum("notification_type", [
   "BILLING_READY", "CHANGE_ORDER_PENDING", "TIME_OFF_REQUEST", "GENERAL", "MATERIAL_OVERAGE",
   "PROJECT_ASSIGNMENT", "MAINTENANCE_REQUEST", "REPAIR_REQUEST", "DELAY_SUBMITTED",

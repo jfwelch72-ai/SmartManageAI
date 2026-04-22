@@ -265,6 +265,12 @@ export default function NotificationPrefsSection() {
   const { toast } = useToast();
   const { user: authUser } = useAuth();
   const isSuperAdmin = authUser?.role === "SUPER_ADMIN";
+  // Task #1021: Only org admins receive CRM transcript backfill completion
+  // summaries (the dispatch path in `notifyBackfillCompletionToOrgAdmins`
+  // filters to users.role === "ADMIN"). Hide the controls for everyone else
+  // — including Super Admins — so we never offer a preference that would
+  // have no effect on delivery.
+  const isOrgAdmin = authUser?.role === "ADMIN";
   const { can } = useEntitlements();
   const hasEnterpriseNotifications = can("ENTERPRISE_NOTIFICATIONS");
   const { status: integrationStatus } = useIntegrationStatus();
@@ -351,6 +357,59 @@ export default function NotificationPrefsSection() {
   function handleJobMetricAlertEmailsToggle(receive: boolean) {
     setReceivesJobMetricAlertEmails(receive);
     updateJobMetricAlertEmailsMutation.mutate(receive);
+  }
+
+  // Task #1021: Per-admin delivery prefs for the CRM transcript backfill
+  // completion summary. Persisted on `users.crmBackfillSummaryChannel` and
+  // `users.crmBackfillSummaryOnFailureOnly` via PATCH /api/auth/profile.
+  // Defaults preserve Task #1006 behavior (email + every run).
+  type BackfillSummaryChannel = "email" | "slack" | "teams" | "none";
+  const [backfillSummaryChannel, setBackfillSummaryChannel] =
+    useState<BackfillSummaryChannel>("email");
+  const [backfillSummaryOnFailureOnly, setBackfillSummaryOnFailureOnly] = useState(false);
+  useEffect(() => {
+    if (authUser) {
+      const ch = (authUser.crmBackfillSummaryChannel ?? "email") as BackfillSummaryChannel;
+      setBackfillSummaryChannel(ch);
+      setBackfillSummaryOnFailureOnly(Boolean(authUser.crmBackfillSummaryOnFailureOnly ?? false));
+    }
+  }, [authUser]);
+
+  const updateBackfillSummaryMutation = useMutation({
+    mutationFn: async (payload: {
+      crmBackfillSummaryChannel?: BackfillSummaryChannel;
+      crmBackfillSummaryOnFailureOnly?: boolean;
+    }) => {
+      return await apiRequest("PATCH", "/api/auth/profile", payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({
+        title: "Backfill summary preferences updated",
+        description: "Future transcript backfill completion summaries will use these settings.",
+      });
+    },
+    onError: (error: Error) => {
+      // Roll back to whatever the server last told us.
+      const ch = (authUser?.crmBackfillSummaryChannel ?? "email") as BackfillSummaryChannel;
+      setBackfillSummaryChannel(ch);
+      setBackfillSummaryOnFailureOnly(Boolean(authUser?.crmBackfillSummaryOnFailureOnly ?? false));
+      toast({
+        title: "Failed to update backfill summary preferences",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  function handleBackfillSummaryChannelChange(next: string) {
+    const ch = next as BackfillSummaryChannel;
+    setBackfillSummaryChannel(ch);
+    updateBackfillSummaryMutation.mutate({ crmBackfillSummaryChannel: ch });
+  }
+  function handleBackfillSummaryOnFailureOnlyChange(next: boolean) {
+    setBackfillSummaryOnFailureOnly(next);
+    updateBackfillSummaryMutation.mutate({ crmBackfillSummaryOnFailureOnly: next });
   }
 
   // Task #748: Super-Admin quiet-hours window for job-metric alert emails.
@@ -1745,6 +1804,75 @@ export default function NotificationPrefsSection() {
                       )}
                     </div>
                   )}
+                </div>
+              )}
+
+              {isOrgAdmin && (
+                <div data-testid="section-crm-backfill-summary-prefs">
+                  <h3 className="text-sm font-semibold mb-1 text-muted-foreground uppercase tracking-wide">
+                    CRM Transcript Backfill Summary
+                  </h3>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    When a CRM transcript backfill run finishes, choose how you want the completion summary delivered. Slack and Teams require a webhook URL to be configured in your channel preferences.
+                  </p>
+
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <Label
+                        htmlFor="backfill-summary-channel"
+                        className="text-xs text-muted-foreground"
+                      >
+                        Delivery channel
+                      </Label>
+                      <Select
+                        value={backfillSummaryChannel}
+                        onValueChange={handleBackfillSummaryChannelChange}
+                        disabled={updateBackfillSummaryMutation.isPending}
+                      >
+                        <SelectTrigger
+                          id="backfill-summary-channel"
+                          data-testid="select-backfill-summary-channel"
+                        >
+                          <SelectValue placeholder="Select channel" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="email" data-testid="option-backfill-summary-channel-email">
+                            Email
+                          </SelectItem>
+                          <SelectItem value="slack" data-testid="option-backfill-summary-channel-slack">
+                            Slack
+                          </SelectItem>
+                          <SelectItem value="teams" data-testid="option-backfill-summary-channel-teams">
+                            Microsoft Teams
+                          </SelectItem>
+                          <SelectItem value="none" data-testid="option-backfill-summary-channel-none">
+                            Don't notify me
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div
+                      className="flex items-center justify-between py-1"
+                      data-testid="row-backfill-summary-failure-only"
+                    >
+                      <div>
+                        <p className="text-sm font-medium">Only on failure</p>
+                        <p className="text-xs text-muted-foreground">
+                          Skip the summary when every recording in the run succeeds.
+                        </p>
+                      </div>
+                      <Switch
+                        checked={backfillSummaryOnFailureOnly}
+                        onCheckedChange={handleBackfillSummaryOnFailureOnlyChange}
+                        disabled={
+                          updateBackfillSummaryMutation.isPending ||
+                          backfillSummaryChannel === "none"
+                        }
+                        data-testid="switch-backfill-summary-failure-only"
+                      />
+                    </div>
+                  </div>
                 </div>
               )}
 

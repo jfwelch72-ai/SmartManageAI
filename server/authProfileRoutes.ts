@@ -1037,6 +1037,12 @@ const upload = multer({
           .enum(["12h", "24h"])
           .optional(),
         jobMetricAlertQuietHoursDigestShowWeekday: z.boolean().optional(),
+        // Task #1021: per-admin delivery preferences for the CRM transcript
+        // backfill completion summary.
+        crmBackfillSummaryChannel: z
+          .enum(["email", "slack", "teams", "none"])
+          .optional(),
+        crmBackfillSummaryOnFailureOnly: z.boolean().optional(),
       });
       const parsed = profileSchema.safeParse(req.body);
       if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
@@ -1052,7 +1058,9 @@ const upload = multer({
         jobMetricAlertQuietHoursDigestMaxEvents,
         jobMetricAlertQuietHoursDigestLocale,
         jobMetricAlertQuietHoursDigestTimeFormat,
-        jobMetricAlertQuietHoursDigestShowWeekday } = parsed.data;
+        jobMetricAlertQuietHoursDigestShowWeekday,
+        crmBackfillSummaryChannel,
+        crmBackfillSummaryOnFailureOnly } = parsed.data;
       const updateData: Record<string, unknown> = { updatedAt: new Date() };
       if (firstName !== undefined) updateData.firstName = firstName;
       if (lastName !== undefined) updateData.lastName = lastName;
@@ -1079,6 +1087,8 @@ const upload = multer({
       if (jobMetricAlertQuietHoursDigestLocale !== undefined) updateData.jobMetricAlertQuietHoursDigestLocale = jobMetricAlertQuietHoursDigestLocale || null;
       if (jobMetricAlertQuietHoursDigestTimeFormat !== undefined) updateData.jobMetricAlertQuietHoursDigestTimeFormat = jobMetricAlertQuietHoursDigestTimeFormat;
       if (jobMetricAlertQuietHoursDigestShowWeekday !== undefined) updateData.jobMetricAlertQuietHoursDigestShowWeekday = jobMetricAlertQuietHoursDigestShowWeekday;
+      if (crmBackfillSummaryChannel !== undefined) updateData.crmBackfillSummaryChannel = crmBackfillSummaryChannel;
+      if (crmBackfillSummaryOnFailureOnly !== undefined) updateData.crmBackfillSummaryOnFailureOnly = crmBackfillSummaryOnFailureOnly;
 
       const [updated] = await db.update(users).set(updateData).where(eq(users.id, userId)).returning();
       if (!updated) { res.status(404).json({ error: "User not found" }); return; }

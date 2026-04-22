@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { addonKeyEnum, addonStatusEnum, bidStatusEnum, billingProviderEnum, deductionCalculationMethodEnum, deductionCategoryEnum, geofenceEnforcementEnum, jobMetricAlertQuietHoursDigestFormatEnum, jobMetricAlertQuietHoursDigestTimeFormatEnum, onboardingStatusEnum, payRunStatusEnum, payrollFormVariantEnum, planTierEnum, projectStatusEnum, subscriptionStatusEnum, tradeTypeEnum, usageKeyEnum, userRoleEnum, workWeekStartDayEnum } from "./enums";
+import { addonKeyEnum, addonStatusEnum, backfillSummaryChannelEnum, bidStatusEnum, billingProviderEnum, deductionCalculationMethodEnum, deductionCategoryEnum, geofenceEnforcementEnum, jobMetricAlertQuietHoursDigestFormatEnum, jobMetricAlertQuietHoursDigestTimeFormatEnum, onboardingStatusEnum, payRunStatusEnum, payrollFormVariantEnum, planTierEnum, projectStatusEnum, subscriptionStatusEnum, tradeTypeEnum, usageKeyEnum, userRoleEnum, workWeekStartDayEnum } from "./enums";
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -409,6 +409,22 @@ export const users = pgTable("users", {
   ).notNull().default("12h"),
   jobMetricAlertQuietHoursDigestShowWeekday: boolean(
     "job_metric_alert_quiet_hours_digest_show_weekday",
+  ).notNull().default(false),
+  // Task #1021 — Per-admin delivery preferences for the CRM transcript
+  // backfill completion summary added in Task #1006. The default keeps the
+  // legacy behavior (email summary on every run) so existing admins see no
+  // change until they pick a different channel or the failure-only filter.
+  //   - `Channel`           : "email" | "slack" | "teams" | "none". When
+  //                           "slack"/"teams" the user's webhook from
+  //                           notification_channel_prefs is used; "none"
+  //                           silences the summary entirely.
+  //   - `OnFailureOnly`     : when true, only failed runs trigger a summary
+  //                           — successful runs are silent.
+  crmBackfillSummaryChannel: backfillSummaryChannelEnum(
+    "crm_backfill_summary_channel",
+  ).notNull().default("email"),
+  crmBackfillSummaryOnFailureOnly: boolean(
+    "crm_backfill_summary_on_failure_only",
   ).notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
