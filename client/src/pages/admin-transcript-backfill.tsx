@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,8 @@ import {
   X,
   RotateCcw,
   Download,
+  ListChecks,
+  ExternalLink,
 } from "lucide-react";
 import { format, formatDistanceStrict } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
@@ -103,9 +106,34 @@ interface BackfillOperatorsResponse {
   operators: BackfillOperator[];
 }
 
+interface PendingRecording {
+  recordingId: string;
+  callId: string;
+  transcriptStatus: string;
+  transcriptError: string | null;
+  recordingDurationSeconds: number;
+  recordingCreatedAt: string | null;
+  opportunityId: string | null;
+  contactId: string | null;
+  crmOrganisationId: string | null;
+  direction: string | null;
+  fromNumber: string | null;
+  toNumber: string | null;
+  callStartedAt: string | null;
+  callDurationSeconds: number;
+}
+
+interface PendingRecordingsResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  recordings: PendingRecording[];
+}
+
 const SUMMARY_KEY = ["/api/crm/calls/transcripts/backfill"];
 const HISTORY_PATH = "/api/crm/calls/transcripts/backfill/history";
 const HISTORY_KEY_BASE = [HISTORY_PATH] as const;
+const PENDING_PATH = "/api/crm/calls/transcripts/backfill/pending";
 const PAGE_SIZE = 20;
 const STATUS_OPTIONS = ["RUNNING", "COMPLETED", "FAILED"] as const;
 type StatusFilter = "ALL" | (typeof STATUS_OPTIONS)[number];
@@ -137,6 +165,7 @@ export default function AdminTranscriptBackfillPage() {
   const [orgFilter, setOrgFilter] = useState<string>(CROSS_ORG_VALUE);
   const [page, setPage] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
+  const [pendingPage, setPendingPage] = useState(0);
 
   useEffect(() => {
     const t = setTimeout(() => setAppliedOperator(operatorInput.trim()), 300);
@@ -222,6 +251,7 @@ export default function AdminTranscriptBackfillPage() {
     if (status && status !== "RUNNING") {
       queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
       queryClient.invalidateQueries({ queryKey: HISTORY_KEY_BASE });
+      queryClient.invalidateQueries({ queryKey: [PENDING_PATH] });
       queryClient.invalidateQueries({
         queryKey: ["/api/crm/calls/transcripts/backfill/operators"],
       });
@@ -230,6 +260,18 @@ export default function AdminTranscriptBackfillPage() {
 
   const historyQuery = useQuery<BackfillHistoryResponse>({
     queryKey: [HISTORY_PATH, historyFilters],
+    refetchInterval: activeJobId ? 5_000 : 30_000,
+  });
+
+  // Task #1010 — drill-down list of recordings still missing transcripts.
+  // Refresh whenever a job completes so admins see the surviving rows
+  // immediately instead of needing to manually reload.
+  const pendingFilters = useMemo(
+    () => ({ limit: String(PAGE_SIZE), offset: String(pendingPage * PAGE_SIZE) }),
+    [pendingPage],
+  );
+  const pendingRecordingsQuery = useQuery<PendingRecordingsResponse>({
+    queryKey: [PENDING_PATH, pendingFilters],
     refetchInterval: activeJobId ? 5_000 : 30_000,
   });
 
@@ -268,6 +310,7 @@ export default function AdminTranscriptBackfillPage() {
       }
       queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
       queryClient.invalidateQueries({ queryKey: HISTORY_KEY_BASE });
+      queryClient.invalidateQueries({ queryKey: [PENDING_PATH] });
       queryClient.invalidateQueries({
         queryKey: ["/api/crm/calls/transcripts/backfill/operators"],
       });
@@ -295,6 +338,7 @@ export default function AdminTranscriptBackfillPage() {
       });
       queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
       queryClient.invalidateQueries({ queryKey: HISTORY_KEY_BASE });
+      queryClient.invalidateQueries({ queryKey: [PENDING_PATH] });
       queryClient.invalidateQueries({
         queryKey: ["/api/crm/calls/transcripts/backfill/operators"],
       });
@@ -399,6 +443,12 @@ export default function AdminTranscriptBackfillPage() {
           )}
         </CardContent>
       </Card>
+
+      <PendingRecordingsCard
+        query={pendingRecordingsQuery}
+        page={pendingPage}
+        onPageChange={setPendingPage}
+      />
 
       <Card data-testid="card-controls">
         <CardHeader className="pb-3">
@@ -928,6 +978,198 @@ export default function AdminTranscriptBackfillPage() {
       </Card>
     </div>
   );
+}
+
+function PendingRecordingsCard({
+  query,
+  page,
+  onPageChange,
+}: {
+  query: ReturnType<typeof useQuery<PendingRecordingsResponse>>;
+  page: number;
+  onPageChange: (next: number) => void;
+}) {
+  const total = query.data?.total ?? 0;
+  const recordings = query.data?.recordings ?? [];
+
+  return (
+    <Card data-testid="card-pending-recordings">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <ListChecks className="h-5 w-5" />
+              Recordings still missing transcripts
+            </CardTitle>
+            <CardDescription>
+              The exact rows a fresh backfill would pick up. Use this to triage
+              individual calls instead of re-running the whole job.
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => query.refetch()}
+            disabled={query.isFetching}
+            data-testid="button-refresh-pending-recordings"
+          >
+            {query.isFetching ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-2" />
+            )}
+            Refresh
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {query.isLoading ? (
+          <Loader2
+            className="h-6 w-6 animate-spin text-muted-foreground"
+            data-testid="status-loading-pending-recordings"
+          />
+        ) : query.isError ? (
+          <div className="text-sm text-destructive" data-testid="text-pending-recordings-error">
+            Failed to load pending recordings.
+          </div>
+        ) : recordings.length === 0 ? (
+          <div
+            className="text-sm text-muted-foreground"
+            data-testid="text-pending-recordings-empty"
+          >
+            No recordings are currently missing transcripts.
+          </div>
+        ) : (
+          <ul className="divide-y rounded-md border" data-testid="list-pending-recordings">
+            {recordings.map((rec) => {
+              // Prefer the deal page when the call is tied to an opportunity.
+              // If it's only tied to a contact / CRM organisation, fall back
+              // to the CRM index so admins still have a one-click jump into
+              // the CRM area to triage from there.
+              const callLink = rec.opportunityId
+                ? `/crm/deals/${rec.opportunityId}`
+                : rec.contactId || rec.crmOrganisationId
+                ? "/crm"
+                : null;
+              const callLinkLabel = rec.opportunityId
+                ? "Open deal"
+                : "Open in CRM";
+              const counterparty =
+                rec.direction === "INBOUND"
+                  ? rec.fromNumber
+                  : rec.toNumber;
+              const startedLabel = rec.callStartedAt
+                ? format(new Date(rec.callStartedAt), "PPpp")
+                : rec.recordingCreatedAt
+                ? format(new Date(rec.recordingCreatedAt), "PPpp")
+                : "Unknown time";
+              return (
+                <li
+                  key={rec.recordingId}
+                  className="p-3 space-y-1"
+                  data-testid={`pending-recording-row-${rec.recordingId}`}
+                >
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant={
+                        rec.transcriptStatus === "FAILED" ? "destructive" : "secondary"
+                      }
+                      data-testid={`badge-pending-status-${rec.recordingId}`}
+                    >
+                      {rec.transcriptStatus}
+                    </Badge>
+                    {rec.direction && (
+                      <Badge
+                        variant="outline"
+                        data-testid={`badge-pending-direction-${rec.recordingId}`}
+                      >
+                        {rec.direction}
+                      </Badge>
+                    )}
+                    <span
+                      className="text-xs text-muted-foreground"
+                      data-testid={`text-pending-started-${rec.recordingId}`}
+                    >
+                      {startedLabel}
+                    </span>
+                    {rec.callDurationSeconds > 0 && (
+                      <span
+                        className="text-xs text-muted-foreground tabular-nums"
+                        data-testid={`text-pending-duration-${rec.recordingId}`}
+                      >
+                        · {formatDuration(rec.callDurationSeconds)}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-sm flex flex-wrap items-center gap-x-3 gap-y-1">
+                    {callLink ? (
+                      <Link
+                        href={callLink}
+                        className="font-medium text-primary inline-flex items-center gap-1 hover:underline"
+                        data-testid={`link-pending-call-${rec.recordingId}`}
+                      >
+                        {callLinkLabel}
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </Link>
+                    ) : (
+                      <span
+                        className="text-xs text-muted-foreground"
+                        data-testid={`text-pending-no-link-${rec.recordingId}`}
+                        title="This call isn't linked to an opportunity, so there's no detail page to open."
+                      >
+                        No linked opportunity
+                      </span>
+                    )}
+                    {counterparty && (
+                      <span
+                        className="text-xs text-muted-foreground"
+                        data-testid={`text-pending-number-${rec.recordingId}`}
+                      >
+                        {rec.direction === "INBOUND" ? "From" : "To"}{" "}
+                        <code className="text-[11px]">{counterparty}</code>
+                      </span>
+                    )}
+                  </div>
+                  {rec.transcriptError && (
+                    <div
+                      className="text-xs text-destructive font-mono break-all"
+                      data-testid={`text-pending-error-${rec.recordingId}`}
+                    >
+                      {rec.transcriptError}
+                    </div>
+                  )}
+                  <div
+                    className="text-[11px] text-muted-foreground"
+                    data-testid={`text-pending-ids-${rec.recordingId}`}
+                  >
+                    Recording <code>{rec.recordingId}</code> · Call{" "}
+                    <code>{rec.callId}</code>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+        {total > 0 && (
+          <HistoryPagination
+            total={total}
+            page={page}
+            pageSize={PAGE_SIZE}
+            isFetching={query.isFetching}
+            onPageChange={onPageChange}
+          />
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return "0s";
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  if (mins === 0) return `${secs}s`;
+  return secs === 0 ? `${mins}m` : `${mins}m ${secs}s`;
 }
 
 function HistoryPagination({

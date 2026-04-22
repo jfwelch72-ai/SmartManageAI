@@ -1485,6 +1485,92 @@ router.get(
   },
 );
 
+// Task #1010 — drill-down list of recordings still missing transcripts. Mirrors
+// the eligibility filter used by `fetchEligibleRecordingBatch` so admins
+// triaging a reaped backfill see exactly what a fresh backfill would pick up.
+// Results are paginated and joined back to their parent call so the UI can
+// link the user straight to the deal/contact for individual triage.
+router.get(
+  "/api/crm/calls/transcripts/backfill/pending",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+
+      const limit = Math.min(
+        Math.max(parseInt(String(req.query.limit ?? "20"), 10) || 20, 1),
+        100,
+      );
+      const offset = Math.max(parseInt(String(req.query.offset ?? "0"), 10) || 0, 0);
+
+      const eligibility = and(
+        eq(crmCalls.organizationId, orgId),
+        sql`${crmCallRecordings.transcript} IS NULL`,
+        inArray(crmCallRecordings.transcriptStatus, ["PENDING", "FAILED"]),
+      );
+
+      const [{ count: totalRaw }] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(crmCallRecordings)
+        .innerJoin(crmCalls, eq(crmCalls.id, crmCallRecordings.callId))
+        .where(eligibility);
+      const total = Number(totalRaw) || 0;
+
+      const rows = await db
+        .select({
+          recordingId: crmCallRecordings.id,
+          callId: crmCallRecordings.callId,
+          transcriptStatus: crmCallRecordings.transcriptStatus,
+          transcriptError: crmCallRecordings.transcriptError,
+          recordingDurationSeconds: crmCallRecordings.durationSeconds,
+          recordingCreatedAt: crmCallRecordings.createdAt,
+          opportunityId: crmCalls.opportunityId,
+          contactId: crmCalls.contactId,
+          crmOrganisationId: crmCalls.crmOrganisationId,
+          direction: crmCalls.direction,
+          fromNumber: crmCalls.fromNumber,
+          toNumber: crmCalls.toNumber,
+          callStartedAt: crmCalls.startedAt,
+          callDurationSeconds: crmCalls.durationSeconds,
+        })
+        .from(crmCallRecordings)
+        .innerJoin(crmCalls, eq(crmCalls.id, crmCallRecordings.callId))
+        .where(eligibility)
+        .orderBy(desc(crmCallRecordings.createdAt))
+        .limit(limit)
+        .offset(offset);
+
+      res.json({
+        total,
+        limit,
+        offset,
+        recordings: rows.map((r) => ({
+          recordingId: r.recordingId,
+          callId: r.callId,
+          transcriptStatus: r.transcriptStatus,
+          transcriptError: r.transcriptError,
+          recordingDurationSeconds: r.recordingDurationSeconds,
+          recordingCreatedAt: r.recordingCreatedAt
+            ? new Date(r.recordingCreatedAt).toISOString()
+            : null,
+          opportunityId: r.opportunityId,
+          contactId: r.contactId,
+          crmOrganisationId: r.crmOrganisationId,
+          direction: r.direction,
+          fromNumber: r.fromNumber,
+          toNumber: r.toNumber,
+          callStartedAt: r.callStartedAt ? new Date(r.callStartedAt).toISOString() : null,
+          callDurationSeconds: r.callDurationSeconds,
+        })),
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
 router.post(
   "/api/crm/calls/transcripts/backfill",
   requireAuth,
