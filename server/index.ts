@@ -284,6 +284,29 @@ app.use((req, res, next) => {
   // environments so both dev and prod orgs are covered on first restart after
   // this fix was deployed.
   await runStartupMigrations();
+
+  // Task #993: kick CRM transcript-backfill boot recovery AFTER migrations
+  // have created `crm_transcript_backfill_jobs`. Previously this fired at
+  // module-import time from crmCallsRoutes.ts and raced the migration on a
+  // fresh database, producing a "relation does not exist" warning and
+  // skipping recovery for that boot entirely.
+  try {
+    const { resumeOrReapBackfillJobsOnBoot } = await import("./crmCallsRoutes");
+    resumeOrReapBackfillJobsOnBoot().catch((err) => {
+      logError(
+        "CRM transcript backfill boot recovery failed",
+        {},
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    });
+  } catch (err) {
+    logError(
+      "Failed to import CRM transcript backfill boot recovery",
+      {},
+      err instanceof Error ? err : new Error(String(err)),
+    );
+  }
+
   await seedBuiltInPresets();
   try {
     const { seedSystemProjectTemplates } = await import("./seedProjectTemplates");

@@ -1167,7 +1167,10 @@ const BACKFILL_RESUME_CONCURRENCY = 2;
 //     launch it against the still-eligible recordings while keeping the
 //     original id, started_at, started_by_id, and counters so the admin
 //     sees a single continuous progress bar.
-async function resumeOrReapBackfillJobsOnBoot() {
+let backfillBootRecoveryStarted = false;
+export async function resumeOrReapBackfillJobsOnBoot() {
+  if (backfillBootRecoveryStarted) return;
+  backfillBootRecoveryStarted = true;
   try {
     const candidates = await listMostRecentRunningCrmTranscriptBackfillJobsPerOrg();
     if (candidates.length === 0) return;
@@ -1263,7 +1266,11 @@ async function resumeOrReapBackfillJobsOnBoot() {
     });
   }
 }
-void resumeOrReapBackfillJobsOnBoot();
+// Boot recovery is now triggered from server/index.ts after
+// runStartupMigrations() finishes so the crm_transcript_backfill_jobs table
+// is guaranteed to exist on a fresh database. Calling it at module-import
+// time used to race the migration on first boot, producing a "relation does
+// not exist" warning and skipping recovery for that boot entirely.
 
 // Pending-count endpoint so the admin UI can show how many recordings are
 // missing a transcript before launching a backfill, plus surface the currently
