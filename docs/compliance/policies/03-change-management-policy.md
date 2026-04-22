@@ -28,14 +28,20 @@ that preserves the integrity and availability of the Service.
    - The rollback procedure
 3. **Branch protection on `main`** requires:
    - At least one approving review from a different engineer
-   - All required CI checks to pass:
-     - Type check
+   - All required CI checks to pass (configured in
+     `.github/workflows/ci.yml`):
+     - Type check (`Build & Test`)
      - Unit + integration tests
-     - Lint
-     - Dependency audit (`npm audit --audit-level=high`)
-     - SAST scan
-     - Secret scan
-     - IaC scan (where applicable)
+     - Lint (`Code Quality`)
+     - End-to-end tests (`E2E Tests (Playwright)`)
+     - **Security Gate (SOC 2 CC8.1 / CC7.1)** — runs
+       `scripts/ci-security.sh` on every PR; covers dependency audit
+       (`npm audit --audit-level=high`), SAST (semgrep, OWASP Top 10),
+       secret scan (gitleaks), and IaC scan (checkov, where applicable).
+       Critical/High findings fail the job and block merge. Results are
+       posted to the PR as a comment and to the Actions job summary, and
+       the full scanner log is uploaded as the `ci-security-report`
+       artifact (90-day retention) for auditor evidence.
    - Linear history (squash or rebase)
 4. Merging triggers the deployment pipeline, which:
    - Builds the artifact

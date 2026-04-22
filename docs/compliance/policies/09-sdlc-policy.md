@@ -32,16 +32,26 @@ on for both the Security and Processing Integrity criteria.
 - Secrets are read from environment variables, never committed.
 
 ### Build / CI
-The CI pipeline runs on every PR and blocks merge on:
+The CI pipeline (`.github/workflows/ci.yml`) runs on every PR and blocks
+merge on:
 1. Type check (`tsc --noEmit`)
 2. Lint
 3. Unit + integration tests
-4. **Dependency audit** — `npm audit --audit-level=high` blocks merge
-5. **SAST** — Semgrep ruleset for OWASP Top 10 + framework-specific rules
-6. **Secret scan** — gitleaks against the diff; `main` is also scanned
-   weekly for any historical leak
-7. **IaC scan** — where IaC files exist
-8. **License audit** — block GPL-family in dependencies of the production
+4. End-to-end tests (Playwright)
+5. **Security Gate** — `scripts/ci-security.sh`, executed by the
+   `Security Gate (SOC 2 CC8.1 / CC7.1)` job. The script runs:
+   - **Dependency audit** — `npm audit --audit-level=high` blocks merge
+   - **SAST** — Semgrep `p/owasp-top-ten` + `p/javascript`
+   - **Secret scan** — gitleaks against the working tree; `main` is also
+     scanned weekly for any historical leak
+   - **IaC scan** — checkov, where IaC files exist
+
+   Any Critical/High finding fails the job and blocks merge. The job
+   posts a results summary as a PR comment and to the GitHub Actions job
+   summary, and uploads the full scanner log as the
+   `ci-security-report` artifact (90-day retention) for auditor
+   evidence.
+6. **License audit** — block GPL-family in dependencies of the production
    bundle
 
 ### Review
