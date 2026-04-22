@@ -15,6 +15,7 @@ import { importChartOfAccounts, exportCustomers, exportSubcontractorPayments, ex
 import { publishToPlatform, fetchEngagement } from "../social/publishService";
 import { socialAccounts } from "@shared/schema";
 import { calculateAllProjectsProfitability } from "../ai/profitabilityEngine";
+import { captureWeeklyKpiSnapshots } from "../services/portfolioKpiSnapshotService";
 import { bids } from "@shared/schema";
 import { eventBus } from "../events";
 import { emailAccounts, emailCampaigns, emailCampaignContacts } from "@shared/schema";
@@ -53,6 +54,7 @@ let crmBirthdayDailyTask: ReturnType<typeof cron.schedule> | null = null;
 let jobMetricsPruneTask: ReturnType<typeof cron.schedule> | null = null;
 let jobMetricAlertsTask: ReturnType<typeof cron.schedule> | null = null;
 let jobMetricQuietDigestTask: ReturnType<typeof cron.schedule> | null = null;
+let portfolioKpiSnapshotTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -166,6 +168,17 @@ export function startJobRunner() {
       await processProfitabilityMonitor();
     } catch (err) {
       logError("Profitability monitor failed", { error: String(err) });
+    }
+  });
+
+  // Task #902: nightly capture of per-project KPI snapshots (health, SPI,
+  // CPI, burn) so the portfolio dashboard sparklines and 12-week deltas
+  // reflect real direction-of-travel instead of created-RFI counts.
+  portfolioKpiSnapshotTask = cron.schedule("15 2 * * *", async () => {
+    try {
+      await captureWeeklyKpiSnapshots();
+    } catch (err) {
+      logError("Portfolio KPI snapshot capture failed", { error: String(err) });
     }
   });
 
@@ -466,6 +479,10 @@ export function stopJobRunner() {
     jobMetricQuietDigestTask.stop();
     jobMetricQuietDigestTask = null;
   }
+  if (portfolioKpiSnapshotTask) {
+    portfolioKpiSnapshotTask.stop();
+    portfolioKpiSnapshotTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -477,6 +494,7 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   token_expiry:        { fn: () => checkSocialTokenExpiry(),           description: "Check social account token expiry",       schedule: "0 3 * * *" },
   compliance:          { fn: () => processComplianceExpirations(),     description: "Check compliance/cert expirations",       schedule: "0 7 * * *" },
   profitability:       { fn: () => processProfitabilityMonitor(),      description: "Monitor project profitability",           schedule: "*/15 * * * *" },
+  portfolio_kpi_snapshot: { fn: async () => { await captureWeeklyKpiSnapshots(); }, description: "Capture per-project weekly KPI snapshots (health/SPI/CPI/burn)", schedule: "15 2 * * *" },
   idle_opportunities:  { fn: () => processIdleOpportunities(),         description: "Flag idle CRM opportunities",            schedule: "0 8 * * *" },
   orphan_uploads:      { fn: () => processOrphanUploads(),             description: "Clean up orphaned file uploads",          schedule: "*/30 * * * *" },
   bid_due_dates:       { fn: () => processBidDueDateApproaching(),     description: "Notify on approaching bid due dates",     schedule: "0 * * * *" },

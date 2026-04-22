@@ -10,6 +10,7 @@ import {
   projectScheduleTasks,
   projectSchedules,
   timeEntries,
+  projectKpiSnapshots,
 } from "@shared/schema";
 import { rfiStatusEnum, changeOrderStatusEnum, punchListStatusEnum, projectStatusEnum } from "@shared/schema/enums";
 import { requireAuth, requireAnyFeaturePermission, type AuthRequest } from "./auth";
@@ -143,6 +144,21 @@ function buildWeekBuckets(weeks = 12): WeekBucket[] {
   return buckets;
 }
 
+interface SnapshotSeries {
+  health: Record<string, number[]>;
+  spi: Record<string, number[]>;
+  cpi: Record<string, number[]>;
+  burn: Record<string, number[]>;
+}
+
+function deltaVs(series: number[], weeksAgo: number): number | null {
+  if (!series.length) return null;
+  const lastIdx = series.length - 1;
+  const refIdx = lastIdx - weeksAgo;
+  if (refIdx < 0) return null;
+  return Math.round((series[lastIdx] - series[refIdx]) * 100) / 100;
+}
+
 function pmNameOf(p: ProjectRow): string | null {
   if (!p.pmFirstName && !p.pmLastName) return null;
   return [p.pmFirstName, p.pmLastName].filter(Boolean).join(" ").trim() || null;
@@ -241,8 +257,9 @@ router.get(
 
       const buckets = buildWeekBuckets(12);
       const earliest = buckets[0].start;
+      const earliestKey = buckets[0].key;
 
-      const [openRfiRows, openCoRows, openPunchRows, scheduleAgg, sparkRfiRows, sparkCoRows, sparkPunchRows] = await Promise.all([
+      const [openRfiRows, openCoRows, openPunchRows, scheduleAgg, sparkRfiRows, sparkCoRows, sparkPunchRows, snapshotRows] = await Promise.all([
         db.select({ projectId: rfis.projectId, count: sql<number>`count(*)::int` })
           .from(rfis)
           .where(and(inArray(rfis.projectId, projectIds), inArray(rfis.status, OPEN_RFI_STATUSES)))
@@ -273,6 +290,16 @@ router.get(
         db.select({ projectId: punchListItems.projectId, createdAt: punchListItems.createdAt })
           .from(punchListItems)
           .where(and(inArray(punchListItems.projectId, projectIds), gte(punchListItems.createdAt, earliest))),
+        db.select({
+            projectId: projectKpiSnapshots.projectId,
+            weekStart: projectKpiSnapshots.weekStart,
+            health: projectKpiSnapshots.health,
+            spi: projectKpiSnapshots.spi,
+            cpi: projectKpiSnapshots.cpi,
+            burn: projectKpiSnapshots.burn,
+          })
+          .from(projectKpiSnapshots)
+          .where(and(inArray(projectKpiSnapshots.projectId, projectIds), gte(projectKpiSnapshots.weekStart, earliestKey))),
       ]);
 
       const rfiMap = new Map(openRfiRows.map((r) => [r.projectId, Number(r.count)]));
@@ -304,7 +331,11 @@ router.get(
         if (idx >= 0) sparkPunch[r.projectId][idx] += 1;
       }
 
-      let cells = projectRows.map((p) => {
+      // Task #902: build the per-project KPI series from the weekly
+      // snapshots table. The current values come from live data so the
+      // most recent point reflects today.
+      const liveKpis: Record<string, { health: number; spi: number; cpi: number; burn: number; variancePct: number; schedulePct: number; expectedPct: number; openRfis: number; openCos: number; openPunch: number }> = {};
+      for (const p of projectRows) {
         const prof = profByCode.get(p.code);
         const variancePct = prof ? prof.variance_percent : 0;
         const sched = schedMap.get(p.id);
@@ -328,16 +359,73 @@ router.get(
           schedulePctComplete: schedulePct,
           expectedPctComplete: expectedPct,
         });
-        const nextMilestone = sched?.nextMilestone ? new Date(sched.nextMilestone) : null;
-        const daysToNext = nextMilestone
-          ? Math.round((nextMilestone.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
-          : null;
         const spi = expectedPct > 0 ? Math.round((schedulePct / expectedPct) * 100) / 100 : 1;
         const cpi = prof && prof.total_actual_cost > 0
           ? Math.round((prof.adjusted_budget / prof.total_actual_cost) * 100) / 100
           : 1;
+        liveKpis[p.id] = { health, spi, cpi, burn: 0, variancePct, schedulePct, expectedPct, openRfis: openRfiCount, openCos: openCoCount, openPunch: openPunchCount };
+      }
 
-        const flatSeries = (n: number, len: number) => new Array(len).fill(n);
+      const series: SnapshotSeries = { health: {}, spi: {}, cpi: {}, burn: {} };
+      for (const id of projectIds) {
+        const fallback = liveKpis[id] || { health: 0, spi: 1, cpi: 1, burn: 0 };
+        series.health[id] = new Array(buckets.length).fill(fallback.health);
+        series.spi[id] = new Array(buckets.length).fill(fallback.spi);
+        series.cpi[id] = new Array(buckets.length).fill(fallback.cpi);
+        series.burn[id] = new Array(buckets.length).fill(0);
+      }
+      const idxByKey = new Map(buckets.map((b, i) => [b.key, i]));
+      const seenWeek: Record<string, boolean[]> = {};
+      for (const id of projectIds) seenWeek[id] = new Array(buckets.length).fill(false);
+      for (const r of snapshotRows) {
+        if (!projectIdSet.has(r.projectId)) continue;
+        const key = typeof r.weekStart === "string" ? r.weekStart : new Date(r.weekStart as unknown as string).toISOString().slice(0, 10);
+        const i = idxByKey.get(key);
+        if (i === undefined) continue;
+        series.health[r.projectId][i] = Number(r.health) || 0;
+        series.spi[r.projectId][i] = Number(r.spi) || 0;
+        series.cpi[r.projectId][i] = Number(r.cpi) || 0;
+        series.burn[r.projectId][i] = Number(r.burn) || 0;
+        seenWeek[r.projectId][i] = true;
+      }
+      // Forward-fill missing weeks; pin the current week to live values
+      // so today's calculation is always reflected on the trailing point.
+      for (const id of projectIds) {
+        let lastH = series.health[id][0];
+        let lastS = series.spi[id][0];
+        let lastC = series.cpi[id][0];
+        for (let i = 0; i < buckets.length; i++) {
+          if (seenWeek[id][i]) {
+            lastH = series.health[id][i];
+            lastS = series.spi[id][i];
+            lastC = series.cpi[id][i];
+          } else {
+            series.health[id][i] = lastH;
+            series.spi[id][i] = lastS;
+            series.cpi[id][i] = lastC;
+          }
+        }
+        const live = liveKpis[id];
+        if (live) {
+          const last = buckets.length - 1;
+          series.health[id][last] = live.health;
+          series.spi[id][last] = live.spi;
+          series.cpi[id][last] = live.cpi;
+        }
+      }
+
+      let cells = projectRows.map((p) => {
+        const live = liveKpis[p.id];
+        const sched = schedMap.get(p.id);
+        const nextMilestone = sched?.nextMilestone ? new Date(sched.nextMilestone) : null;
+        const daysToNext = nextMilestone
+          ? Math.round((nextMilestone.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+          : null;
+
+        const healthSeries = series.health[p.id];
+        const spiSeries = series.spi[p.id];
+        const cpiSeries = series.cpi[p.id];
+
         return {
           projectId: p.id,
           code: p.code,
@@ -346,24 +434,32 @@ router.get(
           pmName: pmNameOf(p),
           clientName: p.clientName,
           state: p.state,
-          health,
-          spi,
-          cpi,
-          budgetVariancePct: Math.round(variancePct * 10) / 10,
-          openRfis: openRfiCount,
-          openCos: openCoCount,
-          openPunch: openPunchCount,
-          schedulePct: Math.round(schedulePct),
-          expectedPct: Math.round(expectedPct),
+          health: live.health,
+          spi: live.spi,
+          cpi: live.cpi,
+          budgetVariancePct: Math.round(live.variancePct * 10) / 10,
+          openRfis: live.openRfis,
+          openCos: live.openCos,
+          openPunch: live.openPunch,
+          schedulePct: Math.round(live.schedulePct),
+          expectedPct: Math.round(live.expectedPct),
           daysToNextMilestone: daysToNext,
-          // Per-KPI 12-week sparklines for the matrix view
+          // Task #902: 12-week deltas vs 4 weeks ago and 12 weeks ago,
+          // surfaced numerically on each card.
+          deltas: {
+            health: { fourWeek: deltaVs(healthSeries, 4), twelveWeek: deltaVs(healthSeries, 11) },
+            spi: { fourWeek: deltaVs(spiSeries, 4), twelveWeek: deltaVs(spiSeries, 11) },
+            cpi: { fourWeek: deltaVs(cpiSeries, 4), twelveWeek: deltaVs(cpiSeries, 11) },
+          },
+          // Per-KPI 12-week sparklines for the matrix view, sourced from
+          // the weekly snapshots table for health/SPI/CPI.
           kpis: [
-            { key: "health", label: "Health", value: health, sparkline: flatSeries(health, buckets.length), tab: "overview" },
-            { key: "spi", label: "SPI", value: spi, sparkline: flatSeries(spi, buckets.length), tab: "schedule" },
-            { key: "cpi", label: "CPI", value: cpi, sparkline: flatSeries(cpi, buckets.length), tab: "financials" },
-            { key: "rfis", label: "Open RFIs", value: openRfiCount, sparkline: sparkRfi[p.id], tab: "rfis" },
-            { key: "cos", label: "Open COs", value: openCoCount, sparkline: sparkCo[p.id], tab: "change-orders" },
-            { key: "punch", label: "Punch", value: openPunchCount, sparkline: sparkPunch[p.id], tab: "punch-list" },
+            { key: "health", label: "Health", value: live.health, sparkline: healthSeries, tab: "overview", delta4w: deltaVs(healthSeries, 4) },
+            { key: "spi", label: "SPI", value: live.spi, sparkline: spiSeries, tab: "schedule", delta4w: deltaVs(spiSeries, 4) },
+            { key: "cpi", label: "CPI", value: live.cpi, sparkline: cpiSeries, tab: "financials", delta4w: deltaVs(cpiSeries, 4) },
+            { key: "rfis", label: "Open RFIs", value: live.openRfis, sparkline: sparkRfi[p.id], tab: "rfis" },
+            { key: "cos", label: "Open COs", value: live.openCos, sparkline: sparkCo[p.id], tab: "change-orders" },
+            { key: "punch", label: "Punch", value: live.openPunch, sparkline: sparkPunch[p.id], tab: "punch-list" },
           ],
         };
       });
@@ -484,33 +580,63 @@ router.get(
       const projectIds = projectRows.map((p) => p.id);
       const buckets = buildWeekBuckets(12);
       const earliest = buckets[0].start;
-
-      const burnRows = projectIds.length
-        ? await db
-            .select({
-              projectId: timeEntries.projectId,
-              date: timeEntries.date,
-              hoursRegular: timeEntries.hoursRegular,
-              hoursOvertime: timeEntries.hoursOvertime,
-            })
-            .from(timeEntries)
-            .where(and(inArray(timeEntries.projectId, projectIds), gte(timeEntries.date, earliest)))
-        : [];
-
+      const earliestKey = buckets[0].key;
       const projectIdSet = new Set(projectIds);
+
+      // Live current-week burn (in-progress) is summed from time entries
+      // since the start of this week so the trailing point reflects real
+      // activity, not just last night's snapshot.
+      const currentWeekStart = buckets[buckets.length - 1].start;
+      const [burnRows, snapshotRows] = await Promise.all([
+        projectIds.length
+          ? db
+              .select({
+                projectId: timeEntries.projectId,
+                date: timeEntries.date,
+                hoursRegular: timeEntries.hoursRegular,
+                hoursOvertime: timeEntries.hoursOvertime,
+              })
+              .from(timeEntries)
+              .where(and(inArray(timeEntries.projectId, projectIds), gte(timeEntries.date, currentWeekStart)))
+          : Promise.resolve([] as Array<{ projectId: string; date: Date; hoursRegular: string | null; hoursOvertime: string | null }>),
+        projectIds.length
+          ? db
+              .select({
+                projectId: projectKpiSnapshots.projectId,
+                weekStart: projectKpiSnapshots.weekStart,
+                burn: projectKpiSnapshots.burn,
+              })
+              .from(projectKpiSnapshots)
+              .where(and(inArray(projectKpiSnapshots.projectId, projectIds), gte(projectKpiSnapshots.weekStart, earliestKey)))
+          : Promise.resolve([] as Array<{ projectId: string; weekStart: string; burn: string }>),
+      ]);
+
       const sparkBy: Record<string, number[]> = {};
       for (const id of projectIds) sparkBy[id] = new Array(buckets.length).fill(0);
+      const idxByKey = new Map(buckets.map((b, i) => [b.key, i]));
+      for (const r of snapshotRows) {
+        if (!projectIdSet.has(r.projectId)) continue;
+        const key = typeof r.weekStart === "string" ? r.weekStart : new Date(r.weekStart as unknown as string).toISOString().slice(0, 10);
+        const i = idxByKey.get(key);
+        if (i === undefined) continue;
+        sparkBy[r.projectId][i] = Number(r.burn) || 0;
+      }
+      // Overlay live current-week burn on the trailing bucket.
+      const currentBurn: Record<string, number> = {};
       for (const r of burnRows) {
         if (!projectIdSet.has(r.projectId)) continue;
-        const idx = bucketIndex(buckets, new Date(r.date).getTime());
-        if (idx < 0) continue;
         const reg = parseFloat(r.hoursRegular || "0") || 0;
         const ot = parseFloat(r.hoursOvertime || "0") || 0;
-        sparkBy[r.projectId][idx] += (reg + ot * 1.5) * 50;
+        currentBurn[r.projectId] = (currentBurn[r.projectId] || 0) + (reg + ot * 1.5) * 50;
+      }
+      const lastIdx = buckets.length - 1;
+      for (const id of projectIds) {
+        if (currentBurn[id] !== undefined) sparkBy[id][lastIdx] = Math.round(currentBurn[id] * 100) / 100;
       }
 
       const cells = projectRows.map((p) => {
         const prof = profByCode.get(p.code);
+        const burnSeries = sparkBy[p.id] || [];
         return {
           projectId: p.id,
           code: p.code,
@@ -527,7 +653,11 @@ router.get(
           margin: prof ? Math.round(prof.estimated_margin * 10) / 10 : 0,
           status_health: prof?.status || "ON_BUDGET",
           weeklyBurn: prof?.cost_prediction?.weekly_burn_rate ?? 0,
-          sparkline: sparkBy[p.id] || [],
+          sparkline: burnSeries,
+          // Task #902: 12-week burn deltas surfaced numerically per card.
+          deltas: {
+            burn: { fourWeek: deltaVs(burnSeries, 4), twelveWeek: deltaVs(burnSeries, 11) },
+          },
           group: groupKeyFor(p, filters.groupBy),
         };
       });

@@ -7755,6 +7755,36 @@ export const insertProjectProfitabilitySnapshotSchema = createInsertSchema(proje
 export type InsertProjectProfitabilitySnapshot = z.infer<typeof insertProjectProfitabilitySnapshotSchema>;
 export type ProjectProfitabilitySnapshot = typeof projectProfitabilitySnapshots.$inferSelect;
 
+// ─── Portfolio KPI Weekly Snapshots (Task #902) ──────────────────────────────
+// Captures one row per project per ISO week (Sunday UTC). Powers the
+// 12-week sparklines on the Portfolio Heatmap and Financial Rollup, and
+// lets us show direction-of-travel deltas (e.g. "Health +5 vs 4w ago").
+export const projectKpiSnapshots = pgTable("project_kpi_snapshots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  weekStart: date("week_start").notNull(),
+  health: integer("health").notNull().default(0),
+  spi: decimal("spi", { precision: 8, scale: 3 }).notNull().default("1"),
+  cpi: decimal("cpi", { precision: 8, scale: 3 }).notNull().default("1"),
+  burn: decimal("burn", { precision: 14, scale: 2 }).notNull().default("0"),
+  variancePct: decimal("variance_pct", { precision: 8, scale: 2 }).notNull().default("0"),
+  schedulePct: integer("schedule_pct").notNull().default(0),
+  expectedPct: integer("expected_pct").notNull().default(0),
+  openRfis: integer("open_rfis").notNull().default(0),
+  openCos: integer("open_cos").notNull().default(0),
+  openPunch: integer("open_punch").notNull().default(0),
+  capturedAt: timestamp("captured_at").notNull().defaultNow(),
+}, (table) => ({
+  projectIdx: index("project_kpi_snap_project_idx").on(table.projectId),
+  weekIdx: index("project_kpi_snap_week_idx").on(table.weekStart),
+  uniqProjectWeek: uniqueIndex("project_kpi_snap_project_week_uniq").on(table.projectId, table.weekStart),
+}));
+
+export const insertProjectKpiSnapshotSchema = createInsertSchema(projectKpiSnapshots).omit({ id: true, capturedAt: true });
+export type InsertProjectKpiSnapshot = z.infer<typeof insertProjectKpiSnapshotSchema>;
+export type ProjectKpiSnapshot = typeof projectKpiSnapshots.$inferSelect;
+
 // ============================================
 // Object ACL Policy mirror (resilience fallback for GCS metadata)
 // ============================================
