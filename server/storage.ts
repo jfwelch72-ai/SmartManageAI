@@ -1058,6 +1058,10 @@ export type CrmTranscriptBackfillNotificationSettingsUpsert = {
   slackWebhookUrl: string | null;
   emailRecipients: string[];
   updatedById: string | null;
+  // Task #1094 — admin-tunable test-alert threshold (per-org). `undefined`
+  // means "leave the existing value untouched"; explicit `null` clears it
+  // back to the service-level default.
+  testAlertThresholdPerDay?: number | null;
 };
 
 export async function getCrmTranscriptBackfillNotificationSettings(
@@ -1083,6 +1087,7 @@ export async function upsertCrmTranscriptBackfillNotificationSettings(
       emailRecipients: data.emailRecipients,
       updatedById: data.updatedById,
       updatedAt: new Date(),
+      testAlertThresholdPerDay: data.testAlertThresholdPerDay ?? null,
     })
     .onConflictDoUpdate({
       target: crmTranscriptBackfillNotificationSettings.organizationId,
@@ -1091,10 +1096,41 @@ export async function upsertCrmTranscriptBackfillNotificationSettings(
         emailRecipients: data.emailRecipients,
         updatedById: data.updatedById,
         updatedAt: new Date(),
+        // Only overwrite the threshold when the caller explicitly passed
+        // it; `undefined` preserves the saved value so the destinations
+        // PUT route doesn't accidentally clobber a separately-managed
+        // threshold field.
+        ...(data.testAlertThresholdPerDay !== undefined
+          ? { testAlertThresholdPerDay: data.testAlertThresholdPerDay }
+          : {}),
       },
     })
     .returning();
   return row;
+}
+
+// Task #1094 — record that a threshold-breach notification was just sent so
+// the throttle window prevents the alert channel from being spammed on
+// every subsequent button click during a sustained breach. Best-effort: a
+// write failure is logged by the caller and never blocks the dispatch.
+export async function recordCrmTranscriptBackfillThresholdAlert(
+  organizationId: string,
+  sentAt: Date = new Date(),
+): Promise<void> {
+  await db
+    .insert(crmTranscriptBackfillNotificationSettings)
+    .values({
+      organizationId,
+      slackWebhookUrl: null,
+      emailRecipients: [],
+      updatedById: null,
+      updatedAt: new Date(),
+      lastThresholdAlertAt: sentAt,
+    })
+    .onConflictDoUpdate({
+      target: crmTranscriptBackfillNotificationSettings.organizationId,
+      set: { lastThresholdAlertAt: sentAt },
+    });
 }
 
 // Task #1045 — persist the most recent test-alert outcome so the settings

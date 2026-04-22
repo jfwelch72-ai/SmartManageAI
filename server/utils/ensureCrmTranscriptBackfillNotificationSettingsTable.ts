@@ -16,5 +16,11 @@ export async function ensureCrmTranscriptBackfillNotificationSettingsTable(): Pr
       "updated_by_id" varchar REFERENCES "users"("id") ON DELETE SET NULL
     )
   `);
+  // Task #1094: admin-tunable test-alert breach threshold + throttle ledger.
+  await db.execute(sql`
+    ALTER TABLE "crm_transcript_backfill_notification_settings"
+      ADD COLUMN IF NOT EXISTS "test_alert_threshold_per_day" integer,
+      ADD COLUMN IF NOT EXISTS "last_threshold_alert_at" timestamp
+  `);
   logInfo("[migration] crm_transcript_backfill_notification_settings table ready");
 }

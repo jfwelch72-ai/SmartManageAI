@@ -26,6 +26,8 @@ const {
   mockGetOperatorContact,
   mockTryReserveResendCooldown,
   mockReleaseResendCooldown,
+  mockGetTestAlertUsageSummary,
+  mockRecordThresholdAlert,
 } = vi.hoisted(() => ({
   mockGetSettings: vi.fn(),
   mockRecordDelivery: vi.fn().mockResolvedValue({}),
@@ -54,6 +56,15 @@ const {
     .fn()
     .mockResolvedValue({ ok: true, reservedAt: new Date() }),
   mockReleaseResendCooldown: vi.fn().mockResolvedValue(undefined),
+  // Task #1094 — test-alert breach threshold notifier mocks. Defaults
+  // assume "no usage" / "no row" so unrelated tests are unaffected.
+  mockGetTestAlertUsageSummary: vi.fn().mockResolvedValue({
+    last24h: 0,
+    last7d: 0,
+    last30d: 0,
+    windowEndsAt: new Date(0).toISOString(),
+  }),
+  mockRecordThresholdAlert: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("../storage", () => ({
   getCrmTranscriptBackfillNotificationSettings: mockGetSettings,
@@ -67,6 +78,8 @@ vi.mock("../storage", () => ({
   getCrmTranscriptBackfillOperatorContact: mockGetOperatorContact,
   tryReserveBackfillAlertResendCooldown: mockTryReserveResendCooldown,
   releaseBackfillAlertResendCooldown: mockReleaseResendCooldown,
+  getCrmTranscriptBackfillTestAlertUsageSummary: mockGetTestAlertUsageSummary,
+  recordCrmTranscriptBackfillThresholdAlert: mockRecordThresholdAlert,
 }));
 vi.mock("../services/slackService", () => ({
   isValidSlackWebhookUrl: (u: string) => /^https:\/\/hooks\.slack\.com\//.test(u),
@@ -1656,5 +1669,195 @@ describe("Resend records the acting admin end-to-end (Task #1103)", () => {
       expect(arg.source).toBe("automatic");
       expect(arg.triggeredById).toBeNull();
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task #1094 — test-alert button breach threshold notifier.
+// These tests pin the dispatch decision (below threshold, throttled,
+// no destinations, dispatched) and the formatter output.
+// ---------------------------------------------------------------------------
+import {
+  formatTestAlertThresholdBreach,
+  checkAndNotifyTestAlertThresholdBreach,
+  DEFAULT_TEST_ALERT_THRESHOLD_PER_DAY,
+  TEST_ALERT_THRESHOLD_NOTIFY_THROTTLE_MS,
+} from "../services/transcriptBackfillNotifications";
+
+describe("formatTestAlertThresholdBreach (Task #1094)", () => {
+  it("names the offending org, count, threshold, and admin link in every channel", () => {
+    const out = formatTestAlertThresholdBreach({
+      orgId: "org-xyz",
+      count: 25,
+      threshold: 20,
+      windowHours: 24,
+      adminUrl: "https://app.example.com/admin/transcript-backfill",
+    });
+    expect(out.title).toContain("threshold");
+    expect(out.slackBody).toContain("org-xyz");
+    expect(out.slackBody).toContain("25");
+    expect(out.slackBody).toContain("20");
+    expect(out.slackBody).toContain(
+      "https://app.example.com/admin/transcript-backfill",
+    );
+    expect(out.emailSubject).toContain("25");
+    expect(out.emailSubject).toContain("20");
+    expect(out.emailText).toContain("org-xyz");
+    expect(out.emailText).toContain(
+      "https://app.example.com/admin/transcript-backfill",
+    );
+    expect(out.emailHtml).toContain("org-xyz");
+    expect(out.emailHtml).toContain(
+      "https://app.example.com/admin/transcript-backfill",
+    );
+  });
+});
+
+describe("checkAndNotifyTestAlertThresholdBreach (Task #1094)", () => {
+  beforeEach(() => {
+    mockGetSettings.mockReset();
+    mockGetTestAlertUsageSummary.mockReset();
+    mockRecordThresholdAlert.mockReset();
+    mockFetch.mockReset();
+    mockSendEmail.mockReset();
+    mockFetch.mockResolvedValue(new Response("ok", { status: 200 }));
+    mockSendEmail.mockResolvedValue(true);
+    mockRecordThresholdAlert.mockResolvedValue(undefined);
+  });
+
+  it("does nothing when usage is below threshold", async () => {
+    mockGetSettings.mockResolvedValue({
+      slackWebhookUrl: "https://hooks.slack.com/services/T/B/C",
+      emailRecipients: ["a@x.co"],
+      testAlertThresholdPerDay: 20,
+      lastThresholdAlertAt: null,
+    });
+    mockGetTestAlertUsageSummary.mockResolvedValue({
+      last24h: 5,
+      last7d: 5,
+      last30d: 5,
+      windowEndsAt: new Date().toISOString(),
+    });
+    const result = await checkAndNotifyTestAlertThresholdBreach("org-1");
+    expect(result).toEqual({ dispatched: false, reason: "BELOW_THRESHOLD" });
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(mockRecordThresholdAlert).not.toHaveBeenCalled();
+  });
+
+  it("treats threshold <= 0 as disabled", async () => {
+    mockGetSettings.mockResolvedValue({
+      slackWebhookUrl: "https://hooks.slack.com/services/T/B/C",
+      emailRecipients: ["a@x.co"],
+      testAlertThresholdPerDay: 0,
+      lastThresholdAlertAt: null,
+    });
+    mockGetTestAlertUsageSummary.mockResolvedValue({
+      last24h: 999,
+      last7d: 999,
+      last30d: 999,
+      windowEndsAt: new Date().toISOString(),
+    });
+    const result = await checkAndNotifyTestAlertThresholdBreach("org-1");
+    expect(result).toEqual({ dispatched: false, reason: "BELOW_THRESHOLD" });
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the default threshold when the org has not set one", async () => {
+    mockGetSettings.mockResolvedValue({
+      slackWebhookUrl: "https://hooks.slack.com/services/T/B/C",
+      emailRecipients: [],
+      testAlertThresholdPerDay: null,
+      lastThresholdAlertAt: null,
+    });
+    mockGetTestAlertUsageSummary.mockResolvedValue({
+      last24h: DEFAULT_TEST_ALERT_THRESHOLD_PER_DAY,
+      last7d: DEFAULT_TEST_ALERT_THRESHOLD_PER_DAY,
+      last30d: DEFAULT_TEST_ALERT_THRESHOLD_PER_DAY,
+      windowEndsAt: new Date().toISOString(),
+    });
+    const result = await checkAndNotifyTestAlertThresholdBreach("org-1");
+    expect(result).toEqual({
+      dispatched: true,
+      count: DEFAULT_TEST_ALERT_THRESHOLD_PER_DAY,
+      threshold: DEFAULT_TEST_ALERT_THRESHOLD_PER_DAY,
+    });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockRecordThresholdAlert).toHaveBeenCalledWith(
+      "org-1",
+      expect.any(Date),
+    );
+  });
+
+  it("respects the throttle window and skips when recently sent", async () => {
+    const now = new Date("2026-04-22T12:00:00.000Z");
+    mockGetSettings.mockResolvedValue({
+      slackWebhookUrl: "https://hooks.slack.com/services/T/B/C",
+      emailRecipients: ["a@x.co"],
+      testAlertThresholdPerDay: 20,
+      lastThresholdAlertAt: new Date(
+        now.getTime() - (TEST_ALERT_THRESHOLD_NOTIFY_THROTTLE_MS - 1000),
+      ).toISOString(),
+    });
+    mockGetTestAlertUsageSummary.mockResolvedValue({
+      last24h: 25,
+      last7d: 25,
+      last30d: 25,
+      windowEndsAt: now.toISOString(),
+    });
+    const result = await checkAndNotifyTestAlertThresholdBreach("org-1", { now });
+    expect(result).toEqual({ dispatched: false, reason: "THROTTLED" });
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(mockRecordThresholdAlert).not.toHaveBeenCalled();
+  });
+
+  it("dispatches once the throttle window has elapsed", async () => {
+    const now = new Date("2026-04-22T12:00:00.000Z");
+    mockGetSettings.mockResolvedValue({
+      slackWebhookUrl: "https://hooks.slack.com/services/T/B/C",
+      emailRecipients: ["a@x.co", "b@x.co"],
+      testAlertThresholdPerDay: 20,
+      lastThresholdAlertAt: new Date(
+        now.getTime() - (TEST_ALERT_THRESHOLD_NOTIFY_THROTTLE_MS + 1000),
+      ).toISOString(),
+    });
+    mockGetTestAlertUsageSummary.mockResolvedValue({
+      last24h: 30,
+      last7d: 30,
+      last30d: 30,
+      windowEndsAt: now.toISOString(),
+    });
+    const result = await checkAndNotifyTestAlertThresholdBreach("org-1", { now });
+    expect(result).toEqual({ dispatched: true, count: 30, threshold: 20 });
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+    expect(mockRecordThresholdAlert).toHaveBeenCalledWith("org-1", now);
+  });
+
+  it("returns NO_DESTINATIONS when both slack and email are empty", async () => {
+    mockGetSettings.mockResolvedValue({
+      slackWebhookUrl: "",
+      emailRecipients: [],
+      testAlertThresholdPerDay: 20,
+      lastThresholdAlertAt: null,
+    });
+    mockGetTestAlertUsageSummary.mockResolvedValue({
+      last24h: 25,
+      last7d: 25,
+      last30d: 25,
+      windowEndsAt: new Date().toISOString(),
+    });
+    const result = await checkAndNotifyTestAlertThresholdBreach("org-1");
+    expect(result).toEqual({ dispatched: false, reason: "NO_DESTINATIONS" });
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  it("never throws even if downstream storage explodes", async () => {
+    mockGetSettings.mockRejectedValue(new Error("db down"));
+    const result = await checkAndNotifyTestAlertThresholdBreach("org-1");
+    expect(result.dispatched).toBe(false);
   });
 });

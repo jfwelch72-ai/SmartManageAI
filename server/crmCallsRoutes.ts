@@ -72,6 +72,8 @@ import {
   getBackfillNotificationConfig,
   buildAlertFailureFallbackContent,
   buildAlertFailureDigestContent,
+  checkAndNotifyTestAlertThresholdBreach,
+  DEFAULT_TEST_ALERT_THRESHOLD_PER_DAY,
 } from "./services/transcriptBackfillNotifications";
 import {
   requireAuth,
@@ -3102,6 +3104,17 @@ router.post(
         });
       }
       res.json({ ...result, testedAt: testedAt.toISOString() });
+
+      // Task #1094 — fire-and-forget the threshold check after responding to
+      // the admin so a slow Slack/email transport for the breach alert can
+      // never block the original button click. The notifier swallows its
+      // own errors; we only catch here as a defence-in-depth measure.
+      void checkAndNotifyTestAlertThresholdBreach(orgId).catch((err) => {
+        logWarn("crmCallsRoutes: threshold-breach check threw", {
+          orgId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
     } catch (e) {
       next(e);
     }
@@ -3634,6 +3647,11 @@ router.get(
         // settings card can show the destination's last-known health on load.
         lastTestAt: settings?.lastTestAt ? settings.lastTestAt.toISOString() : null,
         lastTestResult: settings?.lastTestResult ?? null,
+        // Task #1094 — admin-tunable test-alert breach threshold; a null
+        // saved value renders the service-level default in the UI.
+        testAlertThresholdPerDay:
+          settings?.testAlertThresholdPerDay ?? null,
+        testAlertThresholdDefault: DEFAULT_TEST_ALERT_THRESHOLD_PER_DAY,
       });
     } catch (e) {
       next(e);
@@ -3656,6 +3674,18 @@ const backfillNotificationSettingsSchema = z.object({
   emailRecipients: z
     .array(z.string().trim().email("Each recipient must be a valid email address"))
     .max(50, "Up to 50 email recipients are allowed"),
+  // Task #1094 — admin-tunable per-org threshold for the test-alert breach
+  // notifier. Optional: omitting the field leaves the saved value alone;
+  // explicit `null` clears it back to the service-level default. A
+  // non-positive number disables the check entirely so admins can opt out
+  // without us needing a separate enable flag.
+  testAlertThresholdPerDay: z
+    .number()
+    .int("Threshold must be a whole number")
+    .min(0, "Threshold cannot be negative")
+    .max(10_000, "Threshold cannot exceed 10000")
+    .nullable()
+    .optional(),
 });
 
 router.put(
@@ -3687,6 +3717,10 @@ router.put(
         slackWebhookUrl: parsed.data.slackWebhookUrl ? parsed.data.slackWebhookUrl : null,
         emailRecipients: recipients,
         updatedById: req.user?.id ?? null,
+        // Task #1094 — pass the threshold through only when the client
+        // included it in the payload. `undefined` preserves the saved
+        // value; explicit `null` clears it back to the default.
+        testAlertThresholdPerDay: parsed.data.testAlertThresholdPerDay,
       });
       res.json({
         slackWebhookUrl: saved.slackWebhookUrl ?? "",
@@ -3694,6 +3728,8 @@ router.put(
         updatedAt: saved.updatedAt,
         lastTestAt: saved.lastTestAt ? saved.lastTestAt.toISOString() : null,
         lastTestResult: saved.lastTestResult ?? null,
+        testAlertThresholdPerDay: saved.testAlertThresholdPerDay ?? null,
+        testAlertThresholdDefault: DEFAULT_TEST_ALERT_THRESHOLD_PER_DAY,
       });
     } catch (e) {
       next(e);

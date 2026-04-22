@@ -3538,6 +3538,10 @@ interface BackfillNotificationSettings {
   // show the destinations' last-known health on load.
   lastTestAt: string | null;
   lastTestResult: BackfillTestAlertResult | null;
+  // Task #1094 — admin-tunable test-alert breach threshold. `null` means the
+  // service-level default in `testAlertThresholdDefault` is in effect.
+  testAlertThresholdPerDay: number | null;
+  testAlertThresholdDefault: number;
 }
 const NOTIFICATION_SETTINGS_PATH =
   "/api/crm/calls/transcripts/backfill/notification-settings";
@@ -3683,15 +3687,27 @@ export function BackfillNotificationSettingsCard() {
 
   const [slackWebhookUrl, setSlackWebhookUrl] = useState("");
   const [emailRecipientsRaw, setEmailRecipientsRaw] = useState("");
+  // Task #1094 — kept as a string so the input can render an empty value
+  // (which means "fall back to the service default") and so we can validate
+  // before parsing on submit.
+  const [thresholdRaw, setThresholdRaw] = useState("");
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
     if (settingsQuery.data && !hydrated) {
       setSlackWebhookUrl(settingsQuery.data.slackWebhookUrl ?? "");
       setEmailRecipientsRaw((settingsQuery.data.emailRecipients ?? []).join(", "));
+      setThresholdRaw(
+        settingsQuery.data.testAlertThresholdPerDay == null
+          ? ""
+          : String(settingsQuery.data.testAlertThresholdPerDay),
+      );
       setHydrated(true);
     }
   }, [settingsQuery.data, hydrated]);
+
+  const thresholdDefault =
+    settingsQuery.data?.testAlertThresholdDefault ?? 20;
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -3699,9 +3715,23 @@ export function BackfillNotificationSettingsCard() {
         .split(/[,\n;]/)
         .map((s) => s.trim())
         .filter(Boolean);
+      // An empty input clears the per-org override (back to the default).
+      const trimmedThreshold = thresholdRaw.trim();
+      let testAlertThresholdPerDay: number | null = null;
+      if (trimmedThreshold !== "") {
+        const parsedNum = Number(trimmedThreshold);
+        if (!Number.isFinite(parsedNum) || !Number.isInteger(parsedNum)) {
+          throw new Error("Threshold must be a whole number");
+        }
+        if (parsedNum < 0) {
+          throw new Error("Threshold cannot be negative");
+        }
+        testAlertThresholdPerDay = parsedNum;
+      }
       const res = await apiRequest("PUT", NOTIFICATION_SETTINGS_PATH, {
         slackWebhookUrl: slackWebhookUrl.trim(),
         emailRecipients: recipients,
+        testAlertThresholdPerDay,
       });
       return (await res.json()) as BackfillNotificationSettings;
     },
@@ -3709,6 +3739,11 @@ export function BackfillNotificationSettingsCard() {
       queryClient.setQueryData(NOTIFICATION_SETTINGS_KEY, data);
       setSlackWebhookUrl(data.slackWebhookUrl ?? "");
       setEmailRecipientsRaw((data.emailRecipients ?? []).join(", "));
+      setThresholdRaw(
+        data.testAlertThresholdPerDay == null
+          ? ""
+          : String(data.testAlertThresholdPerDay),
+      );
       toast({
         title: "Notification settings saved",
         description: "Future backfill alerts will use the new destinations.",
@@ -3799,6 +3834,29 @@ export function BackfillNotificationSettingsCard() {
           <p className="text-xs text-muted-foreground">
             Comma-separated list (up to 50). Leave empty to disable email
             alerts.
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="test-alert-threshold" className="text-xs">
+            Test-alert breach threshold (per 24h)
+          </Label>
+          <Input
+            id="test-alert-threshold"
+            type="number"
+            inputMode="numeric"
+            min={0}
+            step={1}
+            placeholder={String(thresholdDefault)}
+            value={thresholdRaw}
+            onChange={(e) => setThresholdRaw(e.target.value)}
+            disabled={settingsQuery.isLoading}
+            data-testid="input-test-alert-threshold"
+          />
+          <p className="text-xs text-muted-foreground">
+            Notify the destinations above when the test-alert button is
+            clicked at least this many times in any 24h window. Leave empty
+            to use the default of {thresholdDefault}; set to 0 to disable
+            the breach alert entirely.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">

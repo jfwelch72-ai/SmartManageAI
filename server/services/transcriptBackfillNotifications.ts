@@ -24,11 +24,13 @@ import {
   getCrmTranscriptBackfillJob,
   getCrmTranscriptBackfillNotificationSettings,
   getCrmTranscriptBackfillOperatorContact,
+  getCrmTranscriptBackfillTestAlertUsageSummary,
   listCrmTranscriptBackfillAlertDeliveries,
   listOrgAdminsForAlertFailureFallback,
   pruneAlertFallbackSentBefore,
   recordAlertFallbackSent,
   recordCrmTranscriptBackfillAlertDelivery,
+  recordCrmTranscriptBackfillThresholdAlert,
   releaseBackfillAlertResendCooldown,
   tryReserveBackfillAlertResendCooldown,
   wasAlertFallbackSentSince,
@@ -1499,4 +1501,212 @@ export async function runAlertFailureDigest(
     totalFailures,
     prunedBefore,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Task #1094 — passive threshold-breach notifier for the test-alert button.
+//
+// Task #1060 added a usage rollup that surfaces test-alert frequency on the
+// admin transcript-backfill page, but that information is only useful if an
+// admin happens to look. A threshold check (default: 20 dispatches in the
+// trailing 24h per org, configurable from `BackfillNotificationSettingsCard`)
+// fans out a Slack/email notification through the same destinations the
+// run-completed alerts use, so runaway scripts or curious users get caught
+// even when nobody is watching the admin page.
+//
+// The notifier is fire-and-forget from the test-alert POST handler: it must
+// never block the admin's button click and must never throw. A throttle
+// window (default: 1h) prevents the alert channel from being spammed on
+// every subsequent click while a sustained breach is unfolding.
+// ---------------------------------------------------------------------------
+
+export const DEFAULT_TEST_ALERT_THRESHOLD_PER_DAY = 20;
+export const TEST_ALERT_THRESHOLD_NOTIFY_THROTTLE_MS = 60 * 60 * 1000; // 1h
+
+export type TestAlertThresholdBreach = {
+  orgId: string;
+  count: number;
+  threshold: number;
+  windowHours: number;
+  /** Pre-computed link back to the admin page for the alert body. */
+  adminUrl: string;
+};
+
+export type FormattedThresholdBreachNotification = {
+  title: string;
+  slackBody: string;
+  emailSubject: string;
+  emailText: string;
+  emailHtml: string;
+};
+
+export function formatTestAlertThresholdBreach(
+  breach: TestAlertThresholdBreach,
+): FormattedThresholdBreachNotification {
+  const title = "Transcript backfill test-alert button hit usage threshold";
+  const summary =
+    `Org ${breach.orgId} dispatched ${breach.count} test alerts in the last ` +
+    `${breach.windowHours}h (threshold: ${breach.threshold}).`;
+
+  const slackBody = [
+    `*Org:* \`${breach.orgId}\``,
+    `*Count:* ${breach.count} test alerts in the last ${breach.windowHours}h`,
+    `*Threshold:* ${breach.threshold}`,
+    `*Review:* <${breach.adminUrl}|Open admin transcript backfill>`,
+  ].join("\n");
+
+  const emailSubject = `[CRM] Test-alert usage exceeded threshold (${breach.count}/${breach.threshold} in ${breach.windowHours}h)`;
+  const emailText = [
+    summary,
+    ``,
+    `Open the admin transcript-backfill page to review who is firing the button:`,
+    breach.adminUrl,
+  ].join("\n");
+
+  const escape = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const emailHtml = `
+    <div style="font-family:-apple-system,system-ui,sans-serif;font-size:14px;color:#111;">
+      <p style="margin:0 0 12px;"><strong>${escape(summary)}</strong></p>
+      <table cellspacing="0" cellpadding="4" style="border-collapse:collapse;">
+        <tr><td><strong>Org</strong></td><td><code>${escape(breach.orgId)}</code></td></tr>
+        <tr><td><strong>Count (${breach.windowHours}h)</strong></td><td>${breach.count}</td></tr>
+        <tr><td><strong>Threshold</strong></td><td>${breach.threshold}</td></tr>
+      </table>
+      <p style="margin:16px 0 0;">
+        <a href="${escape(breach.adminUrl)}" style="color:#2563eb;">Open the admin transcript-backfill page</a>
+        to review who is firing the button.
+      </p>
+    </div>
+  `.trim();
+
+  return { title, slackBody, emailSubject, emailText, emailHtml };
+}
+
+function buildAdminTranscriptBackfillUrl(): string {
+  const baseUrl = (process.env.APP_BASE_URL || "").replace(/\/$/, "");
+  return baseUrl
+    ? `${baseUrl}/admin/transcript-backfill`
+    : "/admin/transcript-backfill";
+}
+
+export type ThresholdBreachCheckResult =
+  | { dispatched: false; reason: "BELOW_THRESHOLD" | "THROTTLED" | "NO_DESTINATIONS" }
+  | { dispatched: true; count: number; threshold: number };
+
+/**
+ * Run the threshold check for an org. Intended to be called fire-and-forget
+ * from the test-alert POST handler after the audit row has been written.
+ * Never throws; a transport / DB failure is logged and reported as
+ * `dispatched: false`.
+ */
+export async function checkAndNotifyTestAlertThresholdBreach(
+  orgId: string,
+  options: { now?: Date } = {},
+): Promise<ThresholdBreachCheckResult> {
+  const now = options.now ?? new Date();
+  try {
+    const settings = await getCrmTranscriptBackfillNotificationSettings(orgId);
+    const threshold =
+      settings?.testAlertThresholdPerDay ?? DEFAULT_TEST_ALERT_THRESHOLD_PER_DAY;
+    // A non-positive threshold disables the check entirely so admins can
+    // opt out without us having to model a separate "enabled" flag.
+    if (!Number.isFinite(threshold) || threshold <= 0) {
+      return { dispatched: false, reason: "BELOW_THRESHOLD" };
+    }
+
+    const usage = await getCrmTranscriptBackfillTestAlertUsageSummary({
+      organizationId: orgId,
+    });
+    if (usage.last24h < threshold) {
+      return { dispatched: false, reason: "BELOW_THRESHOLD" };
+    }
+
+    if (
+      settings?.lastThresholdAlertAt &&
+      now.getTime() - new Date(settings.lastThresholdAlertAt).getTime() <
+        TEST_ALERT_THRESHOLD_NOTIFY_THROTTLE_MS
+    ) {
+      return { dispatched: false, reason: "THROTTLED" };
+    }
+
+    const destinations = await resolveBackfillNotificationDestinations(orgId);
+    const slackWebhook = (destinations.slackWebhookUrl ?? "").trim();
+    const recipients = destinations.emailRecipients;
+    if (!slackWebhook && recipients.length === 0) {
+      return { dispatched: false, reason: "NO_DESTINATIONS" };
+    }
+
+    const formatted = formatTestAlertThresholdBreach({
+      orgId,
+      count: usage.last24h,
+      threshold,
+      windowHours: 24,
+      adminUrl: buildAdminTranscriptBackfillUrl(),
+    });
+
+    const tasks: Array<Promise<unknown>> = [];
+    if (slackWebhook && isValidSlackWebhookUrl(slackWebhook)) {
+      tasks.push(
+        postSlackWebhook(slackWebhook, formatted.title, formatted.slackBody)
+          .catch((err) => {
+            logWarn(
+              "transcriptBackfillNotifications: threshold-breach slack dispatch failed",
+              {
+                orgId,
+                error: err instanceof Error ? err.message : String(err),
+              },
+            );
+          }),
+      );
+    }
+    if (recipients.length > 0) {
+      tasks.push(
+        sendEmail({
+          to: recipients,
+          subject: formatted.emailSubject,
+          text: formatted.emailText,
+          html: formatted.emailHtml,
+        }).catch((err) => {
+          logWarn(
+            "transcriptBackfillNotifications: threshold-breach email dispatch failed",
+            {
+              orgId,
+              error: err instanceof Error ? err.message : String(err),
+            },
+          );
+        }),
+      );
+    }
+    await Promise.all(tasks);
+
+    try {
+      await recordCrmTranscriptBackfillThresholdAlert(orgId, now);
+    } catch (err) {
+      logWarn(
+        "transcriptBackfillNotifications: failed to persist threshold-alert timestamp",
+        {
+          orgId,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      );
+    }
+
+    logInfo("transcriptBackfillNotifications: threshold-breach dispatched", {
+      orgId,
+      count: usage.last24h,
+      threshold,
+    });
+    return { dispatched: true, count: usage.last24h, threshold };
+  } catch (err) {
+    logWarn(
+      "transcriptBackfillNotifications: threshold-breach check threw",
+      {
+        orgId,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    );
+    return { dispatched: false, reason: "BELOW_THRESHOLD" };
+  }
 }

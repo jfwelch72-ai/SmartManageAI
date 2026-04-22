@@ -1835,6 +1835,16 @@ export const crmTranscriptBackfillNotificationSettings = pgTable(
       };
       operatorDisplay: string;
     } | null>(),
+    // Task #1094 — admin-tunable threshold for the test-alert button. When the
+    // number of test-alerts dispatched in the trailing 24h reaches this
+    // value, a passive breach notification is fanned out via the same
+    // backfill alert plumbing so runaway scripts/curious users get caught
+    // even when nobody is actively watching `/admin/transcript-backfill`.
+    // `null` falls back to the default in `transcriptBackfillNotifications.ts`.
+    testAlertThresholdPerDay: integer("test_alert_threshold_per_day"),
+    // Throttle ledger so a sustained breach can't spam the alert channel on
+    // every subsequent click — we only re-notify after the throttle window.
+    lastThresholdAlertAt: timestamp("last_threshold_alert_at"),
   },
 );
 export type CrmTranscriptBackfillNotificationSettings =
