@@ -161,6 +161,32 @@ interface NotificationConfig {
   lastTestAt: string | null;
   lastTestResult: BackfillTestAlertResult | null;
   usingEnvFallback: boolean;
+  // Task #1078 — heartbeat staleness window in ms (5 min default, tunable via
+  // CRM_BACKFILL_HEARTBEAT_STALE_SECONDS server-side). Used to render the
+  // cross-org Cancel hint copy so the UI reflects the live server threshold
+  // instead of a hardcoded "5 minutes". Optional so older deploys/tests that
+  // don't include it gracefully fall back to the default.
+  heartbeatStaleMs?: number;
+}
+
+// Task #1078 — render the heartbeat staleness window in the most natural unit
+// for the cross-org Cancel hint. Whole minutes get "X minutes"; sub-minute
+// values fall back to seconds so an ops-tuned 90s window doesn't render as
+// "1.5 minutes". Singular/plural handled to keep the copy readable.
+function formatHeartbeatStaleWindow(ms: number | undefined): string {
+  const fallbackMs = 5 * 60 * 1000;
+  const value = typeof ms === "number" && Number.isFinite(ms) && ms > 0 ? ms : fallbackMs;
+  const totalSeconds = Math.round(value / 1000);
+  if (totalSeconds % 60 === 0) {
+    const minutes = totalSeconds / 60;
+    return `${minutes} ${minutes === 1 ? "minute" : "minutes"}`;
+  }
+  if (totalSeconds < 60) {
+    return `${totalSeconds} ${totalSeconds === 1 ? "second" : "seconds"}`;
+  }
+  const minutes = totalSeconds / 60;
+  const rounded = Math.round(minutes * 10) / 10;
+  return `${rounded} minutes`;
 }
 
 interface PendingRecording {
@@ -1240,17 +1266,19 @@ export default function AdminTranscriptBackfillPage() {
             {/* Task #1074 — explain the cooperative-vs-reaped Cancel
                 outcomes so support staff don't have to re-derive the
                 heartbeat-staleness behavior every time they see the two
-                different toasts. The 5-minute window mirrors the
-                BACKFILL_HEARTBEAT_STALE_MS constant in
-                server/crmCallsRoutes.ts; keep them in sync. */}
+                different toasts. Task #1078 — render the live server-side
+                threshold from notificationConfig.heartbeatStaleMs so an
+                ops-tuned window (e.g. 10 minutes for slower workers)
+                doesn't make this hint silently lie. */}
             <p
               className="mt-3 text-xs text-muted-foreground"
               data-testid="text-cross-org-cancel-hint"
             >
               Cancel asks the worker to stop after the current recording
               (&ldquo;Cancellation requested&rdquo;). If its heartbeat is older
-              than 5 minutes the worker is presumed dead and the row is reaped
-              immediately to FAILED (&ldquo;Backfill marked as failed&rdquo;).
+              than {formatHeartbeatStaleWindow(notificationConfig?.heartbeatStaleMs)}{" "}
+              the worker is presumed dead and the row is reaped immediately to
+              FAILED (&ldquo;Backfill marked as failed&rdquo;).
             </p>
           </CardContent>
         </Card>

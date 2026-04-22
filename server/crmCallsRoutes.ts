@@ -989,9 +989,32 @@ export type BackfillJobState = {
 };
 
 const MAX_BACKFILL_ERROR_SAMPLES = 50;
-// If a job's heartbeat is older than this, the worker is presumed dead (the
-// process restarted) and the job is marked FAILED on the next read.
-const BACKFILL_HEARTBEAT_STALE_MS = 5 * 60 * 1000;
+// Task #1078 — the heartbeat staleness window is the single source of truth
+// for "the worker is presumed dead, reap the row". It used to be a hardcoded
+// 5 minutes, which made the cross-org Cancel hint copy on the admin page
+// silently lie if ops ever tuned the threshold (e.g. 10 minutes for slower
+// workers). Read it from CRM_BACKFILL_HEARTBEAT_STALE_SECONDS so ops can tune
+// it without a code change, and surface the resolved value to the client via
+// the notification-config endpoint so the UI copy stays in sync automatically.
+// Bounds: keep at least 30s (anything shorter races the heartbeat cadence) and
+// at most 60 minutes (longer effectively disables reaping). Falls back to 5
+// minutes on missing/invalid input.
+const DEFAULT_BACKFILL_HEARTBEAT_STALE_MS = 5 * 60 * 1000;
+const MIN_BACKFILL_HEARTBEAT_STALE_MS = 30 * 1000;
+const MAX_BACKFILL_HEARTBEAT_STALE_MS = 60 * 60 * 1000;
+function resolveBackfillHeartbeatStaleMs(): number {
+  const raw = process.env.CRM_BACKFILL_HEARTBEAT_STALE_SECONDS;
+  if (!raw || !raw.trim()) return DEFAULT_BACKFILL_HEARTBEAT_STALE_MS;
+  const parsed = Number(raw.trim());
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_BACKFILL_HEARTBEAT_STALE_MS;
+  }
+  const ms = Math.round(parsed * 1000);
+  if (ms < MIN_BACKFILL_HEARTBEAT_STALE_MS) return MIN_BACKFILL_HEARTBEAT_STALE_MS;
+  if (ms > MAX_BACKFILL_HEARTBEAT_STALE_MS) return MAX_BACKFILL_HEARTBEAT_STALE_MS;
+  return ms;
+}
+export const BACKFILL_HEARTBEAT_STALE_MS = resolveBackfillHeartbeatStaleMs();
 
 export function __rowToBackfillStateForTests(row: CrmTranscriptBackfillJob): BackfillJobState {
   return rowToState(row);
@@ -2595,7 +2618,11 @@ router.get(
     try {
       const orgId = resolveOrg(req, res);
       if (!orgId) return;
-      res.json(await getBackfillNotificationConfig(orgId));
+      // Task #1078 — also surface the heartbeat staleness window so the
+      // admin UI's cross-org Cancel hint can render the live value instead
+      // of a hardcoded "5 minutes" string.
+      const cfg = await getBackfillNotificationConfig(orgId);
+      res.json({ ...cfg, heartbeatStaleMs: BACKFILL_HEARTBEAT_STALE_MS });
     } catch (e) {
       next(e);
     }
