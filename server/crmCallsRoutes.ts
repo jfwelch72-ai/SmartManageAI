@@ -37,6 +37,7 @@ import { sendEmail } from "./services/emailService";
 import {
   createCrmTranscriptBackfillJob,
   getCrmTranscriptBackfillJob,
+  getCrmTranscriptBackfillNotificationSettings,
   getCrmTranscriptBackfillOperatorContact,
   getRunningCrmTranscriptBackfillJob,
   listCrmTranscriptBackfillJobs,
@@ -44,11 +45,13 @@ import {
   getCrmTranscriptBackfillLineages,
   listMostRecentRunningCrmTranscriptBackfillJobsPerOrg,
   updateCrmTranscriptBackfillJob,
+  upsertCrmTranscriptBackfillNotificationSettings,
 } from "./storage";
 import {
   notifyBackfillCompletion,
   sendTestBackfillAlert,
 } from "./services/transcriptBackfillNotifications";
+import { isValidSlackWebhookUrl } from "./services/slackService";
 import {
   requireAuth,
   requireRole,
@@ -2162,6 +2165,87 @@ router.get(
               : [],
           };
         }),
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #1017 — per-organization Slack/email destinations for transcript
+// backfill alerts. Admins can self-serve from the in-app settings page so
+// they no longer need an ops change to set CRM_BACKFILL_NOTIFY_* env vars.
+router.get(
+  "/api/crm/calls/transcripts/backfill/notification-settings",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+      const settings = await getCrmTranscriptBackfillNotificationSettings(orgId);
+      res.json({
+        slackWebhookUrl: settings?.slackWebhookUrl ?? "",
+        emailRecipients: settings?.emailRecipients ?? [],
+        updatedAt: settings?.updatedAt ?? null,
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+const backfillNotificationSettingsSchema = z.object({
+  // Empty string clears the value. We validate non-empty values are valid
+  // Slack incoming webhook URLs so admins get a clear error before the next
+  // run silently fails to dispatch.
+  slackWebhookUrl: z
+    .string()
+    .trim()
+    .max(2048)
+    .refine((v) => v === "" || isValidSlackWebhookUrl(v), {
+      message: "Slack webhook URL must start with https://hooks.slack.com/",
+    }),
+  // Each entry must be a valid email; empty array clears all recipients.
+  emailRecipients: z
+    .array(z.string().trim().email("Each recipient must be a valid email address"))
+    .max(50, "Up to 50 email recipients are allowed"),
+});
+
+router.put(
+  "/api/crm/calls/transcripts/backfill/notification-settings",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+      const parsed = backfillNotificationSettingsSchema.safeParse(req.body);
+      if (!parsed.success) {
+        const first = parsed.error.errors[0];
+        return res.status(400).json({
+          error: first?.message ?? "Invalid notification settings",
+          fieldErrors: parsed.error.flatten().fieldErrors,
+        });
+      }
+      // De-dup recipients case-insensitively while preserving original case.
+      const seen = new Set<string>();
+      const recipients: string[] = [];
+      for (const r of parsed.data.emailRecipients) {
+        const key = r.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        recipients.push(r);
+      }
+      const saved = await upsertCrmTranscriptBackfillNotificationSettings(orgId, {
+        slackWebhookUrl: parsed.data.slackWebhookUrl ? parsed.data.slackWebhookUrl : null,
+        emailRecipients: recipients,
+        updatedById: req.user?.id ?? null,
+      });
+      res.json({
+        slackWebhookUrl: saved.slackWebhookUrl ?? "",
+        emailRecipients: saved.emailRecipients ?? [],
+        updatedAt: saved.updatedAt,
       });
     } catch (e) {
       next(e);

@@ -17,7 +17,10 @@
 import { sendSlackMessage, isValidSlackWebhookUrl } from "./slackService";
 import { sendEmail } from "./emailService";
 import { logInfo, logWarn } from "../utils/logger";
-import type { CrmTranscriptBackfillOperatorContact } from "../storage";
+import {
+  getCrmTranscriptBackfillNotificationSettings,
+  type CrmTranscriptBackfillOperatorContact,
+} from "../storage";
 
 export type BackfillNotificationJob = {
   id: string;
@@ -148,24 +151,69 @@ export function formatBackfillCompletionNotification(
 }
 
 /**
+ * Resolved destinations for a single notification dispatch — exported for
+ * testing and so the caller can inject pre-fetched settings if it wants to
+ * avoid a second DB round-trip.
+ */
+export type ResolvedBackfillNotificationDestinations = {
+  slackWebhookUrl: string | null;
+  emailRecipients: string[];
+};
+
+/**
+ * Task #1017 — resolve where to send alerts for a given org. Per-org settings
+ * (configured by admins from the in-app settings UI) are the primary source;
+ * env vars are kept as a fallback so existing deployments keep working until
+ * they migrate. We treat the per-org row as authoritative as soon as ANY
+ * destination is set on it, so an admin can intentionally clear a destination
+ * without it silently re-falling-back to the env var.
+ */
+export async function resolveBackfillNotificationDestinations(
+  orgId: string,
+): Promise<ResolvedBackfillNotificationDestinations> {
+  const settings = await getCrmTranscriptBackfillNotificationSettings(orgId);
+  if (settings) {
+    return {
+      slackWebhookUrl: (settings.slackWebhookUrl ?? "").trim() || null,
+      emailRecipients: (settings.emailRecipients ?? [])
+        .map((s) => s.trim())
+        .filter(Boolean),
+    };
+  }
+  const envSlack = (process.env.CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK || "").trim();
+  const envEmail = (process.env.CRM_BACKFILL_NOTIFY_EMAIL_TO || "").trim();
+  return {
+    slackWebhookUrl: envSlack || null,
+    emailRecipients: envEmail
+      ? envEmail
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean)
+      : [],
+  };
+}
+
+/**
  * Dispatches the formatted notification to whichever transports are
- * configured via env. Both channels are best-effort: a transport failure is
- * logged but never throws, so the caller (the backfill worker's `finally`
- * block) can keep doing its bookkeeping.
- *
- * Configuration:
- *   - `CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK` — Slack incoming webhook URL.
- *   - `CRM_BACKFILL_NOTIFY_EMAIL_TO` — comma-separated recipient list.
- *
- * If neither is set the function is a no-op (with a debug log).
+ * configured. Per-organization settings (Task #1017) are the primary source;
+ * env vars (`CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK`,
+ * `CRM_BACKFILL_NOTIFY_EMAIL_TO`) are used only when no per-org row exists.
+ * Both channels are best-effort: a transport failure is logged but never
+ * throws, so the caller (the backfill worker's `finally` block) can keep
+ * doing its bookkeeping. If neither destination is set the function is a
+ * no-op.
  */
 export async function notifyBackfillCompletion(
   job: BackfillNotificationJob,
   operator: CrmTranscriptBackfillOperatorContact | null,
+  destinationsOverride?: ResolvedBackfillNotificationDestinations,
 ): Promise<void> {
-  const slackWebhook = (process.env.CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK || "").trim();
-  const emailTo = (process.env.CRM_BACKFILL_NOTIFY_EMAIL_TO || "").trim();
-  if (!slackWebhook && !emailTo) return;
+  const destinations =
+    destinationsOverride ??
+    (await resolveBackfillNotificationDestinations(job.orgId));
+  const slackWebhook = destinations.slackWebhookUrl ?? "";
+  const recipients = destinations.emailRecipients;
+  if (!slackWebhook && recipients.length === 0) return;
 
   const formatted = formatBackfillCompletionNotification(job, operator);
 
@@ -174,8 +222,8 @@ export async function notifyBackfillCompletion(
   if (slackWebhook) {
     if (!isValidSlackWebhookUrl(slackWebhook)) {
       logWarn(
-        "transcriptBackfillNotifications: ignoring invalid CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK",
-        { jobId: job.id },
+        "transcriptBackfillNotifications: ignoring invalid Slack webhook URL",
+        { jobId: job.id, orgId: job.orgId },
       );
     } else {
       tasks.push(
@@ -189,26 +237,20 @@ export async function notifyBackfillCompletion(
     }
   }
 
-  if (emailTo) {
-    const recipients = emailTo
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (recipients.length > 0) {
-      tasks.push(
-        sendEmail({
-          to: recipients,
-          subject: formatted.emailSubject,
-          text: formatted.emailText,
-          html: formatted.emailHtml,
-        }).catch((err) => {
-          logWarn("transcriptBackfillNotifications: email dispatch failed", {
-            jobId: job.id,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }),
-      );
-    }
+  if (recipients.length > 0) {
+    tasks.push(
+      sendEmail({
+        to: recipients,
+        subject: formatted.emailSubject,
+        text: formatted.emailText,
+        html: formatted.emailHtml,
+      }).catch((err) => {
+        logWarn("transcriptBackfillNotifications: email dispatch failed", {
+          jobId: job.id,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }),
+    );
   }
 
   await Promise.all(tasks);

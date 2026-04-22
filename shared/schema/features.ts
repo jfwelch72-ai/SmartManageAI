@@ -1792,6 +1792,31 @@ export const insertCrmTranscriptBackfillJobSchema = createInsertSchema(crmTransc
 export type InsertCrmTranscriptBackfillJob = z.infer<typeof insertCrmTranscriptBackfillJobSchema>;
 export type CrmTranscriptBackfillJob = typeof crmTranscriptBackfillJobs.$inferSelect;
 
+// Task #1017 — per-organization destinations for transcript backfill alerts.
+// Replaces the env-var fallback as the primary source so admins can configure
+// the Slack webhook + email recipients from the in-app settings page instead
+// of needing an ops change. One row per organization (PK = organizationId);
+// missing rows mean "fall back to env vars".
+export const crmTranscriptBackfillNotificationSettings = pgTable(
+  "crm_transcript_backfill_notification_settings",
+  {
+    organizationId: varchar("organization_id")
+      .primaryKey()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    slackWebhookUrl: text("slack_webhook_url"),
+    emailRecipients: text("email_recipients")
+      .array()
+      .notNull()
+      .default(sql`ARRAY[]::text[]`),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+    updatedById: varchar("updated_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+  },
+);
+export type CrmTranscriptBackfillNotificationSettings =
+  typeof crmTranscriptBackfillNotificationSettings.$inferSelect;
+
 // CRM Quotes - lightweight proposals/quotes generated directly from opportunities
 export const crmQuotes = pgTable("crm_quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

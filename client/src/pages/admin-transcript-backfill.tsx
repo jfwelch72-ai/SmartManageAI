@@ -665,6 +665,8 @@ export default function AdminTranscriptBackfillPage() {
         </CardContent>
       </Card>
 
+      <BackfillNotificationSettingsCard />
+
       {job && (
         <Card data-testid="card-progress">
           <CardHeader className="pb-3">
@@ -1552,5 +1554,139 @@ function RetryLineageChain({
         );
       })}
     </div>
+  );
+}
+
+
+// ---------------------------------------------------------------------------
+// Task #1017 — admin-controlled per-org destinations for backfill alerts.
+// Lives in this file (not its own page) so the settings sit right next to the
+// thing they configure, matching the rest of this admin tool's layout.
+// ---------------------------------------------------------------------------
+interface BackfillNotificationSettings {
+  slackWebhookUrl: string;
+  emailRecipients: string[];
+  updatedAt: string | null;
+}
+const NOTIFICATION_SETTINGS_PATH =
+  "/api/crm/calls/transcripts/backfill/notification-settings";
+const NOTIFICATION_SETTINGS_KEY = [NOTIFICATION_SETTINGS_PATH] as const;
+
+function BackfillNotificationSettingsCard() {
+  const { toast } = useToast();
+  const settingsQuery = useQuery<BackfillNotificationSettings>({
+    queryKey: NOTIFICATION_SETTINGS_KEY,
+  });
+
+  const [slackWebhookUrl, setSlackWebhookUrl] = useState("");
+  const [emailRecipientsRaw, setEmailRecipientsRaw] = useState("");
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    if (settingsQuery.data && !hydrated) {
+      setSlackWebhookUrl(settingsQuery.data.slackWebhookUrl ?? "");
+      setEmailRecipientsRaw((settingsQuery.data.emailRecipients ?? []).join(", "));
+      setHydrated(true);
+    }
+  }, [settingsQuery.data, hydrated]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const recipients = emailRecipientsRaw
+        .split(/[,\n;]/)
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const res = await apiRequest("PUT", NOTIFICATION_SETTINGS_PATH, {
+        slackWebhookUrl: slackWebhookUrl.trim(),
+        emailRecipients: recipients,
+      });
+      return (await res.json()) as BackfillNotificationSettings;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(NOTIFICATION_SETTINGS_KEY, data);
+      setSlackWebhookUrl(data.slackWebhookUrl ?? "");
+      setEmailRecipientsRaw((data.emailRecipients ?? []).join(", "));
+      toast({
+        title: "Notification settings saved",
+        description: "Future backfill alerts will use the new destinations.",
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Failed to save notification settings",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  return (
+    <Card data-testid="card-notification-settings">
+      <CardHeader className="pb-3">
+        <CardTitle>Backfill alert destinations</CardTitle>
+        <CardDescription>
+          Where to send Slack and email notifications when a transcript backfill
+          run completes or fails. Leave blank to silence that channel.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="slack-webhook-url" className="text-xs">
+            Slack incoming webhook URL
+          </Label>
+          <Input
+            id="slack-webhook-url"
+            type="url"
+            placeholder="https://hooks.slack.com/services/…"
+            value={slackWebhookUrl}
+            onChange={(e) => setSlackWebhookUrl(e.target.value)}
+            disabled={settingsQuery.isLoading}
+            data-testid="input-slack-webhook"
+          />
+          <p className="text-xs text-muted-foreground">
+            Must start with <code>https://hooks.slack.com/</code>. Leave empty
+            to disable Slack alerts.
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="email-recipients" className="text-xs">
+            Email recipients
+          </Label>
+          <Input
+            id="email-recipients"
+            type="text"
+            placeholder="alerts@example.com, ops@example.com"
+            value={emailRecipientsRaw}
+            onChange={(e) => setEmailRecipientsRaw(e.target.value)}
+            disabled={settingsQuery.isLoading}
+            data-testid="input-email-recipients"
+          />
+          <p className="text-xs text-muted-foreground">
+            Comma-separated list (up to 50). Leave empty to disable email
+            alerts.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <Button
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending || settingsQuery.isLoading}
+            data-testid="button-save-notification-settings"
+          >
+            {saveMutation.isPending && (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            )}
+            Save settings
+          </Button>
+          {settingsQuery.data?.updatedAt && (
+            <span
+              className="text-xs text-muted-foreground"
+              data-testid="text-notification-settings-updated-at"
+            >
+              Last updated {format(new Date(settingsQuery.data.updatedAt), "PPpp")}
+            </span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

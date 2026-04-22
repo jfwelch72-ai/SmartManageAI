@@ -2,9 +2,11 @@ import { db } from "./db";
 import {
   executiveDigests,
   crmTranscriptBackfillJobs,
+  crmTranscriptBackfillNotificationSettings,
   organizations,
   users,
   type CrmTranscriptBackfillJob,
+  type CrmTranscriptBackfillNotificationSettings,
   type InsertCrmTranscriptBackfillJob,
 } from "@shared/schema";
 import { eq, and, desc, sql, ilike, or, gte, lte, inArray, type SQL } from "drizzle-orm";
@@ -437,6 +439,54 @@ export async function listMostRecentRunningCrmTranscriptBackfillJobsPerOrg(): Pr
     result.push(row);
   }
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// Task #1017 — per-organization Slack/email destinations for transcript
+// backfill alerts. Replaces the env-var fallback as the primary source so
+// admins can self-serve from the in-app settings page.
+// ---------------------------------------------------------------------------
+export type CrmTranscriptBackfillNotificationSettingsUpsert = {
+  slackWebhookUrl: string | null;
+  emailRecipients: string[];
+  updatedById: string | null;
+};
+
+export async function getCrmTranscriptBackfillNotificationSettings(
+  organizationId: string,
+): Promise<CrmTranscriptBackfillNotificationSettings | null> {
+  const [row] = await db
+    .select()
+    .from(crmTranscriptBackfillNotificationSettings)
+    .where(eq(crmTranscriptBackfillNotificationSettings.organizationId, organizationId))
+    .limit(1);
+  return row ?? null;
+}
+
+export async function upsertCrmTranscriptBackfillNotificationSettings(
+  organizationId: string,
+  data: CrmTranscriptBackfillNotificationSettingsUpsert,
+): Promise<CrmTranscriptBackfillNotificationSettings> {
+  const [row] = await db
+    .insert(crmTranscriptBackfillNotificationSettings)
+    .values({
+      organizationId,
+      slackWebhookUrl: data.slackWebhookUrl,
+      emailRecipients: data.emailRecipients,
+      updatedById: data.updatedById,
+      updatedAt: new Date(),
+    })
+    .onConflictDoUpdate({
+      target: crmTranscriptBackfillNotificationSettings.organizationId,
+      set: {
+        slackWebhookUrl: data.slackWebhookUrl,
+        emailRecipients: data.emailRecipients,
+        updatedById: data.updatedById,
+        updatedAt: new Date(),
+      },
+    })
+    .returning();
+  return row;
 }
 
 export const storage = {};

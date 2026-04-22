@@ -6,10 +6,38 @@
  * on the wording (operator name + email surfacing, deleted-user fallback,
  * retry detection, status verb).
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+
+// Task #1017 — the dispatcher now consults storage for per-org settings, so
+// stub storage out before the module under test is imported. The pure
+// formatter tests below don't touch the network or DB. Use vi.hoisted so the
+// mock fns are initialized before vi.mock factories run.
+const { mockGetSettings, mockSendSlack, mockSendEmail } = vi.hoisted(() => ({
+  mockGetSettings: vi.fn(),
+  mockSendSlack: vi.fn().mockResolvedValue(undefined),
+  mockSendEmail: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock("../storage", () => ({
+  getCrmTranscriptBackfillNotificationSettings: mockGetSettings,
+}));
+vi.mock("../services/slackService", () => ({
+  isValidSlackWebhookUrl: (u: string) => /^https:\/\/hooks\.slack\.com\//.test(u),
+  sendSlackMessage: mockSendSlack,
+}));
+vi.mock("../services/emailService", () => ({
+  sendEmail: mockSendEmail,
+}));
+vi.mock("../utils/logger", () => ({
+  logInfo: () => undefined,
+  logWarn: () => undefined,
+  logError: () => undefined,
+}));
+
 import {
   formatBackfillCompletionNotification,
   describeBackfillOperator,
+  notifyBackfillCompletion,
+  resolveBackfillNotificationDestinations,
   type BackfillNotificationJob,
 } from "../services/transcriptBackfillNotifications";
 
@@ -118,5 +146,115 @@ describe("formatBackfillCompletionNotification", () => {
     expect(out.emailHtml).not.toContain("<script>");
     expect(out.emailHtml).toContain("Ann &lt;script&gt;");
     expect(out.emailHtml).toContain("a&amp;b@x.co");
+  });
+});
+
+describe("resolveBackfillNotificationDestinations (Task #1017)", () => {
+  const ORIG_ENV = { ...process.env };
+  beforeEach(() => {
+    mockGetSettings.mockReset();
+    delete process.env.CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK;
+    delete process.env.CRM_BACKFILL_NOTIFY_EMAIL_TO;
+  });
+  afterEach(() => {
+    process.env = { ...ORIG_ENV };
+  });
+
+  it("uses per-org settings when a row exists (env vars ignored)", async () => {
+    process.env.CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK =
+      "https://hooks.slack.com/services/ENV";
+    process.env.CRM_BACKFILL_NOTIFY_EMAIL_TO = "env@example.com";
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: "https://hooks.slack.com/services/ORG",
+      emailRecipients: ["alerts@example.com", "ops@example.com"],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    const out = await resolveBackfillNotificationDestinations("org-1");
+    expect(out.slackWebhookUrl).toBe("https://hooks.slack.com/services/ORG");
+    expect(out.emailRecipients).toEqual(["alerts@example.com", "ops@example.com"]);
+  });
+
+  it("treats an explicitly-cleared per-org row as authoritative (no env fallback)", async () => {
+    process.env.CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK =
+      "https://hooks.slack.com/services/ENV";
+    process.env.CRM_BACKFILL_NOTIFY_EMAIL_TO = "env@example.com";
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: null,
+      emailRecipients: [],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    const out = await resolveBackfillNotificationDestinations("org-1");
+    expect(out.slackWebhookUrl).toBeNull();
+    expect(out.emailRecipients).toEqual([]);
+  });
+
+  it("falls back to env vars when no per-org row exists", async () => {
+    process.env.CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK =
+      "https://hooks.slack.com/services/ENV";
+    process.env.CRM_BACKFILL_NOTIFY_EMAIL_TO = "a@x.co, b@x.co";
+    mockGetSettings.mockResolvedValue(null);
+    const out = await resolveBackfillNotificationDestinations("org-1");
+    expect(out.slackWebhookUrl).toBe("https://hooks.slack.com/services/ENV");
+    expect(out.emailRecipients).toEqual(["a@x.co", "b@x.co"]);
+  });
+
+  it("returns no destinations when neither per-org nor env are set", async () => {
+    mockGetSettings.mockResolvedValue(null);
+    const out = await resolveBackfillNotificationDestinations("org-1");
+    expect(out.slackWebhookUrl).toBeNull();
+    expect(out.emailRecipients).toEqual([]);
+  });
+});
+
+describe("notifyBackfillCompletion (Task #1017)", () => {
+  beforeEach(() => {
+    mockGetSettings.mockReset();
+    mockSendSlack.mockClear();
+    mockSendEmail.mockClear();
+    delete process.env.CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK;
+    delete process.env.CRM_BACKFILL_NOTIFY_EMAIL_TO;
+  });
+
+  it("dispatches to per-org Slack + email destinations", async () => {
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: "https://hooks.slack.com/services/ORG",
+      emailRecipients: ["alerts@example.com"],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    await notifyBackfillCompletion(baseJob, null);
+    expect(mockSendSlack).toHaveBeenCalledWith(
+      "https://hooks.slack.com/services/ORG",
+      expect.any(String),
+      expect.any(String),
+    );
+    expect(mockSendEmail).toHaveBeenCalledWith(
+      expect.objectContaining({ to: ["alerts@example.com"] }),
+    );
+  });
+
+  it("is a no-op when no destinations are configured", async () => {
+    mockGetSettings.mockResolvedValue(null);
+    await notifyBackfillCompletion(baseJob, null);
+    expect(mockSendSlack).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  it("skips an invalid Slack URL but still dispatches email", async () => {
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: "https://example.com/not-slack",
+      emailRecipients: ["alerts@example.com"],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    await notifyBackfillCompletion(baseJob, null);
+    expect(mockSendSlack).not.toHaveBeenCalled();
+    expect(mockSendEmail).toHaveBeenCalled();
   });
 });
