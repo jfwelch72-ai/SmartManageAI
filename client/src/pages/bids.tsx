@@ -1034,7 +1034,7 @@ export default function BidsPage() {
             onCardClick={(b) => setLocation(`/bids/${b.code}`)}
           />
         ) : bidsView === "calendar" ? (
-          <EntityCalendarView<typeof filteredBids[number]>
+          <EntityCalendarView
             items={filteredBids
               .filter((b) => !!b.dueDate)
               .map<CalendarEntityItem<typeof filteredBids[number]>>((b) => ({
