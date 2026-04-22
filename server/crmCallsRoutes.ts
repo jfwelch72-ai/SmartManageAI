@@ -1515,6 +1515,132 @@ router.get(
   },
 );
 
+// Task #1000 — same filters as the JSON history endpoint, but stream the full
+// matching set (not just the visible page) as CSV so admins can export it for
+// auditing or sharing with stakeholders.
+router.get(
+  "/api/crm/calls/transcripts/backfill/history.csv",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+
+      const ALLOWED_STATUSES = ["RUNNING", "COMPLETED", "FAILED"];
+      const rawStatus = req.query.status;
+      const statusList = Array.isArray(rawStatus)
+        ? rawStatus.map(String)
+        : typeof rawStatus === "string" && rawStatus.length > 0
+        ? rawStatus.split(",")
+        : [];
+      const statuses = statusList
+        .map((s) => s.trim().toUpperCase())
+        .filter((s) => ALLOWED_STATUSES.includes(s));
+
+      const operatorRaw = typeof req.query.operator === "string" ? req.query.operator.trim() : "";
+      const operator = operatorRaw.length > 0 ? operatorRaw.slice(0, 200) : undefined;
+
+      const parseDate = (v: unknown): Date | undefined => {
+        if (typeof v !== "string" || v.length === 0) return undefined;
+        const d = new Date(v);
+        return Number.isNaN(d.getTime()) ? undefined : d;
+      };
+      const startedAfter = parseDate(req.query.startedAfter);
+      const startedBefore = parseDate(req.query.startedBefore);
+
+      const escapeCsv = (v: unknown): string => {
+        if (v === null || v === undefined) return "";
+        const s = String(v);
+        if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+        return s;
+      };
+
+      const HEADERS = [
+        "id",
+        "status",
+        "total",
+        "processed",
+        "succeeded",
+        "failed",
+        "operator_name",
+        "operator_email",
+        "started_at",
+        "completed_at",
+        "duration_seconds",
+      ];
+
+      // Page through the same listing the UI uses so the CSV honors the active
+      // filters but isn't capped at 100 rows. Hard cap iterations to a generous
+      // ceiling so an unbounded org can't pin the request forever.
+      const PAGE = 100;
+      const MAX_ROWS = 100_000;
+      const lines: string[] = [HEADERS.join(",")];
+      let offset = 0;
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { rows } = await listCrmTranscriptBackfillJobs(orgId, {
+          limit: PAGE,
+          offset,
+          statuses: statuses.length > 0 ? statuses : undefined,
+          operator,
+          startedAfter,
+          startedBefore,
+        });
+        if (rows.length === 0) break;
+        for (const row of rows) {
+          const fullName = [row.startedByFirstName, row.startedByLastName]
+            .filter(Boolean)
+            .join(" ")
+            .trim();
+          const operatorName = fullName || row.startedByEmail || "";
+          const startedAtIso = row.startedAt ? new Date(row.startedAt).toISOString() : "";
+          const completedAtIso = row.completedAt ? new Date(row.completedAt).toISOString() : "";
+          const durationSeconds =
+            row.startedAt && row.completedAt
+              ? Math.max(
+                  0,
+                  Math.round(
+                    (new Date(row.completedAt).getTime() - new Date(row.startedAt).getTime()) / 1000,
+                  ),
+                )
+              : "";
+          lines.push(
+            [
+              row.id,
+              row.status,
+              row.total,
+              row.processed,
+              row.succeeded,
+              row.failed,
+              operatorName,
+              row.startedByEmail ?? "",
+              startedAtIso,
+              completedAtIso,
+              durationSeconds,
+            ]
+              .map(escapeCsv)
+              .join(","),
+          );
+        }
+        offset += rows.length;
+        if (rows.length < PAGE) break;
+        if (offset >= MAX_ROWS) break;
+      }
+
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="transcript-backfill-history-${stamp}.csv"`,
+      );
+      res.send(lines.join("\n") + "\n");
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
 router.get(
   "/api/crm/calls/transcripts/backfill/:jobId",
   requireAuth,

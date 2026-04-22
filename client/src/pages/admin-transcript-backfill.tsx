@@ -32,6 +32,7 @@ import {
   ChevronsRight,
   X,
   RotateCcw,
+  Download,
 } from "lucide-react";
 import { format, formatDistanceStrict } from "date-fns";
 
@@ -92,6 +93,7 @@ export default function AdminTranscriptBackfillPage() {
   const [startedAfter, setStartedAfter] = useState<Date | undefined>(undefined);
   const [startedBefore, setStartedBefore] = useState<Date | undefined>(undefined);
   const [page, setPage] = useState(0);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setAppliedOperator(operatorInput.trim()), 300);
@@ -219,6 +221,42 @@ export default function AdminTranscriptBackfillPage() {
       toast({ title: "Failed to start backfill", description: err.message, variant: "destructive" });
     },
   });
+
+  const handleExportCsv = async () => {
+    setIsExporting(true);
+    try {
+      const params = new URLSearchParams();
+      if (statusFilter !== "ALL") params.set("status", statusFilter);
+      if (appliedOperator) params.set("operator", appliedOperator);
+      if (startedAfter) params.set("startedAfter", startedAfter.toISOString());
+      if (startedBefore) {
+        const end = new Date(startedBefore);
+        end.setHours(23, 59, 59, 999);
+        params.set("startedBefore", end.toISOString());
+      }
+      const qs = params.toString();
+      const url = `/api/crm/calls/transcripts/backfill/history.csv${qs ? `?${qs}` : ""}`;
+      const res = await apiRequest("GET", url);
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      a.download = `transcript-backfill-history-${stamp}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      toast({
+        title: "Failed to export CSV",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   const pending = summaryQuery.data?.pending ?? 0;
   const job = jobQuery.data ?? summaryQuery.data?.activeJob ?? null;
@@ -409,20 +447,40 @@ export default function AdminTranscriptBackfillPage() {
                 Past transcript backfill runs for this organization. Click a row to view error samples.
               </CardDescription>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => historyQuery.refetch()}
-              disabled={historyQuery.isFetching}
-              data-testid="button-refresh-history"
-            >
-              {historyQuery.isFetching ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <RefreshCw className="h-4 w-4 mr-2" />
-              )}
-              Refresh
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleExportCsv}
+                disabled={
+                  isExporting ||
+                  historyQuery.isLoading ||
+                  (historyQuery.data?.total ?? 0) === 0
+                }
+                data-testid="button-export-history-csv"
+              >
+                {isExporting ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4 mr-2" />
+                )}
+                Download CSV
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => historyQuery.refetch()}
+                disabled={historyQuery.isFetching}
+                data-testid="button-refresh-history"
+              >
+                {historyQuery.isFetching ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                Refresh
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
