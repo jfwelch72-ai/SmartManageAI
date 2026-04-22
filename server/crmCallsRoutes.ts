@@ -947,6 +947,7 @@ type BackfillJobState = {
   startedAt: string;
   completedAt: string | null;
   startedById: string;
+  parentJobId: string | null;
 };
 
 const MAX_BACKFILL_ERROR_SAMPLES = 50;
@@ -967,6 +968,7 @@ function rowToState(row: CrmTranscriptBackfillJob): BackfillJobState {
     startedAt: row.startedAt.toISOString(),
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,
     startedById: row.startedById ?? "",
+    parentJobId: row.parentJobId ?? null,
   };
 }
 
@@ -1540,6 +1542,139 @@ router.get(
         return res.json(rowToState(reaped ?? { ...row, status: "FAILED", completedAt: new Date() }));
       }
       res.json(rowToState(row));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #996 — targeted retry. Re-runs transcription only for the recordingIds
+// captured in a previous job's `errors` jsonb, so admins don't need to launch a
+// fresh full backfill (and re-spend Whisper credits) just to retry a handful of
+// failures. Progress is tracked as a brand new backfill job whose `parentJobId`
+// links back to the original run.
+router.post(
+  "/api/crm/calls/transcripts/backfill/:jobId/retry",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+
+      const schema = z.object({
+        concurrency: z.number().int().min(1).max(4).optional(),
+      });
+      const parsed = schema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+      }
+      const concurrency = parsed.data.concurrency ?? 2;
+
+      const parent = await getCrmTranscriptBackfillJob(req.params.jobId, orgId);
+      if (!parent) {
+        return res.status(404).json({ error: "Backfill job not found" });
+      }
+      if (parent.status === "RUNNING") {
+        return res.status(409).json({
+          error: "Cannot retry a job that is still running",
+          jobId: parent.id,
+        });
+      }
+
+      // Dedupe recordingIds — the parent's errors array may contain the same id
+      // more than once if a row failed across paginated batches.
+      const failedIds = Array.from(
+        new Set(
+          (parent.errors as Array<{ recordingId: string; error: string }> | null ?? [])
+            .map((e) => e.recordingId)
+            .filter((id): id is string => typeof id === "string" && id.length > 0),
+        ),
+      );
+      if (failedIds.length === 0) {
+        return res.status(400).json({
+          error: "No failed recordings recorded for this backfill run",
+        });
+      }
+
+      // Only retry recordings that still belong to this org and still need a
+      // transcript (status PENDING/FAILED with no stored transcript). Anything
+      // already transcribed or moved to a different state is silently skipped.
+      const eligibleRows = await db
+        .select({ id: crmCallRecordings.id })
+        .from(crmCallRecordings)
+        .innerJoin(crmCalls, eq(crmCalls.id, crmCallRecordings.callId))
+        .where(
+          and(
+            eq(crmCalls.organizationId, orgId),
+            inArray(crmCallRecordings.id, failedIds),
+            sql`${crmCallRecordings.transcript} IS NULL`,
+            inArray(crmCallRecordings.transcriptStatus, ["PENDING", "FAILED"]),
+          ),
+        );
+      const eligibleIds = eligibleRows.map((r) => r.id);
+      if (eligibleIds.length === 0) {
+        return res.status(200).json({
+          jobId: null,
+          total: 0,
+          message: "All previously failed recordings already have transcripts or are no longer eligible.",
+        });
+      }
+
+      // Guard against two concurrent backfills for the same org. A stale
+      // RUNNING row (process restart) is reaped before we proceed.
+      const existingRunning = await getRunningCrmTranscriptBackfillJob(orgId);
+      if (existingRunning) {
+        const heartbeatAgeMs =
+          Date.now() - new Date(existingRunning.heartbeatAt).getTime();
+        if (heartbeatAgeMs <= BACKFILL_HEARTBEAT_STALE_MS) {
+          return res.status(409).json({
+            error: "A transcript backfill is already running for this organization",
+            jobId: existingRunning.id,
+          });
+        }
+        await updateCrmTranscriptBackfillJob(existingRunning.id, {
+          status: "FAILED",
+          completedAt: new Date(),
+        });
+        logWarn("crmCalls: reaped stale transcript backfill job before starting a retry", {
+          jobId: existingRunning.id,
+          orgId,
+          heartbeatAgeMs,
+        });
+      }
+
+      const jobId = `retry-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const persistedRow = await createCrmTranscriptBackfillJob({
+        id: jobId,
+        organizationId: orgId,
+        status: "RUNNING",
+        total: eligibleIds.length,
+        processed: 0,
+        succeeded: 0,
+        failed: 0,
+        errors: [],
+        completedAt: null,
+        startedById: req.user!.id,
+        parentJobId: parent.id,
+      });
+      const job = rowToState(persistedRow);
+
+      logInfo("crmCalls: transcript backfill retry started", {
+        jobId,
+        parentJobId: parent.id,
+        orgId,
+        total: job.total,
+        concurrency,
+        startedById: job.startedById,
+      });
+
+      // Cap maxRecords at the eligible set size so the worker stops after
+      // re-attempting just these recordings instead of paginating into every
+      // other PENDING/FAILED row in the org.
+      void runTranscriptBackfill(job, eligibleIds, concurrency, eligibleIds.length);
+
+      res.status(202).json({ jobId, total: job.total, parentJobId: parent.id });
     } catch (e) {
       next(e);
     }

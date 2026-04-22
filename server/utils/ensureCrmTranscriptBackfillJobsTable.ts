@@ -34,5 +34,12 @@ export async function ensureCrmTranscriptBackfillJobsTable(): Promise<void> {
   await db.execute(
     sql`CREATE INDEX IF NOT EXISTS "crm_transcript_backfill_jobs_started_at_idx" ON "crm_transcript_backfill_jobs"("started_at")`,
   );
+  // Task #996 — link a targeted retry job back to its parent run.
+  await db.execute(
+    sql`ALTER TABLE "crm_transcript_backfill_jobs" ADD COLUMN IF NOT EXISTS "parent_job_id" varchar`,
+  );
+  await db.execute(
+    sql`CREATE INDEX IF NOT EXISTS "crm_transcript_backfill_jobs_parent_idx" ON "crm_transcript_backfill_jobs"("parent_job_id")`,
+  );
   logInfo("[migration] crm_transcript_backfill_jobs table ready");
 }

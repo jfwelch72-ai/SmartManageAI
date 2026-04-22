@@ -1761,6 +1761,9 @@ export const crmTranscriptBackfillJobs = pgTable("crm_transcript_backfill_jobs",
   failed: integer("failed").notNull().default(0),
   errors: jsonb("errors").$type<Array<{ recordingId: string; error: string }>>().notNull().default([]),
   startedById: varchar("started_by_id").references(() => users.id, { onDelete: "set null" }),
+  // Task #996 — when this job is a targeted retry of a previous run's failed
+  // recordings, link back to the original job so admins can trace the chain.
+  parentJobId: varchar("parent_job_id"),
   startedAt: timestamp("started_at").notNull().defaultNow(),
   completedAt: timestamp("completed_at"),
   heartbeatAt: timestamp("heartbeat_at").notNull().defaultNow(),
@@ -1769,6 +1772,7 @@ export const crmTranscriptBackfillJobs = pgTable("crm_transcript_backfill_jobs",
   orgIdx: index("crm_transcript_backfill_jobs_org_idx").on(table.organizationId),
   statusIdx: index("crm_transcript_backfill_jobs_status_idx").on(table.status),
   startedAtIdx: index("crm_transcript_backfill_jobs_started_at_idx").on(table.startedAt),
+  parentJobIdx: index("crm_transcript_backfill_jobs_parent_idx").on(table.parentJobId),
 }));
 export const insertCrmTranscriptBackfillJobSchema = createInsertSchema(crmTranscriptBackfillJobs).omit({
   startedAt: true,

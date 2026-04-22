@@ -31,6 +31,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   X,
+  RotateCcw,
 } from "lucide-react";
 import { format, formatDistanceStrict } from "date-fns";
 
@@ -44,6 +45,7 @@ interface BackfillJob {
   errors: Array<{ recordingId: string; error: string }>;
   startedAt: string;
   completedAt: string | null;
+  parentJobId?: string | null;
 }
 
 interface BackfillHistoryEntry extends BackfillJob {
@@ -157,6 +159,41 @@ export default function AdminTranscriptBackfillPage() {
   const historyQuery = useQuery<BackfillHistoryResponse>({
     queryKey: [HISTORY_PATH, historyFilters],
     refetchInterval: activeJobId ? 5_000 : 30_000,
+  });
+
+  const retryMutation = useMutation({
+    mutationFn: async (parentJobId: string) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/crm/calls/transcripts/backfill/${parentJobId}/retry`,
+        {},
+      );
+      return (await res.json()) as {
+        jobId: string | null;
+        total: number;
+        message?: string;
+        parentJobId?: string;
+      };
+    },
+    onSuccess: (data) => {
+      if (data.jobId) {
+        setActiveJobId(data.jobId);
+        toast({
+          title: "Retry started",
+          description: `Re-running ${data.total} previously failed recording${data.total === 1 ? "" : "s"}.`,
+        });
+      } else {
+        toast({
+          title: "Nothing to retry",
+          description: data.message ?? "No eligible failed recordings remain.",
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
+      queryClient.invalidateQueries({ queryKey: HISTORY_KEY_BASE });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to retry", description: err.message, variant: "destructive" });
+    },
   });
 
   const startMutation = useMutation({
@@ -477,11 +514,16 @@ export default function AdminTranscriptBackfillPage() {
                 const duration = entry.completedAt
                   ? formatDistanceStrict(new Date(entry.completedAt), new Date(entry.startedAt))
                   : null;
+                const canRetry =
+                  entry.status !== "RUNNING" && entry.errors.length > 0 && !isRunning;
+                const retryingThisRow =
+                  retryMutation.isPending && retryMutation.variables === entry.id;
                 return (
                   <li key={entry.id} data-testid={`history-row-${entry.id}`}>
+                    <div className="flex items-start gap-2 p-1.5">
                     <button
                       type="button"
-                      className="w-full text-left p-3 hover-elevate active-elevate-2 flex items-start gap-3"
+                      className="flex-1 text-left p-1.5 rounded-md hover-elevate active-elevate-2 flex items-start gap-3"
                       onClick={() => setExpandedHistoryId(isExpanded ? null : entry.id)}
                       data-testid={`button-history-toggle-${entry.id}`}
                     >
@@ -531,8 +573,31 @@ export default function AdminTranscriptBackfillPage() {
                         <div className="text-xs text-muted-foreground" data-testid={`text-history-operator-${entry.id}`}>
                           Started by {operatorName} · <code className="text-[10px]">{entry.id}</code>
                         </div>
+                        {entry.parentJobId && (
+                          <div className="text-xs text-muted-foreground" data-testid={`text-history-parent-${entry.id}`}>
+                            Retry of <code className="text-[10px]">{entry.parentJobId}</code>
+                          </div>
+                        )}
                       </div>
                     </button>
+                    {canRetry && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => retryMutation.mutate(entry.id)}
+                        disabled={retryMutation.isPending || isRunning}
+                        data-testid={`button-history-retry-${entry.id}`}
+                        title="Re-run transcription for the recordings that failed in this run"
+                      >
+                        {retryingThisRow ? (
+                          <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                        ) : (
+                          <RotateCcw className="h-4 w-4 mr-1.5" />
+                        )}
+                        Retry failed
+                      </Button>
+                    )}
+                    </div>
                     {isExpanded && (
                       <div className="px-3 pb-3 pl-10" data-testid={`history-details-${entry.id}`}>
                         {entry.completedAt && (

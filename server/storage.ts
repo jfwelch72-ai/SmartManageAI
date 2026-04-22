@@ -153,6 +153,7 @@ export async function listCrmTranscriptBackfillJobs(
       failed: crmTranscriptBackfillJobs.failed,
       errors: crmTranscriptBackfillJobs.errors,
       startedById: crmTranscriptBackfillJobs.startedById,
+      parentJobId: crmTranscriptBackfillJobs.parentJobId,
       startedAt: crmTranscriptBackfillJobs.startedAt,
       completedAt: crmTranscriptBackfillJobs.completedAt,
       heartbeatAt: crmTranscriptBackfillJobs.heartbeatAt,
