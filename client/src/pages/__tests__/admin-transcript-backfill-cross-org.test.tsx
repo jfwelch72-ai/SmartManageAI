@@ -11,12 +11,22 @@
  * response without touching the real network / QueryClient. All other
  * useQuery callers in the page receive empty stable data so nothing
  * triggers a fetch in jsdom.
+ *
+ * Task #1055 — also covers the org-picker switch from the cross-org view
+ * to a single tenant. Radix's <Select> is unusable in jsdom (it relies
+ * on PointerEvents, scrollIntoView and pointer capture that the
+ * environment doesn't implement), so `@/components/ui/select` is mocked
+ * with a tiny context-driven stand-in that exposes every <SelectItem>
+ * as a clickable button while preserving the testids each item carries.
+ * That lets us drive the picker via userEvent without re-implementing
+ * Radix internals.
  */
 import { describe, it, expect, vi } from "vitest";
 import React from "react";
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 
-const summaryData = {
+const crossOrgSummaryData = {
   pending: 42,
   activeJob: null,
   crossOrg: true,
@@ -57,6 +67,32 @@ const summaryData = {
   ],
 };
 
+// Task #1055 — when the picker narrows to org-A the server returns the
+// scoped roll-up: cross-org flag clears, runningJobs is empty, and the
+// own-org RUNNING backfill is surfaced via `activeJob` so the page can
+// render its single-org progress panel.
+const singleOrgSummaryData = {
+  pending: 7,
+  activeJob: {
+    id: "job-A",
+    status: "RUNNING",
+    total: 10,
+    processed: 3,
+    succeeded: 2,
+    failed: 1,
+    errors: [],
+    failedRecordingIds: [],
+    startedAt: new Date("2026-01-01T12:00:00Z").toISOString(),
+    completedAt: null,
+    parentJobId: null,
+    concurrency: 2,
+    maxRecords: null,
+  },
+  crossOrg: false,
+  scopedOrganizationId: "org-A",
+  runningJobs: [],
+};
+
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({
     user: {
@@ -90,6 +126,55 @@ vi.mock("@/lib/queryClient", () => ({
   },
 }));
 
+// Task #1055 — replace the Radix-backed shadcn Select with a context-driven
+// stand-in. Each <SelectItem value="x"> becomes a real <button> that fires
+// the parent <Select>'s onValueChange when clicked, and the trigger props
+// (notably its data-testid) flow through onto a wrapper div so existing
+// queries keep working. This avoids dragging PointerEvent / scrollIntoView
+// shims into the test setup just to flip a controlled value.
+vi.mock("@/components/ui/select", () => {
+  const Ctx = React.createContext<{ onValueChange?: (v: string) => void }>({});
+  const Select = ({ onValueChange, children }: any) =>
+    React.createElement(Ctx.Provider, { value: { onValueChange } }, children);
+  const SelectTrigger = ({ children, ...rest }: any) =>
+    React.createElement("div", rest, children);
+  const SelectValue = ({ placeholder }: any) =>
+    React.createElement("span", null, placeholder ?? null);
+  const SelectContent = ({ children }: any) =>
+    React.createElement(React.Fragment, null, children);
+  const SelectItem = ({ value, children, ...rest }: any) => {
+    const ctx = React.useContext(Ctx);
+    return React.createElement(
+      "button",
+      {
+        ...rest,
+        type: "button",
+        onClick: () => ctx.onValueChange?.(value),
+      },
+      children,
+    );
+  };
+  const SelectGroup = ({ children }: any) =>
+    React.createElement(React.Fragment, null, children);
+  const SelectLabel = ({ children }: any) =>
+    React.createElement("span", null, children);
+  const SelectSeparator = () => null;
+  const SelectScrollUpButton = () => null;
+  const SelectScrollDownButton = () => null;
+  return {
+    Select,
+    SelectTrigger,
+    SelectValue,
+    SelectContent,
+    SelectItem,
+    SelectGroup,
+    SelectLabel,
+    SelectSeparator,
+    SelectScrollUpButton,
+    SelectScrollDownButton,
+  };
+});
+
 vi.mock("@tanstack/react-query", async () => {
   const actual: any = await vi.importActual("@tanstack/react-query");
   // Each useQuery call in the page is keyed by the endpoint path. We hand
@@ -114,12 +199,18 @@ vi.mock("@tanstack/react-query", async () => {
     if (path === "/api/crm/calls/transcripts/backfill") {
       // Two callers share this base path:
       //   * summaryQuery: keyed `[path, paramsObject]`
-      //   * jobQuery:     keyed `[path, activeJobId]` (only enabled when an
-      //                   id is set, so this branch only fires for the
-      //                   summary one in this test).
+      //   * jobQuery:     keyed `[path, activeJobId]`
       const second = Array.isArray(queryKey) ? queryKey[1] : undefined;
       if (second && typeof second === "object") {
-        return { ...base, data: summaryData };
+        // Task #1055 — when the picker narrows to a single org the page
+        // sends `{ organizationId: "<id>" }`. Returning the scoped
+        // payload here is what proves the queryKey actually changed
+        // when the dropdown's value flipped.
+        const orgId = (second as any).organizationId;
+        if (orgId === "org-A") {
+          return { ...base, data: singleOrgSummaryData };
+        }
+        return { ...base, data: crossOrgSummaryData };
       }
       return { ...base, data: undefined };
     }
@@ -150,7 +241,15 @@ vi.mock("@tanstack/react-query", async () => {
       return { ...base, data: { quietHours: null, recipients: [], suppressEmptyRuns: false } };
     }
     if (path === "/api/platform/organizations") {
-      return { ...base, data: [] };
+      // Task #1055 — populate the platform org list so the picker
+      // exposes a real org option to click.
+      return {
+        ...base,
+        data: [
+          { id: "org-A", name: "Acme Tenant", slug: "acme" },
+          { id: "org-B", name: "Beta Builders", slug: "beta" },
+        ],
+      };
     }
     return { ...base, data: undefined };
   };
@@ -220,5 +319,47 @@ describe("AdminTranscriptBackfillPage cross-org running card (Task #1037)", () =
     expect(text).toContain("5 minute");
     expect(text).toContain("heartbeat");
     expect(text).toContain("reaped");
+  });
+
+  // Task #1055 — picking a specific org from the picker has to flip the
+  // page out of the platform-wide view: the cross-org card should be
+  // gone, the pending copy should drop "all organizations" / "platform-
+  // wide" wording, and the single-org `activeJob` should render in the
+  // job-progress panel. A regression in the `summaryParams` queryKey or
+  // the `isCrossOrgSummary` derivation would break at least one of
+  // these assertions.
+  it("switches to the single-org view when an organization is picked from the dropdown", async () => {
+    const user = userEvent.setup();
+    render(<AdminTranscriptBackfillPage />);
+
+    // Sanity: we start in the cross-org view (proven by the existing
+    // test, but re-asserted here so a failure isolates this behavior).
+    expect(screen.getByTestId("card-cross-org-running")).toBeTruthy();
+
+    // The picker exposes one option per org plus the "all organizations"
+    // sentinel. Click the org-A option to narrow the scope.
+    await user.click(
+      screen.getByTestId("select-history-organization-option-org-A"),
+    );
+
+    // Cross-org card must unmount — `isCrossOrgSummary` is now false.
+    expect(screen.queryByTestId("card-cross-org-running")).toBeNull();
+
+    // Pending card swaps to the single-org copy and count.
+    expect(screen.getByTestId("text-pending-count").textContent).toContain("7");
+    expect(screen.getByTestId("title-pending").textContent?.toLowerCase()).not.toContain(
+      "all organizations",
+    );
+    const scopeText = screen.getByTestId("text-pending-scope").textContent?.toLowerCase() ?? "";
+    expect(scopeText).not.toContain("platform-wide");
+    expect(scopeText).toContain("pending");
+
+    // Active job panel renders the scoped job pulled from the summary's
+    // `activeJob` field (jobQuery has no data of its own in this mock).
+    const progress = screen.getByTestId("card-progress");
+    expect(progress).toBeTruthy();
+    expect(within(progress).getByTestId("text-job-id").textContent).toContain("job-A");
+    expect(within(progress).getByTestId("text-progress-summary").textContent).toContain("3");
+    expect(within(progress).getByTestId("text-progress-summary").textContent).toContain("10");
   });
 });
