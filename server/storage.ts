@@ -959,6 +959,7 @@ export async function listCrmTranscriptBackfillNotificationsForJobs(
   return result;
 }
 
+// ---------------------------------------------------------------------------
 // Task #1031 — alert delivery history. Each per-channel dispatch attempt is
 // recorded so admins can confirm in-app whether the most recent backfill
 // alerts actually reached the configured Slack/email destinations.

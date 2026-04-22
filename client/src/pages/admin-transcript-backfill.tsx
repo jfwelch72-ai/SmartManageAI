@@ -3253,7 +3253,7 @@ function BackfillAlertDeliveriesCard() {
 // currently healthy without having to re-fire the test. Renders one chip
 // per configured channel (Slack, email) plus an explicit error line when
 // either channel failed.
-function BackfillLastTestResultPanel({
+export function BackfillLastTestResultPanel({
   result,
   testedAt,
   onDismiss,
