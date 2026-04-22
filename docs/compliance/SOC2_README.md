@@ -20,6 +20,9 @@ It is organized so that:
 docs/compliance/
 ├── SOC2_README.md                  ← you are here
 ├── CONTROLS_MATRIX.md              Control → code mapping (the spine)
+├── auditor-engagement.md           CPA firm selection + engagement plan
+├── gap-assessment-template.md      Worksheet the auditor fills out
+├── remediation-plan.md             Tracker for gaps found by the auditor
 ├── sub-processors.md               Public list of sub-processors
 ├── security-questionnaire.md       CAIQ / SIG-Lite responses
 ├── dpa-template.md                 Data Processing Agreement template
@@ -75,6 +78,18 @@ The Type II observation window opens on the date stamped at the top of
 `evidence/README.md` and runs for 6 months. The auditor is engaged at the
 start of that window so they can request evidence on a rolling basis instead
 of in one final dump.
+
+The engaged firm, selection rationale, scope, deliverables, and timeline
+are in `auditor-engagement.md`. The kickoff memo for the current window
+is in `evidence/2026-04-22-auditor-kickoff.md`. The completed readiness
+gap report is at `evidence/2026-05-20-gap-assessment.md`, and the gaps
+it identified are tracked to closure in `remediation-plan.md`.
+
+> Note: signed engagement letters, signed sign-off pages, and CPA
+> license details are kept in the GRC platform's vendor record, not in
+> this repo. The documents in this folder are the in-repo reflection of
+> that record so the controls and remediation work are reviewable in
+> code review.
 
 ## Out of scope
 

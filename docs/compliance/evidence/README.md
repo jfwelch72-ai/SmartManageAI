@@ -10,7 +10,9 @@ below need a manual artifact filed here.
 | ---- | ---- |
 | Type II observation window opens | 2026-04-22 |
 | Type II observation window closes | 2026-10-22 |
-| Auditor engaged | (file kickoff memo at `2026-04-XX-auditor-kickoff.md`) |
+| Auditor engaged | Insight Assurance — see `2026-04-22-auditor-kickoff.md` |
+| Gap assessment delivered | 2026-05-20 — see `2026-05-20-gap-assessment.md` |
+| Gaps identified | 0 Critical / 2 High / 3 Medium / 1 Low — tracked in `../remediation-plan.md` |
 
 ## Required artifacts and cadence
 
@@ -26,6 +28,7 @@ below need a manual artifact filed here.
 | Security training completion | Annual | `YYYY-security-training.md` |
 | Policy acknowledgements | On hire / on change | exported from HRIS |
 | Auditor kickoff & evidence requests | Once per audit | `YYYY-MM-DD-auditor-kickoff.md` |
+| Auditor gap assessment | Once per audit | `YYYY-MM-DD-gap-assessment.md` |
 | Baseline counts (for restore drill comparison) | Quarterly refresh | `baseline-counts.md` |
 
 ## How to file evidence
