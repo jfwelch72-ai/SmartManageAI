@@ -68,6 +68,8 @@ import {
   resendBackfillAlertDelivery,
   sendTestBackfillAlert,
   getBackfillNotificationConfig,
+  buildAlertFailureFallbackContent,
+  buildAlertFailureDigestContent,
 } from "./services/transcriptBackfillNotifications";
 import {
   requireAuth,
@@ -1793,6 +1795,154 @@ router.post(
         const message = err instanceof Error ? err.message : String(err);
         logWarn("crmCalls: test backfill summary teams failed", { orgId, error: message });
         return res.status(502).json({ error: `Teams delivery failed: ${message}` });
+      }
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+/**
+ * Task #1086 — preview the per-admin alert-delivery-failure emails.
+ *
+ * Mirrors Task #1046's `/test-backfill-summary` button: lets an org
+ * admin email themselves a sample copy of either the real-time
+ * fallback (`buildAlertFailureFallbackContent`) or the daily digest
+ * (`buildAlertFailureDigestContent`) so they can verify their inbox/
+ * filters without waiting for a real failure or the next nightly run.
+ *
+ * The email always goes to the requesting admin only (never the rest
+ * of the org's admins), and the subject is prefixed with `[Test]` so
+ * it can't be mistaken for a production alert. We deliberately do NOT
+ * consult `alertFailureEmailMode` / mute toggles here — the whole
+ * point of the button is to preview the template even when the admin
+ * has the real stream silenced.
+ */
+router.post(
+  "/api/notifications/test-alert-failure-email",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = req.user?.organizationId;
+      if (!orgId) {
+        return res.status(400).json({
+          error: "Your account is not associated with an organization.",
+        });
+      }
+
+      const stream = (req.body?.stream ?? "realtime") as
+        | "realtime"
+        | "digest";
+      if (stream !== "realtime" && stream !== "digest") {
+        return res.status(400).json({
+          error: 'Invalid stream — expected "realtime" or "digest".',
+        });
+      }
+
+      const to = (req.user?.email ?? "").trim();
+      if (!to) {
+        return res.status(400).json({
+          error:
+            "Your account has no email address on file, so the sample can't be delivered.",
+        });
+      }
+
+      const operatorName =
+        [req.user?.firstName, req.user?.lastName]
+          .filter((p): p is string => !!p)
+          .join(" ")
+          .trim() ||
+        to ||
+        "you";
+
+      let subject: string;
+      let text: string;
+      let html: string;
+
+      if (stream === "realtime") {
+        const content = buildAlertFailureFallbackContent({
+          orgId,
+          jobId: `sample-${Date.now().toString(36)}`,
+          channel: "slack",
+          recipientSummary: operatorName,
+          errorMessage:
+            "Sample failure — Slack webhook returned 404 (no_service)",
+        });
+        subject = `[Test] ${content.subject}`;
+        text =
+          "This is a sample alert-delivery-failure email triggered from your notification preferences. " +
+          "It was sent only to you so you can preview the format and verify your inbox/filters.\n\n" +
+          content.text;
+        html =
+          `<p style="font-family:-apple-system,system-ui,sans-serif;font-size:13px;color:#6b7280;margin:0 0 12px;">` +
+          `<em>This is a sample alert-delivery-failure email triggered from your notification preferences. ` +
+          `It was sent only to you so you can preview the format and verify your inbox/filters.</em></p>` +
+          content.html;
+      } else {
+        const now = new Date();
+        const sampleEntry = {
+          organizationId: orgId,
+          total: 3,
+          slackCount: 2,
+          emailCount: 1,
+          recentFailures: [
+            {
+              jobId: `sample-${now.getTime().toString(36)}-a`,
+              channel: "slack" as const,
+              recipientSummary: operatorName,
+              errorMessage: "Slack webhook returned 404 (no_service)",
+              attemptedAt: new Date(now.getTime() - 45 * 60 * 1000),
+            },
+            {
+              jobId: `sample-${now.getTime().toString(36)}-b`,
+              channel: "email" as const,
+              recipientSummary: to,
+              errorMessage: "SMTP transport refused: 550 mailbox unavailable",
+              attemptedAt: new Date(now.getTime() - 4 * 60 * 60 * 1000),
+            },
+            {
+              jobId: `sample-${now.getTime().toString(36)}-c`,
+              channel: "slack" as const,
+              recipientSummary: operatorName,
+              errorMessage: "Slack webhook returned 410 (channel_archived)",
+              attemptedAt: new Date(now.getTime() - 18 * 60 * 60 * 1000),
+            },
+          ],
+        };
+        const content = buildAlertFailureDigestContent({
+          entry: sampleEntry,
+          windowHours: 24,
+        });
+        subject = `[Test] ${content.subject}`;
+        text =
+          "This is a sample alert-delivery-failure digest triggered from your notification preferences. " +
+          "It was sent only to you so you can preview the format and verify your inbox/filters.\n\n" +
+          content.text;
+        html =
+          `<p style="font-family:-apple-system,system-ui,sans-serif;font-size:13px;color:#6b7280;margin:0 0 12px;">` +
+          `<em>This is a sample alert-delivery-failure digest triggered from your notification preferences. ` +
+          `It was sent only to you so you can preview the format and verify your inbox/filters.</em></p>` +
+          content.html;
+      }
+
+      try {
+        const ok = await sendEmail({ to: [to], subject, text, html });
+        if (!ok) {
+          return res.status(502).json({
+            error:
+              "Email transport reported a failure. Check the server logs and try again.",
+          });
+        }
+        return res.json({ ok: true, stream, target: to });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logWarn("crmCalls: test alert-failure email send failed", {
+          orgId,
+          stream,
+          error: message,
+        });
+        return res.status(502).json({ error: `Email delivery failed: ${message}` });
       }
     } catch (e) {
       next(e);

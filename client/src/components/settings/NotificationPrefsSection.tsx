@@ -531,6 +531,45 @@ export default function NotificationPrefsSection() {
     updateAlertFailureEmailModeMutation.mutate(mode);
   }
 
+  // Task #1086 — preview the per-admin alert-delivery-failure emails
+  // (real-time + daily digest). Mirrors the Task #1046 backfill-summary
+  // test button: fires a sample to the current admin only, marked
+  // [Test], using the same templates as production. Errors (missing
+  // email on file, SMTP misconfigured) come back from the server and
+  // are surfaced as toasts.
+  const sendTestAlertFailureEmailMutation = useMutation({
+    mutationFn: async (
+      stream: "realtime" | "digest",
+    ): Promise<{ ok: boolean; stream: string; target?: string }> => {
+      const res = await apiRequest(
+        "POST",
+        "/api/notifications/test-alert-failure-email",
+        { stream },
+      );
+      return (await res.json()) as {
+        ok: boolean;
+        stream: string;
+        target?: string;
+      };
+    },
+    onSuccess: (data) => {
+      const streamLabel = data.stream === "digest" ? "digest" : "real-time";
+      toast({
+        title: "Test alert-failure email sent",
+        description: data.target
+          ? `A sample ${streamLabel} alert-failure email was sent to ${data.target}.`
+          : `A sample ${streamLabel} alert-failure email was sent to your inbox.`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Couldn't send test alert-failure email",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Task #1046: Let admins fire a sample backfill summary to their currently
   // selected channel so they can verify webhook URLs and preview formatting
   // without waiting for a real backfill to finish. Errors (missing webhook,
@@ -2163,6 +2202,68 @@ export default function NotificationPrefsSection() {
                     </Select>
                     <p className="text-xs text-muted-foreground">
                       Real-time sends one email per failure. Daily digest groups the previous 24 hours into a single rollup. The mute toggles above still apply to both streams.
+                    </p>
+
+                    {/*
+                      Task #1086 — let admins email themselves a sample of
+                      either stream so they can verify their inbox/filters
+                      without waiting for a real failure or the next nightly
+                      digest run. Sends to the current admin only, marked
+                      [Test], using the same templates as production.
+                    */}
+                    <div
+                      className="flex flex-wrap items-center gap-2 pt-2"
+                      data-testid="row-test-alert-failure-emails"
+                    >
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          sendTestAlertFailureEmailMutation.mutate("realtime")
+                        }
+                        disabled={sendTestAlertFailureEmailMutation.isPending}
+                        data-testid="button-send-test-alert-failure-realtime"
+                      >
+                        {sendTestAlertFailureEmailMutation.isPending &&
+                        sendTestAlertFailureEmailMutation.variables === "realtime" ? (
+                          <Fragment>
+                            <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                            Sending...
+                          </Fragment>
+                        ) : (
+                          <Fragment>
+                            <Mail className="h-3 w-3 mr-2" />
+                            Send test (real-time)
+                          </Fragment>
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() =>
+                          sendTestAlertFailureEmailMutation.mutate("digest")
+                        }
+                        disabled={sendTestAlertFailureEmailMutation.isPending}
+                        data-testid="button-send-test-alert-failure-digest"
+                      >
+                        {sendTestAlertFailureEmailMutation.isPending &&
+                        sendTestAlertFailureEmailMutation.variables === "digest" ? (
+                          <Fragment>
+                            <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                            Sending...
+                          </Fragment>
+                        ) : (
+                          <Fragment>
+                            <Mail className="h-3 w-3 mr-2" />
+                            Send test (digest)
+                          </Fragment>
+                        )}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Sends a sample (marked <span className="font-mono">[Test]</span>) to your inbox only, using the production template. Ignores your stream and mute settings so you can preview either format.
                     </p>
                   </div>
                 </div>
