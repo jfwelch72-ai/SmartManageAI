@@ -49,6 +49,7 @@ import { MarkupCalculatorCard } from "@/components/estimate/MarkupCalculator";
 import { LineItemFormDialog } from "@/components/estimate/LineItemForm";
 import { LineItemsTable } from "@/components/estimate/LineItemsTable";
 import { AssemblyInsertDialog } from "@/components/estimate/AssemblyInsertDialog";
+import { BidTabImportDialog } from "@/components/estimate/BidTabImportDialog";
 
 export default function BidEstimate() {
   const [, params] = useRoute("/bids/:code/estimate");
@@ -799,6 +800,9 @@ export default function BidEstimate() {
               <Layers className="w-4 h-4 mr-2" />
               Insert Assembly
             </Button>
+            {estimate && (
+              <BidTabImportDialog estimateId={estimate.id} bidId={bidId} />
+            )}
             <LineItemFormDialog
               mode="add"
               open={addLineItemOpen}
