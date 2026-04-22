@@ -86,6 +86,7 @@ import { ensureCrmTranscriptBackfillAlertDeliveriesTable } from "./ensureCrmTran
 import { ensureUsersAlertFailureEmailModeColumn } from "./ensureUsersAlertFailureEmailModeColumn";
 import { ensureUsersCrmBackfillSummaryPreferenceColumns } from "./ensureUsersCrmBackfillSummaryPreferenceColumns";
 import { ensureCrmTranscriptBackfillTestAlertsTable } from "./ensureCrmTranscriptBackfillTestAlertsTable";
+import { ensureCrmAndReportingTables } from "./ensureCrmAndReportingTables";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -192,6 +193,12 @@ const migrations: MigrationStep[] = [
   // fresh dev DBs get the `crm_backfill_summary_channel` enum/column and the
   // `crm_backfill_summary_on_failure_only` flag without needing manual psql.
   { name: "users_crm_backfill_summary_preference_columns", category: "ADD_COLUMN", fn: ensureUsersCrmBackfillSummaryPreferenceColumns },
+  // Task #1087 — fresh checkouts were missing 14 CRM/reporting tables that
+  // never had a static migration. The schema-drift reconciler only adds
+  // missing columns/enums, never whole tables, so users had to run
+  // `npx drizzle-kit push` by hand. This batched ensure-* migration mirrors
+  // the Drizzle schema so a clean `npm run dev` reports zero missing tables.
+  { name: "crm_and_reporting_tables", category: "CREATE_TABLE", fn: ensureCrmAndReportingTables },
 ];
 
 export async function runStartupMigrations(): Promise<void> {
