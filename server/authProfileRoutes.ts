@@ -1090,7 +1090,15 @@ const upload = multer({
         typeof userMaxEventsRaw === "number" && Number.isFinite(userMaxEventsRaw)
           ? userMaxEventsRaw
           : 100;
-      const preview = await buildQuietHoursDigestPreview(format, { maxEvents: userMaxEvents });
+      // Task #795 — Pass the user's quiet-hours timezone so the preview
+      // mirrors the live digest's localized timestamps.
+      const userTimezone =
+        (req.user as { jobMetricAlertQuietHoursTimezone?: string | null } | undefined)
+          ?.jobMetricAlertQuietHoursTimezone ?? null;
+      const preview = await buildQuietHoursDigestPreview(format, {
+        maxEvents: userMaxEvents,
+        timezone: userTimezone,
+      });
 
       if (mode === "send") {
         const to = req.user?.email;

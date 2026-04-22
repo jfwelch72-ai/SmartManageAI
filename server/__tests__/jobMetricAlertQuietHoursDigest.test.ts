@@ -664,6 +664,113 @@ describe("sendJobMetricAlertQuietHoursDigests honors digestFormat (Task #766)", 
       .toBeLessThan(body.indexOf("job-b (1 alert):"));
   });
 
+  it("Task #795 — renders window range and per-event timestamps in the recipient's timezone (full)", async () => {
+    const { events } = setup();
+    const recipient = makeRecipient({
+      digestFormat: "full",
+      quietHoursTimezone: "America/Los_Angeles",
+    });
+
+    const summary = await alerts.sendJobMetricAlertQuietHoursDigests({
+      recipientsSource: async () => [recipient as never],
+      eventsSource: async () => events as never,
+      // Bypass the in-quiet-window guards so we can isolate the
+      // timezone formatting behavior under test (the recipient's tz
+      // is now America/Los_Angeles, which would otherwise reject the
+      // 09:00 UTC `now` and filter the events).
+      forceSend: true,
+    });
+
+    expect(summary.digestsSent).toBe(1);
+    const call = sendEmailMock.mock.calls[0][0];
+    const text = call.text ?? "";
+    const html = call.html ?? "";
+
+    // Events fired at 02:00, 03:00, 04:00 UTC on 2026-01-15 → that's
+    // 18:00, 19:00, 20:00 PST on 2026-01-14 in America/Los_Angeles.
+    // Use regexes so the test tolerates the narrow-no-break-space that
+    // newer ICU versions emit between the time and AM/PM marker.
+    expect(text).toContain("Jan 14");
+    expect(text).toMatch(/6:00\s*PM\s*PST/);
+    expect(text).toMatch(/7:00\s*PM\s*PST/);
+    expect(text).toMatch(/8:00\s*PM\s*PST/);
+    // Original ISO strings remain in the text body for machine parsing.
+    expect(text).toContain("2026-01-15T02:00:00.000Z");
+    expect(text).toContain("2026-01-15T03:00:00.000Z");
+    expect(text).toContain("2026-01-15T04:00:00.000Z");
+
+    // HTML uses the localized form for visible text (no inline ISO
+    // strings to overflow on mobile widths).
+    expect(html).toContain("Jan 14");
+    expect(html).toContain("PST");
+    expect(html).not.toMatch(/>\s*\[?2026-01-15T02:00:00\.000Z\]?\s*</);
+    // ISO is preserved as a `title=` tooltip for hover discovery.
+    expect(html).toContain('title="2026-01-15T02:00:00.000Z"');
+  });
+
+  it("Task #795 — grouped format also localizes per-event timestamps", async () => {
+    const { events } = setup();
+    const recipient = makeRecipient({
+      digestFormat: "grouped",
+      quietHoursTimezone: "America/Los_Angeles",
+    });
+
+    const summary = await alerts.sendJobMetricAlertQuietHoursDigests({
+      recipientsSource: async () => [recipient as never],
+      eventsSource: async () => events as never,
+      forceSend: true,
+    });
+
+    expect(summary.digestsSent).toBe(1);
+    const text = sendEmailMock.mock.calls[0][0].text ?? "";
+    expect(text).toContain("grouped by job");
+    expect(text).toContain("PST");
+    expect(text).toContain("Jan 14");
+    // Still includes ISO inside brackets for machines.
+    expect(text).toContain("2026-01-15T02:00:00.000Z");
+  });
+
+  it("Task #795 — summary format localizes the window range", async () => {
+    const { events } = setup();
+    const recipient = makeRecipient({
+      digestFormat: "summary",
+      quietHoursTimezone: "America/Los_Angeles",
+    });
+
+    const summary = await alerts.sendJobMetricAlertQuietHoursDigests({
+      recipientsSource: async () => [recipient as never],
+      eventsSource: async () => events as never,
+      forceSend: true,
+    });
+
+    expect(summary.digestsSent).toBe(1);
+    const text = sendEmailMock.mock.calls[0][0].text ?? "";
+    // The intro line should mention the localized window range AND the
+    // ISO range in brackets.
+    expect(text).toContain("PST");
+    expect(text).toContain(
+      "[2026-01-15T02:00:00.000Z → 2026-01-15T04:00:00.000Z]",
+    );
+  });
+
+  it("Task #795 — falls back to UTC when the recipient has no timezone set", async () => {
+    const { events } = setup();
+    const recipient = makeRecipient({
+      digestFormat: "full",
+      quietHoursTimezone: null,
+    });
+
+    const summary = await alerts.sendJobMetricAlertQuietHoursDigests({
+      recipientsSource: async () => [recipient as never],
+      eventsSource: async () => events as never,
+    });
+
+    expect(summary.digestsSent).toBe(1);
+    const text = sendEmailMock.mock.calls[0][0].text ?? "";
+    expect(text).toContain("UTC");
+    expect(text).toContain("2026-01-15T02:00:00.000Z");
+  });
+
   it("renders the 'full' chronological body for recipients who chose the full format", async () => {
     const { events } = setup();
     const recipient = makeRecipient({ digestFormat: "full" });

@@ -1446,11 +1446,36 @@ function formatDigestSubject(count: number): string {
     : `Quiet-hours digest: ${count} alerts fired while you were silenced`;
 }
 
+/**
+ * Task #795 — Render a Date in the recipient's quiet-hours timezone
+ * using a short, human-readable format such as `Apr 21, 6:00 PM PDT`.
+ * Falls back to the raw ISO string if the timezone is unrecognized so
+ * the digest never silently swallows a timestamp.
+ */
+function formatDigestTimestamp(d: Date, timezone: string | null): string {
+  const tz = timezone && timezone.length > 0 ? timezone : "UTC";
+  try {
+    const fmt = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+      timeZoneName: "short",
+    });
+    return fmt.format(d);
+  } catch {
+    return d.toISOString();
+  }
+}
+
 export function buildDigestEmailBody(
   events: DigestEventRow[],
   windowStart: Date,
   windowEnd: Date,
   format: QuietHoursDigestFormat = "full",
+  timezone: string | null = null,
 ): { text: string; html: string } {
   const baseUrl = (
     process.env.APP_URL ||
@@ -1459,12 +1484,21 @@ export function buildDigestEmailBody(
     (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "")
   ).replace(/\/$/, "");
   const dashboardUrl = `${baseUrl}/admin/job-metrics`;
-  const range = `${windowStart.toISOString()} → ${windowEnd.toISOString()}`;
+  const windowStartLocal = formatDigestTimestamp(windowStart, timezone);
+  const windowEndLocal = formatDigestTimestamp(windowEnd, timezone);
+  const windowStartIso = windowStart.toISOString();
+  const windowEndIso = windowEnd.toISOString();
+  // Task #795 — Show the window range in the recipient's timezone for
+  // legibility, but keep the raw ISO strings in the text body so the
+  // digest remains machine-parseable.
+  const rangeLocal = `${windowStartLocal} → ${windowEndLocal}`;
+  const rangeIso = `${windowStartIso} → ${windowEndIso}`;
+  const rangeText = `${rangeLocal} [${rangeIso}]`;
   const intro =
-    `While you were inside your quiet-hours window (${range}), the following ` +
+    `While you were inside your quiet-hours window (${rangeText}), the following ` +
     `${events.length} job-metric alert${events.length === 1 ? "" : "s"} fired`;
   const introHtml = `While you were inside your quiet-hours window
-        (<code class="qh-code" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all;overflow-wrap:anywhere;">${escapeHtmlSafe(range)}</code>), the following
+        (<span class="qh-code" style="word-break:break-word;overflow-wrap:anywhere;">${escapeHtmlSafe(rangeLocal)}</span>), the following
         <strong>${events.length}</strong> job-metric alert${events.length === 1 ? "" : "s"} fired`;
   const footerHtml = `
       <p style="margin-top:20px;">
@@ -1543,10 +1577,11 @@ export function buildDigestEmailBody(
     const textGroups = orderedJobs.map((job) => {
       const list = groups.get(job) ?? [];
       const lines = list.map((e) => {
-        const ts = e.triggeredAt.toISOString();
+        const tsLocal = formatDigestTimestamp(e.triggeredAt, timezone);
+        const tsIso = e.triggeredAt.toISOString();
         const counter = e.counter ? ` · ${e.counter}` : "";
         const kindLabel = e.kind === "stall" ? "stall" : "spike";
-        return `    • [${ts}] (${kindLabel})${counter} — ${e.message}`;
+        return `    • ${tsLocal} [${tsIso}] (${kindLabel})${counter} — ${e.message}`;
       });
       return `${job} (${list.length} alert${list.length === 1 ? "" : "s"}):\n${lines.join("\n")}`;
     });
@@ -1559,12 +1594,13 @@ export function buildDigestEmailBody(
         const list = groups.get(job) ?? [];
         const items = list
           .map((e, idx) => {
-            const ts = escapeHtmlSafe(e.triggeredAt.toISOString());
+            const tsLocal = escapeHtmlSafe(formatDigestTimestamp(e.triggeredAt, timezone));
+            const tsIso = escapeHtmlSafe(e.triggeredAt.toISOString());
             const counter = e.counter ? ` · ${escapeHtmlSafe(e.counter)}` : "";
             const kindLabel = e.kind === "stall" ? "stall" : "spike";
             const isLast = idx === list.length - 1;
             return `<li class="qh-item${isLast ? " qh-item-last" : ""}" style="padding:6px 0;${isLast ? "" : "border-bottom:1px solid #f0f0f0;"}color:#333333;word-break:break-word;overflow-wrap:anywhere;">
-              <strong class="qh-accent qh-code" style="color:#0070f3;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all;overflow-wrap:anywhere;">[${ts}]</strong>
+              <strong class="qh-accent" style="color:#0070f3;word-break:break-word;overflow-wrap:anywhere;" title="${tsIso}">${tsLocal}</strong>
               <span class="qh-tag" style="text-transform:uppercase;font-size:11px;color:#666666;letter-spacing:0.04em;">${kindLabel}</span>${counter}<br/>
               <span class="qh-soft" style="color:#555555;">${escapeHtmlSafe(e.message)}</span>
             </li>`;
@@ -1595,10 +1631,11 @@ export function buildDigestEmailBody(
 
   // Default — "full" — original per-event flat list.
   const lines = events.map((e) => {
-    const ts = e.triggeredAt.toISOString();
+    const tsLocal = formatDigestTimestamp(e.triggeredAt, timezone);
+    const tsIso = e.triggeredAt.toISOString();
     const counter = e.counter ? ` · ${e.counter}` : "";
     const kindLabel = e.kind === "stall" ? "stall" : "spike";
-    return `• [${ts}] (${kindLabel}) ${e.job}${counter} — ${e.message}`;
+    return `• ${tsLocal} [${tsIso}] (${kindLabel}) ${e.job}${counter} — ${e.message}`;
   });
   const text =
     `${intro}:\n\n` +
@@ -1607,12 +1644,13 @@ export function buildDigestEmailBody(
 
   const items = events
     .map((e, idx) => {
-      const ts = escapeHtmlSafe(e.triggeredAt.toISOString());
+      const tsLocal = escapeHtmlSafe(formatDigestTimestamp(e.triggeredAt, timezone));
+      const tsIso = escapeHtmlSafe(e.triggeredAt.toISOString());
       const counter = e.counter ? ` · ${escapeHtmlSafe(e.counter)}` : "";
       const kindLabel = e.kind === "stall" ? "stall" : "spike";
       const isLast = idx === events.length - 1;
       return `<li class="qh-item${isLast ? " qh-item-last" : ""}" style="padding:6px 0;${isLast ? "" : "border-bottom:1px solid #f0f0f0;"}color:#333333;word-break:break-word;overflow-wrap:anywhere;">
-        <strong class="qh-accent qh-code" style="color:#0070f3;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all;overflow-wrap:anywhere;">[${ts}]</strong>
+        <strong class="qh-accent" style="color:#0070f3;word-break:break-word;overflow-wrap:anywhere;" title="${tsIso}">${tsLocal}</strong>
         <span class="qh-tag" style="text-transform:uppercase;font-size:11px;color:#666666;letter-spacing:0.04em;">${kindLabel}</span>
         <strong>${escapeHtmlSafe(e.job)}${counter}</strong><br/>
         <span class="qh-soft" style="color:#555555;">${escapeHtmlSafe(e.message)}</span>
@@ -1691,6 +1729,10 @@ export async function buildQuietHoursDigestPreview(
     // Defaults to 25 to preserve the original preview behavior when the
     // caller does not specify a cap.
     maxEvents?: number;
+    // Task #795 — IANA timezone string used to render the digest's
+    // window range and per-event timestamps in the recipient's locale
+    // (e.g. "America/Los_Angeles"). Defaults to UTC if unset.
+    timezone?: string | null;
   } = {},
 ): Promise<{
   subject: string;
@@ -1772,7 +1814,13 @@ export async function buildQuietHoursDigestPreview(
     null as Date | null,
   ) ?? new Date(nowMs);
 
-  const { text, html } = buildDigestEmailBody(events, windowStart, windowEnd, format);
+  const { text, html } = buildDigestEmailBody(
+    events,
+    windowStart,
+    windowEnd,
+    format,
+    opts.timezone ?? null,
+  );
   const subject = `[Preview] ${formatDigestSubject(events.length)}`;
   return { subject, html, text, isSynthetic, eventCount: events.length, maxEvents: previewMaxEvents };
 }
@@ -1946,7 +1994,13 @@ export async function sendJobMetricAlertQuietHoursDigests(
     const subject = formatDigestSubject(matchedAll.length);
     const windowStart = new Date(firstTs ?? lowerBoundMs);
     const windowEnd = new Date(lastTs ?? now);
-    const { text, html } = buildDigestEmailBody(matched, windowStart, windowEnd, r.digestFormat);
+    const { text, html } = buildDigestEmailBody(
+      matched,
+      windowStart,
+      windowEnd,
+      r.digestFormat,
+      r.quietHoursTimezone,
+    );
 
     // Task #764: build a CSV attachment of every matched event when
     // the recipient opted in. Uses the full `matchedAll` list (no
