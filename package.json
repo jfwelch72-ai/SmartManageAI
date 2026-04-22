@@ -18,6 +18,7 @@
     "audit:report": "tsx audit/index.ts full",
     "seed:test-company": "tsx scripts/seed-test-company.ts",
     "seed:marketplace-contractors": "tsx scripts/seed-marketplace-contractors.ts",
+    "test:setup": "tsx scripts/setup-test-db.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",

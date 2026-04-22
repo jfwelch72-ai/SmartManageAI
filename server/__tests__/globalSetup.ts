@@ -1,3 +1,8 @@
+// Side-effect import: applies `.env.test` overrides (when the file exists)
+// before any of this module's code runs. Same module is also wired up as a
+// vitest `setupFiles` entry so the override propagates to test workers too.
+import "./loadEnvTest";
+
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
