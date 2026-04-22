@@ -466,6 +466,49 @@ export async function listCrmTranscriptBackfillTestAlerts(opts: {
   };
 }
 
+// Task #1060 — usage frequency rollup for the test-alert button so admins can
+// see at a glance how often the button is being clicked (and therefore spot
+// misuse / runaway scripts) without paging through the full audit history.
+// Counts are computed in three rolling windows ending at "now"; we issue a
+// single SQL statement with FILTER clauses so the three windows always agree
+// on the same wall-clock cutoff.
+export type CrmTranscriptBackfillTestAlertUsageSummary = {
+  last24h: number;
+  last7d: number;
+  last30d: number;
+  windowEndsAt: string;
+};
+
+export async function getCrmTranscriptBackfillTestAlertUsageSummary(opts: {
+  organizationId?: string;
+}): Promise<CrmTranscriptBackfillTestAlertUsageSummary> {
+  const now = new Date();
+  const cutoff24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const cutoff7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const cutoff30d = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  const baseQuery = db
+    .select({
+      last24h: sql<number>`count(*) filter (where ${crmTranscriptBackfillTestAlerts.sentAt} >= ${cutoff24h})::int`,
+      last7d: sql<number>`count(*) filter (where ${crmTranscriptBackfillTestAlerts.sentAt} >= ${cutoff7d})::int`,
+      last30d: sql<number>`count(*) filter (where ${crmTranscriptBackfillTestAlerts.sentAt} >= ${cutoff30d})::int`,
+    })
+    .from(crmTranscriptBackfillTestAlerts);
+
+  const [row] = opts.organizationId
+    ? await baseQuery.where(
+        eq(crmTranscriptBackfillTestAlerts.organizationId, opts.organizationId),
+      )
+    : await baseQuery;
+
+  return {
+    last24h: Number(row?.last24h) || 0,
+    last7d: Number(row?.last7d) || 0,
+    last30d: Number(row?.last30d) || 0,
+    windowEndsAt: now.toISOString(),
+  };
+}
+
 // Task #1004 — given a set of backfill job ids, return the full retry lineage
 // each one belongs to (the root job + every descendant retry, in chronological
 // order). Implemented as a single recursive CTE so we can render the chain

@@ -287,6 +287,18 @@ const TEST_ALERT_HISTORY_PATH =
   "/api/crm/calls/transcripts/backfill/test-alert/history";
 const TEST_ALERT_HISTORY_KEY_BASE = [TEST_ALERT_HISTORY_PATH] as const;
 const TEST_ALERT_HISTORY_PAGE_SIZE = 10;
+// Task #1060 — usage frequency rollup (counts in last 24h / 7d / 30d) so
+// admins can spot misuse at a glance without scrolling the full audit list.
+interface TestAlertUsageResponse {
+  last24h: number;
+  last7d: number;
+  last30d: number;
+  windowEndsAt: string;
+  crossOrg: boolean;
+}
+const TEST_ALERT_USAGE_PATH =
+  "/api/crm/calls/transcripts/backfill/test-alert/usage";
+const TEST_ALERT_USAGE_KEY_BASE = [TEST_ALERT_USAGE_PATH] as const;
 const PAGE_SIZE = 20;
 // Task #1057 — surface CANCELLED in the history filter so admins can isolate
 // deliberately-stopped runs from crashes.
@@ -867,6 +879,9 @@ export default function AdminTranscriptBackfillPage() {
       // Task #1052 — also bust the paginated history list so the new row
       // shows up in the "Show previous tests" panel.
       queryClient.invalidateQueries({ queryKey: TEST_ALERT_HISTORY_KEY_BASE });
+      // Task #1060 — refresh the usage rollup so the 24h/7d/30d counts tick
+      // up immediately rather than lagging until the next manual reload.
+      queryClient.invalidateQueries({ queryKey: TEST_ALERT_USAGE_KEY_BASE });
       const { slack, email } = data;
       if (!slack.configured && !email.configured) {
         toast({
@@ -1522,6 +1537,10 @@ export default function AdminTranscriptBackfillPage() {
             )}
           </p>
           <LastTestAlertIndicator query={latestTestAlertQuery} />
+          <TestAlertUsageSummary
+            isSuperAdmin={isSuperAdmin}
+            orgFilter={orgFilter}
+          />
           <TestAlertHistoryPanel
             isSuperAdmin={isSuperAdmin}
             orgFilter={orgFilter}
@@ -2521,6 +2540,84 @@ function LastTestAlertIndicator({
 // see entries from every org by default and can scope to a single tenant
 // via the page's existing org picker (the same `orgFilter` that drives the
 // main backfill history grid above).
+// Task #1060 — compact "how often is this button being used" rollup. Sits
+// between the latest-test indicator and the (collapsed) history list so an
+// admin can spot misuse / runaway scripts at a glance ("12 in the last 24h
+// is way too many") without expanding the full audit log. Counts respect the
+// page's existing org-scope picker for SUPER_ADMINs.
+function TestAlertUsageSummary({
+  isSuperAdmin,
+  orgFilter,
+}: {
+  isSuperAdmin: boolean;
+  orgFilter: string;
+}) {
+  const queryParams = useMemo(() => {
+    const params: Record<string, string> = {};
+    if (isSuperAdmin && orgFilter !== CROSS_ORG_VALUE) {
+      params.organizationId = orgFilter;
+    }
+    return params;
+  }, [isSuperAdmin, orgFilter]);
+
+  const query = useQuery<TestAlertUsageResponse>({
+    queryKey: [...TEST_ALERT_USAGE_KEY_BASE, queryParams],
+  });
+
+  if (query.isLoading) {
+    return (
+      <p
+        className="text-xs text-muted-foreground"
+        data-testid="status-test-alert-usage-loading"
+      >
+        Loading test alert usage…
+      </p>
+    );
+  }
+  if (query.isError || !query.data) {
+    return (
+      <p
+        className="text-xs text-destructive"
+        data-testid="text-test-alert-usage-error"
+      >
+        Couldn't load test alert usage.
+      </p>
+    );
+  }
+
+  const { last24h, last7d, last30d, crossOrg } = query.data;
+  const scopeLabel = crossOrg ? "across all orgs" : "in this org";
+
+  return (
+    <div
+      className="flex flex-wrap items-center gap-3 text-xs"
+      data-testid="panel-test-alert-usage"
+    >
+      <span className="text-muted-foreground">
+        Test alerts sent {scopeLabel}:
+      </span>
+      <span data-testid="text-test-alert-usage-24h">
+        <span className="font-medium text-foreground">
+          {last24h.toLocaleString()}
+        </span>{" "}
+        <span className="text-muted-foreground">in last 24h</span>
+      </span>
+      <span data-testid="text-test-alert-usage-7d">
+        <span className="font-medium text-foreground">
+          {last7d.toLocaleString()}
+        </span>{" "}
+        <span className="text-muted-foreground">in last 7d</span>
+      </span>
+      <span data-testid="text-test-alert-usage-30d">
+        <span className="font-medium text-foreground">
+          {last30d.toLocaleString()}
+        </span>{" "}
+        <span className="text-muted-foreground">in last 30d</span>
+      </span>
+    </div>
+  );
+}
+
 function TestAlertHistoryPanel({
   isSuperAdmin,
   orgFilter,
@@ -3066,6 +3163,8 @@ export function BackfillNotificationSettingsCard() {
       // above without a manual reload.
       queryClient.invalidateQueries({ queryKey: TEST_ALERT_LATEST_KEY });
       queryClient.invalidateQueries({ queryKey: TEST_ALERT_HISTORY_KEY_BASE });
+      // Task #1060 — keep the usage rollup in sync with the new audit row.
+      queryClient.invalidateQueries({ queryKey: TEST_ALERT_USAGE_KEY_BASE });
       const { slack, email, operatorDisplay, testedAt } = data;
       // Task #1045 — sync the persisted last-test fields into the cached
       // settings so the inline health summary updates immediately without a

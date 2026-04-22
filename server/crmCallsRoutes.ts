@@ -47,6 +47,7 @@ import {
   getLatestCrmTranscriptBackfillTestAlert,
   listCrmTranscriptBackfillAlertDeliveries,
   listCrmTranscriptBackfillTestAlerts,
+  getCrmTranscriptBackfillTestAlertUsageSummary,
   recordCrmTranscriptBackfillTestResult,
   getRunningCrmTranscriptBackfillJob,
   listCrmTranscriptBackfillJobs,
@@ -2970,6 +2971,46 @@ router.get(
         offset,
         crossOrg: superAdmin && !scopedOrgId,
         alerts: rows,
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #1060 — usage frequency rollup for the test-alert button (counts in
+// the last 24h / 7d / 30d). Lets admins see at a glance how often the button
+// is being clicked, which is far easier to scan than the raw history list
+// when looking for misuse or runaway scripts. SUPER_ADMINs can pass
+// `?organizationId=<id>` to scope to a single tenant or omit it for a
+// platform-wide view; org-scoped admins are hard-locked to their own org.
+router.get(
+  "/api/crm/calls/transcripts/backfill/test-alert/usage",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const superAdmin = isSuperAdmin(req.user);
+      let scopedOrgId: string | undefined;
+      if (superAdmin) {
+        const requestedOrg =
+          typeof req.query.organizationId === "string"
+            ? req.query.organizationId.trim()
+            : "";
+        scopedOrgId = requestedOrg.length > 0 ? requestedOrg : undefined;
+      } else {
+        const orgId = resolveOrg(req, res);
+        if (!orgId) return;
+        scopedOrgId = orgId;
+      }
+
+      const summary = await getCrmTranscriptBackfillTestAlertUsageSummary({
+        organizationId: scopedOrgId,
+      });
+
+      res.json({
+        ...summary,
+        crossOrg: superAdmin && !scopedOrgId,
       });
     } catch (e) {
       next(e);
