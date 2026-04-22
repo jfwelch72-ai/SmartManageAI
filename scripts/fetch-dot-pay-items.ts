@@ -6,17 +6,18 @@
  * Currently handles agencies that publish a publicly-fetchable HTML/PDF
  * with parseable item tables:
  *
- *   - FHWA  : FP-14 master pay item listing
+ *   - FHWA  : FP-14 master pay item listing (HTML table)
  *             https://highways.dot.gov/federal-lands/estimates/pay-items-fp-14
- *   - NCDOT : 2024 Master Pay Item List
+ *   - NCDOT : 2024 Master Pay Item List (PDF, multi-line rows)
  *             https://connect.ncdot.gov/resources/Specifications/Contracts%20and%20Resources/2024%20Pay%20Item%20list.pdf
  *
  * Each fetcher:
  *   1. Downloads the source via plain HTTPS (no auth).
- *   2. For PDFs, uses `pdf-parse` if installed; otherwise falls back to a
- *      ChromiumDOC text extraction (tika-style) shell call. Failing both,
- *      the fetcher prints a manual-download instruction and exits non-zero.
- *   3. Parses item rows out of the document text.
+ *   2. For HTML pages, parses table rows out of the markup.
+ *   3. For PDFs, uses `pdfjs-dist` to extract positioned text spans, then
+ *      groups spans into rows by Y position and into columns by X position.
+ *      This preserves multi-line description wraps that a flat
+ *      "concatenate every span" extractor would split apart.
  *   4. Writes the per-agency JSON in the shape consumed by
  *      `server/seedDotAgencies.ts`.
  *
@@ -46,30 +47,123 @@ interface AgencyCatalog {
 
 const OUT_DIR = join(process.cwd(), "server/data/dot/pay-items");
 
+interface PdfSpan {
+  str: string;
+  x: number;
+  y: number;
+}
+
+interface PdfRow {
+  y: number;
+  spans: PdfSpan[];
+}
+
+interface PdfTextItem {
+  str: string;
+  transform: number[];
+}
+
+interface PdfTextContent {
+  items: PdfTextItem[];
+}
+
+interface PdfPage {
+  getTextContent(): Promise<PdfTextContent>;
+}
+
+interface PdfDocument {
+  numPages: number;
+  getPage(n: number): Promise<PdfPage>;
+}
+
+interface PdfJsModule {
+  getDocument(args: {
+    data: Uint8Array;
+    useSystemFonts?: boolean;
+    disableFontFace?: boolean;
+    verbosity?: number;
+  }): { promise: Promise<PdfDocument> };
+}
+
+async function loadPdfDocument(buf: Uint8Array): Promise<PdfDocument> {
+  const mod = (await import("pdfjs-dist/legacy/build/pdf.mjs")) as unknown as PdfJsModule;
+  return mod.getDocument({
+    data: buf,
+    useSystemFonts: true,
+    disableFontFace: true,
+    verbosity: 0,
+  }).promise;
+}
+
+/**
+ * Extract each PDF page as a list of rows (grouped by Y) of positioned spans.
+ * This preserves enough geometry for fetchers to detect column positions and
+ * multi-line description wraps without conflating distinct rows.
+ */
+async function extractPdfRows(buf: Uint8Array, url: string): Promise<PdfRow[][]> {
+  try {
+    const doc = await loadPdfDocument(buf);
+    const pages: PdfRow[][] = [];
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i);
+      const tc = await page.getTextContent();
+      const rowsByY = new Map<number, PdfSpan[]>();
+      for (const it of tc.items) {
+        const str = it.str;
+        if (!str || /^\s*$/.test(str)) continue;
+        const x = it.transform?.[4] ?? 0;
+        const y = it.transform?.[5] ?? 0;
+        // Round Y so spans whose baselines differ by sub-pixel jitter still
+        // group together. NCDOT's table uses integer Y baselines per row,
+        // and 14.4pt line height between rows, so a 1.0pt bucket is safe.
+        const yKey = Math.round(y);
+        const list = rowsByY.get(yKey) ?? [];
+        list.push({ str, x, y });
+        rowsByY.set(yKey, list);
+      }
+      const rows: PdfRow[] = Array.from(rowsByY.entries())
+        .map(([yKey, spans]) => ({ y: yKey, spans: spans.sort((a, b) => a.x - b.x) }))
+        .sort((a, b) => b.y - a.y);
+      pages.push(rows);
+    }
+    return pages;
+  } catch (err) {
+    throw new Error(`PDF parse failed for ${url}: ${(err as Error).message}`);
+  }
+}
+
+async function extractPdfText(buf: Uint8Array, url: string): Promise<string> {
+  const pages = await extractPdfRows(buf, url);
+  const parts: string[] = [];
+  for (const rows of pages) {
+    for (const row of rows) parts.push(row.spans.map((s) => s.str).join(" ").replace(/\s+/g, " ").trim());
+    parts.push("");
+  }
+  return parts.join("\n");
+}
+
+const FETCH_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (compatible; ConstructionEstimator/1.0; +https://example.com)",
+  Accept: "text/html,application/xhtml+xml,application/xml,application/pdf,*/*;q=0.8",
+};
+
 async function fetchText(url: string): Promise<string> {
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (compatible; ConstructionEstimator/1.0; +https://example.com)",
-      Accept: "text/html,application/xhtml+xml,application/xml,application/pdf,*/*;q=0.8",
-    },
-  });
+  const res = await fetch(url, { headers: FETCH_HEADERS });
   if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("pdf") || url.toLowerCase().endsWith(".pdf")) {
-    const buf = Buffer.from(await res.arrayBuffer());
-    // Lazy-load pdf-parse so the script still works without it for HTML sources.
-    try {
-      const pdfParse = (await import("pdf-parse")).default as (b: Buffer) => Promise<{ text: string }>;
-      const { text } = await pdfParse(buf);
-      return text;
-    } catch (err) {
-      throw new Error(
-        `Cannot parse PDF without 'pdf-parse'. Install with: npm i pdf-parse. (${url})`,
-      );
-    }
+    const buf = new Uint8Array(await res.arrayBuffer());
+    return extractPdfText(buf, url);
   }
   return res.text();
+}
+
+async function fetchPdfPages(url: string): Promise<PdfRow[][]> {
+  const res = await fetch(url, { headers: FETCH_HEADERS });
+  if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
+  const buf = new Uint8Array(await res.arrayBuffer());
+  return extractPdfRows(buf, url);
 }
 
 // ---------- FHWA FP-14 ----------
@@ -148,34 +242,100 @@ const NCDOT_CATEGORY: Record<string, string> = {
   C: "Concrete",
 };
 
+// NCDOT's Master Pay Item List PDF is a 5-column table with these baseline X
+// positions (values measured from page 1; the layout repeats on every page):
+//
+//   Type ~ 47   ItemNumber ~ 65   Section ~ 153   Units ~ 190   Description >= 215
+//
+// Every "real" item row begins at the Type column. Long descriptions wrap onto
+// follow-up rows that contain *only* a span in the Description column; those
+// rows must be appended to the current item's description.
+const NCDOT_COLS = {
+  type: { min: 40, max: 60 },
+  itemNumber: { min: 60, max: 130 },
+  section: { min: 145, max: 180 },
+  unit: { min: 180, max: 215 },
+  // Description column ends before the rightmost "Foot Note No." footnote
+  // reference column (centered at x ~ 545). Capping at 530 keeps stray
+  // footnote digits from leaking into the description.
+  description: { min: 215, max: 530 },
+} as const;
+const NCDOT_ITEM_RE = /^\d{10}-[NE]$/;
+const NCDOT_ARTIFACT_RE =
+  /\b(End Of Report|Master Pay Item List|Spec Year|Item Number|^Description$|Foot Note)\b/i;
+
+function ncdotPickColumn(spans: PdfSpan[], col: { min: number; max: number }): string {
+  return spans
+    .filter((s) => s.x >= col.min && s.x < col.max)
+    .map((s) => s.str.trim())
+    .filter((s) => s.length > 0)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanNcdotDescription(s: string): string {
+  return s
+    .replace(/\s*\|\s*$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 async function fetchNcdot(): Promise<AgencyCatalog> {
   const url =
     "https://connect.ncdot.gov/resources/Specifications/Contracts%20and%20Resources/2024%20Pay%20Item%20list.pdf";
-  const text = await fetchText(url);
+  const pages = await fetchPdfPages(url);
   const items: PayItem[] = [];
   const seen = new Set<string>();
-  // Each row when extracted from a PDF/HTML table looks like:
-  //   <type> <itemNumber> <section> <units> <description...>
-  // The item number always matches NCDOT's 10-digit + suffix format.
-  const rowRe =
-    /\b([A-Z]{1,3})\s+(\d{10}-[NE])\s+([A-Z0-9]+)\s+([A-Z\/]{1,5})\s+([^\n|]+?)(?=\s*(?:\||\n|$))/g;
-  let m: RegExpExecArray | null;
-  while ((m = rowRe.exec(text)) !== null) {
-    const [, type, itemNumber, section, unit, description] = m;
-    if (seen.has(itemNumber)) continue;
-    seen.add(itemNumber);
-    items.push({
-      itemNumber,
-      description: description
-        .replace(/\\+\*+/g, "")
-        .replace(/\\+/g, "")
-        .replace(/\s*\|\s*$/, "")
-        .replace(/\s+/g, " ")
-        .trim(),
-      unit: unit.trim().toUpperCase(),
-      specSection: section,
-      category: NCDOT_CATEGORY[type] ?? "Standard",
-    });
+  for (const rows of pages) {
+    let current: PayItem | null = null;
+    for (const row of rows) {
+      const itemNumber = ncdotPickColumn(row.spans, NCDOT_COLS.itemNumber);
+      if (NCDOT_ITEM_RE.test(itemNumber)) {
+        // Header row of a new item.
+        if (current && !seen.has(current.itemNumber)) {
+          current.description = cleanNcdotDescription(current.description);
+          if (current.description) {
+            items.push(current);
+            seen.add(current.itemNumber);
+          }
+        }
+        const type = ncdotPickColumn(row.spans, NCDOT_COLS.type);
+        const section = ncdotPickColumn(row.spans, NCDOT_COLS.section);
+        const unit = ncdotPickColumn(row.spans, NCDOT_COLS.unit).toUpperCase();
+        const description = ncdotPickColumn(row.spans, NCDOT_COLS.description);
+        if (!unit) { current = null; continue; }
+        current = {
+          itemNumber,
+          description,
+          unit,
+          specSection: section,
+          category: NCDOT_CATEGORY[type] ?? "Standard",
+        };
+      } else if (current) {
+        // Continuation row: only a description-column span. Reject page
+        // header/footer artifacts (top-of-page column titles, "Spec Year 24"
+        // banner, "*** End Of Report ***" trailer) so they can't bleed into
+        // a description.
+        if (row.y < 60 || row.y > 660) continue;
+        const desc = ncdotPickColumn(row.spans, NCDOT_COLS.description);
+        const hasOtherCols =
+          ncdotPickColumn(row.spans, NCDOT_COLS.type) ||
+          ncdotPickColumn(row.spans, NCDOT_COLS.itemNumber) ||
+          ncdotPickColumn(row.spans, NCDOT_COLS.section) ||
+          ncdotPickColumn(row.spans, NCDOT_COLS.unit);
+        if (!desc || hasOtherCols) continue;
+        if (NCDOT_ARTIFACT_RE.test(desc)) continue;
+        current.description = `${current.description} ${desc}`.trim();
+      }
+    }
+    if (current && !seen.has(current.itemNumber)) {
+      current.description = cleanNcdotDescription(current.description);
+      if (current.description) {
+        items.push(current);
+        seen.add(current.itemNumber);
+      }
+    }
   }
   return {
     specBook: {
@@ -194,6 +354,23 @@ const AGENCY_FETCHERS: Record<string, () => Promise<AgencyCatalog>> = {
   FHWA: fetchFhwa,
   NCDOT: fetchNcdot,
 };
+
+// Page/report boilerplate that should never appear inside an item description.
+// Used as a final guard before we accept the parsed catalog.
+const ARTIFACT_PATTERNS: RegExp[] = [
+  /End Of Report/i,
+  /Master Pay Item List/i,
+  /Spec Year \d+/i,
+  /^Description$/,
+  /\bFoot Note\b/i,
+  /\bPage \d+ of \d+\b/i,
+];
+
+function findArtifacts(catalog: AgencyCatalog): PayItem[] {
+  return catalog.items.filter((it) =>
+    ARTIFACT_PATTERNS.some((re) => re.test(it.description)),
+  );
+}
 
 function writeCatalog(code: string, catalog: AgencyCatalog) {
   mkdirSync(OUT_DIR, { recursive: true });
@@ -226,6 +403,17 @@ async function main() {
         console.warn(
           `[fetch] ${code}: parse produced fewer than 200 items; refusing to overwrite. Investigate parser.`,
         );
+        failures++;
+        continue;
+      }
+      const artifacts = findArtifacts(catalog);
+      if (artifacts.length > 0) {
+        console.error(
+          `[fetch] ${code}: refusing to write — ${artifacts.length} item(s) have descriptions matching page header/footer artifacts:`,
+        );
+        for (const a of artifacts.slice(0, 5)) {
+          console.error(`         ${a.itemNumber}: ${a.description}`);
+        }
         failures++;
         continue;
       }
