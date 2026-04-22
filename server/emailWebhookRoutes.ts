@@ -422,11 +422,39 @@ function isResendAuthorized(req: Request): boolean {
   return false;
 }
 
-function classifyResendEventType(rawType: unknown): "bounce" | "complaint" | null {
+// Classify the incoming Resend event into the categories we suppress on.
+// We split bounces into hard vs soft so the fanout suppressor (Task #866)
+// can apply different rules: any recent hard bounce or complaint is enough
+// to suppress immediately, while soft bounces only suppress once they
+// exceed a threshold within a short window.
+function classifyResendEvent(
+  rawType: unknown,
+  data: any,
+): "hard_bounce" | "soft_bounce" | "complaint" | null {
   if (typeof rawType !== "string") return null;
   const t = rawType.toLowerCase();
-  if (RESEND_BOUNCE_TYPES.has(t)) return "bounce";
   if (RESEND_COMPLAINT_TYPES.has(t)) return "complaint";
+  // delivery_delayed and email.failed are inherently transient/retryable,
+  // so they are always soft regardless of any sub-type the provider includes.
+  if (t === "email.delivery_delayed" || t === "email.failed") return "soft_bounce";
+  if (RESEND_BOUNCE_TYPES.has(t)) {
+    const b = data?.bounce;
+    const bType = (
+      b?.type ??
+      b?.bounceType ??
+      b?.subType ??
+      b?.subtype ??
+      data?.bounce_type ??
+      ""
+    )
+      .toString()
+      .toLowerCase();
+    if (bType.includes("transient") || bType.includes("soft")) return "soft_bounce";
+    // Default any unclassified bounce to hard. Resend (via SES) only forwards
+    // undeliverable mail, so an unknown sub-type is far more likely to be a
+    // permanent failure than a transient one.
+    return "hard_bounce";
+  }
   return null;
 }
 
@@ -485,12 +513,15 @@ router.post("/resend", async (req: Request, res: Response) => {
 
   for (const evt of events) {
     try {
-      const eventType = classifyResendEventType(evt?.type);
-      if (!eventType) continue;
       const data = evt?.data ?? evt;
+      const eventType = classifyResendEvent(evt?.type, data);
+      if (!eventType) continue;
       const recipients = extractRecipients(data);
       if (recipients.length === 0) continue;
-      const reason = extractReason(eventType, data);
+      // extractReason switches on the high-level category, so map the more
+      // specific bounce sub-types back to "bounce" for that helper.
+      const reasonCategory = eventType === "complaint" ? "complaint" : "bounce";
+      const reason = extractReason(reasonCategory, data);
       const receivedAt = (() => {
         const raw = evt?.created_at || data?.created_at;
         if (typeof raw === "string") {

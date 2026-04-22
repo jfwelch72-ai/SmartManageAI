@@ -634,7 +634,7 @@ router.get("/api/admin/status/subscribers", ...adminGuard, async (_req, res, nex
       FROM "status_subscribers" s
       LEFT JOIN LATERAL (
         SELECT
-          SUM(CASE WHEN event_type = 'bounce' THEN 1 ELSE 0 END) AS bounce_count,
+          SUM(CASE WHEN event_type IN ('bounce','hard_bounce','soft_bounce') THEN 1 ELSE 0 END) AS bounce_count,
           SUM(CASE WHEN event_type = 'complaint' THEN 1 ELSE 0 END) AS complaint_count,
           MAX(received_at) AS last_event_at,
           (SELECT event_type FROM "status_subscriber_email_events" e2
@@ -761,6 +761,145 @@ router.get("/api/admin/status/subscriber-removals", ...adminGuard, async (req, r
 
 // ---------- notification fanout ----------
 
+// Suppression policy for the incident-notification fanout (Task #866).
+// Any address with a recent hard bounce or complaint is auto-removed before
+// we send. Soft bounces accrue and only suppress once they cross a small
+// threshold within a short window so a single transient blip doesn't kill
+// a real subscriber.
+const HARD_BOUNCE_WINDOW_DAYS = 90;
+const COMPLAINT_WINDOW_DAYS = 90;
+const SOFT_BOUNCE_WINDOW_DAYS = 7;
+const SOFT_BOUNCE_THRESHOLD = 3;
+
+type SuppressionReason = "Bounce" | "Complaint";
+
+type SubscriberRow = {
+  id: string;
+  email: string;
+  unsubscribe_token: string;
+  confirmed_at: Date | string | null;
+};
+
+/**
+ * Decide which of the supplied subscribers should be suppressed because of
+ * recent hard bounces, complaints, or repeated soft bounces. A subscriber
+ * who re-confirmed after the offending event is treated as fresh and not
+ * suppressed (their `confirmed_at` is later than the event timestamp).
+ */
+async function getSuppressionDecisions(
+  subscribers: SubscriberRow[],
+): Promise<Map<string, SuppressionReason>> {
+  const decisions = new Map<string, SuppressionReason>();
+  if (subscribers.length === 0) return decisions;
+
+  const lowerEmails = Array.from(
+    new Set(subscribers.map((s) => s.email.toLowerCase())),
+  );
+  const r = await db.execute(sql`
+    SELECT
+      lower(email) AS email,
+      MAX(received_at) FILTER (
+        WHERE event_type IN ('hard_bounce','bounce')
+          AND received_at > now() - (${HARD_BOUNCE_WINDOW_DAYS}::int * interval '1 day')
+      ) AS last_hard_at,
+      MAX(received_at) FILTER (
+        WHERE event_type = 'complaint'
+          AND received_at > now() - (${COMPLAINT_WINDOW_DAYS}::int * interval '1 day')
+      ) AS last_complaint_at,
+      COUNT(*) FILTER (
+        WHERE event_type = 'soft_bounce'
+          AND received_at > now() - (${SOFT_BOUNCE_WINDOW_DAYS}::int * interval '1 day')
+      ) AS soft_count,
+      MAX(received_at) FILTER (
+        WHERE event_type = 'soft_bounce'
+          AND received_at > now() - (${SOFT_BOUNCE_WINDOW_DAYS}::int * interval '1 day')
+      ) AS last_soft_at
+    FROM "status_subscriber_email_events"
+    WHERE lower(email) IN (${sql.join(lowerEmails.map((e) => sql`${e}`), sql`, `)})
+    GROUP BY lower(email)
+  `);
+
+  type EvRow = {
+    email: string;
+    last_hard_at: Date | string | null;
+    last_complaint_at: Date | string | null;
+    soft_count: number | string | null;
+    last_soft_at: Date | string | null;
+  };
+  const byEmail = new Map<string, EvRow>();
+  for (const row of r.rows as EvRow[]) byEmail.set(row.email, row);
+
+  const toDate = (value: Date | string | null): Date | null => {
+    if (value === null) return null;
+    const d = value instanceof Date ? value : new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+
+  for (const sub of subscribers) {
+    const ev = byEmail.get(sub.email.toLowerCase());
+    if (!ev) continue;
+    const confirmedAt = toDate(sub.confirmed_at);
+    const isAfterReconfirm = (eventAt: Date | string | null): boolean => {
+      const d = toDate(eventAt);
+      if (!d) return false;
+      if (confirmedAt && confirmedAt.getTime() > d.getTime()) return false;
+      return true;
+    };
+
+    if (isAfterReconfirm(ev.last_complaint_at)) {
+      decisions.set(sub.id, "Complaint");
+      continue;
+    }
+    if (isAfterReconfirm(ev.last_hard_at)) {
+      decisions.set(sub.id, "Bounce");
+      continue;
+    }
+    const softCount = Number(ev.soft_count ?? 0);
+    if (softCount >= SOFT_BOUNCE_THRESHOLD && isAfterReconfirm(ev.last_soft_at)) {
+      decisions.set(sub.id, "Bounce");
+    }
+  }
+  return decisions;
+}
+
+/**
+ * Auto-remove a subscriber the fanout decided to suppress, recording the
+ * removal in `status_subscriber_removals` so it shows up in the existing
+ * "Recently removed" admin view (`removed_by_user_id` stays NULL because
+ * the system, not an admin, made the decision).
+ */
+async function autoRemoveSuppressedSubscribers(
+  rows: Array<{ id: string; email: string; reason: SuppressionReason }>,
+  incidentId: string,
+): Promise<void> {
+  for (const row of rows) {
+    try {
+      await db.transaction(async (tx) => {
+        const del = await tx.execute(
+          sql`DELETE FROM "status_subscribers" WHERE id = ${row.id} RETURNING id`,
+        );
+        if (del.rows.length === 0) return;
+        await tx.execute(sql`
+          INSERT INTO "status_subscriber_removals" (email, removed_by_user_id, reason)
+          VALUES (${row.email}, ${null}, ${row.reason})
+        `);
+      });
+      logInfo("Status subscriber auto-removed by suppression policy", {
+        subscriberId: row.id,
+        email: row.email,
+        reason: row.reason,
+        incidentId,
+      });
+    } catch (err) {
+      logError(
+        "Failed to auto-remove suppressed subscriber",
+        { subscriberId: row.id, email: row.email, reason: row.reason },
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    }
+  }
+}
+
 async function notifySubscribersOfIncident(incidentId: string, updateId: string | null, isNew: boolean): Promise<void> {
   const incRes = await db.execute(sql`SELECT id, title, status, impact FROM "status_incidents" WHERE id = ${incidentId} LIMIT 1`);
   const incident = incRes.rows[0] as { id: string; title: string; status: string; impact: string } | undefined;
@@ -773,7 +912,7 @@ async function notifySubscribersOfIncident(incidentId: string, updateId: string 
   }
 
   const subsRes = await db.execute(sql`
-    SELECT s.id, s.email, s.unsubscribe_token
+    SELECT s.id, s.email, s.unsubscribe_token, s.confirmed_at
     FROM "status_subscribers" s
     WHERE s.confirmed = true
       AND NOT EXISTS (
@@ -782,7 +921,27 @@ async function notifySubscribersOfIncident(incidentId: string, updateId: string 
           AND ((n.update_id IS NULL AND ${updateId}::text IS NULL) OR n.update_id = ${updateId})
       )
   `);
-  const subs = subsRes.rows as Array<{ id: string; email: string; unsubscribe_token: string }>;
+  const allSubs = subsRes.rows as SubscriberRow[];
+  if (allSubs.length === 0) return;
+
+  // Apply the suppression policy before we send. Suppressed addresses are
+  // auto-removed (and surface in the "Recently removed" admin view) so the
+  // bad addresses don't accumulate notification attempts and burn sender
+  // reputation. We send to the remaining, sendable subscribers below.
+  const decisions = await getSuppressionDecisions(allSubs);
+  const subs = allSubs.filter((s) => !decisions.has(s.id));
+  if (decisions.size > 0) {
+    const toRemove = allSubs
+      .filter((s) => decisions.has(s.id))
+      .map((s) => ({ id: s.id, email: s.email, reason: decisions.get(s.id)! }));
+    await autoRemoveSuppressedSubscribers(toRemove, incidentId);
+    logInfo("Status incident fanout suppressed addresses", {
+      incidentId,
+      suppressed: toRemove.length,
+      bounce: toRemove.filter((r) => r.reason === "Bounce").length,
+      complaint: toRemove.filter((r) => r.reason === "Complaint").length,
+    });
+  }
   if (subs.length === 0) return;
 
   const subjectPrefix = isNew ? "[New Incident]" : `[${incident.status}]`;
