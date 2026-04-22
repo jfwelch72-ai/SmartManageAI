@@ -46,9 +46,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Layers, Sparkles, Trash2, Search, FileText, Calendar, Pencil, History, ChevronRight, ChevronDown, Flag, ArrowRight, ListTree, Eye, Plus, X, Check } from "lucide-react";
+import { Layers, Sparkles, Trash2, Search, FileText, Calendar, Pencil, History, ChevronRight, ChevronDown, Flag, ArrowRight, ListTree, Eye, Plus, X, Check, GitCompare } from "lucide-react";
 import type { ProjectTemplate } from "@shared/schema";
 import { TemplateContentEditorDialog } from "@/components/templates/template-content-editor-dialog";
+import { TemplateVersionDiffDialog } from "@/components/templates/template-version-diff-dialog";
 
 interface SnapshotTask {
   refId: string;
@@ -141,6 +142,7 @@ export default function ProjectTemplatesPage() {
     name: "",
     durationDays: "",
   });
+  const [diffTemplate, setDiffTemplate] = useState<ProjectTemplate | null>(null);
 
   const previewSnapshotQuery = useQuery<SnapshotResponse>({
     queryKey: ["/api/project-templates", previewTemplate?.id, "snapshot", "latest"],
@@ -987,6 +989,17 @@ export default function ProjectTemplatesPage() {
                   >
                     <Eye className="w-4 h-4 mr-1" /> Preview
                   </Button>
+                  {(tpl.currentVersion ?? 1) >= 2 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setDiffTemplate(tpl)}
+                      data-testid={`button-compare-template-${tpl.id}`}
+                      title="Compare two versions of this template"
+                    >
+                      <GitCompare className="w-4 h-4 mr-1" /> Compare
+                    </Button>
+                  )}
                   <Button
                     size="sm"
                     onClick={() => openUseDialog(tpl)}
@@ -1587,6 +1600,12 @@ export default function ProjectTemplatesPage() {
         template={contentEditorTarget}
         open={!!contentEditorTarget}
         onOpenChange={(open) => !open && setContentEditorTarget(null)}
+      />
+
+      <TemplateVersionDiffDialog
+        template={diffTemplate}
+        open={!!diffTemplate}
+        onOpenChange={(open) => !open && setDiffTemplate(null)}
       />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
