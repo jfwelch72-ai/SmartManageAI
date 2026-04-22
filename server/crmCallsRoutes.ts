@@ -1066,6 +1066,8 @@ router.get(
           transcript: string | null;
           transcriptStatus: string;
           transcribedAt: string | null;
+          summary: unknown;
+          summaryGeneratedAt: string | null;
         }>();
         if (callIds.length) {
           const recRows = await db
@@ -1077,6 +1079,8 @@ router.get(
               transcript: crmCallRecordings.transcript,
               transcriptStatus: crmCallRecordings.transcriptStatus,
               transcribedAt: crmCallRecordings.transcribedAt,
+              summary: crmCallRecordings.summary,
+              summaryGeneratedAt: crmCallRecordings.summaryGeneratedAt,
             })
             .from(crmCallRecordings)
             .where(inArray(crmCallRecordings.callId, callIds))
@@ -1090,6 +1094,8 @@ router.get(
                 transcript: rec.transcript ?? null,
                 transcriptStatus: rec.transcriptStatus ?? "PENDING",
                 transcribedAt: rec.transcribedAt ? rec.transcribedAt.toISOString() : null,
+                summary: rec.summary ?? null,
+                summaryGeneratedAt: rec.summaryGeneratedAt ? rec.summaryGeneratedAt.toISOString() : null,
               });
             }
           }
@@ -1122,6 +1128,8 @@ router.get(
                     transcript: rec.transcript,
                     transcriptStatus: rec.transcriptStatus,
                     transcribedAt: rec.transcribedAt,
+                    summary: rec.summary,
+                    summaryGeneratedAt: rec.summaryGeneratedAt,
                   }
                 : null,
             },

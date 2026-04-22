@@ -1738,6 +1738,8 @@ export const crmCallRecordings = pgTable("crm_call_recordings", {
   transcriptProvider: text("transcript_provider"),
   transcriptError: text("transcript_error"),
   transcribedAt: timestamp("transcribed_at"),
+  summary: jsonb("summary"),
+  summaryGeneratedAt: timestamp("summary_generated_at"),
   storageKey: text("storage_key"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({

@@ -24,6 +24,7 @@ import {
   ChevronRight,
   Loader2,
   Search,
+  Sparkles,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -452,6 +453,12 @@ function CallRecording({ item, highlight }: { item: UnifiedActivity; highlight?:
     transcript?: string | null;
     transcriptStatus?: string;
     transcribedAt?: string | null;
+    summary?: {
+      summary?: string;
+      keyPoints?: string[];
+      actionItems?: string[];
+      nextSteps?: string[];
+    } | null;
   };
   const callId: string | undefined = item.meta?.callId;
   const hasTranscript = !!rec.transcript && rec.transcript.trim().length > 0;
@@ -513,6 +520,8 @@ function CallRecording({ item, highlight }: { item: UnifiedActivity; highlight?:
           </a>
         )}
       </div>
+
+      <CallSummaryBlock summary={rec.summary} itemId={item.id} />
 
       <div>
         {hasTranscript ? (
@@ -583,6 +592,60 @@ function CallRecording({ item, highlight }: { item: UnifiedActivity; highlight?:
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function CallSummaryBlock({
+  summary,
+  itemId,
+}: {
+  summary?: {
+    summary?: string;
+    keyPoints?: string[];
+    actionItems?: string[];
+    nextSteps?: string[];
+  } | null;
+  itemId: string;
+}) {
+  if (!summary) return null;
+  const keyPoints = (summary.keyPoints || []).filter((s) => s && s.trim().length > 0);
+  const actionItems = (summary.actionItems || []).filter((s) => s && s.trim().length > 0);
+  const nextSteps = (summary.nextSteps || []).filter((s) => s && s.trim().length > 0);
+  const overview = (summary.summary || "").trim();
+  if (!overview && keyPoints.length === 0 && actionItems.length === 0 && nextSteps.length === 0) {
+    return null;
+  }
+  const renderList = (label: string, items: string[], testid: string) =>
+    items.length === 0 ? null : (
+      <div data-testid={testid}>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+        <ul className="mt-0.5 list-disc pl-4 space-y-0.5 text-xs leading-snug text-foreground/90">
+          {items.map((it, i) => (
+            <li key={i}>{it}</li>
+          ))}
+        </ul>
+      </div>
+    );
+  return (
+    <div
+      className="rounded-md border bg-muted/30 px-3 py-2 space-y-2"
+      data-testid={`call-summary-${itemId}`}
+    >
+      <div className="flex items-center gap-1.5">
+        <Sparkles className="h-3 w-3 text-muted-foreground" />
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          AI summary
+        </span>
+      </div>
+      {overview && (
+        <p className="text-xs leading-snug text-foreground/90" data-testid={`text-summary-overview-${itemId}`}>
+          {overview}
+        </p>
+      )}
+      {renderList("Key points", keyPoints, `list-summary-keypoints-${itemId}`)}
+      {renderList("Action items", actionItems, `list-summary-actions-${itemId}`)}
+      {renderList("Next steps", nextSteps, `list-summary-nextsteps-${itemId}`)}
     </div>
   );
 }
