@@ -2399,10 +2399,25 @@ function RetryLineageChain({
 // Lives in this file (not its own page) so the settings sit right next to the
 // thing they configure, matching the rest of this admin tool's layout.
 // ---------------------------------------------------------------------------
+interface BackfillTestAlertResult {
+  slack: { configured: boolean; ok: boolean; error?: string };
+  email: {
+    configured: boolean;
+    ok: boolean;
+    error?: string;
+    recipients?: string[];
+  };
+  operatorDisplay: string;
+}
+
 interface BackfillNotificationSettings {
   slackWebhookUrl: string;
   emailRecipients: string[];
   updatedAt: string | null;
+  // Task #1045 — persisted last test-alert outcome so the settings card can
+  // show the destinations' last-known health on load.
+  lastTestAt: string | null;
+  lastTestResult: BackfillTestAlertResult | null;
 }
 const NOTIFICATION_SETTINGS_PATH =
   "/api/crm/calls/transcripts/backfill/notification-settings";
@@ -2470,15 +2485,8 @@ export function BackfillNotificationSettingsCard() {
         "/api/crm/calls/transcripts/backfill/test-alert",
         {},
       );
-      return (await res.json()) as {
-        slack: { configured: boolean; ok: boolean; error?: string };
-        email: {
-          configured: boolean;
-          ok: boolean;
-          error?: string;
-          recipients?: string[];
-        };
-        operatorDisplay: string;
+      return (await res.json()) as BackfillTestAlertResult & {
+        testedAt: string;
       };
     },
     onSuccess: (data) => {
@@ -2486,7 +2494,20 @@ export function BackfillNotificationSettingsCard() {
       // server; refresh the audit/cooldown query so the button disables
       // immediately instead of waiting for the next mount.
       queryClient.invalidateQueries({ queryKey: TEST_ALERT_LATEST_KEY });
-      const { slack, email } = data;
+      const { slack, email, operatorDisplay, testedAt } = data;
+      // Task #1045 — sync the persisted last-test fields into the cached
+      // settings so the inline health summary updates immediately without a
+      // refetch round-trip.
+      queryClient.setQueryData<BackfillNotificationSettings | undefined>(
+        NOTIFICATION_SETTINGS_KEY,
+        (prev) => ({
+          slackWebhookUrl: prev?.slackWebhookUrl ?? "",
+          emailRecipients: prev?.emailRecipients ?? [],
+          updatedAt: prev?.updatedAt ?? null,
+          lastTestAt: testedAt,
+          lastTestResult: { slack, email, operatorDisplay },
+        }),
+      );
       if (!slack.configured && !email.configured) {
         toast({
           title: "No alert destinations configured",
@@ -2574,6 +2595,38 @@ export function BackfillNotificationSettingsCard() {
       });
     },
   });
+
+  // Task #1045 — clear the persisted last-test outcome from the settings
+  // card. Optimistically updates the cache so the panel disappears
+  // immediately; falls back to a refetch on error.
+  const dismissTestResultMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest(
+        "DELETE",
+        `${NOTIFICATION_SETTINGS_PATH}/last-test`,
+      );
+    },
+    onSuccess: () => {
+      queryClient.setQueryData<BackfillNotificationSettings | undefined>(
+        NOTIFICATION_SETTINGS_KEY,
+        (prev) =>
+          prev
+            ? { ...prev, lastTestAt: null, lastTestResult: null }
+            : prev,
+      );
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Couldn't dismiss the last test result",
+        description: err.message,
+        variant: "destructive",
+      });
+      queryClient.invalidateQueries({ queryKey: NOTIFICATION_SETTINGS_KEY });
+    },
+  });
+
+  const lastTestResult = settingsQuery.data?.lastTestResult ?? null;
+  const lastTestAt = settingsQuery.data?.lastTestAt ?? null;
 
   return (
     <Card data-testid="card-notification-settings">
@@ -2669,6 +2722,14 @@ export function BackfillNotificationSettingsCard() {
             </span>
           )}
         </div>
+        {lastTestResult && lastTestAt && (
+          <BackfillLastTestResultPanel
+            result={lastTestResult}
+            testedAt={lastTestAt}
+            onDismiss={() => dismissTestResultMutation.mutate()}
+            isDismissing={dismissTestResultMutation.isPending}
+          />
+        )}
       </CardContent>
     </Card>
   );
@@ -2828,5 +2889,125 @@ function BackfillAlertDeliveriesCard() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// Task #1045 — inline summary of the most recent "Send test alert" outcome
+// so admins coming back to the page see whether the destinations are
+// currently healthy without having to re-fire the test. Renders one chip
+// per configured channel (Slack, email) plus an explicit error line when
+// either channel failed.
+function BackfillLastTestResultPanel({
+  result,
+  testedAt,
+  onDismiss,
+  isDismissing,
+}: {
+  result: BackfillTestAlertResult;
+  testedAt: string;
+  onDismiss: () => void;
+  isDismissing: boolean;
+}) {
+  const tested = new Date(testedAt);
+  const channels: Array<{
+    key: "slack" | "email";
+    label: string;
+    state: BackfillTestAlertResult["slack"] | BackfillTestAlertResult["email"];
+  }> = [
+    { key: "slack", label: "Slack", state: result.slack },
+    { key: "email", label: "Email", state: result.email },
+  ];
+  const anyConfigured = result.slack.configured || result.email.configured;
+
+  return (
+    <div
+      className="rounded-md border bg-muted/40 p-3 space-y-2"
+      data-testid="panel-last-test-result"
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div className="space-y-0.5">
+          <div className="text-xs font-medium">
+            Last tested{" "}
+            <span data-testid="text-last-test-at">
+              {format(tested, "PPpp")}
+            </span>
+          </div>
+          <div className="text-xs text-muted-foreground">
+            ({formatDistanceStrict(tested, new Date(), { addSuffix: true })})
+          </div>
+        </div>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          onClick={onDismiss}
+          disabled={isDismissing}
+          data-testid="button-dismiss-last-test"
+          title="Clear the saved last-test result"
+        >
+          {isDismissing ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <X className="h-3.5 w-3.5" />
+          )}
+          <span className="sr-only">Dismiss last test result</span>
+        </Button>
+      </div>
+      {!anyConfigured ? (
+        <div
+          className="text-xs text-muted-foreground"
+          data-testid="text-last-test-no-destinations"
+        >
+          No destinations were configured at the time of the last test.
+        </div>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {channels.map(({ key, label, state }) => {
+            if (!state.configured) {
+              return (
+                <Badge
+                  key={key}
+                  variant="outline"
+                  className="text-muted-foreground"
+                  data-testid={`chip-last-test-${key}`}
+                >
+                  {label}: not configured
+                </Badge>
+              );
+            }
+            return (
+              <Badge
+                key={key}
+                variant={state.ok ? "default" : "destructive"}
+                className={
+                  state.ok
+                    ? "bg-green-600 hover:bg-green-600 text-white"
+                    : undefined
+                }
+                data-testid={`chip-last-test-${key}`}
+              >
+                {state.ok ? (
+                  <CheckCircle2 className="h-3 w-3 mr-1" />
+                ) : (
+                  <AlertTriangle className="h-3 w-3 mr-1" />
+                )}
+                {label}: {state.ok ? "healthy" : "failed"}
+              </Badge>
+            );
+          })}
+        </div>
+      )}
+      {channels
+        .filter((c) => c.state.configured && !c.state.ok && c.state.error)
+        .map(({ key, label, state }) => (
+          <div
+            key={`${key}-err`}
+            className="text-xs text-destructive break-words"
+            data-testid={`text-last-test-${key}-error`}
+          >
+            <strong>{label} error:</strong> {state.error}
+          </div>
+        ))}
+    </div>
   );
 }

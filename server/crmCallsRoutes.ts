@@ -41,10 +41,12 @@ import {
   createCrmTranscriptBackfillTestAlert,
   getCrmTranscriptBackfillJob,
   getCrmTranscriptBackfillJobByIdAcrossOrgs,
+  clearCrmTranscriptBackfillTestResult,
   getCrmTranscriptBackfillNotificationSettings,
   getCrmTranscriptBackfillOperatorContact,
   getLatestCrmTranscriptBackfillTestAlert,
   listCrmTranscriptBackfillAlertDeliveries,
+  recordCrmTranscriptBackfillTestResult,
   getRunningCrmTranscriptBackfillJob,
   listCrmTranscriptBackfillJobs,
   listCrmTranscriptBackfillNotificationsForJobs,
@@ -2652,7 +2654,21 @@ router.post(
         });
       }
 
-      res.json(result);
+      // Task #1045 — also persist the outcome on the settings row so the
+      // settings card can render last-known health (timestamp + per-channel
+      // ok/error) without admins having to re-fire the test on every visit.
+      const testedAt = new Date();
+      try {
+        await recordCrmTranscriptBackfillTestResult(orgId, result, testedAt);
+      } catch (err) {
+        // Persistence failure must not mask the dispatch result the admin is
+        // waiting on; surface it in logs and continue.
+        logWarn("crmCalls: failed to persist test-alert result", {
+          orgId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      res.json({ ...result, testedAt: testedAt.toISOString() });
     } catch (e) {
       next(e);
     }
@@ -2855,6 +2871,10 @@ router.get(
         slackWebhookUrl: settings?.slackWebhookUrl ?? "",
         emailRecipients: settings?.emailRecipients ?? [],
         updatedAt: settings?.updatedAt ?? null,
+        // Task #1045 — surface the persisted last-test outcome so the
+        // settings card can show the destination's last-known health on load.
+        lastTestAt: settings?.lastTestAt ? settings.lastTestAt.toISOString() : null,
+        lastTestResult: settings?.lastTestResult ?? null,
       });
     } catch (e) {
       next(e);
@@ -2913,7 +2933,29 @@ router.put(
         slackWebhookUrl: saved.slackWebhookUrl ?? "",
         emailRecipients: saved.emailRecipients ?? [],
         updatedAt: saved.updatedAt,
+        lastTestAt: saved.lastTestAt ? saved.lastTestAt.toISOString() : null,
+        lastTestResult: saved.lastTestResult ?? null,
       });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #1045 — admin "dismiss the last test result" affordance. Lets an
+// admin clear the inline health summary on the settings card after they've
+// acknowledged it (e.g. fixed a misconfigured webhook) without having to
+// fire another test just to overwrite it.
+router.delete(
+  "/api/crm/calls/transcripts/backfill/notification-settings/last-test",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+      await clearCrmTranscriptBackfillTestResult(orgId);
+      res.json({ success: true });
     } catch (e) {
       next(e);
     }

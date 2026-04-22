@@ -771,6 +771,51 @@ export async function upsertCrmTranscriptBackfillNotificationSettings(
   return row;
 }
 
+// Task #1045 — persist the most recent test-alert outcome so the settings
+// card can render last-known health without re-firing the test. Stored on
+// the same per-org row as the destinations so it follows the same tenant
+// isolation rules. We upsert (instead of update-only) so a test fired before
+// the admin has saved any settings still records its result.
+export type CrmTranscriptBackfillTestResult = NonNullable<
+  CrmTranscriptBackfillNotificationSettings["lastTestResult"]
+>;
+
+export async function recordCrmTranscriptBackfillTestResult(
+  organizationId: string,
+  result: CrmTranscriptBackfillTestResult,
+  testedAt: Date = new Date(),
+): Promise<CrmTranscriptBackfillNotificationSettings> {
+  const [row] = await db
+    .insert(crmTranscriptBackfillNotificationSettings)
+    .values({
+      organizationId,
+      slackWebhookUrl: null,
+      emailRecipients: [],
+      updatedById: null,
+      updatedAt: new Date(),
+      lastTestAt: testedAt,
+      lastTestResult: result,
+    })
+    .onConflictDoUpdate({
+      target: crmTranscriptBackfillNotificationSettings.organizationId,
+      set: {
+        lastTestAt: testedAt,
+        lastTestResult: result,
+      },
+    })
+    .returning();
+  return row;
+}
+
+export async function clearCrmTranscriptBackfillTestResult(
+  organizationId: string,
+): Promise<void> {
+  await db
+    .update(crmTranscriptBackfillNotificationSettings)
+    .set({ lastTestAt: null, lastTestResult: null })
+    .where(eq(crmTranscriptBackfillNotificationSettings.organizationId, organizationId));
+}
+
 // ---------------------------------------------------------------------------
 // Task #1022 — audit trail of admins notified for each backfill run.
 // Recipient emails are snapshotted (not joined) so the list survives admin

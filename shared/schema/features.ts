@@ -1812,6 +1812,22 @@ export const crmTranscriptBackfillNotificationSettings = pgTable(
     updatedById: varchar("updated_by_id").references(() => users.id, {
       onDelete: "set null",
     }),
+    // Task #1045 — persist the most recent "Send test alert" outcome so admins
+    // can see whether the configured destinations are healthy without firing
+    // another test. `lastTestResult` shape mirrors the API response of the
+    // POST /test-alert endpoint; `null` until the first test runs or after the
+    // admin clears it.
+    lastTestAt: timestamp("last_test_at"),
+    lastTestResult: jsonb("last_test_result").$type<{
+      slack: { configured: boolean; ok: boolean; error?: string };
+      email: {
+        configured: boolean;
+        ok: boolean;
+        error?: string;
+        recipients?: string[];
+      };
+      operatorDisplay: string;
+    } | null>(),
   },
 );
 export type CrmTranscriptBackfillNotificationSettings =
