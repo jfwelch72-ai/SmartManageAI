@@ -10,7 +10,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Edit, Trash2, Plus, Building2, AlertCircle } from "lucide-react";
+import { Edit, Trash2, Plus, Building2, AlertCircle, Upload, FileSpreadsheet, CheckCircle2, XCircle } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { format, parseISO } from "date-fns";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -85,6 +87,107 @@ export function PrevailingWageTab({
   const [pwExpirationDate, setPwExpirationDate] = useState("");
   const [pwWageDecision, setPwWageDecision] = useState("");
   const [pwNotes, setPwNotes] = useState("");
+
+  type ImportPreviewRowDTO = {
+    rowNumber: number;
+    rawClassification: string;
+    classificationId: string | null;
+    classificationName: string | null;
+    wageRate: string;
+    fringeHealthRate: string;
+    fringePensionRate: string;
+    fringeVacationRate: string;
+    fringeTrainingRate: string;
+    fringeRate: string;
+    totalRate: string;
+    overtimeMultiplier: string;
+    effectiveDate: string;
+    expirationDate: string | null;
+    wageDecision: string | null;
+    notes: string | null;
+    action: "CREATE" | "UPDATE" | "ERROR";
+    existingId: string | null;
+    errors: string[];
+  };
+
+  type ImportPreviewResponse = {
+    projectId: string;
+    projectName: string;
+    headersDetected: string[];
+    summary: { totalRows: number; toCreate: number; toUpdate: number; withErrors: number };
+    rows: ImportPreviewRowDTO[];
+  };
+
+  type ImportResultResponse = {
+    created: number;
+    updated: number;
+    skipped: number;
+    errors: { rowNumber?: number; message: string }[];
+  };
+
+  const [showImportDialog, setShowImportDialog] = useState(false);
+  const [importProjectId, setImportProjectId] = useState("");
+  const [importDefaultDate, setImportDefaultDate] = useState(new Date().toISOString().split("T")[0]);
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [importPreview, setImportPreview] = useState<ImportPreviewResponse | null>(null);
+
+  const resetImportDialog = () => {
+    setShowImportDialog(false);
+    setImportProjectId("");
+    setImportDefaultDate(new Date().toISOString().split("T")[0]);
+    setImportFile(null);
+    setImportPreview(null);
+  };
+
+  const previewMutation = useMutation({
+    mutationFn: async () => {
+      if (!importFile || !importProjectId) throw new Error("Project and file required");
+      const fd = new FormData();
+      fd.append("file", importFile);
+      fd.append("projectId", importProjectId);
+      if (importDefaultDate) fd.append("defaultEffectiveDate", importDefaultDate);
+      const res = await fetch("/api/labor-rates/prevailing-wage-rates/import-preview", {
+        method: "POST",
+        body: fd,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Failed to preview file" })) as { error?: string };
+        throw new Error(err.error || "Failed to preview file");
+      }
+      return (await res.json()) as ImportPreviewResponse;
+    },
+    onSuccess: (data) => {
+      setImportPreview(data);
+    },
+    onError: (e: Error) => {
+      toast({ title: "Preview failed", description: e.message, variant: "destructive" });
+    },
+  });
+
+  const importMutation = useMutation({
+    mutationFn: async () => {
+      if (!importPreview) throw new Error("Run preview first");
+      const rows = importPreview.rows.filter((r) => r.action !== "ERROR");
+      return await apiRequest("POST", "/api/labor-rates/prevailing-wage-rates/import", {
+        projectId: importPreview.projectId,
+        rows,
+      });
+    },
+    onSuccess: async (res) => {
+      const data = (await res.json()) as ImportResultResponse;
+      queryClient.invalidateQueries({ queryKey: ["/api/labor-rates/prevailing-wage-rates"] });
+      const errCount = (data.errors || []).length;
+      toast({
+        title: "Import complete",
+        description: `Created ${data.created}, updated ${data.updated}, skipped ${data.skipped}${errCount ? ` (${errCount} errors)` : ""}`,
+      });
+      resetImportDialog();
+    },
+    onError: (e: Error) => {
+      toast({ title: "Import failed", description: e.message, variant: "destructive" });
+    },
+  });
 
   const pwRateMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -188,10 +291,21 @@ export function PrevailingWageTab({
             </CardDescription>
           </div>
           {canEdit && (
-            <Button onClick={() => openPWRateDialog()} data-testid="button-add-pw-rate" className="w-full sm:w-auto">
-              <Plus className="w-4 h-4 mr-2" />
-              Add PW Rate
-            </Button>
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+              <Button
+                variant="outline"
+                onClick={() => setShowImportDialog(true)}
+                data-testid="button-import-pw-rates"
+                className="w-full sm:w-auto"
+              >
+                <Upload className="w-4 h-4 mr-2" />
+                Import CSV/XLSX
+              </Button>
+              <Button onClick={() => openPWRateDialog()} data-testid="button-add-pw-rate" className="w-full sm:w-auto">
+                <Plus className="w-4 h-4 mr-2" />
+                Add PW Rate
+              </Button>
+            </div>
           )}
         </CardHeader>
         <CardContent>
@@ -459,6 +573,169 @@ export function PrevailingWageTab({
             <Button variant="outline" onClick={resetPWRateDialog}>Cancel</Button>
             <Button onClick={handleSavePWRate} disabled={pwRateMutation.isPending} data-testid="button-save-pw-rate">
               {editingPWRate ? "Update" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showImportDialog} onOpenChange={(open) => !open && resetImportDialog()}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col" data-testid="dialog-import-pw-rates">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileSpreadsheet className="w-5 h-5" />
+              Import Prevailing Wage Rates
+            </DialogTitle>
+            <DialogDescription>
+              Upload a CSV or XLSX file. Required columns: <code>Classification</code> and <code>Wage Rate</code>.
+              Optional: <code>Health</code>, <code>Pension</code>, <code>Vacation</code>, <code>Training</code>,
+              {" "}<code>Fringe</code>, <code>OT Multiplier</code>, <code>Effective Date</code>, <code>Expiration Date</code>,
+              {" "}<code>Wage Decision</code>, <code>Notes</code>. Matching classifications will be updated; new ones created.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 overflow-hidden flex flex-col flex-1">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <Label>Project *</Label>
+                <Select value={importProjectId} onValueChange={(v) => { setImportProjectId(v); setImportPreview(null); }}>
+                  <SelectTrigger data-testid="select-import-project">
+                    <SelectValue placeholder="Select project" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {projects.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="import-default-date">Default Effective Date</Label>
+                <Input
+                  id="import-default-date"
+                  type="date"
+                  value={importDefaultDate}
+                  onChange={(e) => { setImportDefaultDate(e.target.value); setImportPreview(null); }}
+                  data-testid="input-import-default-date"
+                />
+                <p className="text-xs text-muted-foreground mt-1">Used when row has no date.</p>
+              </div>
+              <div>
+                <Label htmlFor="import-file">File *</Label>
+                <Input
+                  id="import-file"
+                  type="file"
+                  accept=".csv,.xlsx,.xls,text/csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  onChange={(e) => { setImportFile(e.target.files?.[0] || null); setImportPreview(null); }}
+                  data-testid="input-import-file"
+                />
+              </div>
+            </div>
+
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() => previewMutation.mutate()}
+                disabled={!importFile || !importProjectId || previewMutation.isPending}
+                data-testid="button-preview-import"
+              >
+                {previewMutation.isPending ? "Parsing..." : "Preview"}
+              </Button>
+              {importPreview && (
+                <div className="flex items-center gap-2 text-sm flex-wrap">
+                  <Badge variant="outline" data-testid="badge-import-total">{importPreview.summary.totalRows} rows</Badge>
+                  <Badge className="bg-green-100 text-green-800 hover:bg-green-100 dark:bg-green-900/30 dark:text-green-300" data-testid="badge-import-create">
+                    {importPreview.summary.toCreate} new
+                  </Badge>
+                  <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300" data-testid="badge-import-update">
+                    {importPreview.summary.toUpdate} update
+                  </Badge>
+                  {importPreview.summary.withErrors > 0 && (
+                    <Badge variant="destructive" data-testid="badge-import-errors">
+                      {importPreview.summary.withErrors} errors
+                    </Badge>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {importPreview && (
+              <ScrollArea className="flex-1 border rounded-md">
+                <Table>
+                  <TableHeader className="sticky top-0 bg-background">
+                    <TableRow>
+                      <TableHead className="w-[60px]">Row</TableHead>
+                      <TableHead className="w-[100px]">Status</TableHead>
+                      <TableHead>Classification</TableHead>
+                      <TableHead className="text-right">Wage</TableHead>
+                      <TableHead className="text-right">H/W</TableHead>
+                      <TableHead className="text-right">Pension</TableHead>
+                      <TableHead className="text-right">Vac.</TableHead>
+                      <TableHead className="text-right">Train.</TableHead>
+                      <TableHead className="text-right">Total</TableHead>
+                      <TableHead>Effective</TableHead>
+                      <TableHead>Notes</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {importPreview.rows.map((r) => (
+                      <TableRow
+                        key={r.rowNumber}
+                        className={r.action === "ERROR" ? "bg-destructive/10" : ""}
+                        data-testid={`row-import-${r.rowNumber}`}
+                      >
+                        <TableCell className="font-mono text-xs">{r.rowNumber}</TableCell>
+                        <TableCell>
+                          {r.action === "ERROR" ? (
+                            <Badge variant="destructive" className="gap-1"><XCircle className="w-3 h-3" />Error</Badge>
+                          ) : r.action === "UPDATE" ? (
+                            <Badge className="bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 gap-1">
+                              <CheckCircle2 className="w-3 h-3" />Update
+                            </Badge>
+                          ) : (
+                            <Badge className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 gap-1">
+                              <CheckCircle2 className="w-3 h-3" />New
+                            </Badge>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-sm">{r.classificationName || r.rawClassification || <span className="text-muted-foreground italic">-</span>}</div>
+                          {r.errors.length > 0 && (
+                            <div className="text-xs text-destructive mt-0.5" data-testid={`text-import-errors-${r.rowNumber}`}>
+                              {r.errors.join("; ")}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs">${r.wageRate}</TableCell>
+                        <TableCell className="text-right font-mono text-xs">${r.fringeHealthRate}</TableCell>
+                        <TableCell className="text-right font-mono text-xs">${r.fringePensionRate}</TableCell>
+                        <TableCell className="text-right font-mono text-xs">${r.fringeVacationRate}</TableCell>
+                        <TableCell className="text-right font-mono text-xs">${r.fringeTrainingRate}</TableCell>
+                        <TableCell className="text-right font-mono text-xs font-semibold">${r.totalRate}</TableCell>
+                        <TableCell className="text-xs whitespace-nowrap">{r.effectiveDate || "-"}</TableCell>
+                        <TableCell className="text-xs max-w-[160px] truncate">{r.notes || ""}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </ScrollArea>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={resetImportDialog}>Cancel</Button>
+            <Button
+              onClick={() => importMutation.mutate()}
+              disabled={
+                !importPreview ||
+                importMutation.isPending ||
+                (importPreview.summary.toCreate + importPreview.summary.toUpdate) === 0
+              }
+              data-testid="button-confirm-import"
+            >
+              {importMutation.isPending
+                ? "Importing..."
+                : importPreview
+                  ? `Import ${importPreview.summary.toCreate + importPreview.summary.toUpdate} rows`
+                  : "Import"}
             </Button>
           </DialogFooter>
         </DialogContent>

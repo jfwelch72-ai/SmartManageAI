@@ -1,5 +1,7 @@
 import { logError } from "./utils/logger";
 import { Router, Response, NextFunction } from "express";
+import multer from "multer";
+import { z } from "zod";
 import { db } from "./db";
 import { 
   jobClassifications, 
@@ -23,6 +25,11 @@ import { logAudit } from "./auditLogger";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 
 const router = Router();
+
+const importUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+});
 
 // ==================== JOB CLASSIFICATIONS ====================
 
@@ -559,6 +566,472 @@ router.post("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER
     }, req);
 
     res.status(201).json(rate);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ----- Bulk import (CSV/XLSX) -----
+
+type ImportAction = "CREATE" | "UPDATE" | "ERROR";
+
+interface ImportPreviewRow {
+  rowNumber: number;
+  rawClassification: string;
+  classificationId: string | null;
+  classificationName: string | null;
+  wageRate: string;
+  fringeHealthRate: string;
+  fringePensionRate: string;
+  fringeVacationRate: string;
+  fringeTrainingRate: string;
+  fringeRate: string;
+  totalRate: string;
+  overtimeMultiplier: string;
+  effectiveDate: string;
+  expirationDate: string | null;
+  wageDecision: string | null;
+  notes: string | null;
+  action: ImportAction;
+  existingId: string | null;
+  errors: string[];
+}
+
+type CellValue = string | number | boolean | Date | null | undefined;
+type SheetGrid = CellValue[][];
+
+const importRowSchema = z.object({
+  rowNumber: z.number().int().nonnegative().optional(),
+  classificationId: z.string().min(1),
+  wageRate: z.union([z.string(), z.number()]).transform(v => String(v)),
+  fringeHealthRate: z.union([z.string(), z.number()]).optional().transform(v => v === undefined ? "0" : String(v)),
+  fringePensionRate: z.union([z.string(), z.number()]).optional().transform(v => v === undefined ? "0" : String(v)),
+  fringeVacationRate: z.union([z.string(), z.number()]).optional().transform(v => v === undefined ? "0" : String(v)),
+  fringeTrainingRate: z.union([z.string(), z.number()]).optional().transform(v => v === undefined ? "0" : String(v)),
+  fringeRate: z.union([z.string(), z.number()]).optional().transform(v => v === undefined ? "" : String(v)),
+  overtimeMultiplier: z.union([z.string(), z.number()]).optional().transform(v => v === undefined ? "1.5" : String(v)),
+  effectiveDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "effectiveDate must be YYYY-MM-DD"),
+  expirationDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  wageDecision: z.string().nullable().optional(),
+  notes: z.string().nullable().optional(),
+  action: z.enum(["CREATE", "UPDATE", "ERROR"]).optional(),
+});
+
+const importPayloadSchema = z.object({
+  projectId: z.string().min(1),
+  rows: z.array(z.unknown()),
+});
+
+const HEADER_ALIASES: Record<string, RegExp> = {
+  classification: /^(classification|class|trade|craft|job\s*class|job\s*classification|title)$/i,
+  wage: /^(wage|wage\s*rate|base\s*wage|hourly\s*rate|rate|basic\s*hourly|bhr)$/i,
+  health: /^(health|health\/welfare|h\s*&\s*w|hw|welfare|medical|health\s*rate)$/i,
+  pension: /^(pension|retirement|pension\s*rate)$/i,
+  vacation: /^(vacation|holiday|vacation\/holiday|vac|paid\s*leave)$/i,
+  training: /^(training|apprentice(ship)?|education|training\s*rate)$/i,
+  fringe: /^(fringe|total\s*fringe|fringes|fringe\s*total|fringe\s*benefits)$/i,
+  ot: /^(ot|ot\s*mult(iplier)?|overtime|overtime\s*multiplier)$/i,
+  effective: /^(effective|effective\s*date|start|start\s*date)$/i,
+  expiration: /^(expiration|expiration\s*date|end|end\s*date|expires)$/i,
+  decision: /^(wage\s*decision|decision|wd|determination|wd\s*number)$/i,
+  notes: /^(notes?|comments?|remarks?)$/i,
+};
+
+function findHeaderIndex(headers: string[], key: keyof typeof HEADER_ALIASES): number {
+  const re = HEADER_ALIASES[key];
+  return headers.findIndex(h => re.test(String(h || "").trim()));
+}
+
+function parseNumber(val: CellValue): number {
+  if (val === null || val === undefined || val === "") return 0;
+  const cleaned = String(val).replace(/[$,\s]/g, "");
+  const n = parseFloat(cleaned);
+  return Number.isFinite(n) ? n : NaN;
+}
+
+function parseDateCell(val: CellValue): string | null {
+  if (val === null || val === undefined || val === "") return null;
+  if (val instanceof Date) {
+    return val.toISOString().split("T")[0];
+  }
+  if (typeof val === "number") {
+    const epoch = new Date(Date.UTC(1899, 11, 30));
+    const d = new Date(epoch.getTime() + val * 86400000);
+    return d.toISOString().split("T")[0];
+  }
+  const s = String(val).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+  const d = new Date(s);
+  if (!isNaN(d.getTime())) return d.toISOString().split("T")[0];
+  return null;
+}
+
+function cellAt(row: CellValue[] | undefined, idx: number): CellValue {
+  if (!row || idx < 0 || idx >= row.length) return "";
+  return row[idx];
+}
+
+router.post("/prevailing-wage-rates/import-preview", requireAuth, requireRole("ADMIN", "MANAGER"), importUpload.single("file"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const organizationId = req.user!.organizationId;
+    if (!organizationId) return res.status(400).json({ error: "Organization required" });
+
+    const file = req.file;
+    if (!file) return res.status(400).json({ error: "No file uploaded" });
+
+    const projectId = String(req.body.projectId || "");
+    if (!projectId) return res.status(400).json({ error: "projectId is required" });
+    const defaultEffectiveDate = req.body.defaultEffectiveDate ? String(req.body.defaultEffectiveDate) : null;
+
+    // Verify project belongs to org
+    const [project] = await db.select().from(projects).where(and(eq(projects.id, projectId), eq(projects.organizationId, organizationId)));
+    if (!project) return res.status(404).json({ error: "Project not found" });
+
+    // Parse file
+    const xlsx = await import("xlsx");
+    let workbook;
+    try {
+      workbook = xlsx.read(file.buffer, { type: "buffer", cellDates: true });
+    } catch (e) {
+      return res.status(400).json({ error: "Could not parse file. Use CSV or XLSX." });
+    }
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    if (!sheet) return res.status(400).json({ error: "File is empty" });
+    const grid = xlsx.utils.sheet_to_json<CellValue[]>(sheet, { header: 1, raw: true, defval: "" });
+    if (grid.length < 2) return res.status(400).json({ error: "File must include a header row and at least one data row" });
+
+    const headers = (grid[0] || []).map(h => String(h ?? "").trim());
+    const idx = {
+      classification: findHeaderIndex(headers, "classification"),
+      wage: findHeaderIndex(headers, "wage"),
+      health: findHeaderIndex(headers, "health"),
+      pension: findHeaderIndex(headers, "pension"),
+      vacation: findHeaderIndex(headers, "vacation"),
+      training: findHeaderIndex(headers, "training"),
+      fringe: findHeaderIndex(headers, "fringe"),
+      ot: findHeaderIndex(headers, "ot"),
+      effective: findHeaderIndex(headers, "effective"),
+      expiration: findHeaderIndex(headers, "expiration"),
+      decision: findHeaderIndex(headers, "decision"),
+      notes: findHeaderIndex(headers, "notes"),
+    };
+
+    if (idx.classification < 0) {
+      return res.status(400).json({ error: "Required column 'Classification' not found", headersDetected: headers });
+    }
+    if (idx.wage < 0) {
+      return res.status(400).json({ error: "Required column 'Wage Rate' not found", headersDetected: headers });
+    }
+
+    // Load classifications & existing rates for this project
+    const orgClassifications = await db
+      .select()
+      .from(jobClassifications)
+      .where(eq(jobClassifications.organizationId, organizationId));
+    const classByName = new Map<string, typeof orgClassifications[number]>();
+    const classByCode = new Map<string, typeof orgClassifications[number]>();
+    for (const c of orgClassifications) {
+      classByName.set(c.name.trim().toLowerCase(), c);
+      if (c.code) classByCode.set(c.code.trim().toLowerCase(), c);
+    }
+    const existingRates = await db
+      .select()
+      .from(prevailingWageRates)
+      .where(and(
+        eq(prevailingWageRates.organizationId, organizationId),
+        eq(prevailingWageRates.projectId, projectId)
+      ));
+    const existingByClass = new Map(existingRates.map(r => [r.classificationId, r]));
+
+    const previewRows: ImportPreviewRow[] = [];
+    for (let i = 1; i < grid.length; i++) {
+      const row: CellValue[] = grid[i] || [];
+      const isBlank = row.every(c => c === "" || c === null || c === undefined);
+      if (isBlank) continue;
+
+      const errors: string[] = [];
+      const rawClass = String(cellAt(row, idx.classification) ?? "").trim();
+      const lookupKey = rawClass.toLowerCase();
+      const matched = classByName.get(lookupKey) || classByCode.get(lookupKey) || null;
+      if (!rawClass) errors.push("Missing classification");
+      else if (!matched) errors.push(`Unknown classification "${rawClass}"`);
+
+      const wageNum = parseNumber(cellAt(row, idx.wage));
+      if (isNaN(wageNum) || wageNum <= 0) errors.push("Invalid or missing wage rate");
+
+      const healthNum = idx.health >= 0 ? parseNumber(cellAt(row, idx.health)) : 0;
+      const pensionNum = idx.pension >= 0 ? parseNumber(cellAt(row, idx.pension)) : 0;
+      const vacationNum = idx.vacation >= 0 ? parseNumber(cellAt(row, idx.vacation)) : 0;
+      const trainingNum = idx.training >= 0 ? parseNumber(cellAt(row, idx.training)) : 0;
+      const fringeChecks: Array<[string, number]> = [
+        ["health", healthNum],
+        ["pension", pensionNum],
+        ["vacation", vacationNum],
+        ["training", trainingNum],
+      ];
+      for (const [name, n] of fringeChecks) {
+        if (isNaN(n) || n < 0) errors.push(`Invalid ${name} fringe`);
+      }
+
+      const breakdownSum = (isNaN(healthNum) ? 0 : healthNum) + (isNaN(pensionNum) ? 0 : pensionNum) + (isNaN(vacationNum) ? 0 : vacationNum) + (isNaN(trainingNum) ? 0 : trainingNum);
+      const fringeRawCell = idx.fringe >= 0 ? cellAt(row, idx.fringe) : "";
+      let fringeNum = idx.fringe >= 0 ? parseNumber(fringeRawCell) : NaN;
+      if (idx.fringe < 0 || isNaN(fringeNum) || fringeRawCell === "" || fringeRawCell === null || fringeRawCell === undefined) {
+        fringeNum = breakdownSum;
+      } else if (fringeNum < 0) {
+        errors.push("Invalid total fringe");
+      }
+
+      const otRaw = idx.ot >= 0 ? cellAt(row, idx.ot) : "";
+      let otStr = "1.5";
+      if (otRaw !== "" && otRaw !== null && otRaw !== undefined) {
+        const otNum = parseNumber(otRaw);
+        if (isNaN(otNum) || otNum <= 0) errors.push("Invalid overtime multiplier");
+        else otStr = otNum.toFixed(2);
+      }
+
+      let effDate = idx.effective >= 0 ? parseDateCell(cellAt(row, idx.effective)) : null;
+      if (!effDate) effDate = defaultEffectiveDate;
+      if (!effDate) errors.push("Missing effective date");
+
+      const expRawCell = idx.expiration >= 0 ? cellAt(row, idx.expiration) : "";
+      const expDate = idx.expiration >= 0 ? parseDateCell(expRawCell) : null;
+      if (idx.expiration >= 0 && expRawCell && !expDate) errors.push("Invalid expiration date");
+
+      const decision = idx.decision >= 0 ? String(cellAt(row, idx.decision) ?? "").trim() : "";
+      const notes = idx.notes >= 0 ? String(cellAt(row, idx.notes) ?? "").trim() : "";
+
+      const wage = isNaN(wageNum) ? 0 : wageNum;
+      const fringe = isNaN(fringeNum) ? 0 : fringeNum;
+      const total = wage + fringe;
+
+      const existing = matched ? existingByClass.get(matched.id) || null : null;
+      const action: ImportPreviewRow["action"] = errors.length > 0 ? "ERROR" : (existing ? "UPDATE" : "CREATE");
+
+      previewRows.push({
+        rowNumber: i + 1,
+        rawClassification: rawClass,
+        classificationId: matched?.id ?? null,
+        classificationName: matched?.name ?? null,
+        wageRate: wage.toFixed(2),
+        fringeHealthRate: (isNaN(healthNum) ? 0 : healthNum).toFixed(2),
+        fringePensionRate: (isNaN(pensionNum) ? 0 : pensionNum).toFixed(2),
+        fringeVacationRate: (isNaN(vacationNum) ? 0 : vacationNum).toFixed(2),
+        fringeTrainingRate: (isNaN(trainingNum) ? 0 : trainingNum).toFixed(2),
+        fringeRate: fringe.toFixed(2),
+        totalRate: total.toFixed(2),
+        overtimeMultiplier: otStr,
+        effectiveDate: effDate || "",
+        expirationDate: expDate,
+        wageDecision: decision || null,
+        notes: notes || null,
+        action,
+        existingId: existing?.id ?? null,
+        errors,
+      });
+    }
+
+    const summary = {
+      totalRows: previewRows.length,
+      toCreate: previewRows.filter(r => r.action === "CREATE").length,
+      toUpdate: previewRows.filter(r => r.action === "UPDATE").length,
+      withErrors: previewRows.filter(r => r.action === "ERROR").length,
+    };
+
+    res.json({
+      projectId,
+      projectName: project.name,
+      headersDetected: headers,
+      summary,
+      rows: previewRows,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/prevailing-wage-rates/import", requireAuth, requireRole("ADMIN", "MANAGER"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const organizationId = req.user!.organizationId;
+    if (!organizationId) return res.status(400).json({ error: "Organization required" });
+
+    const payloadParsed = importPayloadSchema.safeParse(req.body);
+    if (!payloadParsed.success) {
+      return res.status(400).json({ error: "Invalid payload", details: payloadParsed.error.flatten() });
+    }
+    const { projectId, rows } = payloadParsed.data;
+
+    const [project] = await db.select().from(projects).where(and(eq(projects.id, projectId), eq(projects.organizationId, organizationId)));
+    if (!project) return res.status(404).json({ error: "Project not found" });
+
+    const orgClassifications = await db
+      .select()
+      .from(jobClassifications)
+      .where(eq(jobClassifications.organizationId, organizationId));
+    const validClassIds = new Set(orgClassifications.map(c => c.id));
+
+    const existingRates = await db
+      .select()
+      .from(prevailingWageRates)
+      .where(and(
+        eq(prevailingWageRates.organizationId, organizationId),
+        eq(prevailingWageRates.projectId, projectId)
+      ));
+    const existingByClass = new Map(existingRates.map(r => [r.classificationId, r]));
+
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    const errors: { rowNumber?: number; message: string }[] = [];
+
+    // First pass: validate + de-duplicate by classificationId (last-row-wins).
+    type ValidatedRow = z.infer<typeof importRowSchema>;
+    const validatedByClass = new Map<string, { row: ValidatedRow; rowNumber: number }>();
+    for (let idx = 0; idx < rows.length; idx++) {
+      const rawRow = rows[idx];
+      const rowNumberFallback = idx + 1;
+      const parsed = importRowSchema.safeParse(rawRow);
+      if (!parsed.success) {
+        skipped++;
+        const fallbackNum = (rawRow && typeof rawRow === "object" && "rowNumber" in rawRow && typeof (rawRow as { rowNumber: unknown }).rowNumber === "number")
+          ? (rawRow as { rowNumber: number }).rowNumber
+          : rowNumberFallback;
+        errors.push({ rowNumber: fallbackNum, message: parsed.error.issues.map(i => i.message).join("; ") });
+        continue;
+      }
+      const row = parsed.data;
+      const rowNumber = row.rowNumber ?? rowNumberFallback;
+
+      if (row.action === "ERROR" || !validClassIds.has(row.classificationId)) {
+        skipped++;
+        continue;
+      }
+
+      // Server-side semantic validation (mirrors preview).
+      const wageNum = parseFloat(row.wageRate);
+      if (!Number.isFinite(wageNum) || wageNum <= 0) {
+        skipped++;
+        errors.push({ rowNumber, message: "Wage rate must be a positive number" });
+        continue;
+      }
+      const fringeParts = [row.fringeHealthRate, row.fringePensionRate, row.fringeVacationRate, row.fringeTrainingRate]
+        .map(v => parseFloat(v ?? "0"));
+      if (fringeParts.some(n => !Number.isFinite(n) || n < 0)) {
+        skipped++;
+        errors.push({ rowNumber, message: "Fringe components must be non-negative numbers" });
+        continue;
+      }
+      const fringeTotalNum = row.fringeRate ? parseFloat(row.fringeRate) : NaN;
+      if (row.fringeRate && (!Number.isFinite(fringeTotalNum) || fringeTotalNum < 0)) {
+        skipped++;
+        errors.push({ rowNumber, message: "Total fringe must be a non-negative number" });
+        continue;
+      }
+      const otNum = parseFloat(row.overtimeMultiplier ?? "1.5");
+      if (!Number.isFinite(otNum) || otNum <= 0) {
+        skipped++;
+        errors.push({ rowNumber, message: "Overtime multiplier must be a positive number" });
+        continue;
+      }
+
+      const previous = validatedByClass.get(row.classificationId);
+      if (previous) {
+        skipped++;
+        errors.push({ rowNumber: previous.rowNumber, message: `Superseded by later row for the same classification (row ${rowNumber})` });
+      }
+      validatedByClass.set(row.classificationId, { row, rowNumber });
+    }
+
+    for (const { row, rowNumber } of validatedByClass.values()) {
+      try {
+        const wageRate = row.wageRate;
+        const fringeHealthRate = row.fringeHealthRate ?? "0";
+        const fringePensionRate = row.fringePensionRate ?? "0";
+        const fringeVacationRate = row.fringeVacationRate ?? "0";
+        const fringeTrainingRate = row.fringeTrainingRate ?? "0";
+        const breakdownSum =
+          parseFloat(fringeHealthRate) + parseFloat(fringePensionRate) +
+          parseFloat(fringeVacationRate) + parseFloat(fringeTrainingRate);
+        const fringeRate = row.fringeRate && parseFloat(row.fringeRate) > 0
+          ? row.fringeRate
+          : breakdownSum.toFixed(2);
+        const totalRate = (parseFloat(wageRate) + parseFloat(fringeRate)).toFixed(2);
+        const overtimeMultiplier = row.overtimeMultiplier ?? "1.5";
+        const effectiveDate = row.effectiveDate;
+
+        const existing = existingByClass.get(row.classificationId);
+        if (existing) {
+          const [u] = await db
+            .update(prevailingWageRates)
+            .set({
+              wageRate,
+              fringeRate,
+              fringeHealthRate,
+              fringePensionRate,
+              fringeVacationRate,
+              fringeTrainingRate,
+              totalRate,
+              overtimeMultiplier,
+              effectiveDate,
+              expirationDate: row.expirationDate || null,
+              wageDecision: row.wageDecision || null,
+              notes: row.notes || null,
+              updatedAt: new Date(),
+            })
+            .where(and(
+              eq(prevailingWageRates.id, existing.id),
+              eq(prevailingWageRates.organizationId, organizationId)
+            ))
+            .returning();
+          if (u) {
+            updated++;
+            await logAudit({
+              userId: req.user!.id,
+              entityType: "prevailing_wage_rate",
+              entityId: u.id,
+              action: "UPDATE",
+              oldValue: JSON.stringify(existing),
+              newValue: JSON.stringify(u),
+            }, req);
+          }
+        } else {
+          const data = insertPrevailingWageRateSchema.parse({
+            organizationId,
+            projectId,
+            classificationId: row.classificationId,
+            wageRate,
+            fringeRate,
+            fringeHealthRate,
+            fringePensionRate,
+            fringeVacationRate,
+            fringeTrainingRate,
+            totalRate,
+            overtimeMultiplier,
+            effectiveDate,
+            expirationDate: row.expirationDate || null,
+            wageDecision: row.wageDecision || null,
+            notes: row.notes || null,
+          });
+          const [c] = await db.insert(prevailingWageRates).values(data).returning();
+          if (c) {
+            created++;
+            await logAudit({
+              userId: req.user!.id,
+              entityType: "prevailing_wage_rate",
+              entityId: c.id,
+              action: "CREATE",
+              newValue: JSON.stringify(c),
+            }, req);
+          }
+        }
+      } catch (rowErr: unknown) {
+        skipped++;
+        const message = rowErr instanceof Error ? rowErr.message : "Failed to import row";
+        errors.push({ rowNumber, message });
+      }
+    }
+
+    res.json({ created, updated, skipped, errors });
   } catch (error) {
     next(error);
   }
