@@ -35,6 +35,7 @@ import {
   Download,
 } from "lucide-react";
 import { format, formatDistanceStrict } from "date-fns";
+import { useAuth } from "@/hooks/use-auth";
 
 interface BackfillJob {
   id: string;
@@ -60,14 +61,28 @@ interface BackfillHistoryEntry extends BackfillJob {
     lastName: string | null;
     email: string | null;
   } | null;
+  organization?: {
+    id: string;
+    name: string | null;
+    slug: string | null;
+  };
 }
 
 interface BackfillHistoryResponse {
   total: number;
   limit: number;
   offset: number;
+  crossOrg?: boolean;
   jobs: BackfillHistoryEntry[];
 }
+
+interface OrganizationSummary {
+  id: string;
+  name: string;
+  slug: string | null;
+}
+
+const CROSS_ORG_VALUE = "__ALL__";
 
 interface BackfillSummary {
   pending: number;
@@ -95,6 +110,8 @@ type StatusFilter = "ALL" | (typeof STATUS_OPTIONS)[number];
 
 export default function AdminTranscriptBackfillPage() {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [maxRecords, setMaxRecords] = useState<string>("");
   const [concurrency, setConcurrency] = useState<string>("2");
@@ -112,6 +129,10 @@ export default function AdminTranscriptBackfillPage() {
   const [operatorId, setOperatorId] = useState<string>("ALL");
   const [startedAfter, setStartedAfter] = useState<Date | undefined>(undefined);
   const [startedBefore, setStartedBefore] = useState<Date | undefined>(undefined);
+  // Task #1007 — SUPER_ADMINs can see history across every org. Default to the
+  // cross-org view so platform support sees the full picture immediately;
+  // they can narrow to a single org from this picker.
+  const [orgFilter, setOrgFilter] = useState<string>(CROSS_ORG_VALUE);
   const [page, setPage] = useState(0);
   const [isExporting, setIsExporting] = useState(false);
 
@@ -125,7 +146,7 @@ export default function AdminTranscriptBackfillPage() {
   // total.
   useEffect(() => {
     setPage(0);
-  }, [statusFilter, appliedOperator, operatorId, startedAfter, startedBefore]);
+  }, [statusFilter, appliedOperator, operatorId, startedAfter, startedBefore, orgFilter]);
 
   const historyFilters = useMemo(() => {
     const params: Record<string, string> = {
@@ -146,15 +167,30 @@ export default function AdminTranscriptBackfillPage() {
       end.setHours(23, 59, 59, 999);
       params.startedBefore = end.toISOString();
     }
+    // Task #1007 — only super admins can scope to (or away from) a specific
+    // org. Org-scoped admins are locked to their own org by the server.
+    if (isSuperAdmin && orgFilter !== CROSS_ORG_VALUE) {
+      params.organizationId = orgFilter;
+    }
     return params;
-  }, [page, statusFilter, appliedOperator, operatorId, startedAfter, startedBefore]);
+  }, [page, statusFilter, appliedOperator, operatorId, startedAfter, startedBefore, orgFilter, isSuperAdmin]);
 
   const hasActiveFilters =
     statusFilter !== "ALL" ||
     !!appliedOperator ||
     operatorId !== "ALL" ||
     !!startedAfter ||
-    !!startedBefore;
+    !!startedBefore ||
+    (isSuperAdmin && orgFilter !== CROSS_ORG_VALUE);
+
+  // Task #1007 — load the platform org list lazily for the SUPER_ADMIN org
+  // picker. Skipped entirely for org-scoped admins so we don't fire an
+  // unauthorized request that would just 403.
+  const orgsQuery = useQuery<OrganizationSummary[]>({
+    queryKey: ["/api/platform/organizations"],
+    enabled: isSuperAdmin,
+    staleTime: 5 * 60 * 1000,
+  });
 
   const summaryQuery = useQuery<BackfillSummary>({
     queryKey: SUMMARY_KEY,
@@ -277,6 +313,9 @@ export default function AdminTranscriptBackfillPage() {
         const end = new Date(startedBefore);
         end.setHours(23, 59, 59, 999);
         params.set("startedBefore", end.toISOString());
+      }
+      if (isSuperAdmin && orgFilter !== CROSS_ORG_VALUE) {
+        params.set("organizationId", orgFilter);
       }
       const qs = params.toString();
       const url = `/api/crm/calls/transcripts/backfill/history.csv${qs ? `?${qs}` : ""}`;
@@ -501,8 +540,10 @@ export default function AdminTranscriptBackfillPage() {
                 <History className="h-5 w-5" />
                 Backfill history
               </CardTitle>
-              <CardDescription>
-                Past transcript backfill runs for this organization. Click a row to view error samples.
+              <CardDescription data-testid="text-history-scope">
+                {isSuperAdmin && orgFilter === CROSS_ORG_VALUE
+                  ? "Past transcript backfill runs across every organization. Click a row to view error samples."
+                  : "Past transcript backfill runs for this organization. Click a row to view error samples."}
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
@@ -543,6 +584,37 @@ export default function AdminTranscriptBackfillPage() {
         </CardHeader>
         <CardContent>
           <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="history-filters">
+            {isSuperAdmin && (
+              <div className="space-y-1.5 sm:col-span-2 lg:col-span-4">
+                <Label htmlFor="history-organization" className="text-xs">Organization</Label>
+                <Select
+                  value={orgFilter}
+                  onValueChange={(v) => setOrgFilter(v)}
+                  disabled={orgsQuery.isLoading}
+                >
+                  <SelectTrigger id="history-organization" data-testid="select-history-organization">
+                    <SelectValue placeholder="All organizations" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem
+                      value={CROSS_ORG_VALUE}
+                      data-testid="select-history-organization-option-all"
+                    >
+                      All organizations
+                    </SelectItem>
+                    {(orgsQuery.data ?? []).map((org) => (
+                      <SelectItem
+                        key={org.id}
+                        value={org.id}
+                        data-testid={`select-history-organization-option-${org.id}`}
+                      >
+                        {org.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label htmlFor="history-status" className="text-xs">Status</Label>
               <Select
@@ -636,6 +708,7 @@ export default function AdminTranscriptBackfillPage() {
                     setOperatorId("ALL");
                     setStartedAfter(undefined);
                     setStartedBefore(undefined);
+                    if (isSuperAdmin) setOrgFilter(CROSS_ORG_VALUE);
                   }}
                   data-testid="button-clear-history-filters"
                 >
@@ -732,6 +805,17 @@ export default function AdminTranscriptBackfillPage() {
                         <div className="text-xs text-muted-foreground" data-testid={`text-history-operator-${entry.id}`}>
                           Started by {operatorName} · <code className="text-[10px]">{entry.id}</code>
                         </div>
+                        {isSuperAdmin && entry.organization && (
+                          <div
+                            className="text-xs text-muted-foreground"
+                            data-testid={`text-history-organization-${entry.id}`}
+                          >
+                            Org: {entry.organization.name ?? entry.organization.id}
+                            {entry.organization.slug ? (
+                              <> · <code className="text-[10px]">{entry.organization.slug}</code></>
+                            ) : null}
+                          </div>
+                        )}
                         {entry.parentJobId && (
                           <div className="text-xs text-muted-foreground" data-testid={`text-history-parent-${entry.id}`}>
                             Retry of <code className="text-[10px]">{entry.parentJobId}</code>

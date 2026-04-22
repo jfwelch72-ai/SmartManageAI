@@ -2,6 +2,7 @@ import { db } from "./db";
 import {
   executiveDigests,
   crmTranscriptBackfillJobs,
+  organizations,
   users,
   type CrmTranscriptBackfillJob,
   type InsertCrmTranscriptBackfillJob,
@@ -93,11 +94,19 @@ export type CrmTranscriptBackfillJobWithOperator = CrmTranscriptBackfillJob & {
   startedByFirstName: string | null;
   startedByLastName: string | null;
   startedByEmail: string | null;
+  organizationName: string | null;
+  organizationSlug: string | null;
 };
 
 export type ListCrmTranscriptBackfillJobsFilters = {
   limit?: number;
   offset?: number;
+  /**
+   * Restrict to a single organization. When omitted (undefined), the listing is
+   * unscoped — used by SUPER_ADMIN to view backfill history across every org.
+   * Org-scoped admins always pass their own organizationId.
+   */
+  organizationId?: string;
   /** Filter to one or more job statuses (RUNNING/COMPLETED/FAILED). */
   statuses?: string[];
   /** Substring match on the operator's first name, last name, or email. */
@@ -111,13 +120,15 @@ export type ListCrmTranscriptBackfillJobsFilters = {
 };
 
 export async function listCrmTranscriptBackfillJobs(
-  organizationId: string,
   opts: ListCrmTranscriptBackfillJobsFilters = {},
 ): Promise<{ rows: CrmTranscriptBackfillJobWithOperator[]; total: number }> {
   const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
   const offset = Math.max(opts.offset ?? 0, 0);
 
-  const conditions: SQL[] = [eq(crmTranscriptBackfillJobs.organizationId, organizationId)];
+  const conditions: SQL[] = [];
+  if (opts.organizationId) {
+    conditions.push(eq(crmTranscriptBackfillJobs.organizationId, opts.organizationId));
+  }
 
   if (opts.statuses && opts.statuses.length > 0) {
     conditions.push(inArray(crmTranscriptBackfillJobs.status, opts.statuses));
@@ -147,9 +158,14 @@ export async function listCrmTranscriptBackfillJobs(
     conditions.push(lte(crmTranscriptBackfillJobs.startedAt, opts.startedBefore));
   }
 
-  const whereClause = conditions.length === 1 ? conditions[0] : and(...conditions);
+  const whereClause =
+    conditions.length === 0
+      ? undefined
+      : conditions.length === 1
+      ? conditions[0]
+      : and(...conditions);
 
-  const rows = await db
+  const baseRows = db
     .select({
       id: crmTranscriptBackfillJobs.id,
       organizationId: crmTranscriptBackfillJobs.organizationId,
@@ -169,19 +185,25 @@ export async function listCrmTranscriptBackfillJobs(
       startedByFirstName: users.firstName,
       startedByLastName: users.lastName,
       startedByEmail: users.email,
+      organizationName: organizations.name,
+      organizationSlug: organizations.slug,
     })
     .from(crmTranscriptBackfillJobs)
     .leftJoin(users, eq(users.id, crmTranscriptBackfillJobs.startedById))
-    .where(whereClause)
+    .leftJoin(organizations, eq(organizations.id, crmTranscriptBackfillJobs.organizationId));
+
+  const rows = await (whereClause ? baseRows.where(whereClause) : baseRows)
     .orderBy(desc(crmTranscriptBackfillJobs.startedAt))
     .limit(limit)
     .offset(offset);
 
-  const [{ count: totalRaw }] = await db
+  const baseCount = db
     .select({ count: sql<number>`count(*)::int` })
     .from(crmTranscriptBackfillJobs)
     .leftJoin(users, eq(users.id, crmTranscriptBackfillJobs.startedById))
-    .where(whereClause);
+    .leftJoin(organizations, eq(organizations.id, crmTranscriptBackfillJobs.organizationId));
+
+  const [{ count: totalRaw }] = await (whereClause ? baseCount.where(whereClause) : baseCount);
   const total = Number(totalRaw) || 0;
 
   return { rows: rows as CrmTranscriptBackfillJobWithOperator[], total };

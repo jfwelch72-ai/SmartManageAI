@@ -48,7 +48,7 @@ import {
   requireRoleOrFeature,
   type AuthRequest,
 } from "./auth";
-import { getOrgIdForFilter } from "./orgFilter";
+import { getOrgIdForFilter, isSuperAdmin } from "./orgFilter";
 import { isFeatureEnabled } from "./services/featureFlagService";
 import { logError, logInfo, logWarn } from "./utils/logger";
 import { eventBus } from "./events";
@@ -1608,8 +1608,22 @@ router.get(
   requireRole("ADMIN"),
   async (req: AuthRequest, res, next) => {
     try {
-      const orgId = resolveOrg(req, res);
-      if (!orgId) return;
+      // Task #1007 — SUPER_ADMINs supporting multiple customers need a
+      // platform-wide view. They can either omit the org filter to see every
+      // org or pass `?organizationId=<id>` to scope to a specific tenant.
+      // Org-scoped admins are still hard-locked to their own organization.
+      const superAdmin = isSuperAdmin(req.user);
+      let scopedOrgId: string | undefined;
+      if (superAdmin) {
+        const requestedOrg = typeof req.query.organizationId === "string"
+          ? req.query.organizationId.trim()
+          : "";
+        scopedOrgId = requestedOrg.length > 0 ? requestedOrg : undefined;
+      } else {
+        const orgId = resolveOrg(req, res);
+        if (!orgId) return;
+        scopedOrgId = orgId;
+      }
 
       const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "20"), 10) || 20, 1), 100);
       const offset = Math.max(parseInt(String(req.query.offset ?? "0"), 10) || 0, 0);
@@ -1644,7 +1658,8 @@ router.get(
       const startedAfter = parseDate(req.query.startedAfter);
       const startedBefore = parseDate(req.query.startedBefore);
 
-      const { rows, total } = await listCrmTranscriptBackfillJobs(orgId, {
+      const { rows, total } = await listCrmTranscriptBackfillJobs({
+        organizationId: scopedOrgId,
         limit,
         offset,
         statuses: statuses.length > 0 ? statuses : undefined,
@@ -1658,6 +1673,7 @@ router.get(
         total,
         limit,
         offset,
+        crossOrg: superAdmin && !scopedOrgId,
         jobs: rows.map((row) => ({
           ...rowToState(row),
           heartbeatAt: row.heartbeatAt.toISOString(),
@@ -1669,6 +1685,11 @@ router.get(
                 email: row.startedByEmail,
               }
             : null,
+          organization: {
+            id: row.organizationId,
+            name: row.organizationName,
+            slug: row.organizationSlug,
+          },
         })),
       });
     } catch (e) {
@@ -1705,8 +1726,21 @@ router.get(
   requireRole("ADMIN"),
   async (req: AuthRequest, res, next) => {
     try {
-      const orgId = resolveOrg(req, res);
-      if (!orgId) return;
+      // Task #1007 — mirror the JSON history endpoint: SUPER_ADMINs may export
+      // across all orgs (or a single org via ?organizationId=), org-scoped
+      // admins are still locked to their own org.
+      const superAdmin = isSuperAdmin(req.user);
+      let scopedOrgId: string | undefined;
+      if (superAdmin) {
+        const requestedOrg = typeof req.query.organizationId === "string"
+          ? req.query.organizationId.trim()
+          : "";
+        scopedOrgId = requestedOrg.length > 0 ? requestedOrg : undefined;
+      } else {
+        const orgId = resolveOrg(req, res);
+        if (!orgId) return;
+        scopedOrgId = orgId;
+      }
 
       const ALLOWED_STATUSES = ["RUNNING", "COMPLETED", "FAILED"];
       const rawStatus = req.query.status;
@@ -1746,6 +1780,8 @@ router.get(
 
       const HEADERS = [
         "id",
+        "organization_id",
+        "organization_name",
         "status",
         "total",
         "processed",
@@ -1767,7 +1803,8 @@ router.get(
       let offset = 0;
       // eslint-disable-next-line no-constant-condition
       while (true) {
-        const { rows } = await listCrmTranscriptBackfillJobs(orgId, {
+        const { rows } = await listCrmTranscriptBackfillJobs({
+          organizationId: scopedOrgId,
           limit: PAGE,
           offset,
           statuses: statuses.length > 0 ? statuses : undefined,
@@ -1797,6 +1834,8 @@ router.get(
           lines.push(
             [
               row.id,
+              row.organizationId ?? "",
+              row.organizationName ?? "",
               row.status,
               row.total,
               row.processed,
