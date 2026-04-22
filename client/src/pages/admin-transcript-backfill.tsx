@@ -53,7 +53,13 @@ import {
   Send,
   Bell,
   Mail,
+  BellOff,
 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { format, formatDistanceStrict } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -3422,15 +3428,31 @@ interface BackfillAlertDelivery {
   attemptedAt: string;
 }
 
+// Task #1079 — per-channel summary of how many active org admins muted the
+// fallback fan-out (and how many would still receive it). Drives the
+// "fallback suppressed (channel muted by N admins)" badge on failure rows
+// so an admin reviewing the page realizes the rest of the team was also
+// silenced and won't be re-pinged about the misconfiguration.
+interface BackfillAlertFallbackChannelSummary {
+  mutedAdminCount: number;
+  effectiveRecipientCount: number;
+}
+
+interface BackfillAlertFallbackMuteSummary {
+  slack: BackfillAlertFallbackChannelSummary;
+  email: BackfillAlertFallbackChannelSummary;
+}
+
 interface BackfillAlertDeliveriesResponse {
   deliveries: BackfillAlertDelivery[];
+  fallbackMuteSummary?: BackfillAlertFallbackMuteSummary;
 }
 
 const ALERT_DELIVERIES_PATH =
   "/api/crm/calls/transcripts/backfill/alert-deliveries?limit=10";
 const ALERT_DELIVERIES_KEY = [ALERT_DELIVERIES_PATH] as const;
 
-function BackfillAlertDeliveriesCard() {
+export function BackfillAlertDeliveriesCard() {
   const { toast } = useToast();
   const deliveriesQuery = useQuery<BackfillAlertDeliveriesResponse>({
     queryKey: ALERT_DELIVERIES_KEY,
@@ -3472,6 +3494,7 @@ function BackfillAlertDeliveriesCard() {
   });
 
   const deliveries = deliveriesQuery.data?.deliveries ?? [];
+  const fallbackMuteSummary = deliveriesQuery.data?.fallbackMuteSummary;
 
   return (
     <Card data-testid="card-alert-deliveries">
@@ -3580,6 +3603,60 @@ function BackfillAlertDeliveriesCard() {
                       {d.errorMessage}
                     </div>
                   )}
+                  {d.status === "failure" &&
+                    fallbackMuteSummary &&
+                    (() => {
+                      // Task #1079 — when no admin would have received the
+                      // realtime fan-out for this channel AND at least one
+                      // admin actively muted it, surface that the silence
+                      // is org-wide so the reviewer doesn't assume the
+                      // rest of the team got pinged.
+                      const sum = fallbackMuteSummary[d.channel];
+                      if (!sum) return null;
+                      if (sum.effectiveRecipientCount > 0) return null;
+                      if (sum.mutedAdminCount <= 0) return null;
+                      const n = sum.mutedAdminCount;
+                      const label = `Fallback suppressed (channel muted by ${n} admin${n === 1 ? "" : "s"})`;
+                      return (
+                        <div className="mt-1">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Badge
+                                variant="outline"
+                                className="gap-1 text-amber-700 border-amber-300 bg-amber-50 dark:text-amber-300 dark:border-amber-700/60 dark:bg-amber-950/40"
+                                data-testid={`badge-fallback-suppressed-${d.id}`}
+                              >
+                                <BellOff className="h-3 w-3" />
+                                {label}
+                              </Badge>
+                            </TooltipTrigger>
+                            <TooltipContent
+                              side="top"
+                              className="max-w-xs text-xs leading-snug"
+                              data-testid={`tooltip-fallback-suppressed-${d.id}`}
+                            >
+                              <p>
+                                No fallback email went out for this {d.channel}{" "}
+                                failure because every eligible admin muted{" "}
+                                {d.channel} failures under "Alert delivery
+                                failure fallback" in their notification
+                                preferences.
+                              </p>
+                              <p className="mt-1">
+                                <Link
+                                  href="/settings/notifications#section-alert-failure-fallback-prefs"
+                                  className="underline text-primary"
+                                  data-testid={`link-fallback-suppressed-settings-${d.id}`}
+                                >
+                                  Open notification preferences
+                                </Link>{" "}
+                                to change the per-channel mute.
+                              </p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </div>
+                      );
+                    })()}
                   {d.jobId && (
                     <div
                       className="text-[11px] text-muted-foreground mt-0.5 font-mono truncate"

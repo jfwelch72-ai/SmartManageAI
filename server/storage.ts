@@ -1203,6 +1203,91 @@ export async function listOrgAdminsForAlertFailureFallback(
   return out;
 }
 
+// Task #1079 — surface "fallback suppressed (channel muted by N admins)"
+// on the admin transcript-backfill page. The per-failure row UI needs to
+// know, for each delivery channel, (a) how many active org admins muted
+// that channel via the new per-channel mute switch and (b) how many
+// admins would still receive the realtime fan-out. When the effective
+// recipient count drops to zero AND at least one admin muted the channel,
+// the row is rendered with a badge so admins reviewing failures don't
+// mistakenly assume the rest of the team also got notified.
+//
+// We mirror the same exclusion rules as `listOrgAdminsForAlertFailureFallback`
+// (legacy email opt-out, summary-channel "none", fallbackEnabled=false,
+// per-channel mute, alert-failure-email mode) so the surfaced count and
+// the actual fan-out stay in sync. The mute count is a strict subset of
+// "admins who would otherwise have been eligible" — i.e. it doesn't
+// include admins already excluded by the summary-channel or
+// fallback-disabled toggles, because those admins didn't actively pick
+// a per-channel mute.
+export type AlertFailureFallbackChannelSummary = {
+  mutedAdminCount: number;
+  effectiveRecipientCount: number;
+};
+
+export type AlertFailureFallbackMuteSummary = {
+  slack: AlertFailureFallbackChannelSummary;
+  email: AlertFailureFallbackChannelSummary;
+};
+
+export async function summarizeOrgAdminAlertFailureFallbackMutes(
+  organizationId: string,
+): Promise<AlertFailureFallbackMuteSummary> {
+  const rows = await db
+    .select({
+      emailEnabled: notificationChannelPrefs.emailEnabled,
+      backfillChannel: users.crmBackfillSummaryChannel,
+      fallbackEnabled: users.crmAlertFailureFallbackEnabled,
+      fallbackMutedChannels: users.crmAlertFailureFallbackMutedChannels,
+      alertFailureEmailMode: users.alertFailureEmailMode,
+      email: users.email,
+    })
+    .from(users)
+    .leftJoin(
+      notificationChannelPrefs,
+      eq(notificationChannelPrefs.userId, users.id),
+    )
+    .where(
+      and(
+        eq(users.organizationId, organizationId),
+        eq(users.role, "ADMIN"),
+        eq(users.isActive, true),
+      ),
+    );
+
+  const summary: AlertFailureFallbackMuteSummary = {
+    slack: { mutedAdminCount: 0, effectiveRecipientCount: 0 },
+    email: { mutedAdminCount: 0, effectiveRecipientCount: 0 },
+  };
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const email = (r.email ?? "").trim();
+    if (!email) continue;
+    const key = email.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    // The "muted by N admins" count we surface is intentionally limited
+    // to admins who *would otherwise* have been on the realtime fan-out;
+    // admins already excluded (summary-channel none, legacy email
+    // opt-out, fallback fully disabled, or wrong stream mode) didn't
+    // actively pick a per-channel mute and shouldn't inflate the badge.
+    if (r.backfillChannel === "none") continue;
+    if (r.emailEnabled === false) continue;
+    if (r.fallbackEnabled === false) continue;
+    if (!alertFailureEmailModeAllows(r.alertFailureEmailMode, "realtime")) {
+      continue;
+    }
+    const muted = Array.isArray(r.fallbackMutedChannels)
+      ? r.fallbackMutedChannels
+      : [];
+    for (const ch of ["slack", "email"] as const) {
+      if (muted.includes(ch)) summary[ch].mutedAdminCount += 1;
+      else summary[ch].effectiveRecipientCount += 1;
+    }
+  }
+  return summary;
+}
+
 // Task #1065 — daily digest of recent alert delivery failures.
 //
 // Aggregates the last N hours of `crm_transcript_backfill_alert_deliveries`

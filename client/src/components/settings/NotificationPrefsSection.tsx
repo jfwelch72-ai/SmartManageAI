@@ -2050,7 +2050,10 @@ export default function NotificationPrefsSection() {
               )}
 
               {isOrgAdmin && (
-                <div data-testid="section-alert-failure-fallback-prefs">
+                <div
+                  id="section-alert-failure-fallback-prefs"
+                  data-testid="section-alert-failure-fallback-prefs"
+                >
                   <h3 className="text-sm font-semibold mb-1 text-muted-foreground uppercase tracking-wide">
                     Alert Delivery Failure Emails
                   </h3>

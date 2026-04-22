@@ -46,6 +46,7 @@ import {
   getCrmTranscriptBackfillOperatorContact,
   getLatestCrmTranscriptBackfillTestAlert,
   listCrmTranscriptBackfillAlertDeliveries,
+  summarizeOrgAdminAlertFailureFallbackMutes,
   listCrmTranscriptBackfillTestAlerts,
   getCrmTranscriptBackfillTestAlertUsageSummary,
   recordCrmTranscriptBackfillTestResult,
@@ -3408,7 +3409,14 @@ router.get(
         Math.max(parseInt(String(req.query.limit ?? "10"), 10) || 10, 1),
         50,
       );
-      const rows = await listCrmTranscriptBackfillAlertDeliveries(orgId, limit);
+      const [rows, fallbackMuteSummary] = await Promise.all([
+        listCrmTranscriptBackfillAlertDeliveries(orgId, limit),
+        // Task #1079 — surface per-channel mute counts so the UI can render
+        // a "fallback suppressed (channel muted by N admins)" badge on rows
+        // whose realtime fan-out went to nobody because the org silenced
+        // that channel.
+        summarizeOrgAdminAlertFailureFallbackMutes(orgId),
+      ]);
       res.json({
         deliveries: rows.map((row) => ({
           id: row.id,
@@ -3419,6 +3427,7 @@ router.get(
           errorMessage: row.errorMessage,
           attemptedAt: row.attemptedAt.toISOString(),
         })),
+        fallbackMuteSummary,
       });
     } catch (e) {
       next(e);
