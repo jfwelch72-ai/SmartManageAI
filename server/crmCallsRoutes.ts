@@ -1006,6 +1006,7 @@ const MAX_BACKFILL_ERROR_SAMPLES = 50;
 // Bounds: keep at least 30s (anything shorter races the heartbeat cadence) and
 // at most 60 minutes (longer effectively disables reaping). Falls back to 5
 // minutes on missing/invalid input.
+// Operator runbook: docs/runbooks/crm-transcript-backfill-heartbeat.md
 const DEFAULT_BACKFILL_HEARTBEAT_STALE_MS = 5 * 60 * 1000;
 const MIN_BACKFILL_HEARTBEAT_STALE_MS = 30 * 1000;
 const MAX_BACKFILL_HEARTBEAT_STALE_MS = 60 * 60 * 1000;
