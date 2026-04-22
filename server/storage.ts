@@ -441,6 +441,52 @@ export async function listMostRecentRunningCrmTranscriptBackfillJobsPerOrg(): Pr
   return result;
 }
 
+// Task #1019 — same as `listMostRecentRunningCrmTranscriptBackfillJobsPerOrg`,
+// but joins the organization name/slug so the platform-admin pending banner
+// can identify which tenant each running job belongs to without a second
+// round-trip.
+export async function listRunningCrmTranscriptBackfillJobsWithOrg(): Promise<
+  CrmTranscriptBackfillJobWithOperator[]
+> {
+  const rows = await db
+    .select({
+      id: crmTranscriptBackfillJobs.id,
+      organizationId: crmTranscriptBackfillJobs.organizationId,
+      status: crmTranscriptBackfillJobs.status,
+      total: crmTranscriptBackfillJobs.total,
+      processed: crmTranscriptBackfillJobs.processed,
+      succeeded: crmTranscriptBackfillJobs.succeeded,
+      failed: crmTranscriptBackfillJobs.failed,
+      errors: crmTranscriptBackfillJobs.errors,
+      failedRecordingIds: crmTranscriptBackfillJobs.failedRecordingIds,
+      startedById: crmTranscriptBackfillJobs.startedById,
+      parentJobId: crmTranscriptBackfillJobs.parentJobId,
+      startedAt: crmTranscriptBackfillJobs.startedAt,
+      completedAt: crmTranscriptBackfillJobs.completedAt,
+      heartbeatAt: crmTranscriptBackfillJobs.heartbeatAt,
+      updatedAt: crmTranscriptBackfillJobs.updatedAt,
+      startedByFirstName: users.firstName,
+      startedByLastName: users.lastName,
+      startedByEmail: users.email,
+      organizationName: organizations.name,
+      organizationSlug: organizations.slug,
+    })
+    .from(crmTranscriptBackfillJobs)
+    .leftJoin(users, eq(users.id, crmTranscriptBackfillJobs.startedById))
+    .leftJoin(organizations, eq(organizations.id, crmTranscriptBackfillJobs.organizationId))
+    .where(eq(crmTranscriptBackfillJobs.status, "RUNNING"))
+    .orderBy(desc(crmTranscriptBackfillJobs.startedAt));
+
+  const seen = new Set<string>();
+  const result: CrmTranscriptBackfillJobWithOperator[] = [];
+  for (const row of rows) {
+    if (seen.has(row.organizationId)) continue;
+    seen.add(row.organizationId);
+    result.push(row as CrmTranscriptBackfillJobWithOperator);
+  }
+  return result;
+}
+
 // ---------------------------------------------------------------------------
 // Task #1017 — per-organization Slack/email destinations for transcript
 // backfill alerts. Replaces the env-var fallback as the primary source so

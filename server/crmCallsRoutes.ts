@@ -44,6 +44,7 @@ import {
   listCrmTranscriptBackfillOperators,
   getCrmTranscriptBackfillLineages,
   listMostRecentRunningCrmTranscriptBackfillJobsPerOrg,
+  listRunningCrmTranscriptBackfillJobsWithOrg,
   updateCrmTranscriptBackfillJob,
   upsertCrmTranscriptBackfillNotificationSettings,
 } from "./storage";
@@ -1677,40 +1678,113 @@ router.get(
   requireRole("ADMIN"),
   async (req: AuthRequest, res, next) => {
     try {
-      const orgId = resolveOrg(req, res);
-      if (!orgId) return;
+      // Task #1019 — SUPER_ADMINs need a roll-up across every tenant so a
+      // runaway backfill in another org can't hide behind their own org's
+      // pending counter. They may also pin the banner to a single org via
+      // `?organizationId=<id>` (matches the picker on the history view).
+      // Org-scoped admins are still locked to their own org.
+      const superAdmin = isSuperAdmin(req.user);
+      let scopedOrgId: string | null = null;
+      if (superAdmin) {
+        const requested = typeof req.query.organizationId === "string"
+          ? req.query.organizationId.trim()
+          : "";
+        scopedOrgId = requested.length > 0 ? requested : null;
+      } else {
+        const orgId = resolveOrg(req, res);
+        if (!orgId) return;
+        scopedOrgId = orgId;
+      }
 
+      const crossOrg = superAdmin && scopedOrgId === null;
+
+      // Pending count: scope to a single org when one is selected, otherwise
+      // sum across every org for the cross-org roll-up.
+      const pendingWhere = crossOrg
+        ? and(
+            sql`${crmCallRecordings.transcript} IS NULL`,
+            inArray(crmCallRecordings.transcriptStatus, ["PENDING", "FAILED"]),
+          )
+        : and(
+            eq(crmCalls.organizationId, scopedOrgId as string),
+            sql`${crmCallRecordings.transcript} IS NULL`,
+            inArray(crmCallRecordings.transcriptStatus, ["PENDING", "FAILED"]),
+          );
       const [{ count: pendingRaw }] = await db
         .select({ count: sql<number>`count(*)::int` })
         .from(crmCallRecordings)
         .innerJoin(crmCalls, eq(crmCalls.id, crmCallRecordings.callId))
-        .where(
-          and(
-            eq(crmCalls.organizationId, orgId),
-            sql`${crmCallRecordings.transcript} IS NULL`,
-            inArray(crmCallRecordings.transcriptStatus, ["PENDING", "FAILED"]),
-          ),
-        );
+        .where(pendingWhere);
       const pending = Number(pendingRaw) || 0;
 
-      let activeJob: BackfillJobState | null = null;
-      const runningRow = await getRunningCrmTranscriptBackfillJob(orgId);
-      if (runningRow) {
-        const heartbeatAgeMs =
-          Date.now() - new Date(runningRow.heartbeatAt).getTime();
+      // Reap stale RUNNING rows just like the single-org path used to. For
+      // cross-org, do it for every running job so the banner doesn't keep
+      // showing a worker that died in some other tenant.
+      const reapIfStale = async (
+        row: CrmTranscriptBackfillJob,
+      ): Promise<CrmTranscriptBackfillJob | null> => {
+        const heartbeatAgeMs = Date.now() - new Date(row.heartbeatAt).getTime();
         if (heartbeatAgeMs > BACKFILL_HEARTBEAT_STALE_MS) {
-          const reaped = await updateCrmTranscriptBackfillJob(runningRow.id, {
+          const reaped = await updateCrmTranscriptBackfillJob(row.id, {
             status: "FAILED",
             completedAt: new Date(),
           });
-          activeJob = reaped ? rowToState(reaped) : null;
-          scheduleBackfillCompletionEmail(runningRow.id);
-        } else {
-          activeJob = rowToState(runningRow);
+          // Mirror the other reap sites: notify the operator that their
+          // backfill ended (failed) so they don't silently lose visibility.
+          scheduleBackfillCompletionEmail(row.id);
+          return reaped;
         }
+        return row;
+      };
+
+      if (crossOrg) {
+        const runningRows = await listRunningCrmTranscriptBackfillJobsWithOrg();
+        const runningJobs: Array<
+          BackfillJobState & {
+            organization: { id: string; name: string | null; slug: string | null };
+          }
+        > = [];
+        for (const row of runningRows) {
+          const reaped = await reapIfStale(row);
+          if (!reaped || reaped.status !== "RUNNING") continue;
+          runningJobs.push({
+            ...rowToState(reaped),
+            organization: {
+              id: row.organizationId,
+              name: row.organizationName,
+              slug: row.organizationSlug,
+            },
+          });
+        }
+        // `activeJob` stays null in cross-org mode so the client doesn't pin
+        // its single-job poller to one tenant; the UI uses `runningJobs`
+        // instead. The summary endpoint itself is still polled for refresh.
+        res.json({
+          pending,
+          activeJob: null,
+          crossOrg: true,
+          scopedOrganizationId: null,
+          runningJobs,
+        });
+        return;
       }
 
-      res.json({ pending, activeJob });
+      let activeJob: BackfillJobState | null = null;
+      const runningRow = await getRunningCrmTranscriptBackfillJob(
+        scopedOrgId as string,
+      );
+      if (runningRow) {
+        const reaped = await reapIfStale(runningRow);
+        activeJob = reaped ? rowToState(reaped) : null;
+      }
+
+      res.json({
+        pending,
+        activeJob,
+        ...(superAdmin
+          ? { crossOrg: false, scopedOrganizationId: scopedOrgId }
+          : {}),
+      });
     } catch (e) {
       next(e);
     }

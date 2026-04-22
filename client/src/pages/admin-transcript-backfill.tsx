@@ -102,9 +102,23 @@ interface OrganizationSummary {
 
 const CROSS_ORG_VALUE = "__ALL__";
 
+interface RunningBackfillJob extends BackfillJob {
+  organization: {
+    id: string;
+    name: string | null;
+    slug: string | null;
+  };
+}
+
 interface BackfillSummary {
   pending: number;
   activeJob: BackfillJob | null;
+  // Task #1019 — populated only on the SUPER_ADMIN cross-org view. When
+  // `crossOrg` is true, `pending` is the platform-wide total and `runningJobs`
+  // lists every currently running backfill across all tenants.
+  crossOrg?: boolean;
+  scopedOrganizationId?: string | null;
+  runningJobs?: RunningBackfillJob[];
 }
 
 interface BackfillOperator {
@@ -150,7 +164,12 @@ interface PendingRecordingsResponse {
   recordings: PendingRecording[];
 }
 
-const SUMMARY_KEY = ["/api/crm/calls/transcripts/backfill"];
+const SUMMARY_PATH = "/api/crm/calls/transcripts/backfill";
+// Task #1019 — when a SUPER_ADMIN narrows the org picker, the summary endpoint
+// returns that org's pending count + active job; otherwise it returns a
+// platform-wide roll-up. We key the cache on the same params the request
+// sends so switching orgs refetches automatically.
+const SUMMARY_KEY_BASE = [SUMMARY_PATH] as const;
 const HISTORY_PATH = "/api/crm/calls/transcripts/backfill/history";
 const HISTORY_KEY_BASE = [HISTORY_PATH] as const;
 const PENDING_PATH = "/api/crm/calls/transcripts/backfill/pending";
@@ -243,12 +262,32 @@ export default function AdminTranscriptBackfillPage() {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Build the summary request params so SUPER_ADMINs see the full platform
+  // roll-up by default (or a single org when one is picked). The org-scoped
+  // path keeps the empty-params behavior the server already locks down by
+  // organization. Including the params in the queryKey means switching the
+  // org picker invalidates the cache on its own.
+  const summaryParams = useMemo(() => {
+    if (isSuperAdmin && orgFilter !== CROSS_ORG_VALUE) {
+      return { organizationId: orgFilter };
+    }
+    return {};
+  }, [isSuperAdmin, orgFilter]);
+  const summaryKey = useMemo(
+    () => [SUMMARY_PATH, summaryParams] as const,
+    [summaryParams],
+  );
+
   const summaryQuery = useQuery<BackfillSummary>({
-    queryKey: SUMMARY_KEY,
+    queryKey: summaryKey,
     refetchInterval: activeJobId ? false : 10_000,
   });
 
-  // Resume polling an in-flight job after a page reload.
+  // Resume polling an in-flight job after a page reload — but only when the
+  // summary returned a single own-org `activeJob`. In SUPER_ADMIN cross-org
+  // mode the server intentionally returns `activeJob: null` and a list of
+  // every running tenant in `runningJobs`, so we don't pin our single-job
+  // poller to one org.
   useEffect(() => {
     if (!activeJobId && summaryQuery.data?.activeJob) {
       setActiveJobId(summaryQuery.data.activeJob.id);
@@ -269,7 +308,7 @@ export default function AdminTranscriptBackfillPage() {
   useEffect(() => {
     const status = jobQuery.data?.status;
     if (status && status !== "RUNNING") {
-      queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
+      queryClient.invalidateQueries({ queryKey: SUMMARY_KEY_BASE });
       queryClient.invalidateQueries({ queryKey: HISTORY_KEY_BASE });
       queryClient.invalidateQueries({ queryKey: [PENDING_PATH] });
       queryClient.invalidateQueries({
@@ -366,7 +405,7 @@ export default function AdminTranscriptBackfillPage() {
         description: "Recording has been transcribed successfully.",
       });
       queryClient.invalidateQueries({ queryKey: [PENDING_PATH] });
-      queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
+      queryClient.invalidateQueries({ queryKey: SUMMARY_KEY_BASE });
     },
     onError: (err: Error) => {
       toast({
@@ -407,7 +446,7 @@ export default function AdminTranscriptBackfillPage() {
           description: data.message ?? "No eligible failed recordings remain.",
         });
       }
-      queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
+      queryClient.invalidateQueries({ queryKey: SUMMARY_KEY_BASE });
       queryClient.invalidateQueries({ queryKey: HISTORY_KEY_BASE });
       queryClient.invalidateQueries({ queryKey: [PENDING_PATH] });
       queryClient.invalidateQueries({
@@ -496,7 +535,7 @@ export default function AdminTranscriptBackfillPage() {
         title: "Backfill started",
         description: data.message ?? `Processing ${data.total} recording${data.total === 1 ? "" : "s"}.`,
       });
-      queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
+      queryClient.invalidateQueries({ queryKey: SUMMARY_KEY_BASE });
       queryClient.invalidateQueries({ queryKey: HISTORY_KEY_BASE });
       queryClient.invalidateQueries({ queryKey: [PENDING_PATH] });
       queryClient.invalidateQueries({
@@ -548,6 +587,8 @@ export default function AdminTranscriptBackfillPage() {
   };
 
   const pending = summaryQuery.data?.pending ?? 0;
+  const isCrossOrgSummary = !!summaryQuery.data?.crossOrg;
+  const crossOrgRunningJobs = summaryQuery.data?.runningJobs ?? [];
   const job = jobQuery.data ?? summaryQuery.data?.activeJob ?? null;
   const isRunning = job?.status === "RUNNING";
   const progressPct = job && job.total > 0 ? Math.min(100, (job.processed / job.total) * 100) : 0;
@@ -568,9 +609,15 @@ export default function AdminTranscriptBackfillPage() {
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <CardTitle>Recordings missing transcripts</CardTitle>
-              <CardDescription>
-                Calls in PENDING or FAILED state with no stored transcript.
+              <CardTitle data-testid="title-pending">
+                {isCrossOrgSummary
+                  ? "Recordings missing transcripts (all organizations)"
+                  : "Recordings missing transcripts"}
+              </CardTitle>
+              <CardDescription data-testid="text-pending-scope">
+                {isCrossOrgSummary
+                  ? "Platform-wide roll-up across every tenant. Pick an organization above to scope this view."
+                  : "Calls in PENDING or FAILED state with no stored transcript."}
               </CardDescription>
             </div>
             <Button
@@ -610,6 +657,7 @@ export default function AdminTranscriptBackfillPage() {
         retryMutation={retryRecordingMutation}
         onPageChange={setPendingPage}
       />
+
 
       <Card data-testid="card-notification-destinations">
         <CardHeader className="pb-3">
@@ -713,6 +761,87 @@ export default function AdminTranscriptBackfillPage() {
           )}
         </CardContent>
       </Card>
+
+      {isCrossOrgSummary && crossOrgRunningJobs.length > 0 && (
+        <Card data-testid="card-cross-org-running">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              Backfills running across the platform
+              <Badge variant="secondary" data-testid="badge-cross-org-running-count">
+                {crossOrgRunningJobs.length.toLocaleString()}
+              </Badge>
+            </CardTitle>
+            <CardDescription>
+              Active transcript backfill jobs in every tenant. Jobs whose worker
+              has stopped heartbeating are reaped automatically on the next
+              refresh.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ul className="divide-y rounded-md border" data-testid="list-cross-org-running">
+              {crossOrgRunningJobs.map((rj) => {
+                const pct = rj.total > 0
+                  ? Math.min(100, (rj.processed / rj.total) * 100)
+                  : 0;
+                const orgLabel = rj.organization.name
+                  ?? rj.organization.slug
+                  ?? rj.organization.id;
+                return (
+                  <li
+                    key={rj.id}
+                    className="p-3 space-y-2"
+                    data-testid={`cross-org-running-row-${rj.id}`}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="space-y-0.5">
+                        <div
+                          className="text-sm font-medium"
+                          data-testid={`cross-org-running-org-${rj.id}`}
+                        >
+                          {orgLabel}
+                          {rj.organization.slug && rj.organization.name ? (
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              <code className="text-[10px]">{rj.organization.slug}</code>
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          Job <code className="text-[10px]">{rj.id}</code> · started{" "}
+                          {format(new Date(rj.startedAt), "PPpp")}
+                        </div>
+                      </div>
+                      <Badge variant="secondary" data-testid={`cross-org-running-status-${rj.id}`}>
+                        <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                        RUNNING
+                      </Badge>
+                    </div>
+                    <Progress
+                      value={pct}
+                      data-testid={`cross-org-running-progress-${rj.id}`}
+                    />
+                    <div
+                      className="text-xs tabular-nums text-muted-foreground"
+                      data-testid={`cross-org-running-totals-${rj.id}`}
+                    >
+                      {rj.processed.toLocaleString()} / {rj.total.toLocaleString()} processed
+                      ({pct.toFixed(0)}%) ·{" "}
+                      <span className="text-green-600 dark:text-green-500">
+                        {rj.succeeded.toLocaleString()} ok
+                      </span>{" "}
+                      ·{" "}
+                      <span className="text-destructive">
+                        {rj.failed.toLocaleString()} failed
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </CardContent>
+        </Card>
+      )}
+
 
       <Card data-testid="card-controls">
         <CardHeader className="pb-3">
