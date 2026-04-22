@@ -553,13 +553,51 @@ router.get("/api/admin/status/subscribers", ...adminGuard, async (_req, res, nex
   }
 });
 
+const subscriberRemovalSchema = z.object({
+  reason: z.string().trim().max(500).optional(),
+});
+
 router.delete("/api/admin/status/subscribers/:id", ...adminGuard, async (req: any, res, next) => {
   try {
-    const result = await db.execute(sql`DELETE FROM "status_subscribers" WHERE id = ${req.params.id} RETURNING id, email`);
-    if (result.rows.length === 0) return res.status(404).json({ error: "Subscriber not found" });
-    const removed = result.rows[0] as { id: string; email: string };
-    logInfo("Status subscriber removed by admin", { subscriberId: removed.id, email: removed.email, actorUserId: req.user?.id ?? null });
+    const parsed = subscriberRemovalSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "Invalid reason" });
+    const reason = parsed.data.reason && parsed.data.reason.length > 0 ? parsed.data.reason : null;
+
+    const actorUserId = req.user?.id ?? null;
+    const removed = await db.transaction(async (tx) => {
+      const result = await tx.execute(sql`DELETE FROM "status_subscribers" WHERE id = ${req.params.id} RETURNING id, email`);
+      if (result.rows.length === 0) return null;
+      const row = result.rows[0] as { id: string; email: string };
+      await tx.execute(sql`
+        INSERT INTO "status_subscriber_removals" (email, removed_by_user_id, reason)
+        VALUES (${row.email}, ${actorUserId}, ${reason})
+      `);
+      return row;
+    });
+    if (!removed) return res.status(404).json({ error: "Subscriber not found" });
+
+    logInfo("Status subscriber removed by admin", { subscriberId: removed.id, email: removed.email, actorUserId, reason });
     res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/api/admin/status/subscriber-removals", ...adminGuard, async (req, res, next) => {
+  try {
+    const limitParam = Number(req.query.limit ?? 25);
+    const limit = Number.isFinite(limitParam) ? Math.max(1, Math.min(200, Math.floor(limitParam))) : 25;
+    const r = await db.execute(sql`
+      SELECT r.id, r.email, r.reason, r.removed_at,
+             r.removed_by_user_id,
+             u.email AS removed_by_email,
+             TRIM(BOTH FROM COALESCE(u.first_name, '') || ' ' || COALESCE(u.last_name, '')) AS removed_by_name
+      FROM "status_subscriber_removals" r
+      LEFT JOIN "users" u ON u.id = r.removed_by_user_id
+      ORDER BY r.removed_at DESC
+      LIMIT ${limit}
+    `);
+    res.json(r.rows);
   } catch (err) {
     next(err);
   }

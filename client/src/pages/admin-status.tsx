@@ -89,6 +89,16 @@ type Subscriber = {
   confirmed_at: string | null;
 };
 
+type SubscriberRemoval = {
+  id: string;
+  email: string;
+  reason: string | null;
+  removed_at: string;
+  removed_by_user_id: string | null;
+  removed_by_email: string | null;
+  removed_by_name: string | null;
+};
+
 type StatusSummary = {
   overall: ComponentStatus;
   components: Array<{
@@ -106,6 +116,7 @@ type StatusSummary = {
 const COMPONENTS_KEY = ["/api/admin/status/components"];
 const INCIDENTS_KEY = ["/api/admin/status/incidents"];
 const SUBSCRIBERS_KEY = ["/api/admin/status/subscribers"];
+const SUBSCRIBER_REMOVALS_KEY = ["/api/admin/status/subscriber-removals"];
 const SUMMARY_KEY = ["/api/public/status/summary"];
 
 const IMPACT_OPTIONS: IncidentImpact[] = ["NONE", "MINOR", "MAJOR", "CRITICAL"];
@@ -187,6 +198,7 @@ export default function AdminStatusPage() {
   const incidentsQuery = useQuery<AdminIncident[]>({ queryKey: INCIDENTS_KEY });
   const summaryQuery = useQuery<StatusSummary>({ queryKey: SUMMARY_KEY });
   const subscribersQuery = useQuery<Subscriber[]>({ queryKey: SUBSCRIBERS_KEY });
+  const subscriberRemovalsQuery = useQuery<SubscriberRemoval[]>({ queryKey: SUBSCRIBER_REMOVALS_KEY });
 
   const summaryByCompId = useMemo(() => {
     const map = new Map<string, StatusSummary["components"][number]>();
@@ -276,6 +288,10 @@ export default function AdminStatusPage() {
           <SubscribersSection
             subscribers={subscribersQuery.data ?? []}
             isLoading={subscribersQuery.isLoading}
+          />
+          <RecentRemovalsSection
+            removals={subscriberRemovalsQuery.data ?? []}
+            isLoading={subscriberRemovalsQuery.isLoading}
           />
         </TabsContent>
       </Tabs>
@@ -1370,18 +1386,35 @@ function SubscribersSection({
   );
 }
 
+const REMOVAL_REASONS = ["bounce", "abuse", "user_request", "other"] as const;
+type RemovalReason = (typeof REMOVAL_REASONS)[number];
+const REMOVAL_REASON_LABELS: Record<RemovalReason, string> = {
+  bounce: "Bounced email",
+  abuse: "Spam / abuse",
+  user_request: "User requested",
+  other: "Other",
+};
+
 function SubscriberRow({ subscriber }: { subscriber: Subscriber }) {
   const { toast } = useToast();
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [reasonKind, setReasonKind] = useState<RemovalReason>("user_request");
+  const [reasonNote, setReasonNote] = useState("");
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("DELETE", `/api/admin/status/subscribers/${subscriber.id}`);
+      const label = REMOVAL_REASON_LABELS[reasonKind];
+      const note = reasonNote.trim();
+      const reason = note ? `${label}: ${note}` : label;
+      await apiRequest("DELETE", `/api/admin/status/subscribers/${subscriber.id}`, { reason });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: SUBSCRIBERS_KEY });
+      queryClient.invalidateQueries({ queryKey: SUBSCRIBER_REMOVALS_KEY });
       toast({ title: "Subscriber removed", description: subscriber.email });
       setDeleteOpen(false);
+      setReasonNote("");
+      setReasonKind("user_request");
     },
     onError: (err: Error) => {
       toast({ title: "Remove failed", description: err.message, variant: "destructive" });
@@ -1426,6 +1459,38 @@ function SubscriberRow({ subscriber }: { subscriber: Subscriber }) {
               themselves from the public status page if needed.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor={`removal-reason-${subscriber.id}`}>Reason</Label>
+              <Select value={reasonKind} onValueChange={(v) => setReasonKind(v as RemovalReason)}>
+                <SelectTrigger
+                  id={`removal-reason-${subscriber.id}`}
+                  data-testid={`select-removal-reason-${subscriber.id}`}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {REMOVAL_REASONS.map((r) => (
+                    <SelectItem key={r} value={r} data-testid={`option-removal-reason-${r}`}>
+                      {REMOVAL_REASON_LABELS[r]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`removal-note-${subscriber.id}`}>Notes (optional)</Label>
+              <Textarea
+                id={`removal-note-${subscriber.id}`}
+                value={reasonNote}
+                onChange={(e) => setReasonNote(e.target.value)}
+                rows={2}
+                maxLength={400}
+                placeholder="Anything useful for the audit log"
+                data-testid={`input-removal-note-${subscriber.id}`}
+              />
+            </div>
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel data-testid={`button-cancel-delete-subscriber-${subscriber.id}`}>
               Cancel
@@ -1451,5 +1516,75 @@ function SubscriberRow({ subscriber }: { subscriber: Subscriber }) {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  );
+}
+
+// -------------------- Recently removed subscribers --------------------
+
+function RecentRemovalsSection({
+  removals,
+  isLoading,
+}: {
+  removals: SubscriberRemoval[];
+  isLoading: boolean;
+}) {
+  return (
+    <Card data-testid="card-subscriber-removals">
+      <CardHeader>
+        <CardTitle className="text-base">Recently removed</CardTitle>
+        <CardDescription>
+          The last {removals.length || "few"} subscribers removed by an admin, with the reason recorded at the time of removal.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="p-0">
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        ) : removals.length === 0 ? (
+          <div className="px-4 py-6 text-sm text-muted-foreground" data-testid="text-no-removals">
+            No subscriber removals recorded yet.
+          </div>
+        ) : (
+          <div className="divide-y divide-border">
+            {removals.map((r) => {
+              const actor =
+                (r.removed_by_name && r.removed_by_name.length > 0
+                  ? r.removed_by_name
+                  : r.removed_by_email) || "Unknown admin";
+              return (
+                <div
+                  key={r.id}
+                  className="px-4 py-3 text-sm flex flex-col gap-1"
+                  data-testid={`removal-row-${r.id}`}
+                >
+                  <div className="flex items-center justify-between gap-3 flex-wrap">
+                    <div className="font-medium truncate" data-testid={`text-removal-email-${r.id}`}>
+                      {r.email}
+                    </div>
+                    <span
+                      className="text-xs text-muted-foreground"
+                      data-testid={`text-removal-time-${r.id}`}
+                    >
+                      {fmt(r.removed_at)}
+                    </span>
+                  </div>
+                  <div className="text-xs text-muted-foreground" data-testid={`text-removal-actor-${r.id}`}>
+                    Removed by {actor}
+                  </div>
+                  <div className="text-sm" data-testid={`text-removal-reason-${r.id}`}>
+                    {r.reason && r.reason.trim().length > 0 ? (
+                      r.reason
+                    ) : (
+                      <span className="text-muted-foreground italic">No reason recorded</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }

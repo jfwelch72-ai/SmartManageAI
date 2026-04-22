@@ -107,6 +107,17 @@ export async function ensureStatusPageTables(): Promise<void> {
   `);
 
   await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "status_subscriber_removals" (
+      "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+      "email" text NOT NULL,
+      "removed_by_user_id" varchar REFERENCES "users"("id"),
+      "reason" text,
+      "removed_at" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS "status_subscriber_removals_removed_at_idx" ON "status_subscriber_removals" ("removed_at" DESC)`);
+
+  await db.execute(sql`
     CREATE TABLE IF NOT EXISTS "status_incident_notifications" (
       "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
       "incident_id" varchar NOT NULL REFERENCES "status_incidents"("id") ON DELETE CASCADE,
