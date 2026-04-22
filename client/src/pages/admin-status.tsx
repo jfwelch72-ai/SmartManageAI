@@ -1362,22 +1362,94 @@ function SubscribersSection({
         </div>
         <div className="divide-y divide-border">
           {subscribers.map((s) => (
-            <div
-              key={s.id}
-              className="flex items-center justify-between gap-3 px-4 py-2 text-sm"
-              data-testid={`subscriber-row-${s.id}`}
-            >
-              <div className="font-medium truncate">{s.email}</div>
-              <div className="flex items-center gap-3">
-                <Badge variant={s.confirmed ? "secondary" : "outline"}>
-                  {s.confirmed ? "confirmed" : "pending"}
-                </Badge>
-                <span className="text-xs text-muted-foreground">{fmt(s.created_at)}</span>
-              </div>
-            </div>
+            <SubscriberRow key={s.id} subscriber={s} />
           ))}
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function SubscriberRow({ subscriber }: { subscriber: Subscriber }) {
+  const { toast } = useToast();
+  const [deleteOpen, setDeleteOpen] = useState(false);
+
+  const deleteMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest("DELETE", `/api/admin/status/subscribers/${subscriber.id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: SUBSCRIBERS_KEY });
+      toast({ title: "Subscriber removed", description: subscriber.email });
+      setDeleteOpen(false);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Remove failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  return (
+    <div
+      className="flex items-center justify-between gap-3 px-4 py-2 text-sm"
+      data-testid={`subscriber-row-${subscriber.id}`}
+    >
+      <div className="font-medium truncate" data-testid={`text-subscriber-email-${subscriber.id}`}>
+        {subscriber.email}
+      </div>
+      <div className="flex items-center gap-3">
+        <Badge variant={subscriber.confirmed ? "secondary" : "outline"}>
+          {subscriber.confirmed ? "confirmed" : "pending"}
+        </Badge>
+        <span className="text-xs text-muted-foreground">{fmt(subscriber.created_at)}</span>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="text-destructive hover:text-destructive h-8 w-8 p-0"
+          onClick={() => setDeleteOpen(true)}
+          disabled={deleteMutation.isPending}
+          aria-label={`Remove subscriber ${subscriber.email}`}
+          data-testid={`button-delete-subscriber-${subscriber.id}`}
+        >
+          {deleteMutation.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Trash2 className="h-4 w-4" />
+          )}
+        </Button>
+      </div>
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove this subscriber?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {subscriber.email} will stop receiving incident emails. They can resubscribe
+              themselves from the public status page if needed.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid={`button-cancel-delete-subscriber-${subscriber.id}`}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                deleteMutation.mutate();
+              }}
+              disabled={deleteMutation.isPending}
+              data-testid={`button-confirm-delete-subscriber-${subscriber.id}`}
+            >
+              {deleteMutation.isPending ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Removing
+                </>
+              ) : (
+                "Remove"
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }

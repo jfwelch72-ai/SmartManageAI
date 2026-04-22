@@ -553,6 +553,18 @@ router.get("/api/admin/status/subscribers", ...adminGuard, async (_req, res, nex
   }
 });
 
+router.delete("/api/admin/status/subscribers/:id", ...adminGuard, async (req: any, res, next) => {
+  try {
+    const result = await db.execute(sql`DELETE FROM "status_subscribers" WHERE id = ${req.params.id} RETURNING id, email`);
+    if (result.rows.length === 0) return res.status(404).json({ error: "Subscriber not found" });
+    const removed = result.rows[0] as { id: string; email: string };
+    logInfo("Status subscriber removed by admin", { subscriberId: removed.id, email: removed.email, actorUserId: req.user?.id ?? null });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // ---------- notification fanout ----------
 
 async function notifySubscribersOfIncident(incidentId: string, updateId: string | null, isNew: boolean): Promise<void> {
