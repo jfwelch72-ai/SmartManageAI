@@ -981,25 +981,71 @@ function KanbanBoard({
   // column under the user's finger via elementFromPoint.
   useEffect(() => {
     if (!draggingKey || !touchModeRef.current) return;
+    const EDGE = 60;
+    const MAX_SPEED = 14;
+    let lastX = 0;
+    let lastY = 0;
+    let rafId: number | null = null;
+
+    const computeDelta = () => {
+      const vh = window.innerHeight;
+      if (lastY < EDGE) {
+        const ratio = Math.min(1, (EDGE - lastY) / EDGE);
+        return -Math.max(1, Math.ceil(ratio * MAX_SPEED));
+      }
+      if (lastY > vh - EDGE) {
+        const ratio = Math.min(1, (lastY - (vh - EDGE)) / EDGE);
+        return Math.max(1, Math.ceil(ratio * MAX_SPEED));
+      }
+      return 0;
+    };
+    const tick = () => {
+      rafId = null;
+      const delta = computeDelta();
+      if (delta === 0) return;
+      window.scrollBy(0, delta);
+      // After scrolling, the element/column under the finger may have changed.
+      const el = document.elementFromPoint(lastX, lastY) as HTMLElement | null;
+      const colEl = el?.closest?.("[data-bucket]") as HTMLElement | null;
+      const bucket = (colEl?.dataset.bucket ?? null) as Bucket | null;
+      if (bucket && bucket !== dragOverRef.current) setDragOverCol(bucket);
+      rafId = requestAnimationFrame(tick);
+    };
+    const ensureTick = () => {
+      if (rafId == null) rafId = requestAnimationFrame(tick);
+    };
+    const stopTick = () => {
+      if (rafId != null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+    };
+
     const onMoveT = (e: TouchEvent) => {
       if (e.touches.length === 0) return;
       e.preventDefault();
       const t = e.touches[0];
+      lastX = t.clientX;
+      lastY = t.clientY;
       const el = document.elementFromPoint(t.clientX, t.clientY) as HTMLElement | null;
       const colEl = el?.closest?.("[data-bucket]") as HTMLElement | null;
       const bucket = (colEl?.dataset.bucket ?? null) as Bucket | null;
       if (bucket !== dragOverRef.current) setDragOverCol(bucket);
+      if (computeDelta() !== 0) ensureTick();
+      else stopTick();
     };
-    const onEnd = () => finishDrop(dragOverRef.current);
+    const onEnd = () => {
+      stopTick();
+      finishDrop(dragOverRef.current);
+    };
     document.addEventListener("touchmove", onMoveT, { passive: false });
     document.addEventListener("touchend", onEnd);
     document.addEventListener("touchcancel", onEnd);
-    document.body.style.overflow = "hidden";
     return () => {
+      stopTick();
       document.removeEventListener("touchmove", onMoveT);
       document.removeEventListener("touchend", onEnd);
       document.removeEventListener("touchcancel", onEnd);
-      document.body.style.overflow = "";
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draggingKey]);
