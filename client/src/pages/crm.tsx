@@ -71,6 +71,7 @@ import { Link } from "wouter";
 import CrmPipelineView from "@/components/crm/CrmPipelineView";
 import { CrmTasksView } from "@/components/crm/CrmTasksView";
 import { CrmQuotesView } from "@/components/crm/CrmQuotesView";
+import { CrmCallsView } from "@/components/crm/CrmCallsView";
 import { CrmAnalyticsView } from "@/components/crm/CrmAnalyticsView";
 import type {
   CrmOrganisation as CrmOrganization,
@@ -633,7 +634,7 @@ export default function CRMPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [crmTab, setCrmTab] = useState<"orgs" | "contacts" | "pipeline" | "tasks" | "quotes" | "reports" | "analytics">("orgs");
+  const [crmTab, setCrmTab] = useState<"orgs" | "contacts" | "pipeline" | "tasks" | "calls" | "quotes" | "reports" | "analytics">("orgs");
   const [contactSearch, setContactSearch] = useState("");
   // Task #701: filter contacts table by owner. "all" = no filter, "me" = current
   // user, "__unassigned__" = no owner, otherwise a specific user id.
@@ -766,7 +767,7 @@ export default function CRMPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const tabParam = params.get("tab");
-    const tabMap: Record<string, "orgs" | "contacts" | "pipeline" | "tasks" | "quotes" | "reports" | "analytics"> = {
+    const tabMap: Record<string, "orgs" | "contacts" | "pipeline" | "tasks" | "calls" | "quotes" | "reports" | "analytics"> = {
       orgs: "orgs",
       organisations: "orgs",
       organizations: "orgs",
@@ -778,6 +779,7 @@ export default function CRMPage() {
       deals: "pipeline",
       tasks: "tasks",
       activities: "tasks",
+      calls: "calls",
       quotes: "quotes",
       reports: "reports",
       analytics: "analytics",
@@ -1296,6 +1298,14 @@ export default function CRMPage() {
               <span className="whitespace-nowrap">Tasks</span>
             </button>
             <button
+              className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${crmTab === "calls" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
+              onClick={() => setCrmTab("calls")}
+              data-testid="tab-calls"
+            >
+              <Phone className="w-4 h-4 inline mr-1.5 -mt-0.5" />
+              <span className="whitespace-nowrap">Calls</span>
+            </button>
+            <button
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${crmTab === "quotes" ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
               onClick={() => setCrmTab("quotes")}
               data-testid="tab-quotes"
@@ -1326,6 +1336,8 @@ export default function CRMPage() {
           )}
 
           {crmTab === "tasks" && <CrmTasksView />}
+
+          {crmTab === "calls" && <CrmCallsView />}
 
           {crmTab === "quotes" && <CrmQuotesView />}
 
