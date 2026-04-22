@@ -46,6 +46,7 @@ import {
   getCrmTranscriptBackfillOperatorContact,
   getLatestCrmTranscriptBackfillTestAlert,
   listCrmTranscriptBackfillAlertDeliveries,
+  listCrmTranscriptBackfillTestAlerts,
   recordCrmTranscriptBackfillTestResult,
   getRunningCrmTranscriptBackfillJob,
   listCrmTranscriptBackfillJobs,
@@ -2703,6 +2704,59 @@ router.get(
         latest: row,
         cooldownSeconds: TEST_ALERT_COOLDOWN_SECONDS,
         nextAllowedAt,
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #1052 — paginated history of test-alert audit rows so admins debugging
+// flaky Slack/email setups can scroll back through prior attempts (when a
+// channel started failing, who has been hammering the button) without a SQL
+// session. SUPER_ADMINs may pass `?organizationId=<id>` to scope to a single
+// tenant or omit it for a platform-wide view, matching the main backfill
+// history endpoint above. Org-scoped admins are hard-locked to their own org.
+router.get(
+  "/api/crm/calls/transcripts/backfill/test-alert/history",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const superAdmin = isSuperAdmin(req.user);
+      let scopedOrgId: string | undefined;
+      if (superAdmin) {
+        const requestedOrg = typeof req.query.organizationId === "string"
+          ? req.query.organizationId.trim()
+          : "";
+        scopedOrgId = requestedOrg.length > 0 ? requestedOrg : undefined;
+      } else {
+        const orgId = resolveOrg(req, res);
+        if (!orgId) return;
+        scopedOrgId = orgId;
+      }
+
+      const limit = Math.min(
+        Math.max(parseInt(String(req.query.limit ?? "20"), 10) || 20, 1),
+        100,
+      );
+      const offset = Math.max(
+        parseInt(String(req.query.offset ?? "0"), 10) || 0,
+        0,
+      );
+
+      const { rows, total } = await listCrmTranscriptBackfillTestAlerts({
+        organizationId: scopedOrgId,
+        limit,
+        offset,
+      });
+
+      res.json({
+        total,
+        limit,
+        offset,
+        crossOrg: superAdmin && !scopedOrgId,
+        alerts: rows,
       });
     } catch (e) {
       next(e);

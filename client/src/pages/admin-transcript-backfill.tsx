@@ -206,6 +206,25 @@ interface LatestTestAlert {
   sentByLastName: string | null;
   sentByEmail: string | null;
 }
+// Task #1052 — paginated history of every test-alert click. SUPER_ADMINs may
+// see entries from other orgs (when no org filter is applied) so the row
+// optionally carries org name/slug.
+interface TestAlertHistoryEntry extends LatestTestAlert {
+  organizationId: string;
+  organizationName: string | null;
+  organizationSlug: string | null;
+}
+interface TestAlertHistoryResponse {
+  total: number;
+  limit: number;
+  offset: number;
+  crossOrg: boolean;
+  alerts: TestAlertHistoryEntry[];
+}
+const TEST_ALERT_HISTORY_PATH =
+  "/api/crm/calls/transcripts/backfill/test-alert/history";
+const TEST_ALERT_HISTORY_KEY_BASE = [TEST_ALERT_HISTORY_PATH] as const;
+const TEST_ALERT_HISTORY_PAGE_SIZE = 10;
 const PAGE_SIZE = 20;
 const STATUS_OPTIONS = ["RUNNING", "COMPLETED", "FAILED"] as const;
 type StatusFilter = "ALL" | (typeof STATUS_OPTIONS)[number];
@@ -657,6 +676,9 @@ export default function AdminTranscriptBackfillPage() {
       // Task #1033 — refresh the "last test alert sent by" indicator so the
       // newly-recorded audit row appears without a manual reload.
       queryClient.invalidateQueries({ queryKey: TEST_ALERT_LATEST_KEY });
+      // Task #1052 — also bust the paginated history list so the new row
+      // shows up in the "Show previous tests" panel.
+      queryClient.invalidateQueries({ queryKey: TEST_ALERT_HISTORY_KEY_BASE });
       const { slack, email } = data;
       if (!slack.configured && !email.configured) {
         toast({
@@ -1279,6 +1301,10 @@ export default function AdminTranscriptBackfillPage() {
             )}
           </p>
           <LastTestAlertIndicator query={latestTestAlertQuery} />
+          <TestAlertHistoryPanel
+            isSuperAdmin={isSuperAdmin}
+            orgFilter={orgFilter}
+          />
           {pending === 0 && !isRunning && (
             <p className="text-xs text-muted-foreground" data-testid="text-no-pending">
               Nothing to backfill — all recordings already have transcripts.
@@ -2197,6 +2223,252 @@ function LastTestAlertIndicator({
   );
 }
 
+// Task #1052 — collapsible "Show previous tests" panel that lists prior
+// test-alert audit rows (newest first, paginated). Lives right under the
+// latest-indicator so admins debugging a flaky channel can scroll back
+// through several attempts without dropping into a SQL session. SUPER_ADMINs
+// see entries from every org by default and can scope to a single tenant
+// via the page's existing org picker (the same `orgFilter` that drives the
+// main backfill history grid above).
+function TestAlertHistoryPanel({
+  isSuperAdmin,
+  orgFilter,
+}: {
+  isSuperAdmin: boolean;
+  orgFilter: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [page, setPage] = useState(0);
+
+  // Reset to the first page whenever the org scope changes so a SUPER_ADMIN
+  // doesn't end up staring at an empty page.
+  useEffect(() => {
+    setPage(0);
+  }, [orgFilter]);
+
+  const queryParams = useMemo(() => {
+    const params: Record<string, string> = {
+      limit: String(TEST_ALERT_HISTORY_PAGE_SIZE),
+      offset: String(page * TEST_ALERT_HISTORY_PAGE_SIZE),
+    };
+    if (isSuperAdmin && orgFilter !== CROSS_ORG_VALUE) {
+      params.organizationId = orgFilter;
+    }
+    return params;
+  }, [page, isSuperAdmin, orgFilter]);
+
+  const query = useQuery<TestAlertHistoryResponse>({
+    queryKey: [...TEST_ALERT_HISTORY_KEY_BASE, queryParams],
+    enabled: expanded,
+  });
+
+  const total = query.data?.total ?? 0;
+  const alerts = query.data?.alerts ?? [];
+  const totalPages = Math.max(1, Math.ceil(total / TEST_ALERT_HISTORY_PAGE_SIZE));
+  const safePage = Math.min(page, totalPages - 1);
+  const canPrev = safePage > 0;
+  const canNext = safePage < totalPages - 1;
+  const startIdx = total === 0 ? 0 : safePage * TEST_ALERT_HISTORY_PAGE_SIZE + 1;
+  const endIdx = Math.min(total, (safePage + 1) * TEST_ALERT_HISTORY_PAGE_SIZE);
+  const showCrossOrg = !!query.data?.crossOrg;
+
+  return (
+    <div data-testid="panel-test-alert-history">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-7 px-2 text-xs"
+        onClick={() => setExpanded((v) => !v)}
+        data-testid="button-toggle-test-alert-history"
+        aria-expanded={expanded}
+      >
+        {expanded ? (
+          <ChevronDown className="h-3 w-3 mr-1" />
+        ) : (
+          <ChevronRight className="h-3 w-3 mr-1" />
+        )}
+        {expanded ? "Hide previous tests" : "Show previous tests"}
+      </Button>
+      {expanded && (
+        <div
+          className="mt-2 space-y-2"
+          data-testid="container-test-alert-history"
+        >
+          {query.isLoading ? (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="status-test-alert-history-loading"
+            >
+              Loading previous tests…
+            </p>
+          ) : query.isError ? (
+            <p
+              className="text-xs text-destructive"
+              data-testid="text-test-alert-history-error"
+            >
+              Couldn't load previous test alerts.
+            </p>
+          ) : alerts.length === 0 ? (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="text-test-alert-history-empty"
+            >
+              No previous test alerts recorded.
+            </p>
+          ) : (
+            <>
+              <ul
+                className="space-y-2"
+                data-testid="list-test-alert-history"
+              >
+                {alerts.map((entry) => {
+                  const senderName = [entry.sentByFirstName, entry.sentByLastName]
+                    .filter(Boolean)
+                    .join(" ")
+                    .trim();
+                  const sender =
+                    senderName ||
+                    entry.sentByEmail ||
+                    entry.operatorDisplay ||
+                    "Unknown user";
+                  return (
+                    <li
+                      key={entry.id}
+                      className="rounded-md border bg-muted/30 p-2 text-xs space-y-1"
+                      data-testid={`row-test-alert-history-${entry.id}`}
+                    >
+                      <div className="flex flex-wrap items-baseline justify-between gap-2">
+                        <div className="text-muted-foreground">
+                          <span
+                            className="font-medium text-foreground"
+                            data-testid={`text-test-alert-history-sender-${entry.id}`}
+                          >
+                            {sender}
+                          </span>{" "}
+                          <span
+                            data-testid={`text-test-alert-history-time-${entry.id}`}
+                          >
+                            {format(
+                              new Date(entry.sentAt),
+                              "MMM d, yyyy 'at' h:mm a",
+                            )}
+                          </span>
+                        </div>
+                        {showCrossOrg && entry.organizationName && (
+                          <Badge
+                            variant="outline"
+                            data-testid={`badge-test-alert-history-org-${entry.id}`}
+                          >
+                            {entry.organizationName}
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {entry.slackConfigured ? (
+                          <Badge
+                            variant={entry.slackOk ? "default" : "destructive"}
+                            data-testid={`badge-test-alert-history-slack-${entry.id}`}
+                          >
+                            Slack: {entry.slackOk ? "ok" : "failed"}
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            data-testid={`badge-test-alert-history-slack-${entry.id}`}
+                          >
+                            Slack: not configured
+                          </Badge>
+                        )}
+                        {entry.emailConfigured ? (
+                          <Badge
+                            variant={entry.emailOk ? "default" : "destructive"}
+                            data-testid={`badge-test-alert-history-email-${entry.id}`}
+                          >
+                            Email: {entry.emailOk ? "ok" : "failed"}
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            data-testid={`badge-test-alert-history-email-${entry.id}`}
+                          >
+                            Email: not configured
+                          </Badge>
+                        )}
+                      </div>
+                      {(entry.slackError || entry.emailError) && (
+                        <div
+                          className="text-destructive"
+                          data-testid={`text-test-alert-history-errors-${entry.id}`}
+                        >
+                          {entry.slackError && <div>Slack: {entry.slackError}</div>}
+                          {entry.emailError && <div>Email: {entry.emailError}</div>}
+                        </div>
+                      )}
+                      {entry.emailConfigured &&
+                        entry.emailRecipients &&
+                        entry.emailRecipients.length > 0 && (
+                          <div
+                            className="text-muted-foreground"
+                            data-testid={`text-test-alert-history-recipients-${entry.id}`}
+                          >
+                            Email recipients:{" "}
+                            {entry.emailRecipients.join(", ")}
+                          </div>
+                        )}
+                    </li>
+                  );
+                })}
+              </ul>
+              <div
+                className="flex flex-wrap items-center justify-between gap-2 pt-1"
+                data-testid="test-alert-history-pagination"
+              >
+                <div
+                  className="text-xs text-muted-foreground"
+                  data-testid="text-test-alert-history-range"
+                >
+                  Showing{" "}
+                  <span className="font-medium">{startIdx.toLocaleString()}</span>
+                  –
+                  <span className="font-medium">{endIdx.toLocaleString()}</span>{" "}
+                  of <span className="font-medium">{total.toLocaleString()}</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => setPage((p) => Math.max(0, p - 1))}
+                    disabled={!canPrev || query.isFetching}
+                    data-testid="button-test-alert-history-prev"
+                  >
+                    <ChevronLeft className="h-3 w-3 mr-1" />
+                    Previous
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2 text-xs"
+                    onClick={() => setPage((p) => p + 1)}
+                    disabled={!canNext || query.isFetching}
+                    data-testid="button-test-alert-history-next"
+                  >
+                    Next
+                    <ChevronRight className="h-3 w-3 ml-1" />
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function HistoryPagination({
   total,
   page,
@@ -2493,7 +2765,11 @@ export function BackfillNotificationSettingsCard() {
       // Task #1053 — a successful send starts a fresh cooldown window on the
       // server; refresh the audit/cooldown query so the button disables
       // immediately instead of waiting for the next mount.
+      // Task #1052 — also refresh the history panel so a click on this
+      // card's "Send test alert" button updates the UI on the controls card
+      // above without a manual reload.
       queryClient.invalidateQueries({ queryKey: TEST_ALERT_LATEST_KEY });
+      queryClient.invalidateQueries({ queryKey: TEST_ALERT_HISTORY_KEY_BASE });
       const { slack, email, operatorDisplay, testedAt } = data;
       // Task #1045 — sync the persisted last-test fields into the cached
       // settings so the inline health summary updates immediately without a

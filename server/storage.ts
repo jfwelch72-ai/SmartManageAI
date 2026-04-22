@@ -367,6 +367,82 @@ export async function getLatestCrmTranscriptBackfillTestAlert(
   return (row as CrmTranscriptBackfillTestAlertWithSender) || null;
 }
 
+// Task #1052 — paginated history of test-alert audit rows for the admin
+// transcript backfill page so admins can scroll back through prior attempts
+// (when a channel started failing, who has been hammering the button) without
+// dropping into a SQL session. Mirrors the SUPER_ADMIN cross-org behavior of
+// the main backfill history endpoint: pass `organizationId` to scope, omit it
+// to get a platform-wide view (org-scoped admins are always locked to their
+// own org by the route layer).
+export type CrmTranscriptBackfillTestAlertWithContext =
+  CrmTranscriptBackfillTestAlertWithSender & {
+    organizationName: string | null;
+    organizationSlug: string | null;
+  };
+
+export async function listCrmTranscriptBackfillTestAlerts(opts: {
+  organizationId?: string;
+  limit?: number;
+  offset?: number;
+}): Promise<{
+  rows: CrmTranscriptBackfillTestAlertWithContext[];
+  total: number;
+}> {
+  const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
+  const offset = Math.max(opts.offset ?? 0, 0);
+
+  const whereClause = opts.organizationId
+    ? eq(crmTranscriptBackfillTestAlerts.organizationId, opts.organizationId)
+    : undefined;
+
+  const baseRows = db
+    .select({
+      id: crmTranscriptBackfillTestAlerts.id,
+      organizationId: crmTranscriptBackfillTestAlerts.organizationId,
+      sentById: crmTranscriptBackfillTestAlerts.sentById,
+      sentAt: crmTranscriptBackfillTestAlerts.sentAt,
+      operatorDisplay: crmTranscriptBackfillTestAlerts.operatorDisplay,
+      slackConfigured: crmTranscriptBackfillTestAlerts.slackConfigured,
+      slackOk: crmTranscriptBackfillTestAlerts.slackOk,
+      slackError: crmTranscriptBackfillTestAlerts.slackError,
+      emailConfigured: crmTranscriptBackfillTestAlerts.emailConfigured,
+      emailOk: crmTranscriptBackfillTestAlerts.emailOk,
+      emailError: crmTranscriptBackfillTestAlerts.emailError,
+      emailRecipients: crmTranscriptBackfillTestAlerts.emailRecipients,
+      sentByFirstName: users.firstName,
+      sentByLastName: users.lastName,
+      sentByEmail: users.email,
+      organizationName: organizations.name,
+      organizationSlug: organizations.slug,
+    })
+    .from(crmTranscriptBackfillTestAlerts)
+    .leftJoin(users, eq(users.id, crmTranscriptBackfillTestAlerts.sentById))
+    .leftJoin(
+      organizations,
+      eq(organizations.id, crmTranscriptBackfillTestAlerts.organizationId),
+    );
+
+  const rows = await (whereClause ? baseRows.where(whereClause) : baseRows)
+    .orderBy(
+      desc(crmTranscriptBackfillTestAlerts.sentAt),
+      desc(crmTranscriptBackfillTestAlerts.id),
+    )
+    .limit(limit)
+    .offset(offset);
+
+  const totalQuery = db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(crmTranscriptBackfillTestAlerts);
+  const [{ count }] = await (whereClause
+    ? totalQuery.where(whereClause)
+    : totalQuery);
+
+  return {
+    rows: rows as CrmTranscriptBackfillTestAlertWithContext[],
+    total: Number(count) || 0,
+  };
+}
+
 // Task #1004 — given a set of backfill job ids, return the full retry lineage
 // each one belongs to (the root job + every descendant retry, in chronological
 // order). Implemented as a single recursive CTE so we can render the chain
