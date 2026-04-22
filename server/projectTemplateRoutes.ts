@@ -346,6 +346,27 @@ const instantiateSchema = z.object({
     })
     .optional(),
   excludedRefIds: z.array(z.string().min(1)).max(5000).optional(),
+  taskOverrides: z
+    .array(
+      z.object({
+        refId: z.string().min(1),
+        name: z.string().min(1).max(500).optional(),
+        durationDays: z.number().int().min(0).max(10000).nullable().optional(),
+      }),
+    )
+    .max(5000)
+    .optional(),
+  addedTasks: z
+    .array(
+      z.object({
+        tempId: z.string().min(1),
+        parentRefId: z.string().min(1).nullable(),
+        name: z.string().min(1).max(500),
+        durationDays: z.number().int().min(0).max(10000).nullable().optional(),
+      }),
+    )
+    .max(2000)
+    .optional(),
 });
 
 router.post(
@@ -410,6 +431,8 @@ router.post(
         projectInput,
         roleAssignments: parsed.data.roleAssignments,
         excludedRefIds: parsed.data.excludedRefIds,
+        taskOverrides: parsed.data.taskOverrides,
+        addedTasks: parsed.data.addedTasks,
       });
 
       await db

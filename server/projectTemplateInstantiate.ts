@@ -52,6 +52,23 @@ export interface InstantiateOptions {
   /** Snapshot task refIds the user opted out of in the preview. The seeded
    * project will skip these tasks AND any dependency that touches them. */
   excludedRefIds?: string[];
+  /** Per-snapshot-task overrides applied during seeding. Currently supports
+   * renaming and changing the duration; the end offset is recomputed from
+   * the duration when provided. */
+  taskOverrides?: Array<{
+    refId: string;
+    name?: string;
+    durationDays?: number | null;
+  }>;
+  /** Brand-new tasks to append under an existing snapshot task (or at the
+   * top level when parentRefId is null). They inherit the parent's start
+   * offset and use the supplied duration. */
+  addedTasks?: Array<{
+    tempId: string;
+    parentRefId: string | null;
+    name: string;
+    durationDays?: number | null;
+  }>;
 }
 
 const PROJECT_CODE_START = 1000;
@@ -159,20 +176,34 @@ export async function instantiateProjectFromTemplate(opts: InstantiateOptions): 
       })
       .returning();
 
+    // Build override map for quick lookup during seeding.
+    const overrideByRefId = new Map<string, { name?: string; durationDays?: number | null }>();
+    for (const o of opts.taskOverrides ?? []) {
+      if (excludedRefIds.has(o.refId)) continue;
+      overrideByRefId.set(o.refId, { name: o.name, durationDays: o.durationDays });
+    }
+
     // First insert tasks without parent links so we can map refIds → ids,
     // then a second pass updates parentTaskId.
     const refIdToTaskId = new Map<string, string>();
     for (const t of remainingTasks) {
+      const override = overrideByRefId.get(t.refId);
+      const finalDuration =
+        override && override.durationDays !== undefined ? override.durationDays : t.durationDays ?? null;
+      const finalEndOffset =
+        override && override.durationDays !== undefined && t.startOffsetDays !== null && finalDuration !== null
+          ? t.startOffsetDays + finalDuration
+          : t.endOffsetDays;
       const [row] = await db
         .insert(projectScheduleTasks)
         .values({
           scheduleId: schedule.id,
-          name: t.name,
+          name: override?.name?.trim() || t.name,
           description: t.description,
           tradeType: (t.tradeType as TradeType | null) ?? null,
           plannedStartDate: addDays(startDate, t.startOffsetDays),
-          plannedEndDate: addDays(startDate, t.endOffsetDays),
-          durationDays: t.durationDays ?? null,
+          plannedEndDate: addDays(startDate, finalEndOffset),
+          durationDays: finalDuration,
           isMilestone: t.isMilestone,
           sortOrder: t.sortOrder,
           wbsCode: t.wbsCode,
@@ -192,6 +223,50 @@ export async function instantiateProjectFromTemplate(opts: InstantiateOptions): 
         .update(projectScheduleTasks)
         .set({ parentTaskId: parentId })
         .where(eq(projectScheduleTasks.id, childId));
+    }
+
+    // Append user-added tasks. They inherit the parent's start offset and
+    // use the supplied duration. Tasks whose parent was excluded (or is
+    // missing entirely) are skipped to avoid orphans.
+    const taskByRefId = new Map<string, ProjectTemplateSnapshot["tasks"][number]>();
+    for (const t of opts.snapshot.tasks) taskByRefId.set(t.refId, t);
+    let appendedSortOrder = remainingTasks.reduce((m, t) => Math.max(m, t.sortOrder ?? 0), 0) + 1;
+    for (const added of opts.addedTasks ?? []) {
+      const name = added.name.trim();
+      if (!name) continue;
+      let parentTaskId: string | null = null;
+      let outlineLevel = 0;
+      let startOffset: number | null = 0;
+      if (added.parentRefId) {
+        if (excludedRefIds.has(added.parentRefId)) continue;
+        parentTaskId = refIdToTaskId.get(added.parentRefId) ?? null;
+        if (!parentTaskId) continue;
+        const parent = taskByRefId.get(added.parentRefId);
+        outlineLevel = (parent?.outlineLevel ?? 0) + 1;
+        startOffset = parent?.startOffsetDays ?? 0;
+      }
+      const duration = added.durationDays ?? null;
+      const endOffset =
+        startOffset !== null && duration !== null ? startOffset + duration : startOffset;
+      const [row] = await db
+        .insert(projectScheduleTasks)
+        .values({
+          scheduleId: schedule.id,
+          name,
+          description: null,
+          tradeType: null,
+          plannedStartDate: addDays(startDate, startOffset),
+          plannedEndDate: addDays(startDate, endOffset),
+          durationDays: duration,
+          isMilestone: false,
+          sortOrder: appendedSortOrder++,
+          wbsCode: null,
+          outlineLevel,
+          parentTaskId,
+        })
+        .returning();
+      void row;
+      taskCount++;
     }
 
     for (const d of opts.snapshot.dependencies) {

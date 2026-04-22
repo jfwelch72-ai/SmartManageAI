@@ -46,7 +46,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Layers, Sparkles, Trash2, Search, FileText, Calendar, Pencil, History, ChevronRight, ChevronDown, Flag, ArrowRight, ListTree, Eye } from "lucide-react";
+import { Layers, Sparkles, Trash2, Search, FileText, Calendar, Pencil, History, ChevronRight, ChevronDown, Flag, ArrowRight, ListTree, Eye, Plus, X, Check } from "lucide-react";
 import type { ProjectTemplate } from "@shared/schema";
 import { TemplateContentEditorDialog } from "@/components/templates/template-content-editor-dialog";
 
@@ -125,6 +125,22 @@ export default function ProjectTemplatesPage() {
   const [collapsedRefIds, setCollapsedRefIds] = useState<Set<string>>(new Set());
   const [previewTemplate, setPreviewTemplate] = useState<ProjectTemplate | null>(null);
   const [previewCollapsedRefIds, setPreviewCollapsedRefIds] = useState<Set<string>>(new Set());
+  const [overrides, setOverrides] = useState<
+    Map<string, { name?: string; durationDays?: number | null }>
+  >(new Map());
+  const [addedTasks, setAddedTasks] = useState<
+    Array<{ tempId: string; parentRefId: string | null; name: string; durationDays: number | null }>
+  >([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<{ name: string; durationDays: string }>({
+    name: "",
+    durationDays: "",
+  });
+  const [addingUnderId, setAddingUnderId] = useState<string | "__root__" | null>(null);
+  const [addDraft, setAddDraft] = useState<{ name: string; durationDays: string }>({
+    name: "",
+    durationDays: "",
+  });
 
   const previewSnapshotQuery = useQuery<SnapshotResponse>({
     queryKey: ["/api/project-templates", previewTemplate?.id, "snapshot", "latest"],
@@ -250,6 +266,17 @@ export default function ProjectTemplatesPage() {
     return map;
   }, [snapshotQuery.data?.tasks]);
 
+  const addedByParent = useMemo(() => {
+    const map = new Map<string | null, typeof addedTasks>();
+    for (const a of addedTasks) {
+      const key = a.parentRefId ?? null;
+      const arr = map.get(key) ?? [];
+      arr.push(a);
+      map.set(key, arr);
+    }
+    return map;
+  }, [addedTasks]);
+
   const taskByRefId = useMemo(() => {
     const map = new Map<string, SnapshotTask>();
     for (const t of snapshotQuery.data?.tasks ?? []) map.set(t.refId, t);
@@ -294,8 +321,12 @@ export default function ProjectTemplatesPage() {
 
   const includedCount = useMemo(() => {
     const tasks = snapshotQuery.data?.tasks ?? [];
-    return tasks.filter((t) => !excludedRefIds.has(t.refId)).length;
-  }, [snapshotQuery.data?.tasks, excludedRefIds]);
+    const baseCount = tasks.filter((t) => !excludedRefIds.has(t.refId)).length;
+    const addedCount = addedTasks.filter(
+      (a) => a.parentRefId === null || !excludedRefIds.has(a.parentRefId),
+    ).length;
+    return baseCount + addedCount;
+  }, [snapshotQuery.data?.tasks, excludedRefIds, addedTasks]);
 
   const includedDependencies = useMemo(() => {
     const deps = snapshotQuery.data?.dependencies ?? [];
@@ -341,12 +372,21 @@ export default function ProjectTemplatesPage() {
       versionId?: string;
       input: InstantiateInput;
       excludedRefIds?: string[];
+      taskOverrides?: Array<{ refId: string; name?: string; durationDays?: number | null }>;
+      addedTasks?: Array<{
+        tempId: string;
+        parentRefId: string | null;
+        name: string;
+        durationDays?: number | null;
+      }>;
     }) => {
       const res = await apiRequest("POST", "/api/project-templates/instantiate", {
         templateId: vars.templateId,
         versionId: vars.versionId,
         projectStartDate: vars.input.projectStartDate,
         excludedRefIds: vars.excludedRefIds,
+        taskOverrides: vars.taskOverrides,
+        addedTasks: vars.addedTasks,
         project: {
           name: vars.input.name,
           clientName: vars.input.clientName,
@@ -371,6 +411,10 @@ export default function ProjectTemplatesPage() {
       setActiveTemplate(null);
       setExcludedRefIds(new Set());
       setCollapsedRefIds(new Set());
+      setOverrides(new Map());
+      setAddedTasks([]);
+      setEditingId(null);
+      setAddingUnderId(null);
       form.reset();
       setLocation(`/projects/${result.projectCode}`);
     },
@@ -398,6 +442,10 @@ export default function ProjectTemplatesPage() {
     setSelectedVersionId("latest");
     setExcludedRefIds(new Set());
     setCollapsedRefIds(new Set());
+    setOverrides(new Map());
+    setAddedTasks([]);
+    setEditingId(null);
+    setAddingUnderId(null);
     form.reset({
       name: "",
       clientName: "",
@@ -414,19 +462,281 @@ export default function ProjectTemplatesPage() {
 
   function onSubmit(values: InstantiateInput) {
     if (!activeTemplate) return;
+    const taskOverrides = Array.from(overrides.entries())
+      .filter(([refId]) => !excludedRefIds.has(refId))
+      .map(([refId, v]) => ({ refId, name: v.name, durationDays: v.durationDays }));
+    const includedAdded = addedTasks.filter(
+      (a) => a.parentRefId === null || !excludedRefIds.has(a.parentRefId),
+    );
     instantiateMutation.mutate({
       templateId: activeTemplate.id,
       versionId: selectedVersionId === "latest" ? undefined : selectedVersionId,
       input: values,
       excludedRefIds: excludedRefIds.size > 0 ? Array.from(excludedRefIds) : undefined,
+      taskOverrides: taskOverrides.length > 0 ? taskOverrides : undefined,
+      addedTasks: includedAdded.length > 0 ? includedAdded : undefined,
     });
+  }
+
+  function startEditTask(refId: string, currentName: string, currentDuration: number | null) {
+    setEditingId(refId);
+    setEditDraft({
+      name: currentName,
+      durationDays: currentDuration === null ? "" : String(currentDuration),
+    });
+  }
+
+  function commitEditOverride(refId: string, originalName: string, originalDuration: number | null) {
+    const trimmedName = editDraft.name.trim();
+    const parsedDuration =
+      editDraft.durationDays.trim() === "" ? null : Number(editDraft.durationDays);
+    if (
+      editDraft.durationDays.trim() !== "" &&
+      (!Number.isFinite(parsedDuration as number) || (parsedDuration as number) < 0)
+    ) {
+      toast({ title: "Duration must be a non-negative number", variant: "destructive" });
+      return;
+    }
+    setOverrides((prev) => {
+      const next = new Map(prev);
+      const nameChanged = trimmedName !== originalName && trimmedName.length > 0;
+      const durationChanged = parsedDuration !== originalDuration;
+      if (!nameChanged && !durationChanged) {
+        next.delete(refId);
+      } else {
+        next.set(refId, {
+          name: nameChanged ? trimmedName : undefined,
+          durationDays: durationChanged ? parsedDuration : undefined,
+        });
+      }
+      return next;
+    });
+    setEditingId(null);
+  }
+
+  function commitEditAdded(tempId: string) {
+    const trimmedName = editDraft.name.trim();
+    if (!trimmedName) {
+      toast({ title: "Task name is required", variant: "destructive" });
+      return;
+    }
+    const parsedDuration =
+      editDraft.durationDays.trim() === "" ? null : Number(editDraft.durationDays);
+    if (
+      editDraft.durationDays.trim() !== "" &&
+      (!Number.isFinite(parsedDuration as number) || (parsedDuration as number) < 0)
+    ) {
+      toast({ title: "Duration must be a non-negative number", variant: "destructive" });
+      return;
+    }
+    setAddedTasks((prev) =>
+      prev.map((a) =>
+        a.tempId === tempId ? { ...a, name: trimmedName, durationDays: parsedDuration } : a,
+      ),
+    );
+    setEditingId(null);
+  }
+
+  function commitAddTask(parentRefId: string | null) {
+    const trimmedName = addDraft.name.trim();
+    if (!trimmedName) {
+      toast({ title: "Task name is required", variant: "destructive" });
+      return;
+    }
+    const parsedDuration =
+      addDraft.durationDays.trim() === "" ? null : Number(addDraft.durationDays);
+    if (
+      addDraft.durationDays.trim() !== "" &&
+      (!Number.isFinite(parsedDuration as number) || (parsedDuration as number) < 0)
+    ) {
+      toast({ title: "Duration must be a non-negative number", variant: "destructive" });
+      return;
+    }
+    const tempId = `new-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    setAddedTasks((prev) => [
+      ...prev,
+      { tempId, parentRefId, name: trimmedName, durationDays: parsedDuration },
+    ]);
+    if (parentRefId !== null) {
+      setCollapsedRefIds((prev) => {
+        const next = new Set(prev);
+        next.delete(parentRefId);
+        return next;
+      });
+    }
+    setAddDraft({ name: "", durationDays: "" });
+    setAddingUnderId(null);
+  }
+
+  function removeAddedTask(tempId: string) {
+    setAddedTasks((prev) => prev.filter((a) => a.tempId !== tempId));
+    if (editingId === `added:${tempId}`) setEditingId(null);
+  }
+
+  function renderInlineEditFields(testIdPrefix: string) {
+    return (
+      <>
+        <Input
+          value={editDraft.name}
+          onChange={(e) => setEditDraft((d) => ({ ...d, name: e.target.value }))}
+          className="h-7 text-sm flex-1 min-w-0"
+          placeholder="Task name"
+          data-testid={`input-${testIdPrefix}-name`}
+        />
+        <Input
+          value={editDraft.durationDays}
+          onChange={(e) => setEditDraft((d) => ({ ...d, durationDays: e.target.value }))}
+          className="h-7 text-sm w-16 shrink-0"
+          type="number"
+          min="0"
+          placeholder="days"
+          data-testid={`input-${testIdPrefix}-duration`}
+        />
+      </>
+    );
+  }
+
+  function renderAddedNode(
+    added: { tempId: string; parentRefId: string | null; name: string; durationDays: number | null },
+    depth: number,
+  ): JSX.Element {
+    const editing = editingId === `added:${added.tempId}`;
+    const parentExcluded =
+      added.parentRefId !== null && excludedRefIds.has(added.parentRefId);
+    return (
+      <div key={`added-${added.tempId}`}>
+        <div
+          className={`flex items-center gap-2 py-1 px-1 rounded hover-elevate text-sm ${
+            parentExcluded ? "opacity-50 line-through" : ""
+          }`}
+          style={{ paddingLeft: depth * 14 + 4 }}
+          data-testid={`row-added-task-${added.tempId}`}
+        >
+          <span className="w-3 h-3 shrink-0" />
+          <Plus className="w-3 h-3 text-emerald-600 shrink-0" />
+          {editing ? (
+            <>
+              {renderInlineEditFields(`edit-added-${added.tempId}`)}
+              <button
+                type="button"
+                onClick={() => commitEditAdded(added.tempId)}
+                className="shrink-0 text-emerald-600"
+                data-testid={`button-edit-added-save-${added.tempId}`}
+              >
+                <Check className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingId(null)}
+                className="shrink-0 text-muted-foreground"
+                data-testid={`button-edit-added-cancel-${added.tempId}`}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="truncate flex-1" title={added.name}>
+                {added.name}
+              </span>
+              {added.durationDays !== null && (
+                <span className="text-xs text-muted-foreground shrink-0">{added.durationDays}d</span>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingId(`added:${added.tempId}`);
+                  setEditDraft({
+                    name: added.name,
+                    durationDays: added.durationDays === null ? "" : String(added.durationDays),
+                  });
+                }}
+                className="shrink-0 text-muted-foreground"
+                data-testid={`button-edit-added-${added.tempId}`}
+                title="Edit task"
+              >
+                <Pencil className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                onClick={() => removeAddedTask(added.tempId)}
+                className="shrink-0 text-destructive"
+                data-testid={`button-remove-added-${added.tempId}`}
+                title="Remove task"
+              >
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  function renderAddRow(parentRefId: string | null, depth: number): JSX.Element | null {
+    const key = parentRefId ?? "__root__";
+    if (addingUnderId !== key) return null;
+    return (
+      <div
+        className="flex items-center gap-2 py-1 px-1 rounded text-sm bg-muted/40"
+        style={{ paddingLeft: depth * 14 + 4 }}
+        data-testid={`row-add-task-${key}`}
+      >
+        <span className="w-3 h-3 shrink-0" />
+        <Plus className="w-3 h-3 text-emerald-600 shrink-0" />
+        <Input
+          value={addDraft.name}
+          onChange={(e) => setAddDraft((d) => ({ ...d, name: e.target.value }))}
+          className="h-7 text-sm flex-1 min-w-0"
+          placeholder="New task name"
+          autoFocus
+          data-testid={`input-add-task-name-${key}`}
+        />
+        <Input
+          value={addDraft.durationDays}
+          onChange={(e) => setAddDraft((d) => ({ ...d, durationDays: e.target.value }))}
+          className="h-7 text-sm w-16 shrink-0"
+          type="number"
+          min="0"
+          placeholder="days"
+          data-testid={`input-add-task-duration-${key}`}
+        />
+        <button
+          type="button"
+          onClick={() => commitAddTask(parentRefId)}
+          className="shrink-0 text-emerald-600"
+          data-testid={`button-add-task-save-${key}`}
+        >
+          <Check className="w-3 h-3" />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setAddingUnderId(null);
+            setAddDraft({ name: "", durationDays: "" });
+          }}
+          className="shrink-0 text-muted-foreground"
+          data-testid={`button-add-task-cancel-${key}`}
+        >
+          <X className="w-3 h-3" />
+        </button>
+      </div>
+    );
   }
 
   function renderTaskNode(task: SnapshotTask, depth: number): JSX.Element {
     const kids = childrenByParent.get(task.refId) ?? [];
-    const hasKids = kids.length > 0;
+    const addedKids = addedByParent.get(task.refId) ?? [];
+    const hasKids = kids.length > 0 || addedKids.length > 0;
     const collapsed = collapsedRefIds.has(task.refId);
     const excluded = excludedRefIds.has(task.refId);
+    const editing = editingId === task.refId;
+    const override = overrides.get(task.refId);
+    const displayName = override?.name ?? task.name;
+    const displayDuration =
+      override && override.durationDays !== undefined ? override.durationDays : task.durationDays;
+    const isOverridden =
+      !!override && (override.name !== undefined || override.durationDays !== undefined);
     return (
       <div key={task.refId}>
         <div
@@ -456,17 +766,82 @@ export default function ProjectTemplatesPage() {
             data-testid={`checkbox-snapshot-task-${task.refId}`}
           />
           {task.isMilestone && <Flag className="w-3 h-3 text-amber-600 shrink-0" />}
-          <span className="truncate flex-1" title={task.name}>
-            {task.wbsCode ? <span className="text-muted-foreground mr-1">{task.wbsCode}</span> : null}
-            {task.name}
-          </span>
-          {task.durationDays !== null && (
-            <span className="text-xs text-muted-foreground shrink-0">{task.durationDays}d</span>
+          {editing ? (
+            <>
+              {renderInlineEditFields(`edit-task-${task.refId}`)}
+              <button
+                type="button"
+                onClick={() => commitEditOverride(task.refId, task.name, task.durationDays)}
+                className="shrink-0 text-emerald-600"
+                data-testid={`button-edit-task-save-${task.refId}`}
+              >
+                <Check className="w-3 h-3" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditingId(null)}
+                className="shrink-0 text-muted-foreground"
+                data-testid={`button-edit-task-cancel-${task.refId}`}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="truncate flex-1" title={displayName}>
+                {task.wbsCode ? (
+                  <span className="text-muted-foreground mr-1">{task.wbsCode}</span>
+                ) : null}
+                {displayName}
+                {isOverridden && (
+                  <Badge variant="outline" className="ml-1 text-[9px] py-0 px-1" data-testid={`badge-edited-${task.refId}`}>
+                    edited
+                  </Badge>
+                )}
+              </span>
+              {displayDuration !== null && displayDuration !== undefined && (
+                <span className="text-xs text-muted-foreground shrink-0">{displayDuration}d</span>
+              )}
+              {!excluded && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => startEditTask(task.refId, displayName, displayDuration ?? null)}
+                    className="shrink-0 text-muted-foreground"
+                    data-testid={`button-edit-task-${task.refId}`}
+                    title="Edit name and duration"
+                  >
+                    <Pencil className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddingUnderId(task.refId);
+                      setAddDraft({ name: "", durationDays: "" });
+                      setCollapsedRefIds((prev) => {
+                        const next = new Set(prev);
+                        next.delete(task.refId);
+                        return next;
+                      });
+                    }}
+                    className="shrink-0 text-emerald-600"
+                    data-testid={`button-add-child-${task.refId}`}
+                    title="Add child task"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
+                </>
+              )}
+            </>
           )}
         </div>
         {hasKids && !collapsed && (
-          <div>{kids.map((k) => renderTaskNode(k, depth + 1))}</div>
+          <div>
+            {kids.map((k) => renderTaskNode(k, depth + 1))}
+            {addedKids.map((a) => renderAddedNode(a, depth + 1))}
+          </div>
         )}
+        {renderAddRow(task.refId, depth + 1)}
       </div>
     );
   }
@@ -690,6 +1065,10 @@ export default function ProjectTemplatesPage() {
                   setSelectedVersionId(v);
                   setExcludedRefIds(new Set());
                   setCollapsedRefIds(new Set());
+                  setOverrides(new Map());
+                  setAddedTasks([]);
+                  setEditingId(null);
+                  setAddingUnderId(null);
                 }}
               >
                 <SelectTrigger data-testid="select-template-version">
@@ -937,7 +1316,22 @@ export default function ProjectTemplatesPage() {
                   data-testid="tree-snapshot-tasks"
                 >
                   {(childrenByParent.get(null) ?? []).map((t) => renderTaskNode(t, 0))}
+                  {(addedByParent.get(null) ?? []).map((a) => renderAddedNode(a, 0))}
+                  {renderAddRow(null, 0)}
                 </div>
+                {addingUnderId !== "__root__" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAddingUnderId("__root__");
+                      setAddDraft({ name: "", durationDays: "" });
+                    }}
+                    className="text-xs text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1"
+                    data-testid="button-add-root-task"
+                  >
+                    <Plus className="w-3 h-3" /> Add top-level task
+                  </button>
+                )}
 
                 <div>
                   <h4 className="text-sm font-semibold flex items-center gap-2">
