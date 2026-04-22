@@ -4,8 +4,9 @@ import { useAuth } from "@/hooks/use-auth";
 import { useDashboardCustomization } from "@/hooks/use-dashboard-customization";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Building2, Wrench, Image, Shield, FileText, Clock, Users, Code, Link2, Globe, DollarSign, BarChart3, Loader2, Lock, Settings, Bot, Layers, TreePalm, GitBranch, Mail } from "lucide-react";
+import { Building2, Wrench, Image, Shield, FileText, Clock, Users, Code, Link2, Globe, DollarSign, BarChart3, Loader2, Lock, Settings, Bot, Layers, TreePalm, GitBranch, Mail, ToggleRight } from "lucide-react";
 import { CompanyTradeConfigTab } from "@/components/settings/CompanyTradeConfigTab";
+import { OrgFeaturePresetsTab } from "@/components/settings/OrgFeaturePresetsTab";
 import { CompanyProfileTab } from "@/components/settings/CompanyProfileTab";
 import { CompanyNotificationsTab } from "@/components/settings/CompanyNotificationsTab";
 import { CompanyUserInviteTab } from "@/components/settings/CompanyUserInviteTab";
@@ -51,6 +52,12 @@ const TAB_GROUPS: TabGroup[] = [
     parent: "trade",
     label: "Trade",
     icon: Wrench,
+    subTabs: [],
+  },
+  {
+    parent: "feature-presets",
+    label: "Feature Flags",
+    icon: ToggleRight,
     subTabs: [],
   },
   {
@@ -119,7 +126,7 @@ const TAB_GROUPS: TabGroup[] = [
 ];
 
 const VALID_TABS = [
-  "trade", "branding", "insurance", "compliance", "payroll", "hustler",
+  "trade", "feature-presets", "branding", "insurance", "compliance", "payroll", "hustler",
   "cost-codes", "users", "integrations", "website", "overhead-costs", "production-rates",
   "report-locks", "scope-settings", "workflows", "ai-settings", "ai-governance", "leave-types",
   "distribution-lists",
@@ -193,7 +200,7 @@ export default function CompanySettings() {
   const canViewDistributionLists = isOrgAdmin || user.role === "MANAGER" || user.role === "SUPERINTENDENT";
 
   const tabPermissions: Record<string, boolean> = {
-    trade: canViewCoreTabs, branding: canViewCoreTabs, insurance: canViewCoreTabs,
+    trade: canViewCoreTabs, "feature-presets": isOrgAdmin, branding: canViewCoreTabs, insurance: canViewCoreTabs,
     compliance: canViewCoreTabs, payroll: canViewCoreTabs, hustler: canViewCoreTabs,
     "cost-codes": canViewCostCodes, users: canViewUsers, integrations: canViewIntegrations,
     website: canViewWebsite, "overhead-costs": canViewOverhead, "production-rates": canViewProductionRates,
@@ -215,7 +222,7 @@ export default function CompanySettings() {
       if (visibleSubs.length === 0) return null;
       return { ...group, subTabs: visibleSubs };
     }).filter((g): g is TabGroup => g !== null);
-  }, [canViewCoreTabs, canViewCostCodes, canViewUsers, canViewIntegrations, canViewWebsite, canViewOverhead, canViewProductionRates, canViewReportLocks, canViewScopeSettings, canViewAISettings, canViewAIGovernance, canViewLeaveTypes, canViewDistributionLists]);
+  }, [canViewCoreTabs, canViewCostCodes, canViewUsers, canViewIntegrations, canViewWebsite, canViewOverhead, canViewProductionRates, canViewReportLocks, canViewScopeSettings, canViewAISettings, canViewAIGovernance, canViewLeaveTypes, canViewDistributionLists, isOrgAdmin]);
 
   const activeParent = getParentForTab(activeTab);
 
@@ -340,6 +347,12 @@ export default function CompanySettings() {
         {canViewCoreTabs && (
           <TabsContent value="trade" className="mt-6">
             <CompanyTradeConfigTab />
+          </TabsContent>
+        )}
+
+        {isOrgAdmin && (
+          <TabsContent value="feature-presets" className="mt-6">
+            <OrgFeaturePresetsTab />
           </TabsContent>
         )}
 
