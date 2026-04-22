@@ -323,6 +323,42 @@ export default function AdminTranscriptBackfillPage() {
     });
   };
 
+  // Task #1027 — per-recording retry from the pending list. Synchronous on
+  // the server, so the resolved promise tells us whether the row should now
+  // disappear from the list (success) or stay with a fresh error (failure).
+  const retryRecordingMutation = useMutation({
+    mutationFn: async (recordingId: string) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/crm/calls/transcripts/recordings/${recordingId}/retry`,
+        {},
+      );
+      return (await res.json()) as {
+        success?: boolean;
+        recordingId: string;
+        transcript?: string;
+      };
+    },
+    onSuccess: (_data, recordingId) => {
+      toast({
+        title: "Transcript re-generated",
+        description: "Recording has been transcribed successfully.",
+      });
+      queryClient.invalidateQueries({ queryKey: [PENDING_PATH] });
+      queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Retry failed",
+        description: err.message,
+        variant: "destructive",
+      });
+      // Refresh anyway so the row picks up the new transcriptError surfaced
+      // by the backend.
+      queryClient.invalidateQueries({ queryKey: [PENDING_PATH] });
+    },
+  });
+
   const retryMutation = useMutation({
     mutationFn: async (parentJobId: string) => {
       const res = await apiRequest(
@@ -550,6 +586,7 @@ export default function AdminTranscriptBackfillPage() {
       <PendingRecordingsCard
         query={pendingRecordingsQuery}
         page={pendingPage}
+        retryMutation={retryRecordingMutation}
         onPageChange={setPendingPage}
       />
 
@@ -1112,10 +1149,18 @@ function PendingRecordingsCard({
   query,
   page,
   onPageChange,
+  retryMutation,
 }: {
   query: ReturnType<typeof useQuery<PendingRecordingsResponse>>;
   page: number;
   onPageChange: (next: number) => void;
+  retryMutation: ReturnType<
+    typeof useMutation<
+      { success?: boolean; recordingId: string; transcript?: string },
+      Error,
+      string
+    >
+  >;
 }) {
   const total = query.data?.total ?? 0;
   const recordings = query.data?.recordings ?? [];
@@ -1191,6 +1236,9 @@ function PendingRecordingsCard({
                 : rec.recordingCreatedAt
                 ? format(new Date(rec.recordingCreatedAt), "PPpp")
                 : "Unknown time";
+              const retryingThisRow =
+                retryMutation.isPending &&
+                retryMutation.variables === rec.recordingId;
               return (
                 <li
                   key={rec.recordingId}
@@ -1266,12 +1314,29 @@ function PendingRecordingsCard({
                       {rec.transcriptError}
                     </div>
                   )}
-                  <div
-                    className="text-[11px] text-muted-foreground"
-                    data-testid={`text-pending-ids-${rec.recordingId}`}
-                  >
-                    Recording <code>{rec.recordingId}</code> · Call{" "}
-                    <code>{rec.callId}</code>
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <div
+                      className="text-[11px] text-muted-foreground"
+                      data-testid={`text-pending-ids-${rec.recordingId}`}
+                    >
+                      Recording <code>{rec.recordingId}</code> · Call{" "}
+                      <code>{rec.callId}</code>
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => retryMutation.mutate(rec.recordingId)}
+                      disabled={retryMutation.isPending}
+                      data-testid={`button-retry-recording-${rec.recordingId}`}
+                      title="Re-run transcription for just this recording"
+                    >
+                      {retryingThisRow ? (
+                        <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+                      ) : (
+                        <RotateCcw className="h-3.5 w-3.5 mr-2" />
+                      )}
+                      Retry this recording
+                    </Button>
                   </div>
                 </li>
               );

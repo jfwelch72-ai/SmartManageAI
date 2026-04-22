@@ -1799,6 +1799,100 @@ router.get(
   },
 );
 
+// Task #1027 — per-recording retry. Lets admins re-run transcription for a
+// single stuck row (e.g. a one-off Whisper failure) directly from the
+// drill-down list, without spinning up a new backfill job. Mirrors the
+// eligibility filter used by `fetchEligibleRecordingBatch` so the UI and
+// retry agree on what "still needs a transcript" means.
+router.post(
+  "/api/crm/calls/transcripts/recordings/:id/retry",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+
+      const recordingId = req.params.id;
+
+      // Confirm the recording exists, belongs to this org, and is still
+      // eligible (no transcript and status PENDING/FAILED). Anything else is
+      // either already transcribed, currently being processed by another
+      // worker, or owned by a different org — all of which should not be
+      // retried from this endpoint.
+      const [eligible] = await db
+        .select({
+          id: crmCallRecordings.id,
+          transcriptStatus: crmCallRecordings.transcriptStatus,
+        })
+        .from(crmCallRecordings)
+        .innerJoin(crmCalls, eq(crmCalls.id, crmCallRecordings.callId))
+        .where(
+          and(
+            eq(crmCallRecordings.id, recordingId),
+            eq(crmCalls.organizationId, orgId),
+            sql`${crmCallRecordings.transcript} IS NULL`,
+            inArray(crmCallRecordings.transcriptStatus, ["PENDING", "FAILED"]),
+          ),
+        )
+        .limit(1);
+
+      if (!eligible) {
+        // Distinguish "not yours / not found" from "already done" so the UI
+        // can show a helpful message. We re-query without the eligibility
+        // filter (still scoped to the org) to figure out which case applies.
+        const [existing] = await db
+          .select({
+            id: crmCallRecordings.id,
+            transcriptStatus: crmCallRecordings.transcriptStatus,
+          })
+          .from(crmCallRecordings)
+          .innerJoin(crmCalls, eq(crmCalls.id, crmCallRecordings.callId))
+          .where(
+            and(
+              eq(crmCallRecordings.id, recordingId),
+              eq(crmCalls.organizationId, orgId),
+            ),
+          )
+          .limit(1);
+        if (!existing) {
+          return res.status(404).json({ error: "Recording not found" });
+        }
+        return res.status(409).json({
+          error: "Recording is no longer eligible for retry",
+          transcriptStatus: existing.transcriptStatus,
+        });
+      }
+
+      logInfo("crmCalls: per-recording transcript retry started", {
+        recordingId,
+        orgId,
+        previousStatus: eligible.transcriptStatus,
+        startedById: req.user!.id,
+      });
+
+      // Run synchronously so the admin gets immediate feedback (success or
+      // the specific error). `transcribeCallRecording` updates the row's
+      // status/transcript itself, so a successful run causes the row to drop
+      // out of the pending list on the next refetch.
+      const result = await transcribeCallRecording(recordingId);
+      if (!result.ok) {
+        return res.status(502).json({
+          error: result.error || "Transcription failed",
+          recordingId,
+        });
+      }
+      res.json({
+        success: true,
+        recordingId,
+        transcript: result.transcript,
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
 router.post(
   "/api/crm/calls/transcripts/backfill",
   requireAuth,
