@@ -212,7 +212,19 @@ export async function captureProjectTemplate(projectId: string): Promise<Project
 
   let scheduleOfValuesSnap: TemplateSovSnapshot | null = null;
   if (sov) {
-    const lines = await db.select().from(sovLineItems).where(eq(sovLineItems.sovId, sov.id));
+    // Select only the columns we actually use, so the capture does not
+    // break if newer DOT-related columns (dot_pay_item_id, pay_item_number,
+    // spec_section) have not yet been added to the database by a migration.
+    const lines = await db
+      .select({
+        itemCode: sovLineItems.itemCode,
+        description: sovLineItems.description,
+        category: sovLineItems.category,
+        scheduledValue: sovLineItems.scheduledValue,
+        lineNumber: sovLineItems.lineNumber,
+      })
+      .from(sovLineItems)
+      .where(eq(sovLineItems.sovId, sov.id));
     scheduleOfValuesSnap = {
       name: sov.title ?? "Schedule of Values",
       lineItems: lines.map((l, i) => ({
