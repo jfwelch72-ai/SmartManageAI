@@ -10013,3 +10013,45 @@ export const portfolioPdfAlertDeliveries = pgTable("portfolio_pdf_alert_deliveri
 export const insertPortfolioPdfAlertDeliverySchema = createInsertSchema(portfolioPdfAlertDeliveries).omit({ id: true, createdAt: true });
 export type InsertPortfolioPdfAlertDelivery = z.infer<typeof insertPortfolioPdfAlertDeliverySchema>;
 export type PortfolioPdfAlertDelivery = typeof portfolioPdfAlertDeliveries.$inferSelect;
+
+// ============================================
+// SHARED PDF ALERT RECIPIENTS / DELIVERIES (Task #990)
+// Single recipient list shared by both Gantt and Portfolio PDF alert
+// pipelines. Per-service opt-in flags (notifyGantt / notifyPortfolio) let an
+// admin keep one address but pick which pipeline(s) it receives. Deliveries
+// are written to a single audit table with a `service` discriminator.
+//
+// The legacy gantt_pdf_alert_recipients / portfolio_pdf_alert_recipients and
+// gantt_pdf_alert_deliveries / portfolio_pdf_alert_deliveries tables remain
+// for one release as a safety net. Startup migration backfills rows here.
+// ============================================
+export const pdfAlertRecipients = pgTable("pdf_alert_recipients", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  email: text("email").notNull().unique(),
+  notifyInApp: boolean("notify_in_app").notNull().default(true),
+  notifyGantt: boolean("notify_gantt").notNull().default(true),
+  notifyPortfolio: boolean("notify_portfolio").notNull().default(true),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+export const insertPdfAlertRecipientSchema = createInsertSchema(pdfAlertRecipients).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPdfAlertRecipient = z.infer<typeof insertPdfAlertRecipientSchema>;
+export type PdfAlertRecipient = typeof pdfAlertRecipients.$inferSelect;
+
+export const pdfAlertDeliveries = pgTable("pdf_alert_deliveries", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  service: text("service").notNull(),
+  kind: text("kind").notNull(),
+  recipients: text("recipients").array().notNull(),
+  recipientCount: integer("recipient_count").notNull(),
+  emailSuccess: boolean("email_success").notNull(),
+  errorMessage: text("error_message"),
+  triggeredBy: text("triggered_by"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (t) => ({
+  serviceCreatedAtIdx: index("pdf_alert_deliveries_service_created_at_idx").on(t.service, t.createdAt),
+}));
+export const insertPdfAlertDeliverySchema = createInsertSchema(pdfAlertDeliveries).omit({ id: true, createdAt: true });
+export type InsertPdfAlertDelivery = z.infer<typeof insertPdfAlertDeliverySchema>;
+export type PdfAlertDelivery = typeof pdfAlertDeliveries.$inferSelect;

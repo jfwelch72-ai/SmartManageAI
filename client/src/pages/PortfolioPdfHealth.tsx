@@ -910,6 +910,11 @@ function AlertRecipientsCard({
               configured, the system falls back to <code>PORTFOLIO_PDF_ALERT_EMAILS</code>, then to all active super
               admins. Repeat alerts of the same kind are throttled to once per{" "}
               {cfg ? formatDuration(cfg.rateLimitMs) : "30m"}.
+              {" "}
+              <span className="text-muted-foreground">
+                Recipients are stored in a single shared list — entries added or
+                updated here may also appear on the Gantt PDF health page.
+              </span>
             </CardDescription>
           </div>
           <Button

@@ -1,23 +1,34 @@
-import { db } from "./db";
 import {
-  users,
-  ganttPdfAlertRecipients,
-  ganttPdfAlertDeliveries,
-  type GanttPdfAlertRecipient,
-  type GanttPdfAlertDelivery,
+  type PdfAlertRecipient,
+  type PdfAlertDelivery,
 } from "@shared/schema";
-import { and, asc, desc, eq, gte, inArray, lt, sql, type SQL } from "drizzle-orm";
-import { sendEmail } from "./email";
-import { insertNotifications } from "./services/notificationService";
 import { logError, logInfo } from "./utils/logger";
 import { getGanttPdfStats } from "./gantt-pdf-service";
+import {
+  PDF_ALERT_DELIVERIES_RETENTION_MS,
+  addServiceRecipient,
+  clearServiceDeliveries,
+  dispatchServiceAlert,
+  getServiceRecipientSource,
+  getServiceRecipients,
+  listServiceDeliveries,
+  listSharedRecipientsForService,
+  pruneOldServiceDeliveries,
+  removeServiceRecipient,
+  updateSharedRecipient,
+  type ListPdfAlertDeliveryFilters,
+  type PdfAlertRecipientSource,
+  type PdfAlertRecipientView,
+} from "./pdf-alerts-shared";
+
+const SERVICE = "gantt" as const;
 
 const ALERT_RATE_LIMIT_MS = 30 * 60 * 1000;
 const DISCONNECT_ALERT_THRESHOLD_MS = 2 * 60 * 1000;
 const QUEUE_DEPTH_ALERT_RATIO = 1;
 const MONITOR_INTERVAL_MS = 30 * 1000;
-const DELIVERIES_RETENTION_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
-const DELIVERIES_PRUNE_INTERVAL_MS = 60 * 60 * 1000; // hourly
+const DELIVERIES_RETENTION_MS = PDF_ALERT_DELIVERIES_RETENTION_MS;
+const DELIVERIES_PRUNE_INTERVAL_MS = 60 * 60 * 1000;
 
 type AlertKind =
   | "queue_full"
@@ -52,109 +63,16 @@ const state: AlertState = {
   lastPruneAt: null,
 };
 
-function parseEnvRecipients(): string[] {
-  const raw = process.env.GANTT_PDF_ALERT_EMAILS || "";
-  return raw
-    .split(/[,;\s]+/)
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0 && s.includes("@"));
-}
+// ---------- Backwards-compatible types ----------
+// Kept so importers (routes, tests) don't need to update; both now alias the
+// shared types from pdf-alerts-shared.
 
-interface Recipient {
-  email: string;
-  userId: string | null;
-  notifyInApp: boolean;
-}
+export type GanttPdfAlertRecipientSource = PdfAlertRecipientSource;
+export type GanttPdfAlertRecipientView = PdfAlertRecipientView;
 
-async function listDbRecipients(): Promise<GanttPdfAlertRecipient[]> {
-  try {
-    return await db
-      .select()
-      .from(ganttPdfAlertRecipients)
-      .orderBy(asc(ganttPdfAlertRecipients.email));
-  } catch (err) {
-    logError(
-      "Failed to load Gantt PDF alert recipients from database",
-      {},
-      err instanceof Error ? err : new Error(String(err)),
-    );
-    return [];
-  }
-}
+export const GANTT_PDF_ALERT_DELIVERIES_RETENTION_MS = DELIVERIES_RETENTION_MS;
 
-async function resolveUserIdsForEmails(emails: string[]): Promise<Map<string, string>> {
-  const lower = emails.map((e) => e.toLowerCase()).filter((e) => e.length > 0);
-  if (lower.length === 0) return new Map();
-  try {
-    const rows = await db
-      .select({ id: users.id, email: users.email })
-      .from(users)
-      .where(and(inArray(sql`lower(${users.email})`, lower), eq(users.isActive, true)));
-    const map = new Map<string, string>();
-    for (const r of rows) {
-      if (r.email) map.set(r.email.toLowerCase(), r.id);
-    }
-    return map;
-  } catch (err) {
-    logError(
-      "Failed to resolve userIds for Gantt PDF alert recipients",
-      { emailCount: lower.length },
-      err instanceof Error ? err : new Error(String(err)),
-    );
-    return new Map();
-  }
-}
-
-async function getRecipients(): Promise<Recipient[]> {
-  const dbRows = await listDbRecipients();
-  if (dbRows.length > 0) {
-    const missingUserEmails = dbRows
-      .filter((r) => !r.userId)
-      .map((r) => r.email);
-    const lookup = missingUserEmails.length
-      ? await resolveUserIdsForEmails(missingUserEmails)
-      : new Map<string, string>();
-    return dbRows.map((r) => ({
-      email: r.email,
-      userId: r.userId ?? lookup.get(r.email.toLowerCase()) ?? null,
-      notifyInApp: r.notifyInApp,
-    }));
-  }
-  const envEmails = parseEnvRecipients();
-  if (envEmails.length > 0) {
-    const lookup = await resolveUserIdsForEmails(envEmails);
-    return envEmails.map((email) => ({
-      email,
-      userId: lookup.get(email.toLowerCase()) ?? null,
-      notifyInApp: true,
-    }));
-  }
-  try {
-    const admins = await db
-      .select({ id: users.id, email: users.email })
-      .from(users)
-      .where(and(eq(users.role, "SUPER_ADMIN"), eq(users.isActive, true)));
-    return admins
-      .filter((a) => !!a.email)
-      .map((a) => ({ email: a.email, userId: a.id, notifyInApp: true }));
-  } catch (err) {
-    logError(
-      "Failed to load SUPER_ADMIN users for Gantt PDF alerts",
-      {},
-      err instanceof Error ? err : new Error(String(err)),
-    );
-    return [];
-  }
-}
-
-export type GanttPdfAlertRecipientSource = "database" | "env" | "super_admins";
-
-export interface GanttPdfAlertRecipientView {
-  id: string | null;
-  email: string;
-  notifyInApp: boolean;
-  userId: string | null;
-}
+// ---------- Recipient + config queries ----------
 
 export async function getGanttPdfAlertConfig(): Promise<{
   source: GanttPdfAlertRecipientSource;
@@ -171,41 +89,13 @@ export async function getGanttPdfAlertConfig(): Promise<{
     test: number | null;
   };
 }> {
-  const envEmails = parseEnvRecipients();
-  const dbRows = await listDbRecipients();
-  let source: GanttPdfAlertRecipientSource;
-  let recipientDetails: GanttPdfAlertRecipientView[];
-  if (dbRows.length > 0) {
-    source = "database";
-    recipientDetails = dbRows.map((r) => ({
-      id: r.id,
-      email: r.email,
-      notifyInApp: r.notifyInApp,
-      userId: r.userId,
-    }));
-  } else if (envEmails.length > 0) {
-    source = "env";
-    recipientDetails = envEmails.map((email) => ({
-      id: null,
-      email,
-      notifyInApp: true,
-      userId: null,
-    }));
-  } else {
-    source = "super_admins";
-    const list = await getRecipients();
-    recipientDetails = list.map((r) => ({
-      id: null,
-      email: r.email,
-      notifyInApp: r.notifyInApp,
-      userId: r.userId,
-    }));
-  }
+  const { source, recipientDetails, envRecipients } =
+    await getServiceRecipientSource(SERVICE);
   return {
     source,
     recipients: recipientDetails.map((r) => r.email),
     recipientDetails,
-    envRecipients: envEmails,
+    envRecipients,
     rateLimitMs: ALERT_RATE_LIMIT_MS,
     disconnectThresholdMs: DISCONNECT_ALERT_THRESHOLD_MS,
     lastSent: {
@@ -218,139 +108,47 @@ export async function getGanttPdfAlertConfig(): Promise<{
   };
 }
 
-function normalizeEmail(email: string): string {
-  return email.trim().toLowerCase();
+export async function listGanttPdfAlertRecipients(): Promise<PdfAlertRecipient[]> {
+  return listSharedRecipientsForService(SERVICE);
 }
 
-export async function listGanttPdfAlertRecipients(): Promise<GanttPdfAlertRecipient[]> {
-  return listDbRecipients();
-}
-
-export interface ListGanttPdfAlertDeliveryFilters {
-  limit?: number;
-  kinds?: string[];
-  emailSuccess?: boolean;
-  sinceMs?: number;
-}
+export type ListGanttPdfAlertDeliveryFilters = ListPdfAlertDeliveryFilters;
 
 export async function listGanttPdfAlertDeliveries(
-  filtersOrLimit: ListGanttPdfAlertDeliveryFilters | number = 20,
-): Promise<GanttPdfAlertDelivery[]> {
-  const filters: ListGanttPdfAlertDeliveryFilters =
-    typeof filtersOrLimit === "number" ? { limit: filtersOrLimit } : filtersOrLimit;
-  const safeLimit = Math.max(1, Math.min(200, Math.floor(filters.limit ?? 20)));
-  try {
-    const conditions: SQL[] = [];
-    if (filters.kinds && filters.kinds.length > 0) {
-      conditions.push(inArray(ganttPdfAlertDeliveries.kind, filters.kinds));
-    }
-    if (typeof filters.emailSuccess === "boolean") {
-      conditions.push(eq(ganttPdfAlertDeliveries.emailSuccess, filters.emailSuccess));
-    }
-    if (typeof filters.sinceMs === "number" && filters.sinceMs > 0) {
-      conditions.push(
-        gte(ganttPdfAlertDeliveries.createdAt, new Date(Date.now() - filters.sinceMs)),
-      );
-    }
-    const whereClause =
-      conditions.length === 0
-        ? undefined
-        : conditions.length === 1
-          ? conditions[0]
-          : and(...conditions);
-    return await db
-      .select()
-      .from(ganttPdfAlertDeliveries)
-      .where(whereClause)
-      .orderBy(desc(ganttPdfAlertDeliveries.createdAt))
-      .limit(safeLimit);
-  } catch (err) {
-    logError(
-      "Failed to load Gantt PDF alert deliveries",
-      { limit: safeLimit },
-      err instanceof Error ? err : new Error(String(err)),
-    );
-    return [];
-  }
+  filtersOrLimit: ListPdfAlertDeliveryFilters | number = 20,
+): Promise<PdfAlertDelivery[]> {
+  return listServiceDeliveries(SERVICE, filtersOrLimit);
 }
 
 export async function clearGanttPdfAlertDeliveries(options?: {
   olderThanMs?: number;
 }): Promise<number> {
-  try {
-    const olderThanMs = options?.olderThanMs;
-    if (typeof olderThanMs === "number" && olderThanMs > 0) {
-      const cutoff = new Date(Date.now() - olderThanMs);
-      const rows = await db
-        .delete(ganttPdfAlertDeliveries)
-        .where(lt(ganttPdfAlertDeliveries.createdAt, cutoff))
-        .returning({ id: ganttPdfAlertDeliveries.id });
-      return rows.length;
-    }
-    const rows = await db
-      .delete(ganttPdfAlertDeliveries)
-      .returning({ id: ganttPdfAlertDeliveries.id });
-    return rows.length;
-  } catch (err) {
-    logError(
-      "Failed to clear Gantt PDF alert deliveries",
-      { olderThanMs: options?.olderThanMs ?? null },
-      err instanceof Error ? err : new Error(String(err)),
-    );
-    return 0;
-  }
+  return clearServiceDeliveries(SERVICE, options);
 }
 
 export async function pruneOldGanttPdfAlertDeliveries(): Promise<number> {
-  return clearGanttPdfAlertDeliveries({ olderThanMs: DELIVERIES_RETENTION_MS });
+  return pruneOldServiceDeliveries(SERVICE);
 }
-
-export const GANTT_PDF_ALERT_DELIVERIES_RETENTION_MS = DELIVERIES_RETENTION_MS;
 
 export async function addGanttPdfAlertRecipient(input: {
   email: string;
   notifyInApp?: boolean;
-}): Promise<GanttPdfAlertRecipient> {
-  const email = normalizeEmail(input.email);
-  const lookup = await resolveUserIdsForEmails([email]);
-  const [row] = await db
-    .insert(ganttPdfAlertRecipients)
-    .values({
-      email,
-      notifyInApp: input.notifyInApp ?? true,
-      userId: lookup.get(email) ?? null,
-    })
-    .returning();
-  return row;
+}): Promise<PdfAlertRecipient> {
+  return addServiceRecipient(SERVICE, input);
 }
 
 export async function updateGanttPdfAlertRecipient(
   id: string,
   patch: { email?: string; notifyInApp?: boolean },
-): Promise<GanttPdfAlertRecipient | null> {
-  const updates: Record<string, unknown> = { updatedAt: new Date() };
-  if (typeof patch.notifyInApp === "boolean") updates.notifyInApp = patch.notifyInApp;
-  if (typeof patch.email === "string" && patch.email.trim().length > 0) {
-    const email = normalizeEmail(patch.email);
-    updates.email = email;
-    const lookup = await resolveUserIdsForEmails([email]);
-    updates.userId = lookup.get(email) ?? null;
-  }
-  const [row] = await db
-    .update(ganttPdfAlertRecipients)
-    .set(updates)
-    .where(eq(ganttPdfAlertRecipients.id, id))
-    .returning();
-  return row ?? null;
+): Promise<PdfAlertRecipient | null> {
+  return updateSharedRecipient(id, patch, SERVICE);
 }
 
 export async function deleteGanttPdfAlertRecipient(id: string): Promise<boolean> {
-  const rows = await db
-    .delete(ganttPdfAlertRecipients)
-    .where(eq(ganttPdfAlertRecipients.id, id))
-    .returning({ id: ganttPdfAlertRecipients.id });
-  return rows.length > 0;
+  return removeServiceRecipient(SERVICE, id);
 }
+
+// ---------- Throttle helpers ----------
 
 function shouldSend(kind: AlertKind, now: number): boolean {
   const last = state.lastSentAt.get(kind);
@@ -362,31 +160,6 @@ function markSent(kind: AlertKind, now: number): void {
   state.lastSentAt.set(kind, now);
 }
 
-async function recordDelivery(
-  kind: AlertKind,
-  emailTargets: string[],
-  emailSuccess: boolean,
-  errorMessage: string | null,
-  triggeredBy: string | null,
-): Promise<void> {
-  try {
-    await db.insert(ganttPdfAlertDeliveries).values({
-      kind,
-      recipients: emailTargets,
-      recipientCount: emailTargets.length,
-      emailSuccess,
-      errorMessage,
-      triggeredBy,
-    });
-  } catch (err) {
-    logError(
-      "Failed to persist Gantt PDF alert delivery record",
-      { kind, recipientCount: emailTargets.length },
-      err instanceof Error ? err : new Error(String(err)),
-    );
-  }
-}
-
 async function dispatchAlert(
   kind: AlertKind,
   subject: string,
@@ -394,64 +167,10 @@ async function dispatchAlert(
   html: string,
   opts?: { triggeredBy?: string | null },
 ): Promise<void> {
-  const triggeredBy = opts?.triggeredBy ?? null;
-  const recipients = await getRecipients();
-  if (recipients.length === 0) {
-    logInfo("Gantt PDF alert skipped: no recipients configured", { kind });
-    await recordDelivery(kind, [], false, "No recipients configured", triggeredBy);
-    return;
-  }
-
-  const emailTargets = recipients.map((r) => r.email);
-  let emailSuccess = false;
-  let errorMessage: string | null = null;
-  try {
-    const ok = await sendEmail({
-      to: emailTargets,
-      subject,
-      text,
-      html,
-    });
-    emailSuccess = ok;
-    if (!ok) {
-      errorMessage = "Email transport returned false";
-      logError("Gantt PDF alert email returned false", { kind, recipientCount: emailTargets.length });
-    }
-  } catch (err) {
-    errorMessage = err instanceof Error ? err.message : String(err);
-    logError(
-      "Failed to send Gantt PDF alert email",
-      { kind },
-      err instanceof Error ? err : new Error(String(err)),
-    );
-  }
-
-  await recordDelivery(kind, emailTargets, emailSuccess, errorMessage, triggeredBy);
-
-  const userIds = recipients
-    .filter((r) => r.notifyInApp && !!r.userId)
-    .map((r) => r.userId as string);
-  if (userIds.length > 0) {
-    try {
-      await insertNotifications(
-        userIds.map((userId) => ({
-          userId,
-          type: "GENERAL",
-          title: subject,
-          message: text,
-          relatedEntityType: "gantt_pdf_alert",
-          relatedEntityId: kind,
-        })),
-      );
-    } catch (err) {
-      logError(
-        "Failed to insert Gantt PDF alert notifications",
-        { kind, userCount: userIds.length },
-        err instanceof Error ? err : new Error(String(err)),
-      );
-    }
-  }
+  await dispatchServiceAlert(SERVICE, kind, subject, text, html, opts);
 }
+
+// ---------- Email body builders ----------
 
 function buildQueueFullEmail(stats: ReturnType<typeof getGanttPdfStats>): {
   subject: string;
@@ -603,16 +322,18 @@ export async function sendGanttPdfTestAlert(options?: {
   recipients: string[];
   sentAt: number;
 }> {
-  const recipients = await getRecipients();
+  const recipients = await getServiceRecipients(SERVICE);
   const now = Date.now();
   if (recipients.length === 0) {
     logInfo("Gantt PDF test alert skipped: no recipients configured", {});
-    await recordDelivery(
+    // Even with zero recipients, dispatchServiceAlert still records a
+    // delivery row so the audit trail captures the attempt.
+    await dispatchAlert(
       "test_alert",
-      [],
-      false,
-      "No recipients configured",
-      options?.triggeredBy ?? null,
+      "[TEST] Gantt PDF alert recipients verification",
+      "(no recipients)",
+      "<p>(no recipients)</p>",
+      { triggeredBy: options?.triggeredBy ?? null },
     );
     return { recipientCount: 0, recipients: [], sentAt: now };
   }
@@ -653,8 +374,6 @@ export function reportGanttPdfQueueFull(): void {
 }
 
 export function reportGanttPdfBrowserDisconnected(disconnectedAt: number): void {
-  // Track when we first noticed the disconnect; the monitor decides when to
-  // actually send an alert based on DISCONNECT_ALERT_THRESHOLD_MS.
   if (state.disconnectedSince === null) {
     state.disconnectedSince = disconnectedAt;
   }
@@ -670,8 +389,6 @@ async function runMonitorTick(): Promise<void> {
     const stats = getGanttPdfStats();
     const now = Date.now();
 
-    // Periodically prune very old delivery rows so the audit log doesn't grow
-    // unbounded. Runs at most once per DELIVERIES_PRUNE_INTERVAL_MS.
     if (
       state.lastPruneAt === null ||
       now - state.lastPruneAt >= DELIVERIES_PRUNE_INTERVAL_MS
@@ -695,7 +412,6 @@ async function runMonitorTick(): Promise<void> {
         });
     }
 
-    // Queue depth: alert when queue is at capacity and has at least one waiter.
     const queueFullThreshold = Math.floor(
       stats.limits.maxQueueLength * QUEUE_DEPTH_ALERT_RATIO,
     );
@@ -705,10 +421,6 @@ async function runMonitorTick(): Promise<void> {
     if (queueIsFull) {
       reportGanttPdfQueueFull();
     } else if (state.queueAlertActive) {
-      // Recovery: queue has dropped below capacity since the last queue-full
-      // alert. Treat "healthy" as queue empty AND not all worker slots in use,
-      // so we don't ping the all-clear at the moment we just barely dipped
-      // below capacity (helps mitigate flapping).
       const queueIsHealthy =
         stats.queue.queuedRenders === 0 &&
         stats.queue.activeRenders < stats.limits.maxConcurrentRenders;
@@ -719,15 +431,11 @@ async function runMonitorTick(): Promise<void> {
         state.queueAlertActive = false;
         state.queueAlertStartedAt = null;
         const { subject, text, html } = buildQueueDrainedEmail(stats, durationMs);
-        logInfo("Sending Gantt PDF queue-drained recovery alert", {
-          durationMs,
-        });
+        logInfo("Sending Gantt PDF queue-drained recovery alert", { durationMs });
         await dispatchAlert("queue_drained", subject, text, html);
       }
     }
 
-    // Browser disconnect: only alert if a browser was previously cached and is
-    // now disconnected (not just absent because no PDFs have been rendered yet).
     const cb = stats.cachedBrowser;
     if (cb.present && !cb.connected && !cb.recycling) {
       if (state.disconnectedSince === null) {
@@ -755,13 +463,9 @@ async function runMonitorTick(): Promise<void> {
         await dispatchAlert("browser_disconnected", subject, text, html);
       }
     } else {
-      // Cleared (browser absent, reconnected, or recycling on purpose).
       if (state.disconnectedSince !== null) {
         clearGanttPdfBrowserDisconnect();
       }
-      // Recovery: only fire if we previously notified about a disconnect and a
-      // healthy cached browser is back online (present + connected + not
-      // mid-recycle). A merely-absent browser does not count as "recovered".
       if (
         state.browserDisconnectAlertActive &&
         cb.present &&
@@ -775,9 +479,7 @@ async function runMonitorTick(): Promise<void> {
         state.browserDisconnectAlertActive = false;
         state.browserDisconnectAlertStartedAt = null;
         const { subject, text, html } = buildBrowserReconnectedEmail(durationMs);
-        logInfo("Sending Gantt PDF browser-reconnected recovery alert", {
-          durationMs,
-        });
+        logInfo("Sending Gantt PDF browser-reconnected recovery alert", { durationMs });
         await dispatchAlert("browser_reconnected", subject, text, html);
       }
     }
@@ -811,7 +513,6 @@ export function stopGanttPdfHealthMonitor(): void {
   }
 }
 
-// Exposed for tests to reset internal state.
 export function __resetGanttPdfAlertStateForTests(): void {
   state.lastSentAt.clear();
   state.disconnectedSince = null;

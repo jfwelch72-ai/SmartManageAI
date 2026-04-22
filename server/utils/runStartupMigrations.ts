@@ -75,6 +75,7 @@ import { ensureCrmCallTables } from "./ensureCrmCallTables";
 import { ensureProjectsRollupColumns } from "./ensureProjectsRollupColumns";
 import { ensureGanttPdfAlertTables } from "./ensureGanttPdfAlertTables";
 import { ensurePortfolioPdfAlertTables } from "./ensurePortfolioPdfAlertTables";
+import { ensurePdfAlertSharedTables } from "./ensurePdfAlertSharedTables";
 import { ensureProjectKpiSnapshotsTable } from "./ensureProjectKpiSnapshotsTable";
 import { ensureCrmTranscriptBackfillJobsTable } from "./ensureCrmTranscriptBackfillJobsTable";
 
@@ -161,6 +162,8 @@ const migrations: MigrationStep[] = [
   { name: "projects_rollup_columns", category: "ADD_COLUMN", fn: ensureProjectsRollupColumns },
   { name: "gantt_pdf_alert_tables", category: "CREATE_TABLE", fn: ensureGanttPdfAlertTables },
   { name: "portfolio_pdf_alert_tables", category: "CREATE_TABLE", fn: ensurePortfolioPdfAlertTables },
+  // Task #990: must run AFTER both legacy tables exist so backfill copies forward.
+  { name: "pdf_alert_shared_tables", category: "CREATE_TABLE", fn: ensurePdfAlertSharedTables },
   { name: "project_kpi_snapshots_table", category: "CREATE_TABLE", fn: ensureProjectKpiSnapshotsTable },
   { name: "crm_transcript_backfill_jobs_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillJobsTable },
 ];
