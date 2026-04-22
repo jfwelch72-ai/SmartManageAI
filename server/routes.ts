@@ -198,6 +198,8 @@ import clientPortalRoutes from "./clientPortalRoutes";
 import onboardingLibraryRoutes from "./onboardingLibraryRoutes";
 import reportRoutes from "./reportRoutes";
 import safetyTrainingRoutes from "./safetyTrainingRoutes";
+import safetyObservationsRoutes from "./safetyObservationsRoutes";
+import safetyKpiRoutes from "./safetyKpiRoutes";
 import materialTestRoutes from "./materialTestRoutes";
 import projectReportRoutes from "./projectReportRoutes";
 import ppeComplianceRoutes from "./ppeComplianceRoutes";
@@ -409,6 +411,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Register Safety Training routes
   app.use(safetyTrainingRoutes);
   app.use(safetyWorkflowRoutes);
+  app.use(safetyObservationsRoutes);
+  app.use(safetyKpiRoutes);
   app.use(profitabilityAlertRoutes);
   app.use(costLedgerRoutes);
   app.use(revenueRecognitionRoutes);

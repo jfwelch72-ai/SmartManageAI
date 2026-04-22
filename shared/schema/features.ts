@@ -8418,6 +8418,40 @@ export const safetyChecklistInstances = pgTable("safety_checklist_instances", {
 });
 
 export const insertSafetyChecklistInstanceSchema = createInsertSchema(safetyChecklistInstances).omit({ id: true, createdAt: true });
+
+// ─── Safety Observations (positive & at-risk) ───────────────────────────────
+export const safetyObservations = pgTable("safety_observations", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  observationType: text("observation_type").notNull(), // POSITIVE | AT_RISK
+  category: text("category").notNull(), // PPE, FALL_PROTECTION, HOUSEKEEPING, ELECTRICAL, EXCAVATION, ERGONOMICS, ENVIRONMENTAL, BEHAVIOR, EQUIPMENT, OTHER
+  severity: text("severity").notNull().default("LOW"), // LOW | MEDIUM | HIGH | CRITICAL
+  location: text("location"),
+  description: text("description").notNull(),
+  immediateAction: text("immediate_action"),
+  photos: text("photos").array().default(sql`ARRAY[]::text[]`),
+  observedAt: timestamp("observed_at").notNull().defaultNow(),
+  observedBy: varchar("observed_by").references(() => users.id, { onDelete: "set null" }),
+  observedByName: text("observed_by_name"),
+  involvedPartyName: text("involved_party_name"),
+  involvedTrade: text("involved_trade"),
+  status: text("status").notNull().default("OPEN"), // OPEN | IN_REVIEW | CLOSED
+  correctiveActionId: varchar("corrective_action_id"),
+  closedAt: timestamp("closed_at"),
+  closedBy: varchar("closed_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("safety_observations_org_idx").on(table.organizationId),
+  projectIdx: index("safety_observations_project_idx").on(table.projectId),
+  observedAtIdx: index("safety_observations_observed_at_idx").on(table.observedAt),
+  typeIdx: index("safety_observations_type_idx").on(table.observationType),
+}));
+
+export const insertSafetyObservationSchema = createInsertSchema(safetyObservations).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSafetyObservation = z.infer<typeof insertSafetyObservationSchema>;
+export type SafetyObservation = typeof safetyObservations.$inferSelect;
 export type InsertSafetyChecklistInstance = z.infer<typeof insertSafetyChecklistInstanceSchema>;
 export type SafetyChecklistInstance = typeof safetyChecklistInstances.$inferSelect;
 
