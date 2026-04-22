@@ -1760,6 +1760,11 @@ export const crmTranscriptBackfillJobs = pgTable("crm_transcript_backfill_jobs",
   succeeded: integer("succeeded").notNull().default(0),
   failed: integer("failed").notNull().default(0),
   errors: jsonb("errors").$type<Array<{ recordingId: string; error: string }>>().notNull().default([]),
+  // Task #1003 — `errors` is bounded to a sample so the row stays small, but
+  // the targeted retry endpoint needs the *full* list of failed recordingIds
+  // (potentially hundreds) so it can re-run every failure, not just the
+  // sampled subset.
+  failedRecordingIds: jsonb("failed_recording_ids").$type<string[]>().notNull().default([]),
   startedById: varchar("started_by_id").references(() => users.id, { onDelete: "set null" }),
   // Task #996 — when this job is a targeted retry of a previous run's failed
   // recordings, link back to the original job so admins can trace the chain.

@@ -41,5 +41,10 @@ export async function ensureCrmTranscriptBackfillJobsTable(): Promise<void> {
   await db.execute(
     sql`CREATE INDEX IF NOT EXISTS "crm_transcript_backfill_jobs_parent_idx" ON "crm_transcript_backfill_jobs"("parent_job_id")`,
   );
+  // Task #1003 — persist the full set of failed recordingIds so the retry
+  // endpoint can re-run every failure, not just the bounded `errors` sample.
+  await db.execute(
+    sql`ALTER TABLE "crm_transcript_backfill_jobs" ADD COLUMN IF NOT EXISTS "failed_recording_ids" jsonb NOT NULL DEFAULT '[]'::jsonb`,
+  );
   logInfo("[migration] crm_transcript_backfill_jobs table ready");
 }

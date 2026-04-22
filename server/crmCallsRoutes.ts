@@ -946,6 +946,9 @@ type BackfillJobState = {
   succeeded: number;
   failed: number;
   errors: Array<{ recordingId: string; error: string }>;
+  // Task #1003 — full set of failed recordingIds (unbounded), so the retry
+  // endpoint can re-run every failure even past the bounded `errors` sample.
+  failedRecordingIds: string[];
   startedAt: string;
   completedAt: string | null;
   startedById: string;
@@ -967,6 +970,7 @@ function rowToState(row: CrmTranscriptBackfillJob): BackfillJobState {
     succeeded: row.succeeded,
     failed: row.failed,
     errors: (row.errors as BackfillJobState["errors"]) ?? [],
+    failedRecordingIds: (row.failedRecordingIds as string[] | null) ?? [],
     startedAt: row.startedAt.toISOString(),
     completedAt: row.completedAt ? row.completedAt.toISOString() : null,
     startedById: row.startedById ?? "",
@@ -989,6 +993,7 @@ async function persistJobProgress(job: BackfillJobState) {
       succeeded: sql`GREATEST(${crmTranscriptBackfillJobs.succeeded}, ${job.succeeded})`,
       failed: sql`GREATEST(${crmTranscriptBackfillJobs.failed}, ${job.failed})`,
       errors: job.errors,
+      failedRecordingIds: job.failedRecordingIds,
       completedAt: job.completedAt ? new Date(job.completedAt) : null,
       heartbeatAt: new Date(),
       updatedAt: new Date(),
@@ -1055,6 +1060,9 @@ async function runTranscriptBackfill(
           job.succeeded += 1;
         } else {
           job.failed += 1;
+          // Task #1003 — always record the failed id (unbounded) so the retry
+          // endpoint can re-run every failure, even past the bounded sample.
+          job.failedRecordingIds.push(recordingId);
           if (job.errors.length < MAX_BACKFILL_ERROR_SAMPLES) {
             job.errors.push({ recordingId, error: result.error || "Unknown error" });
           }
@@ -1066,6 +1074,9 @@ async function runTranscriptBackfill(
         }
       } catch (e) {
         job.failed += 1;
+        // Task #1003 — same as the result.ok==false branch above: capture the
+        // id unconditionally even when the error message sample is full.
+        job.failedRecordingIds.push(recordingId);
         const msg = e instanceof Error ? e.message : String(e);
         if (job.errors.length < MAX_BACKFILL_ERROR_SAMPLES) {
           job.errors.push({ recordingId, error: msg.slice(0, 500) });
@@ -1483,6 +1494,7 @@ router.post(
         succeeded: 0,
         failed: 0,
         errors: [],
+        failedRecordingIds: [],
         completedAt: null,
         startedById: req.user!.id,
       });
@@ -1813,12 +1825,23 @@ router.post(
         });
       }
 
-      // Dedupe recordingIds — the parent's errors array may contain the same id
-      // more than once if a row failed across paginated batches.
+      // Task #1003 — pull failed recordingIds from the unbounded
+      // `failed_recording_ids` jsonb (the new source of truth) AND from the
+      // legacy bounded `errors` sample, then union + dedupe. Unioning rather
+      // than picking one source covers two edge cases:
+      //   1. Legacy jobs predating the column — only `errors` is populated.
+      //   2. Mixed-version / partially-populated rows (e.g. an in-flight job
+      //      flushed `errors` before the new column existed) — neither
+      //      source alone is complete, but their union is.
+      // Dedupe — either source may contain the same id more than once if a
+      // row failed across paginated batches.
+      const failedIdsFromColumn = (parent.failedRecordingIds as string[] | null) ?? [];
+      const failedIdsFromErrors =
+        (parent.errors as Array<{ recordingId: string; error: string }> | null ?? [])
+          .map((e) => e.recordingId);
       const failedIds = Array.from(
         new Set(
-          (parent.errors as Array<{ recordingId: string; error: string }> | null ?? [])
-            .map((e) => e.recordingId)
+          [...failedIdsFromColumn, ...failedIdsFromErrors]
             .filter((id): id is string => typeof id === "string" && id.length > 0),
         ),
       );
@@ -1885,6 +1908,7 @@ router.post(
         succeeded: 0,
         failed: 0,
         errors: [],
+        failedRecordingIds: [],
         completedAt: null,
         startedById: req.user!.id,
         parentJobId: parent.id,

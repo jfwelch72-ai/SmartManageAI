@@ -48,6 +48,7 @@ export type CrmTranscriptBackfillJobUpdate = Partial<{
   succeeded: number;
   failed: number;
   errors: Array<{ recordingId: string; error: string }>;
+  failedRecordingIds: string[];
   completedAt: Date | null;
   heartbeatAt: Date;
 }>;
@@ -158,6 +159,7 @@ export async function listCrmTranscriptBackfillJobs(
       succeeded: crmTranscriptBackfillJobs.succeeded,
       failed: crmTranscriptBackfillJobs.failed,
       errors: crmTranscriptBackfillJobs.errors,
+      failedRecordingIds: crmTranscriptBackfillJobs.failedRecordingIds,
       startedById: crmTranscriptBackfillJobs.startedById,
       parentJobId: crmTranscriptBackfillJobs.parentJobId,
       startedAt: crmTranscriptBackfillJobs.startedAt,
