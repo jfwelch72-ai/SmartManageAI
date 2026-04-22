@@ -156,15 +156,28 @@ function BondForm({ existing, onClose, defaultProjectId }: { existing: SuretyBon
 
   const mut = useMutation({
     mutationFn: async (data: FormState) => {
-      const payload: Record<string, unknown> = {
-        ...data,
-        projectId: data.projectId || null,
-        premiumAmount: data.premiumAmount || null,
-        effectiveDate: data.effectiveDate || null,
-        expirationDate: data.expirationDate || null,
-        documentId: data.documentId || null,
-        documentUrl: data.documentUrl || null,
-      };
+      // Server strips status from PATCH; lifecycle goes through workflow
+      // endpoints (/activate /release /expire /cancel) below.
+      const { status: _status, ...rest } = data;
+      const payload: Record<string, unknown> = existing
+        ? {
+            ...rest,
+            projectId: rest.projectId || null,
+            premiumAmount: rest.premiumAmount || null,
+            effectiveDate: rest.effectiveDate || null,
+            expirationDate: rest.expirationDate || null,
+            documentId: rest.documentId || null,
+            documentUrl: rest.documentUrl || null,
+          }
+        : {
+            ...data,
+            projectId: data.projectId || null,
+            premiumAmount: data.premiumAmount || null,
+            effectiveDate: data.effectiveDate || null,
+            expirationDate: data.expirationDate || null,
+            documentId: data.documentId || null,
+            documentUrl: data.documentUrl || null,
+          };
       const url = existing ? `/api/surety-bonds/${existing.id}` : "/api/surety-bonds";
       const r = await apiRequest(existing ? "PATCH" : "POST", url, payload);
       return r.json();
@@ -175,6 +188,21 @@ function BondForm({ existing, onClose, defaultProjectId }: { existing: SuretyBon
       onClose();
     },
     onError: (error: Error) => toast({ title: "Failed to save", description: getErrorMessage(error), variant: "destructive" }),
+  });
+
+  const transitionMut = useMutation({
+    mutationFn: async (action: "activate" | "release" | "expire" | "cancel") => {
+      if (!existing) throw new Error("Save the bond first");
+      const r = await apiRequest("POST", `/api/surety-bonds/${existing.id}/${action}`, {});
+      return r.json();
+    },
+    onSuccess: (_d, action) => {
+      const labels: Record<string, string> = { activate: "activated", release: "released", expire: "expired", cancel: "canceled" };
+      toast({ title: `Bond ${labels[action]}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/surety-bonds"] });
+      onClose();
+    },
+    onError: (error: Error) => toast({ title: "Workflow action failed", description: getErrorMessage(error), variant: "destructive" }),
   });
 
   return (
@@ -194,11 +222,18 @@ function BondForm({ existing, onClose, defaultProjectId }: { existing: SuretyBon
             </Select>
           </div>
           <div>
-            <Label>Status</Label>
-            <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
-              <SelectTrigger data-testid="select-bond-status"><SelectValue /></SelectTrigger>
-              <SelectContent>{BOND_STATUSES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
-            </Select>
+            <Label>Status {existing ? "" : "*"}</Label>
+            {existing ? (
+              <div className="h-10 flex items-center" data-testid="badge-bond-status">
+                <Badge variant={STATUS_VARIANT[form.status] || "outline"}>{form.status}</Badge>
+                <span className="text-xs text-muted-foreground ml-2">Use workflow actions below</span>
+              </div>
+            ) : (
+              <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v })}>
+                <SelectTrigger data-testid="select-bond-status"><SelectValue /></SelectTrigger>
+                <SelectContent>{BOND_STATUSES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+              </Select>
+            )}
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -243,6 +278,23 @@ function BondForm({ existing, onClose, defaultProjectId }: { existing: SuretyBon
             </div>
           )}
         </div>
+        {existing && (
+          <div className="flex flex-wrap gap-2 border-t pt-3">
+            <span className="text-xs text-muted-foreground self-center mr-1">Workflow:</span>
+            {existing.status === "DRAFT" && (
+              <Button type="button" size="sm" variant="secondary" disabled={transitionMut.isPending} onClick={() => transitionMut.mutate("activate")} data-testid="button-bond-activate">Activate</Button>
+            )}
+            {existing.status === "ACTIVE" && (
+              <>
+                <Button type="button" size="sm" disabled={transitionMut.isPending} onClick={() => transitionMut.mutate("release")} data-testid="button-bond-release">Release</Button>
+                <Button type="button" size="sm" variant="destructive" disabled={transitionMut.isPending} onClick={() => transitionMut.mutate("expire")} data-testid="button-bond-expire">Expire</Button>
+              </>
+            )}
+            {(existing.status === "DRAFT" || existing.status === "ACTIVE") && (
+              <Button type="button" size="sm" variant="outline" disabled={transitionMut.isPending} onClick={() => transitionMut.mutate("cancel")} data-testid="button-bond-cancel-workflow">Cancel Bond</Button>
+            )}
+          </div>
+        )}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={onClose} data-testid="button-bond-cancel">Cancel</Button>
           <Button type="submit" disabled={mut.isPending} data-testid="button-bond-save">
