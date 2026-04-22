@@ -57,7 +57,19 @@ merge on:
    - **License audit** — `license-checker-rseidelsohn --production`,
      blocks any GPL-family license (GPL, AGPL, LGPL, including
      `-only` / `-or-later` / version-suffixed variants) from the
-     production bundle. Dev-only dependencies are not scanned.
+     production bundle. Dev-only dependencies are not scanned. The
+     same gate is additionally re-run against `main` nightly by the
+     `Nightly License Audit` workflow
+     (`.github/workflows/license-audit-nightly.yml`), which invokes
+     `scripts/ci-security.sh --only license`. Transitive dependency
+     updates (semver-range bumps from existing direct deps) can change
+     a package's reported license between PRs without re-triggering the
+     PR-time gate; the nightly run catches that drift on `main`. The
+     workflow uploads the scanner log as the
+     `license-audit-nightly-report` artifact (90-day retention) and, on
+     any finding, opens (or updates) a `security`-labelled tracking
+     issue so the owner can either remove the offending package or add
+     a reviewed entry to `.license-allowlist.txt`.
 
    Any Critical/High finding fails the job and blocks merge. The job
    posts a results summary as a PR comment and to the GitHub Actions job

@@ -28,6 +28,50 @@ set -o pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
+# Optional gate selection.
+#
+# By default the script runs every gate (dependency audit, SAST, secret
+# scan, IaC scan, license audit). Pass `--only <gate>` (or set
+# CI_SECURITY_ONLY=<gate>) to run a single gate. This is used by the
+# nightly license-audit workflow (`.github/workflows/license-audit-nightly.yml`)
+# to re-run just the license check against `main`, so transitive
+# dependency updates that change a package's license between PRs are
+# caught on a schedule rather than waiting for the next PR.
+#
+# Supported values: deps | sast | secrets | iac | license | all
+ONLY="${CI_SECURITY_ONLY:-all}"
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --only)
+      ONLY="${2:-}"
+      shift 2
+      ;;
+    --only=*)
+      ONLY="${1#*=}"
+      shift
+      ;;
+    *)
+      printf "unknown argument: %s\n" "$1" >&2
+      exit 2
+      ;;
+  esac
+done
+
+case "$ONLY" in
+  deps|sast|secrets|iac|license|all) ;;
+  *)
+    printf "invalid --only value: %s (expected: deps|sast|secrets|iac|license|all)\n" "$ONLY" >&2
+    # Fail closed: an unrecognized selector must not silently skip every
+    # gate and exit 0.
+    exit 2
+    ;;
+esac
+
+run_gate() {
+  # $1 = gate name; returns 0 if the gate should run.
+  [ "$ONLY" = "all" ] || [ "$ONLY" = "$1" ]
+}
+
 PASS=0
 FAIL=0
 SKIP=0
@@ -39,6 +83,7 @@ fail()    { printf "  %s %s\n" "$(color '1;31' 'FAIL ')"   "$1"; FAIL=$((FAIL+1)
 skip()    { printf "  %s %s\n" "$(color '1;33' 'SKIP ')"   "$1"; SKIP=$((SKIP+1)); }
 
 # ---------- 1. Dependency audit ----------
+if run_gate deps; then
 heading "Dependency audit (npm audit, threshold=high)"
 if command -v npm >/dev/null 2>&1; then
   if npm audit --audit-level=high --omit=dev; then
@@ -49,8 +94,10 @@ if command -v npm >/dev/null 2>&1; then
 else
   skip "npm not available in this environment"
 fi
+fi
 
 # ---------- 2. SAST ----------
+if run_gate sast; then
 heading "Static analysis (semgrep p/owasp-top-ten + p/javascript)"
 if command -v semgrep >/dev/null 2>&1; then
   if semgrep --error \
@@ -67,8 +114,10 @@ if command -v semgrep >/dev/null 2>&1; then
 else
   skip "semgrep not available; install in CI image"
 fi
+fi
 
 # ---------- 3. Secret scan ----------
+if run_gate secrets; then
 heading "Secret scan (gitleaks)"
 if command -v gitleaks >/dev/null 2>&1; then
   if gitleaks detect --no-banner --redact --exit-code 1; then
@@ -79,8 +128,10 @@ if command -v gitleaks >/dev/null 2>&1; then
 else
   skip "gitleaks not available; install in CI image"
 fi
+fi
 
 # ---------- 4. IaC scan (optional) ----------
+if run_gate iac; then
 heading "Infrastructure-as-code scan (checkov)"
 if find . -type f \
      \( -name '*.tf' -o -name 'Dockerfile*' -o -name 'kustomization.yaml' \) \
@@ -98,8 +149,10 @@ if find . -type f \
 else
   skip "no IaC files found in repository"
 fi
+fi
 
 # ---------- 5. License audit ----------
+if run_gate license; then
 heading "License audit (production deps, blocks GPL/AGPL/LGPL)"
 ALLOWLIST_FILE="$ROOT/.license-allowlist.txt"
 if command -v npx >/dev/null 2>&1; then
@@ -169,6 +222,7 @@ if command -v npx >/dev/null 2>&1; then
   fi
 else
   fail "npx not available; cannot run license audit — gate is fail-closed"
+fi
 fi
 
 # ---------- Summary ----------

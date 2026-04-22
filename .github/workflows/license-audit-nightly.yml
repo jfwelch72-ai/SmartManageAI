@@ -1,0 +1,171 @@
+name: Nightly License Audit
+
+# Scheduled license audit over `main`.
+#
+# The PR-time Security Gate (`.github/workflows/ci.yml` -> `security` job,
+# `scripts/ci-security.sh`) runs the license audit on every pull request,
+# but transitive dependency updates (semver-range bumps from existing
+# direct deps in the `npm install` resolution on `main`) can change a
+# package's license between PRs without anyone noticing. This workflow
+# re-runs only the license-audit gate against `main` on a nightly cron
+# so license drift is caught quickly rather than waiting for the next
+# unrelated PR.
+#
+# Mirrors the pattern used by the weekly secret history scan
+# (`.github/workflows/security-history-scan.yml`). SOC 2 controls
+# CC7.1 and CC8.1; SDLC policy `docs/compliance/policies/09-sdlc-policy.md`.
+#
+# Findings:
+#   - Always uploaded as the `license-audit-nightly-report` artifact
+#     (90-day retention) so auditors can review the evidence.
+#   - On any finding (or tooling failure), an issue is opened (or a
+#     comment is appended to the existing one) and labelled `security`
+#     so the owner can either remove the offending package or add a
+#     reviewed entry to `.license-allowlist.txt`.
+
+on:
+  schedule:
+    # Every day at 06:00 UTC.
+    - cron: '0 6 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  license-audit:
+    name: license-checker (production deps on main)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run license audit
+        id: license_audit
+        run: |
+          set +e
+          mkdir -p security-reports
+          bash scripts/ci-security.sh --only license 2>&1 \
+            | tee security-reports/license-audit-nightly.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          # Don't fail the job here — we want the artifact upload and the
+          # follow-up "open issue" step to run regardless. The final step
+          # below re-exits with the audit status.
+          exit 0
+
+      - name: Publish job summary
+        if: always()
+        run: |
+          {
+            echo "# Nightly License Audit"
+            echo ""
+            echo "Tool: \`scripts/ci-security.sh --only license\` against \`main\` (production deps)."
+            echo "Policy: \`docs/compliance/policies/09-sdlc-policy.md\` (SDLC, Build/CI)."
+            echo "SOC 2 controls: **CC7.1**, **CC8.1**."
+            echo ""
+            if [ "${{ steps.license_audit.outputs.exit_code }}" = "0" ]; then
+              echo "**Status:** PASSED — no GPL-family licenses in production dependencies."
+            else
+              echo "**Status:** FAILED (exit code ${{ steps.license_audit.outputs.exit_code }}) — license drift detected on \`main\`. Remove the offending package or add a reviewed entry to \`.license-allowlist.txt\`."
+            fi
+            echo ""
+            echo "<details><summary>Scanner output</summary>"
+            echo ""
+            echo '```'
+            sed 's/\x1b\[[0-9;]*m//g' security-reports/license-audit-nightly.log | tail -c 60000
+            echo '```'
+            echo ""
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload license audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: license-audit-nightly-report
+          path: security-reports/
+          retention-days: 90
+
+      - name: Open or update tracking issue on finding
+        if: always() && steps.license_audit.outputs.exit_code != '0'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let log = '';
+            try {
+              log = fs.readFileSync('security-reports/license-audit-nightly.log', 'utf8')
+                .replace(/\x1b\[[0-9;]*m/g, '');
+            } catch (e) {
+              log = '(no log captured)';
+            }
+            const trimmed = log.length > 12000 ? '…(truncated)…\n' + log.slice(-12000) : log;
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const marker = '<!-- nightly-license-audit-finding -->';
+            const title = '[security] Nightly license audit detected GPL-family license on `main`';
+            const body = [
+              marker,
+              '## Nightly license audit — license drift detected on `main`',
+              '',
+              `Workflow run: ${runUrl}`,
+              '',
+              'A scheduled re-run of the license audit against `main` found a',
+              'GPL-family license in production dependencies (or the auditor',
+              'tooling failed). Transitive dependency updates between PRs can',
+              "change a package's reported license without re-triggering the",
+              'PR-time Security Gate, which is why this scheduled run exists.',
+              '',
+              'Per SDLC policy #09:',
+              '',
+              '1. Identify the offending package(s) in the scanner output below.',
+              '2. Either remove or replace the package, **or** add a reviewed',
+              '   `name@version` entry to `.license-allowlist.txt` with',
+              '   justification and legal/CTO sign-off in the PR.',
+              '3. Re-run this workflow (`workflow_dispatch`) to confirm the',
+              '   gate passes once the fix is merged.',
+              '',
+              '<details><summary>Scanner output</summary>',
+              '',
+              '```',
+              trimmed,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+            const { owner, repo } = context.repo;
+            const { data: issues } = await github.rest.issues.listForRepo({
+              owner, repo, state: 'open', labels: 'security', per_page: 100,
+            });
+            const existing = issues.find(i => i.body && i.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number: existing.number,
+                body: `Nightly license audit failed again — see ${runUrl}`,
+              });
+            } else {
+              await github.rest.issues.create({
+                owner, repo, title, body,
+                labels: ['security', 'license-audit', 'priority:high'],
+              });
+            }
+
+      - name: Fail job if license audit found violations
+        if: steps.license_audit.outputs.exit_code != '0'
+        run: |
+          echo "license audit reported findings (exit code ${{ steps.license_audit.outputs.exit_code }})."
+          exit 1
