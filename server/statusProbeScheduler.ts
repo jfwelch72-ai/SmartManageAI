@@ -24,14 +24,7 @@ type VantagePoint = {
 
 const LOCAL_VANTAGE: VantagePoint = { region: "local", buildUrl: (u) => u };
 
-// Optional opt-in remote vantage points. These route the probe through public
-// HTTP proxies hosted on different infrastructure/regions so a regional CDN/DNS
-// problem won't be missed. They are off by default because public proxies can
-// themselves be rate-limited or down, which would create false alerts.
-const OPTIONAL_REMOTE_VANTAGES: VantagePoint[] = [
-  { region: "corsproxy-io", buildUrl: (u) => `https://corsproxy.io/?${encodeURIComponent(u)}` },
-  { region: "allorigins-eu", buildUrl: (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}` },
-];
+let warnedAboutLegacyRemoteFlag = false;
 
 function envBool(name: string): boolean {
   const v = process.env[name]?.trim().toLowerCase();
@@ -39,7 +32,10 @@ function envBool(name: string): boolean {
 }
 
 function vantagePoints(): VantagePoint[] {
-  // Highest priority: explicit JSON configuration of regions/proxies.
+  // Highest priority: explicit JSON configuration of regions/proxies. This is
+  // the supported way to add geographically-distinct vantage points. Operators
+  // are expected to deploy probe workers in regions they control (see
+  // `probes/cloudflare-worker/`) and list them here alongside `local`.
   const raw = process.env.STATUS_PROBE_REGIONS_JSON?.trim();
   if (raw) {
     try {
@@ -56,9 +52,19 @@ function vantagePoints(): VantagePoint[] {
       // fall through
     }
   }
-  // Opt-in flag enables the bundled remote vantage points alongside local.
-  if (envBool("STATUS_ENABLE_REMOTE_PROBES")) {
-    return [LOCAL_VANTAGE, ...OPTIONAL_REMOTE_VANTAGES];
+  // The legacy STATUS_ENABLE_REMOTE_PROBES flag used to enable bundled public
+  // CORS proxies (corsproxy.io, api.allorigins.win) as remote vantage points.
+  // Those third-party proxies were unreliable and have been removed; operators
+  // should configure STATUS_PROBE_REGIONS_JSON pointing at probe endpoints
+  // they control. The flag is honored as a no-op so existing production
+  // secrets do not crash startup.
+  if (envBool("STATUS_ENABLE_REMOTE_PROBES") && !warnedAboutLegacyRemoteFlag) {
+    warnedAboutLegacyRemoteFlag = true;
+    logInfo(
+      "STATUS_ENABLE_REMOTE_PROBES is set but the bundled public proxies have been removed. " +
+        "Configure STATUS_PROBE_REGIONS_JSON to add vantage points you control. " +
+        "See docs/runbooks/status-probe-vantage-points.md.",
+    );
   }
   return [LOCAL_VANTAGE];
 }

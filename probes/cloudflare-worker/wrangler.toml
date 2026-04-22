@@ -1,0 +1,21 @@
+name = "smartmanageai-status-probe"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+# Deploy one Worker per region you want as a vantage point. Cloudflare Workers
+# run on the global edge; pin the perceived region by deploying separate
+# environments with distinct names and PROBE_REGION values, then route them
+# through region-pinned hostnames or use `wrangler deploy --env <name>`.
+
+[vars]
+PROBE_REGION = "us-east"
+ALLOWED_TARGETS = "https://smartmanageai.ai"
+
+# Required secrets (set with `wrangler secret put PROBE_TOKEN --env <name>`):
+#   PROBE_TOKEN  -- shared secret the scheduler must send via x-probe-token
+
+[env.us_east]
+vars = { PROBE_REGION = "us-east", ALLOWED_TARGETS = "https://smartmanageai.ai" }
+
+[env.eu_west]
+vars = { PROBE_REGION = "eu-west", ALLOWED_TARGETS = "https://smartmanageai.ai" }
