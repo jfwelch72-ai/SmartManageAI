@@ -43,6 +43,7 @@ import {
   queueCallTranscription,
   transcribeCallRecording,
 } from "./services/callTranscriptionService";
+import { objectStorageClient } from "./objectStorage";
 
 const router = Router();
 
@@ -52,6 +53,66 @@ const EDIT_ROLES = ["ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"] as const;
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 const TWILIO_FROM_NUMBER = process.env.TWILIO_FROM_NUMBER || "";
+
+function parseStorageKey(storageKey: string): { bucketName: string; objectName: string } | null {
+  const path = storageKey.startsWith("/") ? storageKey.slice(1) : storageKey;
+  const slashIdx = path.indexOf("/");
+  if (slashIdx <= 0) return null;
+  return {
+    bucketName: path.substring(0, slashIdx),
+    objectName: path.substring(slashIdx + 1),
+  };
+}
+
+async function downloadRecordingToStorage(
+  twilioRecordingUrl: string,
+  callId: string,
+  recordingSid: string,
+): Promise<string | null> {
+  try {
+    const privateDir =
+      process.env.PRIVATE_OBJECT_DIR || process.env.REPLIT_OBJECT_STORAGE_PRIVATE_DIR;
+    if (!privateDir) {
+      logWarn("crmCalls: PRIVATE_OBJECT_DIR not set; skipping recording cache");
+      return null;
+    }
+    if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN) {
+      logWarn("crmCalls: Twilio credentials missing; cannot cache recording");
+      return null;
+    }
+
+    const url = twilioRecordingUrl.endsWith(".mp3")
+      ? twilioRecordingUrl
+      : `${twilioRecordingUrl}.mp3`;
+    const basic = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64");
+    const upstream = await fetch(url, { headers: { Authorization: `Basic ${basic}` } });
+    if (!upstream.ok) {
+      logWarn("crmCalls: failed to fetch recording from Twilio for cache", {
+        status: upstream.status,
+        callId,
+      });
+      return null;
+    }
+    const buf = Buffer.from(await upstream.arrayBuffer());
+
+    const storageKey = `crm/call-recordings/${callId}/${recordingSid}.mp3`;
+    const fullPath = `${privateDir}/${storageKey}`;
+    const parsed = parseStorageKey(fullPath);
+    if (!parsed) return null;
+    const bucket = objectStorageClient.bucket(parsed.bucketName);
+    const file = bucket.file(parsed.objectName);
+    await file.save(buf, { contentType: "audio/mpeg", metadata: { contentType: "audio/mpeg" } });
+    logInfo("crmCalls: cached recording to object storage", { callId, storageKey });
+    return storageKey;
+  } catch (e) {
+    logError(
+      "crmCalls: failed caching recording to object storage",
+      { callId },
+      e instanceof Error ? e : new Error(String(e)),
+    );
+    return null;
+  }
+}
 
 function resolveOrg(req: AuthRequest, res: any): string | null {
   const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
@@ -523,6 +584,29 @@ router.post(
             .returning({ id: crmCallRecordings.id });
           recordingId = created?.id ?? null;
           existingStatus = "PENDING";
+
+          // Task #922 — cache the recording to object storage so future plays
+          // don't hit Twilio. Run in the background so we still ack the
+          // webhook quickly.
+          if (created) {
+            void downloadRecordingToStorage(recordingUrl, existing.id, recordingSid).then(
+              async (storageKey) => {
+                if (!storageKey) return;
+                try {
+                  await db
+                    .update(crmCallRecordings)
+                    .set({ storageKey })
+                    .where(eq(crmCallRecordings.id, created.id));
+                } catch (e) {
+                  logError(
+                    "crmCalls: failed to persist storageKey",
+                    { recordingId: created.id },
+                    e instanceof Error ? e : new Error(String(e)),
+                  );
+                }
+              },
+            );
+          }
         }
         // Task #921 — kick off transcription in the background so the webhook
         // can return immediately to Twilio. Errors are logged but never thrown.
@@ -615,6 +699,104 @@ router.get(
         .orderBy(desc(crmCallRecordings.createdAt))
         .limit(1);
       if (!rec) return res.status(404).json({ error: "Recording not found" });
+
+      // Prefer the cached copy in object storage. Falls back to Twilio if
+      // the cache is missing or the file vanished from the bucket.
+      if (rec.storageKey) {
+        const privateDir =
+          process.env.PRIVATE_OBJECT_DIR || process.env.REPLIT_OBJECT_STORAGE_PRIVATE_DIR;
+        if (privateDir) {
+          try {
+            const fullPath = `${privateDir}/${rec.storageKey}`;
+            const parsed = parseStorageKey(fullPath);
+            if (parsed) {
+              const bucket = objectStorageClient.bucket(parsed.bucketName);
+              const file = bucket.file(parsed.objectName);
+              const [exists] = await file.exists();
+              if (exists) {
+                const [metadata] = await file.getMetadata();
+                const totalSize = Number(metadata.size || 0);
+                const contentType = metadata.contentType || "audio/mpeg";
+
+                const rangeHeader = req.headers.range
+                  ? String(req.headers.range)
+                  : null;
+                let start = 0;
+                let end = totalSize > 0 ? totalSize - 1 : 0;
+                let isPartial = false;
+                if (rangeHeader && totalSize > 0) {
+                  const m = /^bytes=(\d*)-(\d*)$/.exec(rangeHeader);
+                  if (m) {
+                    const s = m[1] === "" ? NaN : parseInt(m[1], 10);
+                    const e = m[2] === "" ? NaN : parseInt(m[2], 10);
+                    if (!Number.isNaN(s) && Number.isNaN(e)) {
+                      start = s;
+                      end = totalSize - 1;
+                    } else if (Number.isNaN(s) && !Number.isNaN(e)) {
+                      // Suffix range: last N bytes
+                      start = Math.max(0, totalSize - e);
+                      end = totalSize - 1;
+                    } else if (!Number.isNaN(s) && !Number.isNaN(e)) {
+                      start = s;
+                      end = Math.min(e, totalSize - 1);
+                    }
+                    if (start > end || start < 0 || end >= totalSize) {
+                      res.setHeader("content-range", `bytes */${totalSize}`);
+                      return res.status(416).end();
+                    }
+                    isPartial = true;
+                  }
+                }
+
+                res.setHeader("content-type", contentType);
+                res.setHeader("accept-ranges", "bytes");
+                if (req.query.download) {
+                  res.setHeader(
+                    "content-disposition",
+                    `attachment; filename="call-${call.id}.mp3"`,
+                  );
+                }
+                if (isPartial) {
+                  res.setHeader("content-length", String(end - start + 1));
+                  res.setHeader("content-range", `bytes ${start}-${end}/${totalSize}`);
+                  res.status(206);
+                } else {
+                  if (totalSize > 0) res.setHeader("content-length", String(totalSize));
+                  res.status(200);
+                }
+
+                const stream = file.createReadStream(
+                  isPartial ? { start, end } : undefined,
+                );
+                stream.on("error", (err: Error) => {
+                  logError(
+                    "crmCalls recording: object storage stream error",
+                    { callId: call.id },
+                    err,
+                  );
+                  if (!res.headersSent) {
+                    res.status(500).json({ error: "Failed to stream recording" });
+                  } else {
+                    res.end();
+                  }
+                });
+                stream.pipe(res);
+                return;
+              }
+              logWarn("crmCalls recording: cached object missing, falling back to Twilio", {
+                callId: call.id,
+                storageKey: rec.storageKey,
+              });
+            }
+          } catch (e) {
+            logError(
+              "crmCalls recording: object storage read failed, falling back to Twilio",
+              { callId: call.id },
+              e instanceof Error ? e : new Error(String(e)),
+            );
+          }
+        }
+      }
 
       // SSRF guard: only allow https URLs hosted on a known recording provider.
       // Today that's Twilio's recording API; extend the allowlist if more
