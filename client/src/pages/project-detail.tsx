@@ -65,6 +65,7 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronDown,
+  Layers,
 } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -469,8 +470,13 @@ export default function ProjectDetailPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [showCloseoutDialog, setShowCloseoutDialog] = useState(false);
+  const [showSaveTemplateDialog, setShowSaveTemplateDialog] = useState(false);
+  const [templateName, setTemplateName] = useState("");
+  const [templateCategory, setTemplateCategory] = useState("");
+  const [templateDescription, setTemplateDescription] = useState("");
   const canAccessFinancialsPerms = useFeaturePermission("canViewFinancials");
   const canManagePayrollPerm = useFeaturePermission("canManagePayroll");
+  const canManageProjectTemplatesPerm = useFeaturePermission("canManageProjectTemplates");
 
   const [navCollapsed, setNavCollapsed] = useState<boolean>(() => loadCollapsedRail());
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>(() => loadGroupCollapseState());
@@ -744,10 +750,104 @@ export default function ProjectDetailPage() {
                     Close Project
                   </Button>
                 )}
+                {canManageProjectTemplatesPerm && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setTemplateName(`${project.name} Template`);
+                      setTemplateCategory("");
+                      setTemplateDescription("");
+                      setShowSaveTemplateDialog(true);
+                    }}
+                    data-testid="button-save-as-template"
+                  >
+                    <Layers className="w-4 h-4 mr-2" />
+                    Save as Template
+                  </Button>
+                )}
               </div>
             )}
           </div>
         </div>
+
+        <Dialog open={showSaveTemplateDialog} onOpenChange={setShowSaveTemplateDialog}>
+          <DialogContent data-testid="dialog-save-template">
+            <DialogHeader>
+              <DialogTitle>Save project as template</DialogTitle>
+              <DialogDescription>
+                Capture this project's WBS, dependencies, distribution lists,
+                cost codes, SoV and folder structure as a reusable template.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <div>
+                <Label>Template name *</Label>
+                <Input
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  data-testid="input-save-template-name"
+                />
+              </div>
+              <div>
+                <Label>Category</Label>
+                <Input
+                  value={templateCategory}
+                  onChange={(e) => setTemplateCategory(e.target.value)}
+                  placeholder="e.g. Commercial, Heavy Civil, Residential"
+                  data-testid="input-save-template-category"
+                />
+              </div>
+              <div>
+                <Label>Description</Label>
+                <Input
+                  value={templateDescription}
+                  onChange={(e) => setTemplateDescription(e.target.value)}
+                  placeholder="Short description shown in the library"
+                  data-testid="input-save-template-description"
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                onClick={() => setShowSaveTemplateDialog(false)}
+                data-testid="button-save-template-cancel"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  if (!templateName.trim()) {
+                    toast({ title: "Template name required", variant: "destructive" });
+                    return;
+                  }
+                  try {
+                    const res = await apiRequest("POST", "/api/project-templates/capture", {
+                      projectCode: project.code,
+                      name: templateName.trim(),
+                      category: templateCategory.trim() || undefined,
+                      description: templateDescription.trim() || undefined,
+                    });
+                    await res.json();
+                    toast({ title: "Template saved", description: "Available in the template library." });
+                    setShowSaveTemplateDialog(false);
+                    queryClient.invalidateQueries({ queryKey: ["/api/project-templates"] });
+                  } catch (err: any) {
+                    toast({
+                      title: "Failed to save template",
+                      description: err?.message ?? "Unknown error",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+                data-testid="button-save-template-confirm"
+              >
+                Save template
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {FeaturePermissions.VIEW_PROJECT_BUDGET(user?.role) &&
           (!project.budget || Number(project.budget) === 0) &&

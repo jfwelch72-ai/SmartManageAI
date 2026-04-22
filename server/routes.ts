@@ -187,6 +187,7 @@ import crmAutomationsRoutes from "./crmAutomationsRoutes";
 import crmCsvImportRoutes from "./crmCsvImportRoutes";
 import crmCustomReportsRoutes from "./crmCustomReportsRoutes";
 import projectOpsRoutes from "./projectOpsRoutes";
+import projectTemplateRoutes from "./projectTemplateRoutes";
 import notificationRoutes2 from "./notificationRoutes2";
 import notificationPreferencesRoutes from "./notificationPreferencesRoutes";
 import pushSubscriptionRoutes from "./pushSubscriptionRoutes";
@@ -634,6 +635,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Project Operations Routes (consolidated: receipts, plan docs, file perms, change orders, calendar)
   app.use(projectOpsRoutes);
+  app.use(projectTemplateRoutes);
 
   // Notifications Routes
   app.use(notificationRoutes2);

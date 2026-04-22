@@ -339,6 +339,7 @@ export const FeaturePermissions = {
   VIEW_PROJECT_BUDGET: (role?: string, perms?: FeaturePerms) => hasFinancialAccess(role, perms),
   VIEW_PROJECT_FINANCIALS: (role?: string, perms?: FeaturePerms) => hasFinancialAccess(role, perms),
   CONVERT_BID_TO_PROJECT: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canConvertBidToProject : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "HUSTLER",
+  MANAGE_PROJECT_TEMPLATES: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageProjectTemplates : role === "ADMIN" || role === "MANAGER" || role === "SUPER_ADMIN",
 
   VIEW_BUDGET_TAB: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canViewProjectBudget : hasFinancialAccess(role, perms),
   VIEW_ESTIMATES_TAB: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canViewProjectEstimates : hasFinancialAccess(role, perms),
@@ -390,6 +391,7 @@ export interface FeaturePerms {
   projectScope?: "ALL" | "ACTIVE_ONLY";
   canCreateProjects?: boolean;
   canEditProjects?: boolean;
+  canManageProjectTemplates?: boolean;
   canAccessCalendar?: boolean;
   canAccessTasks?: boolean;
   canAccessMessages?: boolean;

@@ -5159,6 +5159,7 @@ export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
   projectScope: text("project_scope").default("ALL"),
   canCreateProjects: boolean("can_create_projects").default(false),
   canEditProjects: boolean("can_edit_projects").default(false),
+  canManageProjectTemplates: boolean("can_manage_project_templates").default(false),
   canAccessCalendar: boolean("can_access_calendar").default(false),
   canAccessTasks: boolean("can_access_tasks").default(false),
   canAccessMessages: boolean("can_access_messages").default(false),

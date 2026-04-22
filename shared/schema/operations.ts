@@ -3429,3 +3429,63 @@ export const insertGanttPdfRenderSampleSchema = createInsertSchema(ganttPdfRende
 export type InsertGanttPdfRenderSample = z.infer<typeof insertGanttPdfRenderSampleSchema>;
 export type GanttPdfRenderSample = typeof ganttPdfRenderSamples.$inferSelect;
 
+// ============================================
+// PROJECT & WBS TEMPLATES (Task #889)
+// Captures a project archetype (WBS task tree, dependencies, doc folders,
+// distribution lists, custom field defaults, default cost codes, SoV
+// structure, RFI/submittal categories) so new projects can be spun up from
+// a known-good baseline. Templates are versioned: editing a template
+// creates a new version while in-flight projects keep their original.
+// ============================================
+export const projectTemplates = pgTable("project_templates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  category: text("category"),
+  sourceProjectId: varchar("source_project_id").references(() => projects.id, { onDelete: "set null" }),
+  sourceProjectCode: text("source_project_code"),
+  isSystemSeed: boolean("is_system_seed").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  currentVersion: integer("current_version").notNull().default(1),
+  usageCount: integer("usage_count").notNull().default(0),
+  lastUsedAt: timestamp("last_used_at"),
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("project_templates_org_idx").on(table.organizationId),
+  systemSeedIdx: index("project_templates_system_seed_idx").on(table.isSystemSeed),
+}));
+
+export const projectTemplateVersions = pgTable("project_template_versions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  templateId: varchar("template_id").notNull().references(() => projectTemplates.id, { onDelete: "cascade" }),
+  version: integer("version").notNull(),
+  snapshot: jsonb("snapshot").notNull(),
+  notes: text("notes"),
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  templateIdx: index("project_template_versions_template_idx").on(table.templateId),
+  uniqVersion: unique("project_template_versions_uniq").on(table.templateId, table.version),
+}));
+
+export const insertProjectTemplateSchema = createInsertSchema(projectTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  usageCount: true,
+  lastUsedAt: true,
+  currentVersion: true,
+});
+export type InsertProjectTemplate = z.infer<typeof insertProjectTemplateSchema>;
+export type ProjectTemplate = typeof projectTemplates.$inferSelect;
+
+export const insertProjectTemplateVersionSchema = createInsertSchema(projectTemplateVersions).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertProjectTemplateVersion = z.infer<typeof insertProjectTemplateVersionSchema>;
+export type ProjectTemplateVersion = typeof projectTemplateVersions.$inferSelect;
+

@@ -279,6 +279,12 @@ app.use((req, res, next) => {
   // this fix was deployed.
   await runStartupMigrations();
   await seedBuiltInPresets();
+  try {
+    const { seedSystemProjectTemplates } = await import("./seedProjectTemplates");
+    await seedSystemProjectTemplates();
+  } catch (err) {
+    console.error("[startup] Failed to seed project templates:", err);
+  }
   await backfillMissingFeatureFlags();
 
   // Task #722: re-arm any CRM contact reassignment summaries that were

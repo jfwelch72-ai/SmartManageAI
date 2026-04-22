@@ -129,6 +129,7 @@ const BidDetailPage = lazy(() => import("@/pages/bid-detail"));
 const BidEstimate = lazy(() => import("@/pages/bid-estimate"));
 const HistoricalCostsPage = lazy(() => import("@/pages/historical-costs"));
 const ProjectsPage = lazy(() => import("@/pages/projects"));
+const ProjectTemplatesPage = lazy(() => import("@/pages/project-templates"));
 const ProjectDetailPage = lazy(() => import("@/pages/project-detail"));
 const TimeEntryPage = lazy(() => import("@/pages/time-entry"));
 const TMDailyPage = lazy(() => import("@/pages/tm-daily"));
@@ -383,6 +384,7 @@ function Router() {
       <Route path="/settings/:section" component={() => <ProtectedRoute component={SettingsPage} />} />
       <Route path="/settings" component={() => <ProtectedRoute component={SettingsPage} />} />
       <Route path="/projects" component={() => <ProtectedRoute component={ProjectsPage} permission={RoutePermissions.PROJECTS} />} />
+      <Route path="/templates/projects" component={() => <ProtectedRoute component={ProjectTemplatesPage} permission={RoutePermissions.PROJECTS} />} />
       <Route path="/projects/:code" component={() => <ProtectedRoute component={ProjectDetailPage} permission={RoutePermissions.PROJECT_DETAIL} />} />
       <Route path="/calendar" component={() => <ProtectedRoute component={CalendarPage} permission={RoutePermissions.CALENDAR} />} />
       <Route path="/leave-management" component={() => <ProtectedRoute component={LeaveManagementPage} permission={RoutePermissions.LEAVE_MANAGEMENT} />} />

@@ -239,7 +239,8 @@ type FeaturePermissionKeys =
   | 'canViewSwppp' | 'canManageSwppp'
   | 'canViewMaterialCertifications' | 'canManageMaterialCertifications' | 'canVerifyMaterialCertifications'
   | 'canViewSuretyBonds' | 'canManageSuretyBonds'
-  | 'canViewComplianceDashboard';
+  | 'canViewComplianceDashboard'
+  | 'canManageProjectTemplates';
 
 type PermissionSet = Record<FeaturePermissionKeys, boolean> & { projectScope: "ALL" | "ACTIVE_ONLY" };
 
@@ -282,6 +283,7 @@ const ALL_FALSE: PermissionSet = {
   canManageMaterialCertifications: false, canVerifyMaterialCertifications: false,
   canViewSuretyBonds: false, canManageSuretyBonds: false,
   canViewComplianceDashboard: false,
+  canManageProjectTemplates: false,
 };
 
 const ALL_TRUE: PermissionSet = {
@@ -323,6 +325,7 @@ const ALL_TRUE: PermissionSet = {
   canManageMaterialCertifications: true, canVerifyMaterialCertifications: true,
   canViewSuretyBonds: true, canManageSuretyBonds: true,
   canViewComplianceDashboard: true,
+  canManageProjectTemplates: true,
 };
 
 export const ROLE_HIERARCHY: UserRole[] = [

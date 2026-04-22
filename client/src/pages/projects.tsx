@@ -63,7 +63,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Textarea } from "@/components/ui/textarea";
-import { Search, Plus, X, Trash2, FolderKanban, Users as UsersIcon } from "lucide-react";
+import { Search, Plus, X, Trash2, FolderKanban, Users as UsersIcon, Layers } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useLocation, useSearch } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -546,6 +546,14 @@ export default function ProjectsPage() {
                   View Bids
                 </Button>
                 <Button
+                  variant="outline"
+                  onClick={() => setLocation("/templates/projects")}
+                  data-testid="button-from-template"
+                >
+                  <Layers className="w-4 h-4 mr-1 sm:mr-2" />
+                  From Template
+                </Button>
+                <Button
                   onClick={() => setShowCreateDialog(true)}
                   data-testid="button-new-project"
                 >
@@ -763,6 +771,29 @@ export default function ProjectsPage() {
               Bid Board to convert.
             </DialogDescription>
           </DialogHeader>
+          <div
+            className="rounded-md border bg-muted/40 p-3 flex items-center justify-between gap-3"
+            data-testid="banner-start-from-template"
+          >
+            <div className="text-sm">
+              <div className="font-medium">Start from a template?</div>
+              <div className="text-muted-foreground">
+                Pre-fill schedule, dependencies, distribution lists, and SoV from a saved template.
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setShowCreateDialog(false);
+                setLocation("/templates/projects");
+              }}
+              data-testid="button-wizard-from-template"
+            >
+              Browse Templates
+            </Button>
+          </div>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
               <FormField
