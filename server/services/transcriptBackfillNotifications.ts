@@ -368,15 +368,20 @@ export type BackfillNotificationConfig = {
   };
 };
 
-export function getBackfillNotificationConfig(): BackfillNotificationConfig {
-  const slackWebhook = (process.env.CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK || "").trim();
-  const emailTo = (process.env.CRM_BACKFILL_NOTIFY_EMAIL_TO || "").trim();
-  const recipients = emailTo
-    ? emailTo
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean)
-    : [];
+/**
+ * Task #1059 — read the destination summary from the same per-org settings
+ * source the test-alert button and run-completed dispatcher use, so the
+ * admin panel reflects what would actually be targeted. Falls back to the
+ * legacy env vars via `resolveBackfillNotificationDestinations` when no
+ * per-org row exists. The Slack webhook URL itself is intentionally never
+ * returned — only a configured/valid summary.
+ */
+export async function getBackfillNotificationConfig(
+  orgId: string,
+): Promise<BackfillNotificationConfig> {
+  const destinations = await resolveBackfillNotificationDestinations(orgId);
+  const slackWebhook = (destinations.slackWebhookUrl ?? "").trim();
+  const recipients = destinations.emailRecipients;
   return {
     slack: {
       configured: slackWebhook.length > 0,

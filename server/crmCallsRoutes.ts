@@ -2492,18 +2492,26 @@ router.post(
   },
 );
 
-// Task #1032 — admin "notification destinations" panel. Returns whether
-// the Slack webhook and email recipient list env vars are configured so the
-// admin page can show the current setup state up front (instead of forcing
-// admins to click "Send test alert" to find out). The Slack webhook URL
-// itself is intentionally NOT returned — only a configured/valid summary.
+// Task #1032 / #1059 — admin "notification destinations" panel. Returns
+// whether a Slack webhook and email recipient list are configured for the
+// caller's org so the admin page can show the current setup state up front
+// (instead of forcing admins to click "Send test alert" to find out).
+// Sources the per-org settings row saved from the in-app settings UI
+// (Task #1017), with the same env-var fallback as
+// `resolveBackfillNotificationDestinations` for deployments that haven't
+// migrated yet — so this endpoint matches what the test-alert button and
+// the real run-completed dispatcher will actually target. The Slack
+// webhook URL itself is intentionally NOT returned — only a
+// configured/valid summary.
 router.get(
   "/api/crm/calls/transcripts/backfill/notification-config",
   requireAuth,
   requireRole("ADMIN"),
-  async (_req: AuthRequest, res, next) => {
+  async (req: AuthRequest, res, next) => {
     try {
-      res.json(getBackfillNotificationConfig());
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+      res.json(await getBackfillNotificationConfig(orgId));
     } catch (e) {
       next(e);
     }
