@@ -12,22 +12,29 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // stub storage out before the module under test is imported. The pure
 // formatter tests below don't touch the network or DB. Use vi.hoisted so the
 // mock fns are initialized before vi.mock factories run.
-const { mockGetSettings, mockRecordDelivery, mockFetch, mockSendEmail } = vi.hoisted(
-  () => ({
-    mockGetSettings: vi.fn(),
-    mockRecordDelivery: vi.fn().mockResolvedValue({}),
-    // Task #1031 — the dispatcher now POSTs to the Slack webhook directly so
-    // it can record real per-channel success/failure outcomes. Stub global
-    // fetch so the unit tests can observe the calls without hitting the net.
-    mockFetch: vi.fn().mockResolvedValue(
-      new Response("ok", { status: 200 }),
-    ),
-    mockSendEmail: vi.fn().mockResolvedValue(true),
-  }),
-);
+const {
+  mockGetSettings,
+  mockRecordDelivery,
+  mockFetch,
+  mockSendEmail,
+  mockListOrgAdmins,
+} = vi.hoisted(() => ({
+  mockGetSettings: vi.fn(),
+  mockRecordDelivery: vi.fn().mockResolvedValue({}),
+  // Task #1031 — the dispatcher now POSTs to the Slack webhook directly so
+  // it can record real per-channel success/failure outcomes. Stub global
+  // fetch so the unit tests can observe the calls without hitting the net.
+  mockFetch: vi.fn().mockResolvedValue(new Response("ok", { status: 200 })),
+  mockSendEmail: vi.fn().mockResolvedValue(true),
+  // Task #1051 — fallback email lookup. Default to "no admins" so existing
+  // tests don't accidentally trigger fan-out emails; the new dedicated
+  // describe block overrides this per case.
+  mockListOrgAdmins: vi.fn().mockResolvedValue([]),
+}));
 vi.mock("../storage", () => ({
   getCrmTranscriptBackfillNotificationSettings: mockGetSettings,
   recordCrmTranscriptBackfillAlertDelivery: mockRecordDelivery,
+  listOrgAdminsForAlertFailureFallback: mockListOrgAdmins,
 }));
 vi.mock("../services/slackService", () => ({
   isValidSlackWebhookUrl: (u: string) => /^https:\/\/hooks\.slack\.com\//.test(u),
@@ -46,8 +53,11 @@ import {
   formatBackfillCompletionNotification,
   describeBackfillOperator,
   notifyBackfillCompletion,
+  notifyOrgAdminsOfAlertDeliveryFailure,
+  buildAlertFailureFallbackContent,
   resolveBackfillNotificationDestinations,
   sendTestBackfillAlert,
+  _resetAlertFailureFallbackDedupeForTests,
   type BackfillNotificationJob,
 } from "../services/transcriptBackfillNotifications";
 
@@ -228,6 +238,9 @@ describe("notifyBackfillCompletion (Task #1017)", () => {
     mockFetch.mockResolvedValue(new Response("ok", { status: 200 }));
     mockSendEmail.mockReset();
     mockSendEmail.mockResolvedValue(true);
+    mockListOrgAdmins.mockReset();
+    mockListOrgAdmins.mockResolvedValue([]);
+    _resetAlertFailureFallbackDedupeForTests();
     delete process.env.CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK;
     delete process.env.CRM_BACKFILL_NOTIFY_EMAIL_TO;
   });
@@ -517,5 +530,303 @@ describe("sendTestBackfillAlert (Task #1030 / #1044)", () => {
     expect(result.email.configured).toBe(true);
     expect(result.email.ok).toBe(false);
     expect(result.email.error).toMatch(/non-success/i);
+  });
+});
+
+/**
+ * Task #1051 — fallback email to org admins when an alert delivery fails.
+ * Covers (a) the standalone helper's dedupe + opt-out behavior, (b) the
+ * `notifyBackfillCompletion` integration so a recorded failure row also
+ * fans out an email, and (c) the content builder.
+ */
+describe("notifyOrgAdminsOfAlertDeliveryFailure (Task #1051)", () => {
+  const adminA = {
+    id: "u-admin-a",
+    email: "admin-a@example.com",
+    firstName: "Ada",
+    lastName: "Admin",
+  };
+  const adminB = {
+    id: "u-admin-b",
+    email: "admin-b@example.com",
+    firstName: null,
+    lastName: null,
+  };
+
+  beforeEach(() => {
+    mockListOrgAdmins.mockReset();
+    mockSendEmail.mockReset();
+    mockSendEmail.mockResolvedValue(true);
+    _resetAlertFailureFallbackDedupeForTests();
+  });
+
+  it("emails every eligible admin with a one-line summary + history link", async () => {
+    mockListOrgAdmins.mockResolvedValue([adminA, adminB]);
+    const sent = await notifyOrgAdminsOfAlertDeliveryFailure({
+      orgId: "org-1",
+      jobId: "job-xyz",
+      channel: "slack",
+      recipientSummary: "hooks.slack.com",
+      errorMessage: "Slack webhook returned 404",
+    });
+    expect(sent).toBe(2);
+    expect(mockListOrgAdmins).toHaveBeenCalledWith("org-1");
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+    const call = mockSendEmail.mock.calls[0][0];
+    expect(call.to).toEqual(["admin-a@example.com", "admin-b@example.com"]);
+    expect(call.subject).toMatch(/alert delivery failed/i);
+    expect(call.text).toContain("Slack webhook returned 404");
+    expect(call.text).toContain("hooks.slack.com");
+    expect(call.text).toContain("/admin/transcript-backfill");
+    expect(call.html).toContain("/admin/transcript-backfill");
+  });
+
+  it("is a no-op when the org has no eligible admins", async () => {
+    mockListOrgAdmins.mockResolvedValue([]);
+    const sent = await notifyOrgAdminsOfAlertDeliveryFailure({
+      orgId: "org-1",
+      jobId: "job-xyz",
+      channel: "email",
+      recipientSummary: "ops@example.com",
+      errorMessage: "smtp 550",
+    });
+    expect(sent).toBe(0);
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  it("de-duplicates identical failures within the dedupe window", async () => {
+    mockListOrgAdmins.mockResolvedValue([adminA]);
+    const input = {
+      orgId: "org-1",
+      jobId: "job-xyz",
+      channel: "slack" as const,
+      recipientSummary: "hooks.slack.com",
+      errorMessage: "Slack webhook returned 404",
+    };
+    expect(await notifyOrgAdminsOfAlertDeliveryFailure(input)).toBe(1);
+    expect(await notifyOrgAdminsOfAlertDeliveryFailure(input)).toBe(0);
+    expect(await notifyOrgAdminsOfAlertDeliveryFailure(input)).toBe(0);
+    // Only the very first call should have hit the email transport.
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+  });
+
+  it("treats a different channel/error/recipient as a distinct failure", async () => {
+    mockListOrgAdmins.mockResolvedValue([adminA]);
+    await notifyOrgAdminsOfAlertDeliveryFailure({
+      orgId: "org-1",
+      jobId: "job-1",
+      channel: "slack",
+      recipientSummary: "hooks.slack.com",
+      errorMessage: "Slack webhook returned 404",
+    });
+    // Different channel — should send.
+    await notifyOrgAdminsOfAlertDeliveryFailure({
+      orgId: "org-1",
+      jobId: "job-1",
+      channel: "email",
+      recipientSummary: "hooks.slack.com",
+      errorMessage: "Slack webhook returned 404",
+    });
+    // Different error message — should send.
+    await notifyOrgAdminsOfAlertDeliveryFailure({
+      orgId: "org-1",
+      jobId: "job-1",
+      channel: "slack",
+      recipientSummary: "hooks.slack.com",
+      errorMessage: "Slack webhook returned 500",
+    });
+    // Different org — should send.
+    await notifyOrgAdminsOfAlertDeliveryFailure({
+      orgId: "org-2",
+      jobId: "job-1",
+      channel: "slack",
+      recipientSummary: "hooks.slack.com",
+      errorMessage: "Slack webhook returned 404",
+    });
+    expect(mockSendEmail).toHaveBeenCalledTimes(4);
+  });
+
+  it("never throws when the email transport fails", async () => {
+    mockListOrgAdmins.mockResolvedValue([adminA]);
+    mockSendEmail.mockRejectedValueOnce(new Error("smtp blew up"));
+    await expect(
+      notifyOrgAdminsOfAlertDeliveryFailure({
+        orgId: "org-1",
+        jobId: "job-1",
+        channel: "email",
+        recipientSummary: "ops@example.com",
+        errorMessage: "smtp 550",
+      }),
+    ).resolves.toBe(0);
+  });
+
+  it("does not start the dedupe window when the email transport fails", async () => {
+    mockListOrgAdmins.mockResolvedValue([adminA]);
+    // First attempt fails — should NOT mark the key, so a retry within the
+    // window still goes out instead of being silently suppressed.
+    mockSendEmail.mockResolvedValueOnce(false);
+    const input = {
+      orgId: "org-1",
+      jobId: "job-1",
+      channel: "slack" as const,
+      recipientSummary: "hooks.slack.com",
+      errorMessage: "Slack webhook returned 500",
+    };
+    expect(await notifyOrgAdminsOfAlertDeliveryFailure(input)).toBe(0);
+    expect(await notifyOrgAdminsOfAlertDeliveryFailure(input)).toBe(1);
+    // Now the second (successful) call set the key — third call should dedupe.
+    expect(await notifyOrgAdminsOfAlertDeliveryFailure(input)).toBe(0);
+    expect(mockSendEmail).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not start the dedupe window when the admin lookup fails", async () => {
+    mockListOrgAdmins.mockRejectedValueOnce(new Error("db down"));
+    mockListOrgAdmins.mockResolvedValueOnce([adminA]);
+    const input = {
+      orgId: "org-1",
+      jobId: "job-1",
+      channel: "slack" as const,
+      recipientSummary: "hooks.slack.com",
+      errorMessage: "Slack webhook returned 500",
+    };
+    expect(await notifyOrgAdminsOfAlertDeliveryFailure(input)).toBe(0);
+    // Second attempt should still go through — the failed first attempt
+    // must not have started the dedupe window.
+    expect(await notifyOrgAdminsOfAlertDeliveryFailure(input)).toBe(1);
+  });
+
+  it("never throws when the admin lookup fails", async () => {
+    mockListOrgAdmins.mockRejectedValueOnce(new Error("db down"));
+    await expect(
+      notifyOrgAdminsOfAlertDeliveryFailure({
+        orgId: "org-1",
+        jobId: "job-1",
+        channel: "slack",
+        recipientSummary: "hooks.slack.com",
+        errorMessage: "Slack webhook returned 404",
+      }),
+    ).resolves.toBe(0);
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+});
+
+describe("notifyBackfillCompletion fallback wiring (Task #1051)", () => {
+  beforeEach(() => {
+    mockGetSettings.mockReset();
+    mockRecordDelivery.mockClear();
+    mockSendEmail.mockReset();
+    mockSendEmail.mockResolvedValue(true);
+    mockListOrgAdmins.mockReset();
+    mockListOrgAdmins.mockResolvedValue([
+      {
+        id: "u-admin-a",
+        email: "admin-a@example.com",
+        firstName: "Ada",
+        lastName: "Admin",
+      },
+    ]);
+    mockFetch.mockReset();
+    mockFetch.mockResolvedValue(new Response("ok", { status: 200 }));
+    _resetAlertFailureFallbackDedupeForTests();
+  });
+
+  it("emails admins after a Slack failure row is recorded", async () => {
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: "https://hooks.slack.com/services/ORG",
+      emailRecipients: [],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    mockFetch.mockResolvedValueOnce(new Response("invalid_payload", { status: 400 }));
+    await notifyBackfillCompletion(baseJob, null);
+
+    // The original Slack failure should be recorded, and the fallback email
+    // should be sent to the org's admins.
+    expect(mockRecordDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: "slack", status: "failure" }),
+    );
+    expect(mockListOrgAdmins).toHaveBeenCalledWith("org-1");
+    expect(mockSendEmail).toHaveBeenCalledTimes(1);
+    const call = mockSendEmail.mock.calls[0][0];
+    expect(call.to).toEqual(["admin-a@example.com"]);
+    expect(call.subject).toMatch(/alert delivery failed/i);
+  });
+
+  it("does not email admins after a successful dispatch", async () => {
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: "https://hooks.slack.com/services/ORG",
+      emailRecipients: [],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    await notifyBackfillCompletion(baseJob, null);
+    expect(mockListOrgAdmins).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  it("emails admins after an email-transport failure (separate from the original recipient list)", async () => {
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: null,
+      emailRecipients: ["alerts@example.com"],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    // First call is the original alert dispatch and fails; second call is
+    // the fallback fan-out and must succeed.
+    mockSendEmail.mockResolvedValueOnce(false);
+    mockSendEmail.mockResolvedValueOnce(true);
+    await notifyBackfillCompletion(baseJob, null);
+    expect(mockRecordDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: "email", status: "failure" }),
+    );
+    expect(mockSendEmail).toHaveBeenCalledTimes(2);
+    expect(mockSendEmail.mock.calls[1][0].to).toEqual(["admin-a@example.com"]);
+  });
+});
+
+describe("buildAlertFailureFallbackContent (Task #1051)", () => {
+  it("includes the channel, error, recipient, and admin page URL", () => {
+    const content = buildAlertFailureFallbackContent({
+      orgId: "org-1",
+      jobId: "job-xyz",
+      channel: "slack",
+      recipientSummary: "hooks.slack.com",
+      errorMessage: "Slack webhook returned 404",
+    });
+    expect(content.summary).toMatch(/Slack/);
+    expect(content.summary).toMatch(/hooks\.slack\.com/);
+    expect(content.text).toContain("Slack webhook returned 404");
+    expect(content.text).toContain("/admin/transcript-backfill");
+    expect(content.html).toContain("/admin/transcript-backfill");
+    expect(content.html).toContain("Slack webhook returned 404");
+  });
+
+  it("renders sensible placeholders when the error message is missing", () => {
+    const content = buildAlertFailureFallbackContent({
+      orgId: "org-1",
+      jobId: null,
+      channel: "email",
+      recipientSummary: "",
+      errorMessage: null,
+    });
+    expect(content.text).toContain("(no error message recorded)");
+    expect(content.text).toContain("(no recipients on file)");
+    // No Job ID row when jobId is null.
+    expect(content.text).not.toMatch(/^Job ID/m);
+  });
+
+  it("escapes HTML special characters in the error message", () => {
+    const content = buildAlertFailureFallbackContent({
+      orgId: "org-1",
+      jobId: "job-xyz",
+      channel: "slack",
+      recipientSummary: "hooks.slack.com",
+      errorMessage: "<script>alert('x')</script>",
+    });
+    expect(content.html).not.toContain("<script>alert");
+    expect(content.html).toContain("&lt;script&gt;");
   });
 });

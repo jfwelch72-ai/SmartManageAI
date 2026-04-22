@@ -6,6 +6,7 @@ import {
   crmTranscriptBackfillNotifications,
   crmTranscriptBackfillTestAlerts,
   crmTranscriptBackfillAlertDeliveries,
+  notificationChannelPrefs,
   organizations,
   users,
   type CrmTranscriptBackfillJob,
@@ -880,6 +881,8 @@ export async function listCrmTranscriptBackfillNotificationsForJobs(
     });
   }
   return result;
+}
+
 // Task #1031 — alert delivery history. Each per-channel dispatch attempt is
 // recorded so admins can confirm in-app whether the most recent backfill
 // alerts actually reached the configured Slack/email destinations.
@@ -924,6 +927,68 @@ export async function listCrmTranscriptBackfillAlertDeliveries(
     .orderBy(desc(crmTranscriptBackfillAlertDeliveries.attemptedAt))
     .limit(safeLimit);
   return rows;
+}
+
+// Task #1051 — fallback email when alert delivery fails. Looks up active org
+// admins eligible to receive the fallback notice. We respect the same per-user
+// preferences the existing run-completion summary respects (Task #1021): an
+// admin who set their `crmBackfillSummaryChannel` to "none" is treated as
+// having opted out of these alerts entirely, and one whose
+// `notification_channel_prefs.email_enabled` is explicitly `false` is treated
+// as a legacy global email opt-out (matching the routing in
+// `crmCallsRoutes.notifyBackfillCompletionToOrgAdmins`). Users without a
+// notification_channel_prefs row still receive the fallback so freshly-
+// onboarded orgs aren't silent.
+export type OrgAdminFailureFallbackRecipient = {
+  id: string;
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+};
+
+export async function listOrgAdminsForAlertFailureFallback(
+  organizationId: string,
+): Promise<OrgAdminFailureFallbackRecipient[]> {
+  const rows = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      emailEnabled: notificationChannelPrefs.emailEnabled,
+      backfillChannel: users.crmBackfillSummaryChannel,
+    })
+    .from(users)
+    .leftJoin(
+      notificationChannelPrefs,
+      eq(notificationChannelPrefs.userId, users.id),
+    )
+    .where(
+      and(
+        eq(users.organizationId, organizationId),
+        eq(users.role, "ADMIN"),
+        eq(users.isActive, true),
+      ),
+    );
+
+  const seen = new Set<string>();
+  const out: OrgAdminFailureFallbackRecipient[] = [];
+  for (const r of rows) {
+    if (r.backfillChannel === "none") continue;
+    if (r.emailEnabled === false) continue; // legacy global opt-out
+    const email = (r.email ?? "").trim();
+    if (!email) continue;
+    const key = email.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      id: r.id,
+      email,
+      firstName: r.firstName ?? null,
+      lastName: r.lastName ?? null,
+    });
+  }
+  return out;
 }
 
 export const storage = {};

@@ -19,8 +19,10 @@ import { sendEmail } from "./emailService";
 import { logInfo, logWarn } from "../utils/logger";
 import {
   getCrmTranscriptBackfillNotificationSettings,
+  listOrgAdminsForAlertFailureFallback,
   recordCrmTranscriptBackfillAlertDelivery,
   type CrmTranscriptBackfillOperatorContact,
+  type OrgAdminFailureFallbackRecipient,
 } from "../storage";
 
 export type BackfillNotificationJob = {
@@ -194,6 +196,206 @@ export async function resolveBackfillNotificationDestinations(
   };
 }
 
+// ---------------------------------------------------------------------------
+// Task #1051 — fallback email to org admins when an alert delivery fails.
+//
+// Task #1031 records failed Slack/email dispatch attempts so admins can see
+// them on the admin transcript-backfill page, but admins still had to load
+// the page to notice. To catch a misconfigured webhook or expired SMTP key
+// without anyone refreshing the dashboard, every recorded failure now also
+// emails the org's admins (respecting their per-user preferences via
+// `listOrgAdminsForAlertFailureFallback`).
+//
+// Identical failures are de-duplicated within `FAILURE_FALLBACK_DEDUPE_MS`
+// (default: 1 hour) keyed by org + channel + recipient summary + error
+// message, so a continuously-broken webhook can't mailbomb every admin
+// every retry. The dedupe map is in-memory and per-process, which matches
+// the granularity we need (operational pager-style alerts) without a new
+// DB table — losing the cache across deploys/restarts at worst means a
+// single extra email after a deploy, which is acceptable.
+// ---------------------------------------------------------------------------
+
+const FAILURE_FALLBACK_DEDUPE_MS = 60 * 60 * 1000; // 1 hour
+const failureFallbackDedupe = new Map<string, number>();
+
+/** Test seam: clears the dedupe cache between unit tests. */
+export function _resetAlertFailureFallbackDedupeForTests(): void {
+  failureFallbackDedupe.clear();
+}
+
+function buildFallbackDedupeKey(input: {
+  orgId: string;
+  channel: "slack" | "email";
+  recipientSummary: string;
+  errorMessage: string | null;
+}): string {
+  const err = (input.errorMessage ?? "").trim().slice(0, 200);
+  return `${input.orgId}|${input.channel}|${input.recipientSummary.trim().slice(0, 200)}|${err}`;
+}
+
+function isFailureFallbackDeduped(
+  key: string,
+  now: number = Date.now(),
+): boolean {
+  // Drop expired entries opportunistically so the map can't grow unbounded
+  // in long-running processes that see lots of distinct failures.
+  for (const [k, ts] of failureFallbackDedupe) {
+    if (now - ts >= FAILURE_FALLBACK_DEDUPE_MS) failureFallbackDedupe.delete(k);
+  }
+  const last = failureFallbackDedupe.get(key);
+  return last !== undefined && now - last < FAILURE_FALLBACK_DEDUPE_MS;
+}
+
+function markFailureFallbackSent(key: string, now: number = Date.now()): void {
+  failureFallbackDedupe.set(key, now);
+}
+
+function describeAdminRecipient(
+  recipient: OrgAdminFailureFallbackRecipient,
+): string {
+  const first = (recipient.firstName ?? "").trim();
+  const last = (recipient.lastName ?? "").trim();
+  if (first && last) return `${first} ${last}`;
+  if (first) return first;
+  if (last) return last;
+  return recipient.email;
+}
+
+export type AlertFailureFallbackInput = {
+  orgId: string;
+  jobId: string | null;
+  channel: "slack" | "email";
+  recipientSummary: string;
+  errorMessage: string | null;
+};
+
+export type AlertFailureFallbackContent = {
+  subject: string;
+  text: string;
+  html: string;
+  /** One-line human summary used at the top of both bodies. */
+  summary: string;
+  historyUrl: string;
+};
+
+export function buildAlertFailureFallbackContent(
+  input: AlertFailureFallbackInput,
+): AlertFailureFallbackContent {
+  const baseUrl = (process.env.APP_BASE_URL || "").replace(/\/$/, "");
+  const historyUrl = baseUrl
+    ? `${baseUrl}/admin/transcript-backfill`
+    : "/admin/transcript-backfill";
+  const channelLabel = input.channel === "slack" ? "Slack" : "email";
+  const summary =
+    `Transcript backfill alert failed to deliver via ${channelLabel} ` +
+    `to ${input.recipientSummary || "(no recipients on file)"}.`;
+  const subject = `[CRM] Transcript backfill alert delivery failed (${channelLabel})`;
+
+  const escape = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const text = [
+    summary,
+    "",
+    `Channel:  ${channelLabel}`,
+    `Recipient: ${input.recipientSummary || "(none)"}`,
+    `Error:    ${input.errorMessage ?? "(no error message recorded)"}`,
+    input.jobId ? `Job ID:   ${input.jobId}` : null,
+    "",
+    `Open the admin transcript-backfill page to review and fix the destination:`,
+    historyUrl,
+  ]
+    .filter((l): l is string => l !== null)
+    .join("\n");
+
+  const html = `
+    <div style="font-family:-apple-system,system-ui,sans-serif;font-size:14px;color:#111;">
+      <p style="margin:0 0 12px;"><strong>${escape(summary)}</strong></p>
+      <table cellspacing="0" cellpadding="4" style="border-collapse:collapse;">
+        <tr><td><strong>Channel</strong></td><td>${escape(channelLabel)}</td></tr>
+        <tr><td><strong>Recipient</strong></td><td>${escape(input.recipientSummary || "(none)")}</td></tr>
+        <tr><td><strong>Error</strong></td><td>${escape(input.errorMessage ?? "(no error message recorded)")}</td></tr>
+        ${input.jobId ? `<tr><td><strong>Job ID</strong></td><td><code>${escape(input.jobId)}</code></td></tr>` : ""}
+      </table>
+      <p style="margin:16px 0 0;">
+        <a href="${escape(historyUrl)}" style="color:#2563eb;">Open the admin transcript-backfill page</a>
+        to review delivery history and fix the destination.
+      </p>
+    </div>
+  `.trim();
+
+  return { subject, text, html, summary, historyUrl };
+}
+
+/**
+ * Sends the fallback email to every eligible org admin. Returns the number
+ * of admins notified (0 when deduped, opted out, or the email transport
+ * declines). Never throws — a fallback failure must never bubble up and
+ * break the dispatcher's bookkeeping.
+ */
+export async function notifyOrgAdminsOfAlertDeliveryFailure(
+  input: AlertFailureFallbackInput,
+): Promise<number> {
+  try {
+    // Check (don't yet record) the dedupe key first so a transient lookup or
+    // transport failure on the first try doesn't suppress the next hour of
+    // genuine alerts. We only mark the key after a successful send below.
+    const key = buildFallbackDedupeKey(input);
+    if (isFailureFallbackDeduped(key)) {
+      logInfo(
+        "transcriptBackfillNotifications: fallback email suppressed (deduped)",
+        { orgId: input.orgId, channel: input.channel, jobId: input.jobId },
+      );
+      return 0;
+    }
+
+    const admins = await listOrgAdminsForAlertFailureFallback(input.orgId);
+    if (admins.length === 0) {
+      logInfo(
+        "transcriptBackfillNotifications: fallback email skipped (no eligible admins)",
+        { orgId: input.orgId, channel: input.channel, jobId: input.jobId },
+      );
+      return 0;
+    }
+
+    const content = buildAlertFailureFallbackContent(input);
+    const recipients = admins.map((a) => a.email);
+    const ok = await sendEmail({
+      to: recipients,
+      subject: content.subject,
+      text: content.text,
+      html: content.html,
+    });
+    if (!ok) {
+      logWarn(
+        "transcriptBackfillNotifications: fallback email transport returned non-success",
+        { orgId: input.orgId, channel: input.channel, jobId: input.jobId },
+      );
+      return 0;
+    }
+    markFailureFallbackSent(key);
+    logInfo("transcriptBackfillNotifications: fallback email dispatched", {
+      orgId: input.orgId,
+      channel: input.channel,
+      jobId: input.jobId,
+      adminCount: admins.length,
+      admins: admins.map(describeAdminRecipient),
+    });
+    return admins.length;
+  } catch (err) {
+    logWarn(
+      "transcriptBackfillNotifications: fallback email dispatch threw",
+      {
+        orgId: input.orgId,
+        channel: input.channel,
+        jobId: input.jobId,
+        error: err instanceof Error ? err.message : String(err),
+      },
+    );
+    return 0;
+  }
+}
+
 /**
  * Dispatches the formatted notification to whichever transports are
  * configured. Per-organization settings (Task #1017) are the primary source;
@@ -244,6 +446,18 @@ export async function notifyBackfillCompletion(
         jobId: job.id,
         channel,
         error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    // Task #1051 — fan out a fallback email to org admins so a misconfigured
+    // webhook is noticed without anyone loading the admin page. Best-effort:
+    // `notifyOrgAdminsOfAlertDeliveryFailure` swallows its own errors.
+    if (status === "failure") {
+      await notifyOrgAdminsOfAlertDeliveryFailure({
+        orgId: job.orgId,
+        jobId: job.id,
+        channel,
+        recipientSummary,
+        errorMessage: errorMessage ?? null,
       });
     }
   };
