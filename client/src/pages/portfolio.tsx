@@ -11,6 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Download, X, ChevronRight } from "lucide-react";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
+import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 
 type GroupBy = "program" | "division" | "trade" | "pm" | "none";
 type ViewKey = "heatmap" | "gantt" | "financial";
@@ -498,19 +500,57 @@ export default function PortfolioPage() {
   };
   const onClear = () => set({ status: null, ownerId: null, startAfter: null, endBefore: null, minHealth: null });
 
+  const { toast } = useToast();
+
   const handleExport = useCallback(async () => {
     const qs = buildQs(filters);
-    const res = await fetch(`/api/portfolio/summary-pdf?${qs}`, { credentials: "include" });
-    if (!res.ok) return;
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    const ct = res.headers.get("content-type") || "";
-    a.download = `portfolio-summary.${ct.includes("pdf") ? "pdf" : "html"}`;
-    document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-  }, [filters]);
+    try {
+      const res = await fetch(`/api/portfolio/summary-pdf?${qs}`, { credentials: "include" });
+      if (!res.ok) {
+        let detail = "";
+        try {
+          const ct = res.headers.get("content-type") || "";
+          if (ct.includes("application/json")) {
+            const body = await res.json();
+            detail = body?.detail || body?.error || "";
+          }
+        } catch {}
+        const isRendererOffline = res.status === 503 || res.status === 500;
+        toast({
+          variant: "destructive",
+          title: isRendererOffline ? "Portfolio export unavailable" : "Export failed",
+          description: isRendererOffline
+            ? (detail || "The PDF renderer is offline. Please contact an administrator to restore portfolio exports.")
+            : (detail || `The export request failed (status ${res.status}). Please try again.`),
+          action: (
+            <ToastAction altText="Retry export" onClick={() => { void handleExport(); }} data-testid="button-retry-export">
+              Retry
+            </ToastAction>
+          ),
+        });
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      const ct = res.headers.get("content-type") || "";
+      a.download = `portfolio-summary.${ct.includes("pdf") ? "pdf" : "html"}`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+    } catch (err) {
+      toast({
+        variant: "destructive",
+        title: "Export failed",
+        description: "Could not reach the server. Check your connection and try again.",
+        action: (
+          <ToastAction altText="Retry export" onClick={() => { void handleExport(); }} data-testid="button-retry-export">
+            Retry
+          </ToastAction>
+        ),
+      });
+    }
+  }, [filters, toast]);
 
   return (
     <div className="container mx-auto px-4 py-6 max-w-7xl">
