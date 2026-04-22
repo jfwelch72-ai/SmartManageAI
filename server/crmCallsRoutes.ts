@@ -27,10 +27,13 @@ import {
   crmEmailMessages,
   crmQuotes,
   crmTranscriptBackfillJobs,
+  notificationChannelPrefs,
+  organizations,
   users,
   insertCrmCallSchema,
   type CrmTranscriptBackfillJob,
 } from "@shared/schema";
+import { sendEmail } from "./services/emailService";
 import {
   createCrmTranscriptBackfillJob,
   getCrmTranscriptBackfillJob,
@@ -1015,6 +1018,215 @@ async function persistJobProgress(job: BackfillJobState) {
 
 const BACKFILL_BATCH_SIZE = 100;
 
+// ---------------------------------------------------------------------------
+// Task #1006 — email a backfill summary to admins when a run finishes.
+//
+// Fired (fire-and-forget) from every code path that transitions a job to
+// COMPLETED or FAILED. Loads the freshly-persisted job row, looks up the
+// admin recipients for that org, and sends a single email summarising the
+// run (status, totals, duration, operator, link back to the history page).
+//
+// Notification preferences: an admin who has a notification_channel_prefs
+// row with email_enabled=false is treated as opted out and skipped. Admins
+// without an explicit prefs row still receive these summaries — they're an
+// operational signal for a run the admin themselves started.
+//
+// Idempotency: each finalization site flips the job to a terminal status
+// exactly once (existing per-row guards), so it's safe to call this helper
+// from each one without sending duplicates. We re-load the job row inside
+// the helper so the email always reflects the persisted final state even
+// when the caller has a slightly stale in-memory snapshot.
+// ---------------------------------------------------------------------------
+const BACKFILL_NOTIFIED_JOB_IDS = new Set<string>();
+const BACKFILL_NOTIFIED_MAX = 1000;
+
+function rememberBackfillNotified(jobId: string): boolean {
+  if (BACKFILL_NOTIFIED_JOB_IDS.has(jobId)) return false;
+  BACKFILL_NOTIFIED_JOB_IDS.add(jobId);
+  // Bound memory growth in long-running processes.
+  if (BACKFILL_NOTIFIED_JOB_IDS.size > BACKFILL_NOTIFIED_MAX) {
+    const first = BACKFILL_NOTIFIED_JOB_IDS.values().next().value;
+    if (first) BACKFILL_NOTIFIED_JOB_IDS.delete(first);
+  }
+  return true;
+}
+
+export function __resetBackfillNotifiedForTests() {
+  BACKFILL_NOTIFIED_JOB_IDS.clear();
+}
+
+function formatBackfillDuration(startedAt: Date, completedAt: Date): string {
+  const ms = Math.max(0, completedAt.getTime() - startedAt.getTime());
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}h ${m}m ${s}s`;
+  if (m > 0) return `${m}m ${s}s`;
+  return `${s}s`;
+}
+
+function escapeBackfillHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+export async function notifyBackfillCompletionToOrgAdmins(jobId: string): Promise<void> {
+  try {
+    if (!rememberBackfillNotified(jobId)) return;
+
+    const [jobRow] = await db
+      .select({
+        id: crmTranscriptBackfillJobs.id,
+        organizationId: crmTranscriptBackfillJobs.organizationId,
+        status: crmTranscriptBackfillJobs.status,
+        total: crmTranscriptBackfillJobs.total,
+        processed: crmTranscriptBackfillJobs.processed,
+        succeeded: crmTranscriptBackfillJobs.succeeded,
+        failed: crmTranscriptBackfillJobs.failed,
+        startedAt: crmTranscriptBackfillJobs.startedAt,
+        completedAt: crmTranscriptBackfillJobs.completedAt,
+        parentJobId: crmTranscriptBackfillJobs.parentJobId,
+        startedById: crmTranscriptBackfillJobs.startedById,
+        operatorFirstName: users.firstName,
+        operatorLastName: users.lastName,
+        operatorEmail: users.email,
+      })
+      .from(crmTranscriptBackfillJobs)
+      .leftJoin(users, eq(users.id, crmTranscriptBackfillJobs.startedById))
+      .where(eq(crmTranscriptBackfillJobs.id, jobId))
+      .limit(1);
+
+    if (!jobRow) return;
+    if (jobRow.status !== "COMPLETED" && jobRow.status !== "FAILED") return;
+
+    const [orgRow] = await db
+      .select({ name: organizations.name })
+      .from(organizations)
+      .where(eq(organizations.id, jobRow.organizationId))
+      .limit(1);
+
+    // Pick admins for the org. Left join channel prefs so admins without an
+    // explicit prefs row still receive these (they're a transactional ack
+    // for a run the admin themselves started). Anyone with prefs.email_enabled
+    // explicitly set to false is treated as opted out.
+    const adminRows = await db
+      .select({
+        email: users.email,
+        emailEnabled: notificationChannelPrefs.emailEnabled,
+      })
+      .from(users)
+      .leftJoin(notificationChannelPrefs, eq(notificationChannelPrefs.userId, users.id))
+      .where(
+        and(
+          eq(users.organizationId, jobRow.organizationId),
+          eq(users.role, "ADMIN"),
+          eq(users.isActive, true),
+        ),
+      );
+
+    const recipients = Array.from(
+      new Set(
+        adminRows
+          .filter((r) => r.emailEnabled !== false) // null = no prefs row = include
+          .map((r) => r.email)
+          .filter((e): e is string => typeof e === "string" && e.length > 0),
+      ),
+    );
+
+    if (recipients.length === 0) {
+      logInfo("crmCalls: backfill summary email skipped (no eligible admin recipients)", {
+        jobId,
+        orgId: jobRow.organizationId,
+      });
+      return;
+    }
+
+    const completedAt = jobRow.completedAt ?? new Date();
+    const duration = formatBackfillDuration(jobRow.startedAt, completedAt);
+    const operatorName =
+      [jobRow.operatorFirstName, jobRow.operatorLastName]
+        .filter((p): p is string => !!p)
+        .join(" ")
+        .trim() ||
+      jobRow.operatorEmail ||
+      "an administrator";
+    const orgName = orgRow?.name || "your organization";
+    const isRetry = !!jobRow.parentJobId;
+    const runLabel = isRetry ? "Transcript backfill retry" : "Transcript backfill";
+    const statusLabel = jobRow.status === "COMPLETED" ? "completed" : "failed";
+
+    const baseUrl = process.env.APP_BASE_URL || "";
+    const historyUrl = baseUrl
+      ? `${baseUrl.replace(/\/$/, "")}/admin/transcript-backfill`
+      : "/admin/transcript-backfill";
+
+    const subject = `${runLabel} ${statusLabel} — ${jobRow.succeeded}/${jobRow.total} succeeded`;
+
+    const textLines = [
+      `${runLabel} ${statusLabel} for ${orgName}.`,
+      ``,
+      `Status:    ${jobRow.status}`,
+      `Processed: ${jobRow.processed} of ${jobRow.total}`,
+      `Succeeded: ${jobRow.succeeded}`,
+      `Failed:    ${jobRow.failed}`,
+      `Duration:  ${duration}`,
+      `Started:   ${jobRow.startedAt.toISOString()}`,
+      `Finished:  ${completedAt.toISOString()}`,
+      `Operator:  ${operatorName}`,
+      `Job ID:    ${jobRow.id}`,
+      ``,
+      `View history: ${historyUrl}`,
+    ];
+    const text = textLines.join("\n");
+
+    const html = `<!doctype html>
+<html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111;">
+  <h2 style="margin:0 0 8px;">${escapeBackfillHtml(runLabel)} ${escapeBackfillHtml(statusLabel)}</h2>
+  <p style="margin:0 0 16px;color:#444;">Organization: <strong>${escapeBackfillHtml(orgName)}</strong></p>
+  <table cellpadding="6" cellspacing="0" style="border-collapse:collapse;border:1px solid #e5e7eb;">
+    <tbody>
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Status</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(jobRow.status)}</td></tr>
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Processed</strong></td><td style="border:1px solid #e5e7eb;">${jobRow.processed} of ${jobRow.total}</td></tr>
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Succeeded</strong></td><td style="border:1px solid #e5e7eb;">${jobRow.succeeded}</td></tr>
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Failed</strong></td><td style="border:1px solid #e5e7eb;">${jobRow.failed}</td></tr>
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Duration</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(duration)}</td></tr>
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Started</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(jobRow.startedAt.toISOString())}</td></tr>
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Finished</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(completedAt.toISOString())}</td></tr>
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Operator</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(operatorName)}</td></tr>
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Job ID</strong></td><td style="border:1px solid #e5e7eb;font-family:monospace;font-size:12px;">${escapeBackfillHtml(jobRow.id)}</td></tr>
+    </tbody>
+  </table>
+  <p style="margin:16px 0 0;"><a href="${escapeBackfillHtml(historyUrl)}" style="color:#2563eb;">View backfill history</a></p>
+</body></html>`;
+
+    await sendEmail({ to: recipients, subject, html, text });
+
+    logInfo("crmCalls: backfill summary email sent", {
+      jobId,
+      orgId: jobRow.organizationId,
+      status: jobRow.status,
+      recipientCount: recipients.length,
+    });
+  } catch (e) {
+    logError(
+      "crmCalls: failed to send backfill summary email",
+      { jobId },
+      e instanceof Error ? e : new Error(String(e)),
+    );
+  }
+}
+
+function scheduleBackfillCompletionEmail(jobId: string): void {
+  setImmediate(() => {
+    notifyBackfillCompletionToOrgAdmins(jobId).catch(() => undefined);
+  });
+}
+
 export async function fetchEligibleRecordingBatch(
   orgId: string,
   excludeIds: Set<string>,
@@ -1205,6 +1417,12 @@ async function runTranscriptBackfill(
         error: e instanceof Error ? e.message : String(e),
       });
     }
+    // Task #1006 — additionally email each org admin (respecting their
+    // per-user notification prefs) a self-contained summary of the
+    // finished run with a link to the admin transcript-backfill page.
+    // Complementary to Task #1008, which sends a single ops-wide Slack
+    // / email-list alert that includes the operator's contact info.
+    scheduleBackfillCompletionEmail(job.id);
   }
 }
 
@@ -1358,6 +1576,10 @@ export async function resumeOrReapBackfillJobsOnBoot() {
             error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr),
           });
         }
+        // Task #1006 — also email each org admin a summary of the reaped
+        // (FAILED) job so the alert lands in their inbox alongside the
+        // in-app notification above.
+        scheduleBackfillCompletionEmail(row.id);
         continue;
       }
 
@@ -1385,6 +1607,7 @@ export async function resumeOrReapBackfillJobsOnBoot() {
             jobId: job.id,
             orgId: job.orgId,
           });
+          scheduleBackfillCompletionEmail(job.id);
           continue;
         }
 
@@ -1473,6 +1696,7 @@ router.get(
             completedAt: new Date(),
           });
           activeJob = reaped ? rowToState(reaped) : null;
+          scheduleBackfillCompletionEmail(runningRow.id);
         } else {
           activeJob = rowToState(runningRow);
         }
@@ -1617,6 +1841,7 @@ router.post(
           orgId,
           heartbeatAgeMs,
         });
+        scheduleBackfillCompletionEmail(existingRunning.id);
       }
 
       // Seed the worker queue with the first batch. The job will keep paging
@@ -1676,6 +1901,7 @@ router.post(
         job.status = "COMPLETED";
         job.completedAt = new Date().toISOString();
         await persistJobProgress(job);
+        scheduleBackfillCompletionEmail(jobId);
         return res.status(200).json({ jobId, total: 0, message: "No recordings to backfill" });
       }
 
@@ -1985,6 +2211,7 @@ router.get(
           status: "FAILED",
           completedAt: new Date(),
         });
+        scheduleBackfillCompletionEmail(row.id);
         return res.json(rowToState(reaped ?? { ...row, status: "FAILED", completedAt: new Date() }));
       }
       res.json(rowToState(row));
@@ -2099,6 +2326,7 @@ router.post(
           orgId,
           heartbeatAgeMs,
         });
+        scheduleBackfillCompletionEmail(existingRunning.id);
       }
 
       const jobId = `retry-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;

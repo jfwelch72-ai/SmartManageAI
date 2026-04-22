@@ -163,7 +163,15 @@ async function insertJob(opts: {
   });
 }
 
+let priorEmailTransport: string | undefined;
+
 beforeAll(async () => {
+  // Task #1006 added a fire-and-forget admin summary email on every
+  // terminal-state transition. Pin the email transport to the in-memory
+  // noop seam so this suite never makes real Resend calls when the
+  // resume/reap paths flip jobs to COMPLETED/FAILED.
+  priorEmailTransport = process.env.EMAIL_TRANSPORT;
+  process.env.EMAIL_TRANSPORT = "noop";
   routes = await import("../crmCallsRoutes");
 });
 
@@ -178,6 +186,11 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await cleanupTestData();
+  if (priorEmailTransport === undefined) {
+    delete process.env.EMAIL_TRANSPORT;
+  } else {
+    process.env.EMAIL_TRANSPORT = priorEmailTransport;
+  }
 });
 
 describe("resumeOrReapBackfillJobsOnBoot", () => {
