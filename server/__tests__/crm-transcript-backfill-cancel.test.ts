@@ -315,6 +315,154 @@ describe("POST /api/crm/calls/transcripts/backfill/:jobId/cancel", () => {
     20_000,
   );
 
+  // Task #1091 — pin the cancellation-reason capture contract on the live
+  // worker path. The cancel endpoint accepts an optional free-text reason
+  // and stamps both the canceller's user id and the reason onto the
+  // persisted row when the worker exits cooperatively.
+  it(
+    "live worker path: persists cancelledById + cancellationReason from the request body",
+    async () => {
+      const recordingIds: string[] = [];
+      for (let i = 0; i < 8; i++) {
+        recordingIds.push(await makeRecording(callId));
+      }
+
+      const jobId = `live-cancel-reason-${Date.now()}`;
+      const [parentRow] = await db
+        .insert(crmTranscriptBackfillJobs)
+        .values({
+          id: jobId,
+          organizationId: orgId,
+          status: "RUNNING",
+          total: recordingIds.length,
+          processed: 0,
+          succeeded: 0,
+          failed: 0,
+          errors: [],
+          failedRecordingIds: [],
+          startedById: userId,
+          heartbeatAt: new Date(),
+        })
+        .returning();
+
+      const job = routes.__rowToBackfillStateForTests(parentRow);
+      const workerPromise = routes.__runTranscriptBackfillForTests(
+        job,
+        recordingIds,
+        1,
+        recordingIds.length,
+      );
+
+      await new Promise((resolve) => setTimeout(resolve, 120));
+
+      const reasonText = "Stopping — wrong org targeted";
+      const cancelRes = await request(app)
+        .post(`/api/crm/calls/transcripts/backfill/${jobId}/cancel`)
+        .send({ reason: reasonText });
+      expect(cancelRes.status).toBe(202);
+
+      await workerPromise;
+
+      const [persisted] = await db
+        .select()
+        .from(crmTranscriptBackfillJobs)
+        .where(eq(crmTranscriptBackfillJobs.id, jobId));
+      expect(persisted).toBeDefined();
+      expect(persisted.status).toBe("CANCELLED");
+      // Critical assertions: canceller identity + free-text reason are
+      // captured by the worker as it transitions to the terminal state.
+      expect(persisted.cancelledById).toBe(userId);
+      expect(persisted.cancellationReason).toBe(reasonText);
+    },
+    30_000,
+  );
+
+  // Task #1091 — same contract for the stale-worker reap path. When the
+  // worker is gone the cancel endpoint writes the row directly, and it
+  // must include the canceller + reason on that path too.
+  it(
+    "stale-worker path: persists cancelledById + cancellationReason on the reap branch",
+    async () => {
+      const jobId = `stale-cancel-reason-${Date.now()}`;
+      const staleHeartbeat = new Date(Date.now() - (HEARTBEAT_STALE_MS + 60 * 1000));
+      await db.insert(crmTranscriptBackfillJobs).values({
+        id: jobId,
+        organizationId: orgId,
+        status: "RUNNING",
+        total: 10,
+        processed: 4,
+        succeeded: 4,
+        failed: 0,
+        errors: [],
+        failedRecordingIds: [],
+        startedById: userId,
+        startedAt: new Date(Date.now() - 10 * 60 * 1000),
+        heartbeatAt: staleHeartbeat,
+      });
+
+      const reasonText = "Heartbeat dead, reaping the row";
+      const cancelRes = await request(app)
+        .post(`/api/crm/calls/transcripts/backfill/${jobId}/cancel`)
+        .send({ reason: reasonText });
+      expect(cancelRes.status).toBe(200);
+      expect(cancelRes.body).toMatchObject({
+        jobId,
+        status: "CANCELLED",
+        reaped: true,
+      });
+
+      const [persisted] = await db
+        .select()
+        .from(crmTranscriptBackfillJobs)
+        .where(eq(crmTranscriptBackfillJobs.id, jobId));
+      expect(persisted).toBeDefined();
+      expect(persisted.status).toBe("CANCELLED");
+      expect(persisted.cancelledById).toBe(userId);
+      expect(persisted.cancellationReason).toBe(reasonText);
+    },
+    20_000,
+  );
+
+  // Task #1091 — when the admin doesn't supply a reason (or sends an
+  // all-whitespace string) the row should record the canceller identity
+  // but persist the reason as NULL so the UI/email can omit the line
+  // cleanly.
+  it(
+    "stale-worker path: empty/whitespace reason is persisted as NULL alongside the canceller id",
+    async () => {
+      const jobId = `stale-cancel-empty-reason-${Date.now()}`;
+      const staleHeartbeat = new Date(Date.now() - (HEARTBEAT_STALE_MS + 60 * 1000));
+      await db.insert(crmTranscriptBackfillJobs).values({
+        id: jobId,
+        organizationId: orgId,
+        status: "RUNNING",
+        total: 3,
+        processed: 1,
+        succeeded: 1,
+        failed: 0,
+        errors: [],
+        failedRecordingIds: [],
+        startedById: userId,
+        startedAt: new Date(Date.now() - 5 * 60 * 1000),
+        heartbeatAt: staleHeartbeat,
+      });
+
+      const cancelRes = await request(app)
+        .post(`/api/crm/calls/transcripts/backfill/${jobId}/cancel`)
+        .send({ reason: "   " });
+      expect(cancelRes.status).toBe(200);
+
+      const [persisted] = await db
+        .select()
+        .from(crmTranscriptBackfillJobs)
+        .where(eq(crmTranscriptBackfillJobs.id, jobId));
+      expect(persisted.status).toBe("CANCELLED");
+      expect(persisted.cancelledById).toBe(userId);
+      expect(persisted.cancellationReason).toBeNull();
+    },
+    20_000,
+  );
+
   it(
     "rejects cancel on a non-RUNNING job with 409 (idempotency guard)",
     async () => {

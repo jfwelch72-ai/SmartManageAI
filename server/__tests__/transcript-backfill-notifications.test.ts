@@ -195,6 +195,157 @@ describe("formatBackfillCompletionNotification", () => {
     expect(out.slackBody).toContain("CANCELLED");
   });
 
+  // Task #1091 — pin the cancellation-context surface area. Task #1070 added
+  // the canceller display + free-text reason to the cancel completion alert;
+  // these tests assert all four output channels (slackBody, emailText,
+  // emailHtml, emailSubject) include both the canceller name and the reason
+  // when the run was cancelled and a canceller context is passed in.
+  describe("CANCELLED with canceller context (Task #1070 / #1091)", () => {
+    const operator = {
+      id: "u-op",
+      firstName: "Olive",
+      lastName: "Operator",
+      email: "olive@example.com",
+    };
+    const canceller = {
+      id: "u-cancel",
+      firstName: "Cassie",
+      lastName: "Canceller",
+      email: "cassie@example.com",
+    };
+
+    it("renders canceller + reason in slackBody, emailText, emailHtml, and emailSubject", () => {
+      const out = formatBackfillCompletionNotification(
+        {
+          ...baseJob,
+          status: "CANCELLED",
+          cancelledById: canceller.id,
+          cancellationReason: "Wrong org targeted",
+        },
+        operator,
+        { canceller },
+      );
+
+      // Subject names the canceller and still mentions the operator who
+      // started the run, with the dedicated "cancelled" verb.
+      expect(out.emailSubject).toBe(
+        "[CRM] Transcript backfill cancelled by Cassie Canceller — started by Olive Operator",
+      );
+      expect(out.emailSubject).toContain("cancelled");
+      expect(out.emailSubject).not.toContain("failed");
+
+      // Slack body surfaces both the canceller line and the reason line.
+      expect(out.slackBody).toContain("*Cancelled by:* Cassie Canceller <cassie@example.com>");
+      expect(out.slackBody).toContain("*Reason:* Wrong org targeted");
+      expect(out.slackBody).toContain("*Status:* CANCELLED");
+
+      // Plain-text email mirrors the Slack copy.
+      expect(out.emailText).toContain("Cancelled by: Cassie Canceller <cassie@example.com>");
+      expect(out.emailText).toContain("Reason: Wrong org targeted");
+
+      // HTML email renders the canceller + reason rows with escaped values.
+      expect(out.emailHtml).toContain("Cancelled by");
+      expect(out.emailHtml).toContain("Cassie Canceller");
+      expect(out.emailHtml).toContain("cassie@example.com");
+      expect(out.emailHtml).toContain("Reason");
+      expect(out.emailHtml).toContain("Wrong org targeted");
+    });
+
+    it("omits the Reason line on every channel when no reason was supplied", () => {
+      const out = formatBackfillCompletionNotification(
+        {
+          ...baseJob,
+          status: "CANCELLED",
+          cancelledById: canceller.id,
+          cancellationReason: null,
+        },
+        operator,
+        { canceller },
+      );
+
+      // Canceller line is still present...
+      expect(out.slackBody).toContain("*Cancelled by:* Cassie Canceller");
+      expect(out.emailText).toContain("Cancelled by: Cassie Canceller");
+      expect(out.emailHtml).toContain("Cancelled by");
+      expect(out.emailSubject).toContain("by Cassie Canceller");
+
+      // ...but the Reason line/row is suppressed entirely so the alert
+      // doesn't read "Reason: null" or print an empty row.
+      expect(out.slackBody).not.toContain("*Reason:*");
+      expect(out.emailText).not.toMatch(/^Reason:/m);
+      expect(out.emailHtml).not.toContain("<strong>Reason</strong>");
+    });
+
+    it("falls back to the deleted-user label when cancelledById is set but the canceller record is missing", () => {
+      const out = formatBackfillCompletionNotification(
+        {
+          ...baseJob,
+          status: "CANCELLED",
+          cancelledById: "u-deleted",
+          cancellationReason: "Cleanup after a misfire",
+        },
+        operator,
+        { canceller: null },
+      );
+
+      expect(out.emailSubject).toContain("by Unknown operator (deleted user)");
+      expect(out.slackBody).toContain("*Cancelled by:* Unknown operator (deleted user)");
+      expect(out.slackBody).toContain("(no email on file)");
+      expect(out.slackBody).toContain("*Reason:* Cleanup after a misfire");
+      expect(out.emailText).toContain(
+        "Cancelled by: Unknown operator (deleted user) <(no email on file)>",
+      );
+      expect(out.emailText).toContain("Reason: Cleanup after a misfire");
+      expect(out.emailHtml).toContain("Unknown operator (deleted user)");
+      expect(out.emailHtml).toContain("Cleanup after a misfire");
+    });
+
+    it("does NOT add canceller wording when status is CANCELLED but no cancellation context is wired in", () => {
+      // Defensive: if callers forget to pass cancelContext (and the row
+      // also lacks cancelledById), the alert should still render the
+      // "cancelled" verb without inventing a canceller line.
+      const out = formatBackfillCompletionNotification(
+        { ...baseJob, status: "CANCELLED" },
+        operator,
+      );
+
+      expect(out.title).toBe("Transcript backfill cancelled");
+      expect(out.emailSubject).toBe(
+        "[CRM] Transcript backfill cancelled — started by Olive Operator",
+      );
+      expect(out.emailSubject).not.toMatch(/cancelled by/i);
+      expect(out.slackBody).not.toContain("Cancelled by:");
+      expect(out.emailText).not.toMatch(/^Cancelled by:/m);
+      expect(out.emailHtml).not.toContain("<strong>Cancelled by</strong>");
+    });
+
+    it("escapes HTML special characters in the canceller name and reason", () => {
+      const out = formatBackfillCompletionNotification(
+        {
+          ...baseJob,
+          status: "CANCELLED",
+          cancelledById: "u-cancel",
+          cancellationReason: "<script>alert('x')</script> & runaway",
+        },
+        operator,
+        {
+          canceller: {
+            id: "u-cancel",
+            firstName: "Eve <evil>",
+            lastName: "& Co",
+            email: "eve&co@example.com",
+          },
+        },
+      );
+
+      expect(out.emailHtml).not.toContain("<script>alert");
+      expect(out.emailHtml).toContain("Eve &lt;evil&gt;");
+      expect(out.emailHtml).toContain("&amp; Co");
+      expect(out.emailHtml).toContain("eve&amp;co@example.com");
+      expect(out.emailHtml).toContain("&lt;script&gt;alert('x')&lt;/script&gt; &amp; runaway");
+    });
+  });
+
   it("labels retries distinctly and references the parent job id", () => {
     const out = formatBackfillCompletionNotification(
       { ...baseJob, parentJobId: "backfill-original-xyz" },
