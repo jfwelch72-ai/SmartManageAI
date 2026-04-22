@@ -33,6 +33,7 @@ import {
   PlusCircle,
   ArrowRight,
   Clock,
+  Phone,
   Search as SearchIcon,
 } from "lucide-react";
 import {
@@ -50,7 +51,8 @@ export type SearchResultType =
   | "project"
   | "bid"
   | "vendor"
-  | "subcontractor";
+  | "subcontractor"
+  | "call";
 
 export interface SearchResult {
   id: string;
@@ -59,6 +61,7 @@ export interface SearchResult {
   subtitle?: string | null;
   url: string;
   icon?: string;
+  snippet?: string | null;
 }
 
 interface SearchResponse {
@@ -73,6 +76,7 @@ const TYPE_LABEL: Record<SearchResultType, string> = {
   bid: "Bids",
   vendor: "Vendors",
   subcontractor: "Subcontractors",
+  call: "Call Transcripts",
 };
 
 const TYPE_BADGE: Record<SearchResultType, string> = {
@@ -83,6 +87,7 @@ const TYPE_BADGE: Record<SearchResultType, string> = {
   bid: "Bid",
   vendor: "Vendor",
   subcontractor: "Sub",
+  call: "Call",
 };
 
 const TYPE_ORDER: SearchResultType[] = [
@@ -93,6 +98,7 @@ const TYPE_ORDER: SearchResultType[] = [
   "contact",
   "vendor",
   "subcontractor",
+  "call",
 ];
 
 function iconFor(type: SearchResultType) {
@@ -111,6 +117,8 @@ function iconFor(type: SearchResultType) {
       return <Truck className="h-4 w-4" />;
     case "subcontractor":
       return <HardHat className="h-4 w-4" />;
+    case "call":
+      return <Phone className="h-4 w-4" />;
   }
 }
 
@@ -319,6 +327,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                         <span className="truncate">{item.title}</span>
                         {item.subtitle && (
                           <span className="text-xs text-muted-foreground truncate">{item.subtitle}</span>
+                        )}
+                        {item.snippet && (
+                          <span
+                            className="text-xs text-muted-foreground italic line-clamp-2"
+                            data-testid={`snippet-${item.type}-${item.id}`}
+                          >
+                            "{item.snippet}"
+                          </span>
                         )}
                       </div>
                       <Badge variant="secondary" className="ml-2 text-[10px] uppercase tracking-wide" data-testid={`badge-${item.type}-${item.id}`}>

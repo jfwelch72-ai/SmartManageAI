@@ -6,6 +6,8 @@ import {
   crmOrganisations,
   crmContacts,
   crmOpportunities,
+  crmCalls,
+  crmCallRecordings,
 } from "@shared/schema";
 import { and, eq, ilike, or, sql, desc, inArray, type SQL, type AnyColumn } from "drizzle-orm";
 import { z } from "zod";
@@ -30,7 +32,8 @@ export type SearchResultType =
   | "project"
   | "bid"
   | "vendor"
-  | "subcontractor";
+  | "subcontractor"
+  | "call";
 
 export interface SearchResult {
   id: string;
@@ -39,6 +42,7 @@ export interface SearchResult {
   subtitle?: string | null;
   url: string;
   icon: string;
+  snippet?: string | null;
 }
 
 const ACTIVE_PROJECT_STATUSES = ["BID", "PLANNING", "ACTIVE"] as const;
@@ -75,6 +79,12 @@ router.get(
     const allowProjects = perms.canAccessProjects === true;
     const allowBids = perms.canViewBids === true;
     const allowCrm = perms.canAccessCRM === true;
+    // Call transcripts are gated more tightly than the rest of CRM data: the
+    // dedicated /api/crm/calls/transcripts/search endpoint is restricted to
+    // pipeline roles (ADMIN/HUSTLER/MANAGER/ESTIMATOR), so global search must
+    // honour the same gate to avoid widening transcript access.
+    const TRANSCRIPT_ROLES = new Set(["ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR", "SUPER_ADMIN"]);
+    const allowCallTranscripts = allowCrm && TRANSCRIPT_ROLES.has(effectiveRole);
     const projectScope = perms.projectScope === "ACTIVE_ONLY" ? "ACTIVE_ONLY" : "ALL";
 
     const like = `%${q.replace(/[\\%_]/g, (m) => `\\${m}`)}%`;
@@ -272,6 +282,51 @@ router.get(
           .limit(perEntityLimit)
       : Promise.resolve([] as Array<{ id: string; name: string; type: string | null; city: string | null; state: string | null }>);
 
+    const callsQuery = allowCallTranscripts
+      ? db
+          .select({
+            callId: crmCalls.id,
+            opportunityId: crmCalls.opportunityId,
+            contactId: crmCalls.contactId,
+            crmOrganisationId: crmCalls.crmOrganisationId,
+            startedAt: crmCalls.startedAt,
+            direction: crmCalls.direction,
+            outcome: crmCalls.outcome,
+            transcript: crmCallRecordings.transcript,
+            opportunityName: crmOpportunities.name,
+            contactFirstName: crmContacts.firstName,
+            contactLastName: crmContacts.lastName,
+            organisationName: crmOrganisations.name,
+          })
+          .from(crmCalls)
+          .innerJoin(crmCallRecordings, eq(crmCallRecordings.callId, crmCalls.id))
+          .leftJoin(crmOpportunities, eq(crmOpportunities.id, crmCalls.opportunityId))
+          .leftJoin(crmContacts, eq(crmContacts.id, crmCalls.contactId))
+          .leftJoin(crmOrganisations, eq(crmOrganisations.id, crmCalls.crmOrganisationId))
+          .where(
+            compose(
+              orgFilter(crmCalls.organizationId),
+              sql`${crmCallRecordings.transcript} IS NOT NULL`,
+              ilike(crmCallRecordings.transcript, like),
+            ),
+          )
+          .orderBy(desc(crmCalls.startedAt))
+          .limit(perEntityLimit)
+      : Promise.resolve([] as Array<{
+          callId: string;
+          opportunityId: string | null;
+          contactId: string | null;
+          crmOrganisationId: string | null;
+          startedAt: Date;
+          direction: string | null;
+          outcome: string | null;
+          transcript: string | null;
+          opportunityName: string | null;
+          contactFirstName: string | null;
+          contactLastName: string | null;
+          organisationName: string | null;
+        }>);
+
     try {
       const [
         projectRows,
@@ -281,6 +336,7 @@ router.get(
         clientOrgRows,
         vendorRows,
         subRows,
+        callRows,
       ] = await Promise.all([
         projectsQuery,
         bidsQuery,
@@ -289,6 +345,7 @@ router.get(
         clientOrgsQuery,
         vendorsQuery,
         subsQuery,
+        callsQuery,
       ]);
 
       const results: SearchResult[] = [];
@@ -352,6 +409,52 @@ router.get(
           subtitle: [v.type, [v.city, v.state].filter(Boolean).join(", ")].filter(Boolean).join(" · "),
           url: `/crm?tab=orgs&organisationId=${encodeURIComponent(v.id)}`,
           icon: "truck",
+        });
+      }
+      for (const c of callRows) {
+        const transcript = c.transcript || "";
+        const lowerT = transcript.toLowerCase();
+        const lowerQ = q.toLowerCase();
+        const idx = lowerT.indexOf(lowerQ);
+        const start = Math.max(0, idx - 60);
+        const end =
+          idx >= 0
+            ? Math.min(transcript.length, idx + q.length + 60)
+            : Math.min(transcript.length, 160);
+        const snippet =
+          (start > 0 ? "…" : "") +
+          transcript.slice(start, end) +
+          (end < transcript.length ? "…" : "");
+
+        const contactName = [c.contactFirstName, c.contactLastName].filter(Boolean).join(" ").trim();
+        const contextName = c.opportunityName || contactName || c.organisationName || "Call";
+        const dateLabel = c.startedAt
+          ? new Date(c.startedAt).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })
+          : null;
+        const directionLabel = c.direction ? c.direction.toLowerCase() : null;
+
+        const queryParams = new URLSearchParams();
+        queryParams.set("q", q);
+        queryParams.set("callId", c.callId);
+        let url: string;
+        if (c.opportunityId) {
+          url = `/crm/deals/${encodeURIComponent(c.opportunityId)}?${queryParams.toString()}`;
+        } else if (c.contactId) {
+          url = `/crm?tab=contacts&contactId=${encodeURIComponent(c.contactId)}&${queryParams.toString()}`;
+        } else if (c.crmOrganisationId) {
+          url = `/crm?tab=orgs&organisationId=${encodeURIComponent(c.crmOrganisationId)}&${queryParams.toString()}`;
+        } else {
+          url = `/crm?${queryParams.toString()}`;
+        }
+
+        results.push({
+          id: c.callId,
+          type: "call",
+          title: `Call · ${contextName}`,
+          subtitle: [dateLabel, directionLabel, c.outcome ?? null].filter(Boolean).join(" · "),
+          url,
+          icon: "phone",
+          snippet,
         });
       }
       for (const s of subRows) {

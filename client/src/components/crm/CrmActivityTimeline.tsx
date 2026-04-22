@@ -181,7 +181,16 @@ export function CrmActivityTimeline({
 
   const [activeTypes, setActiveTypes] = useState<Set<string>>(initial.types);
   const [timeWindow, setTimeWindow] = useState<TimeWindow>(initial.window);
-  const [searchTerm, setSearchTerm] = useState<string>("");
+  const initialSearch = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    const sp = new URLSearchParams(window.location.search);
+    // Only pre-fill from the URL when the link clearly came from a transcript
+    // deep-link (carries callId alongside q). This avoids hijacking unrelated
+    // CRM page query strings that happen to use ?q=.
+    if (!sp.get("callId")) return "";
+    return sp.get("q") ?? "";
+  }, []);
+  const [searchTerm, setSearchTerm] = useState<string>(initialSearch);
 
   useEffect(() => {
     if (urlSync) writeUrlParams(activeTypes, timeWindow);
