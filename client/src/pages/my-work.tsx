@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { format, formatDistanceToNowStrict, isToday, isPast } from "date-fns";
 import {
@@ -325,9 +325,15 @@ export default function MyWorkPage() {
     [sourceParam, filters.status, teamMode, searchDebounced, filters.priority, projectsParam, filters.dueFrom, filters.dueTo],
   );
 
-  const { data, isLoading } = useQuery<MyWorkResponse>({
+  const {
+    data,
+    isLoading,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery<MyWorkResponse, Error, { pages: MyWorkResponse[] }, readonly unknown[], string | undefined>({
     queryKey,
-    queryFn: async () => {
+    queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams();
       if (sourceParam) params.set("source", sourceParam);
       params.set("status", filters.status);
@@ -337,10 +343,13 @@ export default function MyWorkPage() {
       if (projectsParam) params.set("projects", projectsParam);
       if (filters.dueFrom) params.set("dueFrom", filters.dueFrom);
       if (filters.dueTo) params.set("dueTo", filters.dueTo);
+      if (pageParam) params.set("cursor", pageParam);
       const res = await fetch(`/api/me/work?${params.toString()}`, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load work");
       return res.json();
     },
+    initialPageParam: undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
 
   // Fetch projects + users for filters / inline edits
@@ -423,9 +432,14 @@ export default function MyWorkPage() {
 
   // All filtering (search, priority, projects, due-date range, source, status)
   // is applied server-side — we just render whatever the API returns.
-  const items = useMemo(() => (data?.items ?? []) as MyWorkItem[], [data]);
+  const items = useMemo<MyWorkItem[]>(
+    () => (data?.pages ?? []).flatMap((p) => p.items),
+    [data],
+  );
 
-  const counts = data?.counts;
+  // Counts come from the first page only — the server intentionally skips
+  // recomputing them on subsequent cursor pages for performance.
+  const counts = data?.pages?.[0]?.counts;
 
   const groupedRows = useMemo(() => {
     if (grouping === "none") return [{ key: "all", label: "All work", rows: items }];
@@ -734,6 +748,22 @@ export default function MyWorkPage() {
           legend={ALL_SOURCES.map((t) => ({ label: TYPE_META[t].label, colorClass: TYPE_META[t].badgeClass }))}
           testIdPrefix="my-work-calendar"
         />
+      )}
+
+      {items.length > 0 && (hasNextPage || isFetchingNextPage) && (
+        <div className="flex justify-center pt-2" data-testid="load-more-container">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              void fetchNextPage();
+            }}
+            disabled={!hasNextPage || isFetchingNextPage}
+            data-testid="button-load-more"
+          >
+            {isFetchingNextPage ? "Loading more…" : "Load more"}
+          </Button>
+        </div>
       )}
 
       {selectedItem && (
