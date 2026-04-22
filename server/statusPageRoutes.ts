@@ -13,6 +13,12 @@ const router = Router();
 
 // ---------- helpers ----------
 
+type DailyUptime = {
+  date: string; // YYYY-MM-DD (UTC)
+  total: number;
+  ok: number;
+};
+
 type ComponentSummary = {
   id: string;
   key: string;
@@ -23,6 +29,7 @@ type ComponentSummary = {
   uptime30d: number | null;
   lastCheckedAt: string | null;
   lastError: string | null;
+  daily: DailyUptime[];
 };
 
 async function buildComponentSummaries(): Promise<ComponentSummary[]> {
@@ -62,6 +69,25 @@ async function buildComponentSummaries(): Promise<ComponentSummary[]> {
   const aggByComp = new Map<string, any>();
   for (const r of aggRes.rows as any[]) aggByComp.set(r.component_id, r);
 
+  // Daily rollup for the last 90 days (UTC)
+  const dailyRes = await db.execute(sql`
+    SELECT
+      component_id,
+      to_char(date_trunc('day', checked_at AT TIME ZONE 'UTC'), 'YYYY-MM-DD') AS day,
+      COUNT(*)::int AS total,
+      SUM(CASE WHEN ok THEN 1 ELSE 0 END)::int AS ok
+    FROM "status_probes"
+    WHERE checked_at >= (NOW() AT TIME ZONE 'UTC')::date - INTERVAL '89 days'
+    GROUP BY component_id, day
+    ORDER BY day ASC
+  `);
+  const dailyByComp = new Map<string, DailyUptime[]>();
+  for (const r of dailyRes.rows as any[]) {
+    const arr = dailyByComp.get(r.component_id) || [];
+    arr.push({ date: r.day, total: Number(r.total), ok: Number(r.ok) });
+    dailyByComp.set(r.component_id, arr);
+  }
+
   return comps.map((c) => {
     const latest = latestByComp.get(c.id);
     const agg = aggByComp.get(c.id);
@@ -90,15 +116,21 @@ async function buildComponentSummaries(): Promise<ComponentSummary[]> {
       uptime30d,
       lastCheckedAt: latest ? latest.checked_at.toISOString() : null,
       lastError: latest?.ok === false ? latest.error : null,
+      daily: dailyByComp.get(c.id) ?? [],
     };
   });
 }
 
 async function fetchRecentIncidents(days = 90) {
+  // Include any incident that overlaps the window: either it started inside the
+  // window, or it is still open, or it resolved inside the window. This keeps
+  // long-running incidents that began before the window visible on the strip.
   const incRes = await db.execute(sql`
     SELECT id, title, status, impact, affected_components, started_at, resolved_at, postmortem_url, postmortem
     FROM "status_incidents"
     WHERE started_at >= NOW() - (${days} || ' days')::interval
+       OR resolved_at IS NULL
+       OR resolved_at >= NOW() - (${days} || ' days')::interval
     ORDER BY started_at DESC
     LIMIT 50
   `);

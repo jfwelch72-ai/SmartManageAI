@@ -240,6 +240,8 @@ export function SubProcessorsPage() {
 
 type StatusLevel = "operational" | "degraded" | "outage" | "maintenance" | "unknown";
 
+type DailyUptime = { date: string; total: number; ok: number };
+
 type StatusComponent = {
   id: string;
   key: string;
@@ -250,6 +252,7 @@ type StatusComponent = {
   uptime30d: number | null;
   lastCheckedAt: string | null;
   lastError: string | null;
+  daily: DailyUptime[];
 };
 
 type IncidentUpdate = { id: string; status: string; body: string; createdAt: string };
@@ -430,6 +433,88 @@ function IncidentCard({ incident }: { incident: Incident }) {
   );
 }
 
+function build90DayStrip(daily: DailyUptime[], now: Date): Array<{ date: string; total: number; ok: number }> {
+  const map = new Map<string, DailyUptime>();
+  for (const d of daily) map.set(d.date, d);
+  const days: Array<{ date: string; total: number; ok: number }> = [];
+  // Walk the last 90 UTC dates ending today
+  const todayUtc = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  for (let i = 89; i >= 0; i--) {
+    const d = new Date(todayUtc);
+    d.setUTCDate(d.getUTCDate() - i);
+    const key = d.toISOString().slice(0, 10);
+    const entry = map.get(key);
+    days.push({ date: key, total: entry?.total ?? 0, ok: entry?.ok ?? 0 });
+  }
+  return days;
+}
+
+function dayBarClass(total: number, uptime: number | null): string {
+  if (total === 0 || uptime == null) return "bg-muted/60 dark:bg-muted/40";
+  if (uptime >= 0.999) return "bg-emerald-500";
+  if (uptime >= 0.95) return "bg-amber-400";
+  return "bg-red-500";
+}
+
+function formatDateLabel(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric", timeZone: "UTC" });
+}
+
+function incidentsOnDay(component: StatusComponent, dateIso: string, allIncidents: Incident[]): Incident[] {
+  const dayStart = new Date(`${dateIso}T00:00:00Z`).getTime();
+  const dayEnd = dayStart + 24 * 60 * 60 * 1000;
+  return allIncidents.filter((inc) => {
+    const startedAt = new Date(inc.startedAt).getTime();
+    const resolvedAt = inc.resolvedAt ? new Date(inc.resolvedAt).getTime() : Date.now();
+    if (resolvedAt <= dayStart || startedAt >= dayEnd) return false;
+    if (!inc.affectedComponents || inc.affectedComponents.length === 0) return true;
+    return inc.affectedComponents.some((ac) => ac === component.key || ac === component.name || ac === component.id);
+  });
+}
+
+function UptimeStrip({ component, incidents }: { component: StatusComponent; incidents: Incident[] }) {
+  const now = new Date();
+  const days = build90DayStrip(component.daily ?? [], now);
+  const totalProbes = days.reduce((s, d) => s + d.total, 0);
+  const okProbes = days.reduce((s, d) => s + d.ok, 0);
+  const overall90 = totalProbes > 0 ? okProbes / totalProbes : null;
+  const firstWithData = days.find((d) => d.total > 0);
+
+  return (
+    <div className="mt-2" data-testid={`uptime-strip-${component.key}`}>
+      <div className="flex items-end gap-[2px] h-7" role="img" aria-label={`90-day uptime history for ${component.name}`}>
+        {days.map((d) => {
+          const uptime = d.total > 0 ? d.ok / d.total : null;
+          const dayIncidents = incidentsOnDay(component, d.date, incidents);
+          const uptimeText = uptime == null ? "no data" : `${(uptime * 100).toFixed(2)}% uptime`;
+          const incidentText = dayIncidents.length
+            ? `\nIncidents: ${dayIncidents.map((i) => `${i.title} (${i.impact})`).join("; ")}`
+            : "";
+          const title = `${formatDateLabel(d.date)} — ${uptimeText}${incidentText}`;
+          return (
+            <div
+              key={d.date}
+              title={title}
+              data-testid={`uptime-day-${component.key}-${d.date}`}
+              className={`flex-1 min-w-0 h-full rounded-[1px] ${dayBarClass(d.total, uptime)} ${dayIncidents.length ? "ring-1 ring-inset ring-foreground/40" : ""}`}
+            />
+          );
+        })}
+      </div>
+      <div className="flex items-center justify-between mt-1 text-[11px] text-muted-foreground">
+        <span data-testid={`text-uptime-strip-start-${component.key}`}>
+          {firstWithData ? `${formatDateLabel(firstWithData.date)}` : "90 days ago"}
+        </span>
+        <span data-testid={`text-uptime-strip-90d-${component.key}`}>
+          {overall90 == null ? "Awaiting probe data" : `${(overall90 * 100).toFixed(2)}% uptime over 90 days`}
+        </span>
+        <span>Today</span>
+      </div>
+    </div>
+  );
+}
+
 export function StatusPage() {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
@@ -493,25 +578,28 @@ export function StatusPage() {
         {components.map((c) => (
           <div
             key={c.key}
-            className="flex items-start justify-between gap-3 px-4 py-3"
+            className="px-4 py-3"
             data-testid={`status-component-${c.key}`}
           >
-            <div className="min-w-0">
-              <div className="font-medium text-sm">{c.name}</div>
-              <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 mt-0.5">
-                <span>24h uptime: <span className="font-medium text-foreground" data-testid={`text-uptime-24h-${c.key}`}>{fmtUptime(c.uptime24h)}</span></span>
-                <span>30d uptime: <span className="font-medium text-foreground" data-testid={`text-uptime-30d-${c.key}`}>{fmtUptime(c.uptime30d)}</span></span>
-                <span>Last probe: {fmtRelative(c.lastCheckedAt, now)}</span>
-              </div>
-              {c.lastError && c.status !== "operational" && (
-                <div className="text-xs text-red-600 dark:text-red-400 mt-1" data-testid={`text-component-error-${c.key}`}>
-                  {c.lastError}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="font-medium text-sm">{c.name}</div>
+                <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3 mt-0.5">
+                  <span>24h uptime: <span className="font-medium text-foreground" data-testid={`text-uptime-24h-${c.key}`}>{fmtUptime(c.uptime24h)}</span></span>
+                  <span>30d uptime: <span className="font-medium text-foreground" data-testid={`text-uptime-30d-${c.key}`}>{fmtUptime(c.uptime30d)}</span></span>
+                  <span>Last probe: {fmtRelative(c.lastCheckedAt, now)}</span>
                 </div>
-              )}
+                {c.lastError && c.status !== "operational" && (
+                  <div className="text-xs text-red-600 dark:text-red-400 mt-1" data-testid={`text-component-error-${c.key}`}>
+                    {c.lastError}
+                  </div>
+                )}
+              </div>
+              <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${STATUS_STYLES[c.status].cls}`} data-testid={`status-pill-${c.key}`}>
+                {STATUS_STYLES[c.status].label}
+              </span>
             </div>
-            <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium whitespace-nowrap ${STATUS_STYLES[c.status].cls}`} data-testid={`status-pill-${c.key}`}>
-              {STATUS_STYLES[c.status].label}
-            </span>
+            <UptimeStrip component={c} incidents={incidents} />
           </div>
         ))}
       </div>
