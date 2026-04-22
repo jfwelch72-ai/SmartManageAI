@@ -201,6 +201,118 @@ The background job renews each subscription before it expires
 
 ---
 
+## Part 3 — Resend Bounce/Complaint Webhook (Task #858)
+
+Outbound transactional email is sent via Resend (status-page subscriber
+notifications, etc.). When a recipient address is invalid, full, or marks
+the message as spam, Resend reports it via a webhook. Our
+`/api/webhooks/email/resend` endpoint records each event in
+`status_subscriber_email_events` so the admin **Subscribers** tab can
+badge bad addresses and surface bounce reasons inline.
+
+### 3.1 Choose an authentication mode
+
+The endpoint accepts **either** of two auth modes — pick one:
+
+1. **Svix-style signed headers (recommended).** Resend signs every
+   delivery with `svix-id`, `svix-timestamp`, `svix-signature`. We
+   verify the HMAC-SHA256 against the raw request body and reject
+   deliveries with a timestamp skew greater than 5 minutes. Configure
+   by setting:
+
+   ```
+   RESEND_WEBHOOK_SIGNING_SECRET=whsec_********************************
+   ```
+
+   Use the value Resend shows in the dashboard exactly as displayed
+   (the leading `whsec_` is stripped server-side before
+   base64-decoding).
+
+2. **Shared secret in the URL.** Append `?token=<secret>` to the
+   webhook URL and configure the same value as
+   `RESEND_WEBHOOK_SECRET`. The endpoint also accepts the legacy
+   `EMAIL_WEBHOOK_SECRET` for parity with the Gmail/Outlook handlers,
+   but a Resend-specific secret is preferred so it can be rotated
+   without disturbing the inbox push subscriptions.
+
+If both are configured the endpoint will accept whichever proof the
+incoming request presents.
+
+### 3.2 Create the webhook in the Resend dashboard
+
+1. Sign in to <https://resend.com> and open **Webhooks** in the side
+   nav.
+2. Click **Add Webhook**.
+3. **Endpoint URL:**
+
+   - Signed-headers mode: `https://<APP_BASE_URL>/api/webhooks/email/resend`
+   - Shared-secret mode: `https://<APP_BASE_URL>/api/webhooks/email/resend?token=<RESEND_WEBHOOK_SECRET>`
+
+   `<APP_BASE_URL>` is the production host (no trailing slash). Do not
+   include the `https://` prefix twice.
+4. **Events to enable** — at minimum, tick the bounce and complaint
+   families that the handler classifies (see
+   `RESEND_BOUNCE_TYPES` / `RESEND_COMPLAINT_TYPES` in
+   `server/emailWebhookRoutes.ts`):
+
+   - `email.bounced`
+   - `email.delivery_delayed`
+   - `email.failed`
+   - `email.complained`
+
+   Other event types (e.g. `email.delivered`, `email.opened`) are
+   ignored by the handler — enabling them is harmless but adds noise
+   to the Resend delivery logs.
+5. Click **Add**. Resend reveals the **Signing Secret** once; copy it
+   immediately and store it as `RESEND_WEBHOOK_SIGNING_SECRET` in the
+   platform secrets manager. Restart the application so the new value
+   is picked up.
+
+### 3.3 Verify the webhook
+
+1. In Resend's webhook detail page, use **Send test event** (Resend
+   offers a sample `email.bounced` payload).
+2. The endpoint must respond `202 Accepted` with `{ ok: true,
+   accepted: 1 }`. A 401 means the signing-secret HMAC failed or the
+   `?token=` value doesn't match — recheck step 3.1.
+3. In the database, confirm the event was recorded:
+
+   ```sql
+   SELECT email, event_type, provider, reason, received_at
+   FROM status_subscriber_email_events
+   ORDER BY received_at DESC
+   LIMIT 5;
+   ```
+
+   You should see a `provider = 'resend'` row matching the test event.
+4. Open the admin **Status Page → Subscribers** tab. Any subscriber
+   whose address matches the test event's `to` field should now show
+   the bounce/complaint badge.
+
+### 3.4 Troubleshooting Resend deliveries
+
+- **401 on every delivery, signed-headers mode:** the `whsec_…` value
+  was copied with extra whitespace, or the body is being re-serialised
+  by a proxy. We HMAC the raw request bytes captured by
+  `express.json({ verify: rawBodySaver })` — any middleware that
+  rewrites the body before it reaches the handler will break the
+  signature. Check that no compression/transformation is configured in
+  front of `/api/webhooks/email/resend`.
+- **401 on every delivery, shared-secret mode:** URL-encode the secret
+  if it contains characters Resend's URL parser may strip (`#`, `&`,
+  `?`). Easiest fix: regenerate with `openssl rand -hex 32` and update
+  both the dashboard URL and `RESEND_WEBHOOK_SECRET`.
+- **`status_subscriber_email_events` rows never appear** even though
+  the dashboard shows 202 responses: the event type is one we don't
+  classify (e.g. `email.opened`). Confirm the test event is one of the
+  bounce/complaint families listed in step 3.2.
+- **Replay-style deliveries from old timestamps fail with 401:** Svix
+  retries can stall; we reject deliveries older than 5 minutes to
+  mitigate replay. Trigger a fresh test event from the dashboard
+  rather than re-running an old one.
+
+---
+
 ## Verifying End-to-End
 
 Quick smoke test once both providers are configured:
