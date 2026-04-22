@@ -654,7 +654,7 @@ export const takeoffIssueCategoryEnum = pgEnum("takeoff_issue_category", ["QUEST
 export const takeoffIssueStatusEnum = pgEnum("takeoff_issue_status", ["OPEN", "IN_REVIEW", "RESOLVED"]);
 export const offlineSyncStatusEnum = pgEnum("offline_sync_status", ["PENDING", "SYNCED", "FAILED"]);
 export const offlineOperationTypeEnum = pgEnum("offline_operation_type", ["CREATE", "UPDATE", "DELETE"]);
-export const offlineEntityTypeEnum = pgEnum("offline_entity_type", ["TIME_ENTRY", "NOTE", "ISSUE", "VOICE_LOG", "PHOTO", "HAUL_TICKET", "INSPECTOR_REPORT", "SWPPP_INSPECTION"]);
+export const offlineEntityTypeEnum = pgEnum("offline_entity_type", ["TIME_ENTRY", "NOTE", "ISSUE", "VOICE_LOG", "PHOTO", "HAUL_TICKET", "INSPECTOR_REPORT", "SWPPP_INSPECTION", "RFI", "INSPECTION", "DAILY_REPORT", "PUNCH_ITEM", "DRAWING_MARKUP"]);
 
 // Voice Logs table - Voice memo transcriptions from field workers
 export const vendorScoreCategoryEnum = pgEnum("vendor_score_category", ["QUALITY", "TIMELINESS", "COMMUNICATION", "PRICING", "RELIABILITY"]);

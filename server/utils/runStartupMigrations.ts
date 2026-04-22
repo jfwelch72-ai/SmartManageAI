@@ -21,6 +21,7 @@ import { ensureMobilizationTables } from "./ensureMobilizationTables";
 import { ensurePermitTables } from "./ensurePermitTables";
 import { ensureMaterialTestTables } from "./ensureMaterialTestTables";
 import { ensureReportsTables } from "./ensureReportsTables";
+import { ensureMobileExchangeCodes } from "./ensureMobileExchangeCodes";
 import { ensureSocialEngagementColumns } from "./ensureSocialEngagementColumns";
 import { ensureEmailCampaignTables } from "./ensureEmailCampaignTables";
 import { ensureWorkflowTables } from "./ensureWorkflowTables";
@@ -63,6 +64,7 @@ import { ensurePendingContactReassignmentTable } from "./ensurePendingContactRea
 import { ensureCrmOrganisationOwnerColumn } from "./ensureCrmOrganisationOwnerColumn";
 import { ensureSchedulingModuleEnhancements } from "./ensureSchedulingModuleEnhancements";
 import { ensureStatusPageTables } from "./ensureStatusPageTables";
+import { ensureMobileOfflineEnumValues } from "./ensureMobileOfflineEnumValues";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -94,6 +96,7 @@ const migrations: MigrationStep[] = [
   { name: "permit_tables", category: "CREATE_TABLE", fn: ensurePermitTables },
   { name: "material_test_tables", category: "CREATE_TABLE", fn: ensureMaterialTestTables },
   { name: "project_reports_table", category: "CREATE_TABLE", fn: ensureReportsTables },
+  { name: "mobile_exchange_codes_table", category: "CREATE_TABLE", fn: ensureMobileExchangeCodes },
   { name: "social_engagement_columns", category: "ADD_COLUMN", fn: ensureSocialEngagementColumns },
   { name: "email_campaign_tables", category: "CREATE_TABLE", fn: ensureEmailCampaignTables },
   { name: "workflow_tables", category: "CREATE_TABLE", fn: ensureWorkflowTables },
@@ -135,6 +138,7 @@ const migrations: MigrationStep[] = [
   { name: "crm_organisation_owner_column", category: "ADD_COLUMN", fn: ensureCrmOrganisationOwnerColumn },
   { name: "scheduling_module_enhancements", category: "CREATE_TABLE", fn: ensureSchedulingModuleEnhancements },
   { name: "status_page_tables", category: "CREATE_TABLE", fn: ensureStatusPageTables },
+  { name: "mobile_offline_enum_values", category: "ADD_ENUM", fn: ensureMobileOfflineEnumValues },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

@@ -4,6 +4,7 @@ import { eq, and } from "drizzle-orm";
 import { sendNotificationEmail } from "../email";
 import { sendEmail } from "./emailService";
 import { sendPushToUser } from "./pushService";
+import { sendNativePushToUser } from "./nativePushService";
 import { sendSms, isTwilioConfigured } from "./smsService";
 import { sendTeamsMessage } from "./teamsService";
 import { sendSlackMessage } from "./slackService";
@@ -498,11 +499,24 @@ async function deliverPush(userId: string, notification: NotificationRecord): Pr
   const baseUrl = process.env.APP_BASE_URL || "";
   const { actionUrl } = composeEmailContent(notification);
   const url = actionUrl || baseUrl || "/";
-  await sendPushToUser(userId, {
-    title: notification.title,
-    message: notification.message,
-    url,
-  });
+  await Promise.allSettled([
+    sendPushToUser(userId, {
+      title: notification.title,
+      message: notification.message,
+      url,
+    }),
+    sendNativePushToUser(userId, {
+      title: notification.title,
+      message: notification.message,
+      url,
+      data: {
+        notificationId: notification.id,
+        type: notification.type,
+        relatedEntityId: notification.relatedEntityId ?? null,
+        relatedEntityType: notification.relatedEntityType ?? null,
+      },
+    }),
+  ]);
 }
 
 function deliverTeams(webhookUrl: string | null, notification: NotificationRecord): void {

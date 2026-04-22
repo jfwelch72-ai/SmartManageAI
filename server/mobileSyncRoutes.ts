@@ -2,7 +2,7 @@ import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { requireAuth, type AuthRequest } from "./auth";
-import { mobileDevices, offlineSyncQueue, mobilePendingUploads, projects, timeClockShifts, haulTickets, dailyInspectorReports, swpppInspections } from "@shared/schema";
+import { mobileDevices, offlineSyncQueue, mobilePendingUploads, projects, timeClockShifts, haulTickets, dailyInspectorReports, swpppInspections, rfis } from "@shared/schema";
 import { eq, and, count, max, desc, gte } from "drizzle-orm";
 import { z } from "zod";
 import crypto from "crypto";
@@ -10,7 +10,7 @@ import crypto from "crypto";
 const router = Router();
 
 // Mobile sync typed contracts (shared by GET/POST sync handlers)
-type SyncEntityKey = "HAUL_TICKET" | "INSPECTOR_REPORT" | "SWPPP_INSPECTION";
+type SyncEntityKey = "HAUL_TICKET" | "INSPECTOR_REPORT" | "SWPPP_INSPECTION" | "RFI";
 type OfflineOperation = "CREATE" | "UPDATE" | "DELETE";
 type MobileSyncRecord = {
   id?: string;
@@ -59,6 +59,17 @@ const lookupServerRow: Record<SyncEntityKey, (id: string, orgId: string) => Prom
       .select({ updatedAt: swpppInspections.updatedAt })
       .from(swpppInspections)
       .where(and(eq(swpppInspections.id, id), eq(swpppInspections.organizationId, orgId)))
+      .limit(1);
+    return row;
+  },
+  // Task #798: RFIs are first-class on the web AND queued from mobile, so
+  // conflict detection (server-vs-client updatedAt comparison) applies the
+  // same way as the legacy entities above.
+  RFI: async (id, orgId) => {
+    const [row] = await db
+      .select({ updatedAt: rfis.updatedAt })
+      .from(rfis)
+      .where(and(eq(rfis.id, id), eq(rfis.organizationId, orgId)))
       .limit(1);
     return row;
   },
@@ -389,6 +400,16 @@ router.get("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest,
       ))
       .limit(100);
 
+    // RFIs are first-class on the web — pull them so the mobile RFI screen
+    // can render server-backed data (not just locally-queued drafts).
+    const rfiChanges = await db.select()
+      .from(rfis)
+      .where(and(
+        eq(rfis.organizationId, organizationId),
+        gte(rfis.updatedAt, syncTime)
+      ))
+      .limit(100);
+
     if (deviceId) {
       await db.update(mobileDevices)
         .set({ lastSyncAt: new Date(), syncToken: nextSyncToken })
@@ -411,6 +432,7 @@ router.get("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest,
         haulTickets: haulChanges,
         dailyInspectorReports: idrChanges,
         swpppInspections: swpppChanges,
+        rfis: rfiChanges,
       },
     });
   } catch (error) {
@@ -433,8 +455,43 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
         haulTickets?: MobileSyncRecord[];
         dailyInspectorReports?: MobileSyncRecord[];
         swpppInspections?: MobileSyncRecord[];
+        // Task #798: native mobile field workflows. These are queued into
+        // mobilePendingUploads using the same pattern as timeClockEvents and
+        // attachments — office staff process them through the existing
+        // mobile-pending-uploads worker. Persisting them here closes the gap
+        // where mobile screens were enqueueing records that never reached
+        // the server.
+        photos?: Array<{ localId: string; [k: string]: unknown }>;
+        punchItems?: Array<{ localId: string; [k: string]: unknown }>;
+        rfis?: Array<{ localId: string; [k: string]: unknown }>;
+        inspections?: Array<{ localId: string; [k: string]: unknown }>;
+        dailyReports?: Array<{ localId: string; [k: string]: unknown }>;
+        drawingMarkups?: Array<{ localId: string; [k: string]: unknown }>;
       };
     };
+    // CRITICAL: mobile_pending_uploads.device_id is a FK to mobileDevices.id
+    // (UUID PK), but the mobile client sends the installation `deviceId`
+    // (text/unique column on mobileDevices). Resolve the text id to the row
+    // PK before any insert; if the device hasn't called /register yet, return
+    // a structured 412 so the client can register and retry rather than
+    // silently swallowing FK violations.
+    let devicePk: string | null = null;
+    if (deviceId) {
+      const [device] = await db
+        .select({ id: mobileDevices.id })
+        .from(mobileDevices)
+        .where(and(eq(mobileDevices.deviceId, deviceId), eq(mobileDevices.userId, userId)))
+        .limit(1);
+      if (!device) {
+        return res.status(412).json({
+          error: "Device not registered",
+          code: "DEVICE_NOT_REGISTERED",
+          hint: "POST /api/ai-features/mobile/register before syncing.",
+        });
+      }
+      devicePk = device.id;
+    }
+
     const processed: {
       timeClockEvents: ProcessedItem[];
       dailyLogs: ProcessedItem[];
@@ -443,13 +500,21 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
       dailyInspectorReports: ProcessedItem[];
       swpppInspections: ProcessedItem[];
       attachments: ProcessedItem[];
-    } = { timeClockEvents: [], dailyLogs: [], photos: [], haulTickets: [], dailyInspectorReports: [], swpppInspections: [], attachments: [] };
+      punchItems: ProcessedItem[];
+      rfis: ProcessedItem[];
+      inspections: ProcessedItem[];
+      dailyReports: ProcessedItem[];
+      drawingMarkups: ProcessedItem[];
+    } = { timeClockEvents: [], dailyLogs: [], photos: [], haulTickets: [], dailyInspectorReports: [], swpppInspections: [], attachments: [], punchItems: [], rfis: [], inspections: [], dailyReports: [], drawingMarkups: [] };
     const conflicts: ConflictItem[] = [];
 
     if (changes?.timeClockEvents) {
+      if (!devicePk) {
+        return res.status(412).json({ error: "deviceId is required for time clock sync", code: "DEVICE_NOT_REGISTERED" });
+      }
       for (const event of changes.timeClockEvents) {
         await db.insert(mobilePendingUploads).values({
-          deviceId,
+          deviceId: devicePk,
           localId: event.localId,
           recordType: "TIME_CLOCK_EVENT",
           recordDataJson: JSON.stringify(event),
@@ -467,7 +532,15 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
       // cross-tenant metadata leakage. If the server is newer, do not queue —
       // record a FAILED row in the existing offlineSyncQueue conflict pipeline
       // so the GET /conflicts endpoint surfaces it for resolution.
-      if (record.id && record.clientTimestamp) {
+      // Mobile clients flag user-resolved "keep my changes" pushes with
+      // _resolution: "LOCAL_WINS" in the payload so the server skips the
+      // timestamp-based conflict check and accepts the local version.
+      // Without this override the next push after resolution would loop
+      // back into a CONFLICT response.
+      const overrideLocalWins =
+        (record as { _resolution?: string })._resolution === "LOCAL_WINS" ||
+        (record as { payload?: { _resolution?: string } })?.payload?._resolution === "LOCAL_WINS";
+      if (!overrideLocalWins && record.id && record.clientTimestamp) {
         const server = await lookupServerRow[entityType](record.id, organizationId);
         if (server?.updatedAt && new Date(record.clientTimestamp) < server.updatedAt) {
           const serverIso = server.updatedAt.toISOString();
@@ -508,11 +581,11 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
         clientTimestamp: record.clientTimestamp ? new Date(record.clientTimestamp) : null,
       });
       // Queue any inline attachments to mobilePendingUploads for binary upload
-      if (Array.isArray(record.attachments)) {
+      if (Array.isArray(record.attachments) && devicePk) {
         for (const att of record.attachments) {
           if (!att?.localId) continue;
           await db.insert(mobilePendingUploads).values({
-            deviceId,
+            deviceId: devicePk,
             localId: att.localId,
             recordType: `${entityType}_ATTACHMENT`,
             recordDataJson: JSON.stringify({
@@ -548,6 +621,50 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
       }
     }
 
+    // Task #798: queue native field-app entities into mobilePendingUploads.
+    // These are kept distinct from the legacy offlineSyncQueue conflict
+    // pipeline because they currently have no first-class table to merge
+    // against — office processing materialises them server-side. Conflict
+    // detection for these entities will land alongside their dedicated
+    // tables in a follow-up.
+    const queuePending = async (
+      list: Array<{ localId: string; [k: string]: unknown }> | undefined,
+      recordType: string,
+      bucket: ProcessedItem[]
+    ): Promise<void> => {
+      if (!Array.isArray(list) || list.length === 0) return;
+      // mobilePendingUploads.deviceId is a FK to mobileDevices.id (UUID PK).
+      // Use the resolved devicePk — never the raw installation deviceId
+      // string from the request — or the insert violates the FK.
+      if (!devicePk) {
+        throw new Error("DEVICE_NOT_REGISTERED");
+      }
+      for (const item of list) {
+        if (!item?.localId) continue;
+        await db.insert(mobilePendingUploads).values({
+          deviceId: devicePk,
+          localId: item.localId,
+          recordType,
+          recordDataJson: JSON.stringify(item),
+          status: "PENDING",
+        });
+        bucket.push({ localId: item.localId, status: "QUEUED" });
+      }
+    };
+    await queuePending(changes?.photos, "PHOTO", processed.photos);
+    await queuePending(changes?.punchItems, "PUNCH_ITEM", processed.punchItems);
+    // Task #798: RFIs go through the conflict-detecting offline queue so a
+    // server-side edit made while a mobile user is offline is reconciled
+    // through the same UNRESOLVED-conflicts UI as inspector reports.
+    if (Array.isArray(changes?.rfis)) {
+      for (const r of changes.rfis) {
+        processed.rfis.push(await queueOffline("RFI", r as MobileSyncRecord));
+      }
+    }
+    await queuePending(changes?.inspections, "INSPECTION", processed.inspections);
+    await queuePending(changes?.dailyReports, "DAILY_REPORT", processed.dailyReports);
+    await queuePending(changes?.drawingMarkups, "DRAWING_MARKUP", processed.drawingMarkups);
+
     res.json({
       success: true,
       processed,
@@ -555,6 +672,9 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
       serverTime: new Date().toISOString(),
     });
   } catch (error) {
+    if (error instanceof Error && error.message === "DEVICE_NOT_REGISTERED") {
+      return res.status(412).json({ error: "Device not registered", code: "DEVICE_NOT_REGISTERED" });
+    }
     next(error);
   }
 });

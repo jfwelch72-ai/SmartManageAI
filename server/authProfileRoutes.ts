@@ -614,9 +614,18 @@ const upload = multer({
           .limit(1);
 
         if (ssoConfig && ssoConfig.enabled && ssoConfig.enforceSSO) {
+          // Include the org slug so clients (esp. the native mobile app)
+          // can immediately pivot to /api/sso/:slug/login without an extra
+          // round-trip to look it up.
+          const [org] = await db
+            .select({ slug: organizations.slug })
+            .from(organizations)
+            .where(eq(organizations.id, user.organizationId))
+            .limit(1);
           res.status(403).json({
             error: "SSO is required for your organization. Please sign in via SSO.",
             ssoEnforced: true,
+            ssoSlug: org?.slug ?? null,
           });
           return;
         }
@@ -672,7 +681,11 @@ const upload = multer({
       }
 
       const { passwordHash, tokenVersion, ...userWithoutPassword } = user;
-      res.json({ user: userWithoutPassword });
+      // Mobile clients (which cannot reliably read Set-Cookie headers from
+      // fetch() in React Native) opt in to a JSON-token response by sending
+      // the X-Mobile-Client header. Web clients keep cookie-only behavior.
+      const wantsToken = String(req.headers["x-mobile-client"] ?? "").trim() !== "";
+      res.json(wantsToken ? { user: userWithoutPassword, token } : { user: userWithoutPassword });
     } catch (error) {
       next(error);
     }
@@ -2224,5 +2237,91 @@ const upload = multer({
       next(error);
     }
   });
+
+// Task #798 — Mobile SSO handoff. The native field app cannot share cookies
+// with the system browser, so when an org enforces SSO the mobile app opens
+// /api/sso/:slug/login (with a redirect=/api/auth/mobile-exchange?...
+// RelayState) in a system browser tab. Once the cookie session is
+// established the browser hits this exchange endpoint, which mints a
+// short-lived (60 s) one-time code and 302s back to the registered
+// smartmanageai:// deep link carrying the *code* — never a raw JWT.
+//
+// The mobile app catches the deep link and POSTs the code to
+// /api/auth/mobile-exchange/redeem to atomically swap it for the JWT. This
+// avoids logging the JWT in the system browser history / OS deep-link logs
+// and tightly binds the token to a single redeeming caller (the app).
+// Exchange codes are persisted to mobile_exchange_codes (see
+// utils/ensureMobileExchangeCodes.ts). Postgres is the source of truth so
+// redemption succeeds across multi-instance deployments and survives
+// restarts within the 60 s TTL window.
+import { pool as exchangePool } from "./db";
+function newExchangeCode(): string {
+  return crypto.randomBytes(32).toString("base64url");
+}
+async function pruneExchangeCodes(): Promise<void> {
+  await exchangePool.query("DELETE FROM mobile_exchange_codes WHERE expires_at <= NOW()");
+}
+
+router.get("/api/auth/mobile-exchange", async (req: AuthRequest, res, next) => {
+  try {
+    if (!req.user) {
+      const fallback = `/login?redirect=${encodeURIComponent(req.originalUrl)}`;
+      res.redirect(302, fallback);
+      return;
+    }
+    const redirect = String(req.query.redirect || "");
+    if (!/^smartmanageai:\/\//i.test(redirect)) {
+      res.status(400).json({ error: "redirect must be a smartmanageai:// deep link" });
+      return;
+    }
+    const [u] = await db
+      .select({ id: users.id, tokenVersion: users.tokenVersion })
+      .from(users)
+      .where(eq(users.id, req.user.id))
+      .limit(1);
+    if (!u) {
+      res.status(401).json({ error: "User not found" });
+      return;
+    }
+    await pruneExchangeCodes();
+    const code = newExchangeCode();
+    await exchangePool.query(
+      `INSERT INTO mobile_exchange_codes (code, user_id, token_version, expires_at)
+       VALUES ($1, $2, $3, NOW() + INTERVAL '60 seconds')`,
+      [code, u.id, u.tokenVersion ?? 0]
+    );
+    const sep = redirect.includes("?") ? "&" : "?";
+    res.redirect(302, `${redirect}${sep}code=${encodeURIComponent(code)}`);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/api/auth/mobile-exchange/redeem", async (req, res, next) => {
+  try {
+    const code = String(req.body?.code || "");
+    if (!code) {
+      res.status(400).json({ error: "code is required" });
+      return;
+    }
+    // Atomic single-use redemption: DELETE … RETURNING in a single statement
+    // means a replayed code can never mint two JWTs even under concurrent
+    // requests, and the row only matches if it has not yet expired.
+    const { rows } = await exchangePool.query<{ user_id: string; token_version: number }>(
+      `DELETE FROM mobile_exchange_codes
+       WHERE code = $1 AND expires_at > NOW()
+       RETURNING user_id, token_version`,
+      [code]
+    );
+    if (rows.length === 0) {
+      res.status(401).json({ error: "Code is invalid or expired" });
+      return;
+    }
+    const token = generateToken(rows[0].user_id, rows[0].token_version);
+    res.json({ token });
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default router;

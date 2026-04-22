@@ -69,3 +69,8 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   Microsoft 365 (Mail, Calendar)
 *   DocuSign
 *   @node-saml/node-saml
+## Native Mobile Field App
+- `mobile/` — Expo + React Native (TypeScript) field app: offline-first SQLite cache + outbox, sync coordinator against `mobileSyncRoutes`, push tokens via Expo, SSO with the same `auth_token` cookie. Screens: daily reports, time clock (GPS), photos, punch list, RFI, inspections, drawings, conflicts.
+- `server/services/nativePushService.ts` — sends Expo push to all `mobileDevices.pushToken` for a user. Wired into `notificationDelivery.deliverPush` so any event that already triggers web push also reaches native.
+- `.github/workflows/mobile-eas-build.yml` — EAS preview builds for iOS + Android on changes under `mobile/`.
+- Builds and store submissions (TestFlight, Play Internal) require EAS credentials and an Apple Developer + Google Play account; cannot be performed from Replit.

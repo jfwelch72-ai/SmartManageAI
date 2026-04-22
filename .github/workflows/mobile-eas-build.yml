@@ -1,0 +1,53 @@
+name: Mobile EAS Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile-eas-build.yml"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: "EAS build profile"
+        required: true
+        default: "preview"
+        type: choice
+        options: [development, preview, production]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Expo + EAS CLI
+        run: npm install -g eas-cli
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Authenticate Expo
+        run: echo "EXPO_TOKEN configured"
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build iOS (${{ github.event.inputs.profile || 'preview' }})
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas build -p ios --profile ${{ github.event.inputs.profile || 'preview' }} --non-interactive --no-wait
+
+      - name: Build Android (${{ github.event.inputs.profile || 'preview' }})
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: eas build -p android --profile ${{ github.event.inputs.profile || 'preview' }} --non-interactive --no-wait

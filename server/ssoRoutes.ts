@@ -214,7 +214,16 @@ router.get("/:orgSlug/login", async (req: AuthRequest, res: Response, next: Next
       nameIDFormat: "urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress",
     });
 
-    const loginUrl = await saml.getAuthorizeUrlAsync("", req.headers.host || "", {});
+    // Carry the optional `redirect` query param through to the callback via
+    // SAML RelayState. Whitelist relative paths so the redirect cannot be
+    // weaponised as an open-redirect into a third-party host.
+    const requestedRedirect = String(req.query.redirect || "").trim();
+    const relayState =
+      requestedRedirect.startsWith("/") && !requestedRedirect.startsWith("//")
+        ? requestedRedirect
+        : "";
+
+    const loginUrl = await saml.getAuthorizeUrlAsync(relayState, req.headers.host || "", {});
     return res.redirect(loginUrl);
   } catch (error: any) {
         return next(error);
@@ -319,7 +328,12 @@ router.post("/:orgSlug/callback", async (req: AuthRequest, res: Response, next: 
     const token = generateToken(existingUser.id, existingUser.tokenVersion ?? 0);
     setAuthCookie(res, token);
 
-    return res.redirect("/dashboard");
+    // Honour the redirect carried via SAML RelayState (set by the
+    // /:orgSlug/login handler). Validation: only allow same-origin paths
+    // to prevent open-redirect abuse.
+    const relay = typeof req.body?.RelayState === "string" ? req.body.RelayState : "";
+    const safeRelay = relay && relay.startsWith("/") && !relay.startsWith("//") ? relay : null;
+    return res.redirect(safeRelay ?? "/dashboard");
   } catch (error: any) {
         return next(error);
   }
