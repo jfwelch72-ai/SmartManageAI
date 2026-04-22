@@ -69,6 +69,7 @@ import { ensureMobileOfflineEnumValues } from "./ensureMobileOfflineEnumValues";
 import { ensureCrmEmailLoggingTables } from "./ensureCrmEmailLoggingTables";
 import { ensureUsersManagerIdColumn } from "./ensureUsersManagerIdColumn";
 import { ensureProjectTemplateTables } from "./ensureProjectTemplateTables";
+import { ensureCrmCallTables } from "./ensureCrmCallTables";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -147,6 +148,7 @@ const migrations: MigrationStep[] = [
   { name: "crm_email_logging_tables", category: "CREATE_TABLE", fn: ensureCrmEmailLoggingTables },
   { name: "users_manager_id_column", category: "ADD_COLUMN", fn: ensureUsersManagerIdColumn },
   { name: "project_template_tables", category: "CREATE_TABLE", fn: ensureProjectTemplateTables },
+  { name: "crm_call_tables", category: "CREATE_TABLE", fn: ensureCrmCallTables },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

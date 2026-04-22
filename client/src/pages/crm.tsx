@@ -84,6 +84,7 @@ import {
   type OrgFormState,
 } from "@/components/crm/CrmOrgDialogs";
 import { CrmContactDialogs } from "@/components/crm/CrmContactDialogs";
+import { LogCallDialog } from "@/components/crm/LogCallDialog";
 import { CrmBirthdaysWidget } from "@/components/crm/CrmBirthdaysWidget";
 import { EnrollSequenceDialog } from "@/components/crm/EnrollSequenceDialog";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -723,6 +724,7 @@ export default function CRMPage() {
     setSelectedOrgIds(new Set());
   }, [crmTab, searchTerm, selectedType, statusFilter, stateFilter, specialtyFilters, orgOwnerFilter]);
   const [showFilters, setShowFilters] = useState(false);
+  const [logCallTarget, setLogCallTarget] = useState<{ contactId?: string; crmOrganisationId?: string; toNumber?: string } | null>(null);
 
   const [dupOpen, setDupOpen] = useState(false);
   const [mergePair, setMergePair] = useState<DupPair | null>(null);
@@ -1604,6 +1606,19 @@ export default function CRMPage() {
                               )}
                             </td>
                             <td className="px-4 py-3 text-right" onClick={(e) => e.stopPropagation()}>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                title="Log call"
+                                onClick={() => setLogCallTarget({
+                                  contactId: contact.id,
+                                  crmOrganisationId: contact.organisationId ?? undefined,
+                                  toNumber: contact.phone ?? "",
+                                })}
+                                data-testid={`button-log-call-row-${contact.id}`}
+                              >
+                                <Phone className="w-4 h-4" />
+                              </Button>
                               <EnrollSequenceDialog
                                 contactIds={[contact.id]}
                                 trigger={
@@ -2463,6 +2478,15 @@ export default function CRMPage() {
           </DialogContent>
         </Dialog>
       )}
+
+      <LogCallDialog
+        open={!!logCallTarget}
+        onOpenChange={(open) => { if (!open) setLogCallTarget(null); }}
+        contactId={logCallTarget?.contactId}
+        crmOrganisationId={logCallTarget?.crmOrganisationId}
+        defaultToNumber={logCallTarget?.toNumber}
+        invalidateKeys={[["/api/crm/calls"], ["/api/crm/activity"]]}
+      />
     </div>
   );
 }

@@ -1,0 +1,778 @@
+/**
+ * Task #890 — CRM Call Logging + Unified Activity Timeline
+ *
+ * - GET    /api/crm/calls                          (list with filters)
+ * - POST   /api/crm/calls                          (manual log)
+ * - PATCH  /api/crm/calls/:id                      (edit single)
+ * - DELETE /api/crm/calls/:id
+ * - PATCH  /api/crm/calls/bulk                     (bulk edit outcome/notes)
+ * - POST   /api/crm/calls/click-to-call            (Twilio outbound, gated)
+ * - POST   /api/crm/calls/twilio/webhook           (Twilio status callback)
+ * - GET    /api/crm/contacts/:id/calls
+ * - GET    /api/crm/opportunities/:id/calls
+ * - GET    /api/crm/activity                       (unified merged timeline)
+ */
+
+import { Router } from "express";
+import { and, desc, eq, gte, lte, inArray, sql, type SQL } from "drizzle-orm";
+import { z } from "zod";
+import twilio from "twilio";
+import { db } from "./db";
+import {
+  crmCalls,
+  crmCallRecordings,
+  crmContacts,
+  crmOpportunities,
+  crmOpportunityActivities,
+  crmEmailMessages,
+  crmQuotes,
+  users,
+  insertCrmCallSchema,
+} from "@shared/schema";
+import {
+  requireAuth,
+  requireRole,
+  requireRoleOrFeature,
+  type AuthRequest,
+} from "./auth";
+import { getOrgIdForFilter } from "./orgFilter";
+import { isFeatureEnabled } from "./services/featureFlagService";
+import { logError, logInfo, logWarn } from "./utils/logger";
+import { eventBus } from "./events";
+
+const router = Router();
+
+const PIPELINE_ROLES = ["ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"] as const;
+const EDIT_ROLES = ["ADMIN", "HUSTLER", "MANAGER", "ESTIMATOR"] as const;
+
+const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
+const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
+const TWILIO_FROM_NUMBER = process.env.TWILIO_FROM_NUMBER || "";
+
+function resolveOrg(req: AuthRequest, res: any): string | null {
+  const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+  if (mustDenyAccess) {
+    res.status(403).json({ error: "Access denied" });
+    return null;
+  }
+  if (shouldFilter && orgId) return orgId;
+  return req.user?.organizationId || null;
+}
+
+const callDirection = z.enum(["INBOUND", "OUTBOUND"]);
+const callOutcome = z.enum([
+  "CONNECTED",
+  "VOICEMAIL",
+  "NO_ANSWER",
+  "BUSY",
+  "FAILED",
+  "WRONG_NUMBER",
+  "MEETING_SCHEDULED",
+]);
+
+const logCallSchema = z.object({
+  opportunityId: z.string().optional().nullable(),
+  contactId: z.string().optional().nullable(),
+  crmOrganisationId: z.string().optional().nullable(),
+  direction: callDirection.default("OUTBOUND"),
+  outcome: callOutcome.optional().nullable(),
+  fromNumber: z.string().optional().nullable(),
+  toNumber: z.string().optional().nullable(),
+  durationSeconds: z.number().int().min(0).default(0),
+  startedAt: z.coerce.date().optional(),
+  notes: z.string().max(5000).optional().nullable(),
+});
+
+// ---------------------------------------------------------------------------
+// LIST
+// ---------------------------------------------------------------------------
+router.get(
+  "/api/crm/calls",
+  requireAuth,
+  requireRole(...PIPELINE_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+
+      const opportunityId = req.query.opportunityId as string | undefined;
+      const contactId = req.query.contactId as string | undefined;
+      const crmOrganisationId = req.query.crmOrganisationId as string | undefined;
+      const limit = Math.min(parseInt((req.query.limit as string) || "100", 10), 500);
+
+      const conds: SQL[] = [eq(crmCalls.organizationId, orgId)];
+      if (opportunityId) conds.push(eq(crmCalls.opportunityId, opportunityId));
+      if (contactId) conds.push(eq(crmCalls.contactId, contactId));
+      if (crmOrganisationId) conds.push(eq(crmCalls.crmOrganisationId, crmOrganisationId));
+
+      const rows = await db
+        .select({
+          id: crmCalls.id,
+          opportunityId: crmCalls.opportunityId,
+          contactId: crmCalls.contactId,
+          crmOrganisationId: crmCalls.crmOrganisationId,
+          direction: crmCalls.direction,
+          outcome: crmCalls.outcome,
+          status: crmCalls.status,
+          fromNumber: crmCalls.fromNumber,
+          toNumber: crmCalls.toNumber,
+          durationSeconds: crmCalls.durationSeconds,
+          startedAt: crmCalls.startedAt,
+          endedAt: crmCalls.endedAt,
+          notes: crmCalls.notes,
+          source: crmCalls.source,
+          twilioCallSid: crmCalls.twilioCallSid,
+          createdById: crmCalls.createdById,
+          createdAt: crmCalls.createdAt,
+          createdByFirstName: users.firstName,
+          createdByLastName: users.lastName,
+        })
+        .from(crmCalls)
+        .leftJoin(users, eq(users.id, crmCalls.createdById))
+        .where(and(...conds))
+        .orderBy(desc(crmCalls.startedAt))
+        .limit(limit);
+
+      res.json(rows);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// CREATE (manual log)
+// ---------------------------------------------------------------------------
+router.post(
+  "/api/crm/calls",
+  requireAuth,
+  requireRoleOrFeature([...EDIT_ROLES], "canLogCrmCalls"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+
+      const parsed = logCallSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+      }
+      const data = parsed.data;
+
+      const startedAt = data.startedAt ?? new Date();
+      const [created] = await db
+        .insert(crmCalls)
+        .values({
+          organizationId: orgId,
+          opportunityId: data.opportunityId || null,
+          contactId: data.contactId || null,
+          crmOrganisationId: data.crmOrganisationId || null,
+          direction: data.direction,
+          outcome: data.outcome || null,
+          status: "LOGGED",
+          fromNumber: data.fromNumber || null,
+          toNumber: data.toNumber || null,
+          durationSeconds: data.durationSeconds,
+          startedAt,
+          endedAt: data.durationSeconds > 0
+            ? new Date(startedAt.getTime() + data.durationSeconds * 1000)
+            : null,
+          notes: data.notes || null,
+          source: "MANUAL",
+          createdById: req.user!.id,
+        })
+        .returning();
+
+      // Mirror to opportunity activities for legacy listings.
+      if (created.opportunityId) {
+        await db.insert(crmOpportunityActivities).values({
+          opportunityId: created.opportunityId,
+          activityType: "CALL",
+          description: data.notes || `Call ${data.direction.toLowerCase()} (${data.outcome || "logged"})`,
+          completedAt: startedAt,
+          createdById: req.user!.id,
+        });
+      }
+
+      await eventBus.emit({
+        type: "crm.call_logged",
+        version: 1,
+        orgId,
+        actorId: req.user!.id,
+        timestamp: new Date(),
+        payload: {
+          callId: created.id,
+          opportunityId: created.opportunityId,
+          contactId: created.contactId,
+          direction: created.direction,
+          outcome: created.outcome,
+        },
+      });
+
+      res.status(201).json(created);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// PATCH single
+// ---------------------------------------------------------------------------
+const patchCallSchema = z.object({
+  outcome: callOutcome.optional().nullable(),
+  notes: z.string().max(5000).optional().nullable(),
+  durationSeconds: z.number().int().min(0).optional(),
+});
+
+router.patch(
+  "/api/crm/calls/bulk",
+  requireAuth,
+  requireRoleOrFeature([...EDIT_ROLES], "canLogCrmCalls"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+
+      const schema = z.object({
+        ids: z.array(z.string()).min(1).max(200),
+        outcome: callOutcome.optional().nullable(),
+        notes: z.string().max(5000).optional().nullable(),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+      }
+      const { ids, outcome, notes } = parsed.data;
+      const update: Record<string, unknown> = { updatedAt: new Date() };
+      if (outcome !== undefined) update.outcome = outcome;
+      if (notes !== undefined) update.notes = notes;
+      if (Object.keys(update).length <= 1) {
+        return res.status(400).json({ error: "No fields to update" });
+      }
+
+      const result = await db
+        .update(crmCalls)
+        .set(update)
+        .where(and(eq(crmCalls.organizationId, orgId), inArray(crmCalls.id, ids)))
+        .returning({ id: crmCalls.id });
+
+      res.json({ updated: result.length, ids: result.map((r) => r.id) });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+router.patch(
+  "/api/crm/calls/:id",
+  requireAuth,
+  requireRoleOrFeature([...EDIT_ROLES], "canLogCrmCalls"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+
+      const parsed = patchCallSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+      }
+
+      const [updated] = await db
+        .update(crmCalls)
+        .set({ ...parsed.data, updatedAt: new Date() })
+        .where(and(eq(crmCalls.organizationId, orgId), eq(crmCalls.id, req.params.id)))
+        .returning();
+      if (!updated) return res.status(404).json({ error: "Call not found" });
+      res.json(updated);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+router.delete(
+  "/api/crm/calls/:id",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+      const result = await db
+        .delete(crmCalls)
+        .where(and(eq(crmCalls.organizationId, orgId), eq(crmCalls.id, req.params.id)))
+        .returning({ id: crmCalls.id });
+      if (!result.length) return res.status(404).json({ error: "Call not found" });
+      res.json({ success: true });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Click-to-call (Twilio gated by feature flag)
+// ---------------------------------------------------------------------------
+router.post(
+  "/api/crm/calls/click-to-call",
+  requireAuth,
+  requireRoleOrFeature([...EDIT_ROLES], "canLogCrmCalls"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+
+      const enabled = await isFeatureEnabled(orgId, "TWILIO_INTEGRATION");
+      if (!enabled) {
+        return res.status(403).json({ error: "Twilio click-to-call is not enabled for this organization." });
+      }
+      if (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_FROM_NUMBER) {
+        return res.status(503).json({ error: "Twilio is not configured." });
+      }
+
+      const schema = z.object({
+        toNumber: z.string().regex(/^\+[1-9]\d{1,14}$/, "Must be E.164"),
+        contactId: z.string().optional().nullable(),
+        opportunityId: z.string().optional().nullable(),
+        crmOrganisationId: z.string().optional().nullable(),
+        agentNumber: z.string().regex(/^\+[1-9]\d{1,14}$/, "Must be E.164"),
+      });
+      const parsed = schema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
+      }
+
+      const baseUrl = process.env.PUBLIC_APP_URL || `https://${req.get("host")}`;
+      const statusCallback = `${baseUrl}/api/crm/calls/twilio/webhook`;
+
+      const client = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
+      // Bridge: dial the agent first; once they pick up, Twilio dials the destination.
+      const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Dial callerId="${TWILIO_FROM_NUMBER}" record="record-from-answer-dual" recordingStatusCallback="${statusCallback}"><Number>${parsed.data.toNumber}</Number></Dial></Response>`;
+      const tCall = await client.calls.create({
+        to: parsed.data.agentNumber,
+        from: TWILIO_FROM_NUMBER,
+        twiml,
+        statusCallback,
+        statusCallbackEvent: ["initiated", "ringing", "answered", "completed"],
+        statusCallbackMethod: "POST",
+      });
+
+      const [created] = await db
+        .insert(crmCalls)
+        .values({
+          organizationId: orgId,
+          opportunityId: parsed.data.opportunityId || null,
+          contactId: parsed.data.contactId || null,
+          crmOrganisationId: parsed.data.crmOrganisationId || null,
+          direction: "OUTBOUND",
+          status: "QUEUED",
+          fromNumber: TWILIO_FROM_NUMBER,
+          toNumber: parsed.data.toNumber,
+          durationSeconds: 0,
+          startedAt: new Date(),
+          twilioCallSid: tCall.sid,
+          source: "TWILIO",
+          createdById: req.user!.id,
+        })
+        .returning();
+
+      logInfo("crmCalls: click-to-call queued", { callId: created.id, twilioSid: tCall.sid });
+      res.status(201).json(created);
+    } catch (e) {
+      logError("crmCalls click-to-call failed", {}, e instanceof Error ? e : new Error(String(e)));
+      next(e);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Twilio status webhook
+// ---------------------------------------------------------------------------
+router.post(
+  "/api/crm/calls/twilio/webhook",
+  async (req, res) => {
+    try {
+      // Signature verification when token is configured.
+      if (TWILIO_AUTH_TOKEN) {
+        const signature = (req.header("X-Twilio-Signature") || "").trim();
+        const baseUrl = process.env.PUBLIC_APP_URL || `https://${req.get("host")}`;
+        const fullUrl = `${baseUrl}/api/crm/calls/twilio/webhook`;
+        const ok = twilio.validateRequest(
+          TWILIO_AUTH_TOKEN,
+          signature,
+          fullUrl,
+          (req.body as Record<string, string>) || {},
+        );
+        if (!ok) {
+          logWarn("crmCalls webhook signature mismatch");
+          return res.status(403).send("Forbidden");
+        }
+      }
+
+      const body = (req.body as Record<string, string>) || {};
+      const callSid = body.CallSid;
+      const recordingSid = body.RecordingSid;
+      const recordingUrl = body.RecordingUrl;
+      const duration = parseInt(body.RecordingDuration || body.CallDuration || "0", 10) || 0;
+      const callStatus = (body.CallStatus || "").toUpperCase();
+
+      if (!callSid) {
+        return res.status(200).send("ok");
+      }
+
+      const [existing] = await db
+        .select()
+        .from(crmCalls)
+        .where(eq(crmCalls.twilioCallSid, callSid))
+        .limit(1);
+      if (!existing) {
+        logInfo("crmCalls webhook: no matching call", { callSid });
+        return res.status(200).send("ok");
+      }
+
+      const update: Record<string, unknown> = { updatedAt: new Date() };
+      if (callStatus === "COMPLETED") {
+        update.status = "COMPLETED";
+        update.endedAt = new Date();
+        if (duration > 0) update.durationSeconds = duration;
+      } else if (["BUSY", "NO-ANSWER", "FAILED", "CANCELED"].includes(callStatus)) {
+        update.status = callStatus === "NO-ANSWER" ? "FAILED" : (callStatus as string);
+      } else if (["RINGING", "IN-PROGRESS", "QUEUED", "INITIATED"].includes(callStatus)) {
+        update.status = callStatus.replace("-", "_");
+      }
+      if (recordingSid) update.twilioRecordingSid = recordingSid;
+
+      await db.update(crmCalls).set(update).where(eq(crmCalls.id, existing.id));
+
+      if (recordingUrl && recordingSid) {
+        const [exists] = await db
+          .select({ id: crmCallRecordings.id })
+          .from(crmCallRecordings)
+          .where(eq(crmCallRecordings.twilioRecordingSid, recordingSid))
+          .limit(1);
+        if (!exists) {
+          await db.insert(crmCallRecordings).values({
+            callId: existing.id,
+            recordingUrl,
+            durationSeconds: duration,
+            twilioRecordingSid: recordingSid,
+          });
+        }
+      }
+
+      res.status(200).send("ok");
+    } catch (e) {
+      logError("crmCalls webhook error", {}, e instanceof Error ? e : new Error(String(e)));
+      res.status(200).send("ok");
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Per-entity calls
+// ---------------------------------------------------------------------------
+router.get(
+  "/api/crm/contacts/:id/calls",
+  requireAuth,
+  requireRole(...PIPELINE_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+      const rows = await db
+        .select()
+        .from(crmCalls)
+        .where(and(eq(crmCalls.organizationId, orgId), eq(crmCalls.contactId, req.params.id)))
+        .orderBy(desc(crmCalls.startedAt))
+        .limit(200);
+      res.json(rows);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+router.get(
+  "/api/crm/opportunities/:id/calls",
+  requireAuth,
+  requireRole(...PIPELINE_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+      const rows = await db
+        .select()
+        .from(crmCalls)
+        .where(and(eq(crmCalls.organizationId, orgId), eq(crmCalls.opportunityId, req.params.id)))
+        .orderBy(desc(crmCalls.startedAt))
+        .limit(200);
+      res.json(rows);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Unified activity timeline
+// ---------------------------------------------------------------------------
+type ActivityRow = {
+  id: string;
+  type: "CALL" | "EMAIL" | "MEETING" | "NOTE" | "TASK" | "STATUS" | "QUOTE" | "FOLLOW_UP" | "SITE_VISIT";
+  occurredAt: string;
+  title: string;
+  description: string | null;
+  actorName: string | null;
+  meta: Record<string, unknown>;
+};
+
+router.get(
+  "/api/crm/activity",
+  requireAuth,
+  requireRole(...PIPELINE_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+
+      const opportunityId = req.query.opportunityId as string | undefined;
+      const contactId = req.query.contactId as string | undefined;
+      const crmOrganisationId = req.query.crmOrganisationId as string | undefined;
+      const sinceParam = req.query.since as string | undefined;
+      const since = sinceParam ? new Date(sinceParam) : null;
+      const limit = Math.min(parseInt((req.query.limit as string) || "200", 10), 500);
+
+      if (!opportunityId && !contactId && !crmOrganisationId) {
+        return res.status(400).json({ error: "Provide opportunityId, contactId, or crmOrganisationId" });
+      }
+
+      const out: ActivityRow[] = [];
+
+      // ---- Calls ----
+      {
+        const conds: SQL[] = [eq(crmCalls.organizationId, orgId)];
+        if (opportunityId) conds.push(eq(crmCalls.opportunityId, opportunityId));
+        if (contactId) conds.push(eq(crmCalls.contactId, contactId));
+        if (crmOrganisationId) conds.push(eq(crmCalls.crmOrganisationId, crmOrganisationId));
+        if (since) conds.push(gte(crmCalls.startedAt, since));
+        const rows = await db
+          .select({
+            id: crmCalls.id,
+            direction: crmCalls.direction,
+            outcome: crmCalls.outcome,
+            durationSeconds: crmCalls.durationSeconds,
+            notes: crmCalls.notes,
+            startedAt: crmCalls.startedAt,
+            fromNumber: crmCalls.fromNumber,
+            toNumber: crmCalls.toNumber,
+            createdByFirstName: users.firstName,
+            createdByLastName: users.lastName,
+            opportunityId: crmCalls.opportunityId,
+            contactId: crmCalls.contactId,
+          })
+          .from(crmCalls)
+          .leftJoin(users, eq(users.id, crmCalls.createdById))
+          .where(and(...conds))
+          .orderBy(desc(crmCalls.startedAt))
+          .limit(limit);
+        for (const r of rows) {
+          out.push({
+            id: `call:${r.id}`,
+            type: "CALL",
+            occurredAt: r.startedAt.toISOString(),
+            title: `${r.direction === "OUTBOUND" ? "Outbound" : "Inbound"} call${r.outcome ? ` — ${r.outcome.replace(/_/g, " ").toLowerCase()}` : ""}`,
+            description: r.notes,
+            actorName: [r.createdByFirstName, r.createdByLastName].filter(Boolean).join(" ") || null,
+            meta: {
+              callId: r.id,
+              direction: r.direction,
+              outcome: r.outcome,
+              durationSeconds: r.durationSeconds,
+              fromNumber: r.fromNumber,
+              toNumber: r.toNumber,
+              opportunityId: r.opportunityId,
+              contactId: r.contactId,
+            },
+          });
+        }
+      }
+
+      // ---- Emails (CRM logged) ----
+      {
+        const conds: SQL[] = [eq(crmEmailMessages.organizationId, orgId)];
+        if (opportunityId) conds.push(eq(crmEmailMessages.opportunityId, opportunityId));
+        if (contactId) conds.push(eq(crmEmailMessages.contactId, contactId));
+        if (since) conds.push(gte(crmEmailMessages.sentAt, since));
+        const rows = await db
+          .select({
+            id: crmEmailMessages.id,
+            subject: crmEmailMessages.subject,
+            snippet: crmEmailMessages.snippet,
+            direction: crmEmailMessages.direction,
+            fromAddress: crmEmailMessages.fromAddress,
+            toAddresses: crmEmailMessages.toAddresses,
+            sentAt: crmEmailMessages.sentAt,
+            externalMessageId: crmEmailMessages.externalMessageId,
+            providerDeepLink: crmEmailMessages.providerDeepLink,
+            threadId: crmEmailMessages.threadId,
+          })
+          .from(crmEmailMessages)
+          .where(and(...conds))
+          .orderBy(desc(crmEmailMessages.sentAt))
+          .limit(limit);
+        for (const r of rows) {
+          out.push({
+            id: `email:${r.id}`,
+            type: "EMAIL",
+            occurredAt: r.sentAt.toISOString(),
+            title: r.subject || "(no subject)",
+            description: r.snippet,
+            actorName: r.direction === "OUTBOUND" ? null : r.fromAddress,
+            meta: {
+              messageId: r.id,
+              externalMessageId: r.externalMessageId,
+              direction: r.direction,
+              fromAddress: r.fromAddress,
+              toAddresses: r.toAddresses,
+              providerDeepLink: r.providerDeepLink,
+              threadId: r.threadId,
+              subject: r.subject,
+            },
+          });
+        }
+      }
+
+      // ---- Activities (notes / meetings / follow-ups / site visits) ----
+      // Mirrored CALL rows are also written here; we tag them so the client can
+      // dedupe against direct call rows.
+      if (opportunityId) {
+        const conds: SQL[] = [eq(crmOpportunityActivities.opportunityId, opportunityId)];
+        if (since) conds.push(gte(crmOpportunityActivities.createdAt, since));
+        const rows = await db
+          .select({
+            id: crmOpportunityActivities.id,
+            activityType: crmOpportunityActivities.activityType,
+            description: crmOpportunityActivities.description,
+            scheduledAt: crmOpportunityActivities.scheduledAt,
+            completedAt: crmOpportunityActivities.completedAt,
+            createdAt: crmOpportunityActivities.createdAt,
+            createdByFirstName: users.firstName,
+            createdByLastName: users.lastName,
+          })
+          .from(crmOpportunityActivities)
+          .leftJoin(users, eq(users.id, crmOpportunityActivities.createdById))
+          .where(and(...conds))
+          .orderBy(desc(crmOpportunityActivities.createdAt))
+          .limit(limit);
+        for (const r of rows) {
+          // Skip CALL mirrors — direct call rows already cover those.
+          if (r.activityType === "CALL") continue;
+          // Skip EMAIL mirrors — direct email rows already cover those.
+          if (r.activityType === "EMAIL") continue;
+          out.push({
+            id: `activity:${r.id}`,
+            type: r.activityType as ActivityRow["type"],
+            occurredAt: (r.scheduledAt || r.completedAt || r.createdAt).toISOString(),
+            title: r.activityType.charAt(0) + r.activityType.slice(1).toLowerCase().replace(/_/g, " "),
+            description: r.description,
+            actorName: [r.createdByFirstName, r.createdByLastName].filter(Boolean).join(" ") || null,
+            meta: { activityId: r.id, activityType: r.activityType },
+          });
+        }
+      }
+
+      // ---- Quotes ----
+      if (opportunityId) {
+        const conds: SQL[] = [
+          eq(crmQuotes.organizationId, orgId),
+          eq(crmQuotes.opportunityId, opportunityId),
+        ];
+        if (since) conds.push(gte(crmQuotes.createdAt, since));
+        const rows = await db
+          .select({
+            id: crmQuotes.id,
+            quoteNumber: crmQuotes.quoteNumber,
+            title: crmQuotes.title,
+            status: crmQuotes.status,
+            totalAmount: crmQuotes.totalAmount,
+            sentAt: crmQuotes.sentAt,
+            acceptedAt: crmQuotes.acceptedAt,
+            createdAt: crmQuotes.createdAt,
+          })
+          .from(crmQuotes)
+          .where(and(...conds))
+          .orderBy(desc(crmQuotes.createdAt))
+          .limit(limit);
+        for (const r of rows) {
+          out.push({
+            id: `quote:${r.id}`,
+            type: "QUOTE",
+            occurredAt: (r.sentAt || r.acceptedAt || r.createdAt).toISOString(),
+            title: `Quote ${r.quoteNumber} — ${r.title}`,
+            description: `Status: ${r.status} • Total: $${r.totalAmount}`,
+            actorName: null,
+            meta: {
+              quoteId: r.id,
+              quoteNumber: r.quoteNumber,
+              status: r.status,
+              totalAmount: r.totalAmount,
+            },
+          });
+        }
+      }
+
+      // ---- Stage changes — derived from audit_log on crm_opportunities ----
+      if (opportunityId) {
+        try {
+          const stageRows = (await db.execute(sql`
+            SELECT a.id, a.old_value, a.new_value, a.created_at,
+                   u.first_name, u.last_name
+            FROM audit_log a
+            LEFT JOIN users u ON u.id = a.user_id
+            WHERE a.entity_type = 'crm_opportunities'
+              AND a.entity_id = ${opportunityId}
+              AND a.action = 'UPDATE'
+              AND a.old_value LIKE '%"stage"%'
+              ${since ? sql`AND a.created_at >= ${since}` : sql``}
+            ORDER BY a.created_at DESC
+            LIMIT ${limit}
+          `)) as unknown as { rows: Array<Record<string, unknown>> };
+          for (const r of stageRows.rows || []) {
+            let fromStage: string | null = null;
+            let toStage: string | null = null;
+            try {
+              const ov = JSON.parse(String(r.old_value || "{}"));
+              const nv = JSON.parse(String(r.new_value || "{}"));
+              fromStage = (ov.stage as string) || null;
+              toStage = (nv.stage as string) || null;
+            } catch {
+              continue;
+            }
+            if (!toStage || fromStage === toStage) continue;
+            const occurredAt = r.created_at instanceof Date
+              ? r.created_at.toISOString()
+              : new Date(String(r.created_at)).toISOString();
+            out.push({
+              id: `stage:${r.id}`,
+              type: "STATUS",
+              occurredAt,
+              title: `Stage changed: ${fromStage || "(start)"} → ${toStage}`,
+              description: null,
+              actorName: [r.first_name, r.last_name].filter(Boolean).join(" ") || null,
+              meta: { fromStage, toStage },
+            });
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+
+      out.sort((a, b) => (a.occurredAt < b.occurredAt ? 1 : -1));
+      res.json(out.slice(0, limit));
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+export default router;

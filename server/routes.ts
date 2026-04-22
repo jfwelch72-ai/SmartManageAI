@@ -170,6 +170,7 @@ import materialTrackingRoutes from "./materialTrackingRoutes";
 import productionRateRoutes from "./productionRateRoutes";
 import crmRoutes from "./crmRoutes";
 import crmEmailLoggingRoutes from "./crmEmailLoggingRoutes";
+import crmCallsRoutes from "./crmCallsRoutes";
 import crmTasksRoutes from "./crmTasksRoutes";
 import sequenceRoutes from "./sequenceRoutes";
 import crmQuotesRoutes from "./crmQuotesRoutes";
@@ -611,6 +612,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(crmSlaRoutes);
   app.use(crmRoutes);
   app.use(crmEmailLoggingRoutes);
+  app.use(crmCallsRoutes);
   app.use(crmTasksRoutes);
   app.use(sequenceRoutes);
   app.use(crmQuotesRoutes);

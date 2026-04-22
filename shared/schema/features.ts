@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, uniqueIndex, json, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { addendumRecipientTypeEnum, addendumStatusEnum, aiBidDocumentAnalysisStatusEnum, aiCoDraftStatusEnum, aiContractDocumentAnalysisStatusEnum, contractStatusEnum, contractTypeEnum, contractRedlineStatusEnum, contractApprovalDecisionEnum, clauseCategoryEnum, signatureRequestStatusEnum, signerStatusEnum, aiInsightModuleEnum, aiInsightSeverityEnum, aiTakeoffModeEnum, aiTakeoffStatusEnum, aiTaskPriorityEnum, aiTaskStatusEnum, approvalEntityTypeEnum, approvalStatusEnum, atsProviderEnum, bidEquipmentSourceEnum, bidInvitationStatusEnum, bidRequestStatusEnum, bidResponseStatusEnum, blogCommentStatusEnum, blogPostStatusEnum, conversationTypeEnum, crewAvailabilityStatusEnum, crmActivityTypeEnum, crmCustomFieldEntityEnum, crmCustomFieldTypeEnum, crmContactRoleEnum, crmNoteTypeEnum, crmOrgStatusEnum, crmOrganisationTypeEnum, crmPipelineStageEnum, crmPreferredContactEnum, crmLostCategoryEnum, crmQuoteAcceptanceStatusEnum, crmLeadScoringOperatorEnum, crmSequenceStatusEnum, crmSequenceStepTypeEnum, crmSequenceEnrollmentStatusEnum, crmSequenceExecutionStatusEnum, crmSequenceEmailEventTypeEnum, crmSequenceExitReasonEnum, crmQuoteApprovalStatusEnum, dataSubjectRequestStatusEnum, dataSubjectRequestTypeEnum, documentRevisionSourceEnum, documentRevisionStatusEnum, emailClassificationEnum, emailProviderEnum, emailTaskSourceEnum, emailThreadStatusEnum, hiringActivityTypeEnum, hiringCandidateStageEnum, hiringCompensationTypeEnum, hiringEmploymentTypeEnum, hiringInterviewStatusEnum, hiringJobStatusEnum, hiringSyncStatusEnum, hustlerDelegateRoleEnum, hustlerLinkRequestStatusEnum, installationStatusEnum, lidarScanStatusEnum, lidarAnnotationTypeEnum, lidarComparisonTypeEnum, unifiedPaymentMethodEnum, unifiedPaymentStatusEnum, invoiceTypeEnum, integrationConnectionStatusEnum, integrationEventStatusEnum, integrationProviderEnum, issueSeverityEnum, issueStatusEnum, jobsiteAnalysisStatusEnum, lienWaiverStatusEnum, lienWaiverTypeEnum, locationLevelEnum, maintenanceTypeEnum, measurementSourceEnum, measurementStatusEnum, measurementTypeEnum, takeoffVersionStatusEnum, messageEntityTypeEnum, mobilePlatformEnum, offlineEntityTypeEnum, offlineOperationTypeEnum, offlineSyncStatusEnum, organizationDocumentTypeEnum, organizationDocumentVisibilityEnum, overheadCostActionEnum, overheadCostCategoryEnum, overheadCostFrequencyEnum, portalChatPriorityEnum, portalChatThreadCategoryEnum, portalChatThreadStatusEnum, pricebookImportJobStatusEnum, pricebookStatusEnum, pricingApprovalStatusEnum, pricingSourceTypeEnum, projectEquipmentPlanStatusEnum, repairStatusEnum, retentionActionEnum, retentionEntityTypeEnum, rewardTypeEnum, rfiCategoryEnum, rfiPriorityEnum, rfiStatusEnum, scheduleDependencyTypeEnum, scheduleGeneratedByEnum, scheduleTaskStatusEnum, socialAccountStatusEnum, socialPlatformEnum, socialPostStatusEnum, sovPaymentMethodEnum, sovStatusEnum, storedMaterialStatusEnum, retentionReleaseTypeEnum, retentionReleaseStatusEnum, sowAuditActionEnum, ssoProviderEnum, submittalCategoryEnum, submittalItemStatusEnum, submittalPhaseEnum, submittalReviewRoleEnum, submittalReviewStatusEnum, submittalStatusEnum, submittalTypeEnum, syncStatusEnum, tradeTypeEnum, transmittalStatusEnum, userRoleEnum, vendorEnrollmentStatusEnum, voiceLogStatusEnum, websiteDeploymentActionEnum, websitePageTypeEnum, websiteProjectStatusEnum, websiteStatusEnum, takeoffIssueCategoryEnum, takeoffIssueStatusEnum, talentAvailabilityEnum, talentProfileVisibilityEnum, workflowEntityTypeEnum, riskCategoryEnum, riskStatusEnum, workflowTemplateStatusEnum, workflowInstanceStatusEnum, videoCallStatusEnum, workflowNotificationChannelEnum, dotAgencyKindEnum, dotPayItemTypeEnum, dbeCertificationTypeEnum, suretyBondTypeEnum, suretyBondStatusEnum, haulTicketStatusEnum, swpppInspectionTypeEnum, idrStatusEnum, buyAmericaStatusEnum } from "./enums";
+import { addendumRecipientTypeEnum, addendumStatusEnum, aiBidDocumentAnalysisStatusEnum, aiCoDraftStatusEnum, aiContractDocumentAnalysisStatusEnum, contractStatusEnum, contractTypeEnum, contractRedlineStatusEnum, contractApprovalDecisionEnum, clauseCategoryEnum, signatureRequestStatusEnum, signerStatusEnum, aiInsightModuleEnum, aiInsightSeverityEnum, aiTakeoffModeEnum, aiTakeoffStatusEnum, aiTaskPriorityEnum, aiTaskStatusEnum, approvalEntityTypeEnum, approvalStatusEnum, atsProviderEnum, bidEquipmentSourceEnum, bidInvitationStatusEnum, bidRequestStatusEnum, bidResponseStatusEnum, blogCommentStatusEnum, blogPostStatusEnum, conversationTypeEnum, crewAvailabilityStatusEnum, crmActivityTypeEnum, crmCallDirectionEnum, crmCallOutcomeEnum, crmCallStatusEnum, crmCustomFieldEntityEnum, crmCustomFieldTypeEnum, crmContactRoleEnum, crmNoteTypeEnum, crmOrgStatusEnum, crmOrganisationTypeEnum, crmPipelineStageEnum, crmPreferredContactEnum, crmLostCategoryEnum, crmQuoteAcceptanceStatusEnum, crmLeadScoringOperatorEnum, crmSequenceStatusEnum, crmSequenceStepTypeEnum, crmSequenceEnrollmentStatusEnum, crmSequenceExecutionStatusEnum, crmSequenceEmailEventTypeEnum, crmSequenceExitReasonEnum, crmQuoteApprovalStatusEnum, dataSubjectRequestStatusEnum, dataSubjectRequestTypeEnum, documentRevisionSourceEnum, documentRevisionStatusEnum, emailClassificationEnum, emailProviderEnum, emailTaskSourceEnum, emailThreadStatusEnum, hiringActivityTypeEnum, hiringCandidateStageEnum, hiringCompensationTypeEnum, hiringEmploymentTypeEnum, hiringInterviewStatusEnum, hiringJobStatusEnum, hiringSyncStatusEnum, hustlerDelegateRoleEnum, hustlerLinkRequestStatusEnum, installationStatusEnum, lidarScanStatusEnum, lidarAnnotationTypeEnum, lidarComparisonTypeEnum, unifiedPaymentMethodEnum, unifiedPaymentStatusEnum, invoiceTypeEnum, integrationConnectionStatusEnum, integrationEventStatusEnum, integrationProviderEnum, issueSeverityEnum, issueStatusEnum, jobsiteAnalysisStatusEnum, lienWaiverStatusEnum, lienWaiverTypeEnum, locationLevelEnum, maintenanceTypeEnum, measurementSourceEnum, measurementStatusEnum, measurementTypeEnum, takeoffVersionStatusEnum, messageEntityTypeEnum, mobilePlatformEnum, offlineEntityTypeEnum, offlineOperationTypeEnum, offlineSyncStatusEnum, organizationDocumentTypeEnum, organizationDocumentVisibilityEnum, overheadCostActionEnum, overheadCostCategoryEnum, overheadCostFrequencyEnum, portalChatPriorityEnum, portalChatThreadCategoryEnum, portalChatThreadStatusEnum, pricebookImportJobStatusEnum, pricebookStatusEnum, pricingApprovalStatusEnum, pricingSourceTypeEnum, projectEquipmentPlanStatusEnum, repairStatusEnum, retentionActionEnum, retentionEntityTypeEnum, rewardTypeEnum, rfiCategoryEnum, rfiPriorityEnum, rfiStatusEnum, scheduleDependencyTypeEnum, scheduleGeneratedByEnum, scheduleTaskStatusEnum, socialAccountStatusEnum, socialPlatformEnum, socialPostStatusEnum, sovPaymentMethodEnum, sovStatusEnum, storedMaterialStatusEnum, retentionReleaseTypeEnum, retentionReleaseStatusEnum, sowAuditActionEnum, ssoProviderEnum, submittalCategoryEnum, submittalItemStatusEnum, submittalPhaseEnum, submittalReviewRoleEnum, submittalReviewStatusEnum, submittalStatusEnum, submittalTypeEnum, syncStatusEnum, tradeTypeEnum, transmittalStatusEnum, userRoleEnum, vendorEnrollmentStatusEnum, voiceLogStatusEnum, websiteDeploymentActionEnum, websitePageTypeEnum, websiteProjectStatusEnum, websiteStatusEnum, takeoffIssueCategoryEnum, takeoffIssueStatusEnum, talentAvailabilityEnum, talentProfileVisibilityEnum, workflowEntityTypeEnum, riskCategoryEnum, riskStatusEnum, workflowTemplateStatusEnum, workflowInstanceStatusEnum, videoCallStatusEnum, workflowNotificationChannelEnum, dotAgencyKindEnum, dotPayItemTypeEnum, dbeCertificationTypeEnum, suretyBondTypeEnum, suretyBondStatusEnum, haulTicketStatusEnum, swpppInspectionTypeEnum, idrStatusEnum, buyAmericaStatusEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
 import { changeOrders, estimateLineItems, estimates, planDocuments, projectInspections, tasks, tmTickets } from "./operations";
 
@@ -38,6 +38,7 @@ export const FEATURE_FLAG_KEYS = [
   "LIDAR_SCANNER",
   "VIDEO_CALLS",
   "SMS_NOTIFICATIONS",
+  "TWILIO_INTEGRATION",
   // Heavy Civil / DOT
   "DOT_PAY_ITEMS",
   "DBE_TRACKING",
@@ -86,6 +87,7 @@ export const FEATURE_FLAG_LABELS: Record<FeatureFlagKey, string> = {
   LIDAR_SCANNER: "LiDAR Scanner",
   VIDEO_CALLS: "Video Calls",
   SMS_NOTIFICATIONS: "SMS Notifications",
+  TWILIO_INTEGRATION: "Twilio Click-to-Call",
   DOT_PAY_ITEMS: "DOT Pay Items Library",
   DBE_TRACKING: "DBE / MBE / WBE Tracking",
   WH_347_PAYROLL: "WH-347 Certified Payroll",
@@ -131,6 +133,7 @@ export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
   LIDAR_SCANNER: "Upload LAS/LAZ point clouds for as-built comparison and quantity takeoffs.",
   VIDEO_CALLS: "In-app video calling for messaging, client portal, and field support.",
   SMS_NOTIFICATIONS: "Send notifications and reminders by SMS in addition to email and push.",
+  TWILIO_INTEGRATION: "Click-to-call CRM contacts via Twilio with automatic call logging and recording.",
   DOT_PAY_ITEMS: "Browse FHWA and state DOT pay item catalogs and tie them to bid and SOV lines.",
   DBE_TRACKING: "Track DBE/MBE/WBE/SBE goals, commitments, and certifications by project.",
   WH_347_PAYROLL: "Generate weekly federal WH-347 certified payroll reports for prevailing-wage jobs.",
@@ -194,6 +197,7 @@ export const FEATURE_FLAG_CATEGORY_MAP: Record<FeatureFlagKey, FeatureFlagCatego
 
   VIDEO_CALLS: "Communications",
   SMS_NOTIFICATIONS: "Communications",
+  TWILIO_INTEGRATION: "Communications",
 
   DOT_PAY_ITEMS: "Heavy Civil & DOT",
   DBE_TRACKING: "Heavy Civil & DOT",
@@ -239,6 +243,7 @@ export const DISABLED_BY_DEFAULT_FLAGS: readonly FeatureFlagKey[] = [
   "LIDAR_SCANNER",
   "VIDEO_CALLS",
   "SMS_NOTIFICATIONS",
+  "TWILIO_INTEGRATION",
   "DOT_PAY_ITEMS",
   "DBE_TRACKING",
   "WH_347_PAYROLL",
@@ -1681,6 +1686,53 @@ export const crmOpportunityActivities = pgTable("crm_opportunity_activities", {
 export const insertCrmOpportunityActivitySchema = createInsertSchema(crmOpportunityActivities).omit({ id: true, createdAt: true });
 export type InsertCrmOpportunityActivity = z.infer<typeof insertCrmOpportunityActivitySchema>;
 export type CrmOpportunityActivity = typeof crmOpportunityActivities.$inferSelect;
+
+// Task #890: CRM Call logs (manual + Twilio click-to-call). One row per call.
+export const crmCalls = pgTable("crm_calls", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  opportunityId: varchar("opportunity_id").references(() => crmOpportunities.id, { onDelete: "set null" }),
+  crmOrganisationId: varchar("crm_organisation_id").references(() => crmOrganisations.id, { onDelete: "set null" }),
+  contactId: varchar("contact_id").references(() => crmContacts.id, { onDelete: "set null" }),
+  direction: crmCallDirectionEnum("direction").notNull().default("OUTBOUND"),
+  outcome: crmCallOutcomeEnum("outcome"),
+  status: crmCallStatusEnum("status").notNull().default("LOGGED"),
+  fromNumber: text("from_number"),
+  toNumber: text("to_number"),
+  durationSeconds: integer("duration_seconds").notNull().default(0),
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  endedAt: timestamp("ended_at"),
+  notes: text("notes"),
+  twilioCallSid: text("twilio_call_sid"),
+  twilioRecordingSid: text("twilio_recording_sid"),
+  source: text("source").notNull().default("MANUAL"),
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("crm_calls_org_idx").on(table.organizationId),
+  oppIdx: index("crm_calls_opp_idx").on(table.opportunityId),
+  contactIdx: index("crm_calls_contact_idx").on(table.contactId),
+  startedAtIdx: index("crm_calls_started_at_idx").on(table.startedAt),
+  twilioSidIdx: uniqueIndex("crm_calls_twilio_sid_idx").on(table.twilioCallSid),
+}));
+export const insertCrmCallSchema = createInsertSchema(crmCalls).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertCrmCall = z.infer<typeof insertCrmCallSchema>;
+export type CrmCall = typeof crmCalls.$inferSelect;
+
+export const crmCallRecordings = pgTable("crm_call_recordings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  callId: varchar("call_id").notNull().references(() => crmCalls.id, { onDelete: "cascade" }),
+  recordingUrl: text("recording_url").notNull(),
+  durationSeconds: integer("duration_seconds").notNull().default(0),
+  twilioRecordingSid: text("twilio_recording_sid"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  callIdx: index("crm_call_recordings_call_idx").on(table.callId),
+}));
+export const insertCrmCallRecordingSchema = createInsertSchema(crmCallRecordings).omit({ id: true, createdAt: true });
+export type InsertCrmCallRecording = z.infer<typeof insertCrmCallRecordingSchema>;
+export type CrmCallRecording = typeof crmCallRecordings.$inferSelect;
 
 // CRM Quotes - lightweight proposals/quotes generated directly from opportunities
 export const crmQuotes = pgTable("crm_quotes", {
@@ -5218,6 +5270,8 @@ export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
   canAccessMarketplace: boolean("can_access_marketplace").default(false),
   // Task #886: gate CRM email-thread viewing (logged Gmail/Outlook messages)
   canViewCrmEmails: boolean("can_view_crm_emails").default(false),
+  // Task #890: gate CRM call logging (manual logs + Twilio click-to-call)
+  canLogCrmCalls: boolean("can_log_crm_calls").default(false),
 
   // Category 7: Hiring & Recruitment (51-53)
   canManageHiring: boolean("can_manage_hiring").default(false),

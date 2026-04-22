@@ -16,6 +16,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Avatar, ColoredAvatarFallback } from "@/components/ui/avatar";
 import { CrmActivityTimeline } from "@/components/crm/CrmActivityTimeline";
+import { LogCallDialog } from "@/components/crm/LogCallDialog";
 import { CrmCustomFieldsDisplay } from "@/components/crm/CrmCustomFieldsForm";
 import { EnrollSequenceDialog } from "@/components/crm/EnrollSequenceDialog";
 import {
@@ -95,6 +96,7 @@ export default function CrmDealDetailPage() {
   const [lostOpen, setLostOpen] = useState(false);
   const [lostForm, setLostForm] = useState({ lostCategory: "PRICE", lostReason: "" });
   const [activityOpen, setActivityOpen] = useState(false);
+  const [callOpen, setCallOpen] = useState(false);
   const [activityForm, setActivityForm] = useState({ activityType: "NOTE", description: "", scheduledAt: "" });
 
   const { data: opp, isLoading } = useQuery<Opportunity>({
@@ -347,12 +349,15 @@ export default function CrmDealDetailPage() {
               </TabsContent>
 
               <TabsContent value="timeline" className="mt-4 space-y-3">
-                <div className="flex justify-end">
+                <div className="flex justify-end gap-2">
+                  <Button size="sm" variant="outline" onClick={() => setCallOpen(true)} data-testid="button-log-call">
+                    <Phone className="w-4 h-4 mr-1" /> Log Call
+                  </Button>
                   <Button size="sm" variant="outline" onClick={() => setActivityOpen(true)} data-testid="button-log-activity">
                     <Plus className="w-4 h-4 mr-1" /> Log Activity
                   </Button>
                 </div>
-                <CrmActivityTimeline opportunityId={id} urlSync />
+                <CrmActivityTimeline opportunityId={id} urlSync stickyKey={`deal:${user?.id ?? "anon"}`} />
               </TabsContent>
 
               <TabsContent value="quotes" className="mt-4">
@@ -631,6 +636,19 @@ export default function CrmDealDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <LogCallDialog
+        open={callOpen}
+        onOpenChange={setCallOpen}
+        opportunityId={id}
+        contactId={opp?.contactId ?? undefined}
+        crmOrganisationId={opp?.crmOrganisationId ?? undefined}
+        invalidateKeys={[
+          ["/api/crm/activity", { opportunityId: id, contactId: undefined, crmOrganisationId: undefined }],
+          ["/api/crm/calls"],
+          ["/api/crm/opportunities", id, "activities"],
+        ]}
+      />
     </div>
   );
 }
