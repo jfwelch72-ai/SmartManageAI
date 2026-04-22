@@ -402,9 +402,19 @@ async function postSlackTest(
 export async function sendTestBackfillAlert(
   orgId: string,
   operator: CrmTranscriptBackfillOperatorContact | null,
+  destinationsOverride?: ResolvedBackfillNotificationDestinations,
 ): Promise<TestAlertResult> {
-  const slackWebhook = (process.env.CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK || "").trim();
-  const emailTo = (process.env.CRM_BACKFILL_NOTIFY_EMAIL_TO || "").trim();
+  // Task #1030 — use the *currently-saved* per-org destinations (Slack
+  // webhook + email recipients from the in-app settings card) rather than
+  // env vars, so admins can verify their saved settings end-to-end right
+  // after pressing Save. `resolveBackfillNotificationDestinations` already
+  // falls back to the legacy env vars when no per-org row exists, so older
+  // deployments that haven't migrated keep working.
+  const destinations =
+    destinationsOverride ??
+    (await resolveBackfillNotificationDestinations(orgId));
+  const slackWebhook = (destinations.slackWebhookUrl ?? "").trim();
+  const emailRecipients = destinations.emailRecipients;
 
   const [completedJob, failedJob] = buildSampleJobs(orgId);
   const completedFormatted = formatBackfillCompletionNotification(completedJob, operator);
@@ -431,16 +441,11 @@ export async function sendTestBackfillAlert(
   }
 
   const emailResult: TestAlertChannelResult = { configured: false, ok: false };
-  if (emailTo) {
+  if (emailRecipients.length > 0) {
     emailResult.configured = true;
-    const recipients = emailTo
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const recipients = emailRecipients;
     emailResult.recipients = recipients;
-    if (recipients.length === 0) {
-      emailResult.error = "CRM_BACKFILL_NOTIFY_EMAIL_TO is set but contains no addresses";
-    } else {
+    {
       try {
         const subjects = [completedFormatted, failedFormatted].map((f) => ({
           ...f,
