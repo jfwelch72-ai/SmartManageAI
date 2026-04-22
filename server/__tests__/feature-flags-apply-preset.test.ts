@@ -22,6 +22,7 @@ const HEAVY_CIVIL_USER_FLAGS = [
   "SURETY_BONDS",
   "BUY_AMERICA",
   "MASS_HAUL_ANALYZER",
+  "DOT_PROGRESS_ESTIMATE",
 ] as const;
 
 let app: Express;
@@ -84,7 +85,7 @@ afterAll(async () => {
 }, 30_000);
 
 describe("POST /api/feature-flags/:orgId/apply-preset", () => {
-  it("ADMIN same-org: returns 200 and enables all 9 Heavy Civil flags", async () => {
+  it("ADMIN same-org: returns 200 and enables all 10 Heavy Civil flags", async () => {
     const admin = await loginAs("ADMIN");
     expect(admin.orgId).toBeTruthy();
 

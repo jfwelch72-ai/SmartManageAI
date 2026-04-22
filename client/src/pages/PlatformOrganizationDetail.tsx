@@ -1201,7 +1201,7 @@ export default function PlatformOrganizationDetail() {
                     <div>
                       <div className="font-medium">This looks like a Heavy Civil / DOT contractor</div>
                       <div className="text-sm text-muted-foreground">
-                        Apply the Heavy Civil preset to enable DOT pay items, DBE tracking, WH-347 payroll, haul tickets, IDR, SWPPP, surety bonds, Buy America, and mass-haul analyzer in one click.
+                        Apply the Heavy Civil preset to enable DOT pay items, DOT progress estimates, DBE tracking, WH-347 payroll, haul tickets, IDR, SWPPP, surety bonds, Buy America, and mass-haul analyzer in one click.
                       </div>
                     </div>
                     <Button
