@@ -47,6 +47,7 @@ import { ensureUserSettingsBirthdayDigestSchedule } from "./ensureUserSettingsBi
 import { ensureCrmCustomFieldTables } from "./ensureCrmCustomFieldTables";
 import { ensureGeocodeStatusColumns } from "./ensureGeocodeStatusColumns";
 import { ensureUserSavedViewsTable } from "./ensureUserSavedViewsTable";
+import { ensureMyWorkSavedViewsTable } from "./ensureMyWorkSavedViewsTable";
 import { ensureScheduleBaselinesTable } from "./ensureScheduleBaselinesTable";
 import { ensurePlanPinsTable } from "./ensurePlanPinsTable";
 import { ensureProjectEmailDistributionLists } from "./ensureProjectEmailDistributionLists";
@@ -125,6 +126,7 @@ const migrations: MigrationStep[] = [
   { name: "user_settings_birthday_digest_schedule", category: "ADD_COLUMN", fn: ensureUserSettingsBirthdayDigestSchedule },
   { name: "crm_custom_field_tables", category: "CREATE_TABLE", fn: ensureCrmCustomFieldTables },
   { name: "user_saved_views_table", category: "CREATE_TABLE", fn: ensureUserSavedViewsTable },
+  { name: "my_work_saved_views_table", category: "CREATE_TABLE", fn: ensureMyWorkSavedViewsTable },
   { name: "schedule_baselines_table", category: "CREATE_TABLE", fn: ensureScheduleBaselinesTable },
   { name: "plan_pins_table", category: "CREATE_TABLE", fn: ensurePlanPinsTable },
   { name: "project_email_distribution_lists", category: "CREATE_TABLE", fn: ensureProjectEmailDistributionLists },
