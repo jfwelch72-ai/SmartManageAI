@@ -1005,6 +1005,52 @@ router.get(
   }
 );
 
+const RENDERER_STATUS_REFRESH_MS = 30_000;
+/**
+ * @openapi
+ * /api/portfolio/renderer-status:
+ *   get:
+ *     tags: [Portfolio]
+ *     summary: Lightweight Portfolio PDF renderer availability check
+ *     description: |
+ *       Returns whether the Portfolio PDF renderer (headless Chromium) is
+ *       currently available. Used by the Portfolio Rollup page to display a
+ *       banner when exports are temporarily unavailable. The cached status is
+ *       refreshed at most once every 30s to avoid launching a browser on
+ *       every poll.
+ *     responses:
+ *       200: { description: Renderer availability snapshot }
+ */
+router.get(
+  "/api/portfolio/renderer-status",
+  requireAuth,
+  requireAnyFeaturePermission(...REQUIRED_PERMS),
+  async (_req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      // The cached availability flag in portfolio-pdf-service is intentionally
+      // non-sticky on negative results (it stays `null` so the next probe can
+      // retry). Throttle probes strictly by `lastCheckedAt` so a sustained
+      // outage doesn't cause us to launch Chromium on every poll. When the
+      // cache is fresh, treat cached `true` as available and `null` (which
+      // means the most recent probe failed) as offline.
+      const cached = getPortfolioRendererStatus();
+      const stale =
+        cached.lastCheckedAt === null ||
+        Date.now() - cached.lastCheckedAt > RENDERER_STATUS_REFRESH_MS;
+      const available = stale
+        ? await isPortfolioRendererAvailable()
+        : cached.available === true;
+      const status = getPortfolioRendererStatus();
+      res.json({
+        available,
+        lastCheckedAt: status.lastCheckedAt,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 /**
  * @openapi
  * /api/admin/portfolio-pdf/health:

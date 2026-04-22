@@ -9,7 +9,8 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Download, X, ChevronRight, ArrowUp, ArrowDown, Minus } from "lucide-react";
+import { Download, X, ChevronRight, ArrowUp, ArrowDown, Minus, AlertTriangle } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
@@ -588,6 +589,19 @@ export default function PortfolioPage() {
     },
   });
 
+  const { data: rendererStatus } = useQuery<{ available: boolean; lastCheckedAt: number | null }>({
+    queryKey: ["/api/portfolio/renderer-status"],
+    queryFn: async () => {
+      const res = await fetch("/api/portfolio/renderer-status", { credentials: "include" });
+      if (!res.ok) return { available: true, lastCheckedAt: null };
+      return res.json();
+    },
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
+    staleTime: 15000,
+  });
+  const rendererOffline = rendererStatus?.available === false;
+
   const onChangeView = (v: ViewKey) => set({ view: v === "heatmap" ? null : v });
   const onChangeFilter = (patch: Partial<PortfolioFilters>) => {
     const updates: Record<string, string | null> = {};
@@ -663,10 +677,26 @@ export default function PortfolioPage() {
           <h1 className="text-2xl font-bold" data-testid="text-page-title">Portfolio Rollup</h1>
           <p className="text-sm text-muted-foreground">Cross-project health, schedule, and financial view for executives.</p>
         </div>
-        <Button onClick={handleExport} data-testid="button-export-pdf">
+        <Button
+          onClick={handleExport}
+          disabled={rendererOffline}
+          aria-disabled={rendererOffline}
+          title={rendererOffline ? "Portfolio exports are temporarily unavailable" : undefined}
+          data-testid="button-export-pdf"
+        >
           <Download className="h-4 w-4 mr-2" /> Export Summary
         </Button>
       </div>
+
+      {rendererOffline && (
+        <Alert variant="destructive" className="mb-4" data-testid="banner-renderer-offline">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Portfolio exports are temporarily unavailable</AlertTitle>
+          <AlertDescription>
+            The PDF renderer is offline, so Export Summary is disabled. This banner will clear automatically once exports are restored.
+          </AlertDescription>
+        </Alert>
+      )}
 
       <FilterBar
         view={view}
