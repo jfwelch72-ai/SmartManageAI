@@ -966,7 +966,10 @@ router.post(
 export type BackfillJobState = {
   id: string;
   orgId: string;
-  status: "RUNNING" | "COMPLETED" | "FAILED";
+  // Task #1057 — CANCELLED is a distinct terminal state so admins can
+  // tell a deliberately-stopped run apart from a crash. Existing FAILED
+  // rows in the DB stay FAILED for backwards compatibility.
+  status: "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
   total: number;
   processed: number;
   succeeded: number;
@@ -1110,7 +1113,10 @@ function escapeBackfillHtml(s: string): string {
  */
 export interface BackfillSummaryContentInput {
   jobId: string;
-  status: "COMPLETED" | "FAILED";
+  // Task #1057 — CANCELLED is a distinct terminal status; the builder uses
+  // a "cancelled" verb/subject so admins can tell the run was deliberately
+  // stopped rather than crashing.
+  status: "COMPLETED" | "FAILED" | "CANCELLED";
   total: number;
   processed: number;
   succeeded: number;
@@ -1144,7 +1150,14 @@ export function buildBackfillSummaryContent(
   const duration = formatBackfillDuration(startedAt, completedAt);
   const isRetry = !!parentJobId;
   const runLabel = isRetry ? "Transcript backfill retry" : "Transcript backfill";
-  const statusLabel = status === "COMPLETED" ? "completed" : "failed";
+  // Task #1057 — separate label for cancelled runs so the email subject
+  // and history copy don't read as a crash.
+  const statusLabel =
+    status === "COMPLETED"
+      ? "completed"
+      : status === "CANCELLED"
+        ? "cancelled"
+        : "failed";
 
   const baseUrl = process.env.APP_BASE_URL || "";
   const historyUrl = baseUrl
@@ -1245,7 +1258,15 @@ export async function notifyBackfillCompletionToOrgAdmins(jobId: string): Promis
       .limit(1);
 
     if (!jobRow) return;
-    if (jobRow.status !== "COMPLETED" && jobRow.status !== "FAILED") return;
+    // Task #1057 — CANCELLED is a terminal state on par with COMPLETED /
+    // FAILED, so the per-admin run summary should fire for it too.
+    if (
+      jobRow.status !== "COMPLETED" &&
+      jobRow.status !== "FAILED" &&
+      jobRow.status !== "CANCELLED"
+    ) {
+      return;
+    }
 
     const [orgRow] = await db
       .select({ name: organizations.name })
@@ -1347,7 +1368,7 @@ export async function notifyBackfillCompletionToOrgAdmins(jobId: string): Promis
     const { subject, text, html, chatTitle, chatBody, historyUrl } =
       buildBackfillSummaryContent({
         jobId: jobRow.id,
-        status: jobRow.status as "COMPLETED" | "FAILED",
+        status: jobRow.status as "COMPLETED" | "FAILED" | "CANCELLED",
         total: jobRow.total,
         processed: jobRow.processed,
         succeeded: jobRow.succeeded,
@@ -1798,13 +1819,16 @@ async function runTranscriptBackfill(
         job.total = job.processed + queue.length;
       }
     }
-    // Task #1036 — if cancellation was requested, surface FAILED so admins
-    // can distinguish a cancelled run from a clean completion. Clear the
-    // request flag so a future job id reuse (impossible in practice but
+    // Task #1036 — if cancellation was requested, mark the run terminal so
+    // admins can distinguish a cancelled run from a clean completion. Clear
+    // the request flag so a future job id reuse (impossible in practice but
     // cheap insurance) starts with a fresh slate.
+    // Task #1057 — use the dedicated CANCELLED status (instead of FAILED)
+    // so the badge, history label, and notification copy can reflect that
+    // the run was deliberately stopped rather than crashing.
     if (cancelRequestedJobIds.has(job.id)) {
       cancelRequestedJobIds.delete(job.id);
-      job.status = "FAILED";
+      job.status = "CANCELLED";
       logInfo("crmCalls: transcript backfill cancelled by admin", {
         jobId: job.id,
         orgId: job.orgId,
@@ -2796,7 +2820,7 @@ router.get(
       // Status filter: accept a single value or a comma-separated list. Only
       // forward known statuses so a typo in the query string can't degrade the
       // SQL into matching nothing silently.
-      const ALLOWED_STATUSES = ["RUNNING", "COMPLETED", "FAILED"];
+      const ALLOWED_STATUSES = ["RUNNING", "COMPLETED", "FAILED", "CANCELLED"]; // Task #1057
       const rawStatus = req.query.status;
       const statusList = Array.isArray(rawStatus)
         ? rawStatus.map(String)
@@ -3048,7 +3072,7 @@ router.get(
         scopedOrgId = orgId;
       }
 
-      const ALLOWED_STATUSES = ["RUNNING", "COMPLETED", "FAILED"];
+      const ALLOWED_STATUSES = ["RUNNING", "COMPLETED", "FAILED", "CANCELLED"]; // Task #1057
       const rawStatus = req.query.status;
       const statusList = Array.isArray(rawStatus)
         ? rawStatus.map(String)
@@ -3258,7 +3282,7 @@ router.get(
         scopedOrgId = orgId;
       }
 
-      const ALLOWED_STATUSES = ["RUNNING", "COMPLETED", "FAILED"];
+      const ALLOWED_STATUSES = ["RUNNING", "COMPLETED", "FAILED", "CANCELLED"]; // Task #1057
       const rawStatus = req.query.status;
       const statusList = Array.isArray(rawStatus)
         ? rawStatus.map(String)
@@ -3613,9 +3637,12 @@ router.post(
       const heartbeatAgeMs = Date.now() - new Date(row.heartbeatAt).getTime();
       if (heartbeatAgeMs > BACKFILL_HEARTBEAT_STALE_MS) {
         // Worker is dead (process restart since last heartbeat). Mark the
-        // row FAILED directly so the banner clears on the next refresh.
+        // row terminal directly so the banner clears on the next refresh.
+        // Task #1057 — surface CANCELLED here too: the admin asked to
+        // cancel, so the row should reflect that even when there's no
+        // live worker to flip it cooperatively.
         const reaped = await updateCrmTranscriptBackfillJob(row.id, {
-          status: "FAILED",
+          status: "CANCELLED",
           completedAt: new Date(),
         });
         scheduleBackfillCompletionEmail(row.id);
@@ -3628,7 +3655,7 @@ router.post(
         });
         return res.json({
           jobId: row.id,
-          status: reaped?.status ?? "FAILED",
+          status: reaped?.status ?? "CANCELLED",
           reaped: true,
         });
       }

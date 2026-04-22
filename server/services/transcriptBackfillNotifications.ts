@@ -33,7 +33,9 @@ import {
 export type BackfillNotificationJob = {
   id: string;
   orgId: string;
-  status: "RUNNING" | "COMPLETED" | "FAILED";
+  // Task #1057 — CANCELLED is a distinct terminal state so admins can
+  // tell a deliberately-stopped run apart from a crash.
+  status: "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
   total: number;
   processed: number;
   succeeded: number;
@@ -96,9 +98,13 @@ export function formatBackfillCompletionNotification(
   const { display: operatorDisplay, email: operatorEmail } =
     describeBackfillOperator(operator);
 
+  // Task #1057 — separate "cancelled" verb so the email subject and Slack
+  // headline don't read as a crash for deliberately-stopped runs. Existing
+  // FAILED rows still surface as "failed".
   const isFailure = job.status === "FAILED";
+  const isCancelled = job.status === "CANCELLED";
   const isRetry = !!job.parentJobId;
-  const verb = isFailure ? "failed" : "completed";
+  const verb = isCancelled ? "cancelled" : isFailure ? "failed" : "completed";
   const kind = isRetry ? "Transcript backfill retry" : "Transcript backfill";
   const title = `${kind} ${verb}`;
   const emailSubject = `[CRM] ${title} — started by ${operatorDisplay}`;

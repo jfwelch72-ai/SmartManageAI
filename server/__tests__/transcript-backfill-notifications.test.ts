@@ -145,6 +145,20 @@ describe("formatBackfillCompletionNotification", () => {
     expect(out.slackBody).toContain("FAILED");
   });
 
+  // Task #1057 — cancelled runs are a distinct terminal state (admin
+  // deliberately stopped the run) rather than a crash, so the verb /
+  // subject reads "cancelled" instead of "failed".
+  it("uses the 'cancelled' verb when the job was cancelled", () => {
+    const out = formatBackfillCompletionNotification(
+      { ...baseJob, status: "CANCELLED" },
+      { id: "u1", firstName: "Sam", lastName: null, email: "sam@x.co" },
+    );
+    expect(out.title).toBe("Transcript backfill cancelled");
+    expect(out.emailSubject).toContain("cancelled");
+    expect(out.emailSubject).not.toContain("failed");
+    expect(out.slackBody).toContain("CANCELLED");
+  });
+
   it("labels retries distinctly and references the parent job id", () => {
     const out = formatBackfillCompletionNotification(
       { ...baseJob, parentJobId: "backfill-original-xyz" },

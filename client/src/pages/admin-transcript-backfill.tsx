@@ -32,6 +32,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   X,
+  Ban,
   RotateCcw,
   Download,
   ListChecks,
@@ -44,9 +45,14 @@ import {
 import { format, formatDistanceStrict } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
 
+// Task #1057 — CANCELLED is rendered with its own badge variant + label so
+// admins can tell a deliberately-stopped run apart from a crash. Existing
+// FAILED rows continue to render exactly as before.
+type BackfillJobStatus = "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
+
 interface BackfillJob {
   id: string;
-  status: "RUNNING" | "COMPLETED" | "FAILED";
+  status: BackfillJobStatus;
   total: number;
   processed: number;
   succeeded: number;
@@ -65,7 +71,7 @@ interface BackfillJob {
 
 interface BackfillLineageNode {
   id: string;
-  status: "RUNNING" | "COMPLETED" | "FAILED";
+  status: BackfillJobStatus;
   startedAt: string;
   completedAt: string | null;
   parentJobId: string | null;
@@ -226,7 +232,9 @@ const TEST_ALERT_HISTORY_PATH =
 const TEST_ALERT_HISTORY_KEY_BASE = [TEST_ALERT_HISTORY_PATH] as const;
 const TEST_ALERT_HISTORY_PAGE_SIZE = 10;
 const PAGE_SIZE = 20;
-const STATUS_OPTIONS = ["RUNNING", "COMPLETED", "FAILED"] as const;
+// Task #1057 — surface CANCELLED in the history filter so admins can isolate
+// deliberately-stopped runs from crashes.
+const STATUS_OPTIONS = ["RUNNING", "COMPLETED", "FAILED", "CANCELLED"] as const;
 type StatusFilter = "ALL" | (typeof STATUS_OPTIONS)[number];
 
 export default function AdminTranscriptBackfillPage() {
@@ -1324,20 +1332,26 @@ export default function AdminTranscriptBackfillPage() {
               <div>
                 <CardTitle className="flex items-center gap-2">
                   Job progress
+                  {/* Task #1057 — CANCELLED uses an outline badge + Ban icon
+                      so it reads as "deliberately stopped" rather than the
+                      destructive crash styling reserved for FAILED. */}
                   <Badge
                     variant={
                       job.status === "RUNNING"
                         ? "secondary"
                         : job.status === "COMPLETED"
                         ? "default"
+                        : job.status === "CANCELLED"
+                        ? "outline"
                         : "destructive"
                     }
                     data-testid="badge-job-status"
                   >
                     {job.status === "RUNNING" && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
                     {job.status === "COMPLETED" && <CheckCircle2 className="h-3 w-3 mr-1" />}
+                    {job.status === "CANCELLED" && <Ban className="h-3 w-3 mr-1" />}
                     {job.status === "FAILED" && <AlertTriangle className="h-3 w-3 mr-1" />}
-                    {job.status}
+                    {job.status === "CANCELLED" ? "Cancelled" : job.status}
                   </Badge>
                 </CardTitle>
                 <CardDescription data-testid="text-job-id">
@@ -1669,20 +1683,26 @@ export default function AdminTranscriptBackfillPage() {
                       </div>
                       <div className="flex-1 min-w-0 space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
+                          {/* Task #1057 — match the active-job card: cancelled
+                              runs get an outline badge + Ban icon so they
+                              don't look like crashes. */}
                           <Badge
                             variant={
                               entry.status === "RUNNING"
                                 ? "secondary"
                                 : entry.status === "COMPLETED"
                                 ? "default"
+                                : entry.status === "CANCELLED"
+                                ? "outline"
                                 : "destructive"
                             }
                             data-testid={`badge-history-status-${entry.id}`}
                           >
                             {entry.status === "RUNNING" && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
                             {entry.status === "COMPLETED" && <CheckCircle2 className="h-3 w-3 mr-1" />}
+                            {entry.status === "CANCELLED" && <Ban className="h-3 w-3 mr-1" />}
                             {entry.status === "FAILED" && <AlertTriangle className="h-3 w-3 mr-1" />}
-                            {entry.status}
+                            {entry.status === "CANCELLED" ? "Cancelled" : entry.status}
                           </Badge>
                           <span className="text-xs text-muted-foreground" data-testid={`text-history-started-${entry.id}`}>
                             {format(new Date(entry.startedAt), "PPpp")}
@@ -2619,11 +2639,16 @@ function RetryLineageChain({
         const isCurrent = node.id === currentId;
         const onPage = visibleIds.has(node.id);
         const label = node.attempt === 0 ? "original" : `retry ${node.attempt}`;
+        // Task #1057 — render CANCELLED with a neutral tone (not the
+        // destructive red used for FAILED) so the lineage chip reflects
+        // a deliberate stop rather than a crash.
         const statusTone =
           node.status === "COMPLETED"
             ? "border-green-500/40 text-green-700 dark:text-green-400"
             : node.status === "FAILED"
             ? "border-destructive/40 text-destructive"
+            : node.status === "CANCELLED"
+            ? "border-muted-foreground/60 text-muted-foreground"
             : "border-muted-foreground/40 text-muted-foreground";
         const currentTone = isCurrent ? "bg-muted font-medium" : "";
         // Off-page chips used to be disabled. Task #1015 — they're now
