@@ -1210,10 +1210,22 @@ const BACKFILL_MAX_RESUMABLE_AGE_MS = (() => {
   const raw = Number(process.env.CRM_BACKFILL_MAX_RESUMABLE_AGE_MS);
   return Number.isFinite(raw) && raw > 0 ? raw : 24 * 60 * 60 * 1000;
 })();
-// Default concurrency used when resuming an interrupted job. The original
-// concurrency the admin chose isn't persisted, so we fall back to the same
-// default the POST endpoint uses.
+// Default concurrency used when resuming an interrupted job that predates
+// Task #992 and therefore has NULL persisted concurrency. Newer jobs persist
+// the originally-requested value and use it instead (see Task #1012).
 const BACKFILL_RESUME_CONCURRENCY = 2;
+
+// Test-only seam (Task #1012): allow the resume path to call a stubbed
+// runTranscriptBackfill so tests can assert it is invoked with the exact
+// (concurrency, maxRecords) values loaded from the persisted job row without
+// having to count side-effects of the real worker. Production code path is
+// unchanged: the variable defaults to the real implementation.
+let runTranscriptBackfillForResume: typeof runTranscriptBackfill = runTranscriptBackfill;
+export function __setResumeRunTranscriptBackfillForTests(
+  fn: typeof runTranscriptBackfill | null,
+) {
+  runTranscriptBackfillForResume = fn ?? runTranscriptBackfill;
+}
 
 // On boot, look at the most-recent RUNNING job per org and decide whether to
 // resume it or reap it.
@@ -1378,7 +1390,7 @@ export async function resumeOrReapBackfillJobsOnBoot() {
         // defaults so behavior is unchanged for in-flight jobs.
         const resumeConcurrency = row.concurrency ?? BACKFILL_RESUME_CONCURRENCY;
         const resumeMaxRecords = row.maxRecords ?? null;
-        void runTranscriptBackfill(job, eligible, resumeConcurrency, resumeMaxRecords);
+        void runTranscriptBackfillForResume(job, eligible, resumeConcurrency, resumeMaxRecords);
         resumed += 1;
         logInfo("crmCalls: resumed interrupted transcript backfill on boot", {
           jobId: job.id,
