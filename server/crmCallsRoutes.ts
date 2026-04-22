@@ -26,9 +26,17 @@ import {
   crmOpportunityActivities,
   crmEmailMessages,
   crmQuotes,
+  crmTranscriptBackfillJobs,
   users,
   insertCrmCallSchema,
+  type CrmTranscriptBackfillJob,
 } from "@shared/schema";
+import {
+  createCrmTranscriptBackfillJob,
+  getCrmTranscriptBackfillJob,
+  getRunningCrmTranscriptBackfillJob,
+  updateCrmTranscriptBackfillJob,
+} from "./storage";
 import {
   requireAuth,
   requireRole,
@@ -919,10 +927,13 @@ router.post(
 // Transcript backfill (admin) — Task #949. Iterates over recordings whose
 // transcript is missing (transcriptStatus PENDING or FAILED) and runs them
 // through Whisper with a small concurrency cap to respect rate limits. Runs
-// in the background so the HTTP request returns immediately; progress and
-// failures are tracked in-memory and surfaced via a polling endpoint.
+// in the background so the HTTP request returns immediately. Task #969:
+// progress is persisted to `crm_transcript_backfill_jobs` so admins still see
+// the last-known status if the Node process restarts mid-run. Each worker
+// keeps a small in-memory mirror of the row and flushes mutations through
+// the storage layer.
 // ---------------------------------------------------------------------------
-type BackfillJob = {
+type BackfillJobState = {
   id: string;
   orgId: string;
   status: "RUNNING" | "COMPLETED" | "FAILED";
@@ -936,21 +947,47 @@ type BackfillJob = {
   startedById: string;
 };
 
-const transcriptBackfillJobs = new Map<string, BackfillJob>();
 const MAX_BACKFILL_ERROR_SAMPLES = 50;
-const BACKFILL_JOB_TTL_MS = 60 * 60 * 1000; // keep finished jobs for 1h
+// If a job's heartbeat is older than this, the worker is presumed dead (the
+// process restarted) and the job is marked FAILED on the next read.
+const BACKFILL_HEARTBEAT_STALE_MS = 5 * 60 * 1000;
 
-function pruneBackfillJobs() {
-  const now = Date.now();
-  for (const [id, job] of transcriptBackfillJobs) {
-    if (
-      job.status !== "RUNNING" &&
-      job.completedAt &&
-      now - new Date(job.completedAt).getTime() > BACKFILL_JOB_TTL_MS
-    ) {
-      transcriptBackfillJobs.delete(id);
-    }
-  }
+function rowToState(row: CrmTranscriptBackfillJob): BackfillJobState {
+  return {
+    id: row.id,
+    orgId: row.organizationId,
+    status: row.status as BackfillJobState["status"],
+    total: row.total,
+    processed: row.processed,
+    succeeded: row.succeeded,
+    failed: row.failed,
+    errors: (row.errors as BackfillJobState["errors"]) ?? [],
+    startedAt: row.startedAt.toISOString(),
+    completedAt: row.completedAt ? row.completedAt.toISOString() : null,
+    startedById: row.startedById ?? "",
+  };
+}
+
+async function persistJobProgress(job: BackfillJobState) {
+  // Use GREATEST(...) for the monotonic counters so out-of-order writes from
+  // concurrent workers can never visibly regress the persisted progress
+  // (e.g. a slow write with processed=2 landing after a fast write with
+  // processed=3). The final completion write still flushes the canonical
+  // values via the regular set path below.
+  await db
+    .update(crmTranscriptBackfillJobs)
+    .set({
+      status: job.status,
+      total: sql`GREATEST(${crmTranscriptBackfillJobs.total}, ${job.total})`,
+      processed: sql`GREATEST(${crmTranscriptBackfillJobs.processed}, ${job.processed})`,
+      succeeded: sql`GREATEST(${crmTranscriptBackfillJobs.succeeded}, ${job.succeeded})`,
+      failed: sql`GREATEST(${crmTranscriptBackfillJobs.failed}, ${job.failed})`,
+      errors: job.errors,
+      completedAt: job.completedAt ? new Date(job.completedAt) : null,
+      heartbeatAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(crmTranscriptBackfillJobs.id, job.id));
 }
 
 const BACKFILL_BATCH_SIZE = 100;
@@ -979,7 +1016,7 @@ async function fetchEligibleRecordingBatch(
 }
 
 async function runTranscriptBackfill(
-  job: BackfillJob,
+  job: BackfillJobState,
   initialRecordingIds: string[],
   concurrency: number,
   maxRecords: number | null,
@@ -1034,6 +1071,14 @@ async function runTranscriptBackfill(
         );
       } finally {
         job.processed += 1;
+        try {
+          await persistJobProgress(job);
+        } catch (e) {
+          logWarn("crmCalls: failed to persist transcript backfill progress", {
+            jobId: job.id,
+            error: e instanceof Error ? e.message : String(e),
+          });
+        }
       }
     }
   };
@@ -1073,6 +1118,15 @@ async function runTranscriptBackfill(
     );
   } finally {
     job.completedAt = new Date().toISOString();
+    try {
+      await persistJobProgress(job);
+    } catch (e) {
+      logError(
+        "crmCalls: failed to persist final transcript backfill state",
+        { jobId: job.id },
+        e instanceof Error ? e : new Error(String(e)),
+      );
+    }
     logInfo("crmCalls: transcript backfill finished", {
       jobId: job.id,
       orgId: job.orgId,
@@ -1083,9 +1137,48 @@ async function runTranscriptBackfill(
   }
 }
 
+// On boot, mark only orphaned RUNNING jobs (heartbeat older than the stale
+// threshold) as FAILED. We deliberately avoid blanket-failing every RUNNING
+// row because in rolling-deploy or multi-instance setups another worker may
+// still be actively progressing the job — clobbering its status would both
+// hide real progress and let a duplicate backfill start. Active rows are
+// also lazily reaped on read in the GET handler.
+async function reapStaleBackfillJobsOnBoot() {
+  try {
+    const cutoff = new Date(Date.now() - BACKFILL_HEARTBEAT_STALE_MS);
+    const result = await db
+      .update(crmTranscriptBackfillJobs)
+      .set({
+        status: "FAILED",
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(crmTranscriptBackfillJobs.status, "RUNNING"),
+          lte(crmTranscriptBackfillJobs.heartbeatAt, cutoff),
+        ),
+      )
+      .returning({ id: crmTranscriptBackfillJobs.id });
+    if (result.length > 0) {
+      logInfo("crmCalls: reaped stale transcript backfill jobs on boot", {
+        count: result.length,
+        ids: result.map((r) => r.id),
+      });
+    }
+  } catch (e) {
+    logWarn("crmCalls: failed to reap stale transcript backfill jobs on boot", {
+      error: e instanceof Error ? e.message : String(e),
+    });
+  }
+}
+void reapStaleBackfillJobsOnBoot();
+
 // Pending-count endpoint so the admin UI can show how many recordings are
 // missing a transcript before launching a backfill, plus surface the currently
-// running job (if any) so a fresh page load can resume polling.
+// running job (if any) so a fresh page load can resume polling. Task #969:
+// activeJob now comes from the persisted backfill jobs table so it survives a
+// server restart, and stale RUNNING rows are reaped on read.
 router.get(
   "/api/crm/calls/transcripts/backfill",
   requireAuth,
@@ -1108,12 +1201,19 @@ router.get(
         );
       const pending = Number(pendingRaw) || 0;
 
-      pruneBackfillJobs();
-      let activeJob: BackfillJob | null = null;
-      for (const job of transcriptBackfillJobs.values()) {
-        if (job.orgId === orgId && job.status === "RUNNING") {
-          activeJob = job;
-          break;
+      let activeJob: BackfillJobState | null = null;
+      const runningRow = await getRunningCrmTranscriptBackfillJob(orgId);
+      if (runningRow) {
+        const heartbeatAgeMs =
+          Date.now() - new Date(runningRow.heartbeatAt).getTime();
+        if (heartbeatAgeMs > BACKFILL_HEARTBEAT_STALE_MS) {
+          const reaped = await updateCrmTranscriptBackfillJob(runningRow.id, {
+            status: "FAILED",
+            completedAt: new Date(),
+          });
+          activeJob = reaped ? rowToState(reaped) : null;
+        } else {
+          activeJob = rowToState(runningRow);
         }
       }
 
@@ -1147,17 +1247,29 @@ router.post(
       const maxRecords = parsed.data.maxRecords ?? null;
       const concurrency = parsed.data.concurrency ?? 2;
 
-      pruneBackfillJobs();
-
       // Don't allow two concurrent backfills for the same org — they would
-      // race over the same PENDING/FAILED rows.
-      for (const job of transcriptBackfillJobs.values()) {
-        if (job.orgId === orgId && job.status === "RUNNING") {
+      // race over the same PENDING/FAILED rows. A RUNNING row whose heartbeat
+      // is stale was orphaned by a process restart; mark it FAILED so a fresh
+      // run can start.
+      const existingRunning = await getRunningCrmTranscriptBackfillJob(orgId);
+      if (existingRunning) {
+        const heartbeatAgeMs =
+          Date.now() - new Date(existingRunning.heartbeatAt).getTime();
+        if (heartbeatAgeMs <= BACKFILL_HEARTBEAT_STALE_MS) {
           return res.status(409).json({
             error: "A transcript backfill is already running for this organization",
-            jobId: job.id,
+            jobId: existingRunning.id,
           });
         }
+        await updateCrmTranscriptBackfillJob(existingRunning.id, {
+          status: "FAILED",
+          completedAt: new Date(),
+        });
+        logWarn("crmCalls: reaped stale transcript backfill job before starting a new one", {
+          jobId: existingRunning.id,
+          orgId,
+          heartbeatAgeMs,
+        });
       }
 
       // Seed the worker queue with the first batch. The job will keep paging
@@ -1185,20 +1297,19 @@ router.post(
       const initialTotal = maxRecords !== null ? Math.min(totalEligible, maxRecords) : totalEligible;
 
       const jobId = `backfill-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const job: BackfillJob = {
+      const persistedRow = await createCrmTranscriptBackfillJob({
         id: jobId,
-        orgId,
+        organizationId: orgId,
         status: "RUNNING",
         total: initialTotal,
         processed: 0,
         succeeded: 0,
         failed: 0,
         errors: [],
-        startedAt: new Date().toISOString(),
         completedAt: null,
         startedById: req.user!.id,
-      };
-      transcriptBackfillJobs.set(jobId, job);
+      });
+      const job = rowToState(persistedRow);
 
       logInfo("crmCalls: transcript backfill started", {
         jobId,
@@ -1211,11 +1322,13 @@ router.post(
       if (eligible.length === 0) {
         job.status = "COMPLETED";
         job.completedAt = new Date().toISOString();
+        await persistJobProgress(job);
         return res.status(200).json({ jobId, total: 0, message: "No recordings to backfill" });
       }
 
       // Fire-and-forget; the request returns immediately. The worker keeps
-      // paginating through eligible recordings until none remain.
+      // paginating through eligible recordings until none remain. Progress is
+      // flushed to the persisted row after each recording.
       void runTranscriptBackfill(job, eligible, concurrency, maxRecords);
 
       res.status(202).json({ jobId, total: job.total });
@@ -1233,11 +1346,25 @@ router.get(
     try {
       const orgId = resolveOrg(req, res);
       if (!orgId) return;
-      const job = transcriptBackfillJobs.get(req.params.jobId);
-      if (!job || job.orgId !== orgId) {
+      const row = await getCrmTranscriptBackfillJob(req.params.jobId, orgId);
+      if (!row) {
         return res.status(404).json({ error: "Backfill job not found" });
       }
-      res.json(job);
+      // If the row is still RUNNING but the worker hasn't checked in for a
+      // while, the process that owned it almost certainly restarted. Surface
+      // that as FAILED so admins see a definitive end-state instead of a
+      // perpetually-stuck progress bar.
+      if (
+        row.status === "RUNNING" &&
+        Date.now() - new Date(row.heartbeatAt).getTime() > BACKFILL_HEARTBEAT_STALE_MS
+      ) {
+        const reaped = await updateCrmTranscriptBackfillJob(row.id, {
+          status: "FAILED",
+          completedAt: new Date(),
+        });
+        return res.json(rowToState(reaped ?? { ...row, status: "FAILED", completedAt: new Date() }));
+      }
+      res.json(rowToState(row));
     } catch (e) {
       next(e);
     }

@@ -76,6 +76,7 @@ import { ensureProjectsRollupColumns } from "./ensureProjectsRollupColumns";
 import { ensureGanttPdfAlertTables } from "./ensureGanttPdfAlertTables";
 import { ensurePortfolioPdfAlertTables } from "./ensurePortfolioPdfAlertTables";
 import { ensureProjectKpiSnapshotsTable } from "./ensureProjectKpiSnapshotsTable";
+import { ensureCrmTranscriptBackfillJobsTable } from "./ensureCrmTranscriptBackfillJobsTable";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -161,6 +162,7 @@ const migrations: MigrationStep[] = [
   { name: "gantt_pdf_alert_tables", category: "CREATE_TABLE", fn: ensureGanttPdfAlertTables },
   { name: "portfolio_pdf_alert_tables", category: "CREATE_TABLE", fn: ensurePortfolioPdfAlertTables },
   { name: "project_kpi_snapshots_table", category: "CREATE_TABLE", fn: ensureProjectKpiSnapshotsTable },
+  { name: "crm_transcript_backfill_jobs_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillJobsTable },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

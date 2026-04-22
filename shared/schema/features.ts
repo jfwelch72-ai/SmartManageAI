@@ -1749,6 +1749,35 @@ export const insertCrmCallRecordingSchema = createInsertSchema(crmCallRecordings
 export type InsertCrmCallRecording = z.infer<typeof insertCrmCallRecordingSchema>;
 export type CrmCallRecording = typeof crmCallRecordings.$inferSelect;
 
+// Task #969 — persist transcript backfill job state so admins can still see
+// progress (or the last-known status) after a server restart.
+export const crmTranscriptBackfillJobs = pgTable("crm_transcript_backfill_jobs", {
+  id: varchar("id").primaryKey(),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("RUNNING"),
+  total: integer("total").notNull().default(0),
+  processed: integer("processed").notNull().default(0),
+  succeeded: integer("succeeded").notNull().default(0),
+  failed: integer("failed").notNull().default(0),
+  errors: jsonb("errors").$type<Array<{ recordingId: string; error: string }>>().notNull().default([]),
+  startedById: varchar("started_by_id").references(() => users.id, { onDelete: "set null" }),
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+  heartbeatAt: timestamp("heartbeat_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("crm_transcript_backfill_jobs_org_idx").on(table.organizationId),
+  statusIdx: index("crm_transcript_backfill_jobs_status_idx").on(table.status),
+  startedAtIdx: index("crm_transcript_backfill_jobs_started_at_idx").on(table.startedAt),
+}));
+export const insertCrmTranscriptBackfillJobSchema = createInsertSchema(crmTranscriptBackfillJobs).omit({
+  startedAt: true,
+  updatedAt: true,
+  heartbeatAt: true,
+});
+export type InsertCrmTranscriptBackfillJob = z.infer<typeof insertCrmTranscriptBackfillJobSchema>;
+export type CrmTranscriptBackfillJob = typeof crmTranscriptBackfillJobs.$inferSelect;
+
 // CRM Quotes - lightweight proposals/quotes generated directly from opportunities
 export const crmQuotes = pgTable("crm_quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
