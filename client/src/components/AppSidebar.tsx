@@ -62,6 +62,7 @@ import {
   ShieldCheck,
   ShoppingCart,
   CalendarRange,
+  Activity,
   type LucideIcon,
 } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -268,6 +269,7 @@ export function AppSidebar() {
                         {item.href === "/admin/organizations" && <Building2 className="w-4 h-4" />}
                         {item.href === "/admin/analytics" && <BarChart3 className="w-4 h-4" />}
                         {item.href === "/admin/tools" && <Wrench className="w-4 h-4" />}
+                        {item.href === "/admin/status" && <Activity className="w-4 h-4" />}
                         <span>{item.label}</span>
                       </Link>
                     </SidebarMenuButton>

@@ -657,6 +657,7 @@ export const PlatformAdminNavConfig = {
     { href: "/admin/organizations", label: "Organizations", testId: "nav-admin-organizations", visible: () => true },
     { href: "/admin/analytics", label: "Analytics", testId: "nav-admin-analytics", visible: () => true },
     { href: "/admin/tools", label: "Support Tools", testId: "nav-admin-tools", visible: () => true },
+    { href: "/admin/status", label: "Status", testId: "nav-admin-status", visible: () => true },
   ],
 };
 
