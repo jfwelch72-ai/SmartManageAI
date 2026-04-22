@@ -13,3 +13,4 @@ audit/reports/*.html
 audit/reports/*.md
 test-results/
 nohup.out
+.env.test
