@@ -34,6 +34,14 @@ export const jobMetricAlertQuietHoursDigestFormatEnum = pgEnum(
   ["summary", "full", "grouped"],
 );
 
+// Task #797 — Recipient-chosen clock format for quiet-hours digest
+// timestamps. "12h" preserves the legacy "6:00 PM" rendering; "24h"
+// switches to "18:00" which most non-US locales prefer.
+export const jobMetricAlertQuietHoursDigestTimeFormatEnum = pgEnum(
+  "job_metric_alert_quiet_hours_digest_time_format",
+  ["12h", "24h"],
+);
+
 export const notificationTypeEnum = pgEnum("notification_type", [
   "BILLING_READY", "CHANGE_ORDER_PENDING", "TIME_OFF_REQUEST", "GENERAL", "MATERIAL_OVERAGE",
   "PROJECT_ASSIGNMENT", "MAINTENANCE_REQUEST", "REPAIR_REQUEST", "DELAY_SUBMITTED",

@@ -562,6 +562,126 @@ export default function NotificationPrefsSection() {
     updateQuietDigestFormatMutation.mutate(format);
   }
 
+  // Task #797 — recipient-chosen locale + 12h/24h + weekday preferences
+  // for the quiet-hours digest timestamps. Defaults preserve the
+  // legacy en-US, 12-hour, no-weekday rendering so existing recipients
+  // see no change until they explicitly opt in.
+  type QuietHoursDigestTimeFormat = "12h" | "24h";
+  // Curated short list of common locales — enough to cover the most
+  // requested non-en-US formats without overwhelming the user with the
+  // full 700+ BCP-47 tag list. "" → "Auto (en-US)".
+  const QUIET_DIGEST_LOCALE_OPTIONS: { value: string; label: string }[] = [
+    { value: "", label: "Auto (en-US)" },
+    { value: "en-US", label: "English — United States (en-US)" },
+    { value: "en-GB", label: "English — United Kingdom (en-GB)" },
+    { value: "en-CA", label: "English — Canada (en-CA)" },
+    { value: "en-AU", label: "English — Australia (en-AU)" },
+    { value: "fr-FR", label: "Français — France (fr-FR)" },
+    { value: "fr-CA", label: "Français — Canada (fr-CA)" },
+    { value: "de-DE", label: "Deutsch — Deutschland (de-DE)" },
+    { value: "es-ES", label: "Español — España (es-ES)" },
+    { value: "es-MX", label: "Español — México (es-MX)" },
+    { value: "it-IT", label: "Italiano — Italia (it-IT)" },
+    { value: "nl-NL", label: "Nederlands — Nederland (nl-NL)" },
+    { value: "pt-BR", label: "Português — Brasil (pt-BR)" },
+    { value: "ja-JP", label: "日本語 — 日本 (ja-JP)" },
+    { value: "zh-CN", label: "中文 — 中国大陆 (zh-CN)" },
+    { value: "ko-KR", label: "한국어 — 대한민국 (ko-KR)" },
+  ];
+
+  const [quietDigestLocale, setQuietDigestLocale] = useState<string>("");
+  const [quietDigestTimeFormat, setQuietDigestTimeFormat] =
+    useState<QuietHoursDigestTimeFormat>("12h");
+  const [quietDigestShowWeekday, setQuietDigestShowWeekday] = useState(false);
+  useEffect(() => {
+    if (!authUser) return;
+    const rawLocale = (authUser.jobMetricAlertQuietHoursDigestLocale ?? "") as string;
+    setQuietDigestLocale(rawLocale);
+    const rawFormat = (authUser.jobMetricAlertQuietHoursDigestTimeFormat ?? "12h") as string;
+    setQuietDigestTimeFormat(rawFormat === "24h" ? "24h" : "12h");
+    setQuietDigestShowWeekday(Boolean(authUser.jobMetricAlertQuietHoursDigestShowWeekday));
+  }, [authUser]);
+
+  const updateQuietDigestTimestampPrefsMutation = useMutation({
+    mutationFn: async (payload: {
+      jobMetricAlertQuietHoursDigestLocale?: string | null;
+      jobMetricAlertQuietHoursDigestTimeFormat?: QuietHoursDigestTimeFormat;
+      jobMetricAlertQuietHoursDigestShowWeekday?: boolean;
+    }) => {
+      return await apiRequest("PATCH", "/api/auth/profile", payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({ title: "Digest timestamp format updated" });
+    },
+    onError: (error: Error) => {
+      // Roll the local state back to the persisted values.
+      setQuietDigestLocale(
+        (authUser?.jobMetricAlertQuietHoursDigestLocale ?? "") as string,
+      );
+      const fallbackFmt = (authUser?.jobMetricAlertQuietHoursDigestTimeFormat ?? "12h") as string;
+      setQuietDigestTimeFormat(fallbackFmt === "24h" ? "24h" : "12h");
+      setQuietDigestShowWeekday(
+        Boolean(authUser?.jobMetricAlertQuietHoursDigestShowWeekday),
+      );
+      toast({
+        title: "Failed to update digest timestamp format",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  function handleQuietDigestLocaleChange(raw: string) {
+    setQuietDigestLocale(raw);
+    updateQuietDigestTimestampPrefsMutation.mutate({
+      jobMetricAlertQuietHoursDigestLocale: raw === "" ? null : raw,
+    });
+  }
+
+  function handleQuietDigestTimeFormatChange(value: QuietHoursDigestTimeFormat) {
+    setQuietDigestTimeFormat(value);
+    updateQuietDigestTimestampPrefsMutation.mutate({
+      jobMetricAlertQuietHoursDigestTimeFormat: value,
+    });
+  }
+
+  function handleQuietDigestShowWeekdayChange(value: boolean) {
+    setQuietDigestShowWeekday(value);
+    updateQuietDigestTimestampPrefsMutation.mutate({
+      jobMetricAlertQuietHoursDigestShowWeekday: value,
+    });
+  }
+
+  // Live in-component sample so the recipient can see exactly how
+  // their selected locale + 12h/24h + weekday combo will render a
+  // timestamp before saving — mirrors `formatDigestTimestamp` on the
+  // server. Re-uses the recipient's quiet-hours timezone (or the
+  // detected browser tz when none is configured) so the example feels
+  // realistic.
+  const quietDigestTimestampSample: string = (() => {
+    const sampleDate = new Date();
+    const tz = quietTimezone || detectedTimezone || "UTC";
+    const locale = quietDigestLocale && quietDigestLocale.length > 0
+      ? quietDigestLocale
+      : "en-US";
+    const hour12 = quietDigestTimeFormat !== "24h";
+    try {
+      return new Intl.DateTimeFormat(locale, {
+        timeZone: tz,
+        ...(quietDigestShowWeekday ? { weekday: "short" as const } : {}),
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12,
+        timeZoneName: "short",
+      }).format(sampleDate);
+    } catch {
+      return sampleDate.toISOString();
+    }
+  })();
+
   // Task #764: opt-in CSV attachment for the quiet-hours digest. Defaults
   // to false on the server so the email body stays the only payload until
   // a Super Admin explicitly turns this on for offline analysis.
@@ -1348,6 +1468,114 @@ export default function NotificationPrefsSection() {
                               </span>
                             </Label>
                           </RadioGroup>
+
+                          <div
+                            className="pt-3 border-t border-border space-y-2"
+                            data-testid="row-job-metric-alert-quiet-hours-digest-timestamp-format"
+                          >
+                            <div className="space-y-0.5">
+                              <p className="text-sm font-medium">Digest timestamp format</p>
+                              <p className="text-xs text-muted-foreground">
+                                Choose how event times appear in the catch-up email and the
+                                in-app preview. Times still use your quiet-hours timezone.
+                              </p>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <Label
+                                htmlFor="select-quiet-digest-locale"
+                                className="text-sm"
+                              >
+                                Locale
+                              </Label>
+                              <Select
+                                value={quietDigestLocale === "" ? "auto" : quietDigestLocale}
+                                onValueChange={(v) =>
+                                  handleQuietDigestLocaleChange(v === "auto" ? "" : v)
+                                }
+                                disabled={updateQuietDigestTimestampPrefsMutation.isPending}
+                              >
+                                <SelectTrigger
+                                  id="select-quiet-digest-locale"
+                                  className="w-[260px]"
+                                  data-testid="select-job-metric-alert-quiet-hours-digest-locale"
+                                >
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {QUIET_DIGEST_LOCALE_OPTIONS.map((opt) => {
+                                    const slot = opt.value === "" ? "auto" : opt.value;
+                                    return (
+                                      <SelectItem
+                                        key={slot}
+                                        value={slot}
+                                        data-testid={`select-job-metric-alert-quiet-hours-digest-locale-option-${slot}`}
+                                      >
+                                        {opt.label}
+                                      </SelectItem>
+                                    );
+                                  })}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <Label
+                                htmlFor="select-quiet-digest-time-format"
+                                className="text-sm"
+                              >
+                                Time format
+                              </Label>
+                              <Select
+                                value={quietDigestTimeFormat}
+                                onValueChange={(v) =>
+                                  handleQuietDigestTimeFormatChange(v as QuietHoursDigestTimeFormat)
+                                }
+                                disabled={updateQuietDigestTimestampPrefsMutation.isPending}
+                              >
+                                <SelectTrigger
+                                  id="select-quiet-digest-time-format"
+                                  className="w-[180px]"
+                                  data-testid="select-job-metric-alert-quiet-hours-digest-time-format"
+                                >
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem
+                                    value="12h"
+                                    data-testid="select-job-metric-alert-quiet-hours-digest-time-format-option-12h"
+                                  >
+                                    12-hour (3:45 PM)
+                                  </SelectItem>
+                                  <SelectItem
+                                    value="24h"
+                                    data-testid="select-job-metric-alert-quiet-hours-digest-time-format-option-24h"
+                                  >
+                                    24-hour (15:45)
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="flex items-center justify-between gap-3">
+                              <Label
+                                htmlFor="switch-quiet-digest-show-weekday"
+                                className="text-sm"
+                              >
+                                Show weekday (e.g. "Wed")
+                              </Label>
+                              <Switch
+                                id="switch-quiet-digest-show-weekday"
+                                checked={quietDigestShowWeekday}
+                                onCheckedChange={handleQuietDigestShowWeekdayChange}
+                                disabled={updateQuietDigestTimestampPrefsMutation.isPending}
+                                data-testid="switch-job-metric-alert-quiet-hours-digest-show-weekday"
+                              />
+                            </div>
+                            <p
+                              className="text-xs text-muted-foreground"
+                              data-testid="text-job-metric-alert-quiet-hours-digest-timestamp-sample"
+                            >
+                              Sample: {quietDigestTimestampSample}
+                            </p>
+                          </div>
 
                           <div
                             className="pt-3 border-t border-border space-y-1"

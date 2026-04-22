@@ -346,6 +346,21 @@ async function loadSuperAdmins(): Promise<SuperAdminRecipient[]> {
 
 export type QuietHoursDigestFormat = "summary" | "full" | "grouped";
 
+// Task #797 — recipient-chosen clock format for digest timestamps.
+export type QuietHoursDigestTimeFormat = "12h" | "24h";
+
+/**
+ * Task #797 — Snapshot of the per-recipient timestamp formatting prefs
+ * threaded through `formatDigestTimestamp` and `buildDigestEmailBody`.
+ * `locale` is BCP-47; `null` falls back to "en-US" so the legacy
+ * formatting stays exactly the same for recipients who never opted in.
+ */
+export interface QuietHoursDigestTimestampOptions {
+  locale: string | null;
+  timeFormat: QuietHoursDigestTimeFormat;
+  showWeekday: boolean;
+}
+
 interface QuietHoursDigestRecipient extends SuperAdminRecipient {
   digestEnabled: boolean;
   lastDigestAt: Date | null;
@@ -359,6 +374,11 @@ interface QuietHoursDigestRecipient extends SuperAdminRecipient {
   // email body — and the in-app preview — surface. Falls back to
   // DIGEST_MAX_EVENTS_DEFAULT when unset (e.g. legacy callers/tests).
   digestMaxEvents?: number | null;
+  // Task #797 — locale + 12h/24h + weekday preferences for the
+  // recipient's digest timestamps.
+  digestLocale: string | null;
+  digestTimeFormat: QuietHoursDigestTimeFormat;
+  digestShowWeekday: boolean;
 }
 
 // Task #776 — Allowed values for the per-recipient max-events cap. Kept
@@ -396,6 +416,9 @@ async function loadSuperAdminsForDigest(): Promise<QuietHoursDigestRecipient[]> 
       digestFormat: users.jobMetricAlertQuietHoursDigestFormat,
       digestCsvEnabled: users.jobMetricAlertQuietHoursDigestCsvEnabled,
       digestMaxEvents: users.jobMetricAlertQuietHoursDigestMaxEvents,
+      digestLocale: users.jobMetricAlertQuietHoursDigestLocale,
+      digestTimeFormat: users.jobMetricAlertQuietHoursDigestTimeFormat,
+      digestShowWeekday: users.jobMetricAlertQuietHoursDigestShowWeekday,
     })
     .from(users)
     .where(eq(users.role, "SUPER_ADMIN"));
@@ -415,6 +438,9 @@ async function loadSuperAdminsForDigest(): Promise<QuietHoursDigestRecipient[]> 
       digestFormat: (r.digestFormat as QuietHoursDigestFormat | null) ?? "full",
       digestCsvEnabled: r.digestCsvEnabled ?? false,
       digestMaxEvents: clampDigestMaxEvents(r.digestMaxEvents),
+      digestLocale: r.digestLocale ?? null,
+      digestTimeFormat: (r.digestTimeFormat as QuietHoursDigestTimeFormat | null) ?? "12h",
+      digestShowWeekday: r.digestShowWeekday ?? false,
     }));
 }
 
@@ -1452,21 +1478,49 @@ function formatDigestSubject(count: number): string {
  * Falls back to the raw ISO string if the timezone is unrecognized so
  * the digest never silently swallows a timestamp.
  */
-function formatDigestTimestamp(d: Date, timezone: string | null): string {
+function formatDigestTimestamp(
+  d: Date,
+  timezone: string | null,
+  options: QuietHoursDigestTimestampOptions = {
+    locale: null,
+    timeFormat: "12h",
+    showWeekday: false,
+  },
+): string {
   const tz = timezone && timezone.length > 0 ? timezone : "UTC";
+  const locale =
+    options.locale && options.locale.length > 0 ? options.locale : "en-US";
+  const hour12 = options.timeFormat !== "24h";
   try {
-    const fmt = new Intl.DateTimeFormat("en-US", {
+    const fmt = new Intl.DateTimeFormat(locale, {
       timeZone: tz,
+      ...(options.showWeekday ? { weekday: "short" as const } : {}),
       month: "short",
       day: "numeric",
       hour: "numeric",
       minute: "2-digit",
-      hour12: true,
+      hour12,
       timeZoneName: "short",
     });
     return fmt.format(d);
   } catch {
-    return d.toISOString();
+    // Bad locale or timezone string — retry once with safe en-US/UTC
+    // defaults so the digest never silently swallows a timestamp, then
+    // fall back to the raw ISO if that still fails.
+    try {
+      const fallback = new Intl.DateTimeFormat("en-US", {
+        timeZone: "UTC",
+        month: "short",
+        day: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+        hour12: true,
+        timeZoneName: "short",
+      });
+      return fallback.format(d);
+    } catch {
+      return d.toISOString();
+    }
   }
 }
 
@@ -1476,7 +1530,18 @@ export function buildDigestEmailBody(
   windowEnd: Date,
   format: QuietHoursDigestFormat = "full",
   timezone: string | null = null,
+  // Task #797 — per-recipient locale & 12h/24h/weekday preferences for
+  // every rendered timestamp. Defaults preserve the legacy "en-US,
+  // 12-hour, no weekday" rendering so existing callers/tests remain
+  // unaffected when they do not pass this parameter.
+  timestampOptions: QuietHoursDigestTimestampOptions = {
+    locale: null,
+    timeFormat: "12h",
+    showWeekday: false,
+  },
 ): { text: string; html: string } {
+  const fmtTs = (d: Date): string =>
+    formatDigestTimestamp(d, timezone, timestampOptions);
   const baseUrl = (
     process.env.APP_URL ||
     process.env.PUBLIC_BASE_URL ||
@@ -1484,8 +1549,8 @@ export function buildDigestEmailBody(
     (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : "")
   ).replace(/\/$/, "");
   const dashboardUrl = `${baseUrl}/admin/job-metrics`;
-  const windowStartLocal = formatDigestTimestamp(windowStart, timezone);
-  const windowEndLocal = formatDigestTimestamp(windowEnd, timezone);
+  const windowStartLocal = fmtTs(windowStart);
+  const windowEndLocal = fmtTs(windowEnd);
   const windowStartIso = windowStart.toISOString();
   const windowEndIso = windowEnd.toISOString();
   // Task #795 — Show the window range in the recipient's timezone for
@@ -1577,7 +1642,7 @@ export function buildDigestEmailBody(
     const textGroups = orderedJobs.map((job) => {
       const list = groups.get(job) ?? [];
       const lines = list.map((e) => {
-        const tsLocal = formatDigestTimestamp(e.triggeredAt, timezone);
+        const tsLocal = fmtTs(e.triggeredAt);
         const tsIso = e.triggeredAt.toISOString();
         const counter = e.counter ? ` · ${e.counter}` : "";
         const kindLabel = e.kind === "stall" ? "stall" : "spike";
@@ -1594,7 +1659,7 @@ export function buildDigestEmailBody(
         const list = groups.get(job) ?? [];
         const items = list
           .map((e, idx) => {
-            const tsLocal = escapeHtmlSafe(formatDigestTimestamp(e.triggeredAt, timezone));
+            const tsLocal = escapeHtmlSafe(fmtTs(e.triggeredAt));
             const tsIso = escapeHtmlSafe(e.triggeredAt.toISOString());
             const counter = e.counter ? ` · ${escapeHtmlSafe(e.counter)}` : "";
             const kindLabel = e.kind === "stall" ? "stall" : "spike";
@@ -1631,7 +1696,7 @@ export function buildDigestEmailBody(
 
   // Default — "full" — original per-event flat list.
   const lines = events.map((e) => {
-    const tsLocal = formatDigestTimestamp(e.triggeredAt, timezone);
+    const tsLocal = fmtTs(e.triggeredAt);
     const tsIso = e.triggeredAt.toISOString();
     const counter = e.counter ? ` · ${e.counter}` : "";
     const kindLabel = e.kind === "stall" ? "stall" : "spike";
@@ -1644,7 +1709,7 @@ export function buildDigestEmailBody(
 
   const items = events
     .map((e, idx) => {
-      const tsLocal = escapeHtmlSafe(formatDigestTimestamp(e.triggeredAt, timezone));
+      const tsLocal = escapeHtmlSafe(fmtTs(e.triggeredAt));
       const tsIso = escapeHtmlSafe(e.triggeredAt.toISOString());
       const counter = e.counter ? ` · ${escapeHtmlSafe(e.counter)}` : "";
       const kindLabel = e.kind === "stall" ? "stall" : "spike";
@@ -1733,6 +1798,9 @@ export async function buildQuietHoursDigestPreview(
     // window range and per-event timestamps in the recipient's locale
     // (e.g. "America/Los_Angeles"). Defaults to UTC if unset.
     timezone?: string | null;
+    // Task #797 — per-recipient locale + 12h/24h + weekday options.
+    // When omitted the legacy en-US, 12h, no-weekday rendering is used.
+    timestampOptions?: QuietHoursDigestTimestampOptions;
   } = {},
 ): Promise<{
   subject: string;
@@ -1820,6 +1888,7 @@ export async function buildQuietHoursDigestPreview(
     windowEnd,
     format,
     opts.timezone ?? null,
+    opts.timestampOptions,
   );
   const subject = `[Preview] ${formatDigestSubject(events.length)}`;
   return { subject, html, text, isSynthetic, eventCount: events.length, maxEvents: previewMaxEvents };
@@ -2000,6 +2069,11 @@ export async function sendJobMetricAlertQuietHoursDigests(
       windowEnd,
       r.digestFormat,
       r.quietHoursTimezone,
+      {
+        locale: r.digestLocale,
+        timeFormat: r.digestTimeFormat,
+        showWeekday: r.digestShowWeekday,
+      },
     );
 
     // Task #764: build a CSV attachment of every matched event when
@@ -2143,6 +2217,9 @@ export async function sendTestQuietHoursDigestToUser(
       digestFormat: users.jobMetricAlertQuietHoursDigestFormat,
       digestCsvEnabled: users.jobMetricAlertQuietHoursDigestCsvEnabled,
       digestMaxEvents: users.jobMetricAlertQuietHoursDigestMaxEvents,
+      digestLocale: users.jobMetricAlertQuietHoursDigestLocale,
+      digestTimeFormat: users.jobMetricAlertQuietHoursDigestTimeFormat,
+      digestShowWeekday: users.jobMetricAlertQuietHoursDigestShowWeekday,
     })
     .from(users)
     .where(eq(users.id, userId));
@@ -2171,6 +2248,9 @@ export async function sendTestQuietHoursDigestToUser(
     digestFormat: (r.digestFormat as QuietHoursDigestFormat | null) ?? "full",
     digestCsvEnabled: r.digestCsvEnabled ?? false,
     digestMaxEvents: clampDigestMaxEvents(r.digestMaxEvents),
+    digestLocale: r.digestLocale ?? null,
+    digestTimeFormat: (r.digestTimeFormat as QuietHoursDigestTimeFormat | null) ?? "12h",
+    digestShowWeekday: r.digestShowWeekday ?? false,
   };
   return sendJobMetricAlertQuietHoursDigests({
     recipientsSource: async () => [recipient],

@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { addonKeyEnum, addonStatusEnum, bidStatusEnum, billingProviderEnum, deductionCalculationMethodEnum, deductionCategoryEnum, geofenceEnforcementEnum, jobMetricAlertQuietHoursDigestFormatEnum, onboardingStatusEnum, payRunStatusEnum, payrollFormVariantEnum, planTierEnum, projectStatusEnum, subscriptionStatusEnum, tradeTypeEnum, usageKeyEnum, userRoleEnum, workWeekStartDayEnum } from "./enums";
+import { addonKeyEnum, addonStatusEnum, bidStatusEnum, billingProviderEnum, deductionCalculationMethodEnum, deductionCategoryEnum, geofenceEnforcementEnum, jobMetricAlertQuietHoursDigestFormatEnum, jobMetricAlertQuietHoursDigestTimeFormatEnum, onboardingStatusEnum, payRunStatusEnum, payrollFormVariantEnum, planTierEnum, projectStatusEnum, subscriptionStatusEnum, tradeTypeEnum, usageKeyEnum, userRoleEnum, workWeekStartDayEnum } from "./enums";
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -389,6 +389,23 @@ export const users = pgTable("users", {
   // quieter recipients widen it to see more history. Allowed values are
   // 25 / 50 / 100 / 250; defaults to 100 to match the prior hard-coded cap.
   jobMetricAlertQuietHoursDigestMaxEvents: integer("job_metric_alert_quiet_hours_digest_max_events").notNull().default(100),
+  // Task #797: per-recipient locale & format preferences for the
+  // quiet-hours digest timestamps (window range + per-event rows). The
+  // engine still localizes to `jobMetricAlertQuietHoursTimezone`, but
+  // these fields control how the rendered date/time string looks.
+  //   - `Locale`        : optional BCP-47 tag (e.g. "en-GB", "fr-FR").
+  //                       Null falls back to "en-US" so existing
+  //                       recipients see no behavior change.
+  //   - `TimeFormat`    : "12h" → "6:00 PM" (legacy), "24h" → "18:00".
+  //   - `ShowWeekday`   : when true, a short weekday is prepended
+  //                       (e.g. "Wed Jan 14, 18:00 PST").
+  jobMetricAlertQuietHoursDigestLocale: text("job_metric_alert_quiet_hours_digest_locale"),
+  jobMetricAlertQuietHoursDigestTimeFormat: jobMetricAlertQuietHoursDigestTimeFormatEnum(
+    "job_metric_alert_quiet_hours_digest_time_format",
+  ).notNull().default("12h"),
+  jobMetricAlertQuietHoursDigestShowWeekday: boolean(
+    "job_metric_alert_quiet_hours_digest_show_weekday",
+  ).notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

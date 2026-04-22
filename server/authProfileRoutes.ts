@@ -1005,6 +1005,25 @@ const upload = multer({
             message: "Must be one of 25, 50, 100, or 250",
           })
           .optional(),
+        // Task #797: per-recipient locale & format preferences for the
+        // quiet-hours digest timestamps. Locale is a BCP-47 tag (or
+        // null to fall back to "en-US"); time format toggles 12h/24h;
+        // showWeekday prepends a short weekday like "Wed Jan 14".
+        jobMetricAlertQuietHoursDigestLocale: z
+          .string()
+          .max(35)
+          // BCP-47 language tag — e.g. "en", "en-US", "zh-Hant-TW".
+          // We keep the regex permissive (Intl will reject invalid
+          // tags) while still rejecting obviously bad input.
+          .regex(/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/, {
+            message: "Must be a BCP-47 language tag (e.g. en-GB)",
+          })
+          .optional()
+          .nullable(),
+        jobMetricAlertQuietHoursDigestTimeFormat: z
+          .enum(["12h", "24h"])
+          .optional(),
+        jobMetricAlertQuietHoursDigestShowWeekday: z.boolean().optional(),
       });
       const parsed = profileSchema.safeParse(req.body);
       if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
@@ -1017,7 +1036,10 @@ const upload = multer({
         jobMetricAlertQuietHoursWeekdays, jobMetricAlertQuietHoursDigestEnabled,
         jobMetricAlertQuietHoursDigestFormat,
         jobMetricAlertQuietHoursDigestCsvEnabled,
-        jobMetricAlertQuietHoursDigestMaxEvents } = parsed.data;
+        jobMetricAlertQuietHoursDigestMaxEvents,
+        jobMetricAlertQuietHoursDigestLocale,
+        jobMetricAlertQuietHoursDigestTimeFormat,
+        jobMetricAlertQuietHoursDigestShowWeekday } = parsed.data;
       const updateData: Record<string, unknown> = { updatedAt: new Date() };
       if (firstName !== undefined) updateData.firstName = firstName;
       if (lastName !== undefined) updateData.lastName = lastName;
@@ -1041,6 +1063,9 @@ const upload = multer({
       if (jobMetricAlertQuietHoursDigestFormat !== undefined) updateData.jobMetricAlertQuietHoursDigestFormat = jobMetricAlertQuietHoursDigestFormat;
       if (jobMetricAlertQuietHoursDigestCsvEnabled !== undefined) updateData.jobMetricAlertQuietHoursDigestCsvEnabled = jobMetricAlertQuietHoursDigestCsvEnabled;
       if (jobMetricAlertQuietHoursDigestMaxEvents !== undefined) updateData.jobMetricAlertQuietHoursDigestMaxEvents = jobMetricAlertQuietHoursDigestMaxEvents;
+      if (jobMetricAlertQuietHoursDigestLocale !== undefined) updateData.jobMetricAlertQuietHoursDigestLocale = jobMetricAlertQuietHoursDigestLocale || null;
+      if (jobMetricAlertQuietHoursDigestTimeFormat !== undefined) updateData.jobMetricAlertQuietHoursDigestTimeFormat = jobMetricAlertQuietHoursDigestTimeFormat;
+      if (jobMetricAlertQuietHoursDigestShowWeekday !== undefined) updateData.jobMetricAlertQuietHoursDigestShowWeekday = jobMetricAlertQuietHoursDigestShowWeekday;
 
       const [updated] = await db.update(users).set(updateData).where(eq(users.id, userId)).returning();
       if (!updated) { res.status(404).json({ error: "User not found" }); return; }
@@ -1095,9 +1120,27 @@ const upload = multer({
       const userTimezone =
         (req.user as { jobMetricAlertQuietHoursTimezone?: string | null } | undefined)
           ?.jobMetricAlertQuietHoursTimezone ?? null;
+      // Task #797 — Also forward the user's locale + 12h/24h + weekday
+      // preferences so the in-app preview matches what the next live
+      // digest will render.
+      const userPrefs = req.user as
+        | {
+            jobMetricAlertQuietHoursDigestLocale?: string | null;
+            jobMetricAlertQuietHoursDigestTimeFormat?: "12h" | "24h" | null;
+            jobMetricAlertQuietHoursDigestShowWeekday?: boolean | null;
+          }
+        | undefined;
       const preview = await buildQuietHoursDigestPreview(format, {
         maxEvents: userMaxEvents,
         timezone: userTimezone,
+        timestampOptions: {
+          locale: userPrefs?.jobMetricAlertQuietHoursDigestLocale ?? null,
+          timeFormat:
+            (userPrefs?.jobMetricAlertQuietHoursDigestTimeFormat ?? "12h") === "24h"
+              ? "24h"
+              : "12h",
+          showWeekday: Boolean(userPrefs?.jobMetricAlertQuietHoursDigestShowWeekday),
+        },
       });
 
       if (mode === "send") {

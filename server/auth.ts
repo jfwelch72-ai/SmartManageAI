@@ -206,6 +206,13 @@ export async function authMiddleware(
       jobMetricAlertQuietHoursLastDigestAt: user.jobMetricAlertQuietHoursLastDigestAt,
       jobMetricAlertQuietHoursDigestFormat: user.jobMetricAlertQuietHoursDigestFormat,
       jobMetricAlertQuietHoursDigestCsvEnabled: user.jobMetricAlertQuietHoursDigestCsvEnabled,
+      jobMetricAlertQuietHoursDigestMaxEvents: user.jobMetricAlertQuietHoursDigestMaxEvents,
+      // Task #797 — locale + 12h/24h + weekday prefs for the digest
+      // timestamps. Surfaced to the client so the in-app preview and
+      // the Notification Preferences UI both see the persisted values.
+      jobMetricAlertQuietHoursDigestLocale: user.jobMetricAlertQuietHoursDigestLocale,
+      jobMetricAlertQuietHoursDigestTimeFormat: user.jobMetricAlertQuietHoursDigestTimeFormat,
+      jobMetricAlertQuietHoursDigestShowWeekday: user.jobMetricAlertQuietHoursDigestShowWeekday,
       effectiveRole,
       isHustlerOwner,
     };

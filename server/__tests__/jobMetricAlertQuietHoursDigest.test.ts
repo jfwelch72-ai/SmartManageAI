@@ -29,6 +29,12 @@ interface FakeRecipient {
   lastDigestAt: Date | null;
   digestFormat: "summary" | "full" | "grouped";
   digestCsvEnabled?: boolean;
+  // Task #797 — recipient-chosen locale + 12h/24h + weekday for the
+  // digest timestamp rendering. All optional so existing test fixtures
+  // continue to compile against the legacy en-US/12h/no-weekday default.
+  digestLocale?: string | null;
+  digestTimeFormat?: "12h" | "24h";
+  digestShowWeekday?: boolean;
 }
 
 interface FakeEvent {
@@ -769,6 +775,54 @@ describe("sendJobMetricAlertQuietHoursDigests honors digestFormat (Task #766)", 
     const text = sendEmailMock.mock.calls[0][0].text ?? "";
     expect(text).toContain("UTC");
     expect(text).toContain("2026-01-15T02:00:00.000Z");
+  });
+
+  it("Task #797 — renders 24-hour, weekday-prefixed timestamps in the recipient's locale (en-GB / Europe/London / 24h / weekday)", async () => {
+    const { events } = setup();
+    const recipient = makeRecipient({
+      digestFormat: "full",
+      // BST ends Oct 25, 2026 → London is on GMT (UTC+0) on Jan 15.
+      // Events at 02:00 / 03:00 / 04:00 UTC therefore render as
+      // 02:00 / 03:00 / 04:00 GMT in en-GB, with "Thu" prefix because
+      // 2026-01-15 is a Thursday.
+      quietHoursTimezone: "Europe/London",
+      digestLocale: "en-GB",
+      digestTimeFormat: "24h",
+      digestShowWeekday: true,
+    });
+
+    const summary = await alerts.sendJobMetricAlertQuietHoursDigests({
+      recipientsSource: async () => [recipient as never],
+      eventsSource: async () => events as never,
+      forceSend: true,
+    });
+
+    expect(summary.digestsSent).toBe(1);
+    const call = sendEmailMock.mock.calls[0][0];
+    const text = call.text ?? "";
+    const html = call.html ?? "";
+
+    // 24-hour times — must appear, must NOT include AM/PM markers.
+    expect(text).toMatch(/02:00/);
+    expect(text).toMatch(/03:00/);
+    expect(text).toMatch(/04:00/);
+    // No 12-hour AM/PM indicator anywhere in the localized timestamps.
+    // (We allow "AM"/"PM" only inside the original ISO-bracketed strings,
+    // which never contain those tokens — so the assertion is global.)
+    expect(text).not.toMatch(/\b(AM|PM)\b/);
+    // Weekday prefix — Jan 15 2026 is a Thursday in London.
+    expect(text).toMatch(/Thu/);
+    // London timezone marker — covers both "GMT" and the
+    // less-common "BST" emitted around the DST boundary.
+    expect(text).toMatch(/GMT|BST/);
+    // ISO strings remain in the body for machine parsing.
+    expect(text).toContain("2026-01-15T02:00:00.000Z");
+
+    // HTML body mirrors the same localized rendering and keeps the
+    // ISO timestamp as a hover tooltip.
+    expect(html).toMatch(/02:00/);
+    expect(html).toMatch(/Thu/);
+    expect(html).toContain('title="2026-01-15T02:00:00.000Z"');
   });
 
   it("renders the 'full' chronological body for recipients who chose the full format", async () => {
