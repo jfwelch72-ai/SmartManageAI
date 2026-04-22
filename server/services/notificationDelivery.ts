@@ -420,6 +420,15 @@ export function composeEmailContent(notification: NotificationRecord): {
     };
   }
 
+  if (type === "CRM_TRANSCRIPT_BACKFILL_REAPED") {
+    return {
+      subject: `CRM transcript backfill was reaped — SmartManageAI`,
+      body: notification.message,
+      actionUrl: `${baseUrl}/admin/transcript-backfill`,
+      actionText: "Start a new backfill",
+    };
+  }
+
   if (type === "DEADLINE_WARNING" || type === "REMINDER") {
     return {
       subject: `${notification.title} — SmartManageAI`,

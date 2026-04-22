@@ -28,6 +28,7 @@ import {
   crmCalls,
   crmCallRecordings,
   crmTranscriptBackfillJobs,
+  notifications,
 } from "@shared/schema";
 
 // Stub the Whisper-backed transcription service before importing the routes
@@ -71,6 +72,14 @@ async function cleanupTestData() {
     sql`${crmTranscriptBackfillJobs.organizationId} IN (
       SELECT ${organizations.id} FROM ${organizations}
       WHERE ${organizations.name} LIKE ${`${TEST_PREFIX}%`}
+    )`,
+  );
+  // Task #1005: clean up the heads-up notifications the reap branch emits
+  // so they don't pile up across test runs and skew assertions.
+  await db.delete(notifications).where(
+    sql`${notifications.userId} IN (
+      SELECT ${users.id} FROM ${users}
+      WHERE ${users.email} LIKE ${`${TEST_PREFIX}%`}
     )`,
   );
   await db.delete(organizations).where(sql`${organizations.name} LIKE ${`${TEST_PREFIX}%`}`);
@@ -230,6 +239,71 @@ describe("resumeOrReapBackfillJobsOnBoot", () => {
     expect(row.processed).toBe(12);
     expect(row.succeeded).toBe(10);
     expect(row.failed).toBe(2);
+
+    // Task #1005: the reap branch must emit a heads-up notification so the
+    // admin who started the run isn't left guessing why their backfill
+    // silently stopped.
+    const notifRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.relatedEntityId, jobId));
+    expect(notifRows).toHaveLength(1);
+    const [notif] = notifRows;
+    expect(notif.userId).toBe(userId);
+    expect(notif.type).toBe("CRM_TRANSCRIPT_BACKFILL_REAPED");
+    expect(notif.relatedEntityType).toBe("CRM_TRANSCRIPT_BACKFILL_JOB");
+    expect(notif.organizationId).toBe(orgId);
+    expect(notif.message).toContain("12");
+    expect(notif.message).toContain("50");
+    expect(notif.message).toContain("10");
+    expect(notif.message).toContain("2");
+  });
+
+  it("falls back to org admins when the original starter is no longer active", async () => {
+    // Original starter is deactivated; a separate active admin should
+    // receive the heads-up so the org isn't left without a signal.
+    await db.update(users).set({ isActive: false }).where(eq(users.id, userId));
+    const [extraAdmin] = await db
+      .insert(users)
+      .values({
+        email: `${TEST_PREFIX}reap-fallback-${Date.now()}@test.invalid`,
+        passwordHash: "x",
+        firstName: "Other",
+        lastName: "Admin",
+        organizationId: orgId,
+        role: "ADMIN",
+      })
+      .returning();
+    // Also add a non-admin who must NOT be notified.
+    await db.insert(users).values({
+      email: `${TEST_PREFIX}reap-fallback-worker-${Date.now()}@test.invalid`,
+      passwordHash: "x",
+      firstName: "Worker",
+      lastName: "Bee",
+      organizationId: orgId,
+      role: "FIELD_WORKER",
+    });
+
+    const jobId = `job-reap-fallback-${Date.now()}`;
+    const startedAt = new Date(Date.now() - (MAX_RESUMABLE_AGE_MS + 60 * 60 * 1000));
+    const heartbeatAt = new Date(Date.now() - (HEARTBEAT_STALE_MS + 60 * 1000));
+    await insertJob({
+      id: jobId,
+      orgIdLocal: orgId,
+      startedById: userId,
+      startedAt,
+      heartbeatAt,
+    });
+
+    await routes.resumeOrReapBackfillJobsOnBoot();
+
+    const notifRows = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.relatedEntityId, jobId));
+    expect(notifRows).toHaveLength(1);
+    expect(notifRows[0].userId).toBe(extraAdmin.id);
+    expect(notifRows[0].type).toBe("CRM_TRANSCRIPT_BACKFILL_REAPED");
   });
 
   it("resumes interrupted jobs while preserving id, startedAt, startedById and counters", async () => {

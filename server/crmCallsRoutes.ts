@@ -54,6 +54,7 @@ import {
   queueCallTranscription,
   transcribeCallRecording,
 } from "./services/callTranscriptionService";
+import { insertNotifications } from "./services/notificationService";
 import { objectStorageClient } from "./objectStorage";
 
 const router = Router();
@@ -1170,6 +1171,62 @@ const BACKFILL_RESUME_CONCURRENCY = 2;
 //     launch it against the still-eligible recordings while keeping the
 //     original id, started_at, started_by_id, and counters so the admin
 //     sees a single continuous progress bar.
+// Task #1005: build the in-app notification payload(s) for a reaped backfill
+// job. We prefer the original starter (the admin who kicked off the run) so
+// the notification lands in their inbox; if that account is gone or
+// deactivated we fan out to every active org admin so the org isn't left
+// without a signal.
+async function notifyAdminsOfReapedBackfill(row: CrmTranscriptBackfillJob): Promise<void> {
+  const recipients: string[] = [];
+  if (row.startedById) {
+    const [starter] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.id, row.startedById), eq(users.isActive, true)))
+      .limit(1);
+    if (starter) recipients.push(starter.id);
+  }
+
+  if (recipients.length === 0) {
+    const orgAdmins = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(
+        and(
+          eq(users.organizationId, row.organizationId),
+          eq(users.role, "ADMIN"),
+          eq(users.isActive, true),
+        ),
+      );
+    for (const admin of orgAdmins) recipients.push(admin.id);
+  }
+
+  if (recipients.length === 0) return;
+
+  const processed = row.processed ?? 0;
+  const total = row.total ?? 0;
+  const succeeded = row.succeeded ?? 0;
+  const failed = row.failed ?? 0;
+  const message =
+    `A CRM call transcript backfill was stuck for too long and has been ` +
+    `marked failed on server restart. Processed ${processed}` +
+    (total ? ` of ${total}` : "") +
+    ` recording(s) (${succeeded} succeeded, ${failed} failed) before it was ` +
+    `reaped. Start a fresh backfill to pick up where it left off.`;
+
+  await insertNotifications(
+    recipients.map((userId) => ({
+      userId,
+      organizationId: row.organizationId,
+      type: "CRM_TRANSCRIPT_BACKFILL_REAPED" as const,
+      title: "CRM transcript backfill was reaped",
+      message,
+      relatedEntityId: row.id,
+      relatedEntityType: "CRM_TRANSCRIPT_BACKFILL_JOB" as const,
+    })),
+  );
+}
+
 let backfillBootRecoveryStarted = false;
 // Test-only seam: allow the vitest suite to re-run the boot recovery path
 // across multiple scenarios without having to reload the module.
@@ -1210,6 +1267,20 @@ export async function resumeOrReapBackfillJobsOnBoot() {
           orgId: row.organizationId,
           startedAgeMs,
         });
+        // Task #1005: surface the reap as an in-app (and optionally emailed)
+        // notification so admins don't only learn about the failure when
+        // they next visit the page hours later. Routes through the standard
+        // notification pipeline, which respects each user's per-channel
+        // opt-out preferences (the same toggle used for other admin alerts).
+        try {
+          await notifyAdminsOfReapedBackfill(row);
+        } catch (notifyErr) {
+          logWarn("crmCalls: failed to notify admins of reaped backfill", {
+            jobId: row.id,
+            orgId: row.organizationId,
+            error: notifyErr instanceof Error ? notifyErr.message : String(notifyErr),
+          });
+        }
         continue;
       }
 

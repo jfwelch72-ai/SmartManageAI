@@ -150,6 +150,13 @@ export function getNotificationDestination(notification: {
       }
       return "/bids";
 
+    case "CRM_TRANSCRIPT_BACKFILL_REAPED":
+      // Task #1005: clicking the "your backfill was reaped" notification
+      // takes the admin straight to the page where they can kick off a
+      // fresh backfill. relatedEntityId is the reaped job id but the page
+      // is org-scoped, so we don't need to thread it through the URL.
+      return "/admin/transcript-backfill";
+
     case "GENERAL":
       if (relatedEntityType === "gantt_pdf_health") {
         return "/admin/gantt-pdf";

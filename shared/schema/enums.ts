@@ -77,6 +77,10 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "CRM_ORGANIZATION_REASSIGNED",
   "SCHEDULE_TASK_RESCHEDULED",
   "SCHEDULE_BASELINE_SLIP",
+  // Task #1005: heads-up that a stuck CRM transcript backfill job was reaped
+  // to FAILED on server boot so admins can retry instead of leaving
+  // recordings without transcripts.
+  "CRM_TRANSCRIPT_BACKFILL_REAPED",
 ]);
 
 export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["PENDING", "APPROVED", "DENIED"]);

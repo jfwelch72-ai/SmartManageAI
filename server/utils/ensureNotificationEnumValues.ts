@@ -22,6 +22,9 @@ const REQUIRED_NOTIFICATION_TYPES = [
   // Task #731: bundle the same coalesced reassignment notifications for CRM
   // organisations now that the table has its own ownerId column.
   "CRM_ORGANIZATION_REASSIGNED",
+  // Task #1005: heads-up notification when a CRM transcript backfill job is
+  // reaped to FAILED on boot because it exceeded the max-resumable age.
+  "CRM_TRANSCRIPT_BACKFILL_REAPED",
 ];
 
 export async function ensureNotificationEnumValues(): Promise<void> {
