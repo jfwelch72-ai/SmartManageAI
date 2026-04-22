@@ -29,6 +29,8 @@ import {
   pruneAlertFallbackSentBefore,
   recordAlertFallbackSent,
   recordCrmTranscriptBackfillAlertDelivery,
+  releaseBackfillAlertResendCooldown,
+  tryReserveBackfillAlertResendCooldown,
   wasAlertFallbackSentSince,
   type AlertFallbackSentKey,
   type CrmTranscriptBackfillAlertDelivery,
@@ -1083,35 +1085,24 @@ export type ResendBackfillAlertResult =
 
 // Task #1068 — short per-(delivery, channel) cooldown to keep an admin (or a
 // script driving the admin button) from spamming Slack / Resend with the same
-// alert burst. We key on (orgId, jobId|deliveryId, channel) so the limit also
-// follows the *new* delivery row a successful resend creates — otherwise a
-// fresh failure row would let a fast clicker bypass the cooldown immediately.
+// alert burst. We key on (orgId, jobId, channel) so the limit also follows
+// the *new* delivery row a successful resend creates — otherwise a fresh
+// failure row would let a fast clicker bypass the cooldown immediately.
+//
+// Task #1098 — the reservation now lives in
+// `crm_transcript_backfill_alert_resend_cooldowns` (via
+// `tryReserveBackfillAlertResendCooldown` in storage) instead of an
+// in-process Map, so the window survives a restart/deploy and is shared
+// across replicas. The atomic upsert in storage handles the equivalent of
+// the previous "stamp before any awaited work" trick — two concurrent
+// reservers (in this process or on another pod) cannot both win.
 export const RESEND_COOLDOWN_MS = 30_000;
-const resendCooldownTimestamps = new Map<string, number>();
 
-function cooldownKey(
-  orgId: string,
-  jobOrDeliveryId: string,
-  channel: string,
-): string {
-  return `${orgId}::${jobOrDeliveryId}::${channel}`;
-}
-
-// Exposed so tests can reset between cases without poking module internals.
+// Kept as a no-op for backwards compatibility with callers/tests that used
+// to clear the in-process Map. The persisted ledger is now reset by tests
+// that mock the storage module, so this function intentionally does nothing.
 export function __resetResendCooldownsForTests(): void {
-  resendCooldownTimestamps.clear();
-}
-
-// Lightweight TTL pruning so the in-memory map can't accumulate forever on a
-// long-running process. Called opportunistically each time a fresh cooldown
-// is recorded — cost is proportional to the size of the map and only happens
-// on a successful resend, which is bounded by the cooldown itself.
-function pruneExpiredResendCooldowns(now: number): void {
-  resendCooldownTimestamps.forEach((ts, key) => {
-    if (now - ts >= RESEND_COOLDOWN_MS) {
-      resendCooldownTimestamps.delete(key);
-    }
-  });
+  // intentionally empty: cooldown state lives in the database now
 }
 
 export async function resendBackfillAlertDelivery(
@@ -1135,33 +1126,38 @@ export async function resendBackfillAlertDelivery(
   if (!original.jobId) return { ok: false, reason: "JOB_MISSING" };
 
   // Cooldown check + reservation must be atomic — Node is single-threaded
-  // between awaits, so stamping the timestamp *before* any further awaited
-  // work means two concurrent requests that both pass the check would still
-  // see each other's reservation on the next pass. Without this, two near-
-  // simultaneous clicks could both pass the read and double-fire Slack/Resend.
-  // Anchored on jobId so a resend that produces a brand-new failure row stays
-  // cooled down too. Opportunistically evicts stale keys to keep the in-memory
-  // map from growing without bound on long-running processes.
-  const cdKey = cooldownKey(orgId, original.jobId, original.channel);
-  const last = resendCooldownTimestamps.get(cdKey);
-  if (last !== undefined && now - last < RESEND_COOLDOWN_MS) {
-    const retryAfterSeconds = Math.max(
-      1,
-      Math.ceil((RESEND_COOLDOWN_MS - (now - last)) / 1000),
-    );
-    return { ok: false, reason: "COOLDOWN", retryAfterSeconds };
+  // between awaits, but two near-simultaneous clicks (or two clicks landing
+  // on different replicas) that both pass a naive "read then write" check
+  // would still double-fire Slack/Resend. Task #1098 moved the reservation
+  // into a persisted upsert so the database enforces the same atomicity
+  // across the whole fleet, and the window survives a restart/deploy.
+  // Anchored on jobId so a resend that produces a brand-new failure row
+  // stays cooled down too.
+  const cdKey = {
+    orgId,
+    jobId: original.jobId,
+    channel: original.channel,
+  };
+  const reservation = await tryReserveBackfillAlertResendCooldown(
+    cdKey,
+    RESEND_COOLDOWN_MS,
+    new Date(now),
+  );
+  if (!reservation.ok) {
+    return {
+      ok: false,
+      reason: "COOLDOWN",
+      retryAfterSeconds: reservation.retryAfterSeconds,
+    };
   }
-  resendCooldownTimestamps.set(cdKey, now);
-  pruneExpiredResendCooldowns(now);
+  const reservedAt = reservation.reservedAt;
 
   const job = await getCrmTranscriptBackfillJob(original.jobId, orgId);
   if (!job) {
     // Roll back the reservation only if we lost it on a precondition failure
     // before any external dispatch ran — otherwise an admin who hits a
     // missing-job edge case would be locked out for 30s for no reason.
-    if (resendCooldownTimestamps.get(cdKey) === now) {
-      resendCooldownTimestamps.delete(cdKey);
-    }
+    await releaseBackfillAlertResendCooldown(cdKey, reservedAt);
     return { ok: false, reason: "JOB_MISSING" };
   }
 
@@ -1184,9 +1180,7 @@ export async function resendBackfillAlertDelivery(
   ) {
     // Roll back the reservation — nothing was dispatched, so there's no
     // recipient to protect.
-    if (resendCooldownTimestamps.get(cdKey) === now) {
-      resendCooldownTimestamps.delete(cdKey);
-    }
+    await releaseBackfillAlertResendCooldown(cdKey, reservedAt);
     return { ok: false, reason: "CHANNEL_NOT_CONFIGURED" };
   }
 

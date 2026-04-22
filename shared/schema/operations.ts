@@ -3575,3 +3575,32 @@ export const insertAlertFallbackSentSchema = createInsertSchema(alertFallbackSen
 });
 export type InsertAlertFallbackSent = z.infer<typeof insertAlertFallbackSentSchema>;
 export type AlertFallbackSent = typeof alertFallbackSent.$inferSelect;
+
+// ============================================
+// CRM TRANSCRIPT BACKFILL ALERT RESEND COOLDOWNS (Task #1098)
+// Persisted ledger backing the per-(org, job, channel) cooldown that keeps
+// admins (or a script driving the admin button) from spamming Slack/Resend
+// by mashing the "Resend" button on a failed transcript-backfill alert
+// delivery. Task #1068 originally held this in a plain in-process Map, so
+// the window reset every deploy/restart and was not shared across replicas.
+// Storing the last successful reservation timestamp here lets every process
+// across the fleet enforce the same 30-second window.
+// ============================================
+export const crmTranscriptBackfillAlertResendCooldowns = pgTable(
+  "crm_transcript_backfill_alert_resend_cooldowns",
+  {
+    orgId: varchar("org_id").notNull(),
+    jobId: varchar("job_id").notNull(),
+    channel: text("channel").notNull(),
+    lastResendAt: timestamp("last_resend_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    pk: unique("crm_transcript_backfill_alert_resend_cooldowns_pk").on(
+      table.orgId,
+      table.jobId,
+      table.channel,
+    ),
+  }),
+);
+export type CrmTranscriptBackfillAlertResendCooldown =
+  typeof crmTranscriptBackfillAlertResendCooldowns.$inferSelect;

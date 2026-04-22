@@ -20,6 +20,12 @@ const {
   mockListOrgAdmins,
   mockWasFallbackSent,
   mockRecordFallbackSent,
+  mockGetAlertDelivery,
+  mockGetBackfillJob,
+  mockListAlertDeliveries,
+  mockGetOperatorContact,
+  mockTryReserveResendCooldown,
+  mockReleaseResendCooldown,
 } = vi.hoisted(() => ({
   mockGetSettings: vi.fn(),
   mockRecordDelivery: vi.fn().mockResolvedValue({}),
@@ -36,6 +42,18 @@ const {
   // existing in-memory dedupe tests behave the same as before.
   mockWasFallbackSent: vi.fn().mockResolvedValue(false),
   mockRecordFallbackSent: vi.fn().mockResolvedValue(undefined),
+  // Task #1098 — resend path mocks. Defaults to "no row found" so the
+  // existing tests don't accidentally exercise the resend codepath.
+  mockGetAlertDelivery: vi.fn().mockResolvedValue(null),
+  mockGetBackfillJob: vi.fn().mockResolvedValue(null),
+  mockListAlertDeliveries: vi.fn().mockResolvedValue([]),
+  mockGetOperatorContact: vi.fn().mockResolvedValue(null),
+  // Defaults to "always reserve" — individual cases override to simulate
+  // a still-active persisted cooldown.
+  mockTryReserveResendCooldown: vi
+    .fn()
+    .mockResolvedValue({ ok: true, reservedAt: new Date() }),
+  mockReleaseResendCooldown: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("../storage", () => ({
   getCrmTranscriptBackfillNotificationSettings: mockGetSettings,
@@ -43,6 +61,12 @@ vi.mock("../storage", () => ({
   listOrgAdminsForAlertFailureFallback: mockListOrgAdmins,
   wasAlertFallbackSentSince: mockWasFallbackSent,
   recordAlertFallbackSent: mockRecordFallbackSent,
+  getCrmTranscriptBackfillAlertDelivery: mockGetAlertDelivery,
+  getCrmTranscriptBackfillJob: mockGetBackfillJob,
+  listCrmTranscriptBackfillAlertDeliveries: mockListAlertDeliveries,
+  getCrmTranscriptBackfillOperatorContact: mockGetOperatorContact,
+  tryReserveBackfillAlertResendCooldown: mockTryReserveResendCooldown,
+  releaseBackfillAlertResendCooldown: mockReleaseResendCooldown,
 }));
 vi.mock("../services/slackService", () => ({
   isValidSlackWebhookUrl: (u: string) => /^https:\/\/hooks\.slack\.com\//.test(u),
@@ -65,8 +89,11 @@ import {
   buildAlertFailureFallbackContent,
   resolveBackfillNotificationDestinations,
   getBackfillNotificationConfig,
+  resendBackfillAlertDelivery,
   sendTestBackfillAlert,
   _resetAlertFailureFallbackDedupeForTests,
+  __resetResendCooldownsForTests,
+  RESEND_COOLDOWN_MS,
   type BackfillNotificationJob,
 } from "../services/transcriptBackfillNotifications";
 
@@ -1099,5 +1126,210 @@ describe("getBackfillNotificationConfig (Task #1063 / #1072)", () => {
     expect(cfg.usingEnvFallback).toBe(true);
     expect(cfg.lastTestAt).toBeNull();
     expect(cfg.lastTestResult).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Task #1098 — the resend cooldown used to live in an in-process Map. The
+// reservation now lives in `crm_transcript_backfill_alert_resend_cooldowns`
+// via the storage helpers `tryReserveBackfillAlertResendCooldown` /
+// `releaseBackfillAlertResendCooldown`, so the window survives a restart
+// and is shared across replicas. These tests exercise the dispatcher
+// against the storage mocks to confirm a) it asks the persisted store
+// before doing any work and surfaces COOLDOWN when the store rejects, and
+// b) clearing any in-process state (the equivalent of a restart) does NOT
+// open a window because the next call still consults the persisted store.
+// ---------------------------------------------------------------------------
+describe("resendBackfillAlertDelivery cooldown (Task #1098)", () => {
+  beforeEach(() => {
+    mockGetAlertDelivery.mockReset();
+    mockGetBackfillJob.mockReset();
+    mockListAlertDeliveries.mockReset();
+    mockGetOperatorContact.mockReset();
+    mockTryReserveResendCooldown.mockReset();
+    mockReleaseResendCooldown.mockReset();
+    mockGetSettings.mockReset();
+    mockFetch.mockReset();
+    mockSendEmail.mockReset();
+    mockRecordDelivery.mockReset();
+
+    mockGetAlertDelivery.mockResolvedValue({
+      id: "del-1",
+      orgId: "org-1",
+      jobId: "job-1",
+      channel: "slack",
+      status: "failure",
+      recipientSummary: "hooks.slack.com",
+      errorMessage: "boom",
+      attemptedAt: new Date("2026-04-22T12:00:00.000Z"),
+      source: "automatic",
+    });
+    mockGetBackfillJob.mockResolvedValue({
+      id: "job-1",
+      organizationId: "org-1",
+      status: "FAILED",
+      total: 1,
+      processed: 1,
+      succeeded: 0,
+      failed: 1,
+      startedAt: new Date("2026-04-22T11:55:00.000Z"),
+      completedAt: new Date("2026-04-22T12:00:00.000Z"),
+      parentJobId: null,
+      startedById: null,
+    });
+    mockListAlertDeliveries.mockResolvedValue([
+      {
+        id: "del-2",
+        orgId: "org-1",
+        jobId: "job-1",
+        channel: "slack",
+        status: "success",
+        recipientSummary: "hooks.slack.com",
+        errorMessage: null,
+        attemptedAt: new Date("2026-04-22T12:00:30.000Z"),
+        source: "resend",
+      },
+      {
+        id: "del-1",
+        orgId: "org-1",
+        jobId: "job-1",
+        channel: "slack",
+        status: "failure",
+        recipientSummary: "hooks.slack.com",
+        errorMessage: "boom",
+        attemptedAt: new Date("2026-04-22T12:00:00.000Z"),
+        source: "automatic",
+      },
+    ]);
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: "https://hooks.slack.com/services/T/B/X",
+      emailRecipients: [],
+    });
+    mockFetch.mockResolvedValue(new Response("ok", { status: 200 }));
+    mockSendEmail.mockResolvedValue(true);
+    mockRecordDelivery.mockResolvedValue({});
+    __resetResendCooldownsForTests();
+  });
+
+  it("asks the persisted store and dispatches when the slot is available", async () => {
+    const reservedAt = new Date("2026-04-22T12:00:05.000Z");
+    mockTryReserveResendCooldown.mockResolvedValueOnce({
+      ok: true,
+      reservedAt,
+    });
+
+    const result = await resendBackfillAlertDelivery(
+      "org-1",
+      "del-1",
+      "admin-1",
+      reservedAt.getTime(),
+    );
+
+    expect(result.ok).toBe(true);
+    expect(mockTryReserveResendCooldown).toHaveBeenCalledTimes(1);
+    const [keyArg, cooldownArg] = mockTryReserveResendCooldown.mock.calls[0];
+    expect(keyArg).toEqual({ orgId: "org-1", jobId: "job-1", channel: "slack" });
+    expect(cooldownArg).toBe(RESEND_COOLDOWN_MS);
+    // Slack POST happened — the dispatch was not short-circuited.
+    expect(mockFetch).toHaveBeenCalled();
+    // Successful dispatch is NOT rolled back, so release must not run.
+    expect(mockReleaseResendCooldown).not.toHaveBeenCalled();
+  });
+
+  it("returns COOLDOWN with retryAfterSeconds when the persisted store rejects", async () => {
+    mockTryReserveResendCooldown.mockResolvedValueOnce({
+      ok: false,
+      retryAfterSeconds: 17,
+    });
+
+    const result = await resendBackfillAlertDelivery(
+      "org-1",
+      "del-1",
+      "admin-1",
+      new Date("2026-04-22T12:00:13.000Z").getTime(),
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "COOLDOWN",
+      retryAfterSeconds: 17,
+    });
+    // No dispatch, no follow-up DB lookups beyond the initial delivery
+    // fetch — the cooldown short-circuits the path.
+    expect(mockGetBackfillJob).not.toHaveBeenCalled();
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("still rejects a second resend within 30s after the in-process state is reset (simulated restart)", async () => {
+    // First click: persisted store accepts.
+    const firstReservedAt = new Date("2026-04-22T12:00:00.000Z");
+    mockTryReserveResendCooldown.mockResolvedValueOnce({
+      ok: true,
+      reservedAt: firstReservedAt,
+    });
+    const first = await resendBackfillAlertDelivery(
+      "org-1",
+      "del-1",
+      "admin-1",
+      firstReservedAt.getTime(),
+    );
+    expect(first.ok).toBe(true);
+
+    // Simulate a process restart / fresh replica picking up the next click:
+    // any in-process bookkeeping the dispatcher still has is wiped, but the
+    // persisted store remembers the recent reservation and continues to
+    // reject within the cooldown window.
+    __resetResendCooldownsForTests();
+    mockTryReserveResendCooldown.mockResolvedValueOnce({
+      ok: false,
+      retryAfterSeconds: 25,
+    });
+    mockFetch.mockClear();
+
+    const secondClickAt = new Date("2026-04-22T12:00:05.000Z");
+    const second = await resendBackfillAlertDelivery(
+      "org-1",
+      "del-1",
+      "admin-1",
+      secondClickAt.getTime(),
+    );
+
+    expect(second).toEqual({
+      ok: false,
+      reason: "COOLDOWN",
+      retryAfterSeconds: 25,
+    });
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("rolls back the persisted reservation when the channel has no destination", async () => {
+    const reservedAt = new Date("2026-04-22T12:00:05.000Z");
+    mockTryReserveResendCooldown.mockResolvedValueOnce({
+      ok: true,
+      reservedAt,
+    });
+    // Settings have an empty webhook so the slack channel is unconfigured.
+    mockGetSettings.mockResolvedValueOnce({
+      organizationId: "org-1",
+      slackWebhookUrl: "",
+      emailRecipients: [],
+    });
+
+    const result = await resendBackfillAlertDelivery(
+      "org-1",
+      "del-1",
+      "admin-1",
+      reservedAt.getTime(),
+    );
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "CHANNEL_NOT_CONFIGURED",
+    });
+    expect(mockReleaseResendCooldown).toHaveBeenCalledWith(
+      { orgId: "org-1", jobId: "job-1", channel: "slack" },
+      reservedAt,
+    );
   });
 });

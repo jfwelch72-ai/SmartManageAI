@@ -7,6 +7,7 @@ import {
   crmTranscriptBackfillTestAlerts,
   crmTranscriptBackfillAlertDeliveries,
   alertFallbackSent,
+  crmTranscriptBackfillAlertResendCooldowns,
   notificationChannelPrefs,
   organizations,
   users,
@@ -1527,6 +1528,118 @@ export async function recordAlertFallbackSent(
  */
 export async function pruneAlertFallbackSentBefore(cutoff: Date): Promise<void> {
   await db.delete(alertFallbackSent).where(lte(alertFallbackSent.sentAt, cutoff));
+}
+
+// ---------------------------------------------------------------------------
+// Task #1098 — persisted, fleet-wide cooldown for the "resend alert
+// delivery" admin button. Task #1068 originally held this in an in-process
+// Map, which meant the window reset every deploy/restart and was not shared
+// across replicas. Two admins clicking on different pods (or one admin who
+// timed a deploy) could still bypass the cooldown.
+//
+// `tryReserveBackfillAlertResendCooldown` performs an atomic upsert against
+// the persisted ledger — the conditional `setWhere` clause makes the
+// reservation succeed only when no row exists OR the existing row is
+// already older than the cooldown, so two concurrent reservers (in the
+// same process or on different replicas) cannot both win. The helper
+// returns `{ ok: true }` on a successful reservation and
+// `{ ok: false, retryAfterSeconds }` when the cooldown is still active.
+//
+// `releaseBackfillAlertResendCooldown` rolls back a reservation only if
+// the row still has the timestamp the caller stamped, so a later, valid
+// reservation is never accidentally cleared.
+// ---------------------------------------------------------------------------
+export type BackfillAlertResendCooldownKey = {
+  orgId: string;
+  jobId: string;
+  channel: string;
+};
+
+export type BackfillAlertResendReservationResult =
+  | { ok: true; reservedAt: Date }
+  | { ok: false; retryAfterSeconds: number };
+
+export async function tryReserveBackfillAlertResendCooldown(
+  key: BackfillAlertResendCooldownKey,
+  cooldownMs: number,
+  now: Date = new Date(),
+): Promise<BackfillAlertResendReservationResult> {
+  const cutoff = new Date(now.getTime() - cooldownMs);
+  // Atomic upsert: insert when no row exists, or update only when the
+  // existing reservation is older than the cooldown window. If neither
+  // branch fires, RETURNING comes back empty and we know the cooldown is
+  // still in effect.
+  const reserved = await db
+    .insert(crmTranscriptBackfillAlertResendCooldowns)
+    .values({
+      orgId: key.orgId,
+      jobId: key.jobId,
+      channel: key.channel,
+      lastResendAt: now,
+    })
+    .onConflictDoUpdate({
+      target: [
+        crmTranscriptBackfillAlertResendCooldowns.orgId,
+        crmTranscriptBackfillAlertResendCooldowns.jobId,
+        crmTranscriptBackfillAlertResendCooldowns.channel,
+      ],
+      set: { lastResendAt: now },
+      setWhere: lte(
+        crmTranscriptBackfillAlertResendCooldowns.lastResendAt,
+        cutoff,
+      ),
+    })
+    .returning({
+      lastResendAt: crmTranscriptBackfillAlertResendCooldowns.lastResendAt,
+    });
+  if (reserved.length > 0) {
+    return { ok: true, reservedAt: reserved[0].lastResendAt };
+  }
+  // The upsert was a no-op because the existing reservation is still within
+  // the cooldown window. Read it back to compute Retry-After. If the row
+  // somehow vanished between the upsert and this read (e.g. a TTL prune),
+  // treat the slot as available so the next dispatch can proceed.
+  const [existing] = await db
+    .select({
+      lastResendAt: crmTranscriptBackfillAlertResendCooldowns.lastResendAt,
+    })
+    .from(crmTranscriptBackfillAlertResendCooldowns)
+    .where(
+      and(
+        eq(crmTranscriptBackfillAlertResendCooldowns.orgId, key.orgId),
+        eq(crmTranscriptBackfillAlertResendCooldowns.jobId, key.jobId),
+        eq(crmTranscriptBackfillAlertResendCooldowns.channel, key.channel),
+      ),
+    )
+    .limit(1);
+  if (!existing) {
+    return { ok: true, reservedAt: now };
+  }
+  const elapsedMs = Math.max(0, now.getTime() - existing.lastResendAt.getTime());
+  const retryAfterSeconds = Math.max(
+    1,
+    Math.ceil((cooldownMs - elapsedMs) / 1000),
+  );
+  return { ok: false, retryAfterSeconds };
+}
+
+export async function releaseBackfillAlertResendCooldown(
+  key: BackfillAlertResendCooldownKey,
+  expectedReservedAt: Date,
+): Promise<void> {
+  await db
+    .delete(crmTranscriptBackfillAlertResendCooldowns)
+    .where(
+      and(
+        eq(crmTranscriptBackfillAlertResendCooldowns.orgId, key.orgId),
+        eq(crmTranscriptBackfillAlertResendCooldowns.jobId, key.jobId),
+        eq(crmTranscriptBackfillAlertResendCooldowns.channel, key.channel),
+        eq(
+          crmTranscriptBackfillAlertResendCooldowns.lastResendAt,
+          expectedReservedAt,
+        ),
+      ),
+    );
 }
 
 export const storage = {};
