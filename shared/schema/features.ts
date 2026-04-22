@@ -9004,6 +9004,28 @@ export const insertUserSavedViewSchema = createInsertSchema(userSavedViews).omit
 export type InsertUserSavedView = z.infer<typeof insertUserSavedViewSchema>;
 export type UserSavedView = typeof userSavedViews.$inferSelect;
 
+// Task #898: My Work Saved Views — dedicated per-user table for the My Work page.
+// Kept separate from `userSavedViews` so we can add My-Work-specific options
+// later (e.g. default grouping, "show team work") without polluting the shared
+// org-wide saved-views schema.
+export const myWorkSavedViews = pgTable("my_work_saved_views", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  view: text("view").notNull(),
+  filtersJson: text("filters_json").notNull().default("{}"),
+  isShared: boolean("is_shared").notNull().default(false),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  userIdx: index("my_work_saved_views_user_idx").on(table.userId),
+  orgSharedIdx: index("my_work_saved_views_org_shared_idx").on(table.organizationId, table.isShared),
+}));
+
+export const insertMyWorkSavedViewSchema = createInsertSchema(myWorkSavedViews).omit({ id: true, createdAt: true });
+export type InsertMyWorkSavedView = z.infer<typeof insertMyWorkSavedViewSchema>;
+export type MyWorkSavedView = typeof myWorkSavedViews.$inferSelect;
+
 export const activityLog = pgTable("activity_log", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),

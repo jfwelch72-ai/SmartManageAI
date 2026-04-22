@@ -27,6 +27,7 @@
 import { Router, type Response, type NextFunction } from "express";
 import { and, eq, inArray, or, desc, type SQL } from "drizzle-orm";
 import type { PgColumn } from "drizzle-orm/pg-core";
+import { z } from "zod";
 import { db } from "./db";
 import {
   tasks,
@@ -36,6 +37,7 @@ import {
   projectInspections,
   projects,
   users,
+  myWorkSavedViews,
 } from "@shared/schema";
 import { requireAuth, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
@@ -585,6 +587,193 @@ router.get("/api/me/work", requireAuth, async (req: AuthRequest, res: Response, 
     });
   } catch (err) {
     next(err);
+  }
+});
+
+/* ------------------------------------------------------------------
+ * Task #898 — My Work saved views (per-user filter+view combinations)
+ *
+ *   GET    /api/me/work/views        — list mine + team-shared
+ *   POST   /api/me/work/views        — create
+ *   PATCH  /api/me/work/views/:id    — rename / re-share / overwrite filters
+ *   DELETE /api/me/work/views/:id    — delete
+ *
+ * Stored in the dedicated `my_work_saved_views` table so future My-Work-only
+ * options (default grouping, "show team work", etc.) can be added without
+ * polluting the org-wide `user_saved_views` schema.
+ * ------------------------------------------------------------------ */
+
+const MY_WORK_VIEW_VALUES = ["table", "kanban", "calendar"] as const;
+
+function isAdminRole(role: string | null | undefined): boolean {
+  return role === "ADMIN" || role === "SUPER_ADMIN";
+}
+
+router.get("/api/me/work/views", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.id;
+    const orgId = req.user!.organizationId;
+    if (!orgId) {
+      return res.status(400).json({ error: "Organization context required" });
+    }
+
+    const rows = await db
+      .select({
+        view: myWorkSavedViews,
+        creatorFirstName: users.firstName,
+        creatorLastName: users.lastName,
+      })
+      .from(myWorkSavedViews)
+      .leftJoin(users, eq(users.id, myWorkSavedViews.userId))
+      .where(and(
+        eq(myWorkSavedViews.organizationId, orgId),
+        or(
+          eq(myWorkSavedViews.userId, userId),
+          eq(myWorkSavedViews.isShared, true),
+        ),
+      ));
+
+    const result = rows.map((r) => {
+      const first = (r.creatorFirstName || "").trim();
+      const last = (r.creatorLastName || "").trim();
+      const fullName = [first, last].filter(Boolean).join(" ");
+      const initials = `${first.charAt(0)}${last.charAt(0)}`.toUpperCase() || null;
+      return {
+        ...r.view,
+        creatorName: fullName || null,
+        creatorInitials: initials,
+      };
+    });
+    result.sort((a, b) => (b.createdAt?.getTime?.() ?? 0) - (a.createdAt?.getTime?.() ?? 0));
+    return res.json(result);
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.post("/api/me/work/views", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.id;
+    const orgId = req.user!.organizationId;
+    if (!orgId) {
+      return res.status(400).json({ error: "Organization context required" });
+    }
+    const schema = z.object({
+      name: z.string().min(1).max(120),
+      view: z.enum(MY_WORK_VIEW_VALUES),
+      filters: z.record(z.any()).optional(),
+      isShared: z.boolean().optional(),
+    });
+    const parsed = schema.parse(req.body);
+    const [created] = await db
+      .insert(myWorkSavedViews)
+      .values({
+        userId,
+        organizationId: orgId,
+        name: parsed.name,
+        view: parsed.view,
+        filtersJson: JSON.stringify(parsed.filters || {}),
+        isShared: parsed.isShared === true,
+      })
+      .returning();
+    return res.status(201).json(created);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: "Invalid saved view", details: err.errors });
+    }
+    return next(err);
+  }
+});
+
+router.patch("/api/me/work/views/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.id;
+    const orgId = req.user!.organizationId;
+    const role = req.user!.role;
+    if (!orgId) {
+      return res.status(400).json({ error: "Organization context required" });
+    }
+    const { id } = req.params;
+    const schema = z.object({
+      name: z.string().min(1).max(120).optional(),
+      isShared: z.boolean().optional(),
+      filters: z.record(z.any()).optional(),
+      view: z.enum(MY_WORK_VIEW_VALUES).optional(),
+    });
+    const parsed = schema.parse(req.body);
+
+    const [existing] = await db
+      .select()
+      .from(myWorkSavedViews)
+      .where(and(
+        eq(myWorkSavedViews.id, id),
+        eq(myWorkSavedViews.organizationId, orgId),
+      ))
+      .limit(1);
+    if (!existing) {
+      return res.status(404).json({ error: "Saved view not found" });
+    }
+    if (existing.userId !== userId && !isAdminRole(role)) {
+      return res.status(403).json({ error: "Only the creator or an admin can edit this view" });
+    }
+
+    const updates: Partial<typeof existing> = {};
+    if (parsed.name !== undefined) updates.name = parsed.name;
+    if (parsed.isShared !== undefined) updates.isShared = parsed.isShared;
+    if (parsed.view !== undefined) updates.view = parsed.view;
+    if (parsed.filters !== undefined) updates.filtersJson = JSON.stringify(parsed.filters);
+
+    if (Object.keys(updates).length === 0) {
+      return res.json(existing);
+    }
+
+    const [updated] = await db
+      .update(myWorkSavedViews)
+      .set(updates)
+      .where(and(
+        eq(myWorkSavedViews.id, id),
+        eq(myWorkSavedViews.organizationId, orgId),
+      ))
+      .returning();
+    return res.json(updated);
+  } catch (err) {
+    if (err instanceof z.ZodError) {
+      return res.status(400).json({ error: "Invalid update", details: err.errors });
+    }
+    return next(err);
+  }
+});
+
+router.delete("/api/me/work/views/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const userId = req.user!.id;
+    const orgId = req.user!.organizationId;
+    const role = req.user!.role;
+    if (!orgId) {
+      return res.status(400).json({ error: "Organization context required" });
+    }
+    const { id } = req.params;
+    const [existing] = await db
+      .select()
+      .from(myWorkSavedViews)
+      .where(and(
+        eq(myWorkSavedViews.id, id),
+        eq(myWorkSavedViews.organizationId, orgId),
+      ))
+      .limit(1);
+    if (!existing) {
+      return res.status(404).json({ error: "Saved view not found" });
+    }
+    if (existing.userId !== userId && !isAdminRole(role)) {
+      return res.status(403).json({ error: "Only the creator or an admin can delete this view" });
+    }
+    await db.delete(myWorkSavedViews).where(and(
+      eq(myWorkSavedViews.id, id),
+      eq(myWorkSavedViews.organizationId, orgId),
+    ));
+    return res.json({ success: true });
+  } catch (err) {
+    return next(err);
   }
 });
 

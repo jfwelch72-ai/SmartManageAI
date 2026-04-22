@@ -54,6 +54,14 @@ interface Props<F = Record<string, any>> {
   onApply: (view: AppliedView<F>) => void;
   builtInViews?: BuiltInView<F>[];
   defaultFilters: F;
+  /**
+   * Optional override for the REST endpoint used to list/create/update/delete
+   * saved views. Defaults to the org-wide `/api/saved-views` collection (which
+   * accepts `viewKey` as a query/body param). Pages with their own dedicated
+   * saved-views table (e.g. My Work → `/api/me/work/views`) pass their base
+   * path here. When overridden, requests omit the `viewKey` param entirely.
+   */
+  apiBasePath?: string;
 }
 
 export default function SavedViewsDropdown<F extends Record<string, any> = Record<string, any>>({
@@ -62,7 +70,16 @@ export default function SavedViewsDropdown<F extends Record<string, any> = Recor
   onApply,
   builtInViews = [],
   defaultFilters,
+  apiBasePath,
 }: Props<F>) {
+  const usingDedicatedEndpoint = typeof apiBasePath === "string" && apiBasePath.length > 0;
+  const basePath = usingDedicatedEndpoint ? apiBasePath! : "/api/saved-views";
+  const listQueryKey = usingDedicatedEndpoint
+    ? [basePath]
+    : [basePath, { viewKey }];
+  const listUrl = usingDedicatedEndpoint
+    ? basePath
+    : `${basePath}?viewKey=${encodeURIComponent(viewKey)}`;
   const { toast } = useToast();
   const { user } = useAuth();
   const [showSaveDialog, setShowSaveDialog] = useState(false);
@@ -75,9 +92,9 @@ export default function SavedViewsDropdown<F extends Record<string, any> = Recor
   const currentUserId = user?.id;
 
   const { data: savedViews = [] } = useQuery<SavedView[]>({
-    queryKey: ["/api/saved-views", { viewKey }],
+    queryKey: listQueryKey,
     queryFn: async () => {
-      const res = await fetch(`/api/saved-views?viewKey=${encodeURIComponent(viewKey)}`, { credentials: "include" });
+      const res = await fetch(listUrl, { credentials: "include" });
       if (!res.ok) throw new Error("Failed to load saved views");
       return res.json();
     },
@@ -85,17 +102,18 @@ export default function SavedViewsDropdown<F extends Record<string, any> = Recor
 
   const createMutation = useMutation({
     mutationFn: async (data: { name: string; isShared: boolean }) => {
-      const res = await apiRequest("POST", "/api/saved-views", {
-        viewKey,
+      const body: Record<string, unknown> = {
         name: data.name,
         view: current.view,
         filters: current.filters,
         isShared: data.isShared,
-      });
+      };
+      if (!usingDedicatedEndpoint) body.viewKey = viewKey;
+      const res = await apiRequest("POST", basePath, body);
       return res.json();
     },
     onSuccess: (_data, vars) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/saved-views", { viewKey }] });
+      queryClient.invalidateQueries({ queryKey: listQueryKey });
       toast({
         title: "View saved",
         description: vars.isShared
@@ -114,10 +132,10 @@ export default function SavedViewsDropdown<F extends Record<string, any> = Recor
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/saved-views/${id}`);
+      await apiRequest("DELETE", `${basePath}/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/saved-views", { viewKey }] });
+      queryClient.invalidateQueries({ queryKey: listQueryKey });
       toast({ title: "View removed" });
     },
     onError: (err: unknown) => {
@@ -128,11 +146,11 @@ export default function SavedViewsDropdown<F extends Record<string, any> = Recor
 
   const renameMutation = useMutation({
     mutationFn: async ({ id, name }: { id: string; name: string }) => {
-      const res = await apiRequest("PATCH", `/api/saved-views/${id}`, { name });
+      const res = await apiRequest("PATCH", `${basePath}/${id}`, { name });
       return res.json();
     },
     onSuccess: (_d, vars) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/saved-views", { viewKey: "projects" }] });
+      queryClient.invalidateQueries({ queryKey: listQueryKey });
       toast({ title: "View renamed", description: `Renamed to "${vars.name}".` });
       setRenameTarget(null);
       setRenameValue("");
@@ -145,14 +163,14 @@ export default function SavedViewsDropdown<F extends Record<string, any> = Recor
 
   const updateFiltersMutation = useMutation({
     mutationFn: async (sv: SavedView) => {
-      const res = await apiRequest("PATCH", `/api/saved-views/${sv.id}`, {
+      const res = await apiRequest("PATCH", `${basePath}/${sv.id}`, {
         view: current.view,
         filters: current.filters,
       });
       return res.json();
     },
     onSuccess: (_d, sv) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/saved-views", { viewKey: "projects" }] });
+      queryClient.invalidateQueries({ queryKey: listQueryKey });
       toast({
         title: "View updated",
         description: `"${sv.name}" now uses the current filters.`,
@@ -166,11 +184,11 @@ export default function SavedViewsDropdown<F extends Record<string, any> = Recor
 
   const toggleShareMutation = useMutation({
     mutationFn: async ({ id, isShared }: { id: string; isShared: boolean }) => {
-      const res = await apiRequest("PATCH", `/api/saved-views/${id}`, { isShared });
+      const res = await apiRequest("PATCH", `${basePath}/${id}`, { isShared });
       return res.json();
     },
     onSuccess: (_d, vars) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/saved-views", { viewKey: "projects" }] });
+      queryClient.invalidateQueries({ queryKey: listQueryKey });
       toast({ title: vars.isShared ? "Shared with team" : "Now private" });
     },
     onError: (err: unknown) => {

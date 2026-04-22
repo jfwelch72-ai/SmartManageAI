@@ -469,6 +469,7 @@ export default function MyWorkPage() {
           <ViewSwitcher value={view} onChange={handleViewChange} views={["table", "kanban", "calendar"]} testId="my-work-view-switcher" />
           <SavedViewsDropdown
             viewKey="my-work"
+            apiBasePath="/api/me/work/views"
             defaultFilters={DEFAULT_FILTERS}
             builtInViews={BUILT_IN_VIEWS}
             current={{ view, filters }}
