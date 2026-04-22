@@ -939,7 +939,7 @@ router.post(
 // keeps a small in-memory mirror of the row and flushes mutations through
 // the storage layer.
 // ---------------------------------------------------------------------------
-type BackfillJobState = {
+export type BackfillJobState = {
   id: string;
   orgId: string;
   status: "RUNNING" | "COMPLETED" | "FAILED";
@@ -961,6 +961,10 @@ const MAX_BACKFILL_ERROR_SAMPLES = 50;
 // If a job's heartbeat is older than this, the worker is presumed dead (the
 // process restarted) and the job is marked FAILED on the next read.
 const BACKFILL_HEARTBEAT_STALE_MS = 5 * 60 * 1000;
+
+export function __rowToBackfillStateForTests(row: CrmTranscriptBackfillJob): BackfillJobState {
+  return rowToState(row);
+}
 
 function rowToState(row: CrmTranscriptBackfillJob): BackfillJobState {
   return {
@@ -1026,6 +1030,19 @@ export async function fetchEligibleRecordingBatch(
     // this run (e.g. failures that stay PENDING/FAILED in the table).
     .limit(batchSize + excludeIds.size);
   return rows.map((r) => r.id).filter((id) => !excludeIds.has(id)).slice(0, batchSize);
+}
+
+// Exported for tests only — Task #1014's coverage of the >50-failure retry
+// flow needs to drive the worker without going through the POST endpoint
+// (which paginates through every PENDING/FAILED recording in the org and
+// makes it awkward to seed an exact failure count).
+export async function __runTranscriptBackfillForTests(
+  job: BackfillJobState,
+  initialRecordingIds: string[],
+  concurrency: number,
+  maxRecords: number | null,
+) {
+  return runTranscriptBackfill(job, initialRecordingIds, concurrency, maxRecords);
 }
 
 async function runTranscriptBackfill(
