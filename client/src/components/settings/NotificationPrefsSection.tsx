@@ -484,6 +484,53 @@ export default function NotificationPrefsSection() {
     });
   }
 
+  // Task #1076 — Per-admin opt-in for the two streams of CRM transcript-backfill
+  // alert delivery failure emails:
+  //   - Real-time (Task #1051): one email per recorded failure.
+  //   - Daily digest (Task #1065): a once-a-day rollup of the previous 24h.
+  // Default "both" preserves the legacy behavior so existing admins see no
+  // change until they pick a quieter mode. Composes with the Task #1066 mute
+  // knobs above (mode picks the stream, mutes pick the failing channel).
+  type AlertFailureEmailMode = "both" | "realtime" | "digest" | "none";
+  const [alertFailureEmailMode, setAlertFailureEmailMode] =
+    useState<AlertFailureEmailMode>("both");
+  useEffect(() => {
+    if (authUser) {
+      const mode = (authUser.alertFailureEmailMode ?? "both") as AlertFailureEmailMode;
+      setAlertFailureEmailMode(mode);
+    }
+  }, [authUser]);
+
+  const updateAlertFailureEmailModeMutation = useMutation({
+    mutationFn: async (mode: AlertFailureEmailMode) => {
+      return await apiRequest("PATCH", "/api/auth/profile", {
+        alertFailureEmailMode: mode,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({
+        title: "Alert-failure email preference updated",
+        description: "Future transcript backfill alert-failure emails will use this setting.",
+      });
+    },
+    onError: (error: Error) => {
+      const mode = (authUser?.alertFailureEmailMode ?? "both") as AlertFailureEmailMode;
+      setAlertFailureEmailMode(mode);
+      toast({
+        title: "Failed to update alert-failure email preference",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  function handleAlertFailureEmailModeChange(next: string) {
+    const mode = next as AlertFailureEmailMode;
+    setAlertFailureEmailMode(mode);
+    updateAlertFailureEmailModeMutation.mutate(mode);
+  }
+
   // Task #1046: Let admins fire a sample backfill summary to their currently
   // selected channel so they can verify webhook URLs and preview formatting
   // without waiting for a real backfill to finish. Errors (missing webhook,
@@ -2072,6 +2119,48 @@ export default function NotificationPrefsSection() {
                         data-testid="switch-alert-failure-fallback-mute-email"
                       />
                     </div>
+                  </div>
+
+                  {/* Task #1076: stream-mode picker (real-time vs daily digest). */}
+                  <div
+                    className="mt-4 space-y-1"
+                    data-testid="section-alert-failure-email-mode"
+                  >
+                    <Label
+                      htmlFor="alert-failure-email-mode"
+                      className="text-xs text-muted-foreground"
+                    >
+                      Email me…
+                    </Label>
+                    <Select
+                      value={alertFailureEmailMode}
+                      onValueChange={handleAlertFailureEmailModeChange}
+                      disabled={updateAlertFailureEmailModeMutation.isPending}
+                    >
+                      <SelectTrigger
+                        id="alert-failure-email-mode"
+                        data-testid="select-alert-failure-email-mode"
+                      >
+                        <SelectValue placeholder="Select mode" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="both" data-testid="option-alert-failure-email-mode-both">
+                          Real-time and daily digest
+                        </SelectItem>
+                        <SelectItem value="realtime" data-testid="option-alert-failure-email-mode-realtime">
+                          Real-time only (one email per failure)
+                        </SelectItem>
+                        <SelectItem value="digest" data-testid="option-alert-failure-email-mode-digest">
+                          Daily digest only (one email per day)
+                        </SelectItem>
+                        <SelectItem value="none" data-testid="option-alert-failure-email-mode-none">
+                          Don't email me
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <p className="text-xs text-muted-foreground">
+                      Real-time sends one email per failure. Daily digest groups the previous 24 hours into a single rollup. The mute toggles above still apply to both streams.
+                    </p>
                   </div>
                 </div>
               )}

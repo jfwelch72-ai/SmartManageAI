@@ -1045,6 +1045,17 @@ export async function listCrmTranscriptBackfillAlertDeliveries(
 //     channels (e.g. ["slack"]) to suppress; other channels still alert.
 //     Callers pass the failing `channel` so the muted-channel filter can
 //     run; omitting it preserves the legacy "any channel" behavior.
+//
+// Task #1076 — admins can additionally pick which of the two streams of
+// alert-failure emails they want via `users.alert_failure_email_mode`:
+// real-time only, daily digest only, both (legacy default), or neither.
+// Callers pass the stream they're dispatching for (`"realtime"` from the
+// per-failure fan-out in `notifyOrgAdminsOfAlertDeliveryFailure`, `"digest"`
+// from `runAlertFailureDigest`) and recipients who opted out of that stream
+// are filtered out here. Omitting the stream preserves the legacy behavior
+// (no extra filter) for any internal/test callers. Both filters compose:
+// the admin must pass the Task #1066 mute checks AND opt into the requested
+// stream to receive the email.
 export type OrgAdminFailureFallbackRecipient = {
   id: string;
   email: string;
@@ -1052,9 +1063,25 @@ export type OrgAdminFailureFallbackRecipient = {
   lastName: string | null;
 };
 
+export type AlertFailureEmailStream = "realtime" | "digest";
+
+function alertFailureEmailModeAllows(
+  mode: string | null | undefined,
+  stream: AlertFailureEmailStream | undefined,
+): boolean {
+  if (!stream) return true; // No stream filter requested.
+  // Treat unknown / null modes as the legacy "both" so we never silently
+  // drop a recipient because of an unmigrated row.
+  const m = mode ?? "both";
+  if (m === "none") return false;
+  if (m === "both") return true;
+  return m === stream;
+}
+
 export async function listOrgAdminsForAlertFailureFallback(
   organizationId: string,
   channel?: "slack" | "email",
+  stream?: AlertFailureEmailStream,
 ): Promise<OrgAdminFailureFallbackRecipient[]> {
   const rows = await db
     .select({
@@ -1066,6 +1093,7 @@ export async function listOrgAdminsForAlertFailureFallback(
       backfillChannel: users.crmBackfillSummaryChannel,
       fallbackEnabled: users.crmAlertFailureFallbackEnabled,
       fallbackMutedChannels: users.crmAlertFailureFallbackMutedChannels,
+      alertFailureEmailMode: users.alertFailureEmailMode,
     })
     .from(users)
     .leftJoin(
@@ -1093,6 +1121,8 @@ export async function listOrgAdminsForAlertFailureFallback(
         : [];
       if (muted.includes(channel)) continue;
     }
+    // Task #1076: per-stream opt-in (orthogonal to the Task #1066 mute knobs).
+    if (!alertFailureEmailModeAllows(r.alertFailureEmailMode, stream)) continue;
     const email = (r.email ?? "").trim();
     if (!email) continue;
     const key = email.toLowerCase();

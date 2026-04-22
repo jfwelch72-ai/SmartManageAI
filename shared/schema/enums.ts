@@ -52,6 +52,22 @@ export const backfillSummaryChannelEnum = pgEnum(
   ["email", "slack", "teams", "none"],
 );
 
+// Task #1076 — Per-admin opt-in for the two streams of CRM transcript-backfill
+// alert delivery failure emails:
+//   - Task #1051 fans out a real-time email on every recorded failure.
+//   - Task #1065 sends a once-a-day rollup of the previous 24h.
+// Both streams previously emailed every eligible admin. Admins who only want
+// the calmer baseline (digest) or only the live pages (real-time) can now
+// opt out of the other without losing visibility entirely.
+//   - "both"     : receive both real-time and digest emails (legacy default).
+//   - "realtime" : real-time fan-out only; suppress the daily digest.
+//   - "digest"   : daily digest only; suppress the real-time fan-out.
+//   - "none"     : silence both streams (in-app history page is unaffected).
+export const alertFailureEmailModeEnum = pgEnum(
+  "alert_failure_email_mode",
+  ["both", "realtime", "digest", "none"],
+);
+
 export const notificationTypeEnum = pgEnum("notification_type", [
   "BILLING_READY", "CHANGE_ORDER_PENDING", "TIME_OFF_REQUEST", "GENERAL", "MATERIAL_OVERAGE",
   "PROJECT_ASSIGNMENT", "MAINTENANCE_REQUEST", "REPAIR_REQUEST", "DELAY_SUBMITTED",

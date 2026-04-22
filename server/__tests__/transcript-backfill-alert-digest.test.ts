@@ -209,6 +209,10 @@ describe("runAlertFailureDigest (Task #1065)", () => {
     const firstCall = mockSendEmail.mock.calls[0][0];
     expect(firstCall.to).toEqual(["a@example.com", "b@example.com"]);
     expect(firstCall.subject).toContain("3 alert deliveries failed");
+    // Task #1076 — the digest run asks for admins opted into the "digest"
+    // stream so realtime-only / none recipients are excluded.
+    expect(mockListOrgAdmins).toHaveBeenCalledWith("org-1", undefined, "digest");
+    expect(mockListOrgAdmins).toHaveBeenCalledWith("org-2", undefined, "digest");
   });
 
   it("skips orgs with no eligible admins without throwing", async () => {

@@ -82,6 +82,7 @@ import { ensureCrmTranscriptBackfillJobsTable } from "./ensureCrmTranscriptBackf
 import { ensureCrmTranscriptBackfillNotificationSettingsTable } from "./ensureCrmTranscriptBackfillNotificationSettingsTable";
 import { ensureCrmTranscriptBackfillNotificationsTable } from "./ensureCrmTranscriptBackfillNotificationsTable";
 import { ensureCrmTranscriptBackfillAlertDeliveriesTable } from "./ensureCrmTranscriptBackfillAlertDeliveriesTable";
+import { ensureUsersAlertFailureEmailModeColumn } from "./ensureUsersAlertFailureEmailModeColumn";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -177,6 +178,8 @@ const migrations: MigrationStep[] = [
   // Task #1066 — per-admin mute for the alert delivery failure fallback
   // emails (Task #1051). Adds two columns to `users`.
   { name: "users_crm_alert_failure_fallback_columns", category: "ADD_COLUMN", fn: ensureUsersCrmAlertFailureFallbackColumns },
+  // Task #1076 — per-admin opt-in for real-time vs digest alert-failure emails.
+  { name: "users_alert_failure_email_mode_column", category: "ADD_COLUMN", fn: ensureUsersAlertFailureEmailModeColumn },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

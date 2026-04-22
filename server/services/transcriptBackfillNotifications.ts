@@ -432,12 +432,14 @@ export async function notifyOrgAdminsOfAlertDeliveryFailure(
       return 0;
     }
 
-    // Task #1066: pass the failing channel so per-admin per-channel mutes
-    // (e.g. "ignore Slack failures, still tell me about email failures")
-    // are honored at lookup time.
+    // Task #1066 + Task #1076: pass the failing channel so per-admin per-channel
+    // mutes (e.g. "ignore Slack failures, still tell me about email failures")
+    // are honored, AND pass the "realtime" stream so admins who opted into
+    // digest-only / none are excluded from the real-time fan-out.
     const admins = await listOrgAdminsForAlertFailureFallback(
       input.orgId,
       input.channel,
+      "realtime",
     );
     if (admins.length === 0) {
       logInfo(
@@ -1225,8 +1227,13 @@ export async function runAlertFailureDigest(
   for (const entry of aggregates) {
     totalFailures += entry.total;
     try {
+      // Task #1076: only deliver the daily rollup to admins who opted into
+      // the digest stream (mode `digest` or `both`). Real-time-only / none
+      // recipients are skipped here.
       const admins = await listOrgAdminsForAlertFailureFallback(
         entry.organizationId,
+        undefined,
+        "digest",
       );
       if (admins.length === 0) {
         logInfo(

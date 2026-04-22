@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { addonKeyEnum, addonStatusEnum, backfillSummaryChannelEnum, bidStatusEnum, billingProviderEnum, deductionCalculationMethodEnum, deductionCategoryEnum, geofenceEnforcementEnum, jobMetricAlertQuietHoursDigestFormatEnum, jobMetricAlertQuietHoursDigestTimeFormatEnum, onboardingStatusEnum, payRunStatusEnum, payrollFormVariantEnum, planTierEnum, projectStatusEnum, subscriptionStatusEnum, tradeTypeEnum, usageKeyEnum, userRoleEnum, workWeekStartDayEnum } from "./enums";
+import { addonKeyEnum, addonStatusEnum, alertFailureEmailModeEnum, backfillSummaryChannelEnum, bidStatusEnum, billingProviderEnum, deductionCalculationMethodEnum, deductionCategoryEnum, geofenceEnforcementEnum, jobMetricAlertQuietHoursDigestFormatEnum, jobMetricAlertQuietHoursDigestTimeFormatEnum, onboardingStatusEnum, payRunStatusEnum, payrollFormVariantEnum, planTierEnum, projectStatusEnum, subscriptionStatusEnum, tradeTypeEnum, usageKeyEnum, userRoleEnum, workWeekStartDayEnum } from "./enums";
 
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -447,6 +447,16 @@ export const users = pgTable("users", {
   crmAlertFailureFallbackMutedChannels: text(
     "crm_alert_failure_fallback_muted_channels",
   ).array().notNull().default(sql`'{}'::text[]`),
+  // Task #1076 — Per-admin opt-in for the two streams of CRM transcript-backfill
+  // alert delivery failure emails. The default ("both") preserves the legacy
+  // Task #1051 + Task #1065 behavior so existing admins see no change until
+  // they pick a different mode. See `alertFailureEmailModeEnum` for the full
+  // value docs. This is orthogonal to the Task #1066 mute knobs above:
+  // both filters are applied (mode picks the stream, mutes pick the failing
+  // channel for the realtime stream).
+  alertFailureEmailMode: alertFailureEmailModeEnum(
+    "alert_failure_email_mode",
+  ).notNull().default("both"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
