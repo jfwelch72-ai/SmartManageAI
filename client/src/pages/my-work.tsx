@@ -956,9 +956,13 @@ function KanbanBoard({
 }) {
   const [draggingKey, setDraggingKey] = useState<string | null>(null);
   const [dragOverCol, setDragOverCol] = useState<Bucket | null>(null);
+  const [ghost, setGhost] = useState<
+    { item: MyWorkItem; width: number; x: number; y: number } | null
+  >(null);
   const draggedRef = useRef<MyWorkItem | null>(null);
   const dragOverRef = useRef<Bucket | null>(null);
   const touchModeRef = useRef(false);
+  const ghostElRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     dragOverRef.current = dragOverCol;
@@ -968,6 +972,7 @@ function KanbanBoard({
     const item = draggedRef.current;
     setDragOverCol(null);
     setDraggingKey(null);
+    setGhost(null);
     draggedRef.current = null;
     touchModeRef.current = false;
     if (!item || bucket == null) return;
@@ -1027,6 +1032,9 @@ function KanbanBoard({
       const t = e.touches[0];
       lastX = t.clientX;
       lastY = t.clientY;
+      if (ghostElRef.current) {
+        ghostElRef.current.style.transform = `translate(${t.clientX}px, ${t.clientY}px) translate(-50%, -50%) rotate(2deg)`;
+      }
       const el = document.elementFromPoint(t.clientX, t.clientY) as HTMLElement | null;
       const colEl = el?.closest?.("[data-bucket]") as HTMLElement | null;
       const bucket = (colEl?.dataset.bucket ?? null) as Bucket | null;
@@ -1050,14 +1058,20 @@ function KanbanBoard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draggingKey]);
 
-  const beginTouchDrag = (item: MyWorkItem, key: string) => {
+  const beginTouchDrag = (
+    item: MyWorkItem,
+    key: string,
+    info: { width: number; x: number; y: number },
+  ) => {
     if (!item.canEditDueDate) return;
     draggedRef.current = item;
     touchModeRef.current = true;
+    setGhost({ item, width: info.width, x: info.x, y: info.y });
     setDraggingKey(key);
   };
 
   return (
+    <>
     <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3" data-testid="kanban">
       {columns.map((col) => {
         const isOver = dragOverCol === col.key;
@@ -1112,7 +1126,7 @@ function KanbanBoard({
                       setDragOverCol(null);
                       draggedRef.current = null;
                     }}
-                    onTouchDragStart={() => beginTouchDrag(it, key)}
+                    onTouchDragStart={(info) => beginTouchDrag(it, key, info)}
                   />
                 );
               })}
@@ -1126,6 +1140,20 @@ function KanbanBoard({
         );
       })}
     </div>
+    {ghost && (
+      <div
+        ref={ghostElRef}
+        className="fixed left-0 top-0 pointer-events-none z-50 opacity-80 drop-shadow-lg"
+        style={{
+          width: ghost.width,
+          transform: `translate(${ghost.x}px, ${ghost.y}px) translate(-50%, -50%) rotate(2deg)`,
+        }}
+        data-testid="kanban-touch-ghost"
+      >
+        <KanbanCard item={ghost.item} />
+      </div>
+    )}
+    </>
   );
 }
 
@@ -1140,7 +1168,7 @@ function KanbanCard({
   isDragging?: boolean;
   onDragStart?: (e: React.DragEvent<HTMLDivElement>) => void;
   onDragEnd?: (e: React.DragEvent<HTMLDivElement>) => void;
-  onTouchDragStart?: () => void;
+  onTouchDragStart?: (info: { width: number; x: number; y: number }) => void;
 }) {
   const meta = TYPE_META[item.type];
   const draggable = item.canEditDueDate;
@@ -1160,10 +1188,12 @@ function KanbanCard({
     }
   };
 
-  const handleTouchStart = (e: React.TouchEvent) => {
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     if (!draggable) return;
     if (e.touches.length !== 1) return;
     const t = e.touches[0];
+    const rect = e.currentTarget.getBoundingClientRect();
+    const width = rect.width;
     startPos.current = { x: t.clientX, y: t.clientY };
     activatedRef.current = false;
     clearTimer();
@@ -1176,7 +1206,8 @@ function KanbanCard({
           /* ignore */
         }
       }
-      onTouchDragStart?.();
+      const last = startPos.current ?? { x: t.clientX, y: t.clientY };
+      onTouchDragStart?.({ width, x: last.x, y: last.y });
     }, 220);
   };
 
