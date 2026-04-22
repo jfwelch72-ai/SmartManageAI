@@ -62,6 +62,7 @@ import { ensureJobMetricAlertTables } from "./ensureJobMetricAlertTables";
 import { ensureUsersJobMetricAlertEmailsColumn } from "./ensureUsersJobMetricAlertEmailsColumn";
 import { ensureUsersJobMetricAlertQuietHoursColumns } from "./ensureUsersJobMetricAlertQuietHoursColumns";
 import { ensureUsersJobMetricAlertQuietHoursDigestColumns } from "./ensureUsersJobMetricAlertQuietHoursDigestColumns";
+import { ensureUsersCrmAlertFailureFallbackColumns } from "./ensureUsersCrmAlertFailureFallbackColumns";
 import { ensurePendingContactReassignmentTable } from "./ensurePendingContactReassignmentTable";
 import { ensureCrmOrganisationOwnerColumn } from "./ensureCrmOrganisationOwnerColumn";
 import { ensureSchedulingModuleEnhancements } from "./ensureSchedulingModuleEnhancements";
@@ -173,6 +174,9 @@ const migrations: MigrationStep[] = [
   // Task #1022 — must run AFTER the jobs table since it FK-references it.
   { name: "crm_transcript_backfill_notifications_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillNotificationsTable },
   { name: "crm_transcript_backfill_alert_deliveries_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillAlertDeliveriesTable },
+  // Task #1066 — per-admin mute for the alert delivery failure fallback
+  // emails (Task #1051). Adds two columns to `users`.
+  { name: "users_crm_alert_failure_fallback_columns", category: "ADD_COLUMN", fn: ensureUsersCrmAlertFailureFallbackColumns },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

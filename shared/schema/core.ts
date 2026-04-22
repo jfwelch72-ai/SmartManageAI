@@ -426,6 +426,27 @@ export const users = pgTable("users", {
   crmBackfillSummaryOnFailureOnly: boolean(
     "crm_backfill_summary_on_failure_only",
   ).notNull().default(false),
+  // Task #1066 — per-admin opt-out for the Task #1051 fallback emails sent
+  // when an alert delivery (Slack/email) fails. The global
+  // `crmBackfillSummaryChannel = "none"` already silences both the run
+  // summary AND these fallbacks, but admins who want completion summaries
+  // and only want to mute the failure fan-out (or mute it for a single
+  // failing channel — e.g. ignore Slack failures while still being told
+  // about email failures) need finer control.
+  //   - `Enabled`         : when false, this admin never receives the
+  //                         fallback email regardless of which channel
+  //                         failed. Defaults to true so existing admins
+  //                         keep getting alerted.
+  //   - `MutedChannels`   : list of failing-delivery channels to mute
+  //                         (allowed values: "slack", "email"). When the
+  //                         failed channel is in this list the admin is
+  //                         skipped, but other channels still alert.
+  crmAlertFailureFallbackEnabled: boolean(
+    "crm_alert_failure_fallback_enabled",
+  ).notNull().default(true),
+  crmAlertFailureFallbackMutedChannels: text(
+    "crm_alert_failure_fallback_muted_channels",
+  ).array().notNull().default(sql`'{}'::text[]`),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

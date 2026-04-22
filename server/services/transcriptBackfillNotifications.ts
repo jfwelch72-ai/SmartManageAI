@@ -362,7 +362,13 @@ export async function notifyOrgAdminsOfAlertDeliveryFailure(
       return 0;
     }
 
-    const admins = await listOrgAdminsForAlertFailureFallback(input.orgId);
+    // Task #1066: pass the failing channel so per-admin per-channel mutes
+    // (e.g. "ignore Slack failures, still tell me about email failures")
+    // are honored at lookup time.
+    const admins = await listOrgAdminsForAlertFailureFallback(
+      input.orgId,
+      input.channel,
+    );
     if (admins.length === 0) {
       logInfo(
         "transcriptBackfillNotifications: fallback email skipped (no eligible admins)",

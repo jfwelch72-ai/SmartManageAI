@@ -412,6 +412,78 @@ export default function NotificationPrefsSection() {
     updateBackfillSummaryMutation.mutate({ crmBackfillSummaryOnFailureOnly: next });
   }
 
+  // Task #1066: per-admin mute knobs for the alert delivery failure
+  // fallback emails (Task #1051). The `crmBackfillSummaryChannel = "none"`
+  // setting above already silences the fallback as a side effect, but
+  // admins who still want completion summaries need a way to mute just
+  // the fallback fan-out — globally or for a specific failing channel.
+  type AlertFailureFallbackChannel = "slack" | "email";
+  const [alertFailureFallbackEnabled, setAlertFailureFallbackEnabled] = useState(true);
+  const [alertFailureFallbackMutedChannels, setAlertFailureFallbackMutedChannels] =
+    useState<AlertFailureFallbackChannel[]>([]);
+  useEffect(() => {
+    if (authUser) {
+      setAlertFailureFallbackEnabled(
+        Boolean(authUser.crmAlertFailureFallbackEnabled ?? true),
+      );
+      const muted = Array.isArray(authUser.crmAlertFailureFallbackMutedChannels)
+        ? (authUser.crmAlertFailureFallbackMutedChannels as AlertFailureFallbackChannel[])
+        : [];
+      setAlertFailureFallbackMutedChannels(muted);
+    }
+  }, [authUser]);
+
+  const updateAlertFailureFallbackMutation = useMutation({
+    mutationFn: async (payload: {
+      crmAlertFailureFallbackEnabled?: boolean;
+      crmAlertFailureFallbackMutedChannels?: AlertFailureFallbackChannel[];
+    }) => {
+      return await apiRequest("PATCH", "/api/auth/profile", payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({
+        title: "Alert failure email preferences updated",
+        description:
+          "Future alert delivery failure notifications will use these settings.",
+      });
+    },
+    onError: (error: Error) => {
+      // Roll back to whatever the server last told us.
+      setAlertFailureFallbackEnabled(
+        Boolean(authUser?.crmAlertFailureFallbackEnabled ?? true),
+      );
+      const muted = Array.isArray(authUser?.crmAlertFailureFallbackMutedChannels)
+        ? (authUser?.crmAlertFailureFallbackMutedChannels as AlertFailureFallbackChannel[])
+        : [];
+      setAlertFailureFallbackMutedChannels(muted);
+      toast({
+        title: "Failed to update alert failure email preferences",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  function handleAlertFailureFallbackEnabledChange(receive: boolean) {
+    setAlertFailureFallbackEnabled(receive);
+    updateAlertFailureFallbackMutation.mutate({
+      crmAlertFailureFallbackEnabled: receive,
+    });
+  }
+  function handleAlertFailureFallbackChannelToggle(
+    channel: AlertFailureFallbackChannel,
+    muted: boolean,
+  ) {
+    const next = muted
+      ? Array.from(new Set([...alertFailureFallbackMutedChannels, channel]))
+      : alertFailureFallbackMutedChannels.filter((c) => c !== channel);
+    setAlertFailureFallbackMutedChannels(next);
+    updateAlertFailureFallbackMutation.mutate({
+      crmAlertFailureFallbackMutedChannels: next,
+    });
+  }
+
   // Task #1046: Let admins fire a sample backfill summary to their currently
   // selected channel so they can verify webhook URLs and preview formatting
   // without waiting for a real backfill to finish. Errors (missing webhook,
@@ -1924,6 +1996,80 @@ export default function NotificationPrefsSection() {
                           backfillSummaryChannel === "none"
                         }
                         data-testid="switch-backfill-summary-failure-only"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {isOrgAdmin && (
+                <div data-testid="section-alert-failure-fallback-prefs">
+                  <h3 className="text-sm font-semibold mb-1 text-muted-foreground uppercase tracking-wide">
+                    Alert Delivery Failure Emails
+                  </h3>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    When a transcript backfill alert fails to deliver to Slack or email, we email org admins so a misconfigured webhook or SMTP key doesn't go unnoticed. Use these toggles to mute the fallback fan-out without giving up the run completion summary above. Setting the summary channel to "Don't notify me" silences both.
+                  </p>
+
+                  <div
+                    className="flex items-center justify-between py-1"
+                    data-testid="row-alert-failure-fallback-enabled"
+                  >
+                    <div>
+                      <p className="text-sm font-medium">Email me when an alert delivery fails</p>
+                      <p className="text-xs text-muted-foreground">
+                        Turn off to stop receiving every fallback email — both Slack and email failures.
+                      </p>
+                    </div>
+                    <Switch
+                      checked={alertFailureFallbackEnabled}
+                      onCheckedChange={handleAlertFailureFallbackEnabledChange}
+                      disabled={
+                        updateAlertFailureFallbackMutation.isPending ||
+                        backfillSummaryChannel === "none"
+                      }
+                      data-testid="switch-alert-failure-fallback-enabled"
+                    />
+                  </div>
+
+                  <div className="mt-3 space-y-2">
+                    <p className="text-xs text-muted-foreground">
+                      Mute specific failing channels (other channels will still alert):
+                    </p>
+                    <div
+                      className="flex items-center justify-between py-1"
+                      data-testid="row-alert-failure-fallback-mute-slack"
+                    >
+                      <span className="text-sm">Mute Slack delivery failures</span>
+                      <Switch
+                        checked={alertFailureFallbackMutedChannels.includes("slack")}
+                        onCheckedChange={(checked) =>
+                          handleAlertFailureFallbackChannelToggle("slack", checked)
+                        }
+                        disabled={
+                          updateAlertFailureFallbackMutation.isPending ||
+                          !alertFailureFallbackEnabled ||
+                          backfillSummaryChannel === "none"
+                        }
+                        data-testid="switch-alert-failure-fallback-mute-slack"
+                      />
+                    </div>
+                    <div
+                      className="flex items-center justify-between py-1"
+                      data-testid="row-alert-failure-fallback-mute-email"
+                    >
+                      <span className="text-sm">Mute email delivery failures</span>
+                      <Switch
+                        checked={alertFailureFallbackMutedChannels.includes("email")}
+                        onCheckedChange={(checked) =>
+                          handleAlertFailureFallbackChannelToggle("email", checked)
+                        }
+                        disabled={
+                          updateAlertFailureFallbackMutation.isPending ||
+                          !alertFailureFallbackEnabled ||
+                          backfillSummaryChannel === "none"
+                        }
+                        data-testid="switch-alert-failure-fallback-mute-email"
                       />
                     </div>
                   </div>

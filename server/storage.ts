@@ -1036,6 +1036,14 @@ export async function listCrmTranscriptBackfillAlertDeliveries(
 // `crmCallsRoutes.notifyBackfillCompletionToOrgAdmins`). Users without a
 // notification_channel_prefs row still receive the fallback so freshly-
 // onboarded orgs aren't silent.
+//
+// Task #1066 — additional per-admin mute knobs scoped just to the fallback
+// fan-out (without having to give up the run-completion summary):
+//   - `crmAlertFailureFallbackEnabled = false` mutes ALL failure fallbacks.
+//   - `crmAlertFailureFallbackMutedChannels` lists specific failing
+//     channels (e.g. ["slack"]) to suppress; other channels still alert.
+//     Callers pass the failing `channel` so the muted-channel filter can
+//     run; omitting it preserves the legacy "any channel" behavior.
 export type OrgAdminFailureFallbackRecipient = {
   id: string;
   email: string;
@@ -1045,6 +1053,7 @@ export type OrgAdminFailureFallbackRecipient = {
 
 export async function listOrgAdminsForAlertFailureFallback(
   organizationId: string,
+  channel?: "slack" | "email",
 ): Promise<OrgAdminFailureFallbackRecipient[]> {
   const rows = await db
     .select({
@@ -1054,6 +1063,8 @@ export async function listOrgAdminsForAlertFailureFallback(
       lastName: users.lastName,
       emailEnabled: notificationChannelPrefs.emailEnabled,
       backfillChannel: users.crmBackfillSummaryChannel,
+      fallbackEnabled: users.crmAlertFailureFallbackEnabled,
+      fallbackMutedChannels: users.crmAlertFailureFallbackMutedChannels,
     })
     .from(users)
     .leftJoin(
@@ -1073,6 +1084,14 @@ export async function listOrgAdminsForAlertFailureFallback(
   for (const r of rows) {
     if (r.backfillChannel === "none") continue;
     if (r.emailEnabled === false) continue; // legacy global opt-out
+    // Task #1066: scoped fallback opt-outs.
+    if (r.fallbackEnabled === false) continue;
+    if (channel) {
+      const muted = Array.isArray(r.fallbackMutedChannels)
+        ? r.fallbackMutedChannels
+        : [];
+      if (muted.includes(channel)) continue;
+    }
     const email = (r.email ?? "").trim();
     if (!email) continue;
     const key = email.toLowerCase();

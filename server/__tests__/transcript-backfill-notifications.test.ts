@@ -584,7 +584,9 @@ describe("notifyOrgAdminsOfAlertDeliveryFailure (Task #1051)", () => {
       errorMessage: "Slack webhook returned 404",
     });
     expect(sent).toBe(2);
-    expect(mockListOrgAdmins).toHaveBeenCalledWith("org-1");
+    // Task #1066: the failing channel is forwarded so per-channel mutes
+    // (e.g. "ignore Slack failures") can be honored at lookup time.
+    expect(mockListOrgAdmins).toHaveBeenCalledWith("org-1", "slack");
     expect(mockSendEmail).toHaveBeenCalledTimes(1);
     const call = mockSendEmail.mock.calls[0][0];
     expect(call.to).toEqual(["admin-a@example.com", "admin-b@example.com"]);
@@ -760,7 +762,7 @@ describe("notifyBackfillCompletion fallback wiring (Task #1051)", () => {
     expect(mockRecordDelivery).toHaveBeenCalledWith(
       expect.objectContaining({ channel: "slack", status: "failure" }),
     );
-    expect(mockListOrgAdmins).toHaveBeenCalledWith("org-1");
+    expect(mockListOrgAdmins).toHaveBeenCalledWith("org-1", "slack");
     expect(mockSendEmail).toHaveBeenCalledTimes(1);
     const call = mockSendEmail.mock.calls[0][0];
     expect(call.to).toEqual(["admin-a@example.com"]);

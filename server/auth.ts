@@ -218,6 +218,11 @@ export async function authMiddleware(
       // can render the saved channel + failure-only filter.
       crmBackfillSummaryChannel: user.crmBackfillSummaryChannel,
       crmBackfillSummaryOnFailureOnly: user.crmBackfillSummaryOnFailureOnly,
+      // Task #1066 — per-admin mute knobs for the alert delivery failure
+      // fallback emails (Task #1051). Surfaced so Notification Preferences
+      // can render the persisted toggle and per-channel mutes.
+      crmAlertFailureFallbackEnabled: user.crmAlertFailureFallbackEnabled,
+      crmAlertFailureFallbackMutedChannels: user.crmAlertFailureFallbackMutedChannels,
       effectiveRole,
       isHustlerOwner,
     };

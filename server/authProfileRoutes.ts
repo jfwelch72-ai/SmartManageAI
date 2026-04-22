@@ -1043,6 +1043,15 @@ const upload = multer({
           .enum(["email", "slack", "teams", "none"])
           .optional(),
         crmBackfillSummaryOnFailureOnly: z.boolean().optional(),
+        // Task #1066: per-admin mute for the Task #1051 alert delivery
+        // failure fallback emails. `Enabled = false` mutes all fallback
+        // emails for this admin; `MutedChannels` mutes specific failing
+        // channels (e.g. ["slack"]) while still alerting on others.
+        crmAlertFailureFallbackEnabled: z.boolean().optional(),
+        crmAlertFailureFallbackMutedChannels: z
+          .array(z.enum(["slack", "email"]))
+          .max(2)
+          .optional(),
       });
       const parsed = profileSchema.safeParse(req.body);
       if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
@@ -1060,7 +1069,9 @@ const upload = multer({
         jobMetricAlertQuietHoursDigestTimeFormat,
         jobMetricAlertQuietHoursDigestShowWeekday,
         crmBackfillSummaryChannel,
-        crmBackfillSummaryOnFailureOnly } = parsed.data;
+        crmBackfillSummaryOnFailureOnly,
+        crmAlertFailureFallbackEnabled,
+        crmAlertFailureFallbackMutedChannels } = parsed.data;
       const updateData: Record<string, unknown> = { updatedAt: new Date() };
       if (firstName !== undefined) updateData.firstName = firstName;
       if (lastName !== undefined) updateData.lastName = lastName;
@@ -1089,6 +1100,14 @@ const upload = multer({
       if (jobMetricAlertQuietHoursDigestShowWeekday !== undefined) updateData.jobMetricAlertQuietHoursDigestShowWeekday = jobMetricAlertQuietHoursDigestShowWeekday;
       if (crmBackfillSummaryChannel !== undefined) updateData.crmBackfillSummaryChannel = crmBackfillSummaryChannel;
       if (crmBackfillSummaryOnFailureOnly !== undefined) updateData.crmBackfillSummaryOnFailureOnly = crmBackfillSummaryOnFailureOnly;
+      if (crmAlertFailureFallbackEnabled !== undefined) updateData.crmAlertFailureFallbackEnabled = crmAlertFailureFallbackEnabled;
+      if (crmAlertFailureFallbackMutedChannels !== undefined) {
+        // De-dupe to keep the stored array small; order doesn't matter
+        // since the lookup uses Array.includes.
+        updateData.crmAlertFailureFallbackMutedChannels = Array.from(
+          new Set(crmAlertFailureFallbackMutedChannels),
+        );
+      }
 
       const [updated] = await db.update(users).set(updateData).where(eq(users.id, userId)).returning();
       if (!updated) { res.status(404).json({ error: "User not found" }); return; }
