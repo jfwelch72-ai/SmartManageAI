@@ -237,6 +237,34 @@ export async function listCrmTranscriptBackfillOperators(
     }));
 }
 
+// Task #1008 — fetch the operator (display name + email) who started a
+// transcript backfill job, so the run-completed Slack/email notifications
+// can name the responsible admin. Returns `null` when the user record has
+// been deleted; the notification formatter uses that to render a graceful
+// "Unknown operator (deleted user)" fallback.
+export type CrmTranscriptBackfillOperatorContact = {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
+};
+
+export async function getCrmTranscriptBackfillOperatorContact(
+  userId: string,
+): Promise<CrmTranscriptBackfillOperatorContact | null> {
+  const [row] = await db
+    .select({
+      id: users.id,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      email: users.email,
+    })
+    .from(users)
+    .where(eq(users.id, userId))
+    .limit(1);
+  return row || null;
+}
+
 export async function getRunningCrmTranscriptBackfillJob(
   organizationId: string,
 ): Promise<CrmTranscriptBackfillJob | null> {

@@ -34,12 +34,14 @@ import {
 import {
   createCrmTranscriptBackfillJob,
   getCrmTranscriptBackfillJob,
+  getCrmTranscriptBackfillOperatorContact,
   getRunningCrmTranscriptBackfillJob,
   listCrmTranscriptBackfillJobs,
   listCrmTranscriptBackfillOperators,
   listMostRecentRunningCrmTranscriptBackfillJobsPerOrg,
   updateCrmTranscriptBackfillJob,
 } from "./storage";
+import { notifyBackfillCompletion } from "./services/transcriptBackfillNotifications";
 import {
   requireAuth,
   requireRole,
@@ -1151,6 +1153,35 @@ async function runTranscriptBackfill(
       succeeded: job.succeeded,
       failed: job.failed,
     });
+    // Task #1008 — surface the operator's display name + email in the
+    // run-completed Slack/email notifications so admins know who to ask
+    // about a failed run without opening the admin page. Falls back
+    // gracefully when the user record was deleted (operator === null).
+    try {
+      const operator = job.startedById
+        ? await getCrmTranscriptBackfillOperatorContact(job.startedById)
+        : null;
+      await notifyBackfillCompletion(
+        {
+          id: job.id,
+          orgId: job.orgId,
+          status: job.status,
+          total: job.total,
+          processed: job.processed,
+          succeeded: job.succeeded,
+          failed: job.failed,
+          startedAt: job.startedAt,
+          completedAt: job.completedAt,
+          parentJobId: job.parentJobId,
+        },
+        operator,
+      );
+    } catch (e) {
+      logWarn("crmCalls: failed to dispatch transcript backfill notification", {
+        jobId: job.id,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
   }
 }
 
