@@ -218,6 +218,7 @@ const UnifiedPortal = lazy(() => import("@/pages/unified-portal"));
 const RfqResponsePage = lazy(() => import("@/pages/rfq-response"));
 const CompanyHealthPage = lazy(() => import("@/pages/company-health"));
 const ExecutiveDigestPage = lazy(() => import("@/pages/executive-digest"));
+const PortfolioPage = lazy(() => import("@/pages/portfolio"));
 const WhatIfSimulatorPage = lazy(() => import("@/pages/what-if-simulator"));
 const CalculatorPage = lazy(() => import("@/pages/calculator"));
 const LidarScansPage = lazy(() => import("@/pages/lidar-scans"));
@@ -480,6 +481,7 @@ function Router() {
       {/* Executive Intelligence routes */}
       <Route path="/company-health" component={() => <ProtectedRoute component={CompanyHealthPage} permission={RoutePermissions.CFO} />} />
       <Route path="/executive-digest" component={() => <ProtectedRoute component={ExecutiveDigestPage} permission={RoutePermissions.EXECUTIVE_DIGEST} />} />
+      <Route path="/portfolio" component={() => <ProtectedRoute component={PortfolioPage} permission={RoutePermissions.PORTFOLIO} />} />
       <Route path="/what-if-simulator" component={() => <ProtectedRoute component={() => <FeatureFlagGate flag="WHATIF_SIMULATOR"><WhatIfSimulatorPage /></FeatureFlagGate>} permission={RoutePermissions.CFO} />} />
 
       {/* Bid Network routes */}

@@ -325,6 +325,7 @@ export const RoutePermissions = {
   LEAVE_MANAGEMENT: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageLeave : hasContractorAccess(role),
   MARKETPLACE: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessMarketplace : hasManagementAccess(role),
   EXECUTIVE_DIGEST: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessExecutiveDigest : role === "ADMIN" || role === "HUSTLER",
+  PORTFOLIO: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canViewPortfolio : role === "ADMIN" || role === "MANAGER" || role === "SUPER_ADMIN" || role === "HUSTLER",
   LIDAR_SCANS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "FIELD_WORKER" || role === "HUSTLER",
   PERMITS: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
   DISPATCH_BOARD: (role?: string, perms?: FeaturePerms) => hasDispatchAccess(role, perms),
@@ -484,6 +485,7 @@ export interface FeaturePerms {
   canManageSuretyBonds?: boolean;
   canViewSuretyBonds?: boolean;
   canViewComplianceDashboard?: boolean;
+  canViewPortfolio?: boolean;
 }
 
 export interface NavItem {
@@ -497,6 +499,7 @@ export const NavItems: Record<string, NavItem> = {
   '/dashboard': { href: '/dashboard', label: 'Dashboard', testId: 'nav-dashboard', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessDashboard : hasVendorOrContractorAccess(role) },
   '/communications': { href: '/communications', label: 'Bulletins', testId: 'nav-bulletins', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessBulletins : hasContractorAccess(role) },
   '/executive-digest': { href: '/executive-digest', label: 'Executive Digest', testId: 'nav-executive-digest', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessExecutiveDigest : role === "ADMIN" || role === "HUSTLER" },
+  '/portfolio': { href: '/portfolio', label: 'Portfolio Rollup', testId: 'nav-portfolio', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canViewPortfolio : role === "ADMIN" || role === "MANAGER" || role === "SUPER_ADMIN" || role === "HUSTLER" },
   '/crm': { href: '/crm', label: 'CRM', testId: 'nav-crm', visible: (role?: string, perms?: FeaturePerms) => hasCrmAccess(role, perms) },
   '/sequences': { href: '/sequences', label: 'Sequences', testId: 'nav-sequences', visible: (role?: string, perms?: FeaturePerms) => hasCrmAccess(role, perms) },
   '/bids': { href: '/bids', label: 'Bids', testId: 'nav-bids', visible: (role?: string, perms?: FeaturePerms) => canAccessBids(role, perms) },
@@ -554,7 +557,7 @@ export const NavigationConfig = {
   crmMenu: [NavItems['/crm']],
   marketplaceMenu: [NavItems['/marketplace']],
   hiringMenu: [NavItems['/hiring']],
-  insightsMenu: [NavItems['/executive-digest']],
+  insightsMenu: [NavItems['/portfolio'], NavItems['/executive-digest']],
   administrationMenu: [NavItems['/users'], NavItems['/company-settings'], NavItems['/scope-settings'], NavItems['/ai-settings'], NavItems['/audit-logs'], NavItems['/reports'], NavItems['/approvals']],
   toolsMenu: [NavItems['/website-builder'], NavItems['/social-media'], NavItems['/calculator']],
   timeClockMenu: [NavItems['/time-clock'], NavItems['/time-clock-manager'], NavItems['/tm-daily']],
@@ -573,7 +576,7 @@ export interface WorkflowGroup {
 }
 
 const ADMIN_WORKFLOW: WorkflowGroup[] = [
-  { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications', '/executive-digest'] },
+  { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications', '/portfolio', '/executive-digest'] },
   { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/sequences', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages', '/email-assistant'] },
   { key: 'team', label: 'Team', itemHrefs: ['/users', '/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/safety', '/safety-training'] },
@@ -591,7 +594,7 @@ const HUSTLER_WORKFLOW: WorkflowGroup[] = [
 ];
 
 const MANAGER_WORKFLOW: WorkflowGroup[] = [
-  { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications'] },
+  { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications', '/portfolio'] },
   { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/sequences', '/bids', '/marketplace'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages', '/email-assistant'] },
   { key: 'time', label: 'Time', itemHrefs: ['/time-clock', '/time-clock-manager', '/tm-daily'] },

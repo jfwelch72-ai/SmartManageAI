@@ -163,6 +163,7 @@ import mobilizationRoutes from "./mobilizationRoutes";
 import projectCrudRoutes from "./projectCrudRoutes";
 import projectContentRoutes from "./projectContentRoutes";
 import projectFinancialRoutes from "./projectFinancialRoutes";
+import portfolioRoutes from "./portfolioRoutes";
 import scopeRoutes from "./scopeRoutes";
 import locationRoutes from "./locationRoutes";
 import materialTrackingRoutes from "./materialTrackingRoutes";
@@ -602,6 +603,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(projectCrudRoutes);
   app.use(projectContentRoutes);
   app.use(projectFinancialRoutes);
+  app.use(portfolioRoutes);
   app.use(materialTrackingRoutes);
   app.use(productionRateRoutes);
 
