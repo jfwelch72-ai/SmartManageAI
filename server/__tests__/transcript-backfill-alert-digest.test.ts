@@ -11,12 +11,14 @@ const {
   mockSendEmail,
   mockGetSettings,
   mockRecordDelivery,
+  mockPruneAlertFallbackSentBefore,
 } = vi.hoisted(() => ({
   mockAggregateFailures: vi.fn(),
   mockListOrgAdmins: vi.fn(),
   mockSendEmail: vi.fn().mockResolvedValue(true),
   mockGetSettings: vi.fn(),
   mockRecordDelivery: vi.fn().mockResolvedValue({}),
+  mockPruneAlertFallbackSentBefore: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("../storage", () => ({
@@ -24,6 +26,7 @@ vi.mock("../storage", () => ({
   listOrgAdminsForAlertFailureFallback: mockListOrgAdmins,
   getCrmTranscriptBackfillNotificationSettings: mockGetSettings,
   recordCrmTranscriptBackfillAlertDelivery: mockRecordDelivery,
+  pruneAlertFallbackSentBefore: mockPruneAlertFallbackSentBefore,
 }));
 vi.mock("../services/slackService", () => ({
   isValidSlackWebhookUrl: () => true,
@@ -176,17 +179,21 @@ describe("runAlertFailureDigest (Task #1065)", () => {
     mockListOrgAdmins.mockReset();
     mockSendEmail.mockReset();
     mockSendEmail.mockResolvedValue(true);
+    mockPruneAlertFallbackSentBefore.mockReset();
+    mockPruneAlertFallbackSentBefore.mockResolvedValue(undefined);
   });
 
   it("is a no-op when no orgs had failures in the window", async () => {
     mockAggregateFailures.mockResolvedValue([]);
-    const summary = await runAlertFailureDigest();
+    const fixedNow = new Date("2026-04-22T12:00:00.000Z");
+    const summary = await runAlertFailureDigest({ now: fixedNow });
     expect(summary).toEqual({
       windowHours: 24,
       orgsWithFailures: 0,
       orgsNotified: 0,
       emailsSent: 0,
       totalFailures: 0,
+      prunedBefore: new Date("2026-04-15T12:00:00.000Z"),
     });
     expect(mockListOrgAdmins).not.toHaveBeenCalled();
     expect(mockSendEmail).not.toHaveBeenCalled();
@@ -254,5 +261,35 @@ describe("runAlertFailureDigest (Task #1065)", () => {
     await runAlertFailureDigest({ now: fixedNow, windowHours: 48 });
     const sinceArg = mockAggregateFailures.mock.calls[0][0] as Date;
     expect(sinceArg.toISOString()).toBe("2026-04-20T12:00:00.000Z");
+  });
+
+  // Task #1082 — the persisted dedupe ledger (`alert_fallback_sent`) must be
+  // pruned by the daily digest run so it can't grow without bound.
+  it("prunes the persisted dedupe ledger to a 7-day cutoff after the digest run", async () => {
+    mockAggregateFailures.mockResolvedValue([baseEntry]);
+    mockListOrgAdmins.mockResolvedValue([adminA]);
+    const fixedNow = new Date("2026-04-22T12:00:00.000Z");
+    const summary = await runAlertFailureDigest({ now: fixedNow });
+    expect(mockPruneAlertFallbackSentBefore).toHaveBeenCalledTimes(1);
+    const cutoff = mockPruneAlertFallbackSentBefore.mock.calls[0][0] as Date;
+    // Cutoff is exactly 7 days before `now`, which is comfortably larger
+    // than the 1-hour FAILURE_FALLBACK_DEDUPE_MS window so housekeeping
+    // can't accidentally re-enable a deduped alert.
+    expect(cutoff.toISOString()).toBe("2026-04-15T12:00:00.000Z");
+    const ageMs = fixedNow.getTime() - cutoff.getTime();
+    expect(ageMs).toBeGreaterThan(60 * 60 * 1000);
+    expect(summary.prunedBefore?.toISOString()).toBe(
+      "2026-04-15T12:00:00.000Z",
+    );
+  });
+
+  it("still returns a successful summary when the prune step throws", async () => {
+    mockAggregateFailures.mockResolvedValue([baseEntry]);
+    mockListOrgAdmins.mockResolvedValue([adminA]);
+    mockPruneAlertFallbackSentBefore.mockRejectedValue(new Error("db down"));
+    const summary = await runAlertFailureDigest();
+    expect(summary.orgsNotified).toBe(1);
+    expect(summary.prunedBefore).toBeNull();
+    expect(mockPruneAlertFallbackSentBefore).toHaveBeenCalledTimes(1);
   });
 });

@@ -26,6 +26,7 @@ import {
   getCrmTranscriptBackfillOperatorContact,
   listCrmTranscriptBackfillAlertDeliveries,
   listOrgAdminsForAlertFailureFallback,
+  pruneAlertFallbackSentBefore,
   recordAlertFallbackSent,
   recordCrmTranscriptBackfillAlertDelivery,
   wasAlertFallbackSentSince,
@@ -1396,7 +1397,16 @@ export type AlertFailureDigestRunSummary = {
   orgsNotified: number;
   emailsSent: number;
   totalFailures: number;
+  // Task #1082 — set to the cutoff date used to prune the persisted
+  // `alert_fallback_sent` ledger after the digest run completes, or null
+  // if the prune step was skipped or failed.
+  prunedBefore: Date | null;
 };
+
+// Task #1082 — keep the persisted dedupe ledger from growing forever. The
+// retention window must be comfortably larger than `FAILURE_FALLBACK_DEDUPE_MS`
+// (1 hour) so housekeeping can never accidentally re-enable a deduped alert.
+const ALERT_FALLBACK_SENT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 /**
  * Runs the digest: fetches the previous `windowHours` of failures, groups
@@ -1469,11 +1479,30 @@ export async function runAlertFailureDigest(
     }
   }
 
+  // Task #1082 — opportunistically prune the persisted dedupe ledger so it
+  // can't grow without bound. Best-effort: a prune failure is logged but
+  // never fails the digest run.
+  const pruneCutoff = new Date(now.getTime() - ALERT_FALLBACK_SENT_RETENTION_MS);
+  let prunedBefore: Date | null = null;
+  try {
+    await pruneAlertFallbackSentBefore(pruneCutoff);
+    prunedBefore = pruneCutoff;
+  } catch (err) {
+    logWarn(
+      "transcriptBackfillNotifications: alert_fallback_sent prune failed",
+      {
+        cutoff: pruneCutoff.toISOString(),
+        error: err instanceof Error ? err.message : String(err),
+      },
+    );
+  }
+
   return {
     windowHours,
     orgsWithFailures: aggregates.length,
     orgsNotified,
     emailsSent,
     totalFailures,
+    prunedBefore,
   };
 }
