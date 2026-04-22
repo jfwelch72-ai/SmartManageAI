@@ -61,6 +61,12 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { format, formatDistanceStrict } from "date-fns";
+import {
+  LineChart as RechartsLineChart,
+  Line as RechartsLine,
+  ResponsiveContainer as RechartsResponsiveContainer,
+  Tooltip as RechartsTooltip,
+} from "recharts";
 import { useAuth } from "@/hooks/use-auth";
 
 // Task #1057 — CANCELLED is rendered with its own badge variant + label so
@@ -312,6 +318,25 @@ interface TestAlertUsageResponse {
 const TEST_ALERT_USAGE_PATH =
   "/api/crm/calls/transcripts/backfill/test-alert/usage";
 const TEST_ALERT_USAGE_KEY_BASE = [TEST_ALERT_USAGE_PATH] as const;
+// Task #1093 — per-day bucket endpoint that powers the inline sparkline
+// rendered next to the 24h/7d/30d rollup so admins can spot week-over-week
+// trends at a glance instead of just point-in-time totals.
+interface TestAlertUsageBucket {
+  day: string; // YYYY-MM-DD (UTC)
+  count: number;
+}
+interface TestAlertUsageBucketsResponse {
+  buckets: TestAlertUsageBucket[];
+  windowEndsAt: string;
+  days: number;
+  crossOrg: boolean;
+}
+const TEST_ALERT_USAGE_BUCKETS_PATH =
+  "/api/crm/calls/transcripts/backfill/test-alert/usage-buckets";
+const TEST_ALERT_USAGE_BUCKETS_KEY_BASE = [
+  TEST_ALERT_USAGE_BUCKETS_PATH,
+] as const;
+const TEST_ALERT_SPARKLINE_DAYS = 30;
 const PAGE_SIZE = 20;
 // Task #1057 — surface CANCELLED in the history filter so admins can isolate
 // deliberately-stopped runs from crashes.
@@ -917,6 +942,7 @@ export default function AdminTranscriptBackfillPage() {
       // Task #1060 — refresh the usage rollup so the 24h/7d/30d counts tick
       // up immediately rather than lagging until the next manual reload.
       queryClient.invalidateQueries({ queryKey: TEST_ALERT_USAGE_KEY_BASE });
+      queryClient.invalidateQueries({ queryKey: TEST_ALERT_USAGE_BUCKETS_KEY_BASE });
       const { slack, email } = data;
       if (!slack.configured && !email.configured) {
         toast({
@@ -2653,6 +2679,20 @@ function TestAlertUsageSummary({
     queryKey: [...TEST_ALERT_USAGE_KEY_BASE, queryParams],
   });
 
+  // Task #1093 — fetch per-day counts to render an inline sparkline next to
+  // the 24h/7d/30d totals so admins can eyeball trends ("usage doubled
+  // week over week") instead of only seeing point-in-time numbers.
+  const bucketParams = useMemo(() => {
+    const params: Record<string, string> = { days: String(TEST_ALERT_SPARKLINE_DAYS) };
+    if (isSuperAdmin && orgFilter !== CROSS_ORG_VALUE) {
+      params.organizationId = orgFilter;
+    }
+    return params;
+  }, [isSuperAdmin, orgFilter]);
+  const bucketsQuery = useQuery<TestAlertUsageBucketsResponse>({
+    queryKey: [...TEST_ALERT_USAGE_BUCKETS_KEY_BASE, bucketParams],
+  });
+
   if (query.isLoading) {
     return (
       <p
@@ -2703,7 +2743,93 @@ function TestAlertUsageSummary({
         </span>{" "}
         <span className="text-muted-foreground">in last 30d</span>
       </span>
+      <TestAlertUsageSparkline query={bucketsQuery} />
     </div>
+  );
+}
+
+// Task #1093 — small inline sparkline of daily test-alert counts over the
+// last 30 days. Rendered next to the 24h/7d/30d totals so admins can spot
+// week-over-week trends ("usage doubled week over week") instead of only
+// seeing point-in-time numbers. Uses a fixed pixel size (no axes / grid)
+// so it stays visually a sparkline rather than a full chart, and degrades
+// gracefully when there is no data to plot.
+function TestAlertUsageSparkline({
+  query,
+}: {
+  query: ReturnType<
+    typeof useQuery<TestAlertUsageBucketsResponse>
+  >;
+}) {
+  if (query.isLoading) {
+    return (
+      <span
+        className="text-xs text-muted-foreground"
+        data-testid="status-test-alert-usage-sparkline-loading"
+      >
+        Loading trend…
+      </span>
+    );
+  }
+  if (query.isError || !query.data) {
+    return (
+      <span
+        className="text-xs text-destructive"
+        data-testid="text-test-alert-usage-sparkline-error"
+      >
+        trend unavailable
+      </span>
+    );
+  }
+  const buckets = query.data.buckets;
+  const total = buckets.reduce((sum, b) => sum + b.count, 0);
+  if (buckets.length === 0 || total === 0) {
+    return (
+      <span
+        className="text-xs text-muted-foreground"
+        data-testid="text-test-alert-usage-sparkline-empty"
+      >
+        no activity in last {query.data.days}d
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="inline-flex items-center gap-2"
+      data-testid="chart-test-alert-usage-sparkline"
+      aria-label={`Daily test alert counts over the last ${query.data.days} days`}
+    >
+      <span
+        className="text-muted-foreground"
+        data-testid="text-test-alert-usage-sparkline-label"
+      >
+        {query.data.days}d trend:
+      </span>
+      <span style={{ width: 120, height: 28, display: "inline-block" }}>
+        <RechartsResponsiveContainer width="100%" height="100%">
+          <RechartsLineChart
+            data={buckets}
+            margin={{ top: 2, right: 2, bottom: 2, left: 2 }}
+          >
+            <RechartsTooltip
+              cursor={false}
+              contentStyle={{ fontSize: 11, padding: "2px 6px" }}
+              labelFormatter={(label) => String(label)}
+              formatter={(value: number) => [value, "alerts"]}
+            />
+            <RechartsLine
+              type="monotone"
+              dataKey="count"
+              stroke="hsl(var(--primary))"
+              strokeWidth={1.5}
+              dot={false}
+              isAnimationActive={false}
+            />
+          </RechartsLineChart>
+        </RechartsResponsiveContainer>
+      </span>
+    </span>
   );
 }
 // Task #1061 — channel-result filter values for the test-alert history
@@ -3494,6 +3620,7 @@ export function BackfillNotificationSettingsCard() {
       queryClient.invalidateQueries({ queryKey: TEST_ALERT_HISTORY_KEY_BASE });
       // Task #1060 — keep the usage rollup in sync with the new audit row.
       queryClient.invalidateQueries({ queryKey: TEST_ALERT_USAGE_KEY_BASE });
+      queryClient.invalidateQueries({ queryKey: TEST_ALERT_USAGE_BUCKETS_KEY_BASE });
       const { slack, email, operatorDisplay, testedAt } = data;
       // Task #1045 — sync the persisted last-test fields into the cached
       // settings so the inline health summary updates immediately without a

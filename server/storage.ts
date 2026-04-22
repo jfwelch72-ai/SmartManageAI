@@ -626,6 +626,63 @@ export async function getCrmTranscriptBackfillTestAlertUsageSummary(opts: {
   };
 }
 
+// Task #1093 — per-day usage buckets for the test-alert button so the admin
+// transcript backfill page can render a small sparkline next to the
+// 24h/7d/30d rollup. Returns one row per day (UTC) over the trailing
+// `days` window, including days with zero alerts so the chart x-axis is
+// continuous. Implemented with generate_series + a left join so we don't
+// have to fill gaps in JS (and so SUPER_ADMINs get cross-org totals when
+// no organizationId is passed). Days are returned oldest-first.
+export type CrmTranscriptBackfillTestAlertUsageBucket = {
+  day: string; // YYYY-MM-DD (UTC)
+  count: number;
+};
+
+export async function getCrmTranscriptBackfillTestAlertUsageBuckets(opts: {
+  organizationId?: string;
+  days: number;
+}): Promise<{
+  buckets: CrmTranscriptBackfillTestAlertUsageBucket[];
+  windowEndsAt: string;
+  days: number;
+}> {
+  const days = Math.min(Math.max(Math.floor(opts.days) || 30, 1), 90);
+  const now = new Date();
+
+  const orgFilter = opts.organizationId
+    ? sql`AND a.organization_id = ${opts.organizationId}`
+    : sql``;
+
+  const result = await db.execute(sql`
+    WITH days AS (
+      SELECT (date_trunc('day', now() AT TIME ZONE 'UTC')
+              - ((${days - 1} - g) || ' days')::interval)::date AS day
+      FROM generate_series(0, ${days - 1}) AS g
+    )
+    SELECT
+      to_char(d.day, 'YYYY-MM-DD') AS day,
+      COUNT(a.id)::int AS count
+    FROM days d
+    LEFT JOIN crm_transcript_backfill_test_alerts a
+      ON (a.sent_at AT TIME ZONE 'UTC')::date = d.day
+      ${orgFilter}
+    GROUP BY d.day
+    ORDER BY d.day ASC
+  `);
+
+  const rows = (result as unknown as { rows: Array<{ day: string; count: number }> }).rows
+    ?? (result as unknown as Array<{ day: string; count: number }>);
+
+  const buckets: CrmTranscriptBackfillTestAlertUsageBucket[] = (rows as Array<{ day: string; count: number | string }>)
+    .map((r) => ({ day: String(r.day), count: Number(r.count) || 0 }));
+
+  return {
+    buckets,
+    windowEndsAt: now.toISOString(),
+    days,
+  };
+}
+
 // Task #1004 — given a set of backfill job ids, return the full retry lineage
 // each one belongs to (the root job + every descendant retry, in chronological
 // order). Implemented as a single recursive CTE so we can render the chain

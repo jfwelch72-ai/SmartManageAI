@@ -50,6 +50,7 @@ import {
   summarizeOrgAdminAlertFailureFallbackMutes,
   listCrmTranscriptBackfillTestAlerts,
   getCrmTranscriptBackfillTestAlertUsageSummary,
+  getCrmTranscriptBackfillTestAlertUsageBuckets,
   recordCrmTranscriptBackfillTestResult,
   getRunningCrmTranscriptBackfillJob,
   listCrmTranscriptBackfillJobs,
@@ -3362,6 +3363,51 @@ router.get(
 
       res.json({
         ...summary,
+        crossOrg: superAdmin && !scopedOrgId,
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #1093 — per-day usage buckets for the test-alert button so the admin
+// page can render an inline sparkline of daily counts next to the
+// 24h/7d/30d rollup. Same auth + org-scoping rules as the rollup endpoint:
+// SUPER_ADMINs may pass `?organizationId=<id>` to scope to a tenant or omit
+// it for a platform-wide view; org-scoped admins are hard-locked to their
+// own org. The `days` query param is clamped (1..90, default 30) so a
+// runaway value can't ask for an unbounded range.
+router.get(
+  "/api/crm/calls/transcripts/backfill/test-alert/usage-buckets",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const superAdmin = isSuperAdmin(req.user);
+      let scopedOrgId: string | undefined;
+      if (superAdmin) {
+        const requestedOrg =
+          typeof req.query.organizationId === "string"
+            ? req.query.organizationId.trim()
+            : "";
+        scopedOrgId = requestedOrg.length > 0 ? requestedOrg : undefined;
+      } else {
+        const orgId = resolveOrg(req, res);
+        if (!orgId) return;
+        scopedOrgId = orgId;
+      }
+
+      const requestedDays = parseInt(String(req.query.days ?? "30"), 10);
+      const days = Number.isFinite(requestedDays) ? requestedDays : 30;
+
+      const result = await getCrmTranscriptBackfillTestAlertUsageBuckets({
+        organizationId: scopedOrgId,
+        days,
+      });
+
+      res.json({
+        ...result,
         crossOrg: superAdmin && !scopedOrgId,
       });
     } catch (e) {
