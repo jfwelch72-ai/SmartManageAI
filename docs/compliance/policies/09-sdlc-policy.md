@@ -54,14 +54,25 @@ merge on:
      removed from history per the policy #11 SLAs. The artifact is the auditor-facing
      evidence for the weekly history-scan commitment.
    - **IaC scan** — checkov, where IaC files exist
+   - **License audit** — `license-checker-rseidelsohn --production`,
+     blocks any GPL-family license (GPL, AGPL, LGPL, including
+     `-only` / `-or-later` / version-suffixed variants) from the
+     production bundle. Dev-only dependencies are not scanned.
 
    Any Critical/High finding fails the job and blocks merge. The job
    posts a results summary as a PR comment and to the GitHub Actions job
    summary, and uploads the full scanner log as the
    `ci-security-report` artifact (90-day retention) for auditor
    evidence.
-6. **License audit** — block GPL-family in dependencies of the production
-   bundle
+
+   **Allowlisting a package for the license audit.** If a package is
+   flagged but legal has reviewed and approved its use (e.g. it is
+   actually dual-licensed and the upstream metadata is wrong), add an
+   entry to `.license-allowlist.txt` in the repository root using the
+   `name@version` format that `license-checker` reports. Each entry
+   must be preceded by a justification comment, and the PR must record
+   sign-off from legal or the CTO. Entries are version-pinned on
+   purpose: a new version of the same package re-triggers the gate.
 
 ### Review
 - Two-eyes rule: every PR requires at least one approving review from a

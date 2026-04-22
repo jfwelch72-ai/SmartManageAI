@@ -10,6 +10,8 @@
 #   2. SAST              (semgrep, OWASP top-10 ruleset)
 #   3. Secret scan       (gitleaks)
 #   4. IaC scan          (checkov, optional, runs only if IaC files exist)
+#   5. License audit     (license-checker-rseidelsohn, blocks GPL family
+#                         in production dependencies)
 #
 # This script is the auditor-facing evidence for SOC 2 controls CC5.8 and
 # CC7.1. See docs/compliance/CONTROLS_MATRIX.md and
@@ -95,6 +97,78 @@ if find . -type f \
   fi
 else
   skip "no IaC files found in repository"
+fi
+
+# ---------- 5. License audit ----------
+heading "License audit (production deps, blocks GPL/AGPL/LGPL)"
+ALLOWLIST_FILE="$ROOT/.license-allowlist.txt"
+if command -v npx >/dev/null 2>&1; then
+  ALLOWLIST_PACKAGES=""
+  if [ -f "$ALLOWLIST_FILE" ]; then
+    ALLOWLIST_PACKAGES=$(grep -v '^[[:space:]]*#' "$ALLOWLIST_FILE" \
+      | grep -v '^[[:space:]]*$' \
+      | tr '\n' ';' \
+      | sed 's/;$//')
+  fi
+
+  LC_ARGS=(--yes license-checker-rseidelsohn@4 --production --json)
+  if [ -n "$ALLOWLIST_PACKAGES" ]; then
+    LC_ARGS+=(--excludePackages "$ALLOWLIST_PACKAGES")
+  fi
+
+  # Capture both stdout and stderr so we can show why the tool failed.
+  LICENSE_OUT=$(npx "${LC_ARGS[@]}" 2>&1)
+  LC_TOOL_STATUS=$?
+  if [ "$LC_TOOL_STATUS" -ne 0 ] || [ -z "$LICENSE_OUT" ]; then
+    printf "%s\n" "$LICENSE_OUT" | tail -n 20
+    fail "license-checker-rseidelsohn failed to run (exit $LC_TOOL_STATUS) — gate is fail-closed"
+  else
+    VIOLATIONS=$(printf '%s' "$LICENSE_OUT" | node -e '
+      let buf = "";
+      process.stdin.on("data", c => buf += c);
+      process.stdin.on("end", () => {
+        let data;
+        try { data = JSON.parse(buf); } catch (e) {
+          console.error("license-checker output was not valid JSON");
+          process.exit(2);
+        }
+        if (!data || typeof data !== "object" || Object.keys(data).length === 0) {
+          console.error("license-checker returned no packages");
+          process.exit(2);
+        }
+        // Match GPL, AGPL, LGPL and their -only / -or-later / version
+        // suffixes. Negative-look style done manually so we do not also
+        // match unrelated tokens that happen to contain "GPL".
+        const re = /\b(?:A|L)?GPL(?:-[0-9.]+)?(?:-only|-or-later|\+)?\b/i;
+        const violations = [];
+        for (const [pkg, info] of Object.entries(data)) {
+          const lic = Array.isArray(info.licenses)
+            ? info.licenses.join(" ")
+            : String(info.licenses || "");
+          if (re.test(lic)) {
+            violations.push(pkg + "  =>  " + lic);
+          }
+        }
+        if (violations.length) {
+          for (const v of violations) console.log(v);
+          process.exit(1);
+        }
+      });
+    ' 2>&1)
+    LC_STATUS=$?
+    if [ "$LC_STATUS" -eq 0 ]; then
+      ok "no GPL-family licenses in production dependencies"
+    elif [ "$LC_STATUS" -eq 2 ]; then
+      printf "%s\n" "$VIOLATIONS"
+      fail "could not parse license-checker output — gate is fail-closed"
+    else
+      printf "%s\n" "$VIOLATIONS"
+      printf "  %s\n" "see .license-allowlist.txt to exempt a specific package after legal/CTO review"
+      fail "GPL-family licenses found in production dependencies"
+    fi
+  fi
+else
+  fail "npx not available; cannot run license audit — gate is fail-closed"
 fi
 
 # ---------- Summary ----------

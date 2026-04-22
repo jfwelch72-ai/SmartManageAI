@@ -1,0 +1,20 @@
+# Production-dependency license allowlist for the CI license audit.
+#
+# The license audit step in scripts/ci-security.sh blocks any GPL-family
+# license (GPL, AGPL, LGPL, including -only / -or-later variants) from
+# entering the production bundle.
+#
+# If a specific package needs to be exempted (for example, the package is
+# actually dual-licensed and the upstream metadata is wrong, or legal has
+# reviewed and approved its use), add it here on its own line in the
+# license-checker `name@version` format. Lines starting with `#` and
+# blank lines are ignored.
+#
+# Every entry MUST have:
+#   - a justification comment on the preceding line(s)
+#   - sign-off recorded in the PR description from legal or the CTO
+#
+# Example:
+#   # Reviewed 2026-01-15 by legal: project is also MIT-licensed upstream,
+#   # see https://example.com/license-clarification.
+#   some-package@1.2.3

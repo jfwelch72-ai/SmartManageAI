@@ -178,7 +178,7 @@ jobs:
             echo ""
             echo "SOC 2 controls: **CC8.1** (change management) and **CC7.1** (vulnerability management)."
             echo ""
-            echo "Script: \`scripts/ci-security.sh\` — dependency audit, SAST (semgrep), secret scan (gitleaks), IaC scan (checkov)."
+            echo "Script: \`scripts/ci-security.sh\` — dependency audit, SAST (semgrep), secret scan (gitleaks), IaC scan (checkov), license audit (license-checker-rseidelsohn)."
             echo ""
             if [ "${{ steps.security_gate.outputs.exit_code }}" = "0" ]; then
               echo "**Status:** PASSED — no Critical/High findings."
@@ -236,7 +236,7 @@ jobs:
               '',
               status,
               '',
-              'Script: `scripts/ci-security.sh` — dependency audit, SAST, secret scan, IaC scan.',
+              'Script: `scripts/ci-security.sh` — dependency audit, SAST, secret scan, IaC scan, license audit.',
               '',
               '<details><summary>Scanner output</summary>',
               '',
