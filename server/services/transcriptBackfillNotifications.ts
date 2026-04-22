@@ -18,9 +18,14 @@ import { isValidSlackWebhookUrl } from "./slackService";
 import { sendEmail } from "./emailService";
 import { logInfo, logWarn } from "../utils/logger";
 import {
+  getCrmTranscriptBackfillAlertDelivery,
+  getCrmTranscriptBackfillJob,
   getCrmTranscriptBackfillNotificationSettings,
+  getCrmTranscriptBackfillOperatorContact,
+  listCrmTranscriptBackfillAlertDeliveries,
   listOrgAdminsForAlertFailureFallback,
   recordCrmTranscriptBackfillAlertDelivery,
+  type CrmTranscriptBackfillAlertDelivery,
   type CrmTranscriptBackfillOperatorContact,
   type OrgAdminFailureFallbackRecipient,
 } from "../storage";
@@ -803,4 +808,118 @@ export async function sendTestBackfillAlert(
     email: emailResult,
     operatorDisplay: completedFormatted.operatorDisplay,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Task #1050 — admin "Resend" action for a previously-failed alert delivery.
+// Re-runs the same dispatch (same job id, same channel) using the org's
+// currently-saved destinations and writes a brand-new delivery row reflecting
+// the new outcome. Successful or non-existent deliveries are rejected so the
+// UI can never accidentally double-fire a working alert.
+// ---------------------------------------------------------------------------
+export type ResendBackfillAlertResult =
+  | { ok: true; delivery: CrmTranscriptBackfillAlertDelivery }
+  | {
+      ok: false;
+      reason:
+        | "NOT_FOUND"
+        | "NOT_FAILED"
+        | "JOB_MISSING"
+        | "CHANNEL_NOT_CONFIGURED";
+    };
+
+export async function resendBackfillAlertDelivery(
+  orgId: string,
+  deliveryId: string,
+): Promise<ResendBackfillAlertResult> {
+  const original = await getCrmTranscriptBackfillAlertDelivery(deliveryId, orgId);
+  if (!original) return { ok: false, reason: "NOT_FOUND" };
+  if (original.status !== "failure") return { ok: false, reason: "NOT_FAILED" };
+  // Test-alert rows (and any orphaned deliveries whose backing job was
+  // garbage-collected) can't be replayed because we no longer have the
+  // counts/operator context the formatter needs.
+  if (!original.jobId) return { ok: false, reason: "JOB_MISSING" };
+
+  const job = await getCrmTranscriptBackfillJob(original.jobId, orgId);
+  if (!job) return { ok: false, reason: "JOB_MISSING" };
+
+  const operator = job.startedById
+    ? await getCrmTranscriptBackfillOperatorContact(job.startedById)
+    : null;
+
+  const destinations = await resolveBackfillNotificationDestinations(orgId);
+  // Restrict the dispatch to ONLY the channel that originally failed so
+  // resending a broken Slack delivery doesn't re-fire the (already
+  // successful) email to the same recipients.
+  const channel = original.channel as "slack" | "email";
+  const restricted: ResolvedBackfillNotificationDestinations = {
+    slackWebhookUrl: channel === "slack" ? destinations.slackWebhookUrl : null,
+    emailRecipients: channel === "email" ? destinations.emailRecipients : [],
+  };
+  if (
+    (channel === "slack" && !restricted.slackWebhookUrl) ||
+    (channel === "email" && restricted.emailRecipients.length === 0)
+  ) {
+    return { ok: false, reason: "CHANNEL_NOT_CONFIGURED" };
+  }
+
+  const startedAt =
+    job.startedAt instanceof Date
+      ? job.startedAt.toISOString()
+      : String(job.startedAt);
+  const completedAt = job.completedAt
+    ? job.completedAt instanceof Date
+      ? job.completedAt.toISOString()
+      : String(job.completedAt)
+    : null;
+
+  await notifyBackfillCompletion(
+    {
+      id: job.id,
+      orgId: job.organizationId,
+      status: job.status as "RUNNING" | "COMPLETED" | "FAILED",
+      total: job.total,
+      processed: job.processed,
+      succeeded: job.succeeded,
+      failed: job.failed,
+      startedAt,
+      completedAt,
+      parentJobId: job.parentJobId ?? null,
+    },
+    operator,
+    restricted,
+  );
+
+  // `notifyBackfillCompletion` writes the new delivery row itself; pull it
+  // back out so the caller can return it to the UI without an extra round
+  // trip from the client.
+  const recent = await listCrmTranscriptBackfillAlertDeliveries(orgId, 20);
+  const newRow =
+    recent.find(
+      (r) =>
+        r.jobId === job.id &&
+        r.channel === channel &&
+        r.id !== original.id &&
+        r.attemptedAt >= original.attemptedAt,
+    ) ?? null;
+  if (!newRow) {
+    // The dispatcher should always have recorded a row, but if persistence
+    // failed (logged as a warning inside `notifyBackfillCompletion`) we
+    // still treat the resend as having taken place rather than throwing.
+    logWarn(
+      "transcriptBackfillNotifications: resend dispatched but new delivery row not found",
+      { orgId, jobId: job.id, channel, originalDeliveryId: original.id },
+    );
+    return {
+      ok: true,
+      delivery: {
+        ...original,
+        id: original.id,
+        status: "failure",
+        errorMessage: "Resend dispatched but outcome row could not be located.",
+        attemptedAt: new Date(),
+      },
+    };
+  }
+  return { ok: true, delivery: newRow };
 }

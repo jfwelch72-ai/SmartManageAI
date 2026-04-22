@@ -913,6 +913,26 @@ export async function recordCrmTranscriptBackfillAlertDelivery(
   return row;
 }
 
+// Task #1050 — single-row lookup so the "Resend" admin action can verify
+// the failed delivery still exists and belongs to the caller's org before
+// re-dispatching the same job/channel.
+export async function getCrmTranscriptBackfillAlertDelivery(
+  id: string,
+  organizationId: string,
+): Promise<CrmTranscriptBackfillAlertDelivery | null> {
+  const [row] = await db
+    .select()
+    .from(crmTranscriptBackfillAlertDeliveries)
+    .where(
+      and(
+        eq(crmTranscriptBackfillAlertDeliveries.id, id),
+        eq(crmTranscriptBackfillAlertDeliveries.organizationId, organizationId),
+      ),
+    )
+    .limit(1);
+  return row || null;
+}
+
 export async function listCrmTranscriptBackfillAlertDeliveries(
   organizationId: string,
   limit = 10,

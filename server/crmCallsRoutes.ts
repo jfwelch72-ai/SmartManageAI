@@ -61,6 +61,7 @@ import {
 } from "./storage";
 import {
   notifyBackfillCompletion,
+  resendBackfillAlertDelivery,
   sendTestBackfillAlert,
   getBackfillNotificationConfig,
 } from "./services/transcriptBackfillNotifications";
@@ -3097,6 +3098,61 @@ router.get(
           errorMessage: row.errorMessage,
           attemptedAt: row.attemptedAt.toISOString(),
         })),
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #1050 — admin "Resend" action on a previously-failed alert delivery.
+// Re-runs the same dispatch (same job id, same channel) using the org's
+// currently-saved Slack/email destinations and writes a brand-new delivery
+// row reflecting the new outcome. Successful deliveries are rejected so the
+// UI's "only show on failures" filter cannot be bypassed by a hand-crafted
+// request.
+router.post(
+  "/api/crm/calls/transcripts/backfill/alert-deliveries/:id/resend",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+      const deliveryId = String(req.params.id || "").trim();
+      if (!deliveryId) {
+        return res.status(400).json({ error: "Missing delivery id" });
+      }
+      const result = await resendBackfillAlertDelivery(orgId, deliveryId);
+      if (!result.ok) {
+        const statusCode =
+          result.reason === "NOT_FOUND" || result.reason === "JOB_MISSING"
+            ? 404
+            : 409;
+        const message =
+          result.reason === "NOT_FOUND"
+            ? "Alert delivery not found."
+            : result.reason === "NOT_FAILED"
+              ? "Only failed deliveries can be resent."
+              : result.reason === "JOB_MISSING"
+                ? "The original backfill job is no longer available, so this alert can't be resent."
+                : "No destination is currently configured for this channel. Update notification settings and try again.";
+        return res.status(statusCode).json({ error: message, reason: result.reason });
+      }
+      const d = result.delivery;
+      res.json({
+        delivery: {
+          id: d.id,
+          jobId: d.jobId,
+          channel: d.channel,
+          status: d.status,
+          recipientSummary: d.recipientSummary,
+          errorMessage: d.errorMessage,
+          attemptedAt:
+            d.attemptedAt instanceof Date
+              ? d.attemptedAt.toISOString()
+              : new Date(d.attemptedAt as unknown as string).toISOString(),
+        },
       });
     } catch (e) {
       next(e);

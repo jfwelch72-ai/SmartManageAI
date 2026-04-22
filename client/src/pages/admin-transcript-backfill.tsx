@@ -2760,8 +2760,44 @@ const ALERT_DELIVERIES_PATH =
 const ALERT_DELIVERIES_KEY = [ALERT_DELIVERIES_PATH] as const;
 
 function BackfillAlertDeliveriesCard() {
+  const { toast } = useToast();
   const deliveriesQuery = useQuery<BackfillAlertDeliveriesResponse>({
     queryKey: ALERT_DELIVERIES_KEY,
+  });
+
+  // Task #1050 — track which row's resend is in flight so we can show a
+  // per-row spinner instead of disabling the entire list.
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const resendMutation = useMutation({
+    mutationFn: async (deliveryId: string) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/crm/calls/transcripts/backfill/alert-deliveries/${deliveryId}/resend`,
+      );
+      return (await res.json()) as {
+        delivery: BackfillAlertDelivery;
+      };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ALERT_DELIVERIES_KEY });
+      const ok = data.delivery.status === "success";
+      toast({
+        title: ok ? "Alert resent" : "Resend failed",
+        description: ok
+          ? `${data.delivery.channel} delivery to ${data.delivery.recipientSummary || "(unspecified)"} succeeded.`
+          : data.delivery.errorMessage ??
+            "The retry attempt also failed. Check the destination and try again.",
+        variant: ok ? "default" : "destructive",
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Couldn't resend alert",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+    onSettled: () => setResendingId(null),
   });
 
   const deliveries = deliveriesQuery.data?.deliveries ?? [];
@@ -2883,6 +2919,25 @@ function BackfillAlertDeliveriesCard() {
                     </div>
                   )}
                 </div>
+                {d.status === "failure" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setResendingId(d.id);
+                      resendMutation.mutate(d.id);
+                    }}
+                    disabled={resendingId === d.id && resendMutation.isPending}
+                    data-testid={`button-resend-alert-${d.id}`}
+                  >
+                    {resendingId === d.id && resendMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <RefreshCw className="h-4 w-4 mr-2" />
+                    )}
+                    Resend
+                  </Button>
+                )}
               </li>
             ))}
           </ul>
