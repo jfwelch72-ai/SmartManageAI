@@ -46,8 +46,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Layers, Sparkles, Trash2, Search, FileText, Calendar, Pencil, History, ChevronRight, ChevronDown, Flag, ArrowRight } from "lucide-react";
+import { Layers, Sparkles, Trash2, Search, FileText, Calendar, Pencil, History, ChevronRight, ChevronDown, Flag, ArrowRight, ListTree } from "lucide-react";
 import type { ProjectTemplate } from "@shared/schema";
+import { TemplateContentEditorDialog } from "@/components/templates/template-content-editor-dialog";
 
 interface SnapshotTask {
   refId: string;
@@ -116,6 +117,7 @@ export default function ProjectTemplatesPage() {
   const [selectedVersionId, setSelectedVersionId] = useState<string | "latest">("latest");
   const [deleteTarget, setDeleteTarget] = useState<ProjectTemplate | null>(null);
   const [editTarget, setEditTarget] = useState<ProjectTemplate | null>(null);
+  const [contentEditorTarget, setContentEditorTarget] = useState<ProjectTemplate | null>(null);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editCategory, setEditCategory] = useState("");
@@ -529,8 +531,18 @@ export default function ProjectTemplatesPage() {
                         variant="outline"
                         onClick={() => openEditDialog(tpl)}
                         data-testid={`button-edit-template-${tpl.id}`}
+                        title="Edit metadata (name/category/description)"
                       >
                         <Pencil className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setContentEditorTarget(tpl)}
+                        data-testid={`button-edit-content-${tpl.id}`}
+                        title="Edit tasks, dependencies, folders and SoV (creates a new version)"
+                      >
+                        <ListTree className="w-4 h-4" />
                       </Button>
                       {tpl.sourceProjectId && (
                         <Button
@@ -947,6 +959,12 @@ export default function ProjectTemplatesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <TemplateContentEditorDialog
+        template={contentEditorTarget}
+        open={!!contentEditorTarget}
+        onOpenChange={(open) => !open && setContentEditorTarget(null)}
+      />
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent data-testid="dialog-delete-template">
