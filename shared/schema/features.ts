@@ -1817,6 +1817,50 @@ export const crmTranscriptBackfillNotificationSettings = pgTable(
 export type CrmTranscriptBackfillNotificationSettings =
   typeof crmTranscriptBackfillNotificationSettings.$inferSelect;
 
+// Task #1033 — audit trail for the admin "send test alert" button. Each row
+// captures who clicked the button (org + user), when, and the per-channel
+// result (Slack + email) so admins can see in-app who last triggered a test
+// notification and whether it succeeded, instead of having to grep server
+// logs.
+export const crmTranscriptBackfillTestAlerts = pgTable(
+  "crm_transcript_backfill_test_alerts",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    organizationId: varchar("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    sentById: varchar("sent_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    sentAt: timestamp("sent_at").notNull().defaultNow(),
+    operatorDisplay: text("operator_display").notNull(),
+    slackConfigured: boolean("slack_configured").notNull().default(false),
+    slackOk: boolean("slack_ok").notNull().default(false),
+    slackError: text("slack_error"),
+    emailConfigured: boolean("email_configured").notNull().default(false),
+    emailOk: boolean("email_ok").notNull().default(false),
+    emailError: text("email_error"),
+    emailRecipients: jsonb("email_recipients")
+      .$type<string[]>()
+      .notNull()
+      .default([]),
+  },
+  (table) => ({
+    orgSentAtIdx: index("crm_transcript_backfill_test_alerts_org_sent_at_idx").on(
+      table.organizationId,
+      table.sentAt,
+    ),
+  }),
+);
+export const insertCrmTranscriptBackfillTestAlertSchema = createInsertSchema(
+  crmTranscriptBackfillTestAlerts,
+).omit({ id: true, sentAt: true });
+export type InsertCrmTranscriptBackfillTestAlert = z.infer<
+  typeof insertCrmTranscriptBackfillTestAlertSchema
+>;
+export type CrmTranscriptBackfillTestAlert =
+  typeof crmTranscriptBackfillTestAlerts.$inferSelect;
+
 // CRM Quotes - lightweight proposals/quotes generated directly from opportunities
 export const crmQuotes = pgTable("crm_quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

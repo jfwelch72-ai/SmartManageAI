@@ -38,9 +38,11 @@ import { sendSlackMessage, isValidSlackWebhookUrl } from "./services/slackServic
 import { sendTeamsMessage, isValidTeamsWebhookUrl } from "./services/teamsService";
 import {
   createCrmTranscriptBackfillJob,
+  createCrmTranscriptBackfillTestAlert,
   getCrmTranscriptBackfillJob,
   getCrmTranscriptBackfillNotificationSettings,
   getCrmTranscriptBackfillOperatorContact,
+  getLatestCrmTranscriptBackfillTestAlert,
   getRunningCrmTranscriptBackfillJob,
   listCrmTranscriptBackfillJobs,
   listCrmTranscriptBackfillNotificationsForJobs,
@@ -2526,7 +2528,51 @@ router.post(
         : null;
 
       const result = await sendTestBackfillAlert(orgId, operator);
+
+      // Task #1033 — persist a per-channel audit row so admins can see in-app
+      // who last clicked the button and whether each channel succeeded,
+      // instead of having to grep server logs. Best-effort: a write failure
+      // should not break the test-alert dispatch itself.
+      try {
+        await createCrmTranscriptBackfillTestAlert({
+          organizationId: orgId,
+          sentById: req.user?.id ?? null,
+          operatorDisplay: result.operatorDisplay,
+          slackConfigured: result.slack.configured,
+          slackOk: result.slack.ok,
+          slackError: result.slack.error ?? null,
+          emailConfigured: result.email.configured,
+          emailOk: result.email.ok,
+          emailError: result.email.error ?? null,
+          emailRecipients: result.email.recipients ?? [],
+        });
+      } catch (auditErr) {
+        logWarn("crmCallsRoutes: failed to persist test-alert audit row", {
+          orgId,
+          error: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        });
+      }
+
       res.json(result);
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #1033 — surface the most recent test-alert audit row for the current
+// org so the admin page can show "Last test alert sent by Jane at 3:14pm"
+// underneath the "Send test alert" button.
+router.get(
+  "/api/crm/calls/transcripts/backfill/test-alert/latest",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+      const row = await getLatestCrmTranscriptBackfillTestAlert(orgId);
+      res.json({ latest: row });
     } catch (e) {
       next(e);
     }

@@ -183,6 +183,29 @@ const SUMMARY_KEY_BASE = [SUMMARY_PATH] as const;
 const HISTORY_PATH = "/api/crm/calls/transcripts/backfill/history";
 const HISTORY_KEY_BASE = [HISTORY_PATH] as const;
 const PENDING_PATH = "/api/crm/calls/transcripts/backfill/pending";
+// Task #1033 — most recent "Send test alert" audit row, surfaced under the
+// button so admins can see who last triggered a test and whether each
+// channel succeeded.
+const TEST_ALERT_LATEST_KEY = [
+  "/api/crm/calls/transcripts/backfill/test-alert/latest",
+] as const;
+
+interface LatestTestAlert {
+  id: string;
+  sentAt: string;
+  sentById: string | null;
+  operatorDisplay: string;
+  slackConfigured: boolean;
+  slackOk: boolean;
+  slackError: string | null;
+  emailConfigured: boolean;
+  emailOk: boolean;
+  emailError: string | null;
+  emailRecipients: string[];
+  sentByFirstName: string | null;
+  sentByLastName: string | null;
+  sentByEmail: string | null;
+}
 const PAGE_SIZE = 20;
 const STATUS_OPTIONS = ["RUNNING", "COMPLETED", "FAILED"] as const;
 type StatusFilter = "ALL" | (typeof STATUS_OPTIONS)[number];
@@ -590,6 +613,74 @@ export default function AdminTranscriptBackfillPage() {
     },
   });
 
+  const latestTestAlertQuery = useQuery<{ latest: LatestTestAlert | null }>({
+    queryKey: TEST_ALERT_LATEST_KEY,
+  });
+
+  const testAlertMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(
+        "POST",
+        "/api/crm/calls/transcripts/backfill/test-alert",
+        {},
+      );
+      return (await res.json()) as {
+        slack: { configured: boolean; ok: boolean; error?: string };
+        email: {
+          configured: boolean;
+          ok: boolean;
+          error?: string;
+          recipients?: string[];
+        };
+        operatorDisplay: string;
+      };
+    },
+    onSuccess: (data) => {
+      // Task #1033 — refresh the "last test alert sent by" indicator so the
+      // newly-recorded audit row appears without a manual reload.
+      queryClient.invalidateQueries({ queryKey: TEST_ALERT_LATEST_KEY });
+      const { slack, email } = data;
+      if (!slack.configured && !email.configured) {
+        toast({
+          title: "No alert destinations configured",
+          description:
+            "Set CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK or CRM_BACKFILL_NOTIFY_EMAIL_TO and try again.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (slack.configured) {
+        toast({
+          title: slack.ok ? "Slack test alert sent" : "Slack test alert failed",
+          description: slack.ok
+            ? "Check your Slack channel for two sample alerts (completed + failed)."
+            : slack.error ?? "Unknown error.",
+          variant: slack.ok ? "default" : "destructive",
+        });
+      }
+      if (email.configured) {
+        const recipientText =
+          email.recipients && email.recipients.length > 0
+            ? ` to ${email.recipients.join(", ")}`
+            : "";
+        toast({
+          title: email.ok ? "Email test alert sent" : "Email test alert failed",
+          description: email.ok
+            ? `Sent two sample alerts (completed + failed)${recipientText}.`
+            : email.error ?? "Unknown error.",
+          variant: email.ok ? "default" : "destructive",
+        });
+      }
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Failed to send test alert",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const startMutation = useMutation({
     mutationFn: async () => {
       const body: { maxRecords?: number; concurrency?: number } = {};
@@ -963,6 +1054,20 @@ export default function AdminTranscriptBackfillPage() {
               {isRunning ? "Backfill running…" : "Start backfill"}
             </Button>
           </div>
+          <p className="text-xs text-muted-foreground" data-testid="text-test-alert-help">
+            Sends a sample completion + failure alert to whichever Slack webhook /
+            email recipients are configured, so you can confirm they arrive.
+            {noDestinationsConfigured && (
+              <span
+                className="ml-1 text-amber-600 dark:text-amber-500"
+                data-testid="text-test-alert-no-destinations-hint"
+              >
+                No destinations are currently configured — clicking this will be a
+                no-op until either env var is set.
+              </span>
+            )}
+          </p>
+          <LastTestAlertIndicator query={latestTestAlertQuery} />
           {pending === 0 && !isRunning && (
             <p className="text-xs text-muted-foreground" data-testid="text-no-pending">
               Nothing to backfill — all recordings already have transcripts.
@@ -1731,6 +1836,128 @@ function formatDuration(seconds: number): string {
   const secs = Math.floor(seconds % 60);
   if (mins === 0) return `${secs}s`;
   return secs === 0 ? `${mins}m` : `${mins}m ${secs}s`;
+}
+
+// Task #1033 — render the most recent "Send test alert" audit row under the
+// button. Shows operator + timestamp + per-channel ok/failed badges, with a
+// graceful "never sent" placeholder so the button area always communicates
+// state instead of looking unchanged after a click.
+function LastTestAlertIndicator({
+  query,
+}: {
+  query: ReturnType<typeof useQuery<{ latest: LatestTestAlert | null }>>;
+}) {
+  if (query.isLoading) {
+    return (
+      <p
+        className="text-xs text-muted-foreground"
+        data-testid="status-last-test-alert-loading"
+      >
+        Loading last test alert…
+      </p>
+    );
+  }
+  if (query.isError) {
+    return (
+      <p
+        className="text-xs text-destructive"
+        data-testid="text-last-test-alert-error"
+      >
+        Couldn't load the last test alert.
+      </p>
+    );
+  }
+  const latest = query.data?.latest;
+  if (!latest) {
+    return (
+      <p
+        className="text-xs text-muted-foreground"
+        data-testid="text-last-test-alert-empty"
+      >
+        No test alerts have been sent yet.
+      </p>
+    );
+  }
+  const sentAt = new Date(latest.sentAt);
+  const senderName = [latest.sentByFirstName, latest.sentByLastName]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+  const sender =
+    senderName ||
+    latest.sentByEmail ||
+    latest.operatorDisplay ||
+    "Unknown user";
+  return (
+    <div
+      className="rounded-md border bg-muted/40 p-3 text-xs space-y-1"
+      data-testid="card-last-test-alert"
+    >
+      <div className="text-muted-foreground">
+        Last test alert sent by{" "}
+        <span
+          className="font-medium text-foreground"
+          data-testid="text-last-test-alert-sender"
+        >
+          {sender}
+        </span>{" "}
+        <span data-testid="text-last-test-alert-time">
+          on {format(sentAt, "MMM d, yyyy 'at' h:mm a")}
+        </span>
+      </div>
+      <div className="flex flex-wrap gap-2 pt-1">
+        {latest.slackConfigured ? (
+          <Badge
+            variant={latest.slackOk ? "default" : "destructive"}
+            data-testid="badge-last-test-alert-slack"
+          >
+            Slack: {latest.slackOk ? "ok" : "failed"}
+          </Badge>
+        ) : (
+          <Badge
+            variant="outline"
+            data-testid="badge-last-test-alert-slack"
+          >
+            Slack: not configured
+          </Badge>
+        )}
+        {latest.emailConfigured ? (
+          <Badge
+            variant={latest.emailOk ? "default" : "destructive"}
+            data-testid="badge-last-test-alert-email"
+          >
+            Email: {latest.emailOk ? "ok" : "failed"}
+          </Badge>
+        ) : (
+          <Badge
+            variant="outline"
+            data-testid="badge-last-test-alert-email"
+          >
+            Email: not configured
+          </Badge>
+        )}
+      </div>
+      {(latest.slackError || latest.emailError) && (
+        <div
+          className="text-destructive pt-1"
+          data-testid="text-last-test-alert-errors"
+        >
+          {latest.slackError && <div>Slack: {latest.slackError}</div>}
+          {latest.emailError && <div>Email: {latest.emailError}</div>}
+        </div>
+      )}
+      {latest.emailConfigured &&
+        latest.emailRecipients &&
+        latest.emailRecipients.length > 0 && (
+          <div
+            className="text-muted-foreground"
+            data-testid="text-last-test-alert-recipients"
+          >
+            Email recipients: {latest.emailRecipients.join(", ")}
+          </div>
+        )}
+    </div>
+  );
 }
 
 function HistoryPagination({

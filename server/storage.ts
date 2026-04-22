@@ -4,12 +4,15 @@ import {
   crmTranscriptBackfillJobs,
   crmTranscriptBackfillNotificationSettings,
   crmTranscriptBackfillNotifications,
+  crmTranscriptBackfillTestAlerts,
   organizations,
   users,
   type CrmTranscriptBackfillJob,
   type CrmTranscriptBackfillNotificationSettings,
   type CrmTranscriptBackfillNotification,
   type InsertCrmTranscriptBackfillJob,
+  type CrmTranscriptBackfillTestAlert,
+  type InsertCrmTranscriptBackfillTestAlert,
 } from "@shared/schema";
 import { eq, and, desc, sql, ilike, or, gte, lte, inArray, type SQL } from "drizzle-orm";
 
@@ -294,6 +297,56 @@ export async function getCrmTranscriptBackfillOperatorContact(
     .where(eq(users.id, userId))
     .limit(1);
   return row || null;
+}
+
+// Task #1033 — record an audit row each time an admin clicks "Send test
+// alert" on the transcript backfill page, including per-channel result so
+// the UI can render "Last test alert sent by Jane at 3:14pm — Slack ok,
+// email failed" without grepping logs.
+export type CrmTranscriptBackfillTestAlertWithSender =
+  CrmTranscriptBackfillTestAlert & {
+    sentByFirstName: string | null;
+    sentByLastName: string | null;
+    sentByEmail: string | null;
+  };
+
+export async function createCrmTranscriptBackfillTestAlert(
+  data: InsertCrmTranscriptBackfillTestAlert,
+): Promise<CrmTranscriptBackfillTestAlert> {
+  const [row] = await db
+    .insert(crmTranscriptBackfillTestAlerts)
+    .values(data)
+    .returning();
+  return row;
+}
+
+export async function getLatestCrmTranscriptBackfillTestAlert(
+  organizationId: string,
+): Promise<CrmTranscriptBackfillTestAlertWithSender | null> {
+  const [row] = await db
+    .select({
+      id: crmTranscriptBackfillTestAlerts.id,
+      organizationId: crmTranscriptBackfillTestAlerts.organizationId,
+      sentById: crmTranscriptBackfillTestAlerts.sentById,
+      sentAt: crmTranscriptBackfillTestAlerts.sentAt,
+      operatorDisplay: crmTranscriptBackfillTestAlerts.operatorDisplay,
+      slackConfigured: crmTranscriptBackfillTestAlerts.slackConfigured,
+      slackOk: crmTranscriptBackfillTestAlerts.slackOk,
+      slackError: crmTranscriptBackfillTestAlerts.slackError,
+      emailConfigured: crmTranscriptBackfillTestAlerts.emailConfigured,
+      emailOk: crmTranscriptBackfillTestAlerts.emailOk,
+      emailError: crmTranscriptBackfillTestAlerts.emailError,
+      emailRecipients: crmTranscriptBackfillTestAlerts.emailRecipients,
+      sentByFirstName: users.firstName,
+      sentByLastName: users.lastName,
+      sentByEmail: users.email,
+    })
+    .from(crmTranscriptBackfillTestAlerts)
+    .leftJoin(users, eq(users.id, crmTranscriptBackfillTestAlerts.sentById))
+    .where(eq(crmTranscriptBackfillTestAlerts.organizationId, organizationId))
+    .orderBy(desc(crmTranscriptBackfillTestAlerts.sentAt))
+    .limit(1);
+  return (row as CrmTranscriptBackfillTestAlertWithSender) || null;
 }
 
 // Task #1004 — given a set of backfill job ids, return the full retry lineage
