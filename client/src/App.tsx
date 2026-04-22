@@ -235,6 +235,7 @@ const AuditLogsPage = lazy(() => import("@/pages/audit-logs"));
 const DeveloperPortalPage = lazy(() => import("@/pages/developer-portal"));
 const AdminEmailOutboxPage = lazy(() => import("@/pages/admin-email-outbox"));
 const AdminStatusPage = lazy(() => import("@/pages/admin-status"));
+const AdminTranscriptBackfillPage = lazy(() => import("@/pages/admin-transcript-backfill"));
 const EnterpriseSettingsPage = lazy(() => import("@/pages/enterprise-settings"));
 const ReportsPage = lazy(() => import("@/pages/reports"));
 const SafetyTrainingPage = lazy(() => import("@/pages/safety-training"));
@@ -414,6 +415,7 @@ function Router() {
       <Route path="/audit-logs" component={() => <ProtectedRoute component={AuditLogsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       <Route path="/admin/email-outbox" component={() => <ProtectedRoute component={AdminEmailOutboxPage} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/status" component={() => <ProtectedRoute component={AdminStatusPage} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      <Route path="/admin/transcript-backfill" component={() => <ProtectedRoute component={AdminTranscriptBackfillPage} permission={(role) => role === "ADMIN" || role === "SUPER_ADMIN"} />} />
       <Route path="/enterprise-settings" component={() => <ProtectedRoute component={EnterpriseSettingsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       <Route path="/cost-codes" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=cost-codes" />} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       

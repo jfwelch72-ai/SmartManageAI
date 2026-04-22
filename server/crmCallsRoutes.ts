@@ -1083,6 +1083,47 @@ async function runTranscriptBackfill(
   }
 }
 
+// Pending-count endpoint so the admin UI can show how many recordings are
+// missing a transcript before launching a backfill, plus surface the currently
+// running job (if any) so a fresh page load can resume polling.
+router.get(
+  "/api/crm/calls/transcripts/backfill",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+
+      const [{ count: pendingRaw }] = await db
+        .select({ count: sql<number>`count(*)::int` })
+        .from(crmCallRecordings)
+        .innerJoin(crmCalls, eq(crmCalls.id, crmCallRecordings.callId))
+        .where(
+          and(
+            eq(crmCalls.organizationId, orgId),
+            sql`${crmCallRecordings.transcript} IS NULL`,
+            inArray(crmCallRecordings.transcriptStatus, ["PENDING", "FAILED"]),
+          ),
+        );
+      const pending = Number(pendingRaw) || 0;
+
+      pruneBackfillJobs();
+      let activeJob: BackfillJob | null = null;
+      for (const job of transcriptBackfillJobs.values()) {
+        if (job.orgId === orgId && job.status === "RUNNING") {
+          activeJob = job;
+          break;
+        }
+      }
+
+      res.json({ pending, activeJob });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
 router.post(
   "/api/crm/calls/transcripts/backfill",
   requireAuth,
