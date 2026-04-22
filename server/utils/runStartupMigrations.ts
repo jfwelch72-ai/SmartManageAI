@@ -64,6 +64,7 @@ import { ensurePendingContactReassignmentTable } from "./ensurePendingContactRea
 import { ensureCrmOrganisationOwnerColumn } from "./ensureCrmOrganisationOwnerColumn";
 import { ensureSchedulingModuleEnhancements } from "./ensureSchedulingModuleEnhancements";
 import { ensureStatusPageTables } from "./ensureStatusPageTables";
+import { backfillStatusProbeDailyHistory } from "./backfillStatusProbeDailyHistory";
 import { ensureMobileOfflineEnumValues } from "./ensureMobileOfflineEnumValues";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
@@ -138,6 +139,7 @@ const migrations: MigrationStep[] = [
   { name: "crm_organisation_owner_column", category: "ADD_COLUMN", fn: ensureCrmOrganisationOwnerColumn },
   { name: "scheduling_module_enhancements", category: "CREATE_TABLE", fn: ensureSchedulingModuleEnhancements },
   { name: "status_page_tables", category: "CREATE_TABLE", fn: ensureStatusPageTables },
+  { name: "status_probe_daily_history_backfill", category: "ALTER_TABLE", fn: backfillStatusProbeDailyHistory },
   { name: "mobile_offline_enum_values", category: "ADD_ENUM", fn: ensureMobileOfflineEnumValues },
 ];
 
