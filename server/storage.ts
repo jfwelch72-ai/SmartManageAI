@@ -306,7 +306,7 @@ export type BackfillLineageEntry = {
 };
 
 export async function getCrmTranscriptBackfillLineages(
-  organizationId: string,
+  organizationId: string | undefined,
   jobIds: string[],
 ): Promise<{
   jobToRoot: Map<string, string>;
@@ -321,18 +321,31 @@ export async function getCrmTranscriptBackfillLineages(
   // SELECT joins back to the table for status/timestamps. Org id is enforced
   // both on the seed rows and on the final select so a malicious id from
   // another tenant cannot leak data through the climb.
+  //
+  // Task #1007 / #1020: when organizationId is undefined the caller is a
+  // SUPER_ADMIN viewing the cross-org history (no single tenant to scope
+  // to). In that mode the climb/descend run unfiltered. Org-scoped admins
+  // always pass their own organizationId so tenant isolation is preserved.
+  const orgFilter = organizationId
+    ? sql`AND organization_id = ${organizationId}`
+    : sql``;
+  const orgFilterAliased = (alias: string) =>
+    organizationId
+      ? sql.raw(`AND ${alias}.organization_id = `).append(sql`${organizationId}`)
+      : sql``;
+
   const result = await db.execute(sql`
     WITH RECURSIVE
       climb AS (
         SELECT id, parent_job_id
         FROM crm_transcript_backfill_jobs
-        WHERE organization_id = ${organizationId}
-          AND id IN (${sql.join(jobIds.map((id) => sql`${id}`), sql`, `)})
+        WHERE id IN (${sql.join(jobIds.map((id) => sql`${id}`), sql`, `)})
+          ${orgFilter}
         UNION
         SELECT j.id, j.parent_job_id
         FROM crm_transcript_backfill_jobs j
         JOIN climb c ON c.parent_job_id = j.id
-        WHERE j.organization_id = ${organizationId}
+        WHERE 1=1 ${orgFilterAliased("j")}
       ),
       roots AS (
         SELECT DISTINCT id AS root_id
@@ -346,13 +359,13 @@ export async function getCrmTranscriptBackfillLineages(
         SELECT d.root_id, j.id
         FROM crm_transcript_backfill_jobs j
         JOIN descend d ON j.parent_job_id = d.id
-        WHERE j.organization_id = ${organizationId}
+        WHERE 1=1 ${orgFilterAliased("j")}
       )
     SELECT d.root_id, j.id, j.parent_job_id, j.status,
            j.started_at, j.completed_at
     FROM descend d
     JOIN crm_transcript_backfill_jobs j ON j.id = d.id
-    WHERE j.organization_id = ${organizationId}
+    WHERE 1=1 ${orgFilterAliased("j")}
     ORDER BY d.root_id, j.started_at ASC, j.id ASC
   `);
 

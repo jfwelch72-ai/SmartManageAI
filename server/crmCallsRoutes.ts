@@ -2115,7 +2115,7 @@ router.get(
       // one round-trip (recursive CTE) so each row can render its parent →
       // retry-N chain inline without N+1 lookups against `parent_job_id`.
       const { jobToRoot, lineagesByRoot } = await getCrmTranscriptBackfillLineages(
-        orgId,
+        scopedOrgId,
         rows.map((r) => r.id),
       );
 
