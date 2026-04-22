@@ -49,6 +49,7 @@ import {
 import { DatePicker } from "@/components/ui/date-picker";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
 import ViewSwitcher, { type ViewType } from "@/components/ViewSwitcher";
@@ -330,12 +331,12 @@ export default function MyWorkPage() {
     { queryKey: ["/api/users"] },
   );
 
-  const updateMutation = useMutation<unknown, Error, { item: MyWorkItem; patch: Record<string, unknown> }>({
+  const updateMutation = useMutation<unknown, Error, { item: MyWorkItem; patch: Record<string, unknown>; silent?: boolean }>({
     mutationFn: async ({ item, patch }) => dispatchUpdate(item, patch),
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ["/api/me/work"] });
       queryClient.invalidateQueries({ queryKey: ["/api/my-day"] });
-      toast({ title: "Updated" });
+      if (!vars.silent) toast({ title: "Updated" });
     },
     onError: (err) => {
       toast({
@@ -345,6 +346,57 @@ export default function MyWorkPage() {
       });
     },
   });
+
+  const bucketLabel = (b: Bucket): string => {
+    switch (b) {
+      case "overdue": return "Overdue";
+      case "today": return "Today";
+      case "thisWeek": return "This week";
+      case "later": return "Later";
+      case "none": return "No due date";
+    }
+  };
+
+  const handleKanbanMove = async (item: MyWorkItem, bucket: Bucket) => {
+    const previousDueDate = item.dueDate;
+    const newDueDate = dueDateForBucket(bucket);
+    const newDueIso = newDueDate ? newDueDate.toISOString() : null;
+    if (previousDueDate === newDueIso) return;
+    try {
+      await updateMutation.mutateAsync({
+        item,
+        patch: { dueDate: newDueIso },
+        silent: true,
+      });
+      const dateSuffix = newDueDate ? ` (${format(newDueDate, "MMM d")})` : "";
+      const { dismiss } = toast({
+        title: `Moved "${item.title}" to ${bucketLabel(bucket)}${dateSuffix}`,
+        action: (
+          <ToastAction
+            altText="Undo move"
+            onClick={async () => {
+              dismiss();
+              try {
+                await updateMutation.mutateAsync({
+                  item,
+                  patch: { dueDate: previousDueDate },
+                  silent: true,
+                });
+                toast({ title: "Move undone" });
+              } catch {
+                /* error toast already shown by mutation */
+              }
+            }}
+            data-testid={`button-undo-move-${item.id}`}
+          >
+            Undo
+          </ToastAction>
+        ),
+      });
+    } catch {
+      /* error toast already shown by mutation */
+    }
+  };
 
   // Filtering done client-side for project, search, priority, due-date range.
   const items = useMemo(() => {
@@ -669,11 +721,7 @@ export default function MyWorkPage() {
         <KanbanBoard
           columns={kanbanColumns}
           onMove={(item, bucket) => {
-            const dueDate = dueDateForBucket(bucket);
-            updateMutation.mutate({
-              item,
-              patch: { dueDate: dueDate ? dueDate.toISOString() : null },
-            });
+            void handleKanbanMove(item, bucket);
           }}
         />
       ) : (
