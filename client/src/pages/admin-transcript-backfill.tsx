@@ -39,6 +39,7 @@ import {
   ArrowRight,
   Send,
   Bell,
+  Mail,
 } from "lucide-react";
 import { format, formatDistanceStrict } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
@@ -84,6 +85,15 @@ interface BackfillHistoryEntry extends BackfillJob {
     slug: string | null;
   };
   lineage: BackfillLineageNode[];
+  // Task #1022 — recipient snapshot for the run-completed admin email.
+  // `null` when no notification was dispatched (legacy rows, suppressed
+  // because no eligible recipients, or send failed before audit).
+  notification?: {
+    channel: string;
+    recipientEmails: string[];
+    recipientCount: number;
+    notifiedAt: string;
+  } | null;
 }
 
 interface BackfillHistoryResponse {
@@ -1435,6 +1445,32 @@ export default function AdminTranscriptBackfillPage() {
                         <div className="text-xs text-muted-foreground" data-testid={`text-history-operator-${entry.id}`}>
                           Started by {operatorName} · <code className="text-[10px]">{entry.id}</code>
                         </div>
+                        {entry.status !== "RUNNING" && (
+                          <div
+                            className="text-xs text-muted-foreground flex items-center gap-1"
+                            data-testid={`text-history-notified-${entry.id}`}
+                          >
+                            <Mail className="h-3 w-3" />
+                            {entry.notification && entry.notification.recipientCount > 0 ? (
+                              <>
+                                Emailed{" "}
+                                <span
+                                  className="font-medium text-foreground"
+                                  data-testid={`text-history-notified-count-${entry.id}`}
+                                >
+                                  {entry.notification.recipientCount.toLocaleString()}
+                                </span>{" "}
+                                admin{entry.notification.recipientCount === 1 ? "" : "s"}
+                                {" · "}
+                                {format(new Date(entry.notification.notifiedAt), "PPp")}
+                              </>
+                            ) : (
+                              <span data-testid={`text-history-notified-none-${entry.id}`}>
+                                No completion email sent
+                              </span>
+                            )}
+                          </div>
+                        )}
                         {isSuperAdmin && entry.organization && (
                           <div
                             className="text-xs text-muted-foreground"
@@ -1482,6 +1518,39 @@ export default function AdminTranscriptBackfillPage() {
                         {entry.completedAt && (
                           <div className="text-xs text-muted-foreground mb-2" data-testid={`text-history-completed-${entry.id}`}>
                             Finished {format(new Date(entry.completedAt), "PPpp")}
+                          </div>
+                        )}
+                        {entry.notification && entry.notification.recipientEmails.length > 0 && (
+                          <div className="mb-3 space-y-1" data-testid={`history-notification-${entry.id}`}>
+                            <Label
+                              className="text-xs flex items-center gap-1"
+                              data-testid={`label-history-notification-${entry.id}`}
+                            >
+                              <Mail className="h-3 w-3" />
+                              Notified admins ({entry.notification.recipientCount.toLocaleString()})
+                            </Label>
+                            <ul
+                              className="flex flex-wrap gap-1.5"
+                              data-testid={`list-history-notification-${entry.id}`}
+                            >
+                              {entry.notification.recipientEmails.map((email) => (
+                                <li key={email}>
+                                  <Badge
+                                    variant="outline"
+                                    className="font-mono text-[11px]"
+                                    data-testid={`badge-history-notification-recipient-${entry.id}-${email}`}
+                                  >
+                                    {email}
+                                  </Badge>
+                                </li>
+                              ))}
+                            </ul>
+                            <div
+                              className="text-[11px] text-muted-foreground"
+                              data-testid={`text-history-notification-when-${entry.id}`}
+                            >
+                              Sent {format(new Date(entry.notification.notifiedAt), "PPpp")}
+                            </div>
                           </div>
                         )}
                         {entry.errors.length === 0 ? (

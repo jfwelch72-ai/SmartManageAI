@@ -4,7 +4,7 @@ import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, domainEventStatusEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteBlockTypeEnum, noteTypeEnum, notificationTypeEnum, birthdayReminderCadenceEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum, punchListTradeEnum, punchListPriorityEnum, punchListStatusEnum, warrantyCaseTypeEnum, warrantyCaseStatusEnum, warrantyPriorityEnum, warrantyTaskStatusEnum, warrantyDocumentTypeEnum, leaveRequestStatusEnum, handoverItemStatusEnum, handoverSignoffRoleEnum, assetMaintenanceTypeEnum, maintenanceSystemEnum, recurringFrequencyEnum, costSourceCategoryEnum, costOriginModuleEnum, costTransactionStatusEnum, mobilizationChecklistStatusEnum, mobilizationItemStatusEnum, methodStatementStatusEnum, permitStatusEnum, permitTypeEnum, materialTestStatusEnum, materialTestTypeEnum, ppeTypeEnum, ppeComplianceStatusEnum, projectReportTypeEnum, projectReportStatusEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
-import { aiRuns, contracts, crmOrganisations, dotPayItems, dotSpecBooks, organizationSowItems, quantityCategories, rfis, scopeWorkTypes } from "./features";
+import { aiRuns, contracts, crmOrganisations, crmTranscriptBackfillJobs, dotPayItems, dotSpecBooks, organizationSowItems, quantityCategories, rfis, scopeWorkTypes } from "./features";
 
 export const bidSubcontractorQuotes = pgTable("bid_subcontractor_quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -3509,3 +3509,30 @@ export const portfolioPdfRenderSamples = pgTable("portfolio_pdf_render_samples",
 export const insertPortfolioPdfRenderSampleSchema = createInsertSchema(portfolioPdfRenderSamples).omit({ id: true, createdAt: true });
 export type InsertPortfolioPdfRenderSample = z.infer<typeof insertPortfolioPdfRenderSampleSchema>;
 export type PortfolioPdfRenderSample = typeof portfolioPdfRenderSamples.$inferSelect;
+
+
+// ============================================
+// CRM TRANSCRIPT BACKFILL NOTIFICATIONS (Task #1022)
+// One audit row per dispatched run-completion email so the admin history page
+// can show who was notified for each backfill run. Recipient emails are
+// snapshotted (not joined to users.email) so the list survives admin role
+// changes / departures after the run.
+// ============================================
+export const crmTranscriptBackfillNotifications = pgTable("crm_transcript_backfill_notifications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  jobId: varchar("job_id").notNull().references(() => crmTranscriptBackfillJobs.id, { onDelete: "cascade" }),
+  channel: text("channel").notNull().default("EMAIL"),
+  recipientEmails: text("recipient_emails").array().notNull().default(sql`'{}'::text[]`),
+  recipientCount: integer("recipient_count").notNull().default(0),
+  notifiedAt: timestamp("notified_at").notNull().defaultNow(),
+}, (table) => ({
+  jobIdx: index("crm_transcript_backfill_notifications_job_idx").on(table.jobId),
+  notifiedAtIdx: index("crm_transcript_backfill_notifications_notified_at_idx").on(table.notifiedAt),
+}));
+
+export const insertCrmTranscriptBackfillNotificationSchema = createInsertSchema(crmTranscriptBackfillNotifications).omit({
+  id: true,
+  notifiedAt: true,
+});
+export type InsertCrmTranscriptBackfillNotification = z.infer<typeof insertCrmTranscriptBackfillNotificationSchema>;
+export type CrmTranscriptBackfillNotification = typeof crmTranscriptBackfillNotifications.$inferSelect;

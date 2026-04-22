@@ -3,10 +3,12 @@ import {
   executiveDigests,
   crmTranscriptBackfillJobs,
   crmTranscriptBackfillNotificationSettings,
+  crmTranscriptBackfillNotifications,
   organizations,
   users,
   type CrmTranscriptBackfillJob,
   type CrmTranscriptBackfillNotificationSettings,
+  type CrmTranscriptBackfillNotification,
   type InsertCrmTranscriptBackfillJob,
 } from "@shared/schema";
 import { eq, and, desc, sql, ilike, or, gte, lte, inArray, type SQL } from "drizzle-orm";
@@ -697,6 +699,72 @@ export async function upsertCrmTranscriptBackfillNotificationSettings(
     })
     .returning();
   return row;
+}
+
+// ---------------------------------------------------------------------------
+// Task #1022 — audit trail of admins notified for each backfill run.
+// Recipient emails are snapshotted (not joined) so the list survives admin
+// role changes after the run.
+// ---------------------------------------------------------------------------
+export type CrmTranscriptBackfillNotificationSummary = {
+  id: string;
+  jobId: string;
+  channel: string;
+  recipientEmails: string[];
+  recipientCount: number;
+  notifiedAt: Date;
+};
+
+export async function recordCrmTranscriptBackfillNotification(opts: {
+  jobId: string;
+  recipientEmails: string[];
+  channel?: string;
+}): Promise<CrmTranscriptBackfillNotification | null> {
+  const channel = opts.channel ?? "EMAIL";
+  // De-dupe defensively so the audit row matches what was actually sent.
+  const recipients = Array.from(
+    new Set(
+      (opts.recipientEmails ?? [])
+        .map((e) => (typeof e === "string" ? e.trim() : ""))
+        .filter((e) => e.length > 0),
+    ),
+  );
+  const [row] = await db
+    .insert(crmTranscriptBackfillNotifications)
+    .values({
+      jobId: opts.jobId,
+      channel,
+      recipientEmails: recipients,
+      recipientCount: recipients.length,
+    })
+    .returning();
+  return row || null;
+}
+
+export async function listCrmTranscriptBackfillNotificationsForJobs(
+  jobIds: string[],
+): Promise<Map<string, CrmTranscriptBackfillNotificationSummary>> {
+  const result = new Map<string, CrmTranscriptBackfillNotificationSummary>();
+  if (jobIds.length === 0) return result;
+  const rows = await db
+    .select()
+    .from(crmTranscriptBackfillNotifications)
+    .where(inArray(crmTranscriptBackfillNotifications.jobId, jobIds))
+    .orderBy(desc(crmTranscriptBackfillNotifications.notifiedAt));
+  // First (most recent) wins per job — we only emit one notification per
+  // run today, but ordering keeps the contract stable if we ever retry.
+  for (const row of rows) {
+    if (result.has(row.jobId)) continue;
+    result.set(row.jobId, {
+      id: row.id,
+      jobId: row.jobId,
+      channel: row.channel,
+      recipientEmails: (row.recipientEmails as string[] | null) ?? [],
+      recipientCount: row.recipientCount,
+      notifiedAt: row.notifiedAt,
+    });
+  }
+  return result;
 }
 
 export const storage = {};

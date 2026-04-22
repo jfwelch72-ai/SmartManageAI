@@ -43,11 +43,13 @@ import {
   getCrmTranscriptBackfillOperatorContact,
   getRunningCrmTranscriptBackfillJob,
   listCrmTranscriptBackfillJobs,
+  listCrmTranscriptBackfillNotificationsForJobs,
   listCrmTranscriptBackfillOperators,
   locateCrmTranscriptBackfillJobPage,
   getCrmTranscriptBackfillLineages,
   listMostRecentRunningCrmTranscriptBackfillJobsPerOrg,
   listRunningCrmTranscriptBackfillJobsWithOrg,
+  recordCrmTranscriptBackfillNotification,
   updateCrmTranscriptBackfillJob,
   upsertCrmTranscriptBackfillNotificationSettings,
 } from "./storage";
@@ -1302,6 +1304,25 @@ export async function notifyBackfillCompletionToOrgAdmins(jobId: string): Promis
 
     await Promise.all(dispatches);
 
+    // Task #1022 — persist who was notified so the admin history page can
+    // surface the recipient list later. Snapshotting the addresses (rather
+    // than re-deriving from current admin roles) means the audit row stays
+    // accurate even after admins are added/removed/opt-out post-run.
+    if (recipients.length > 0) {
+      try {
+        await recordCrmTranscriptBackfillNotification({
+          jobId,
+          recipientEmails: recipients,
+          channel: "EMAIL",
+        });
+      } catch (auditErr) {
+        logWarn("crmCalls: failed to record backfill notification audit row", {
+          jobId,
+          error: auditErr instanceof Error ? auditErr.message : String(auditErr),
+        });
+      }
+    }
+
     logInfo("crmCalls: backfill summary dispatched", {
       jobId,
       orgId: jobRow.organizationId,
@@ -2303,6 +2324,13 @@ router.get(
         scopedOrgId,
         rows.map((r) => r.id),
       );
+      // Task #1022 — attach the recipient list of the run-completed admin
+      // email (if one was sent) so the UI can show who was notified for each
+      // run. Only fetched for the visible page so an org with thousands of
+      // jobs doesn't pull a huge join.
+      const notificationsByJob = await listCrmTranscriptBackfillNotificationsForJobs(
+        rows.map((r) => r.id),
+      );
 
       res.json({
         total,
@@ -2312,6 +2340,7 @@ router.get(
         jobs: rows.map((row) => {
           const rootId = jobToRoot.get(row.id) ?? row.id;
           const lineage = lineagesByRoot.get(rootId) ?? [];
+          const note = notificationsByJob.get(row.id);
           return {
             ...rowToState(row),
             heartbeatAt: row.heartbeatAt.toISOString(),
@@ -2345,6 +2374,16 @@ router.get(
                   attempt: idx,
                 }))
               : [],
+            // Task #1022 — recipient snapshot for the run-completed admin
+            // email. `null` when no notification was dispatched.
+            notification: note
+              ? {
+                  channel: note.channel,
+                  recipientEmails: note.recipientEmails,
+                  recipientCount: note.recipientCount,
+                  notifiedAt: note.notifiedAt.toISOString(),
+                }
+              : null,
           };
         }),
       });

@@ -79,6 +79,7 @@ import { ensurePdfAlertSharedTables } from "./ensurePdfAlertSharedTables";
 import { ensureProjectKpiSnapshotsTable } from "./ensureProjectKpiSnapshotsTable";
 import { ensureCrmTranscriptBackfillJobsTable } from "./ensureCrmTranscriptBackfillJobsTable";
 import { ensureCrmTranscriptBackfillNotificationSettingsTable } from "./ensureCrmTranscriptBackfillNotificationSettingsTable";
+import { ensureCrmTranscriptBackfillNotificationsTable } from "./ensureCrmTranscriptBackfillNotificationsTable";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -168,6 +169,8 @@ const migrations: MigrationStep[] = [
   { name: "project_kpi_snapshots_table", category: "CREATE_TABLE", fn: ensureProjectKpiSnapshotsTable },
   { name: "crm_transcript_backfill_jobs_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillJobsTable },
   { name: "crm_transcript_backfill_notification_settings_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillNotificationSettingsTable },
+  // Task #1022 — must run AFTER the jobs table since it FK-references it.
+  { name: "crm_transcript_backfill_notifications_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillNotificationsTable },
 ];
 
 export async function runStartupMigrations(): Promise<void> {
