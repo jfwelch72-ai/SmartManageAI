@@ -39,6 +39,10 @@ import { getOrgIdForFilter } from "./orgFilter";
 import { isFeatureEnabled } from "./services/featureFlagService";
 import { logError, logInfo, logWarn } from "./utils/logger";
 import { eventBus } from "./events";
+import {
+  queueCallTranscription,
+  transcribeCallRecording,
+} from "./services/callTranscriptionService";
 
 const router = Router();
 
@@ -460,17 +464,36 @@ router.post(
 
       if (recordingUrl && recordingSid) {
         const [exists] = await db
-          .select({ id: crmCallRecordings.id })
+          .select({
+            id: crmCallRecordings.id,
+            transcriptStatus: crmCallRecordings.transcriptStatus,
+          })
           .from(crmCallRecordings)
           .where(eq(crmCallRecordings.twilioRecordingSid, recordingSid))
           .limit(1);
+        let recordingId: string | null = exists?.id ?? null;
+        let existingStatus: string | null = exists?.transcriptStatus ?? null;
         if (!exists) {
-          await db.insert(crmCallRecordings).values({
-            callId: existing.id,
-            recordingUrl,
-            durationSeconds: duration,
-            twilioRecordingSid: recordingSid,
-          });
+          const [created] = await db
+            .insert(crmCallRecordings)
+            .values({
+              callId: existing.id,
+              recordingUrl,
+              durationSeconds: duration,
+              twilioRecordingSid: recordingSid,
+            })
+            .returning({ id: crmCallRecordings.id });
+          recordingId = created?.id ?? null;
+          existingStatus = "PENDING";
+        }
+        // Task #921 — kick off transcription in the background so the webhook
+        // can return immediately to Twilio. Errors are logged but never thrown.
+        // Idempotency: Twilio retries the recording callback on its own, so
+        // skip queueing when this recording is already done or in flight to
+        // avoid duplicate billable Whisper runs.
+        const status = (existingStatus || "PENDING").toUpperCase();
+        if (recordingId && status !== "COMPLETED" && status !== "PROCESSING") {
+          queueCallTranscription(recordingId);
         }
       }
 
@@ -632,6 +655,127 @@ router.get(
 );
 
 // ---------------------------------------------------------------------------
+// Transcript: manual re-transcribe (admin/manager) for a call's most recent
+// recording. Useful for retries after a Whisper failure or for backfilling
+// transcripts on recordings created before Task #921.
+// ---------------------------------------------------------------------------
+router.post(
+  "/api/crm/calls/:id/transcribe",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+
+      const [call] = await db
+        .select({ id: crmCalls.id })
+        .from(crmCalls)
+        .where(and(eq(crmCalls.organizationId, orgId), eq(crmCalls.id, req.params.id)))
+        .limit(1);
+      if (!call) return res.status(404).json({ error: "Call not found" });
+
+      const [rec] = await db
+        .select({ id: crmCallRecordings.id })
+        .from(crmCallRecordings)
+        .where(eq(crmCallRecordings.callId, call.id))
+        .orderBy(desc(crmCallRecordings.createdAt))
+        .limit(1);
+      if (!rec) return res.status(404).json({ error: "Recording not found" });
+
+      // Run synchronously so the caller gets the transcript or error directly.
+      const result = await transcribeCallRecording(rec.id);
+      if (!result.ok) {
+        return res.status(502).json({ error: result.error || "Transcription failed" });
+      }
+      res.json({ success: true, transcript: result.transcript });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Transcript search — full-text-ish ILIKE match across an opportunity/contact/
+// crmOrganisation's call transcripts. Returns the matching call rows so the
+// client can deep-link into the activity timeline.
+// ---------------------------------------------------------------------------
+router.get(
+  "/api/crm/calls/transcripts/search",
+  requireAuth,
+  requireRole(...PIPELINE_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+
+      const q = String(req.query.q || "").trim();
+      if (q.length < 2) {
+        return res.status(400).json({ error: "Query must be at least 2 characters" });
+      }
+      const opportunityId = req.query.opportunityId as string | undefined;
+      const contactId = req.query.contactId as string | undefined;
+      const crmOrganisationId = req.query.crmOrganisationId as string | undefined;
+      const limit = Math.min(parseInt((req.query.limit as string) || "50", 10), 200);
+
+      const escaped = q.replace(/[\\%_]/g, (m) => `\\${m}`);
+      const like = `%${escaped}%`;
+
+      const conds: SQL[] = [
+        eq(crmCalls.organizationId, orgId),
+        sql`${crmCallRecordings.transcript} IS NOT NULL`,
+        sql`${crmCallRecordings.transcript} ILIKE ${like}`,
+      ];
+      if (opportunityId) conds.push(eq(crmCalls.opportunityId, opportunityId));
+      if (contactId) conds.push(eq(crmCalls.contactId, contactId));
+      if (crmOrganisationId) conds.push(eq(crmCalls.crmOrganisationId, crmOrganisationId));
+
+      const rows = await db
+        .select({
+          callId: crmCalls.id,
+          opportunityId: crmCalls.opportunityId,
+          contactId: crmCalls.contactId,
+          crmOrganisationId: crmCalls.crmOrganisationId,
+          startedAt: crmCalls.startedAt,
+          direction: crmCalls.direction,
+          outcome: crmCalls.outcome,
+          recordingId: crmCallRecordings.id,
+          transcript: crmCallRecordings.transcript,
+        })
+        .from(crmCalls)
+        .innerJoin(crmCallRecordings, eq(crmCallRecordings.callId, crmCalls.id))
+        .where(and(...conds))
+        .orderBy(desc(crmCalls.startedAt))
+        .limit(limit);
+
+      // Build a short snippet around the first match for each row.
+      const results = rows.map((r) => {
+        const text = r.transcript || "";
+        const idx = text.toLowerCase().indexOf(q.toLowerCase());
+        const start = Math.max(0, idx - 60);
+        const end = idx >= 0 ? Math.min(text.length, idx + q.length + 60) : Math.min(text.length, 160);
+        const snippet = (start > 0 ? "…" : "") + text.slice(start, end) + (end < text.length ? "…" : "");
+        return {
+          callId: r.callId,
+          recordingId: r.recordingId,
+          opportunityId: r.opportunityId,
+          contactId: r.contactId,
+          crmOrganisationId: r.crmOrganisationId,
+          startedAt: r.startedAt.toISOString(),
+          direction: r.direction,
+          outcome: r.outcome,
+          snippet,
+        };
+      });
+
+      res.json({ query: q, results });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Unified activity timeline
 // ---------------------------------------------------------------------------
 type ActivityRow = {
@@ -696,7 +840,13 @@ router.get(
 
         // Fetch recordings for the calls in one query.
         const callIds = rows.map((r) => r.id);
-        const recordingsByCall = new Map<string, { id: string; durationSeconds: number }>();
+        const recordingsByCall = new Map<string, {
+          id: string;
+          durationSeconds: number;
+          transcript: string | null;
+          transcriptStatus: string;
+          transcribedAt: string | null;
+        }>();
         if (callIds.length) {
           const recRows = await db
             .select({
@@ -704,6 +854,9 @@ router.get(
               callId: crmCallRecordings.callId,
               durationSeconds: crmCallRecordings.durationSeconds,
               createdAt: crmCallRecordings.createdAt,
+              transcript: crmCallRecordings.transcript,
+              transcriptStatus: crmCallRecordings.transcriptStatus,
+              transcribedAt: crmCallRecordings.transcribedAt,
             })
             .from(crmCallRecordings)
             .where(inArray(crmCallRecordings.callId, callIds))
@@ -714,6 +867,9 @@ router.get(
               recordingsByCall.set(rec.callId, {
                 id: rec.id,
                 durationSeconds: rec.durationSeconds,
+                transcript: rec.transcript ?? null,
+                transcriptStatus: rec.transcriptStatus ?? "PENDING",
+                transcribedAt: rec.transcribedAt ? rec.transcribedAt.toISOString() : null,
               });
             }
           }
@@ -743,6 +899,9 @@ router.get(
                     durationSeconds: rec.durationSeconds,
                     streamUrl: `/api/crm/calls/${r.id}/recording`,
                     downloadUrl: `/api/crm/calls/${r.id}/recording?download=1`,
+                    transcript: rec.transcript,
+                    transcriptStatus: rec.transcriptStatus,
+                    transcribedAt: rec.transcribedAt,
                   }
                 : null,
             },

@@ -64,6 +64,15 @@ export async function ensureCrmCallTables(): Promise<void> {
   `);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_call_recordings_call_idx" ON "crm_call_recordings"("call_id")`);
 
+  // Task #921 — transcripts on call recordings.
+  await db.execute(sql`ALTER TABLE "crm_call_recordings" ADD COLUMN IF NOT EXISTS "transcript" text`);
+  await db.execute(sql`ALTER TABLE "crm_call_recordings" ADD COLUMN IF NOT EXISTS "transcript_status" text NOT NULL DEFAULT 'PENDING'`);
+  await db.execute(sql`ALTER TABLE "crm_call_recordings" ADD COLUMN IF NOT EXISTS "transcript_provider" text`);
+  await db.execute(sql`ALTER TABLE "crm_call_recordings" ADD COLUMN IF NOT EXISTS "transcript_error" text`);
+  await db.execute(sql`ALTER TABLE "crm_call_recordings" ADD COLUMN IF NOT EXISTS "transcribed_at" timestamp`);
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS "crm_call_recordings_transcript_search_idx"
+    ON "crm_call_recordings" USING gin (to_tsvector('english', coalesce("transcript", '')))`);
+
   await db.execute(sql`ALTER TABLE "user_dashboard_permissions" ADD COLUMN IF NOT EXISTS "can_log_crm_calls" boolean DEFAULT false`);
 
   console.log("[migration] crm_call_tables — ensured");

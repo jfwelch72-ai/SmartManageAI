@@ -20,7 +20,15 @@ import {
   Download,
   Mic,
   MicOff,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Search,
 } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { format, startOfDay, startOfWeek, startOfMonth, isSameDay } from "date-fns";
 import { cn } from "@/lib/utils";
 
@@ -172,6 +180,7 @@ export function CrmActivityTimeline({
 
   const [activeTypes, setActiveTypes] = useState<Set<string>>(initial.types);
   const [timeWindow, setTimeWindow] = useState<TimeWindow>(initial.window);
+  const [searchTerm, setSearchTerm] = useState<string>("");
 
   useEffect(() => {
     if (urlSync) writeUrlParams(activeTypes, timeWindow);
@@ -208,13 +217,29 @@ export function CrmActivityTimeline({
       timeWindow === "today" ? startOfDay(now) :
       timeWindow === "week" ? startOfWeek(now, { weekStartsOn: 0 }) :
       timeWindow === "month" ? startOfMonth(now) : null;
+    const needle = searchTerm.trim().toLowerCase();
     return items.filter((it) => {
       const ts = new Date(it.occurredAt);
       if (cutoff && ts < cutoff) return false;
-      if (activeTypes.size === 0) return true;
-      return activeTypes.has(it.type);
+      if (activeTypes.size > 0 && !activeTypes.has(it.type)) return false;
+      if (needle) {
+        const transcript: string =
+          (it.meta?.recording && typeof it.meta.recording.transcript === "string"
+            ? it.meta.recording.transcript
+            : "") || "";
+        const haystack = [
+          it.title || "",
+          it.description || "",
+          it.actorName || "",
+          transcript,
+        ]
+          .join("\n")
+          .toLowerCase();
+        if (!haystack.includes(needle)) return false;
+      }
+      return true;
     });
-  }, [items, activeTypes, timeWindow]);
+  }, [items, activeTypes, timeWindow, searchTerm]);
 
   const grouped = useMemo(() => {
     const groups: { date: Date; items: UnifiedActivity[] }[] = [];
@@ -242,6 +267,7 @@ export function CrmActivityTimeline({
   const clearFilters = useCallback(() => {
     setActiveTypes(new Set());
     setTimeWindow("all");
+    setSearchTerm("");
   }, []);
 
   if (isLoading) return <Skeleton className="h-40" data-testid="skeleton-timeline" />;
@@ -289,6 +315,17 @@ export function CrmActivityTimeline({
             );
           })}
         </div>
+        <div className="relative" data-testid="filter-search-wrapper">
+          <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+          <Input
+            type="search"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search activities & call transcripts…"
+            className="h-8 pl-7 text-xs"
+            data-testid="input-timeline-search"
+          />
+        </div>
         <div className="flex flex-wrap gap-2" data-testid="filter-chips-window">
           {WINDOW_CHIPS.map((chip) => {
             const active = timeWindow === chip.value;
@@ -327,7 +364,7 @@ export function CrmActivityTimeline({
               </div>
               <div className="space-y-3">
                 {group.items.map((it) => (
-                  <ActivityRow key={it.id} item={it} />
+                  <ActivityRow key={it.id} item={it} highlight={searchTerm.trim()} />
                 ))}
               </div>
             </div>
@@ -338,7 +375,7 @@ export function CrmActivityTimeline({
   );
 }
 
-function ActivityRow({ item }: { item: UnifiedActivity }) {
+function ActivityRow({ item, highlight }: { item: UnifiedActivity; highlight?: string }) {
   const ts = new Date(item.occurredAt);
   return (
     <div
@@ -366,7 +403,7 @@ function ActivityRow({ item }: { item: UnifiedActivity }) {
           <EmailActions item={item} />
         )}
         {item.type === "CALL" && item.meta?.recording && (
-          <CallRecording item={item} />
+          <CallRecording item={item} highlight={highlight} />
         )}
       </div>
     </div>
@@ -408,36 +445,172 @@ function EmailActions({ item }: { item: UnifiedActivity }) {
   );
 }
 
-function CallRecording({ item }: { item: UnifiedActivity }) {
+function CallRecording({ item, highlight }: { item: UnifiedActivity; highlight?: string }) {
   const rec = (item.meta?.recording || {}) as {
     streamUrl?: string;
     downloadUrl?: string;
+    transcript?: string | null;
+    transcriptStatus?: string;
+    transcribedAt?: string | null;
   };
+  const callId: string | undefined = item.meta?.callId;
+  const hasTranscript = !!rec.transcript && rec.transcript.trim().length > 0;
+  const status = (rec.transcriptStatus || (hasTranscript ? "COMPLETED" : "PENDING")).toUpperCase();
+  // Auto-expand when there's a search highlight that matches the transcript.
+  const matchesHighlight =
+    !!highlight && hasTranscript && (rec.transcript || "").toLowerCase().includes(highlight.toLowerCase());
+  const [open, setOpen] = useState<boolean>(matchesHighlight);
+  useEffect(() => {
+    if (matchesHighlight) setOpen(true);
+  }, [matchesHighlight]);
+
+  const { toast } = useToast();
+  const { permissionRole } = useAuth();
+  const canTranscribe = permissionRole === "ADMIN" || permissionRole === "MANAGER";
+  const [retranscribing, setRetranscribing] = useState(false);
+
   if (!rec.streamUrl) return null;
+
+  const onRetranscribe = async () => {
+    if (!callId || retranscribing) return;
+    setRetranscribing(true);
+    try {
+      await apiRequest("POST", `/api/crm/calls/${callId}/transcribe`);
+      await queryClient.invalidateQueries({ queryKey: ["/api/crm/activity"] });
+      toast({ title: "Transcript generated" });
+    } catch (e) {
+      toast({
+        title: "Transcription failed",
+        description: e instanceof Error ? e.message : "Please try again later.",
+        variant: "destructive",
+      });
+    } finally {
+      setRetranscribing(false);
+    }
+  };
+
   return (
-    <div className="mt-1.5 flex items-center gap-2" data-testid={`recording-${item.id}`}>
-      <audio
-        controls
-        preload="none"
-        src={rec.streamUrl}
-        className="h-8 max-w-full"
-        data-testid={`audio-recording-${item.id}`}
-      >
-        Your browser does not support the audio element.
-      </audio>
-      {rec.downloadUrl && (
-        <a
-          href={rec.downloadUrl}
-          download
-          data-testid={`link-download-recording-${item.id}`}
+    <div className="mt-1.5 space-y-1.5" data-testid={`recording-${item.id}`}>
+      <div className="flex items-center gap-2">
+        <audio
+          controls
+          preload="none"
+          src={rec.streamUrl}
+          className="h-8 max-w-full"
+          data-testid={`audio-recording-${item.id}`}
         >
-          <Button variant="ghost" size="sm" className="h-7 text-xs">
-            <Download className="w-3 h-3 mr-1" /> Download
-          </Button>
-        </a>
-      )}
+          Your browser does not support the audio element.
+        </audio>
+        {rec.downloadUrl && (
+          <a
+            href={rec.downloadUrl}
+            download
+            data-testid={`link-download-recording-${item.id}`}
+          >
+            <Button variant="ghost" size="sm" className="h-7 text-xs">
+              <Download className="w-3 h-3 mr-1" /> Download
+            </Button>
+          </a>
+        )}
+      </div>
+
+      <div>
+        {hasTranscript ? (
+          <button
+            type="button"
+            onClick={() => setOpen((v) => !v)}
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            data-testid={`button-toggle-transcript-${item.id}`}
+            aria-expanded={open}
+          >
+            {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            {open ? "Hide transcript" : "Show transcript"}
+          </button>
+        ) : status === "PROCESSING" ? (
+          <span
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground"
+            data-testid={`text-transcript-status-${item.id}`}
+          >
+            <Loader2 className="h-3 w-3 animate-spin" /> Transcribing…
+          </span>
+        ) : status === "FAILED" ? (
+          <span
+            className="inline-flex items-center gap-2 text-xs text-muted-foreground"
+            data-testid={`text-transcript-status-${item.id}`}
+          >
+            Transcript unavailable
+            {callId && canTranscribe && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={onRetranscribe}
+                disabled={retranscribing}
+                data-testid={`button-retranscribe-${item.id}`}
+              >
+                {retranscribing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                Retry
+              </Button>
+            )}
+          </span>
+        ) : (
+          <span
+            className="inline-flex items-center gap-2 text-xs text-muted-foreground"
+            data-testid={`text-transcript-status-${item.id}`}
+          >
+            Transcript pending
+            {callId && canTranscribe && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-2 text-xs"
+                onClick={onRetranscribe}
+                disabled={retranscribing}
+                data-testid={`button-transcribe-${item.id}`}
+              >
+                {retranscribing ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                Transcribe now
+              </Button>
+            )}
+          </span>
+        )}
+        {open && hasTranscript && (
+          <div
+            className="mt-1 rounded-md border bg-muted/40 px-3 py-2 text-xs leading-relaxed whitespace-pre-wrap text-foreground/90 max-h-64 overflow-y-auto"
+            data-testid={`text-transcript-${item.id}`}
+          >
+            {renderTranscriptWithHighlight(rec.transcript || "", highlight)}
+          </div>
+        )}
+      </div>
     </div>
   );
+}
+
+function renderTranscriptWithHighlight(text: string, highlight?: string): React.ReactNode {
+  if (!highlight) return text;
+  const needle = highlight.trim();
+  if (!needle) return text;
+  const lower = text.toLowerCase();
+  const target = needle.toLowerCase();
+  const out: React.ReactNode[] = [];
+  let i = 0;
+  let key = 0;
+  while (i < text.length) {
+    const idx = lower.indexOf(target, i);
+    if (idx === -1) {
+      out.push(text.slice(i));
+      break;
+    }
+    if (idx > i) out.push(text.slice(i, idx));
+    out.push(
+      <mark key={key++} className="bg-yellow-200 dark:bg-yellow-700/60 rounded px-0.5">
+        {text.slice(idx, idx + needle.length)}
+      </mark>,
+    );
+    i = idx + needle.length;
+  }
+  return out;
 }
 
 function renderBadges(item: UnifiedActivity) {
