@@ -31,7 +31,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **SOC 2 Type II Readiness**: Full policy library, runbooks, DPA template, security questionnaire, and controls matrix live in `docs/compliance/`.
 *   **Integration Gating**: Feature flags gate unconfigured third-party services.
 *   **Structured Error Logging**: Captures production errors with stack trace, user context, route, and request ID.
-*   **Consolidated Startup Migrations**: Idempotent schema migration checks with automatic schema drift detection.
+*   **Consolidated Startup Migrations**: Idempotent schema migration checks with automatic schema drift detection. Every SQL file under `migrations/` must have an entry in `server/utils/migrationStartupCoverage.ts` — either pointing at an `ensure*` helper that is **registered in the `migrations` array** of `runStartupMigrations.ts` (importing the helper is not enough — it must appear as `{ fn: ensureXxx }` so it actually runs on startup) or carrying an explicit `skip` reason. The companion test (`server/utils/__tests__/migrationStartupCoverage.test.ts`) fails CI if a new SQL file lands without coverage, catching the class of regression seen in #1062/#1066/#1076/#1089.
 *   **Integration Hub**: Provider-agnostic framework for centralized connection management.
 *   **Project Health Score**: Deterministic 0-100 score based on weighted project inputs.
 *   **Internal Domain Event Bus**: Typed, in-process EventBus for decoupling business actions.
