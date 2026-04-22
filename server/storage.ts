@@ -289,6 +289,104 @@ export async function getCrmTranscriptBackfillOperatorContact(
   return row || null;
 }
 
+// Task #1004 — given a set of backfill job ids, return the full retry lineage
+// each one belongs to (the root job + every descendant retry, in chronological
+// order). Implemented as a single recursive CTE so we can render the chain
+// inline on every history row without N+1 lookups against `parent_job_id`.
+//
+// Each lineage is keyed by the root job id; the caller maps every page row to
+// its root via the `jobToRoot` map so siblings/children sharing a root reuse
+// the same lineage array.
+export type BackfillLineageEntry = {
+  id: string;
+  status: string;
+  startedAt: Date;
+  completedAt: Date | null;
+  parentJobId: string | null;
+};
+
+export async function getCrmTranscriptBackfillLineages(
+  organizationId: string,
+  jobIds: string[],
+): Promise<{
+  jobToRoot: Map<string, string>;
+  lineagesByRoot: Map<string, BackfillLineageEntry[]>;
+}> {
+  const jobToRoot = new Map<string, string>();
+  const lineagesByRoot = new Map<string, BackfillLineageEntry[]>();
+  if (jobIds.length === 0) return { jobToRoot, lineagesByRoot };
+
+  // Recursive CTE: (1) climb from the page's job ids up to their roots, then
+  // (2) descend from those roots back down through every retry. The final
+  // SELECT joins back to the table for status/timestamps. Org id is enforced
+  // both on the seed rows and on the final select so a malicious id from
+  // another tenant cannot leak data through the climb.
+  const result = await db.execute(sql`
+    WITH RECURSIVE
+      climb AS (
+        SELECT id, parent_job_id
+        FROM crm_transcript_backfill_jobs
+        WHERE organization_id = ${organizationId}
+          AND id IN (${sql.join(jobIds.map((id) => sql`${id}`), sql`, `)})
+        UNION
+        SELECT j.id, j.parent_job_id
+        FROM crm_transcript_backfill_jobs j
+        JOIN climb c ON c.parent_job_id = j.id
+        WHERE j.organization_id = ${organizationId}
+      ),
+      roots AS (
+        SELECT DISTINCT id AS root_id
+        FROM climb
+        WHERE parent_job_id IS NULL
+      ),
+      descend AS (
+        SELECT root_id, root_id AS id
+        FROM roots
+        UNION
+        SELECT d.root_id, j.id
+        FROM crm_transcript_backfill_jobs j
+        JOIN descend d ON j.parent_job_id = d.id
+        WHERE j.organization_id = ${organizationId}
+      )
+    SELECT d.root_id, j.id, j.parent_job_id, j.status,
+           j.started_at, j.completed_at
+    FROM descend d
+    JOIN crm_transcript_backfill_jobs j ON j.id = d.id
+    WHERE j.organization_id = ${organizationId}
+    ORDER BY d.root_id, j.started_at ASC, j.id ASC
+  `);
+
+  const rows = ((result as any).rows ?? result) as Array<{
+    root_id: string;
+    id: string;
+    parent_job_id: string | null;
+    status: string;
+    started_at: Date | string;
+    completed_at: Date | string | null;
+  }>;
+
+  for (const r of rows) {
+    const rootId = r.root_id;
+    let lineage = lineagesByRoot.get(rootId);
+    if (!lineage) {
+      lineage = [];
+      lineagesByRoot.set(rootId, lineage);
+    }
+    lineage.push({
+      id: r.id,
+      status: r.status,
+      parentJobId: r.parent_job_id,
+      startedAt: r.started_at instanceof Date ? r.started_at : new Date(r.started_at),
+      completedAt: r.completed_at == null
+        ? null
+        : (r.completed_at instanceof Date ? r.completed_at : new Date(r.completed_at)),
+    });
+    jobToRoot.set(r.id, rootId);
+  }
+
+  return { jobToRoot, lineagesByRoot };
+}
+
 export async function getRunningCrmTranscriptBackfillJob(
   organizationId: string,
 ): Promise<CrmTranscriptBackfillJob | null> {

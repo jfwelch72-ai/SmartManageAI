@@ -36,6 +36,7 @@ import {
   Download,
   ListChecks,
   ExternalLink,
+  ArrowRight,
 } from "lucide-react";
 import { format, formatDistanceStrict } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
@@ -59,6 +60,15 @@ interface BackfillJob {
   maxRecords: number | null;
 }
 
+interface BackfillLineageNode {
+  id: string;
+  status: "RUNNING" | "COMPLETED" | "FAILED";
+  startedAt: string;
+  completedAt: string | null;
+  parentJobId: string | null;
+  attempt: number;
+}
+
 interface BackfillHistoryEntry extends BackfillJob {
   startedBy: {
     id: string;
@@ -71,6 +81,7 @@ interface BackfillHistoryEntry extends BackfillJob {
     name: string | null;
     slug: string | null;
   };
+  lineage: BackfillLineageNode[];
 }
 
 interface BackfillHistoryResponse {
@@ -280,6 +291,36 @@ export default function AdminTranscriptBackfillPage() {
   const operatorsQuery = useQuery<BackfillOperatorsResponse>({
     queryKey: ["/api/crm/calls/transcripts/backfill/operators"],
   });
+
+  // Set of job ids visible on the current history page. Used by the lineage
+  // chain so we can disable jump links pointing to jobs that aren't on this
+  // page (rather than silently no-op'ing).
+  const visibleHistoryIds = useMemo(
+    () => new Set((historyQuery.data?.jobs ?? []).map((j) => j.id)),
+    [historyQuery.data],
+  );
+
+  // Clicking a chip in the lineage chain expands that row and scrolls it into
+  // view. We rely on the `history-row-${id}` data-testid set on each <li>.
+  const handleJumpToHistoryRow = (jobId: string) => {
+    if (!visibleHistoryIds.has(jobId)) {
+      toast({
+        title: "Run not on this page",
+        description:
+          "That related run isn't visible with the current filters or page. Clear filters or page through the history to find it.",
+      });
+      return;
+    }
+    setExpandedHistoryId(jobId);
+    // Wait a tick so the row has finished re-rendering in its expanded state
+    // before scrolling, otherwise we land mid-collapse.
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-testid="history-row-${jobId}"]`);
+      if (el && "scrollIntoView" in el) {
+        (el as HTMLElement).scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+    });
+  };
 
   const retryMutation = useMutation({
     mutationFn: async (parentJobId: string) => {
@@ -900,11 +941,6 @@ export default function AdminTranscriptBackfillPage() {
                             ) : null}
                           </div>
                         )}
-                        {entry.parentJobId && (
-                          <div className="text-xs text-muted-foreground" data-testid={`text-history-parent-${entry.id}`}>
-                            Retry of <code className="text-[10px]">{entry.parentJobId}</code>
-                          </div>
-                        )}
                       </div>
                     </button>
                     {canRetry && (
@@ -925,6 +961,16 @@ export default function AdminTranscriptBackfillPage() {
                       </Button>
                     )}
                     </div>
+                    {entry.lineage.length > 1 && (
+                      <div className="px-3 pb-2 pl-10">
+                        <RetryLineageChain
+                          lineage={entry.lineage}
+                          currentId={entry.id}
+                          visibleIds={visibleHistoryIds}
+                          onJump={handleJumpToHistoryRow}
+                        />
+                      </div>
+                    )}
                     {isExpanded && (
                       <div className="px-3 pb-3 pl-10" data-testid={`history-details-${entry.id}`}>
                         {entry.completedAt && (
@@ -1294,6 +1340,70 @@ function Stat({
       <div className={`text-2xl font-semibold tabular-nums ${color}`} data-testid={testId}>
         {value.toLocaleString()}
       </div>
+    </div>
+  );
+}
+
+function RetryLineageChain({
+  lineage,
+  currentId,
+  visibleIds,
+  onJump,
+}: {
+  lineage: BackfillLineageNode[];
+  currentId: string;
+  visibleIds: Set<string>;
+  onJump: (id: string) => void;
+}) {
+  return (
+    <div
+      className="flex flex-wrap items-center gap-1 text-xs"
+      data-testid={`lineage-chain-${currentId}`}
+      aria-label="Retry lineage"
+    >
+      <span className="text-muted-foreground mr-1">Chain:</span>
+      {lineage.map((node, idx) => {
+        const isCurrent = node.id === currentId;
+        const onPage = visibleIds.has(node.id);
+        const label = node.attempt === 0 ? "original" : `retry ${node.attempt}`;
+        const statusTone =
+          node.status === "COMPLETED"
+            ? "border-green-500/40 text-green-700 dark:text-green-400"
+            : node.status === "FAILED"
+            ? "border-destructive/40 text-destructive"
+            : "border-muted-foreground/40 text-muted-foreground";
+        const currentTone = isCurrent ? "bg-muted font-medium" : "";
+        const interactive = !isCurrent && onPage;
+        return (
+          <span key={node.id} className="flex items-center gap-1">
+            {idx > 0 && (
+              <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" aria-hidden="true" />
+            )}
+            <button
+              type="button"
+              disabled={!interactive}
+              onClick={() => onJump(node.id)}
+              title={
+                isCurrent
+                  ? `${label} (this run) · ${node.status}`
+                  : onPage
+                  ? `Jump to ${label} · ${node.status}`
+                  : `${label} · ${node.status} · not on this page`
+              }
+              className={`inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 ${statusTone} ${currentTone} ${
+                interactive ? "hover-elevate active-elevate-2 cursor-pointer" : "cursor-default opacity-80"
+              }`}
+              data-testid={`lineage-chip-${currentId}-${node.id}`}
+              data-current={isCurrent ? "true" : "false"}
+            >
+              <span>{label}</span>
+              <code className="text-[10px] opacity-70">
+                {node.id.slice(0, 8)}
+              </code>
+            </button>
+          </span>
+        );
+      })}
     </div>
   );
 }

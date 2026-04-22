@@ -41,6 +41,7 @@ import {
   getRunningCrmTranscriptBackfillJob,
   listCrmTranscriptBackfillJobs,
   listCrmTranscriptBackfillOperators,
+  getCrmTranscriptBackfillLineages,
   listMostRecentRunningCrmTranscriptBackfillJobsPerOrg,
   updateCrmTranscriptBackfillJob,
 } from "./storage";
@@ -1987,28 +1988,57 @@ router.get(
         startedBefore,
       });
 
+      // Task #1004 — pull the full retry lineage for every job on this page in
+      // one round-trip (recursive CTE) so each row can render its parent →
+      // retry-N chain inline without N+1 lookups against `parent_job_id`.
+      const { jobToRoot, lineagesByRoot } = await getCrmTranscriptBackfillLineages(
+        orgId,
+        rows.map((r) => r.id),
+      );
+
       res.json({
         total,
         limit,
         offset,
         crossOrg: superAdmin && !scopedOrgId,
-        jobs: rows.map((row) => ({
-          ...rowToState(row),
-          heartbeatAt: row.heartbeatAt.toISOString(),
-          startedBy: row.startedById
-            ? {
-                id: row.startedById,
-                firstName: row.startedByFirstName,
-                lastName: row.startedByLastName,
-                email: row.startedByEmail,
-              }
-            : null,
-          organization: {
-            id: row.organizationId,
-            name: row.organizationName,
-            slug: row.organizationSlug,
-          },
-        })),
+        jobs: rows.map((row) => {
+          const rootId = jobToRoot.get(row.id) ?? row.id;
+          const lineage = lineagesByRoot.get(rootId) ?? [];
+          return {
+            ...rowToState(row),
+            heartbeatAt: row.heartbeatAt.toISOString(),
+            startedBy: row.startedById
+              ? {
+                  id: row.startedById,
+                  firstName: row.startedByFirstName,
+                  lastName: row.startedByLastName,
+                  email: row.startedByEmail,
+                }
+              : null,
+            organization: {
+              id: row.organizationId,
+              name: row.organizationName,
+              slug: row.organizationSlug,
+            },
+            // Inline retry chain: ordered by startedAt ASC, parent first. Only
+            // included when the lineage actually has more than one entry so
+            // standalone runs stay visually quiet.
+            lineage: lineage.length > 1
+              ? lineage.map((entry, idx) => ({
+                  id: entry.id,
+                  status: entry.status,
+                  startedAt: entry.startedAt.toISOString(),
+                  completedAt: entry.completedAt
+                    ? entry.completedAt.toISOString()
+                    : null,
+                  parentJobId: entry.parentJobId,
+                  // 0 = original run, 1+ = nth retry. Used by the UI to label
+                  // each chip ("parent", "retry 1", "retry 2", …).
+                  attempt: idx,
+                }))
+              : [],
+          };
+        }),
       });
     } catch (e) {
       next(e);
