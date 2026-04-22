@@ -126,6 +126,30 @@ export async function ensureStatusPageTables(): Promise<void> {
   `);
   await db.execute(sql`CREATE INDEX IF NOT EXISTS "status_subscriber_removals_removed_at_idx" ON "status_subscriber_removals" ("removed_at" DESC)`);
 
+  // Per-email bounce/complaint events from the email provider (Task #858).
+  // Stored separately from status_subscribers so we keep history even after
+  // an admin removes the subscriber, and so we can record events for
+  // addresses that aren't (or are no longer) in the subscribers table.
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS "status_subscriber_email_events" (
+      "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),
+      "email" text NOT NULL,
+      "event_type" text NOT NULL,
+      "provider" text,
+      "reason" text,
+      "raw_event" jsonb,
+      "received_at" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS "status_subscriber_email_events_email_idx"
+      ON "status_subscriber_email_events" (lower("email"), "received_at" DESC)
+  `);
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS "status_subscriber_email_events_type_idx"
+      ON "status_subscriber_email_events" ("event_type", "received_at" DESC)
+  `);
+
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS "status_incident_notifications" (
       "id" varchar PRIMARY KEY DEFAULT gen_random_uuid(),

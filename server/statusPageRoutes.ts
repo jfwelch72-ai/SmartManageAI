@@ -618,7 +618,33 @@ router.delete("/api/admin/status/incidents/:id", ...adminGuard, async (req, res,
 
 router.get("/api/admin/status/subscribers", ...adminGuard, async (_req, res, next) => {
   try {
-    const r = await db.execute(sql`SELECT id, email, confirmed, created_at, confirmed_at FROM "status_subscribers" ORDER BY created_at DESC`);
+    // Aggregate bounce/complaint events (Task #858) so admins can spot bad
+    // addresses directly in the Subscribers tab without leaving the app.
+    const r = await db.execute(sql`
+      SELECT
+        s.id,
+        s.email,
+        s.confirmed,
+        s.created_at,
+        s.confirmed_at,
+        COALESCE(ev.bounce_count, 0)::int AS bounce_count,
+        COALESCE(ev.complaint_count, 0)::int AS complaint_count,
+        ev.last_event_at,
+        ev.last_event_type
+      FROM "status_subscribers" s
+      LEFT JOIN LATERAL (
+        SELECT
+          SUM(CASE WHEN event_type = 'bounce' THEN 1 ELSE 0 END) AS bounce_count,
+          SUM(CASE WHEN event_type = 'complaint' THEN 1 ELSE 0 END) AS complaint_count,
+          MAX(received_at) AS last_event_at,
+          (SELECT event_type FROM "status_subscriber_email_events" e2
+             WHERE lower(e2.email) = lower(s.email)
+             ORDER BY e2.received_at DESC LIMIT 1) AS last_event_type
+        FROM "status_subscriber_email_events" e
+        WHERE lower(e.email) = lower(s.email)
+      ) ev ON TRUE
+      ORDER BY s.created_at DESC
+    `);
     res.json(r.rows);
   } catch (err) {
     next(err);

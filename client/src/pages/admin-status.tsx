@@ -88,6 +88,10 @@ type Subscriber = {
   confirmed: boolean;
   created_at: string;
   confirmed_at: string | null;
+  bounce_count?: number | null;
+  complaint_count?: number | null;
+  last_event_at?: string | null;
+  last_event_type?: "bounce" | "complaint" | null;
 };
 
 type SubscriberRemoval = {
@@ -1361,8 +1365,30 @@ function SubscribersSection({
   const [pasteValue, setPasteValue] = useState("");
   const [bulkReason, setBulkReason] = useState("Bounced email");
   const [pasteReason, setPasteReason] = useState("Bounced email");
+  const [onlyBouncing, setOnlyBouncing] = useState(false);
 
-  const subscriberIds = useMemo(() => subscribers.map((s) => s.id), [subscribers]);
+  const bouncingTotal = useMemo(
+    () =>
+      subscribers.filter(
+        (s) => (s.bounce_count ?? 0) > 0 || (s.complaint_count ?? 0) > 0,
+      ).length,
+    [subscribers],
+  );
+
+  const visibleSubscribers = useMemo(
+    () =>
+      onlyBouncing
+        ? subscribers.filter(
+            (s) => (s.bounce_count ?? 0) > 0 || (s.complaint_count ?? 0) > 0,
+          )
+        : subscribers,
+    [subscribers, onlyBouncing],
+  );
+
+  const subscriberIds = useMemo(
+    () => visibleSubscribers.map((s) => s.id),
+    [visibleSubscribers],
+  );
 
   useEffect(() => {
     setSelectedIds((prev) => {
@@ -1403,7 +1429,8 @@ function SubscribersSection({
     },
   });
 
-  const allSelected = subscribers.length > 0 && selectedIds.size === subscribers.length;
+  const allSelected =
+    visibleSubscribers.length > 0 && selectedIds.size === visibleSubscribers.length;
   const someSelected = selectedIds.size > 0 && !allSelected;
 
   const toggleAll = () => {
@@ -1455,6 +1482,11 @@ function SubscribersSection({
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="text-sm text-muted-foreground" data-testid="text-subscriber-count">
           {confirmed} confirmed of {subscribers.length} total
+          {bouncingTotal > 0 && (
+            <span className="ml-2 text-amber-700 dark:text-amber-400" data-testid="text-bouncing-count">
+              · {bouncingTotal} bouncing
+            </span>
+          )}
           {selectedIds.size > 0 && (
             <span className="ml-2" data-testid="text-subscribers-selected">
               · {selectedIds.size} selected
@@ -1462,6 +1494,18 @@ function SubscribersSection({
           )}
         </div>
         <div className="flex items-center gap-2 flex-wrap">
+          <label
+            className="flex items-center gap-2 text-sm"
+            data-testid="label-only-bouncing"
+          >
+            <Switch
+              checked={onlyBouncing}
+              onCheckedChange={(v) => setOnlyBouncing(Boolean(v))}
+              disabled={bouncingTotal === 0 && !onlyBouncing}
+              data-testid="switch-only-bouncing"
+            />
+            <span>Only show bouncing</span>
+          </label>
           <Button
             variant="outline"
             size="sm"
@@ -1502,16 +1546,25 @@ function SubscribersSection({
             />
             <span>Select all on this page</span>
           </div>
-          <div className="divide-y divide-border">
-            {subscribers.map((s) => (
-              <SubscriberRow
-                key={s.id}
-                subscriber={s}
-                selected={selectedIds.has(s.id)}
-                onToggle={() => toggleOne(s.id)}
-              />
-            ))}
-          </div>
+          {visibleSubscribers.length === 0 ? (
+            <div
+              className="px-4 py-8 text-sm text-muted-foreground text-center"
+              data-testid="text-no-bouncing-subscribers"
+            >
+              No subscribers match the current filter.
+            </div>
+          ) : (
+            <div className="divide-y divide-border">
+              {visibleSubscribers.map((s) => (
+                <SubscriberRow
+                  key={s.id}
+                  subscriber={s}
+                  selected={selectedIds.has(s.id)}
+                  onToggle={() => toggleOne(s.id)}
+                />
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -1686,6 +1739,42 @@ function SubscriberRow({
         </div>
       </div>
       <div className="flex items-center gap-3">
+        {(subscriber.bounce_count ?? 0) > 0 && (
+          <Badge
+            variant="outline"
+            className="bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30"
+            title={
+              subscriber.last_event_at
+                ? `Last bounce ${fmt(subscriber.last_event_at)}`
+                : undefined
+            }
+            data-testid={`badge-bounce-${subscriber.id}`}
+          >
+            {subscriber.bounce_count} bounce
+            {subscriber.bounce_count === 1 ? "" : "s"}
+            {subscriber.last_event_at && subscriber.last_event_type === "bounce"
+              ? ` · ${fmt(subscriber.last_event_at)}`
+              : ""}
+          </Badge>
+        )}
+        {(subscriber.complaint_count ?? 0) > 0 && (
+          <Badge
+            variant="outline"
+            className="bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30"
+            title={
+              subscriber.last_event_at
+                ? `Last complaint ${fmt(subscriber.last_event_at)}`
+                : undefined
+            }
+            data-testid={`badge-complaint-${subscriber.id}`}
+          >
+            {subscriber.complaint_count} complaint
+            {subscriber.complaint_count === 1 ? "" : "s"}
+            {subscriber.last_event_at && subscriber.last_event_type === "complaint"
+              ? ` · ${fmt(subscriber.last_event_at)}`
+              : ""}
+          </Badge>
+        )}
         <Badge variant={subscriber.confirmed ? "secondary" : "outline"}>
           {subscriber.confirmed ? "confirmed" : "pending"}
         </Badge>

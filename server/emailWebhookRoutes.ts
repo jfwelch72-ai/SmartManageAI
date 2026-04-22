@@ -19,7 +19,7 @@ import { Router, type Request, type Response } from "express";
 import crypto from "crypto";
 import { db } from "./db";
 import { emailAccounts } from "@shared/schema";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { syncGmailAccount, syncOutlookAccount } from "./emailRoutes";
 import { getEmailWebhookSecret } from "./emailPushNotifications";
 import {
@@ -328,6 +328,212 @@ router.post("/outlook", async (req: Request, res: Response) => {
       {},
       err instanceof Error ? err : new Error(String(err)),
     );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Resend bounce/complaint webhook (Task #858)
+// ---------------------------------------------------------------------------
+//
+// Resend POSTs events shaped like:
+//   { type: "email.bounced" | "email.complained" | ..., created_at, data: {
+//     email_id, to: ["user@example.com"], from, subject, bounce?, ... } }
+//
+// Authentication: either a shared secret in `?token=` (matching
+// RESEND_WEBHOOK_SECRET, falling back to the legacy EMAIL_WEBHOOK_SECRET) or
+// Svix-style signed headers (`svix-id`, `svix-timestamp`, `svix-signature`)
+// when RESEND_WEBHOOK_SIGNING_SECRET is configured. Bounces/complaints are
+// recorded per-email in `status_subscriber_email_events` so admins can spot
+// bad addresses directly in the Subscribers tab.
+
+const RESEND_BOUNCE_TYPES = new Set([
+  "email.bounced",
+  "email.bounce",
+  "email.failed",
+  "email.delivery_delayed",
+]);
+const RESEND_COMPLAINT_TYPES = new Set([
+  "email.complained",
+  "email.complaint",
+  "email.spam_reported",
+]);
+
+function getResendSharedSecret(): string {
+  return (process.env.RESEND_WEBHOOK_SECRET || getEmailWebhookSecret() || "").trim();
+}
+
+function hasValidResendSharedSecret(req: Request): boolean {
+  const expected = getResendSharedSecret();
+  if (!expected) return false;
+  const provided = getProvidedToken(req);
+  if (!provided) return false;
+  return timingSafeEquals(provided, expected);
+}
+
+function verifyResendSvixSignature(req: Request): boolean {
+  const signingSecret = (process.env.RESEND_WEBHOOK_SIGNING_SECRET || "").trim();
+  if (!signingSecret) return false;
+  const svixId = req.header("svix-id");
+  const svixTimestamp = req.header("svix-timestamp");
+  const svixSignature = req.header("svix-signature");
+  if (!svixId || !svixTimestamp || !svixSignature) return false;
+
+  // Reject deliveries with skewed timestamps (5 minute window) to mitigate replay.
+  const ts = Number(svixTimestamp);
+  if (!Number.isFinite(ts)) return false;
+  const ageSec = Math.abs(Date.now() / 1000 - ts);
+  if (ageSec > 5 * 60) return false;
+
+  // Svix secrets are typically prefixed with `whsec_`; strip and base64-decode.
+  const rawSecret = signingSecret.startsWith("whsec_")
+    ? signingSecret.slice("whsec_".length)
+    : signingSecret;
+  let keyBuffer: Buffer;
+  try {
+    keyBuffer = Buffer.from(rawSecret, "base64");
+  } catch {
+    return false;
+  }
+  // express.json() in server/index.ts captures req.rawBody as a Buffer; use the
+  // exact bytes for HMAC instead of re-serialising req.body (which would lose
+  // whitespace/key-order from the original payload and break the signature).
+  const raw = (req as Request & { rawBody?: unknown }).rawBody;
+  let rawBody: string;
+  if (Buffer.isBuffer(raw)) rawBody = raw.toString("utf8");
+  else if (typeof raw === "string") rawBody = raw;
+  else return false; // refuse to verify against a re-serialised body
+  const signedPayload = `${svixId}.${svixTimestamp}.${rawBody}`;
+  const expectedSig = crypto
+    .createHmac("sha256", keyBuffer)
+    .update(signedPayload)
+    .digest("base64");
+
+  // Header looks like "v1,base64sig v1,base64sig2" — accept any match.
+  for (const part of svixSignature.split(/\s+/)) {
+    const [, sig] = part.split(",", 2);
+    if (sig && timingSafeEquals(sig, expectedSig)) return true;
+  }
+  return false;
+}
+
+function isResendAuthorized(req: Request): boolean {
+  if (verifyResendSvixSignature(req)) return true;
+  if (hasValidResendSharedSecret(req)) return true;
+  return false;
+}
+
+function classifyResendEventType(rawType: unknown): "bounce" | "complaint" | null {
+  if (typeof rawType !== "string") return null;
+  const t = rawType.toLowerCase();
+  if (RESEND_BOUNCE_TYPES.has(t)) return "bounce";
+  if (RESEND_COMPLAINT_TYPES.has(t)) return "complaint";
+  return null;
+}
+
+function extractRecipients(data: any): string[] {
+  if (!data) return [];
+  const out: string[] = [];
+  const push = (v: unknown) => {
+    if (typeof v === "string" && v.includes("@")) out.push(v.toLowerCase().trim());
+  };
+  if (Array.isArray(data.to)) data.to.forEach(push);
+  else push(data.to);
+  if (Array.isArray(data.cc)) data.cc.forEach(push);
+  if (Array.isArray(data.bcc)) data.bcc.forEach(push);
+  push(data.email);
+  return Array.from(new Set(out.filter(Boolean)));
+}
+
+function extractReason(eventType: string, data: any): string | null {
+  if (!data || typeof data !== "object") return null;
+  if (eventType === "bounce") {
+    const b = data.bounce;
+    if (b && typeof b === "object") {
+      const parts = [b.type, b.subType, b.subtype, b.message, b.diagnosticCode]
+        .filter((s) => typeof s === "string" && s.length > 0);
+      if (parts.length > 0) return parts.join(" — ").slice(0, 500);
+    }
+    if (typeof data.reason === "string") return data.reason.slice(0, 500);
+  }
+  if (eventType === "complaint") {
+    const c = data.complaint;
+    if (c && typeof c === "object" && typeof c.feedbackType === "string") {
+      return String(c.feedbackType).slice(0, 500);
+    }
+    if (typeof data.feedback_type === "string") return data.feedback_type.slice(0, 500);
+  }
+  return null;
+}
+
+router.post("/resend", async (req: Request, res: Response) => {
+  if (!isResendAuthorized(req)) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+
+  // Resend can deliver a single event or an array of events.
+  const body = req.body;
+  const events: any[] = Array.isArray(body)
+    ? body
+    : Array.isArray(body?.events)
+      ? body.events
+      : body
+        ? [body]
+        : [];
+
+  // Acknowledge promptly; Resend retries on slow/failed responses.
+  res.status(202).json({ ok: true, accepted: events.length });
+
+  for (const evt of events) {
+    try {
+      const eventType = classifyResendEventType(evt?.type);
+      if (!eventType) continue;
+      const data = evt?.data ?? evt;
+      const recipients = extractRecipients(data);
+      if (recipients.length === 0) continue;
+      const reason = extractReason(eventType, data);
+      const receivedAt = (() => {
+        const raw = evt?.created_at || data?.created_at;
+        if (typeof raw === "string") {
+          const d = new Date(raw);
+          if (!Number.isNaN(d.getTime())) return d;
+        }
+        return new Date();
+      })();
+
+      for (const email of recipients) {
+        try {
+          await db.execute(sql`
+            INSERT INTO "status_subscriber_email_events"
+              ("email", "event_type", "provider", "reason", "raw_event", "received_at")
+            VALUES (
+              ${email},
+              ${eventType},
+              ${"resend"},
+              ${reason},
+              ${sql`${JSON.stringify(evt)}::jsonb`},
+              ${receivedAt}
+            )
+          `);
+          logInfo("Recorded email provider bounce/complaint event", {
+            email,
+            eventType,
+            provider: "resend",
+          });
+        } catch (err) {
+          logError(
+            "Failed to insert email provider event",
+            { email, eventType },
+            err instanceof Error ? err : new Error(String(err)),
+          );
+        }
+      }
+    } catch (err) {
+      logError(
+        "Resend webhook event processing failed",
+        {},
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    }
   }
 });
 
