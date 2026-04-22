@@ -73,6 +73,62 @@ router.get("/api/project-templates/:id", requireAuth, async (req: AuthRequest, r
   }
 });
 
+router.get(
+  "/api/project-templates/:id/snapshot",
+  requireAuth,
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = req.user?.organizationId;
+      if (!orgId) return res.status(403).json({ error: "Organization required" });
+
+      const [tpl] = await db
+        .select()
+        .from(projectTemplates)
+        .where(eq(projectTemplates.id, req.params.id))
+        .limit(1);
+      if (!tpl) return res.status(404).json({ error: "Template not found" });
+      if (!tpl.isSystemSeed && tpl.organizationId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const versionId = typeof req.query.versionId === "string" ? req.query.versionId : null;
+      const versionRow = versionId
+        ? (
+            await db
+              .select()
+              .from(projectTemplateVersions)
+              .where(
+                and(
+                  eq(projectTemplateVersions.templateId, tpl.id),
+                  eq(projectTemplateVersions.id, versionId),
+                ),
+              )
+              .limit(1)
+          )[0]
+        : (
+            await db
+              .select()
+              .from(projectTemplateVersions)
+              .where(eq(projectTemplateVersions.templateId, tpl.id))
+              .orderBy(desc(projectTemplateVersions.version))
+              .limit(1)
+          )[0];
+
+      if (!versionRow) return res.status(404).json({ error: "Template version not found" });
+
+      const snapshot = versionRow.snapshot as ProjectTemplateSnapshot;
+      res.json({
+        versionId: versionRow.id,
+        version: versionRow.version,
+        tasks: snapshot.tasks ?? [],
+        dependencies: snapshot.dependencies ?? [],
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 const captureSchema = z.object({
   projectCode: z.string().min(1),
   name: z.string().min(1).max(200),
@@ -289,6 +345,7 @@ const instantiateSchema = z.object({
       safetyOfficerId: z.string().optional().nullable(),
     })
     .optional(),
+  excludedRefIds: z.array(z.string().min(1)).max(5000).optional(),
 });
 
 router.post(
@@ -352,6 +409,7 @@ router.post(
         projectStartDate: startDate,
         projectInput,
         roleAssignments: parsed.data.roleAssignments,
+        excludedRefIds: parsed.data.excludedRefIds,
       });
 
       await db

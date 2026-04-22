@@ -49,6 +49,9 @@ export interface InstantiateOptions {
     estimatorId?: string | null;
     safetyOfficerId?: string | null;
   };
+  /** Snapshot task refIds the user opted out of in the preview. The seeded
+   * project will skip these tasks AND any dependency that touches them. */
+  excludedRefIds?: string[];
 }
 
 const PROJECT_CODE_START = 1000;
@@ -113,10 +116,37 @@ export async function instantiateProjectFromTemplate(opts: InstantiateOptions): 
 
   const [newProject] = await db.insert(projects).values(projectInsert).returning();
 
+  // Resolve the excluded set: seed it with the caller-provided refIds and
+  // then cascade so any descendant of an excluded parent is also excluded
+  // (otherwise the child becomes an orphan in the seeded WBS).
+  const excludedRefIds = new Set<string>(opts.excludedRefIds ?? []);
+  if (excludedRefIds.size > 0) {
+    const childrenByParent = new Map<string, string[]>();
+    for (const t of opts.snapshot.tasks) {
+      if (!t.parentRefId) continue;
+      const arr = childrenByParent.get(t.parentRefId) ?? [];
+      arr.push(t.refId);
+      childrenByParent.set(t.parentRefId, arr);
+    }
+    const stack = Array.from(excludedRefIds);
+    while (stack.length > 0) {
+      const cur = stack.pop()!;
+      const kids = childrenByParent.get(cur);
+      if (!kids) continue;
+      for (const k of kids) {
+        if (!excludedRefIds.has(k)) {
+          excludedRefIds.add(k);
+          stack.push(k);
+        }
+      }
+    }
+  }
+
   // Create the project schedule and seed the WBS task tree.
   let taskCount = 0;
   let dependencyCount = 0;
-  if (opts.snapshot.tasks.length > 0) {
+  const remainingTasks = opts.snapshot.tasks.filter((t) => !excludedRefIds.has(t.refId));
+  if (remainingTasks.length > 0) {
     const [schedule] = await db
       .insert(projectSchedules)
       .values({
@@ -132,7 +162,7 @@ export async function instantiateProjectFromTemplate(opts: InstantiateOptions): 
     // First insert tasks without parent links so we can map refIds → ids,
     // then a second pass updates parentTaskId.
     const refIdToTaskId = new Map<string, string>();
-    for (const t of opts.snapshot.tasks) {
+    for (const t of remainingTasks) {
       const [row] = await db
         .insert(projectScheduleTasks)
         .values({
@@ -153,7 +183,7 @@ export async function instantiateProjectFromTemplate(opts: InstantiateOptions): 
       taskCount++;
     }
 
-    for (const t of opts.snapshot.tasks) {
+    for (const t of remainingTasks) {
       if (!t.parentRefId) continue;
       const childId = refIdToTaskId.get(t.refId);
       const parentId = refIdToTaskId.get(t.parentRefId);
@@ -165,6 +195,7 @@ export async function instantiateProjectFromTemplate(opts: InstantiateOptions): 
     }
 
     for (const d of opts.snapshot.dependencies) {
+      if (excludedRefIds.has(d.predecessorRefId) || excludedRefIds.has(d.successorRefId)) continue;
       const pred = refIdToTaskId.get(d.predecessorRefId);
       const succ = refIdToTaskId.get(d.successorRefId);
       if (!pred || !succ) continue;

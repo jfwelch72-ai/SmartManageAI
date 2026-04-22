@@ -46,8 +46,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Layers, Sparkles, Trash2, Search, FileText, Calendar, Pencil, History } from "lucide-react";
+import { Layers, Sparkles, Trash2, Search, FileText, Calendar, Pencil, History, ChevronRight, ChevronDown, Flag, ArrowRight } from "lucide-react";
 import type { ProjectTemplate } from "@shared/schema";
+
+interface SnapshotTask {
+  refId: string;
+  parentRefId: string | null;
+  name: string;
+  durationDays: number | null;
+  isMilestone: boolean;
+  sortOrder: number;
+  outlineLevel: number;
+  wbsCode: string | null;
+}
+interface SnapshotDependency {
+  predecessorRefId: string;
+  successorRefId: string;
+  dependencyType: string;
+  lagDays: number;
+}
+interface SnapshotResponse {
+  versionId: string;
+  version: number;
+  tasks: SnapshotTask[];
+  dependencies: SnapshotDependency[];
+}
 
 interface TemplatesResponse {
   templates: ProjectTemplate[];
@@ -96,11 +119,100 @@ export default function ProjectTemplatesPage() {
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
   const [editCategory, setEditCategory] = useState("");
+  const [excludedRefIds, setExcludedRefIds] = useState<Set<string>>(new Set());
+  const [collapsedRefIds, setCollapsedRefIds] = useState<Set<string>>(new Set());
 
   const detailQuery = useQuery<TemplateDetailResponse>({
     queryKey: ["/api/project-templates", activeTemplate?.id],
     enabled: !!activeTemplate,
   });
+
+  const snapshotVersionParam = selectedVersionId === "latest" ? undefined : selectedVersionId;
+  const snapshotQuery = useQuery<SnapshotResponse>({
+    queryKey: [
+      "/api/project-templates",
+      activeTemplate?.id,
+      "snapshot",
+      snapshotVersionParam ?? "latest",
+    ],
+    queryFn: async () => {
+      const url = snapshotVersionParam
+        ? `/api/project-templates/${activeTemplate!.id}/snapshot?versionId=${snapshotVersionParam}`
+        : `/api/project-templates/${activeTemplate!.id}/snapshot`;
+      const res = await apiRequest("GET", url);
+      return res.json();
+    },
+    enabled: !!activeTemplate && useDialogOpen,
+  });
+
+  const childrenByParent = useMemo(() => {
+    const map = new Map<string | null, SnapshotTask[]>();
+    const tasks = snapshotQuery.data?.tasks ?? [];
+    for (const t of tasks) {
+      const key = t.parentRefId ?? null;
+      const arr = map.get(key) ?? [];
+      arr.push(t);
+      map.set(key, arr);
+    }
+    for (const arr of map.values()) {
+      arr.sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    }
+    return map;
+  }, [snapshotQuery.data?.tasks]);
+
+  const taskByRefId = useMemo(() => {
+    const map = new Map<string, SnapshotTask>();
+    for (const t of snapshotQuery.data?.tasks ?? []) map.set(t.refId, t);
+    return map;
+  }, [snapshotQuery.data?.tasks]);
+
+  function descendantsOf(refId: string): string[] {
+    const out: string[] = [];
+    const stack: string[] = [refId];
+    while (stack.length) {
+      const cur = stack.pop()!;
+      const kids = childrenByParent.get(cur) ?? [];
+      for (const k of kids) {
+        out.push(k.refId);
+        stack.push(k.refId);
+      }
+    }
+    return out;
+  }
+
+  function toggleExcluded(refId: string) {
+    setExcludedRefIds((prev) => {
+      const next = new Set(prev);
+      const affected = [refId, ...descendantsOf(refId)];
+      const isExcluding = !next.has(refId);
+      for (const id of affected) {
+        if (isExcluding) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }
+
+  function toggleCollapsed(refId: string) {
+    setCollapsedRefIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(refId)) next.delete(refId);
+      else next.add(refId);
+      return next;
+    });
+  }
+
+  const includedCount = useMemo(() => {
+    const tasks = snapshotQuery.data?.tasks ?? [];
+    return tasks.filter((t) => !excludedRefIds.has(t.refId)).length;
+  }, [snapshotQuery.data?.tasks, excludedRefIds]);
+
+  const includedDependencies = useMemo(() => {
+    const deps = snapshotQuery.data?.dependencies ?? [];
+    return deps.filter(
+      (d) => !excludedRefIds.has(d.predecessorRefId) && !excludedRefIds.has(d.successorRefId),
+    );
+  }, [snapshotQuery.data?.dependencies, excludedRefIds]);
 
   const { data, isLoading } = useQuery<TemplatesResponse>({
     queryKey: ["/api/project-templates"],
@@ -134,11 +246,17 @@ export default function ProjectTemplatesPage() {
   });
 
   const instantiateMutation = useMutation({
-    mutationFn: async (vars: { templateId: string; versionId?: string; input: InstantiateInput }) => {
+    mutationFn: async (vars: {
+      templateId: string;
+      versionId?: string;
+      input: InstantiateInput;
+      excludedRefIds?: string[];
+    }) => {
       const res = await apiRequest("POST", "/api/project-templates/instantiate", {
         templateId: vars.templateId,
         versionId: vars.versionId,
         projectStartDate: vars.input.projectStartDate,
+        excludedRefIds: vars.excludedRefIds,
         project: {
           name: vars.input.name,
           clientName: vars.input.clientName,
@@ -161,6 +279,8 @@ export default function ProjectTemplatesPage() {
       queryClient.invalidateQueries({ queryKey: ["/api/project-templates"] });
       setUseDialogOpen(false);
       setActiveTemplate(null);
+      setExcludedRefIds(new Set());
+      setCollapsedRefIds(new Set());
       form.reset();
       setLocation(`/projects/${result.projectCode}`);
     },
@@ -186,6 +306,8 @@ export default function ProjectTemplatesPage() {
   function openUseDialog(tpl: ProjectTemplate) {
     setActiveTemplate(tpl);
     setSelectedVersionId("latest");
+    setExcludedRefIds(new Set());
+    setCollapsedRefIds(new Set());
     form.reset({
       name: "",
       clientName: "",
@@ -206,7 +328,57 @@ export default function ProjectTemplatesPage() {
       templateId: activeTemplate.id,
       versionId: selectedVersionId === "latest" ? undefined : selectedVersionId,
       input: values,
+      excludedRefIds: excludedRefIds.size > 0 ? Array.from(excludedRefIds) : undefined,
     });
+  }
+
+  function renderTaskNode(task: SnapshotTask, depth: number): JSX.Element {
+    const kids = childrenByParent.get(task.refId) ?? [];
+    const hasKids = kids.length > 0;
+    const collapsed = collapsedRefIds.has(task.refId);
+    const excluded = excludedRefIds.has(task.refId);
+    return (
+      <div key={task.refId}>
+        <div
+          className={`flex items-center gap-2 py-1 px-1 rounded hover-elevate text-sm ${
+            excluded ? "opacity-50 line-through" : ""
+          }`}
+          style={{ paddingLeft: depth * 14 + 4 }}
+          data-testid={`row-snapshot-task-${task.refId}`}
+        >
+          {hasKids ? (
+            <button
+              type="button"
+              onClick={() => toggleCollapsed(task.refId)}
+              className="shrink-0 text-muted-foreground"
+              data-testid={`button-toggle-${task.refId}`}
+            >
+              {collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+            </button>
+          ) : (
+            <span className="w-3 h-3 shrink-0" />
+          )}
+          <input
+            type="checkbox"
+            checked={!excluded}
+            onChange={() => toggleExcluded(task.refId)}
+            className="shrink-0"
+            data-testid={`checkbox-snapshot-task-${task.refId}`}
+          />
+          {task.isMilestone && <Flag className="w-3 h-3 text-amber-600 shrink-0" />}
+          <span className="truncate flex-1" title={task.name}>
+            {task.wbsCode ? <span className="text-muted-foreground mr-1">{task.wbsCode}</span> : null}
+            {task.name}
+          </span>
+          {task.durationDays !== null && (
+            <span className="text-xs text-muted-foreground shrink-0">{task.durationDays}d</span>
+          )}
+        </div>
+        {hasKids && !collapsed && (
+          <div>{kids.map((k) => renderTaskNode(k, depth + 1))}</div>
+        )}
+      </div>
+    );
   }
 
   const editMutation = useMutation({
@@ -390,7 +562,7 @@ export default function ProjectTemplatesPage() {
       )}
 
       <Dialog open={useDialogOpen} onOpenChange={setUseDialogOpen}>
-        <DialogContent className="sm:max-w-2xl" data-testid="dialog-use-template">
+        <DialogContent className="sm:max-w-5xl max-h-[90vh] overflow-y-auto" data-testid="dialog-use-template">
           <DialogHeader>
             <DialogTitle>Start from template: {activeTemplate?.name}</DialogTitle>
             <DialogDescription>
@@ -399,12 +571,18 @@ export default function ProjectTemplatesPage() {
               adjust any of it after the project is created.
             </DialogDescription>
           </DialogHeader>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-4">
           {detailQuery.data && detailQuery.data.versions.length > 0 && (
             <div className="space-y-1" data-testid="version-selector">
               <label className="text-sm font-medium">Template version</label>
               <Select
                 value={selectedVersionId}
-                onValueChange={(v) => setSelectedVersionId(v)}
+                onValueChange={(v) => {
+                  setSelectedVersionId(v);
+                  setExcludedRefIds(new Set());
+                  setCollapsedRefIds(new Set());
+                }}
               >
                 <SelectTrigger data-testid="select-template-version">
                   <SelectValue />
@@ -600,6 +778,107 @@ export default function ProjectTemplatesPage() {
               </DialogFooter>
             </form>
           </Form>
+          </div>
+
+          <div className="space-y-4 lg:border-l lg:pl-6" data-testid="panel-template-preview">
+            <div>
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <Layers className="w-4 h-4" /> WBS preview
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                Uncheck any task you don't want seeded into the new project.
+                Toggling a parent off cascades to its children and removes
+                dependencies that touch excluded tasks.
+              </p>
+            </div>
+
+            {snapshotQuery.isLoading ? (
+              <p className="text-sm text-muted-foreground" data-testid="text-snapshot-loading">
+                Loading snapshot...
+              </p>
+            ) : snapshotQuery.isError ? (
+              <p className="text-sm text-destructive" data-testid="text-snapshot-error">
+                Could not load template snapshot.
+              </p>
+            ) : (snapshotQuery.data?.tasks ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground" data-testid="text-snapshot-empty">
+                This template has no schedule tasks captured.
+              </p>
+            ) : (
+              <>
+                <div
+                  className="text-xs text-muted-foreground flex items-center justify-between"
+                  data-testid="text-snapshot-counts"
+                >
+                  <span>
+                    {includedCount} of {snapshotQuery.data!.tasks.length} task(s) selected
+                  </span>
+                  {excludedRefIds.size > 0 && (
+                    <button
+                      type="button"
+                      className="underline"
+                      onClick={() => setExcludedRefIds(new Set())}
+                      data-testid="button-include-all"
+                    >
+                      Include all
+                    </button>
+                  )}
+                </div>
+                <div
+                  className="border rounded-md p-2 max-h-64 overflow-y-auto bg-muted/20"
+                  data-testid="tree-snapshot-tasks"
+                >
+                  {(childrenByParent.get(null) ?? []).map((t) => renderTaskNode(t, 0))}
+                </div>
+
+                <div>
+                  <h4 className="text-sm font-semibold flex items-center gap-2">
+                    <ArrowRight className="w-4 h-4" /> Dependencies
+                  </h4>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {includedDependencies.length} of{" "}
+                    {snapshotQuery.data!.dependencies.length} link(s) will be created.
+                  </p>
+                  <div
+                    className="border rounded-md p-2 max-h-40 overflow-y-auto mt-2 space-y-1 bg-muted/20"
+                    data-testid="list-snapshot-dependencies"
+                  >
+                    {(snapshotQuery.data?.dependencies ?? []).length === 0 ? (
+                      <p className="text-xs text-muted-foreground">
+                        No dependencies captured.
+                      </p>
+                    ) : (
+                      (snapshotQuery.data?.dependencies ?? []).map((d, i) => {
+                        const pred = taskByRefId.get(d.predecessorRefId);
+                        const succ = taskByRefId.get(d.successorRefId);
+                        const skipped =
+                          excludedRefIds.has(d.predecessorRefId) ||
+                          excludedRefIds.has(d.successorRefId);
+                        return (
+                          <div
+                            key={`${d.predecessorRefId}-${d.successorRefId}-${i}`}
+                            className={`text-xs flex items-center gap-1 ${
+                              skipped ? "opacity-40 line-through" : ""
+                            }`}
+                            data-testid={`row-dependency-${i}`}
+                          >
+                            <span className="truncate">{pred?.name ?? d.predecessorRefId}</span>
+                            <ArrowRight className="w-3 h-3 shrink-0 text-muted-foreground" />
+                            <span className="truncate">{succ?.name ?? d.successorRefId}</span>
+                            <Badge variant="outline" className="ml-auto shrink-0 text-[10px] py-0 px-1">
+                              {d.dependencyType}
+                              {d.lagDays ? ` ${d.lagDays > 0 ? "+" : ""}${d.lagDays}d` : ""}
+                            </Badge>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+          </div>
         </DialogContent>
       </Dialog>
 
