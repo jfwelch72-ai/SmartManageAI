@@ -2131,11 +2131,18 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       await objectFile.save(file.buffer, { contentType: file.mimetype, metadata: { contentType: file.mimetype } });
 
       const photoUrl = `/api/estimates/line-item-photos/${orgId}/${lineItemId}/${fileName}`;
+
+      const existingUrls = Array.isArray(lineItem.photoUrls) ? lineItem.photoUrls : [];
+      const legacyUrl = lineItem.photoUrl;
+      const merged = [...existingUrls];
+      if (legacyUrl && !merged.includes(legacyUrl)) merged.unshift(legacyUrl);
+      const nextUrls = [...merged, photoUrl];
+
       await db.update(estimateLineItems)
-        .set({ photoUrl, updatedAt: new Date() })
+        .set({ photoUrls: nextUrls, photoUrl, updatedAt: new Date() })
         .where(and(eq(estimateLineItems.id, lineItemId), eq(estimateLineItems.estimateId, estimateId)));
 
-      res.json({ photoUrl });
+      res.json({ photoUrl, photoUrls: nextUrls });
     } catch (error) {
       next(error);
     }
@@ -2147,10 +2154,35 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       const estimate = await verifyEstimateOrgAccess(estimateId, req.user);
       if (!estimate) return res.status(404).json({ error: "Estimate not found" });
 
+      const targetUrl = typeof req.query.url === "string" ? req.query.url : null;
+
+      const lineItem = await db.query.estimateLineItems.findFirst({
+        where: and(eq(estimateLineItems.id, lineItemId), eq(estimateLineItems.estimateId, estimateId)),
+      });
+      if (!lineItem) return res.status(404).json({ error: "Line item not found" });
+
+      const currentUrls = Array.isArray(lineItem.photoUrls) ? lineItem.photoUrls : [];
+      const legacyUrl = lineItem.photoUrl;
+
+      let nextUrls: string[];
+      let nextLegacy: string | null;
+
+      if (targetUrl) {
+        nextUrls = currentUrls.filter((u) => u !== targetUrl);
+        if (legacyUrl === targetUrl) {
+          nextLegacy = nextUrls.length > 0 ? nextUrls[0] : null;
+        } else {
+          nextLegacy = legacyUrl;
+        }
+      } else {
+        nextUrls = [];
+        nextLegacy = null;
+      }
+
       await db.update(estimateLineItems)
-        .set({ photoUrl: null, updatedAt: new Date() })
+        .set({ photoUrls: nextUrls, photoUrl: nextLegacy, updatedAt: new Date() })
         .where(and(eq(estimateLineItems.id, lineItemId), eq(estimateLineItems.estimateId, estimateId)));
-      res.json({ success: true });
+      res.json({ success: true, photoUrls: nextUrls });
     } catch (error) {
       next(error);
     }

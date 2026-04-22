@@ -1643,7 +1643,8 @@ export const estimateLineItems = pgTable("estimate_line_items", {
 
   
   photoUrl: text("photo_url"),
-  
+  photoUrls: text("photo_urls").array().notNull().default(sql`ARRAY[]::text[]`),
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

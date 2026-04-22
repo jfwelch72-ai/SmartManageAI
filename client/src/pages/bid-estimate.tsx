@@ -583,6 +583,7 @@ export default function BidEstimate() {
       profitAllocation: 0,
       notes: lineItemAny.notes || "",
       photoUrl: lineItemAny.photoUrl || undefined,
+      photoUrls: Array.isArray(lineItemAny.photoUrls) ? lineItemAny.photoUrls : [],
       dotPayItemId: item.dotPayItemId ?? null,
       dotSpecBookId: item.dotSpecBookId ?? null,
       payItemNumber: item.payItemNumber ?? null,

@@ -320,6 +320,187 @@ interface HistoricalCostRecord {
   projectName: string | null;
 }
 
+function LineItemPhotoGallery({
+  estimateId,
+  lineItemId,
+  testPrefix,
+  legacyPhotoUrl,
+  photoUrls,
+  onChange,
+}: {
+  estimateId: string;
+  lineItemId: string;
+  testPrefix: string;
+  legacyPhotoUrl: string | null;
+  photoUrls: string[];
+  onChange: (photoUrls: string[], legacyPhotoUrl: string | null) => void;
+}) {
+  const { toast } = useToast();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  const allUrls = (() => {
+    const set = new Set<string>();
+    if (legacyPhotoUrl) set.add(legacyPhotoUrl);
+    for (const u of photoUrls) if (u) set.add(u);
+    return Array.from(set);
+  })();
+
+  const handleUpload = async (file: File) => {
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: "File too large. Maximum size is 10MB.", variant: "destructive" });
+      return;
+    }
+    setIsUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append("photo", file);
+      const res = await fetch(`/api/estimates/${estimateId}/line-items/${lineItemId}/upload-photo`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Upload failed" }));
+        throw new Error(err.error || "Upload failed");
+      }
+      const data = await res.json();
+      const nextUrls: string[] = Array.isArray(data.photoUrls) ? data.photoUrls : [...allUrls, data.photoUrl];
+      const nextLegacy: string | null = data.photoUrl ?? legacyPhotoUrl;
+      onChange(nextUrls, nextLegacy);
+      toast({ title: "Photo attached successfully" });
+    } catch (err: any) {
+      toast({ title: err?.message || "Photo upload failed", variant: "destructive" });
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const handleRemove = async (url: string) => {
+    try {
+      const res = await fetch(
+        `/api/estimates/${estimateId}/line-items/${lineItemId}/photo?url=${encodeURIComponent(url)}`,
+        { method: "DELETE", credentials: "include" },
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: "Delete failed" }));
+        throw new Error(err.error || "Delete failed");
+      }
+      const data = await res.json().catch(() => ({}));
+      const nextUrls: string[] = Array.isArray(data.photoUrls)
+        ? data.photoUrls
+        : allUrls.filter((u) => u !== url);
+      const nextLegacy = legacyPhotoUrl === url ? null : legacyPhotoUrl;
+      onChange(nextUrls, nextLegacy);
+      toast({ title: "Photo removed" });
+    } catch (err: any) {
+      toast({ title: err?.message || "Failed to remove photo", variant: "destructive" });
+    }
+  };
+
+  return (
+    <div className="mt-2 space-y-3">
+      {allUrls.length > 0 && (
+        <div
+          className="flex flex-wrap gap-3"
+          data-testid={`gallery-${testPrefix}line-item-photos`}
+        >
+          {allUrls.map((url, idx) => (
+            <div
+              key={url}
+              className="relative group"
+              data-testid={`thumb-${testPrefix}line-item-photo-${idx}`}
+            >
+              <button
+                type="button"
+                onClick={() => setLightboxUrl(url)}
+                className="block focus:outline-none focus:ring-2 focus:ring-ring rounded-lg"
+                data-testid={`button-${testPrefix}view-photo-${idx}`}
+                aria-label="View photo full size"
+              >
+                <img
+                  src={url}
+                  alt={`Line item photo ${idx + 1}`}
+                  className="h-24 w-24 rounded-lg border border-border object-cover transition-transform hover:scale-105"
+                  data-testid={`img-${testPrefix}line-item-photo-${idx}`}
+                />
+              </button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="icon"
+                className="absolute -top-2 -right-2 h-6 w-6 rounded-full opacity-90 group-hover:opacity-100"
+                onClick={() => handleRemove(url)}
+                data-testid={`button-${testPrefix}remove-photo-${idx}`}
+                aria-label="Remove photo"
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/gif,image/webp"
+          className="hidden"
+          data-testid={`input-${testPrefix}photo-file`}
+          onChange={async (e) => {
+            const file = e.target.files?.[0];
+            if (!file) return;
+            await handleUpload(file);
+          }}
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={isUploading}
+          onClick={() => fileInputRef.current?.click()}
+          data-testid={`button-${testPrefix}upload-photo`}
+        >
+          {isUploading ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <Camera className="h-4 w-4 mr-2" />
+          )}
+          {isUploading ? "Uploading..." : allUrls.length > 0 ? "Add Another Photo" : "Attach Photo"}
+        </Button>
+        {allUrls.length > 0 && (
+          <span className="text-xs text-muted-foreground" data-testid={`text-${testPrefix}photo-count`}>
+            {allUrls.length} photo{allUrls.length === 1 ? "" : "s"}
+          </span>
+        )}
+      </div>
+
+      <Dialog open={lightboxUrl !== null} onOpenChange={(open) => !open && setLightboxUrl(null)}>
+        <DialogContent
+          className="max-w-4xl p-2"
+          data-testid={`dialog-${testPrefix}photo-lightbox`}
+        >
+          <DialogHeader className="sr-only">
+            <DialogTitle>Photo preview</DialogTitle>
+            <DialogDescription>Full-size view of the line item photo</DialogDescription>
+          </DialogHeader>
+          {lightboxUrl && (
+            <img
+              src={lightboxUrl}
+              alt="Line item photo full size"
+              className="w-full h-auto max-h-[80vh] object-contain rounded"
+              data-testid={`img-${testPrefix}photo-lightbox`}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
 function HistoricalCostImportButton({ form }: { form: UseFormReturn<LineItemFormValues> }) {
   const [importOpen, setImportOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -458,8 +639,6 @@ export function LineItemFormDialog({
   const testPrefix = isEdit ? "edit-" : "";
   const [manualCalcToggle, setManualCalcToggle] = useState(false);
   const [numericDisplayValues, setNumericDisplayValues] = useState<Record<string, string>>({});
-  const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   
   useEffect(() => {
@@ -1051,93 +1230,19 @@ export function LineItemFormDialog({
             {isEdit && estimateId && lineItemId && (
               <div className="col-span-2">
                 <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
-                  Photo Attachment (Optional)
+                  Photo Attachments (Optional)
                 </label>
-                <div className="mt-2">
-                  {form.watch("photoUrl") ? (
-                    <div className="relative inline-block">
-                      <img
-                        src={form.watch("photoUrl")!}
-                        alt="Line item photo"
-                        className="h-32 w-auto rounded-lg border border-border object-cover"
-                        data-testid={`img-${testPrefix}line-item-photo`}
-                      />
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="icon"
-                        className="absolute -top-2 -right-2 h-6 w-6 rounded-full"
-                        onClick={async () => {
-                          try {
-                            await apiRequest("DELETE", `/api/estimates/${estimateId}/line-items/${lineItemId}/photo`, {});
-                            form.setValue("photoUrl", null);
-                            toast({ title: "Photo removed" });
-                          } catch {
-                            toast({ title: "Failed to remove photo", variant: "destructive" });
-                          }
-                        }}
-                        data-testid={`button-${testPrefix}remove-photo`}
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/jpeg,image/png,image/gif,image/webp"
-                        className="hidden"
-                        data-testid={`input-${testPrefix}photo-file`}
-                        onChange={async (e) => {
-                          const file = e.target.files?.[0];
-                          if (!file) return;
-                          if (file.size > 10 * 1024 * 1024) {
-                            toast({ title: "File too large. Maximum size is 10MB.", variant: "destructive" });
-                            return;
-                          }
-                          setIsUploading(true);
-                          try {
-                            const formData = new FormData();
-                            formData.append("photo", file);
-                            const res = await fetch(`/api/estimates/${estimateId}/line-items/${lineItemId}/upload-photo`, {
-                              method: "POST",
-                              body: formData,
-                              credentials: "include",
-                            });
-                            if (!res.ok) {
-                              const err = await res.json().catch(() => ({ error: "Upload failed" }));
-                              throw new Error(err.error || "Upload failed");
-                            }
-                            const data = await res.json();
-                            form.setValue("photoUrl", data.photoUrl);
-                            toast({ title: "Photo attached successfully" });
-                          } catch (err: any) {
-                            toast({ title: err?.message || "Photo upload failed", variant: "destructive" });
-                          } finally {
-                            setIsUploading(false);
-                            if (fileInputRef.current) fileInputRef.current.value = "";
-                          }
-                        }}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={isUploading}
-                        onClick={() => fileInputRef.current?.click()}
-                        data-testid={`button-${testPrefix}upload-photo`}
-                      >
-                        {isUploading ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <Camera className="h-4 w-4 mr-2" />
-                        )}
-                        {isUploading ? "Uploading..." : "Attach Photo"}
-                      </Button>
-                    </div>
-                  )}
-                </div>
+                <LineItemPhotoGallery
+                  estimateId={estimateId}
+                  lineItemId={lineItemId}
+                  testPrefix={testPrefix}
+                  legacyPhotoUrl={form.watch("photoUrl") ?? null}
+                  photoUrls={form.watch("photoUrls") ?? []}
+                  onChange={(urls, legacy) => {
+                    form.setValue("photoUrls", urls, { shouldDirty: true });
+                    form.setValue("photoUrl", legacy, { shouldDirty: true });
+                  }}
+                />
               </div>
             )}
           </div>

@@ -3,6 +3,7 @@ import { reconcileSchemaDrift } from "./schemaDriftDetector";
 
 import { ensureVideoCallTables } from "./ensureVideoCallTables";
 import { ensureEstimateSubcontractorTables } from "./ensureEstimateSubcontractorTables";
+import { ensureLineItemPhotoUrls } from "./ensureLineItemPhotoUrls";
 import { ensureEquipmentColumns } from "./ensureEquipmentColumns";
 import { ensureMessageColumns } from "./ensureMessageColumns";
 import { ensureNotificationEnumValues } from "./ensureNotificationEnumValues";
@@ -97,6 +98,7 @@ const migrations: MigrationStep[] = [
   { name: "dot_tables", category: "CREATE_TABLE", fn: ensureDotTables },
   { name: "video_call_tables", category: "CREATE_TABLE", fn: ensureVideoCallTables },
   { name: "estimate_subcontractor_tables", category: "CREATE_TABLE", fn: ensureEstimateSubcontractorTables },
+  { name: "line_item_photo_urls", category: "ADD_COLUMN", fn: ensureLineItemPhotoUrls },
   { name: "equipment_columns", category: "ADD_COLUMN", fn: ensureEquipmentColumns },
   { name: "message_columns", category: "ADD_COLUMN", fn: ensureMessageColumns },
   { name: "notification_enum_values", category: "ADD_ENUM", fn: ensureNotificationEnumValues },
