@@ -33,6 +33,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   Activity,
   AlertCircle,
+  AlertTriangle,
   CheckCircle2,
   Clock,
   Loader2,
@@ -118,7 +119,21 @@ type StatusSummary = {
   }>;
 };
 
+type WebhookSecretSeverity = "warn" | "error";
+
+type WebhookSecretFinding = {
+  variable: string;
+  integration: string;
+  severity: WebhookSecretSeverity;
+  message: string;
+};
+
+type WebhookSecretsResponse = {
+  findings: WebhookSecretFinding[];
+};
+
 const COMPONENTS_KEY = ["/api/admin/status/components"];
+const WEBHOOK_SECRETS_KEY = ["/api/admin/status/webhook-secrets"];
 const INCIDENTS_KEY = ["/api/admin/status/incidents"];
 const SUBSCRIBERS_KEY = ["/api/admin/status/subscribers"];
 const SUBSCRIBER_REMOVALS_KEY = ["/api/admin/status/subscriber-removals"];
@@ -204,6 +219,7 @@ export default function AdminStatusPage() {
   const summaryQuery = useQuery<StatusSummary>({ queryKey: SUMMARY_KEY });
   const subscribersQuery = useQuery<Subscriber[]>({ queryKey: SUBSCRIBERS_KEY });
   const subscriberRemovalsQuery = useQuery<SubscriberRemoval[]>({ queryKey: SUBSCRIBER_REMOVALS_KEY });
+  const webhookSecretsQuery = useQuery<WebhookSecretsResponse>({ queryKey: WEBHOOK_SECRETS_KEY });
 
   const summaryByCompId = useMemo(() => {
     const map = new Map<string, StatusSummary["components"][number]>();
@@ -260,6 +276,8 @@ export default function AdminStatusPage() {
         </Button>
       </div>
 
+      <WebhookSecretsBanner findings={webhookSecretsQuery.data?.findings ?? []} />
+
       <Tabs defaultValue="incidents">
         <TabsList>
           <TabsTrigger value="incidents" data-testid="tab-incidents">
@@ -300,6 +318,65 @@ export default function AdminStatusPage() {
           />
         </TabsContent>
       </Tabs>
+    </div>
+  );
+}
+
+// -------------------- Webhook secrets banner (Task #884) --------------------
+
+/**
+ * Renders one alert row per missing webhook secret reported by
+ * `collectWebhookSecretFindings()` on the server. Hidden when there are
+ * zero findings. Severity-colour-coded so an `error` (a webhook that will
+ * actively reject deliveries) is louder than a `warn` (graceful degradation).
+ */
+function WebhookSecretsBanner({ findings }: { findings: WebhookSecretFinding[] }) {
+  if (findings.length === 0) return null;
+
+  return (
+    <div className="space-y-2" data-testid="webhook-secrets-banner">
+      {findings.map((f) => {
+        const isError = f.severity === "error";
+        const containerClass = isError
+          ? "border-red-500/40 bg-red-500/10 text-red-900 dark:text-red-200"
+          : "border-amber-500/40 bg-amber-500/10 text-amber-900 dark:text-amber-200";
+        const Icon = isError ? AlertCircle : AlertTriangle;
+        return (
+          <div
+            key={f.variable}
+            role="alert"
+            className={`flex items-start gap-3 rounded-md border p-3 text-sm ${containerClass}`}
+            data-testid={`webhook-secret-finding-${f.variable}`}
+          >
+            <Icon className="h-5 w-5 flex-shrink-0 mt-0.5" />
+            <div className="space-y-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="font-semibold" data-testid={`text-webhook-secret-integration-${f.variable}`}>
+                  {f.integration}
+                </span>
+                <Badge
+                  variant="outline"
+                  className={
+                    isError
+                      ? "border-red-500/40 text-red-700 dark:text-red-300"
+                      : "border-amber-500/40 text-amber-700 dark:text-amber-300"
+                  }
+                  data-testid={`badge-webhook-secret-severity-${f.variable}`}
+                >
+                  {isError ? "ERROR" : "WARN"}
+                </Badge>
+                <code
+                  className="text-xs px-1.5 py-0.5 rounded bg-background/40 border border-border/40"
+                  data-testid={`text-webhook-secret-variable-${f.variable}`}
+                >
+                  {f.variable}
+                </code>
+              </div>
+              <div data-testid={`text-webhook-secret-message-${f.variable}`}>{f.message}</div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

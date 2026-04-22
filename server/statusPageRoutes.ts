@@ -9,6 +9,7 @@ import { sendEmail } from "./services/emailService";
 import { logError, logInfo } from "./utils/logger";
 import { runProbeSweep } from "./statusProbeScheduler";
 import { getAlertOverview, sendTestAlert } from "./statusAlertService";
+import { collectWebhookSecretFindings } from "./webhookSecretsAudit";
 
 const router = Router();
 
@@ -405,6 +406,29 @@ router.get("/api/public/status/unsubscribe", async (req, res, next) => {
 // ---------- admin endpoints (SUPER_ADMIN) ----------
 
 const adminGuard = [requireAuth, requireRole("SUPER_ADMIN")];
+
+/**
+ * GET /api/admin/status/webhook-secrets — Task #884.
+ *
+ * Surfaces the same findings emitted to the boot log by the webhook
+ * secrets audit (Task #883) so operators who don't tail logs at restart
+ * still see misconfig in the admin status UI. Returns variable name,
+ * integration label, severity, and operator-facing impact text — never
+ * the secret value itself.
+ */
+router.get("/api/admin/status/webhook-secrets", ...adminGuard, (_req, res, next) => {
+  try {
+    const findings = collectWebhookSecretFindings().map((f) => ({
+      variable: f.variable,
+      integration: f.integration,
+      severity: f.severity,
+      message: f.message,
+    }));
+    res.json({ findings });
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.get("/api/admin/status/components", ...adminGuard, async (_req, res, next) => {
   try {
