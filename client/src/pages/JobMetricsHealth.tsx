@@ -1,11 +1,13 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ArrowLeft, RefreshCw, Cake, XCircle, Activity } from "lucide-react";
+import { ArrowLeft, RefreshCw, Cake, XCircle, Activity, BarChart3 } from "lucide-react";
 import { useMemo } from "react";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import {
   ComposedChart,
   Bar,
@@ -132,6 +134,31 @@ export default function JobMetricsHealth() {
     refetchInterval: 30000,
   });
 
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const portfolioKpiMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/jobs/portfolio_kpi_snapshot/run");
+      return (await res.json()) as { job: string; status: string; durationMs: number };
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Portfolio KPI snapshot captured",
+        description: `Completed in ${data.durationMs}ms. Sparklines will refresh shortly.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ALL_JOBS_KEY });
+    },
+    onError: (err: unknown) => {
+      const description =
+        err instanceof Error ? err.message : "An unexpected error occurred. Check server logs.";
+      toast({
+        title: "Failed to capture portfolio KPI snapshot",
+        description,
+        variant: "destructive",
+      });
+    },
+  });
+
   const chartData = useMemo(
     () => (data ? bucketSamples(data.samples, BIRTHDAY_COUNTERS) : []),
     [data]
@@ -181,6 +208,33 @@ export default function JobMetricsHealth() {
           <AlertDescription>Try refreshing or check server logs.</AlertDescription>
         </Alert>
       )}
+
+      <Card data-testid="card-portfolio-kpi-snapshot">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <BarChart3 className="h-4 w-4" /> Portfolio KPI snapshot
+              </CardTitle>
+              <CardDescription>
+                Manually run the <code>portfolio_kpi_snapshot</code> job to refresh per-project
+                weekly KPI sparklines (health/SPI/CPI/burn). The job otherwise runs nightly at
+                02:15. Super Admin only.
+              </CardDescription>
+            </div>
+            <Button
+              onClick={() => portfolioKpiMutation.mutate()}
+              disabled={portfolioKpiMutation.isPending}
+              data-testid="button-run-portfolio-kpi-snapshot"
+            >
+              <RefreshCw
+                className={`h-4 w-4 mr-1 ${portfolioKpiMutation.isPending ? "animate-spin" : ""}`}
+              />
+              {portfolioKpiMutation.isPending ? "Capturing…" : "Capture snapshot now"}
+            </Button>
+          </div>
+        </CardHeader>
+      </Card>
 
       <Card data-testid="card-birthday-digest">
         <CardHeader>
