@@ -23,7 +23,7 @@
  */
 
 export type { UserRole } from "@shared/schema";
-import type { UserRole } from "@shared/schema";
+import type { UserRole, FeatureFlagKey } from "@shared/schema";
 
 export const CORE_ROLES: UserRole[] = ["ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER", "VENDOR"];
 export const ASSIGNABLE_ROLES: UserRole[] = ["ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "FIELD_WORKER", "VENDOR"];
@@ -493,6 +493,7 @@ export interface NavItem {
   label: string;
   testId: string;
   visible: (role?: string, perms?: FeaturePerms) => boolean;
+  featureFlag?: FeatureFlagKey;
 }
 
 export const NavItems: Record<string, NavItem> = {
@@ -545,6 +546,13 @@ export const NavItems: Record<string, NavItem> = {
   '/permits': { href: '/permits', label: 'Permits & Licenses', testId: 'nav-permits', visible: (role?: string, perms?: FeaturePerms) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER" },
   '/compliance': { href: '/compliance', label: 'Compliance', testId: 'nav-compliance', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canViewComplianceDashboard : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER" },
   '/dispatch-board': { href: '/dispatch-board', label: 'Dispatch Board', testId: 'nav-dispatch-board', visible: (role?: string, perms?: FeaturePerms) => hasDispatchAccess(role, perms) },
+  '/dot-library': { href: '/dot-library', label: 'DOT Pay Item Library', testId: 'nav-dot-library', visible: (role?: string) => role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "HUSTLER" },
+  '/haul-tickets': { href: '/haul-tickets', label: 'Haul Tickets', testId: 'nav-haul-tickets', featureFlag: 'HAUL_TICKETS', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canViewHaulTickets : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "HUSTLER" },
+  '/daily-inspector-reports': { href: '/daily-inspector-reports', label: 'Daily Inspector Reports', testId: 'nav-daily-inspector-reports', featureFlag: 'DAILY_INSPECTOR_REPORTS', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canViewInspectorReports : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "HUSTLER" },
+  '/swppp-inspections': { href: '/swppp-inspections', label: 'SWPPP Inspections', testId: 'nav-swppp-inspections', featureFlag: 'SWPPP_INSPECTIONS', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canViewSwppp : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "HUSTLER" },
+  '/surety-bonds': { href: '/surety-bonds', label: 'Surety Bonds', testId: 'nav-surety-bonds', featureFlag: 'SURETY_BONDS', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canViewSuretyBonds : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "HUSTLER" },
+  '/dbe-goals': { href: '/dbe-goals', label: 'DBE Goals', testId: 'nav-dbe-goals', featureFlag: 'DBE_TRACKING', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canViewDbeGoals : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "HUSTLER" },
+  '/material-certifications': { href: '/material-certifications', label: 'Material Certifications', testId: 'nav-material-certifications', featureFlag: 'BUY_AMERICA', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canViewMaterialCertifications : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "HUSTLER" },
 };
 
 export const NavigationConfig = {
@@ -565,7 +573,7 @@ export const NavigationConfig = {
 
 export type SidebarSection =
   | 'portfolio' | 'home' | 'sales' | 'projects' | 'team' | 'time' | 'finance'
-  | 'field_ops' | 'settings' | 'marketing' | 'tools'
+  | 'field_ops' | 'field_compliance' | 'settings' | 'marketing' | 'tools'
   | 'today' | 'crew' | 'jobsite' | 'review' | 'reference'
   | 'bids' | 'costs' | 'reports' | 'info';
 
@@ -583,6 +591,7 @@ const ADMIN_WORKFLOW: WorkflowGroup[] = [
   { key: 'time', label: 'Time', itemHrefs: ['/time-clock', '/time-clock-manager', '/tm-daily'] },
   { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/cost-rates', '/production-rates', '/subcontractor-payables', '/overhead-costs'] },
   { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/dispatch-board', '/equipment', '/procurement-module', '/approvals', '/lidar-scans', '/permits', '/compliance'] },
+  { key: 'field_compliance', label: 'Field Compliance', itemHrefs: ['/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
   { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/ai-settings', '/audit-logs', '/reports'] },
   { key: 'marketing', label: 'Marketing', itemHrefs: ['/website-builder', '/social-media', '/email-campaigns'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
@@ -601,6 +610,7 @@ const MANAGER_WORKFLOW: WorkflowGroup[] = [
   { key: 'team', label: 'Team', itemHrefs: ['/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/safety', '/safety-training'] },
   { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/production-rates', '/overhead-costs'] },
   { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/dispatch-board', '/equipment', '/procurement-module', '/approvals', '/lidar-scans', '/permits', '/compliance'] },
+  { key: 'field_compliance', label: 'Field Compliance', itemHrefs: ['/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
   { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/reports'] },
   { key: 'marketing', label: 'Marketing', itemHrefs: ['/social-media'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
@@ -610,6 +620,7 @@ const SUPERINTENDENT_WORKFLOW: WorkflowGroup[] = [
   { key: 'today', label: 'Today', itemHrefs: ['/time-clock', '/dashboard'] },
   { key: 'crew', label: 'Crew', itemHrefs: ['/time-clock-manager', '/tm-daily', '/manage-workers', '/leave-management', '/safety', '/safety-training'] },
   { key: 'jobsite', label: 'Jobsite', itemHrefs: ['/dispatch-board', '/projects', '/calendar', '/tasks', '/messages', '/equipment', '/procurement-module', '/permits', '/compliance'] },
+  { key: 'field_compliance', label: 'Field Compliance', itemHrefs: ['/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
   { key: 'review', label: 'Review', itemHrefs: ['/approvals', '/reports'] },
   { key: 'reference', label: 'Reference', itemHrefs: ['/bids', '/production-rates', '/scope-settings', '/communications'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
@@ -621,6 +632,7 @@ const ESTIMATOR_WORKFLOW: WorkflowGroup[] = [
   { key: 'costs', label: 'Costs', itemHrefs: ['/cost-rates', '/production-rates', '/scope-settings'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages'] },
   { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/lidar-scans'] },
+  { key: 'field_compliance', label: 'Field Compliance', itemHrefs: ['/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
   { key: 'reports', label: 'Reports', itemHrefs: ['/reports'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
 ];
@@ -650,10 +662,19 @@ export function getWorkflowGroups(role?: string): WorkflowGroup[] {
   return ADMIN_WORKFLOW;
 }
 
-export function getVisibleGroupItems(group: WorkflowGroup, role?: string, perms?: FeaturePerms): NavItem[] {
+export function getVisibleGroupItems(
+  group: WorkflowGroup,
+  role?: string,
+  perms?: FeaturePerms,
+  featureFlags?: Partial<Record<FeatureFlagKey, boolean>>,
+): NavItem[] {
   return group.itemHrefs
     .map(href => NavItems[href])
-    .filter(item => item && item.visible(role, perms));
+    .filter(item => {
+      if (!item || !item.visible(role, perms)) return false;
+      if (item.featureFlag && featureFlags && featureFlags[item.featureFlag] !== true) return false;
+      return true;
+    });
 }
 
 export const PlatformAdminNavConfig = {

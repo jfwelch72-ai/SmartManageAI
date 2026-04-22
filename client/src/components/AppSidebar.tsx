@@ -5,6 +5,7 @@ import { useUnreadMessageCount } from "@/hooks/use-data";
 import { useVisibleRefetchInterval } from "@/hooks/use-page-visible";
 import { PlatformAdminNavConfig, VendorPortalNavConfig, isSuperAdmin, isVendor, isFieldWorker, type FeaturePerms, type SidebarSection, getWorkflowGroups, getVisibleGroupItems, NavItems, ROLE_DISPLAY_NAMES } from "@/lib/rbac";
 import { useDashboardCustomizationSafe } from "@/hooks/use-dashboard-customization";
+import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import { useTour } from "@/components/TourProvider";
 import {
   Sidebar,
@@ -79,6 +80,7 @@ const GROUP_ICONS: Record<SidebarSection, LucideIcon> = {
   time: Clock,
   finance: DollarSign,
   field_ops: HardHat,
+  field_compliance: ShieldCheck,
   settings: Shield,
   marketing: Megaphone,
   tools: Wrench,
@@ -231,6 +233,7 @@ export function AppSidebar() {
   
   const { entitlements } = useEntitlements();
   const { permissions: featurePerms, isLoadingPermissions } = useDashboardCustomizationSafe();
+  const { flags: featureFlags } = useFeatureFlags();
 
   const showTutorialButton = !!walkthroughStatus;
   const isInWalkthrough = tour.isTourActive;
@@ -391,7 +394,7 @@ export function AppSidebar() {
             </SidebarGroupContent>
           </SidebarGroup>
           {workflowGroups.map((group) => {
-            const visibleItems = getVisibleGroupItems(group, userRole, perms);
+            const visibleItems = getVisibleGroupItems(group, userRole, perms, featureFlags);
             if (visibleItems.length === 0) return null;
             const GroupIcon = GROUP_ICONS[group.key] || Wrench;
             return (
@@ -499,7 +502,7 @@ export function AppSidebar() {
             );
           }
 
-          const visibleItems = getVisibleGroupItems(group, userRole, perms);
+          const visibleItems = getVisibleGroupItems(group, userRole, perms, featureFlags);
           if (visibleItems.length === 0) return null;
 
           const GroupIcon = GROUP_ICONS[group.key] || Wrench;
