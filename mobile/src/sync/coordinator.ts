@@ -91,6 +91,11 @@ export async function pull(): Promise<number> {
       dailyInspectorReports?: CacheableRow[];
       swpppInspections?: CacheableRow[];
       rfis?: CacheableRow[];
+      // Task #807: server now ships these as part of the pull-down delta.
+      dailyReports?: CacheableRow[];
+      photos?: CacheableRow[];
+      punchItems?: CacheableRow[];
+      inspections?: CacheableRow[];
       projects?: { created?: CacheableRow[]; updated?: CacheableRow[] };
     };
   };
@@ -103,6 +108,10 @@ export async function pull(): Promise<number> {
     ["dailyInspectorReports", "INSPECTOR_REPORT"],
     ["swpppInspections", "SWPPP_INSPECTION"],
     ["rfis", "RFI"],
+    ["dailyReports", "DAILY_REPORT"],
+    ["photos", "PHOTO"],
+    ["punchItems", "PUNCH_ITEM"],
+    ["inspections", "INSPECTION"],
   ];
   for (const [k, entityType] of map) {
     const items = (res.changes?.[k] as CacheableRow[] | undefined) ?? [];
@@ -224,7 +233,18 @@ export async function push(): Promise<{ pushed: number; conflicts: number }> {
         if (item.status === "CONFLICT" && item.serverUpdatedAt) {
           await markConflict(item.localId, item.serverUpdatedAt);
           conflicts++;
-        } else if (item.status === "QUEUED" || item.status === "SYNCED") {
+        } else if (
+          item.status === "QUEUED" ||
+          item.status === "SYNCED" ||
+          // Task #807: server now persists DAILY_REPORT/PHOTO/PUNCH_ITEM/
+          // INSPECTION/RFI directly into first-class tables and reports
+          // SAVED on success or DUPLICATE when an idempotency marker for the
+          // same (deviceId, localId, recordType) was already recorded. Both
+          // mean the server has fully accepted the record — clear the
+          // outbox entry, otherwise the row would stay retryable forever.
+          item.status === "SAVED" ||
+          item.status === "DUPLICATE"
+        ) {
           await markSynced(item.localId);
           pushed++;
         }

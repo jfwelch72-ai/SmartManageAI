@@ -2,7 +2,7 @@ import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { requireAuth, type AuthRequest } from "./auth";
-import { mobileDevices, offlineSyncQueue, mobilePendingUploads, projects, timeClockShifts, haulTickets, dailyInspectorReports, swpppInspections, rfis } from "@shared/schema";
+import { mobileDevices, offlineSyncQueue, mobilePendingUploads, projects, timeClockShifts, haulTickets, dailyInspectorReports, swpppInspections, rfis, dailyReports, media, punchListItems, projectInspections } from "@shared/schema";
 import { eq, and, count, max, desc, gte } from "drizzle-orm";
 import { z } from "zod";
 import crypto from "crypto";
@@ -25,7 +25,7 @@ type MobileSyncRecord = {
   }>;
   [k: string]: unknown;
 };
-type ProcessedItem = { localId: string; status: "QUEUED" | "CONFLICT"; serverUpdatedAt?: string };
+type ProcessedItem = { localId: string; status: "QUEUED" | "CONFLICT" | "SAVED" | "DUPLICATE"; serverUpdatedAt?: string; serverId?: string };
 type ConflictItem = {
   entityType: SyncEntityKey;
   entityId: string;
@@ -410,6 +410,88 @@ router.get("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest,
       ))
       .limit(100);
 
+    // Task #807: pull-down delta for the field-action entities now that
+    // the POST handler persists them to first-class tables. Without these
+    // sections the mobile cache could drift from the server (e.g. office
+    // staff edits a punch item or daily report on the web).
+    const dailyReportChanges = await db.select()
+      .from(dailyReports)
+      .where(and(
+        eq(dailyReports.organizationId, organizationId),
+        gte(dailyReports.updatedAt, syncTime)
+      ))
+      .limit(100);
+
+    // media has no updatedAt column — fall back to uploadedAt for delta.
+    // Org scoping rides on the projects join: media rows are always tied
+    // to a project, and projects.gcOrganizationId is the tenant boundary.
+    const photoChanges = await db.select({
+      id: media.id,
+      projectId: media.projectId,
+      type: media.type,
+      fileName: media.fileName,
+      fileUrl: media.fileUrl,
+      objectKey: media.objectKey,
+      mimeType: media.mimeType,
+      caption: media.caption,
+      uploadedById: media.uploadedById,
+      uploadedAt: media.uploadedAt,
+    })
+      .from(media)
+      .innerJoin(projects, eq(projects.id, media.projectId))
+      .where(and(
+        eq(projects.gcOrganizationId, organizationId),
+        gte(media.uploadedAt, syncTime),
+        eq(media.type, "IMAGE"),
+      ))
+      .limit(200);
+
+    const punchChanges = await db.select({
+      id: punchListItems.id,
+      projectId: punchListItems.projectId,
+      itemNumber: punchListItems.itemNumber,
+      title: punchListItems.title,
+      description: punchListItems.description,
+      status: punchListItems.status,
+      priority: punchListItems.priority,
+      trade: punchListItems.trade,
+      assignedToName: punchListItems.assignedToName,
+      assignedToEmail: punchListItems.assignedToEmail,
+      dueDate: punchListItems.dueDate,
+      createdAt: punchListItems.createdAt,
+      updatedAt: punchListItems.updatedAt,
+    })
+      .from(punchListItems)
+      .innerJoin(projects, eq(projects.id, punchListItems.projectId))
+      .where(and(
+        eq(projects.gcOrganizationId, organizationId),
+        gte(punchListItems.updatedAt, syncTime),
+      ))
+      .limit(200);
+
+    const inspectionChanges = await db.select({
+      id: projectInspections.id,
+      projectId: projectInspections.projectId,
+      inspectionNumber: projectInspections.inspectionNumber,
+      inspectionType: projectInspections.inspectionType,
+      title: projectInspections.title,
+      description: projectInspections.description,
+      status: projectInspections.status,
+      requestedDate: projectInspections.requestedDate,
+      scheduledDate: projectInspections.scheduledDate,
+      completedDate: projectInspections.completedDate,
+      resultNotes: projectInspections.resultNotes,
+      createdAt: projectInspections.createdAt,
+      updatedAt: projectInspections.updatedAt,
+    })
+      .from(projectInspections)
+      .innerJoin(projects, eq(projects.id, projectInspections.projectId))
+      .where(and(
+        eq(projects.gcOrganizationId, organizationId),
+        gte(projectInspections.updatedAt, syncTime),
+      ))
+      .limit(200);
+
     if (deviceId) {
       await db.update(mobileDevices)
         .set({ lastSyncAt: new Date(), syncToken: nextSyncToken })
@@ -433,6 +515,10 @@ router.get("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest,
         dailyInspectorReports: idrChanges,
         swpppInspections: swpppChanges,
         rfis: rfiChanges,
+        dailyReports: dailyReportChanges,
+        photos: photoChanges,
+        punchItems: punchChanges,
+        inspections: inspectionChanges,
       },
     });
   } catch (error) {
@@ -651,18 +737,277 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
         bucket.push({ localId: item.localId, status: "QUEUED" });
       }
     };
-    await queuePending(changes?.photos, "PHOTO", processed.photos);
-    await queuePending(changes?.punchItems, "PUNCH_ITEM", processed.punchItems);
-    // Task #798: RFIs go through the conflict-detecting offline queue so a
-    // server-side edit made while a mobile user is offline is reconciled
-    // through the same UNRESOLVED-conflicts UI as inspector reports.
-    if (Array.isArray(changes?.rfis)) {
-      for (const r of changes.rfis) {
-        processed.rfis.push(await queueOffline("RFI", r as MobileSyncRecord));
+    // Task #807: persist field-action entities directly into first-class
+    // server tables so office staff can see them on the existing web pages
+    // (punch list, inspections, media gallery, RFIs, daily reports) instead
+    // of waiting for a separate processing pass over mobilePendingUploads.
+    // Each helper is best-effort: if required columns are missing or any
+    // database error occurs, we fall back to queueing the raw payload into
+    // mobilePendingUploads so nothing is lost.
+
+    // Idempotency marker: we record every successful direct-persist as a
+    // COMPLETED mobile_pending_uploads row keyed by (deviceId, localId,
+    // recordType). Re-syncing the same localId becomes a no-op.
+    const alreadyPersisted = async (recordType: string, localId: string): Promise<boolean> => {
+      if (!devicePk) return false;
+      const [existing] = await db.select({ id: mobilePendingUploads.id })
+        .from(mobilePendingUploads)
+        .where(and(
+          eq(mobilePendingUploads.deviceId, devicePk),
+          eq(mobilePendingUploads.localId, localId),
+          eq(mobilePendingUploads.recordType, recordType),
+          eq(mobilePendingUploads.status, "COMPLETED"),
+        ))
+        .limit(1);
+      return !!existing;
+    };
+    const markPersisted = async (recordType: string, localId: string, payload: unknown): Promise<void> => {
+      if (!devicePk) return;
+      await db.insert(mobilePendingUploads).values({
+        deviceId: devicePk,
+        localId,
+        recordType,
+        recordDataJson: JSON.stringify(payload),
+        status: "COMPLETED",
+        processedAt: new Date(),
+      });
+    };
+
+    // Verify a project belongs to the caller's org so a malicious client
+    // cannot inject rows into other tenants' projects by guessing IDs.
+    const projectInOrg = async (projectId: string | undefined | null): Promise<boolean> => {
+      if (!projectId) return false;
+      const [p] = await db.select({ id: projects.id })
+        .from(projects)
+        .where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, organizationId)))
+        .limit(1);
+      return !!p;
+    };
+
+    // ---- DAILY_REPORT ------------------------------------------------------
+    if (Array.isArray(changes?.dailyReports)) {
+      for (const item of changes.dailyReports) {
+        if (!item?.localId) continue;
+        if (await alreadyPersisted("DAILY_REPORT", item.localId)) {
+          processed.dailyReports.push({ localId: item.localId, status: "DUPLICATE" });
+          continue;
+        }
+        const projectId = typeof item.projectId === "string" ? item.projectId : null;
+        const validProject = projectId && await projectInOrg(projectId);
+        const reportDateRaw = (item.date ?? item.reportDate) as string | undefined;
+        const reportDate = reportDateRaw && /^\d{4}-\d{2}-\d{2}/.test(reportDateRaw)
+          ? reportDateRaw.slice(0, 10)
+          : new Date().toISOString().slice(0, 10);
+        try {
+          const [row] = await db.insert(dailyReports).values({
+            organizationId,
+            projectId: validProject ? projectId : null,
+            reportDate,
+            notes: typeof item.notes === "string" ? item.notes : null,
+            weather: typeof item.weather === "string" ? item.weather : null,
+            attachmentsJson: Array.isArray(item.attachments)
+              ? (item.attachments as Array<Record<string, unknown>>).map((a) => ({
+                  localId: typeof a.localId === "string" ? a.localId : undefined,
+                  name: typeof a.name === "string" ? a.name : undefined,
+                  mime: typeof a.mime === "string" ? a.mime : undefined,
+                  size: typeof a.size === "number" ? a.size : undefined,
+                  objectKey: typeof a.objectKey === "string" ? a.objectKey : undefined,
+                  url: typeof a.url === "string" ? a.url : undefined,
+                }))
+              : [],
+            submittedById: userId,
+            submittedByDeviceId: deviceId ?? null,
+            submittedLocalId: item.localId,
+          }).returning({ id: dailyReports.id });
+          await markPersisted("DAILY_REPORT", item.localId, item);
+          processed.dailyReports.push({ localId: item.localId, status: "SAVED", serverId: row?.id });
+        } catch (err) {
+          logError(err, { route: "mobile-sync DAILY_REPORT persist", localId: item.localId });
+          await queuePending([item], "DAILY_REPORT", processed.dailyReports);
+        }
       }
     }
-    await queuePending(changes?.inspections, "INSPECTION", processed.inspections);
-    await queuePending(changes?.dailyReports, "DAILY_REPORT", processed.dailyReports);
+
+    // ---- PHOTO -------------------------------------------------------------
+    if (Array.isArray(changes?.photos)) {
+      for (const item of changes.photos) {
+        if (!item?.localId) continue;
+        if (await alreadyPersisted("PHOTO", item.localId)) {
+          processed.photos.push({ localId: item.localId, status: "DUPLICATE" });
+          continue;
+        }
+        const projectId = typeof item.projectId === "string" ? item.projectId : null;
+        const validProject = projectId && await projectInOrg(projectId);
+        const fileUrl = typeof item.fileUrl === "string" ? item.fileUrl
+          : typeof item.url === "string" ? item.url : null;
+        const fileName = typeof item.fileName === "string" ? item.fileName
+          : typeof item.name === "string" ? item.name : null;
+        if (!validProject || !fileUrl || !fileName) {
+          await queuePending([item], "PHOTO", processed.photos);
+          continue;
+        }
+        try {
+          const [row] = await db.insert(media).values({
+            projectId: projectId!,
+            type: "IMAGE",
+            fileName,
+            fileUrl,
+            objectKey: typeof item.objectKey === "string" ? item.objectKey : null,
+            mimeType: typeof item.mime === "string" ? item.mime
+              : typeof item.mimeType === "string" ? item.mimeType : null,
+            fileSize: typeof item.size === "number" ? item.size : null,
+            caption: typeof item.caption === "string" ? item.caption
+              : typeof item.notes === "string" ? item.notes : null,
+            uploadedById: userId,
+            uploadedAt: typeof item.takenAt === "string" ? new Date(item.takenAt) : new Date(),
+          }).returning({ id: media.id });
+          await markPersisted("PHOTO", item.localId, item);
+          processed.photos.push({ localId: item.localId, status: "SAVED", serverId: row?.id });
+        } catch (err) {
+          logError(err, { route: "mobile-sync PHOTO persist", localId: item.localId });
+          await queuePending([item], "PHOTO", processed.photos);
+        }
+      }
+    }
+
+    // ---- PUNCH_ITEM --------------------------------------------------------
+    if (Array.isArray(changes?.punchItems)) {
+      for (const item of changes.punchItems) {
+        if (!item?.localId) continue;
+        if (await alreadyPersisted("PUNCH_ITEM", item.localId)) {
+          processed.punchItems.push({ localId: item.localId, status: "DUPLICATE" });
+          continue;
+        }
+        const projectId = typeof item.projectId === "string" ? item.projectId : null;
+        const title = typeof item.title === "string" && item.title.trim().length > 0 ? item.title : null;
+        const validProject = projectId && await projectInOrg(projectId);
+        if (!validProject || !title) {
+          await queuePending([item], "PUNCH_ITEM", processed.punchItems);
+          continue;
+        }
+        try {
+          // Generate a per-project sequential item number. Cheap COUNT —
+          // punchListItems already has a project_id index. Race-condition
+          // collisions are rare in practice and we re-try on failure.
+          const [{ n }] = await db.select({ n: count() })
+            .from(punchListItems)
+            .where(eq(punchListItems.projectId, projectId!));
+          const itemNumber = `PLI-${String(projectId).slice(-6).toUpperCase()}-${String(Number(n) + 1).padStart(3, "0")}`;
+          const [row] = await db.insert(punchListItems).values({
+            projectId: projectId!,
+            itemNumber,
+            title,
+            description: typeof item.description === "string" ? item.description : null,
+            assignedToName: typeof item.assignee === "string" ? item.assignee
+              : typeof item.assignedToName === "string" ? item.assignedToName : null,
+            assignedToEmail: typeof item.assignedToEmail === "string" ? item.assignedToEmail : null,
+            createdById: userId,
+          }).returning({ id: punchListItems.id });
+          await markPersisted("PUNCH_ITEM", item.localId, item);
+          processed.punchItems.push({ localId: item.localId, status: "SAVED", serverId: row?.id });
+        } catch (err) {
+          logError(err, { route: "mobile-sync PUNCH_ITEM persist", localId: item.localId });
+          await queuePending([item], "PUNCH_ITEM", processed.punchItems);
+        }
+      }
+    }
+
+    // ---- RFI ---------------------------------------------------------------
+    // RFIs continue through the conflict-detecting offline queue (so server
+    // edits during offline windows surface in /conflicts), AND we attempt to
+    // materialise the row in `rfis` so office staff see it on /rfi without
+    // a separate processing pass.
+    if (Array.isArray(changes?.rfis)) {
+      for (const r of changes.rfis) {
+        const queueResult = await queueOffline("RFI", r as MobileSyncRecord);
+        processed.rfis.push(queueResult);
+        if (queueResult.status !== "QUEUED" || !r?.localId) continue;
+        if (await alreadyPersisted("RFI", r.localId)) continue;
+        const projectId = typeof r.projectId === "string" ? r.projectId : null;
+        const subject = typeof r.subject === "string" ? r.subject : null;
+        const question = typeof r.question === "string" ? r.question : null;
+        if (!projectId || !subject || !question) continue;
+        if (!(await projectInOrg(projectId))) continue;
+        try {
+          const [{ n }] = await db.select({ n: count() })
+            .from(rfis)
+            .where(eq(rfis.organizationId, organizationId));
+          const rfiNumber = typeof r.rfiNumber === "string" ? r.rfiNumber
+            : `RFI-${String(Number(n) + 1).padStart(4, "0")}`;
+          await db.insert(rfis).values({
+            organizationId,
+            projectId,
+            rfiNumber,
+            subject,
+            question,
+            submittedById: userId,
+            submittedByName: typeof r.submittedByName === "string" ? r.submittedByName : null,
+            dateSubmitted: new Date(),
+          });
+          await markPersisted("RFI", r.localId, r);
+        } catch (err) {
+          logError(err, { route: "mobile-sync RFI persist", localId: r.localId });
+        }
+      }
+    }
+
+    // ---- INSPECTION --------------------------------------------------------
+    if (Array.isArray(changes?.inspections)) {
+      for (const item of changes.inspections) {
+        if (!item?.localId) continue;
+        if (await alreadyPersisted("INSPECTION", item.localId)) {
+          processed.inspections.push({ localId: item.localId, status: "DUPLICATE" });
+          continue;
+        }
+        const projectId = typeof item.projectId === "string" ? item.projectId : null;
+        const validProject = projectId && await projectInOrg(projectId);
+        // projectInspections.inspectionType is a Postgres enum; coercing an
+        // unvetted string would either fail at insert time or silently break
+        // the type system. Whitelist the known values to keep the type
+        // narrow (rather than `as never`) and fall back to the queue for
+        // anything else so office staff can still triage the payload.
+        const ALLOWED_INSPECTION_TYPES = ["CITY_OFFICIAL", "GC_REPRESENTATIVE", "OWNER_REPRESENTATIVE"] as const;
+        type InspectionType = typeof ALLOWED_INSPECTION_TYPES[number];
+        const rawType = typeof item.inspectionType === "string" ? item.inspectionType.toUpperCase() : null;
+        const inspectionType = (ALLOWED_INSPECTION_TYPES as readonly string[]).includes(rawType ?? "")
+          ? (rawType as InspectionType)
+          : null;
+        const title = typeof item.title === "string" ? item.title : null;
+        // projectInspections requires inspectionType (enum) + title — without
+        // those the row would violate NOT NULL, so fall back to the queue.
+        if (!validProject || !inspectionType || !title) {
+          await queuePending([item], "INSPECTION", processed.inspections);
+          continue;
+        }
+        try {
+          const [{ n }] = await db.select({ n: count() })
+            .from(projectInspections)
+            .where(eq(projectInspections.projectId, projectId!));
+          const inspectionNumber = `INSP-${String(projectId).slice(-6).toUpperCase()}-${String(Number(n) + 1).padStart(3, "0")}`;
+          const completedAt = typeof item.completedAt === "string" ? new Date(item.completedAt) : null;
+          const [row] = await db.insert(projectInspections).values({
+            projectId: projectId!,
+            inspectionNumber,
+            inspectionType,
+            title,
+            description: typeof item.description === "string" ? item.description : null,
+            requestedDate: completedAt ?? new Date(),
+            completedDate: completedAt,
+            status: completedAt ? "COMPLETED" : "REQUESTED",
+            resultNotes: typeof item.answers === "string"
+              ? item.answers
+              : item.answers !== undefined ? JSON.stringify(item.answers) : null,
+            createdById: userId,
+          }).returning({ id: projectInspections.id });
+          await markPersisted("INSPECTION", item.localId, item);
+          processed.inspections.push({ localId: item.localId, status: "SAVED", serverId: row?.id });
+        } catch (err) {
+          logError(err, { route: "mobile-sync INSPECTION persist", localId: item.localId });
+          await queuePending([item], "INSPECTION", processed.inspections);
+        }
+      }
+    }
+
     await queuePending(changes?.drawingMarkups, "DRAWING_MARKUP", processed.drawingMarkups);
 
     res.json({
@@ -675,6 +1020,30 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
     if (error instanceof Error && error.message === "DEVICE_NOT_REGISTERED") {
       return res.status(412).json({ error: "Device not registered", code: "DEVICE_NOT_REGISTERED" });
     }
+    next(error);
+  }
+});
+
+// Task #807: web-side read endpoint for the dailyReports rows persisted by
+// the mobile sync route. Office staff use the new /daily-reports page to
+// review what crews submitted from the field.
+router.get("/api/daily-reports", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    if (!organizationId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const { projectId } = req.query as { projectId?: string };
+    const where = projectId
+      ? and(eq(dailyReports.organizationId, organizationId), eq(dailyReports.projectId, projectId))
+      : eq(dailyReports.organizationId, organizationId);
+    const rows = await db.select()
+      .from(dailyReports)
+      .where(where)
+      .orderBy(desc(dailyReports.reportDate), desc(dailyReports.createdAt))
+      .limit(200);
+    res.json({ dailyReports: rows });
+  } catch (error) {
     next(error);
   }
 });

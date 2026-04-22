@@ -9438,6 +9438,37 @@ export type InsertDailyInspectorReport = z.infer<typeof insertDailyInspectorRepo
 export type DailyInspectorReport = typeof dailyInspectorReports.$inferSelect;
 
 // ============================================
+// DAILY REPORT
+// Lightweight daily field report submitted from the mobile DailyReports
+// screen (mobile/src/screens/DailyReports.tsx). Distinct from the more
+// formal `daily_inspector_reports` IDR. The mobile client posts notes,
+// the date, and inline attachments (photos/voice notes) which the sync
+// route persists here so office staff can view them on the web.
+// ============================================
+export const dailyReports = pgTable("daily_reports", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  reportDate: date("report_date").notNull(),
+  notes: text("notes"),
+  weather: text("weather"),
+  attachmentsJson: json("attachments_json").$type<Array<{ localId?: string; name?: string; mime?: string; size?: number; objectKey?: string; url?: string }>>().default([]),
+  submittedById: varchar("submitted_by_id").references(() => users.id, { onDelete: "set null" }),
+  submittedByDeviceId: varchar("submitted_by_device_id"),
+  submittedLocalId: varchar("submitted_local_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("daily_reports_org_idx").on(table.organizationId),
+  projectIdx: index("daily_reports_project_idx").on(table.projectId),
+  reportDateIdx: index("daily_reports_date_idx").on(table.reportDate),
+  localIdUnique: uniqueIndex("daily_reports_org_local_id_uniq").on(table.organizationId, table.submittedLocalId),
+}));
+export const insertDailyReportSchema = createInsertSchema(dailyReports).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDailyReport = z.infer<typeof insertDailyReportSchema>;
+export type DailyReport = typeof dailyReports.$inferSelect;
+
+// ============================================
 // SWPPP / NPDES INSPECTION LOG
 // ============================================
 export const swpppInspections = pgTable("swppp_inspections", {
