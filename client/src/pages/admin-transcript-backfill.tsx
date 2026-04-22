@@ -1180,6 +1180,21 @@ export default function AdminTranscriptBackfillPage() {
                 );
               })}
             </ul>
+            {/* Task #1074 — explain the cooperative-vs-reaped Cancel
+                outcomes so support staff don't have to re-derive the
+                heartbeat-staleness behavior every time they see the two
+                different toasts. The 5-minute window mirrors the
+                BACKFILL_HEARTBEAT_STALE_MS constant in
+                server/crmCallsRoutes.ts; keep them in sync. */}
+            <p
+              className="mt-3 text-xs text-muted-foreground"
+              data-testid="text-cross-org-cancel-hint"
+            >
+              Cancel asks the worker to stop after the current recording
+              (&ldquo;Cancellation requested&rdquo;). If its heartbeat is older
+              than 5 minutes the worker is presumed dead and the row is reaped
+              immediately to FAILED (&ldquo;Backfill marked as failed&rdquo;).
+            </p>
           </CardContent>
         </Card>
       )}

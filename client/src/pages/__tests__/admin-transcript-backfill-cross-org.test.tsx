@@ -202,4 +202,18 @@ describe("AdminTranscriptBackfillPage cross-org running card (Task #1037)", () =
       "all organizations",
     );
   });
+
+  // Task #1074 — the hint under the per-row Cancel button must explain
+  // both outcomes (cooperative cancel vs heartbeat-staleness reap) and
+  // mention the 5-minute threshold so support staff don't have to read
+  // server code to interpret the two different toasts.
+  it("renders a hint near the Cancel button explaining the cooperative-vs-reaped behavior and the 5-minute heartbeat window", () => {
+    render(<AdminTranscriptBackfillPage />);
+    const hint = screen.getByTestId("text-cross-org-cancel-hint");
+    const text = (hint.textContent ?? "").toLowerCase();
+    expect(text).toContain("cancel");
+    expect(text).toContain("5 minute");
+    expect(text).toContain("heartbeat");
+    expect(text).toContain("reaped");
+  });
 });
