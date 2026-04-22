@@ -1444,7 +1444,39 @@ router.get(
       const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "20"), 10) || 20, 1), 100);
       const offset = Math.max(parseInt(String(req.query.offset ?? "0"), 10) || 0, 0);
 
-      const { rows, total } = await listCrmTranscriptBackfillJobs(orgId, { limit, offset });
+      // Status filter: accept a single value or a comma-separated list. Only
+      // forward known statuses so a typo in the query string can't degrade the
+      // SQL into matching nothing silently.
+      const ALLOWED_STATUSES = ["RUNNING", "COMPLETED", "FAILED"];
+      const rawStatus = req.query.status;
+      const statusList = Array.isArray(rawStatus)
+        ? rawStatus.map(String)
+        : typeof rawStatus === "string" && rawStatus.length > 0
+        ? rawStatus.split(",")
+        : [];
+      const statuses = statusList
+        .map((s) => s.trim().toUpperCase())
+        .filter((s) => ALLOWED_STATUSES.includes(s));
+
+      const operatorRaw = typeof req.query.operator === "string" ? req.query.operator.trim() : "";
+      const operator = operatorRaw.length > 0 ? operatorRaw.slice(0, 200) : undefined;
+
+      const parseDate = (v: unknown): Date | undefined => {
+        if (typeof v !== "string" || v.length === 0) return undefined;
+        const d = new Date(v);
+        return Number.isNaN(d.getTime()) ? undefined : d;
+      };
+      const startedAfter = parseDate(req.query.startedAfter);
+      const startedBefore = parseDate(req.query.startedBefore);
+
+      const { rows, total } = await listCrmTranscriptBackfillJobs(orgId, {
+        limit,
+        offset,
+        statuses: statuses.length > 0 ? statuses : undefined,
+        operator,
+        startedAfter,
+        startedBefore,
+      });
 
       res.json({
         total,

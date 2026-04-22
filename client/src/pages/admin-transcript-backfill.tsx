@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -7,9 +7,31 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { DatePicker } from "@/components/ui/date-picker";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Loader2, Mic, Play, AlertTriangle, CheckCircle2, RefreshCw, ChevronDown, ChevronRight, History } from "lucide-react";
+import {
+  Loader2,
+  Mic,
+  Play,
+  AlertTriangle,
+  CheckCircle2,
+  RefreshCw,
+  ChevronDown,
+  ChevronRight,
+  History,
+  ChevronLeft,
+  ChevronsLeft,
+  ChevronsRight,
+  X,
+} from "lucide-react";
 import { format, formatDistanceStrict } from "date-fns";
 
 interface BackfillJob {
@@ -46,7 +68,11 @@ interface BackfillSummary {
 }
 
 const SUMMARY_KEY = ["/api/crm/calls/transcripts/backfill"];
-const HISTORY_KEY = ["/api/crm/calls/transcripts/backfill/history"];
+const HISTORY_PATH = "/api/crm/calls/transcripts/backfill/history";
+const HISTORY_KEY_BASE = [HISTORY_PATH] as const;
+const PAGE_SIZE = 20;
+const STATUS_OPTIONS = ["RUNNING", "COMPLETED", "FAILED"] as const;
+type StatusFilter = "ALL" | (typeof STATUS_OPTIONS)[number];
 
 export default function AdminTranscriptBackfillPage() {
   const { toast } = useToast();
@@ -54,6 +80,48 @@ export default function AdminTranscriptBackfillPage() {
   const [maxRecords, setMaxRecords] = useState<string>("");
   const [concurrency, setConcurrency] = useState<string>("2");
   const [expandedHistoryId, setExpandedHistoryId] = useState<string | null>(null);
+
+  // History filters. `appliedOperator` is debounced from the input field so we
+  // don't fire a request on every keystroke. Status/date changes apply
+  // immediately because they come from explicit pickers.
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("ALL");
+  const [operatorInput, setOperatorInput] = useState("");
+  const [appliedOperator, setAppliedOperator] = useState("");
+  const [startedAfter, setStartedAfter] = useState<Date | undefined>(undefined);
+  const [startedBefore, setStartedBefore] = useState<Date | undefined>(undefined);
+  const [page, setPage] = useState(0);
+
+  useEffect(() => {
+    const t = setTimeout(() => setAppliedOperator(operatorInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [operatorInput]);
+
+  // Reset to the first page whenever filters change so users don't end up
+  // staring at an empty page because their previous offset is past the new
+  // total.
+  useEffect(() => {
+    setPage(0);
+  }, [statusFilter, appliedOperator, startedAfter, startedBefore]);
+
+  const historyFilters = useMemo(() => {
+    const params: Record<string, string> = {
+      limit: String(PAGE_SIZE),
+      offset: String(page * PAGE_SIZE),
+    };
+    if (statusFilter !== "ALL") params.status = statusFilter;
+    if (appliedOperator) params.operator = appliedOperator;
+    if (startedAfter) params.startedAfter = startedAfter.toISOString();
+    if (startedBefore) {
+      // Make the upper bound inclusive of the entire selected day.
+      const end = new Date(startedBefore);
+      end.setHours(23, 59, 59, 999);
+      params.startedBefore = end.toISOString();
+    }
+    return params;
+  }, [page, statusFilter, appliedOperator, startedAfter, startedBefore]);
+
+  const hasActiveFilters =
+    statusFilter !== "ALL" || !!appliedOperator || !!startedAfter || !!startedBefore;
 
   const summaryQuery = useQuery<BackfillSummary>({
     queryKey: SUMMARY_KEY,
@@ -82,12 +150,12 @@ export default function AdminTranscriptBackfillPage() {
     const status = jobQuery.data?.status;
     if (status && status !== "RUNNING") {
       queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
-      queryClient.invalidateQueries({ queryKey: HISTORY_KEY });
+      queryClient.invalidateQueries({ queryKey: HISTORY_KEY_BASE });
     }
   }, [jobQuery.data?.status]);
 
   const historyQuery = useQuery<BackfillHistoryResponse>({
-    queryKey: HISTORY_KEY,
+    queryKey: [HISTORY_PATH, historyFilters],
     refetchInterval: activeJobId ? 5_000 : 30_000,
   });
 
@@ -108,7 +176,7 @@ export default function AdminTranscriptBackfillPage() {
         description: data.message ?? `Processing ${data.total} recording${data.total === 1 ? "" : "s"}.`,
       });
       queryClient.invalidateQueries({ queryKey: SUMMARY_KEY });
-      queryClient.invalidateQueries({ queryKey: HISTORY_KEY });
+      queryClient.invalidateQueries({ queryKey: HISTORY_KEY_BASE });
     },
     onError: (err: Error) => {
       toast({ title: "Failed to start backfill", description: err.message, variant: "destructive" });
@@ -301,7 +369,7 @@ export default function AdminTranscriptBackfillPage() {
                 Backfill history
               </CardTitle>
               <CardDescription>
-                Recent transcript backfill runs for this organization. Click a row to view error samples.
+                Past transcript backfill runs for this organization. Click a row to view error samples.
               </CardDescription>
             </div>
             <Button
@@ -321,6 +389,74 @@ export default function AdminTranscriptBackfillPage() {
           </div>
         </CardHeader>
         <CardContent>
+          <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4" data-testid="history-filters">
+            <div className="space-y-1.5">
+              <Label htmlFor="history-status" className="text-xs">Status</Label>
+              <Select
+                value={statusFilter}
+                onValueChange={(v) => setStatusFilter(v as StatusFilter)}
+              >
+                <SelectTrigger id="history-status" data-testid="select-history-status">
+                  <SelectValue placeholder="All statuses" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL" data-testid="select-history-status-option-ALL">All statuses</SelectItem>
+                  {STATUS_OPTIONS.map((s) => (
+                    <SelectItem key={s} value={s} data-testid={`select-history-status-option-${s}`}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="history-operator" className="text-xs">Operator</Label>
+              <Input
+                id="history-operator"
+                value={operatorInput}
+                onChange={(e) => setOperatorInput(e.target.value)}
+                placeholder="Name or email"
+                data-testid="input-history-operator"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Started after</Label>
+              <DatePicker
+                value={startedAfter ?? null}
+                onChange={(d) => setStartedAfter(d)}
+                placeholder="Any date"
+                data-testid="picker-history-started-after"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Started before</Label>
+              <DatePicker
+                value={startedBefore ?? null}
+                onChange={(d) => setStartedBefore(d)}
+                placeholder="Any date"
+                data-testid="picker-history-started-before"
+              />
+            </div>
+            {hasActiveFilters && (
+              <div className="sm:col-span-2 lg:col-span-4">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setStatusFilter("ALL");
+                    setOperatorInput("");
+                    setAppliedOperator("");
+                    setStartedAfter(undefined);
+                    setStartedBefore(undefined);
+                  }}
+                  data-testid="button-clear-history-filters"
+                >
+                  <X className="h-4 w-4 mr-1" />
+                  Clear filters
+                </Button>
+              </div>
+            )}
+          </div>
           {historyQuery.isLoading ? (
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" data-testid="status-loading-history" />
           ) : historyQuery.isError ? (
@@ -329,7 +465,9 @@ export default function AdminTranscriptBackfillPage() {
             </div>
           ) : !historyQuery.data || historyQuery.data.jobs.length === 0 ? (
             <div className="text-sm text-muted-foreground" data-testid="text-history-empty">
-              No backfill runs yet.
+              {hasActiveFilters
+                ? "No backfill runs match the current filters."
+                : "No backfill runs yet."}
             </div>
           ) : (
             <ul className="divide-y rounded-md border" data-testid="list-history">
@@ -428,8 +566,96 @@ export default function AdminTranscriptBackfillPage() {
               })}
             </ul>
           )}
+          {historyQuery.data && historyQuery.data.total > 0 && (
+            <HistoryPagination
+              total={historyQuery.data.total}
+              page={page}
+              pageSize={PAGE_SIZE}
+              isFetching={historyQuery.isFetching}
+              onPageChange={setPage}
+            />
+          )}
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function HistoryPagination({
+  total,
+  page,
+  pageSize,
+  isFetching,
+  onPageChange,
+}: {
+  total: number;
+  page: number;
+  pageSize: number;
+  isFetching: boolean;
+  onPageChange: (next: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(page, totalPages - 1);
+  const startIdx = total === 0 ? 0 : safePage * pageSize + 1;
+  const endIdx = Math.min(total, (safePage + 1) * pageSize);
+  const canPrev = safePage > 0;
+  const canNext = safePage < totalPages - 1;
+
+  return (
+    <div
+      className="mt-3 flex flex-wrap items-center justify-between gap-3"
+      data-testid="history-pagination"
+    >
+      <div className="text-xs text-muted-foreground" data-testid="text-history-range">
+        Showing <span className="font-medium">{startIdx.toLocaleString()}</span>–
+        <span className="font-medium">{endIdx.toLocaleString()}</span> of{" "}
+        <span className="font-medium">{total.toLocaleString()}</span>
+      </div>
+      <div className="flex items-center gap-1">
+        <Button
+          variant="outline"
+          size="icon"
+          disabled={!canPrev || isFetching}
+          onClick={() => onPageChange(0)}
+          data-testid="button-history-page-first"
+          aria-label="First page"
+        >
+          <ChevronsLeft className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          disabled={!canPrev || isFetching}
+          onClick={() => onPageChange(safePage - 1)}
+          data-testid="button-history-page-prev"
+          aria-label="Previous page"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </Button>
+        <div className="px-2 text-xs tabular-nums text-muted-foreground" data-testid="text-history-page">
+          Page {safePage + 1} of {totalPages}
+        </div>
+        <Button
+          variant="outline"
+          size="icon"
+          disabled={!canNext || isFetching}
+          onClick={() => onPageChange(safePage + 1)}
+          data-testid="button-history-page-next"
+          aria-label="Next page"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          disabled={!canNext || isFetching}
+          onClick={() => onPageChange(totalPages - 1)}
+          data-testid="button-history-page-last"
+          aria-label="Last page"
+        >
+          <ChevronsRight className="h-4 w-4" />
+        </Button>
+      </div>
     </div>
   );
 }

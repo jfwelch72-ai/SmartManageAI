@@ -6,7 +6,7 @@ import {
   type CrmTranscriptBackfillJob,
   type InsertCrmTranscriptBackfillJob,
 } from "@shared/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, ilike, or, gte, lte, inArray, type SQL } from "drizzle-orm";
 
 export interface ExecutiveDigestInsert {
   organizationId: string;
@@ -94,12 +94,54 @@ export type CrmTranscriptBackfillJobWithOperator = CrmTranscriptBackfillJob & {
   startedByEmail: string | null;
 };
 
+export type ListCrmTranscriptBackfillJobsFilters = {
+  limit?: number;
+  offset?: number;
+  /** Filter to one or more job statuses (RUNNING/COMPLETED/FAILED). */
+  statuses?: string[];
+  /** Substring match on the operator's first name, last name, or email. */
+  operator?: string;
+  /** Inclusive lower bound on `started_at`. */
+  startedAfter?: Date;
+  /** Inclusive upper bound on `started_at`. */
+  startedBefore?: Date;
+};
+
 export async function listCrmTranscriptBackfillJobs(
   organizationId: string,
-  opts: { limit?: number; offset?: number } = {},
+  opts: ListCrmTranscriptBackfillJobsFilters = {},
 ): Promise<{ rows: CrmTranscriptBackfillJobWithOperator[]; total: number }> {
   const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
   const offset = Math.max(opts.offset ?? 0, 0);
+
+  const conditions: SQL[] = [eq(crmTranscriptBackfillJobs.organizationId, organizationId)];
+
+  if (opts.statuses && opts.statuses.length > 0) {
+    conditions.push(inArray(crmTranscriptBackfillJobs.status, opts.statuses));
+  }
+
+  if (opts.operator && opts.operator.trim().length > 0) {
+    const pattern = `%${opts.operator.trim()}%`;
+    const operatorClause = or(
+      ilike(users.firstName, pattern),
+      ilike(users.lastName, pattern),
+      ilike(users.email, pattern),
+      // Match against the concatenated full name so "Jane Doe" matches even
+      // though firstName/lastName individually do not contain the space.
+      sql`(coalesce(${users.firstName}, '') || ' ' || coalesce(${users.lastName}, '')) ILIKE ${pattern}`,
+    );
+    if (operatorClause) conditions.push(operatorClause);
+  }
+
+  if (opts.startedAfter) {
+    conditions.push(gte(crmTranscriptBackfillJobs.startedAt, opts.startedAfter));
+  }
+  if (opts.startedBefore) {
+    conditions.push(lte(crmTranscriptBackfillJobs.startedAt, opts.startedBefore));
+  }
+
+  const whereClause = conditions.length === 1 ? conditions[0] : and(...conditions);
+
   const rows = await db
     .select({
       id: crmTranscriptBackfillJobs.id,
@@ -121,7 +163,7 @@ export async function listCrmTranscriptBackfillJobs(
     })
     .from(crmTranscriptBackfillJobs)
     .leftJoin(users, eq(users.id, crmTranscriptBackfillJobs.startedById))
-    .where(eq(crmTranscriptBackfillJobs.organizationId, organizationId))
+    .where(whereClause)
     .orderBy(desc(crmTranscriptBackfillJobs.startedAt))
     .limit(limit)
     .offset(offset);
@@ -129,7 +171,8 @@ export async function listCrmTranscriptBackfillJobs(
   const [{ count: totalRaw }] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(crmTranscriptBackfillJobs)
-    .where(eq(crmTranscriptBackfillJobs.organizationId, organizationId));
+    .leftJoin(users, eq(users.id, crmTranscriptBackfillJobs.startedById))
+    .where(whereClause);
   const total = Number(totalRaw) || 0;
 
   return { rows: rows as CrmTranscriptBackfillJobWithOperator[], total };
