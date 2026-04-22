@@ -14,6 +14,8 @@ below need a manual artifact filed here.
 | Gap assessment delivered | 2026-05-20 — see `2026-05-20-gap-assessment.md` |
 | Gaps identified | 0 Critical / 2 High / 3 Medium / 1 Low — tracked in `../remediation-plan.md` |
 | Annual penetration test executed | 2026-07-13 → 2026-07-31 — see `2026-pentest-summary.md` (0 Critical / 0 High) |
+| First quarterly access review filed | 2026-06-15 — see `2026-Q2-access-review-*.md` (10 systems) |
+| Next quarterly access review due | 2026-09-30 (2026-Q3) — see `../runbooks/access-review-runbook.md` |
 
 ## Required artifacts and cadence
 
@@ -24,7 +26,7 @@ below need a manual artifact filed here.
 | Disaster recovery exercise | Annual | `YYYY-MM-DD-dr-exercise.md` |
 | IR tabletop drill | Annual | `YYYY-MM-DD-ir-tabletop.md` |
 | Backup restore drill | Quarterly | `YYYY-MM-DD-restore-drill.md` |
-| Quarterly access review (per system) | Quarterly | `YYYY-Q#-access-review-<system>.md` |
+| Quarterly access review (per system) | Quarterly | `YYYY-Q#-access-review-<system>.md` (procedure: `../runbooks/access-review-runbook.md`) |
 | Vendor reviews (Critical / High tier) | Annual | `YYYY-vendor-review-<vendor>.md` |
 | Security training completion | Annual | `YYYY-security-training.md` |
 | Policy acknowledgements | On hire / on change | exported from HRIS |
