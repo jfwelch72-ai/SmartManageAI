@@ -206,13 +206,17 @@ export function PrevailingWageTab({
           ) : (
             <>
               <div className="hidden md:block overflow-x-auto">
-                <Table className="min-w-[640px]">
+                <Table className="min-w-[1100px]">
                   <TableHeader>
                     <TableRow>
                       <TableHead className="min-w-[130px]">Project</TableHead>
                       <TableHead className="min-w-[130px]">Classification</TableHead>
                       <TableHead className="text-right whitespace-nowrap min-w-[100px]">Wage Rate</TableHead>
-                      <TableHead className="text-right whitespace-nowrap min-w-[80px]">Fringe</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[90px]">H&amp;W</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[90px]">Pension</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[90px]">Vac/Hol</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[90px]">Training</TableHead>
+                      <TableHead className="text-right whitespace-nowrap min-w-[90px]">Fringe Total</TableHead>
                       <TableHead className="text-right whitespace-nowrap min-w-[100px]">Total Rate</TableHead>
                       <TableHead className="text-right whitespace-nowrap min-w-[80px]">OT Mult</TableHead>
                       <TableHead className="whitespace-nowrap min-w-[100px]">Effective</TableHead>
@@ -225,7 +229,11 @@ export function PrevailingWageTab({
                         <TableCell className="font-medium whitespace-nowrap">{pw.project?.name || "Unknown"}</TableCell>
                         <TableCell className="whitespace-nowrap">{pw.classification?.name || "Unknown"}</TableCell>
                         <TableCell className="text-right font-mono whitespace-nowrap">${parseFloat(pw.wageRate).toFixed(2)}</TableCell>
-                        <TableCell className="text-right font-mono whitespace-nowrap">${parseFloat(pw.fringeRate).toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-mono whitespace-nowrap text-muted-foreground" data-testid={`text-pw-fringe-health-${pw.id}`}>${parseFloat(pw.fringeHealthRate || "0").toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-mono whitespace-nowrap text-muted-foreground" data-testid={`text-pw-fringe-pension-${pw.id}`}>${parseFloat(pw.fringePensionRate || "0").toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-mono whitespace-nowrap text-muted-foreground" data-testid={`text-pw-fringe-vacation-${pw.id}`}>${parseFloat(pw.fringeVacationRate || "0").toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-mono whitespace-nowrap text-muted-foreground" data-testid={`text-pw-fringe-training-${pw.id}`}>${parseFloat(pw.fringeTrainingRate || "0").toFixed(2)}</TableCell>
+                        <TableCell className="text-right font-mono whitespace-nowrap" data-testid={`text-pw-fringe-total-${pw.id}`}>${parseFloat(pw.fringeRate).toFixed(2)}</TableCell>
                         <TableCell className="text-right font-mono font-semibold whitespace-nowrap">${parseFloat(pw.totalRate).toFixed(2)}</TableCell>
                         <TableCell className="text-right font-mono whitespace-nowrap">{pw.overtimeMultiplier}x</TableCell>
                         <TableCell className="whitespace-nowrap">{pw.effectiveDate}</TableCell>
@@ -277,6 +285,24 @@ export function PrevailingWageTab({
                       <div>
                         <span className="text-muted-foreground">Total</span>
                         <p className="font-mono font-semibold">${parseFloat(pw.totalRate).toFixed(2)}</p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-4 gap-2 text-[11px] border-t pt-2">
+                      <div>
+                        <span className="text-muted-foreground">H&amp;W</span>
+                        <p className="font-mono" data-testid={`text-pw-fringe-health-m-${pw.id}`}>${parseFloat(pw.fringeHealthRate || "0").toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Pension</span>
+                        <p className="font-mono" data-testid={`text-pw-fringe-pension-m-${pw.id}`}>${parseFloat(pw.fringePensionRate || "0").toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Vac/Hol</span>
+                        <p className="font-mono" data-testid={`text-pw-fringe-vacation-m-${pw.id}`}>${parseFloat(pw.fringeVacationRate || "0").toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Training</span>
+                        <p className="font-mono" data-testid={`text-pw-fringe-training-m-${pw.id}`}>${parseFloat(pw.fringeTrainingRate || "0").toFixed(2)}</p>
                       </div>
                     </div>
                     <div className="flex items-center justify-between text-xs text-muted-foreground">
