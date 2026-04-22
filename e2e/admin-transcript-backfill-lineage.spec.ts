@@ -160,6 +160,327 @@ async function stubBackfillEndpoints(page: Page) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Task #1058 — UI coverage for the cross-org running-jobs Cancel button
+// added in Task #1036. The handler (`cancelMutation`) POSTs to
+// `/api/crm/calls/transcripts/backfill/:jobId/cancel`. We stub the summary
+// endpoint to surface a fake cross-org running job, then assert that
+// clicking the row's Cancel button fires the cancel POST against the right
+// job id and that the success toast surfaces the server's reply.
+// ---------------------------------------------------------------------------
+const CROSS_ORG_RUNNING_JOB_ID = "xorg-running-9999";
+const CROSS_ORG_RUNNING_ORG_ID = "org-stub-running";
+
+async function stubCrossOrgSummaryEndpoints(page: Page) {
+  // Platform org list — the SUPER_ADMIN start-target picker fetches this
+  // on mount. An empty list is enough to keep the picker quiet.
+  await page.route("**/api/platform/organizations", async (route) => {
+    if (route.request().method() !== "GET") return route.fallback();
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        { id: CROSS_ORG_RUNNING_ORG_ID, name: "Stub Tenant", slug: "stub-tenant" },
+      ]),
+    });
+  });
+
+  // Summary returns the cross-org payload: a single tenant with a RUNNING
+  // backfill so the cross-org card mounts and the Cancel button renders.
+  await page.route(
+    "**/api/crm/calls/transcripts/backfill?**",
+    async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          pending: 0,
+          activeJob: null,
+          crossOrg: true,
+          scopedOrganizationId: null,
+          runningJobs: [
+            {
+              id: CROSS_ORG_RUNNING_JOB_ID,
+              organizationId: CROSS_ORG_RUNNING_ORG_ID,
+              status: "RUNNING",
+              total: 10,
+              processed: 4,
+              succeeded: 4,
+              failed: 0,
+              errors: [],
+              failedRecordingIds: [],
+              startedAt: isoStep(0),
+              completedAt: null,
+              parentJobId: null,
+              concurrency: 2,
+              maxRecords: null,
+              heartbeatAt: isoStep(30_000),
+              startedBy: null,
+              organization: {
+                id: CROSS_ORG_RUNNING_ORG_ID,
+                name: "Stub Tenant",
+                slug: "stub-tenant",
+              },
+            },
+          ],
+        }),
+      });
+    },
+  );
+  // The base path (no querystring) is used when the picker is on the
+  // cross-org default — match it too so the page mounts even before any
+  // params are appended to the request.
+  await page.route(
+    "**/api/crm/calls/transcripts/backfill",
+    async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          pending: 0,
+          activeJob: null,
+          crossOrg: true,
+          scopedOrganizationId: null,
+          runningJobs: [
+            {
+              id: CROSS_ORG_RUNNING_JOB_ID,
+              organizationId: CROSS_ORG_RUNNING_ORG_ID,
+              status: "RUNNING",
+              total: 10,
+              processed: 4,
+              succeeded: 4,
+              failed: 0,
+              errors: [],
+              failedRecordingIds: [],
+              startedAt: isoStep(0),
+              completedAt: null,
+              parentJobId: null,
+              concurrency: 2,
+              maxRecords: null,
+              heartbeatAt: isoStep(30_000),
+              startedBy: null,
+              organization: {
+                id: CROSS_ORG_RUNNING_ORG_ID,
+                name: "Stub Tenant",
+                slug: "stub-tenant",
+              },
+            },
+          ],
+        }),
+      });
+    },
+  );
+
+  // Quiet the page's other GETs so the cross-org card isn't crowded out
+  // by errors / spinners on unrelated panels.
+  await page.route(
+    "**/api/crm/calls/transcripts/backfill/operators",
+    async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ operators: [] }),
+      });
+    },
+  );
+  await page.route(
+    "**/api/crm/calls/transcripts/backfill/pending**",
+    async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ total: 0, limit: 20, offset: 0, recordings: [] }),
+      });
+    },
+  );
+  await page.route(
+    "**/api/crm/calls/transcripts/backfill/history**",
+    async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ total: 0, limit: 20, offset: 0, jobs: [] }),
+      });
+    },
+  );
+  await page.route(
+    "**/api/crm/calls/transcripts/backfill/notification-config",
+    async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          slack: { configured: false, valid: false },
+          email: { configured: false, recipients: [] },
+        }),
+      });
+    },
+  );
+  await page.route(
+    "**/api/crm/calls/transcripts/backfill/notification-settings",
+    async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          slack: { source: "env", valueMasked: null, valid: false },
+          email: { source: "env", recipients: [] },
+        }),
+      });
+    },
+  );
+  await page.route(
+    "**/api/crm/calls/transcripts/backfill/test-alert/latest",
+    async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          latest: null,
+          cooldownSeconds: 30,
+          nextAllowedAt: null,
+        }),
+      });
+    },
+  );
+  await page.route(
+    "**/api/crm/calls/transcripts/backfill/alert-deliveries**",
+    async (route) => {
+      if (route.request().method() !== "GET") return route.fallback();
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ deliveries: [] }),
+      });
+    },
+  );
+}
+
+test.describe("Admin transcript backfill — cross-org cancel (Task #1058)", () => {
+  test.beforeEach(async ({ page }) => {
+    await installCsrf(page);
+    // linkOrg=true keeps the dev SUPER_ADMIN attached to the seeded org so
+    // the page session works normally; the cross-org running-jobs card with
+    // the per-row Cancel button is driven entirely by the stubbed summary
+    // payload (`crossOrg: true` + `crossOrgRunning: [...]`) installed below,
+    // so the linked-org status doesn't affect what renders.
+    const res = await page.request.post(`${BASE_URL}/api/dev/test-login`, {
+      data: { role: "SUPER_ADMIN", linkOrg: true },
+    });
+    expect(res.status()).toBe(200);
+    await stubCrossOrgSummaryEndpoints(page);
+  });
+
+  test("clicking Cancel on a cross-org running job posts to /:jobId/cancel and surfaces the reply", async ({
+    page,
+  }) => {
+    // Capture the cancel POST so we can assert URL + payload after click.
+    let cancelRequestUrl: string | null = null;
+    await page.route(
+      `**/api/crm/calls/transcripts/backfill/${CROSS_ORG_RUNNING_JOB_ID}/cancel`,
+      async (route) => {
+        if (route.request().method() !== "POST") return route.fallback();
+        cancelRequestUrl = route.request().url();
+        await route.fulfill({
+          status: 202,
+          contentType: "application/json",
+          body: JSON.stringify({
+            jobId: CROSS_ORG_RUNNING_JOB_ID,
+            status: "CANCELLING",
+            reaped: false,
+            message:
+              "Cancellation requested; the job will stop after the current recording finishes.",
+          }),
+        });
+      },
+    );
+
+    await page.goto(`${BASE_URL}/admin/transcript-backfill`, {
+      waitUntil: "domcontentloaded",
+    });
+
+    // The cross-org running-jobs card must be visible with our stub row.
+    await expect(page.getByTestId("card-cross-org-running")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(
+      page.getByTestId(`cross-org-running-row-${CROSS_ORG_RUNNING_JOB_ID}`),
+    ).toBeVisible();
+    await expect(
+      page.getByTestId(`cross-org-running-org-${CROSS_ORG_RUNNING_JOB_ID}`),
+    ).toContainText("Stub Tenant");
+
+    // Click the per-row Cancel button. The mutation fires a POST whose
+    // URL must include the right job id; the toast that follows must
+    // reflect the server's "cancellation requested" message (reaped:false).
+    await page
+      .getByTestId(`button-cross-org-cancel-${CROSS_ORG_RUNNING_JOB_ID}`)
+      .click();
+
+    await expect.poll(() => cancelRequestUrl, { timeout: 10_000 }).toContain(
+      `/api/crm/calls/transcripts/backfill/${CROSS_ORG_RUNNING_JOB_ID}/cancel`,
+    );
+
+    // The success toast surfaces the server reply. The page renders toast
+    // titles inside an aria-live region; assert the human-readable string
+    // is present somewhere on the page.
+    await expect(
+      page.getByText("Cancellation requested", { exact: true }),
+    ).toBeVisible({ timeout: 10_000 });
+  });
+
+  test("clicking 'Start backfill here' on a cross-org row posts to /backfill with that org's id", async ({
+    page,
+  }) => {
+    // Capture the start POST so we can assert the body's organizationId
+    // matches the targeted tenant (the regression Task #1036 guards
+    // against — a SUPER_ADMIN accidentally starting in the wrong tenant).
+    let startRequestBody: unknown = null;
+    await page.route(
+      "**/api/crm/calls/transcripts/backfill",
+      async (route) => {
+        if (route.request().method() !== "POST") return route.fallback();
+        try {
+          startRequestBody = JSON.parse(route.request().postData() ?? "{}");
+        } catch {
+          startRequestBody = null;
+        }
+        await route.fulfill({
+          status: 202,
+          contentType: "application/json",
+          body: JSON.stringify({
+            jobId: "started-in-target-tenant",
+            total: 0,
+          }),
+        });
+      },
+    );
+
+    await page.goto(`${BASE_URL}/admin/transcript-backfill`, {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(page.getByTestId("card-cross-org-running")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await page
+      .getByTestId(`button-cross-org-start-${CROSS_ORG_RUNNING_JOB_ID}`)
+      .click();
+
+    await expect
+      .poll(() => startRequestBody, { timeout: 10_000 })
+      .toMatchObject({ organizationId: CROSS_ORG_RUNNING_ORG_ID });
+  });
+});
+
 test.describe("Admin transcript backfill — retry lineage chips (Task #1016)", () => {
   test.beforeEach(async ({ page }) => {
     await installCsrf(page);
