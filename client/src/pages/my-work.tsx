@@ -993,6 +993,7 @@ function KanbanBoard({
   const dragOverRef = useRef<Bucket | null>(null);
   const touchModeRef = useRef(false);
   const ghostElRef = useRef<HTMLDivElement | null>(null);
+  const boardRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     dragOverRef.current = dragOverCol;
@@ -1022,23 +1023,64 @@ function KanbanBoard({
     let lastY = 0;
     let rafId: number | null = null;
 
-    const computeDelta = () => {
-      const vh = window.innerHeight;
-      if (lastY < EDGE) {
-        const ratio = Math.min(1, (EDGE - lastY) / EDGE);
+    // Compute a scroll delta based on how close `pos` is to either edge of
+    // the [start, end] range. Returns negative to scroll toward `start`,
+    // positive to scroll toward `end`.
+    const computeDelta = (pos: number, start: number, end: number) => {
+      if (end - start < EDGE * 2) return 0;
+      if (pos < start + EDGE) {
+        const ratio = Math.min(1, (start + EDGE - pos) / EDGE);
         return -Math.max(1, Math.ceil(ratio * MAX_SPEED));
       }
-      if (lastY > vh - EDGE) {
-        const ratio = Math.min(1, (lastY - (vh - EDGE)) / EDGE);
+      if (pos > end - EDGE) {
+        const ratio = Math.min(1, (pos - (end - EDGE)) / EDGE);
         return Math.max(1, Math.ceil(ratio * MAX_SPEED));
       }
       return 0;
     };
+    // Edge ranges come from the kanban container rect (clamped to the
+    // viewport) so triggers feel anchored to the board, not the screen.
+    const getRanges = () => {
+      const rect = boardRef.current?.getBoundingClientRect();
+      const xStart = Math.max(0, rect?.left ?? 0);
+      const xEnd = Math.min(window.innerWidth, rect?.right ?? window.innerWidth);
+      const yStart = Math.max(0, rect?.top ?? 0);
+      const yEnd = Math.min(window.innerHeight, rect?.bottom ?? window.innerHeight);
+      return { xStart, xEnd, yStart, yEnd };
+    };
+    const findScrollable = (axis: "x" | "y"): HTMLElement | null => {
+      let node: HTMLElement | null = boardRef.current;
+      while (node && node !== document.body) {
+        const style = getComputedStyle(node);
+        const overflow = axis === "x" ? style.overflowX : style.overflowY;
+        const scrollSize = axis === "x" ? node.scrollWidth : node.scrollHeight;
+        const clientSize = axis === "x" ? node.clientWidth : node.clientHeight;
+        if (/(auto|scroll|overlay)/.test(overflow) && scrollSize > clientSize + 1) {
+          return node;
+        }
+        node = node.parentElement;
+      }
+      return null;
+    };
+    const applyScroll = (axis: "x" | "y", delta: number) => {
+      const target = findScrollable(axis);
+      if (target) {
+        if (axis === "x") target.scrollLeft += delta;
+        else target.scrollTop += delta;
+      } else if (axis === "x") {
+        window.scrollBy(delta, 0);
+      } else {
+        window.scrollBy(0, delta);
+      }
+    };
     const tick = () => {
       rafId = null;
-      const delta = computeDelta();
-      if (delta === 0) return;
-      window.scrollBy(0, delta);
+      const { xStart, xEnd, yStart, yEnd } = getRanges();
+      const dx = computeDelta(lastX, xStart, xEnd);
+      const dy = computeDelta(lastY, yStart, yEnd);
+      if (dx === 0 && dy === 0) return;
+      if (dx !== 0) applyScroll("x", dx);
+      if (dy !== 0) applyScroll("y", dy);
       // After scrolling, the element/column under the finger may have changed.
       const el = document.elementFromPoint(lastX, lastY) as HTMLElement | null;
       const colEl = el?.closest?.("[data-bucket]") as HTMLElement | null;
@@ -1069,7 +1111,10 @@ function KanbanBoard({
       const colEl = el?.closest?.("[data-bucket]") as HTMLElement | null;
       const bucket = (colEl?.dataset.bucket ?? null) as Bucket | null;
       if (bucket !== dragOverRef.current) setDragOverCol(bucket);
-      if (computeDelta() !== 0) ensureTick();
+      const { xStart, xEnd, yStart, yEnd } = getRanges();
+      const dx = computeDelta(lastX, xStart, xEnd);
+      const dy = computeDelta(lastY, yStart, yEnd);
+      if (dx !== 0 || dy !== 0) ensureTick();
       else stopTick();
     };
     const onEnd = () => {
@@ -1102,7 +1147,7 @@ function KanbanBoard({
 
   return (
     <>
-    <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3" data-testid="kanban">
+    <div ref={boardRef} className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-3" data-testid="kanban">
       {columns.map((col) => {
         const isOver = dragOverCol === col.key;
         return (
