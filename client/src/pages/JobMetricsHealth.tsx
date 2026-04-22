@@ -4,8 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ArrowLeft, RefreshCw, Cake, XCircle, Activity, BarChart3 } from "lucide-react";
-import { useMemo } from "react";
+import { ArrowLeft, RefreshCw, Cake, XCircle, Activity, BarChart3, Play, ListChecks } from "lucide-react";
+import { useMemo, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -34,6 +34,17 @@ interface JobMetricsResponse {
 
 interface JobsListResponse {
   jobs: JobMetricsResponse[];
+}
+
+interface RegistryJob {
+  name: string;
+  description?: string;
+  schedule?: string;
+}
+
+interface RegistryJobsResponse {
+  schedulersRunning: boolean;
+  jobs: RegistryJob[];
 }
 
 const BIRTHDAY_JOB = "crm_birthday_digest";
@@ -86,6 +97,7 @@ function formatTimestamp(ts: number | null): string {
 
 const BIRTHDAY_KEY = ["/api/admin/metrics/jobs", BIRTHDAY_JOB] as const;
 const ALL_JOBS_KEY = ["/api/admin/metrics/jobs"] as const;
+const REGISTRY_KEY = ["/api/admin/jobs"] as const;
 
 function bucketSamples(samples: JobMetricSample[], counters: readonly string[]) {
   const now = Date.now();
@@ -134,8 +146,43 @@ export default function JobMetricsHealth() {
     refetchInterval: 30000,
   });
 
+  const { data: registry, isLoading: registryLoading, isError: registryError } = useQuery<RegistryJobsResponse>({
+    queryKey: REGISTRY_KEY,
+  });
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [runningJob, setRunningJob] = useState<string | null>(null);
+
+  const runJobMutation = useMutation({
+    mutationFn: async (jobName: string) => {
+      const res = await apiRequest("POST", `/api/admin/jobs/${encodeURIComponent(jobName)}/run`);
+      return (await res.json()) as { job: string; status: string; durationMs: number };
+    },
+    onMutate: (jobName) => {
+      setRunningJob(jobName);
+    },
+    onSuccess: (data) => {
+      toast({
+        title: `Job '${data.job}' completed`,
+        description: `Finished in ${data.durationMs}ms.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ALL_JOBS_KEY });
+      queryClient.invalidateQueries({ queryKey: BIRTHDAY_KEY });
+    },
+    onError: (err: unknown, jobName) => {
+      const description =
+        err instanceof Error ? err.message : "An unexpected error occurred. Check server logs.";
+      toast({
+        title: `Failed to run '${jobName}'`,
+        description,
+        variant: "destructive",
+      });
+    },
+    onSettled: () => {
+      setRunningJob(null);
+    },
+  });
   const portfolioKpiMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/admin/jobs/portfolio_kpi_snapshot/run");
@@ -234,6 +281,94 @@ export default function JobMetricsHealth() {
             </Button>
           </div>
         </CardHeader>
+      </Card>
+
+      <Card data-testid="card-all-jobs">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ListChecks className="h-4 w-4" /> All background jobs
+          </CardTitle>
+          <CardDescription>
+            Manually trigger any job registered in the backend job registry. Useful for
+            kicking off nightly compliance checks, idle opportunity sweeps, IMAP sync, etc.
+            without shell access.{" "}
+            {registry && (
+              <span className="text-muted-foreground" data-testid="text-schedulers-status">
+                Schedulers are{" "}
+                <strong>{registry.schedulersRunning ? "running" : "disabled"}</strong> in this
+                environment.
+              </span>
+            )}{" "}
+            Super Admin only.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {registryLoading ? (
+            <Skeleton className="h-32 w-full" data-testid="skeleton-registry" />
+          ) : registryError || !registry ? (
+            <Alert variant="destructive" data-testid="alert-registry-error">
+              <XCircle className="h-4 w-4" />
+              <AlertTitle>Failed to load job registry</AlertTitle>
+              <AlertDescription>Try refreshing or check server logs.</AlertDescription>
+            </Alert>
+          ) : registry.jobs.length === 0 ? (
+            <div className="text-sm text-muted-foreground" data-testid="text-no-jobs">
+              No jobs registered.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm" data-testid="table-jobs">
+                <thead>
+                  <tr className="border-b text-left text-muted-foreground">
+                    <th className="py-2 pr-4 font-medium">Job</th>
+                    <th className="py-2 pr-4 font-medium">Description</th>
+                    <th className="py-2 pr-4 font-medium">Schedule</th>
+                    <th className="py-2 pr-4 font-medium text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {registry.jobs.map((job) => {
+                    const isRunning = runJobMutation.isPending && runningJob === job.name;
+                    const anyRunning = runJobMutation.isPending;
+                    return (
+                      <tr
+                        key={job.name}
+                        className="border-b last:border-b-0 align-top"
+                        data-testid={`row-job-${job.name}`}
+                      >
+                        <td className="py-2 pr-4 font-mono text-xs" data-testid={`text-job-registry-name-${job.name}`}>
+                          {job.name}
+                        </td>
+                        <td className="py-2 pr-4 text-muted-foreground">
+                          {job.description ?? "—"}
+                        </td>
+                        <td className="py-2 pr-4 font-mono text-xs text-muted-foreground">
+                          {job.schedule ?? "—"}
+                        </td>
+                        <td className="py-2 pr-4 text-right">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => runJobMutation.mutate(job.name)}
+                            disabled={anyRunning}
+                            data-testid={`button-run-job-${job.name}`}
+                          >
+                            {isRunning ? (
+                              <RefreshCw className="h-3.5 w-3.5 mr-1 animate-spin" />
+                            ) : (
+                              <Play className="h-3.5 w-3.5 mr-1" />
+                            )}
+                            {isRunning ? "Running…" : "Run now"}
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
       </Card>
 
       <Card data-testid="card-birthday-digest">
