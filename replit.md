@@ -28,6 +28,7 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Unified External Portal**: Single entry point (`/portal`) for Client, Subcontractor, and Vendor access with role-based auto-detection.
 *   **Website Builder System**: White-label website management with AI Website Wizard, page builder, publishing controls, and DNS verification.
 *   **Enterprise Features**: SSO/SAML 2.0, advanced session security, audit log export, data retention, GDPR compliance, and feature flags.
+*   **SOC 2 Type II Readiness**: Full policy library, runbooks (DR, IR tabletop, backup restore), DPA template, security questionnaire, and a controls matrix live in `docs/compliance/`. Public customer-facing artifacts at `/trust`, `/sub-processors`, and `/status`. CI security gate at `scripts/ci-security.sh` (dependency audit + SAST + secret scan + IaC).
 *   **Integration Gating**: Feature flags gate unconfigured third-party services, providing graceful degradation.
 *   **Structured Error Logging**: Captures production errors with stack trace, user context, route, and request ID.
 *   **Consolidated Startup Migrations**: Idempotent schema migration checks managed by a single runner with automatic schema drift detection.

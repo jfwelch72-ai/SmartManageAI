@@ -247,6 +247,9 @@ const UnifiedMessagesPage = lazy(() => import("@/pages/unified-messages"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
 const MyDayPage = lazy(() => import("@/pages/my-day"));
 const PlanPinsHarnessPage = lazy(() => import("@/pages/test/plan-pins-harness"));
+const TrustPage = lazy(() => import("@/pages/trust").then(m => ({ default: m.TrustPage })));
+const SubProcessorsPage = lazy(() => import("@/pages/trust").then(m => ({ default: m.SubProcessorsPage })));
+const StatusPage = lazy(() => import("@/pages/trust").then(m => ({ default: m.StatusPage })));
 
 function FeatureFlagGate({ flag, children }: { flag: FeatureFlagKey; children: React.ReactNode }) {
   const { isEnabled } = useFeatureFlagsHook();
@@ -346,6 +349,9 @@ function Router() {
       <Route path="/reset-password" component={ResetPasswordPage} />
       <Route path="/register" component={RegisterPage} />
       <Route path="/impersonate" component={ImpersonatePage} />
+      <Route path="/trust" component={TrustPage} />
+      <Route path="/sub-processors" component={SubProcessorsPage} />
+      <Route path="/status" component={StatusPage} />
       <Route path="/site/:subdomain/staging" component={() => <PublicWebsite isStaging={true} />} />
       <Route path="/site/:subdomain" component={PublicWebsite} />
       <Route path="/shared-preview/:token" component={SharedPreviewPage} />
@@ -610,7 +616,7 @@ function AppContent() {
   const [location] = useLocation();
   const { user, isLoading } = useAuth();
   
-  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/') || location === '/portal' || location.startsWith('/portal/') || location.startsWith('/print/');
+  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/') || location === '/portal' || location.startsWith('/portal/') || location.startsWith('/print/') || location === '/trust' || location === '/sub-processors' || location === '/status';
 
   const isPublicRoute = ['/', '/login', '/register', '/forgot-password', '/reset-password', '/hustler/accept-invite'].some(
     route => location === route || (route !== '/' && location.startsWith(route))
@@ -638,7 +644,7 @@ function AuthGatedWidget() {
   const { user } = useAuth();
   const [messagingOpen, setMessagingOpen] = React.useState(false);
   const [aiOpen, setAiOpen] = React.useState(false);
-  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/') || location === '/portal' || location.startsWith('/portal/') || location.startsWith('/print/');
+  const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/') || location === '/portal' || location.startsWith('/portal/') || location.startsWith('/print/') || location === '/trust' || location === '/sub-processors' || location === '/status';
 
   React.useEffect(() => {
     const handleMessaging = (e: Event) => {
