@@ -152,4 +152,26 @@ export async function getRunningCrmTranscriptBackfillJob(
   return row || null;
 }
 
+// Returns the most recent RUNNING backfill job per organization across all
+// orgs. Used on server boot to find jobs that may need to be resumed (or
+// reaped) after a process restart. Because the POST endpoint guards against
+// concurrent runs per org, in practice each org should appear at most once.
+export async function listMostRecentRunningCrmTranscriptBackfillJobsPerOrg(): Promise<
+  CrmTranscriptBackfillJob[]
+> {
+  const rows = await db
+    .select()
+    .from(crmTranscriptBackfillJobs)
+    .where(eq(crmTranscriptBackfillJobs.status, "RUNNING"))
+    .orderBy(desc(crmTranscriptBackfillJobs.startedAt));
+  const seen = new Set<string>();
+  const result: CrmTranscriptBackfillJob[] = [];
+  for (const row of rows) {
+    if (seen.has(row.organizationId)) continue;
+    seen.add(row.organizationId);
+    result.push(row);
+  }
+  return result;
+}
+
 export const storage = {};

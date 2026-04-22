@@ -36,6 +36,7 @@ import {
   getCrmTranscriptBackfillJob,
   getRunningCrmTranscriptBackfillJob,
   listCrmTranscriptBackfillJobs,
+  listMostRecentRunningCrmTranscriptBackfillJobsPerOrg,
   updateCrmTranscriptBackfillJob,
 } from "./storage";
 import {
@@ -1138,42 +1139,131 @@ async function runTranscriptBackfill(
   }
 }
 
-// On boot, mark only orphaned RUNNING jobs (heartbeat older than the stale
-// threshold) as FAILED. We deliberately avoid blanket-failing every RUNNING
-// row because in rolling-deploy or multi-instance setups another worker may
-// still be actively progressing the job — clobbering its status would both
-// hide real progress and let a duplicate backfill start. Active rows are
-// also lazily reaped on read in the GET handler.
-async function reapStaleBackfillJobsOnBoot() {
+// Maximum age (since startedAt) at which a RUNNING job is still considered
+// resumable. Anything older is treated as a zombie and reaped to FAILED so
+// it can't tie up the per-org "no concurrent backfills" guard forever.
+// Configurable via env so ops can tune it without a code change.
+const BACKFILL_MAX_RESUMABLE_AGE_MS = (() => {
+  const raw = Number(process.env.CRM_BACKFILL_MAX_RESUMABLE_AGE_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 24 * 60 * 60 * 1000;
+})();
+// Default concurrency used when resuming an interrupted job. The original
+// concurrency the admin chose isn't persisted, so we fall back to the same
+// default the POST endpoint uses.
+const BACKFILL_RESUME_CONCURRENCY = 2;
+
+// On boot, look at the most-recent RUNNING job per org and decide whether to
+// resume it or reap it.
+//
+//   - If the heartbeat is still fresh (< BACKFILL_HEARTBEAT_STALE_MS), some
+//     other instance may still own the job in a multi-process / rolling
+//     deploy setup. Leave it alone; the lazy on-read reaper in the GET
+//     handler will catch it later if that instance is actually dead.
+//   - If startedAt is older than BACKFILL_MAX_RESUMABLE_AGE_MS, treat the
+//     job as a zombie and reap it to FAILED so a fresh backfill can start.
+//   - Otherwise, the worker that owned this job died with the process. The
+//     transcript worker is idempotent (it only operates on rows whose
+//     transcript is still NULL with status PENDING/FAILED), so we can re-
+//     launch it against the still-eligible recordings while keeping the
+//     original id, started_at, started_by_id, and counters so the admin
+//     sees a single continuous progress bar.
+async function resumeOrReapBackfillJobsOnBoot() {
   try {
-    const cutoff = new Date(Date.now() - BACKFILL_HEARTBEAT_STALE_MS);
-    const result = await db
-      .update(crmTranscriptBackfillJobs)
-      .set({
-        status: "FAILED",
-        completedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(
-        and(
-          eq(crmTranscriptBackfillJobs.status, "RUNNING"),
-          lte(crmTranscriptBackfillJobs.heartbeatAt, cutoff),
-        ),
-      )
-      .returning({ id: crmTranscriptBackfillJobs.id });
-    if (result.length > 0) {
-      logInfo("crmCalls: reaped stale transcript backfill jobs on boot", {
-        count: result.length,
-        ids: result.map((r) => r.id),
+    const candidates = await listMostRecentRunningCrmTranscriptBackfillJobsPerOrg();
+    if (candidates.length === 0) return;
+
+    const now = Date.now();
+    let resumed = 0;
+    let reaped = 0;
+    let skipped = 0;
+
+    for (const row of candidates) {
+      const heartbeatAgeMs = now - new Date(row.heartbeatAt).getTime();
+      const startedAgeMs = now - new Date(row.startedAt).getTime();
+
+      // Another live instance probably owns this job — don't touch it.
+      if (heartbeatAgeMs < BACKFILL_HEARTBEAT_STALE_MS) {
+        skipped += 1;
+        continue;
+      }
+
+      // Stuck / zombie job — reap so the per-org guard doesn't block forever.
+      if (startedAgeMs >= BACKFILL_MAX_RESUMABLE_AGE_MS) {
+        await updateCrmTranscriptBackfillJob(row.id, {
+          status: "FAILED",
+          completedAt: new Date(),
+        });
+        reaped += 1;
+        logInfo("crmCalls: reaped zombie transcript backfill job on boot", {
+          jobId: row.id,
+          orgId: row.organizationId,
+          startedAgeMs,
+        });
+        continue;
+      }
+
+      // Resumable — bump the heartbeat right away so any concurrent boot of
+      // another instance sees a fresh heartbeat and won't try to resume the
+      // same job in parallel. Then re-launch the worker against the
+      // still-eligible recordings.
+      try {
+        await updateCrmTranscriptBackfillJob(row.id, { heartbeatAt: new Date() });
+
+        const job = rowToState(row);
+        const eligible = await fetchEligibleRecordingBatch(
+          job.orgId,
+          new Set(),
+          BACKFILL_BATCH_SIZE,
+        );
+
+        if (eligible.length === 0) {
+          // Nothing left to do — close out the job cleanly so the admin sees
+          // a definitive completed state instead of a perpetually-RUNNING row.
+          job.status = "COMPLETED";
+          job.completedAt = new Date().toISOString();
+          await persistJobProgress(job);
+          logInfo("crmCalls: resumed transcript backfill had nothing left to process", {
+            jobId: job.id,
+            orgId: job.orgId,
+          });
+          continue;
+        }
+
+        // Keep the job's existing id, startedAt, startedById, and counters
+        // (they were loaded via rowToState above) so the admin's progress
+        // bar continues from where it left off.
+        void runTranscriptBackfill(job, eligible, BACKFILL_RESUME_CONCURRENCY, null);
+        resumed += 1;
+        logInfo("crmCalls: resumed interrupted transcript backfill on boot", {
+          jobId: job.id,
+          orgId: job.orgId,
+          processed: job.processed,
+          total: job.total,
+          heartbeatAgeMs,
+        });
+      } catch (e) {
+        logWarn("crmCalls: failed to resume transcript backfill on boot", {
+          jobId: row.id,
+          orgId: row.organizationId,
+          error: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+
+    if (resumed > 0 || reaped > 0 || skipped > 0) {
+      logInfo("crmCalls: transcript backfill boot recovery summary", {
+        resumed,
+        reaped,
+        skipped,
       });
     }
   } catch (e) {
-    logWarn("crmCalls: failed to reap stale transcript backfill jobs on boot", {
+    logWarn("crmCalls: failed to resume/reap transcript backfill jobs on boot", {
       error: e instanceof Error ? e.message : String(e),
     });
   }
 }
-void reapStaleBackfillJobsOnBoot();
+void resumeOrReapBackfillJobsOnBoot();
 
 // Pending-count endpoint so the admin UI can show how many recordings are
 // missing a transcript before launching a backfill, plus surface the currently
