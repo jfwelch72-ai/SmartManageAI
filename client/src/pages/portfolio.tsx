@@ -9,7 +9,7 @@ import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Download, X, ChevronRight } from "lucide-react";
+import { Download, X, ChevronRight, ArrowUp, ArrowDown, Minus } from "lucide-react";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
@@ -17,7 +17,8 @@ import { ToastAction } from "@/components/ui/toast";
 type GroupBy = "program" | "division" | "trade" | "pm" | "none";
 type ViewKey = "heatmap" | "gantt" | "financial";
 
-interface KpiCell { key: string; label: string; value: number; sparkline: number[]; tab: string }
+interface DeltaPair { fourWeek: number | null; twelveWeek: number | null }
+interface KpiCell { key: string; label: string; value: number; sparkline: number[]; tab: string; delta4w?: number | null }
 interface HeatmapCell {
   projectId: string; code: string; name: string; status: string;
   pmName: string | null; clientName: string; state: string | null;
@@ -25,6 +26,7 @@ interface HeatmapCell {
   openRfis: number; openCos: number; openPunch: number;
   schedulePct: number; expectedPct: number;
   daysToNextMilestone: number | null;
+  deltas?: { health?: DeltaPair; spi?: DeltaPair; cpi?: DeltaPair };
   kpis: KpiCell[];
 }
 interface HeatmapGroup {
@@ -46,6 +48,7 @@ interface FinancialCell {
   contractAmount: number; actualCost: number; forecastFinal: number;
   variance: number; variancePct: number; margin: number;
   status_health: string; weeklyBurn: number; sparkline: number[];
+  deltas?: { burn?: DeltaPair };
 }
 interface FinancialGroup {
   key: string; label: string; cells: FinancialCell[];
@@ -80,6 +83,65 @@ function healthBgColor(h: number) {
   if (h >= 80) return "bg-emerald-500/15 border-emerald-500/40 text-emerald-700 dark:text-emerald-300";
   if (h >= 60) return "bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-300";
   return "bg-red-500/15 border-red-500/40 text-red-700 dark:text-red-300";
+}
+
+function formatDeltaNumber(n: number): string {
+  const abs = Math.abs(n);
+  const fixed = abs >= 100 ? abs.toFixed(0) : abs.toFixed(abs >= 10 ? 1 : 2);
+  const trimmed = fixed.replace(/\.?0+$/, "");
+  return `${n > 0 ? "+" : n < 0 ? "−" : ""}${trimmed || "0"}`;
+}
+
+function DeltaBadge({
+  value,
+  label,
+  inverse = false,
+  testId,
+}: {
+  value: number | null | undefined;
+  label?: string;
+  inverse?: boolean;
+  testId?: string;
+}) {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return (
+      <span
+        className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground"
+        title={label ? `${label}: insufficient history` : "Insufficient history"}
+        data-testid={testId}
+      >
+        <Minus className="h-2.5 w-2.5" />—
+      </span>
+    );
+  }
+  const rounded = Math.round(value * 100) / 100;
+  if (rounded === 0) {
+    return (
+      <span
+        className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground"
+        title={label ? `${label}: no change` : "No change"}
+        data-testid={testId}
+      >
+        <Minus className="h-2.5 w-2.5" />0
+      </span>
+    );
+  }
+  const isUp = rounded > 0;
+  const good = inverse ? !isUp : isUp;
+  const colorClass = good
+    ? "text-emerald-700 dark:text-emerald-400"
+    : "text-red-700 dark:text-red-400";
+  const Icon = isUp ? ArrowUp : ArrowDown;
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 text-[10px] font-medium ${colorClass}`}
+      title={label ? `${label} ${formatDeltaNumber(rounded)}` : undefined}
+      data-testid={testId}
+    >
+      <Icon className="h-2.5 w-2.5" />
+      {formatDeltaNumber(rounded)}
+    </span>
+  );
 }
 
 function Sparkline({ data, stroke = "currentColor" }: { data: number[]; stroke?: string }) {
@@ -286,18 +348,41 @@ function HeatmapView({ filters }: { filters: PortfolioFilters }) {
                         </div>
                       </Link>
                     </td>
-                    {c.kpis.map((k) => (
-                      <td key={k.key} className="py-2 px-2 align-middle min-w-[120px]" data-testid={`cell-kpi-${c.code}-${k.key}`}>
-                        <Link href={`/projects/${c.code}?tab=${k.tab}`}>
-                          <div className={`p-2 rounded border ${k.key === "health" ? healthBgColor(k.value) : "bg-muted/40 border-transparent"} hover-elevate cursor-pointer`}>
-                            <div className="flex items-baseline justify-between">
-                              <span className="text-base font-semibold" data-testid={`text-kpi-value-${c.code}-${k.key}`}>{k.value}</span>
+                    {c.kpis.map((k) => {
+                      const pair = (c.deltas as Record<string, DeltaPair | undefined> | undefined)?.[k.key];
+                      const delta4 = pair?.fourWeek ?? k.delta4w ?? null;
+                      const delta12 = pair?.twelveWeek ?? null;
+                      const hasDeltaContract = pair !== undefined || k.delta4w !== undefined;
+                      return (
+                        <td key={k.key} className="py-2 px-2 align-middle min-w-[140px]" data-testid={`cell-kpi-${c.code}-${k.key}`}>
+                          <Link href={`/projects/${c.code}?tab=${k.tab}`}>
+                            <div className={`p-2 rounded border ${k.key === "health" ? healthBgColor(k.value) : "bg-muted/40 border-transparent"} hover-elevate cursor-pointer`}>
+                              <div className="flex items-baseline justify-between gap-2">
+                                <span className="text-base font-semibold" data-testid={`text-kpi-value-${c.code}-${k.key}`}>{k.value}</span>
+                                {hasDeltaContract && (
+                                  <DeltaBadge
+                                    value={delta4}
+                                    label={`${k.label} vs 4 wks ago`}
+                                    testId={`delta-4w-${c.code}-${k.key}`}
+                                  />
+                                )}
+                              </div>
+                              <Sparkline data={k.sparkline} />
+                              {hasDeltaContract && (
+                                <div className="mt-1 flex items-center justify-between text-[10px] text-muted-foreground">
+                                  <span>vs 12w</span>
+                                  <DeltaBadge
+                                    value={delta12}
+                                    label={`${k.label} vs 12 wks ago`}
+                                    testId={`delta-12w-${c.code}-${k.key}`}
+                                  />
+                                </div>
+                              )}
                             </div>
-                            <Sparkline data={k.sparkline} />
-                          </div>
-                        </Link>
-                      </td>
-                    ))}
+                          </Link>
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
@@ -443,7 +528,26 @@ function FinancialView({ filters }: { filters: PortfolioFilters }) {
                     <td className="py-2 text-right">{fmtCurrency(c.forecastFinal)}</td>
                     <td className={`py-2 text-right ${c.variancePct < 0 ? "text-red-600" : "text-emerald-600"}`} data-testid={`text-fin-var-${c.code}`}>{c.variancePct}%</td>
                     <td className="py-2 text-right">{c.margin}%</td>
-                    <td className="py-2"><Sparkline data={c.sparkline} /></td>
+                    <td className="py-2 min-w-[140px]">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex-1"><Sparkline data={c.sparkline} /></div>
+                        <DeltaBadge
+                          value={c.deltas?.burn?.fourWeek ?? null}
+                          label="Burn vs 4 wks ago"
+                          inverse
+                          testId={`delta-burn-4w-${c.code}`}
+                        />
+                      </div>
+                      <div className="mt-0.5 flex items-center justify-between text-[10px] text-muted-foreground">
+                        <span>vs 12w</span>
+                        <DeltaBadge
+                          value={c.deltas?.burn?.twelveWeek ?? null}
+                          label="Burn vs 12 wks ago"
+                          inverse
+                          testId={`delta-burn-12w-${c.code}`}
+                        />
+                      </div>
+                    </td>
                     <td className="py-2 text-right">
                       <Link href={`/projects/${c.code}?tab=financials`}>
                         <Button variant="ghost" size="sm" data-testid={`button-drill-${c.code}`}>
