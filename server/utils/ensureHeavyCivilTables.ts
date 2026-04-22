@@ -304,7 +304,7 @@ export async function ensureHeavyCivilTables(): Promise<void> {
           "variant" "payroll_form_variant" NOT NULL,
           "object_key" text NOT NULL,
           "file_size" integer NOT NULL DEFAULT 0,
-          "generated_by_id" varchar NOT NULL REFERENCES "users"("id"),
+          "generated_by_id" varchar REFERENCES "users"("id"),
           "generated_at" timestamp NOT NULL DEFAULT now()
         )
       `);
@@ -313,6 +313,10 @@ export async function ensureHeavyCivilTables(): Promise<void> {
       await db.execute(sql`CREATE INDEX IF NOT EXISTS "certified_payroll_reports_project_idx" ON "certified_payroll_reports" ("project_id")`);
       await db.execute(sql`CREATE INDEX IF NOT EXISTS "certified_payroll_reports_generated_at_idx" ON "certified_payroll_reports" ("generated_at")`);
     }
+
+    // Backfill-friendly: allow generated_by_id to be NULL on existing installs so the
+    // backfill script can insert rows for legacy PDFs whose original generator is unknown.
+    await db.execute(sql`ALTER TABLE "certified_payroll_reports" ALTER COLUMN "generated_by_id" DROP NOT NULL`);
 
     logInfo("[migration] heavy_civil_tables — created missing heavy-civil tables");
   } catch (err) {

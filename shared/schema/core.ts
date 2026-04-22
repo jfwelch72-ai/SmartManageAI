@@ -181,7 +181,7 @@ export const certifiedPayrollReports = pgTable("certified_payroll_reports", {
   variant: payrollFormVariantEnum("variant").notNull(),
   objectKey: text("object_key").notNull(),
   fileSize: integer("file_size").notNull().default(0),
-  generatedById: varchar("generated_by_id").notNull().references(() => users.id),
+  generatedById: varchar("generated_by_id").references(() => users.id),
   generatedAt: timestamp("generated_at").notNull().defaultNow(),
 }, (table) => ({
   orgIdx: index("certified_payroll_reports_org_idx").on(table.organizationId),
