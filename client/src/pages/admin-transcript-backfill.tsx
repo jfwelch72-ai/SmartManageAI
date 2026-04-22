@@ -178,6 +178,13 @@ interface BackfillOperatorsResponse {
   operators: BackfillOperator[];
 }
 
+// Task #1090 — quick-pick of users who have cancelled at least one run
+// in the current org scope. Reuses the operator shape so the dropdown
+// renders identically (name — email (jobCount)).
+interface BackfillCancellersResponse {
+  cancellers: BackfillOperator[];
+}
+
 // Task #1032 — read-only summary of which alert destinations are wired up
 // server-side. The Slack webhook URL is intentionally NOT included.
 // Task #1063 — also carries the persisted last-test outcome so the env-var
@@ -440,6 +447,9 @@ export default function AdminTranscriptBackfillPage() {
   // user's id (exact match) and ignore the free-text operator input so the
   // two filters don't fight each other.
   const [operatorId, setOperatorId] = useState<string>("ALL");
+  // Task #1090 — quick-pick "Cancelled by" filter. Mirrors the operator
+  // dropdown but matches against the canceller column. "ALL" means no filter.
+  const [cancellerId, setCancellerId] = useState<string>("ALL");
   const [startedAfter, setStartedAfter] = useState<Date | undefined>(undefined);
   const [startedBefore, setStartedBefore] = useState<Date | undefined>(undefined);
   // Task #1007 — SUPER_ADMINs can see history across every org. Default to the
@@ -473,7 +483,7 @@ export default function AdminTranscriptBackfillPage() {
       return;
     }
     setPage(0);
-  }, [statusFilter, appliedOperator, operatorId, startedAfter, startedBefore, orgFilter]);
+  }, [statusFilter, appliedOperator, operatorId, cancellerId, startedAfter, startedBefore, orgFilter]);
 
   const historyFilters = useMemo(() => {
     const params: Record<string, string> = {
@@ -486,6 +496,11 @@ export default function AdminTranscriptBackfillPage() {
       params.startedById = operatorId;
     } else if (appliedOperator) {
       params.operator = appliedOperator;
+    }
+    // Task #1090 — chainable canceller quick-pick. Independent of the operator
+    // filter so admins can ask "every run Sam started that Jane cancelled".
+    if (cancellerId !== "ALL") {
+      params.cancelledById = cancellerId;
     }
     if (startedAfter) params.startedAfter = startedAfter.toISOString();
     if (startedBefore) {
@@ -500,12 +515,13 @@ export default function AdminTranscriptBackfillPage() {
       params.organizationId = orgFilter;
     }
     return params;
-  }, [page, statusFilter, appliedOperator, operatorId, startedAfter, startedBefore, orgFilter, isSuperAdmin]);
+  }, [page, statusFilter, appliedOperator, operatorId, cancellerId, startedAfter, startedBefore, orgFilter, isSuperAdmin]);
 
   const hasActiveFilters =
     statusFilter !== "ALL" ||
     !!appliedOperator ||
     operatorId !== "ALL" ||
+    cancellerId !== "ALL" ||
     !!startedAfter ||
     !!startedBefore ||
     (isSuperAdmin && orgFilter !== CROSS_ORG_VALUE);
@@ -595,6 +611,13 @@ export default function AdminTranscriptBackfillPage() {
   // appearing operators show up without a manual reload.
   const operatorsQuery = useQuery<BackfillOperatorsResponse>({
     queryKey: ["/api/crm/calls/transcripts/backfill/operators"],
+  });
+
+  // Task #1090 — quick-pick source for the new "Cancelled by" dropdown.
+  // Refreshes whenever a job is cancelled (see cancelMutation.onSuccess) so a
+  // newly-appearing canceller shows up without a manual reload.
+  const cancellersQuery = useQuery<BackfillCancellersResponse>({
+    queryKey: ["/api/crm/calls/transcripts/backfill/cancellers"],
   });
 
   // Task #1032 — current notification destination configuration (Slack
@@ -700,6 +723,7 @@ export default function AdminTranscriptBackfillPage() {
     setOperatorInput("");
     setAppliedOperator("");
     setOperatorId("ALL");
+    setCancellerId("ALL");
     setStartedAfter(undefined);
     setStartedBefore(undefined);
   };
@@ -725,6 +749,11 @@ export default function AdminTranscriptBackfillPage() {
         params.set("startedById", operatorId);
       } else if (appliedOperator) {
         params.set("operator", appliedOperator);
+      }
+      // Task #1090 — pass the canceller filter so the locate offset matches
+      // the filtered listing.
+      if (cancellerId !== "ALL") {
+        params.set("cancelledById", cancellerId);
       }
       if (startedAfter) params.set("startedAfter", startedAfter.toISOString());
       if (startedBefore) {
@@ -1006,6 +1035,11 @@ export default function AdminTranscriptBackfillPage() {
       queryClient.invalidateQueries({ queryKey: HISTORY_KEY_BASE });
       queryClient.invalidateQueries({
         queryKey: ["/api/crm/calls/transcripts/backfill", data.jobId],
+      });
+      // Task #1090 — refresh the "Cancelled by" quick-pick so the new
+      // canceller (or an updated jobCount) shows up immediately.
+      queryClient.invalidateQueries({
+        queryKey: ["/api/crm/calls/transcripts/backfill/cancellers"],
       });
     },
     onError: (err: Error) => {
@@ -1859,6 +1893,52 @@ export default function AdminTranscriptBackfillPage() {
                 </p>
               )}
             </div>
+            {/* Task #1090 — "Cancelled by" quick-pick. Only the users who have
+                actually cancelled at least one run in the current org scope
+                appear here, so an empty dropdown is a meaningful signal that
+                nobody has cancelled anything yet. */}
+            <div className="space-y-1.5">
+              <Label htmlFor="history-cancelled-by-select" className="text-xs">
+                Cancelled by
+              </Label>
+              <Select
+                value={cancellerId}
+                onValueChange={(v) => setCancellerId(v)}
+              >
+                <SelectTrigger
+                  id="history-cancelled-by-select"
+                  data-testid="select-history-cancelled-by"
+                >
+                  <SelectValue placeholder="Anyone" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem
+                    value="ALL"
+                    data-testid="select-history-cancelled-by-option-ALL"
+                  >
+                    Anyone
+                  </SelectItem>
+                  {(cancellersQuery.data?.cancellers ?? []).map((op) => (
+                    <SelectItem
+                      key={op.id}
+                      value={op.id}
+                      data-testid={`select-history-cancelled-by-option-${op.id}`}
+                    >
+                      {formatOperatorOption(op)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {(cancellersQuery.data?.cancellers ?? []).length === 0 &&
+                !cancellersQuery.isLoading && (
+                  <p
+                    className="text-[11px] text-muted-foreground"
+                    data-testid="text-history-cancelled-by-empty"
+                  >
+                    No cancelled runs yet.
+                  </p>
+                )}
+            </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Started after</Label>
               <DatePicker
@@ -1887,6 +1967,7 @@ export default function AdminTranscriptBackfillPage() {
                     setOperatorInput("");
                     setAppliedOperator("");
                     setOperatorId("ALL");
+                    setCancellerId("ALL");
                     setStartedAfter(undefined);
                     setStartedBefore(undefined);
                     if (isSuperAdmin) setOrgFilter(CROSS_ORG_VALUE);

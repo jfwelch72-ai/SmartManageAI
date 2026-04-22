@@ -152,6 +152,12 @@ export type ListCrmTranscriptBackfillJobsFilters = {
   operator?: string;
   /** Exact match on the operator's user id (set by the quick-pick dropdown). */
   startedById?: string;
+  /**
+   * Task #1090 — exact match on the user id of whoever cancelled the run.
+   * Set by the "Cancelled by" quick-pick dropdown so admins can quickly
+   * find every run a specific person stopped. Mirrors `startedById`.
+   */
+  cancelledById?: string;
   /** Inclusive lower bound on `started_at`. */
   startedAfter?: Date;
   /** Inclusive upper bound on `started_at`. */
@@ -175,6 +181,12 @@ export async function listCrmTranscriptBackfillJobs(
 
   if (opts.startedById) {
     conditions.push(eq(crmTranscriptBackfillJobs.startedById, opts.startedById));
+  }
+
+  // Task #1090 — exact-match filter on the canceller. Combined with AND so
+  // admins can chain it with status/date/operator pickers.
+  if (opts.cancelledById) {
+    conditions.push(eq(crmTranscriptBackfillJobs.cancelledById, opts.cancelledById));
   }
 
   if (opts.operator && opts.operator.trim().length > 0) {
@@ -296,6 +308,49 @@ export async function listCrmTranscriptBackfillOperators(
     )
     .groupBy(
       crmTranscriptBackfillJobs.startedById,
+      users.firstName,
+      users.lastName,
+      users.email,
+    )
+    .orderBy(users.firstName, users.lastName, users.email);
+
+  return rows
+    .filter((r): r is CrmTranscriptBackfillOperator & { id: string } => !!r.id)
+    .map((r) => ({
+      id: r.id,
+      firstName: r.firstName,
+      lastName: r.lastName,
+      email: r.email,
+      jobCount: Number(r.jobCount) || 0,
+    }));
+}
+
+// Task #1090 — distinct set of users who have cancelled at least one
+// transcript backfill in the given org. Powers the "Cancelled by" quick-pick
+// dropdown in the admin history UI so admins can filter by an exact user id
+// without having to remember the canceller's spelling. Mirrors the shape and
+// behaviour of `listCrmTranscriptBackfillOperators` for the starter side.
+export async function listCrmTranscriptBackfillCancellers(
+  organizationId: string,
+): Promise<CrmTranscriptBackfillOperator[]> {
+  const rows = await db
+    .select({
+      id: crmTranscriptBackfillJobs.cancelledById,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      email: users.email,
+      jobCount: sql<number>`count(*)::int`,
+    })
+    .from(crmTranscriptBackfillJobs)
+    .leftJoin(users, eq(users.id, crmTranscriptBackfillJobs.cancelledById))
+    .where(
+      and(
+        eq(crmTranscriptBackfillJobs.organizationId, organizationId),
+        sql`${crmTranscriptBackfillJobs.cancelledById} IS NOT NULL`,
+      ),
+    )
+    .groupBy(
+      crmTranscriptBackfillJobs.cancelledById,
       users.firstName,
       users.lastName,
       users.email,
@@ -759,6 +814,11 @@ export async function locateCrmTranscriptBackfillJobPage(
       if (filters.startedById) {
         conds.push(eq(crmTranscriptBackfillJobs.startedById, filters.startedById));
       }
+      // Task #1090 — keep the locate page count in sync with the listing
+      // when the "Cancelled by" quick-pick is active.
+      if (filters.cancelledById) {
+        conds.push(eq(crmTranscriptBackfillJobs.cancelledById, filters.cancelledById));
+      }
       if (filters.operator && filters.operator.trim().length > 0) {
         const pattern = `%${filters.operator.trim()}%`;
         const operatorClause = or(
@@ -785,6 +845,7 @@ export async function locateCrmTranscriptBackfillJobPage(
   const hasNonOrgFilters =
     (filters.statuses && filters.statuses.length > 0) ||
     !!filters.startedById ||
+    !!filters.cancelledById ||
     !!filters.startedAfter ||
     !!filters.startedBefore ||
     !!(filters.operator && filters.operator.trim().length > 0);
@@ -800,6 +861,9 @@ export async function locateCrmTranscriptBackfillJobPage(
     }
     if (filters.startedById) {
       matchConds.push(eq(crmTranscriptBackfillJobs.startedById, filters.startedById));
+    }
+    if (filters.cancelledById) {
+      matchConds.push(eq(crmTranscriptBackfillJobs.cancelledById, filters.cancelledById));
     }
     if (filters.startedAfter) {
       matchConds.push(gte(crmTranscriptBackfillJobs.startedAt, filters.startedAfter));

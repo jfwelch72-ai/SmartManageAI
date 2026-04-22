@@ -54,6 +54,7 @@ import {
   listCrmTranscriptBackfillJobs,
   listCrmTranscriptBackfillNotificationsForJobs,
   listCrmTranscriptBackfillOperators,
+  listCrmTranscriptBackfillCancellers,
   locateCrmTranscriptBackfillJobPage,
   getCrmTranscriptBackfillLineages,
   listMostRecentRunningCrmTranscriptBackfillJobsPerOrg,
@@ -3103,6 +3104,14 @@ router.get(
       const startedById =
         startedByIdRaw.length > 0 ? startedByIdRaw.slice(0, 200) : undefined;
 
+      // Task #1090 — exact-match filter on the canceller. Mirrors the
+      // existing `startedById` quick-pick so admins can quickly find every
+      // run a specific person stopped.
+      const cancelledByIdRaw =
+        typeof req.query.cancelledById === "string" ? req.query.cancelledById.trim() : "";
+      const cancelledById =
+        cancelledByIdRaw.length > 0 ? cancelledByIdRaw.slice(0, 200) : undefined;
+
       const parseDate = (v: unknown): Date | undefined => {
         if (typeof v !== "string" || v.length === 0) return undefined;
         const d = new Date(v);
@@ -3118,6 +3127,7 @@ router.get(
         statuses: statuses.length > 0 ? statuses : undefined,
         operator,
         startedById,
+        cancelledById,
         startedAfter,
         startedBefore,
       });
@@ -3368,6 +3378,13 @@ router.get(
       const startedById =
         startedByIdRaw.length > 0 ? startedByIdRaw.slice(0, 200) : undefined;
 
+      // Task #1090 — also honor the canceller quick-pick so jumping to an
+      // off-page lineage chip respects the same filters the history list does.
+      const cancelledByIdRaw =
+        typeof req.query.cancelledById === "string" ? req.query.cancelledById.trim() : "";
+      const cancelledById =
+        cancelledByIdRaw.length > 0 ? cancelledByIdRaw.slice(0, 200) : undefined;
+
       const parseDate = (v: unknown): Date | undefined => {
         if (typeof v !== "string" || v.length === 0) return undefined;
         const d = new Date(v);
@@ -3385,6 +3402,7 @@ router.get(
         statuses: statuses.length > 0 ? statuses : undefined,
         operator,
         startedById,
+        cancelledById,
         startedAfter,
         startedBefore,
       });
@@ -3395,6 +3413,7 @@ router.get(
           statuses: statuses.length > 0 ? statuses : undefined,
           operator,
           startedById,
+          cancelledById,
           startedAfter,
           startedBefore,
         });
@@ -3591,6 +3610,26 @@ router.get(
   },
 );
 
+// Task #1090 — list distinct users who have cancelled at least one backfill
+// in this org. Powers the "Cancelled by" quick-pick dropdown in the admin
+// history UI so admins can filter without having to remember exact spelling.
+// Mirrors the operators endpoint above.
+router.get(
+  "/api/crm/calls/transcripts/backfill/cancellers",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+      const cancellers = await listCrmTranscriptBackfillCancellers(orgId);
+      res.json({ cancellers });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
 // Task #1000 — same filters as the JSON history endpoint, but stream the full
 // matching set (not just the visible page) as CSV so admins can export it for
 // auditing or sharing with stakeholders.
@@ -3636,6 +3675,13 @@ router.get(
         typeof req.query.startedById === "string" ? req.query.startedById.trim() : "";
       const startedById =
         startedByIdRaw.length > 0 ? startedByIdRaw.slice(0, 200) : undefined;
+
+      // Task #1090 — same treatment for the canceller quick-pick so an
+      // exported CSV mirrors the filtered history view exactly.
+      const cancelledByIdRaw =
+        typeof req.query.cancelledById === "string" ? req.query.cancelledById.trim() : "";
+      const cancelledById =
+        cancelledByIdRaw.length > 0 ? cancelledByIdRaw.slice(0, 200) : undefined;
 
       const parseDate = (v: unknown): Date | undefined => {
         if (typeof v !== "string" || v.length === 0) return undefined;
@@ -3684,6 +3730,7 @@ router.get(
           statuses: statuses.length > 0 ? statuses : undefined,
           operator,
           startedById,
+          cancelledById,
           startedAfter,
           startedBefore,
         });
