@@ -1861,6 +1861,49 @@ export type InsertCrmTranscriptBackfillTestAlert = z.infer<
 export type CrmTranscriptBackfillTestAlert =
   typeof crmTranscriptBackfillTestAlerts.$inferSelect;
 
+// Task #1031 — record every per-channel dispatch attempt for transcript
+// backfill alerts so admins can confirm in-app that the most recent runs
+// actually reached Slack/email. Failures are logged server-side too, but
+// without this table they're invisible to the people who configured the
+// destinations. One row per (job, channel, recipient batch).
+export const crmTranscriptBackfillAlertDeliveries = pgTable(
+  "crm_transcript_backfill_alert_deliveries",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    organizationId: varchar("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    jobId: varchar("job_id"),
+    // 'slack' | 'email'
+    channel: text("channel").notNull(),
+    // 'success' | 'failure'
+    status: text("status").notNull(),
+    // Human-readable target summary: webhook host for Slack, comma-separated
+    // recipient list (truncated) for email.
+    recipientSummary: text("recipient_summary").notNull().default(""),
+    errorMessage: text("error_message"),
+    attemptedAt: timestamp("attempted_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    orgAttemptedIdx: index(
+      "crm_transcript_backfill_alert_deliveries_org_attempted_idx",
+    ).on(table.organizationId, table.attemptedAt),
+    jobIdx: index("crm_transcript_backfill_alert_deliveries_job_idx").on(
+      table.jobId,
+    ),
+  }),
+);
+export type CrmTranscriptBackfillAlertDelivery =
+  typeof crmTranscriptBackfillAlertDeliveries.$inferSelect;
+export const insertCrmTranscriptBackfillAlertDeliverySchema =
+  createInsertSchema(crmTranscriptBackfillAlertDeliveries).omit({
+    id: true,
+    attemptedAt: true,
+  });
+export type InsertCrmTranscriptBackfillAlertDelivery = z.infer<
+  typeof insertCrmTranscriptBackfillAlertDeliverySchema
+>;
+
 // CRM Quotes - lightweight proposals/quotes generated directly from opportunities
 export const crmQuotes = pgTable("crm_quotes", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

@@ -43,6 +43,7 @@ import {
   getCrmTranscriptBackfillNotificationSettings,
   getCrmTranscriptBackfillOperatorContact,
   getLatestCrmTranscriptBackfillTestAlert,
+  listCrmTranscriptBackfillAlertDeliveries,
   getRunningCrmTranscriptBackfillJob,
   listCrmTranscriptBackfillJobs,
   listCrmTranscriptBackfillNotificationsForJobs,
@@ -2907,6 +2908,40 @@ router.get(
         // cross-org view before navigating.
         orgScopeChanged,
         pageSize: 20,
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #1031 — recent per-channel alert dispatch history so admins can
+// confirm in-app whether the most recent backfill alerts actually reached
+// the configured Slack/email destinations. Capped at 50 rows per request;
+// the UI defaults to 10.
+router.get(
+  "/api/crm/calls/transcripts/backfill/alert-deliveries",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+      const limit = Math.min(
+        Math.max(parseInt(String(req.query.limit ?? "10"), 10) || 10, 1),
+        50,
+      );
+      const rows = await listCrmTranscriptBackfillAlertDeliveries(orgId, limit);
+      res.json({
+        deliveries: rows.map((row) => ({
+          id: row.id,
+          jobId: row.jobId,
+          channel: row.channel,
+          status: row.status,
+          recipientSummary: row.recipientSummary,
+          errorMessage: row.errorMessage,
+          attemptedAt: row.attemptedAt.toISOString(),
+        })),
       });
     } catch (e) {
       next(e);

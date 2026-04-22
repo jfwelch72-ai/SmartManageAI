@@ -14,11 +14,12 @@
  * to unit test without touching the network.
  */
 
-import { sendSlackMessage, isValidSlackWebhookUrl } from "./slackService";
+import { isValidSlackWebhookUrl } from "./slackService";
 import { sendEmail } from "./emailService";
 import { logInfo, logWarn } from "../utils/logger";
 import {
   getCrmTranscriptBackfillNotificationSettings,
+  recordCrmTranscriptBackfillAlertDelivery,
   type CrmTranscriptBackfillOperatorContact,
 } from "../storage";
 
@@ -219,37 +220,97 @@ export async function notifyBackfillCompletion(
 
   const tasks: Array<Promise<unknown>> = [];
 
+  // Task #1031 — every dispatch attempt (success or failure) is recorded so
+  // admins can confirm delivery from the in-app history card. Recording is
+  // best-effort: a logging failure must never bubble up and break the
+  // backfill worker's `finally` block.
+  const recordDelivery = async (
+    channel: "slack" | "email",
+    status: "success" | "failure",
+    recipientSummary: string,
+    errorMessage?: string,
+  ) => {
+    try {
+      await recordCrmTranscriptBackfillAlertDelivery({
+        organizationId: job.orgId,
+        jobId: job.id,
+        channel,
+        status,
+        recipientSummary,
+        errorMessage: errorMessage ?? null,
+      });
+    } catch (err) {
+      logWarn("transcriptBackfillNotifications: failed to record delivery", {
+        jobId: job.id,
+        channel,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
+  const slackTarget = (() => {
+    try {
+      return new URL(slackWebhook).host;
+    } catch {
+      return slackWebhook ? "slack" : "";
+    }
+  })();
+
   if (slackWebhook) {
     if (!isValidSlackWebhookUrl(slackWebhook)) {
+      const msg = "Invalid Slack webhook URL (must be https://hooks.slack.com/...)";
       logWarn(
         "transcriptBackfillNotifications: ignoring invalid Slack webhook URL",
         { jobId: job.id, orgId: job.orgId },
       );
+      tasks.push(recordDelivery("slack", "failure", slackTarget, msg));
     } else {
       tasks.push(
-        sendSlackMessage(slackWebhook, formatted.title, formatted.slackBody).catch((err) => {
-          logWarn("transcriptBackfillNotifications: slack dispatch failed", {
-            jobId: job.id,
-            error: err instanceof Error ? err.message : String(err),
-          });
-        }),
+        postSlackWebhook(slackWebhook, formatted.title, formatted.slackBody)
+          .then(
+            () => recordDelivery("slack", "success", slackTarget),
+            (err) => {
+              const message = err instanceof Error ? err.message : String(err);
+              logWarn("transcriptBackfillNotifications: slack dispatch failed", {
+                jobId: job.id,
+                error: message,
+              });
+              return recordDelivery("slack", "failure", slackTarget, message);
+            },
+          ),
       );
     }
   }
 
   if (recipients.length > 0) {
+    const recipientSummary = recipients.join(", ");
     tasks.push(
       sendEmail({
         to: recipients,
         subject: formatted.emailSubject,
         text: formatted.emailText,
         html: formatted.emailHtml,
-      }).catch((err) => {
-        logWarn("transcriptBackfillNotifications: email dispatch failed", {
-          jobId: job.id,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }),
+      }).then(
+        (ok) => {
+          if (ok) {
+            return recordDelivery("email", "success", recipientSummary);
+          }
+          return recordDelivery(
+            "email",
+            "failure",
+            recipientSummary,
+            "Email transport returned a non-success result",
+          );
+        },
+        (err) => {
+          const message = err instanceof Error ? err.message : String(err);
+          logWarn("transcriptBackfillNotifications: email dispatch failed", {
+            jobId: job.id,
+            error: message,
+          });
+          return recordDelivery("email", "failure", recipientSummary, message);
+        },
+      ),
     );
   }
 
@@ -359,6 +420,34 @@ function buildSampleJobs(orgId: string): BackfillNotificationJob[] {
       parentJobId: null,
     },
   ];
+}
+
+// Task #1031 — direct webhook POST so the dispatcher can record real
+// success/failure outcomes per channel (the shared `sendSlackMessage` helper
+// swallows transport errors via logging, which would make every recorded
+// Slack delivery look "successful" even on a 4xx).
+async function postSlackWebhook(
+  webhookUrl: string,
+  title: string,
+  message: string,
+): Promise<void> {
+  const payload = {
+    blocks: [
+      { type: "header", text: { type: "plain_text", text: title, emoji: true } },
+      { type: "section", text: { type: "mrkdwn", text: message } },
+    ],
+  };
+  const res = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(
+      `Slack webhook returned ${res.status}${body ? `: ${body.slice(0, 200)}` : ""}`,
+    );
+  }
 }
 
 async function postSlackTest(

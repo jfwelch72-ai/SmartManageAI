@@ -12,21 +12,30 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // stub storage out before the module under test is imported. The pure
 // formatter tests below don't touch the network or DB. Use vi.hoisted so the
 // mock fns are initialized before vi.mock factories run.
-const { mockGetSettings, mockSendSlack, mockSendEmail } = vi.hoisted(() => ({
-  mockGetSettings: vi.fn(),
-  mockSendSlack: vi.fn().mockResolvedValue(undefined),
-  mockSendEmail: vi.fn().mockResolvedValue(undefined),
-}));
+const { mockGetSettings, mockRecordDelivery, mockFetch, mockSendEmail } = vi.hoisted(
+  () => ({
+    mockGetSettings: vi.fn(),
+    mockRecordDelivery: vi.fn().mockResolvedValue({}),
+    // Task #1031 — the dispatcher now POSTs to the Slack webhook directly so
+    // it can record real per-channel success/failure outcomes. Stub global
+    // fetch so the unit tests can observe the calls without hitting the net.
+    mockFetch: vi.fn().mockResolvedValue(
+      new Response("ok", { status: 200 }),
+    ),
+    mockSendEmail: vi.fn().mockResolvedValue(true),
+  }),
+);
 vi.mock("../storage", () => ({
   getCrmTranscriptBackfillNotificationSettings: mockGetSettings,
+  recordCrmTranscriptBackfillAlertDelivery: mockRecordDelivery,
 }));
 vi.mock("../services/slackService", () => ({
   isValidSlackWebhookUrl: (u: string) => /^https:\/\/hooks\.slack\.com\//.test(u),
-  sendSlackMessage: mockSendSlack,
 }));
 vi.mock("../services/emailService", () => ({
   sendEmail: mockSendEmail,
 }));
+vi.stubGlobal("fetch", mockFetch);
 vi.mock("../utils/logger", () => ({
   logInfo: () => undefined,
   logWarn: () => undefined,
@@ -214,8 +223,11 @@ describe("resolveBackfillNotificationDestinations (Task #1017)", () => {
 describe("notifyBackfillCompletion (Task #1017)", () => {
   beforeEach(() => {
     mockGetSettings.mockReset();
-    mockSendSlack.mockClear();
-    mockSendEmail.mockClear();
+    mockRecordDelivery.mockClear();
+    mockFetch.mockClear();
+    mockFetch.mockResolvedValue(new Response("ok", { status: 200 }));
+    mockSendEmail.mockReset();
+    mockSendEmail.mockResolvedValue(true);
     delete process.env.CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK;
     delete process.env.CRM_BACKFILL_NOTIFY_EMAIL_TO;
   });
@@ -229,10 +241,9 @@ describe("notifyBackfillCompletion (Task #1017)", () => {
       updatedById: null,
     });
     await notifyBackfillCompletion(baseJob, null);
-    expect(mockSendSlack).toHaveBeenCalledWith(
+    expect(mockFetch).toHaveBeenCalledWith(
       "https://hooks.slack.com/services/ORG",
-      expect.any(String),
-      expect.any(String),
+      expect.objectContaining({ method: "POST" }),
     );
     expect(mockSendEmail).toHaveBeenCalledWith(
       expect.objectContaining({ to: ["alerts@example.com"] }),
@@ -242,8 +253,9 @@ describe("notifyBackfillCompletion (Task #1017)", () => {
   it("is a no-op when no destinations are configured", async () => {
     mockGetSettings.mockResolvedValue(null);
     await notifyBackfillCompletion(baseJob, null);
-    expect(mockSendSlack).not.toHaveBeenCalled();
+    expect(mockFetch).not.toHaveBeenCalled();
     expect(mockSendEmail).not.toHaveBeenCalled();
+    expect(mockRecordDelivery).not.toHaveBeenCalled();
   });
 
   it("skips an invalid Slack URL but still dispatches email", async () => {
@@ -255,8 +267,71 @@ describe("notifyBackfillCompletion (Task #1017)", () => {
       updatedById: null,
     });
     await notifyBackfillCompletion(baseJob, null);
-    expect(mockSendSlack).not.toHaveBeenCalled();
+    expect(mockFetch).not.toHaveBeenCalled();
     expect(mockSendEmail).toHaveBeenCalled();
+    // Task #1031 — invalid Slack URL is recorded as a failure so admins can
+    // see the misconfiguration in the in-app history card.
+    expect(mockRecordDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "slack",
+        status: "failure",
+      }),
+    );
+  });
+
+  it("records per-channel success when both transports succeed (Task #1031)", async () => {
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: "https://hooks.slack.com/services/ORG",
+      emailRecipients: ["alerts@example.com"],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    await notifyBackfillCompletion(baseJob, null);
+    const channels = mockRecordDelivery.mock.calls.map((c) => c[0].channel);
+    const statuses = mockRecordDelivery.mock.calls.map((c) => c[0].status);
+    expect(channels.sort()).toEqual(["email", "slack"]);
+    expect(statuses).toEqual(["success", "success"]);
+  });
+
+  it("records a Slack failure when the webhook returns non-2xx (Task #1031)", async () => {
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: "https://hooks.slack.com/services/ORG",
+      emailRecipients: [],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    mockFetch.mockResolvedValueOnce(
+      new Response("invalid_payload", { status: 400 }),
+    );
+    await notifyBackfillCompletion(baseJob, null);
+    expect(mockRecordDelivery).toHaveBeenCalledTimes(1);
+    expect(mockRecordDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "slack",
+        status: "failure",
+        errorMessage: expect.stringContaining("400"),
+      }),
+    );
+  });
+
+  it("records an email failure when the transport returns false (Task #1031)", async () => {
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: null,
+      emailRecipients: ["alerts@example.com"],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    mockSendEmail.mockResolvedValueOnce(false);
+    await notifyBackfillCompletion(baseJob, null);
+    expect(mockRecordDelivery).toHaveBeenCalledWith(
+      expect.objectContaining({
+        channel: "email",
+        status: "failure",
+      }),
+    );
   });
 });
 

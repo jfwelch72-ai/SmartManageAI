@@ -1078,6 +1078,8 @@ export default function AdminTranscriptBackfillPage() {
 
       <BackfillNotificationSettingsCard />
 
+      <BackfillAlertDeliveriesCard />
+
       {job && (
         <Card data-testid="card-progress">
           <CardHeader className="pb-3">
@@ -2370,6 +2372,163 @@ export function BackfillNotificationSettingsCard() {
             </span>
           )}
         </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Task #1031 — recent alert delivery history. Surfaces the per-channel
+// outcome of the last ~10 dispatch attempts so admins can spot a misconfigured
+// webhook or recipient list immediately, instead of waiting for someone to
+// notice the silence and dig through server logs.
+// ---------------------------------------------------------------------------
+interface BackfillAlertDelivery {
+  id: string;
+  jobId: string | null;
+  channel: "slack" | "email";
+  status: "success" | "failure";
+  recipientSummary: string;
+  errorMessage: string | null;
+  attemptedAt: string;
+}
+
+interface BackfillAlertDeliveriesResponse {
+  deliveries: BackfillAlertDelivery[];
+}
+
+const ALERT_DELIVERIES_PATH =
+  "/api/crm/calls/transcripts/backfill/alert-deliveries?limit=10";
+const ALERT_DELIVERIES_KEY = [ALERT_DELIVERIES_PATH] as const;
+
+function BackfillAlertDeliveriesCard() {
+  const deliveriesQuery = useQuery<BackfillAlertDeliveriesResponse>({
+    queryKey: ALERT_DELIVERIES_KEY,
+  });
+
+  const deliveries = deliveriesQuery.data?.deliveries ?? [];
+
+  return (
+    <Card data-testid="card-alert-deliveries">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>Recent alert deliveries</CardTitle>
+            <CardDescription>
+              The last {deliveries.length || 10} attempts to dispatch a
+              transcript backfill alert. Use this to confirm that Slack /
+              email destinations are wired up correctly.
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() =>
+              queryClient.invalidateQueries({ queryKey: ALERT_DELIVERIES_KEY })
+            }
+            disabled={deliveriesQuery.isFetching}
+            data-testid="button-refresh-alert-deliveries"
+          >
+            {deliveriesQuery.isFetching ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-2" />
+            )}
+            Refresh
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {deliveriesQuery.isLoading ? (
+          <Loader2
+            className="h-6 w-6 animate-spin text-muted-foreground"
+            data-testid="status-loading-alert-deliveries"
+          />
+        ) : deliveriesQuery.isError ? (
+          <div
+            className="text-sm text-destructive"
+            data-testid="text-alert-deliveries-error"
+          >
+            Failed to load alert delivery history.
+          </div>
+        ) : deliveries.length === 0 ? (
+          <div
+            className="text-sm text-muted-foreground"
+            data-testid="text-alert-deliveries-empty"
+          >
+            No alert dispatches recorded yet. Run a backfill (or send a test
+            alert) and the per-channel outcome will appear here.
+          </div>
+        ) : (
+          <ul className="divide-y" data-testid="list-alert-deliveries">
+            {deliveries.map((d) => (
+              <li
+                key={d.id}
+                className="py-2.5 flex items-start gap-3"
+                data-testid={`row-alert-delivery-${d.id}`}
+              >
+                {d.status === "success" ? (
+                  <CheckCircle2
+                    className="h-4 w-4 mt-0.5 text-green-600 shrink-0"
+                    data-testid={`icon-alert-success-${d.id}`}
+                  />
+                ) : (
+                  <AlertTriangle
+                    className="h-4 w-4 mt-0.5 text-destructive shrink-0"
+                    data-testid={`icon-alert-failure-${d.id}`}
+                  />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
+                    <Badge
+                      variant={d.channel === "slack" ? "secondary" : "outline"}
+                      data-testid={`badge-alert-channel-${d.id}`}
+                    >
+                      {d.channel}
+                    </Badge>
+                    <Badge
+                      variant={d.status === "success" ? "default" : "destructive"}
+                      data-testid={`badge-alert-status-${d.id}`}
+                    >
+                      {d.status}
+                    </Badge>
+                    <span
+                      className="text-xs text-muted-foreground"
+                      data-testid={`text-alert-attempted-at-${d.id}`}
+                      title={d.attemptedAt}
+                    >
+                      {format(new Date(d.attemptedAt), "PPpp")}
+                    </span>
+                  </div>
+                  <div
+                    className="text-xs text-muted-foreground mt-0.5 truncate"
+                    data-testid={`text-alert-recipients-${d.id}`}
+                    title={d.recipientSummary}
+                  >
+                    To: {d.recipientSummary || "(unspecified)"}
+                  </div>
+                  {d.errorMessage && (
+                    <div
+                      className="text-xs text-destructive mt-0.5 break-words"
+                      data-testid={`text-alert-error-${d.id}`}
+                    >
+                      {d.errorMessage}
+                    </div>
+                  )}
+                  {d.jobId && (
+                    <div
+                      className="text-[11px] text-muted-foreground mt-0.5 font-mono truncate"
+                      data-testid={`text-alert-job-${d.id}`}
+                      title={d.jobId}
+                    >
+                      job: {d.jobId}
+                    </div>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
       </CardContent>
     </Card>
   );

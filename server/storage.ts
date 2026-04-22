@@ -5,11 +5,13 @@ import {
   crmTranscriptBackfillNotificationSettings,
   crmTranscriptBackfillNotifications,
   crmTranscriptBackfillTestAlerts,
+  crmTranscriptBackfillAlertDeliveries,
   organizations,
   users,
   type CrmTranscriptBackfillJob,
   type CrmTranscriptBackfillNotificationSettings,
   type CrmTranscriptBackfillNotification,
+  type CrmTranscriptBackfillAlertDelivery,
   type InsertCrmTranscriptBackfillJob,
   type CrmTranscriptBackfillTestAlert,
   type InsertCrmTranscriptBackfillTestAlert,
@@ -818,6 +820,50 @@ export async function listCrmTranscriptBackfillNotificationsForJobs(
     });
   }
   return result;
+// Task #1031 — alert delivery history. Each per-channel dispatch attempt is
+// recorded so admins can confirm in-app whether the most recent backfill
+// alerts actually reached the configured Slack/email destinations.
+// ---------------------------------------------------------------------------
+export type CrmTranscriptBackfillAlertDeliveryInsert = {
+  organizationId: string;
+  jobId: string | null;
+  channel: "slack" | "email";
+  status: "success" | "failure";
+  recipientSummary: string;
+  errorMessage?: string | null;
+};
+
+export async function recordCrmTranscriptBackfillAlertDelivery(
+  data: CrmTranscriptBackfillAlertDeliveryInsert,
+): Promise<CrmTranscriptBackfillAlertDelivery> {
+  const [row] = await db
+    .insert(crmTranscriptBackfillAlertDeliveries)
+    .values({
+      organizationId: data.organizationId,
+      jobId: data.jobId,
+      channel: data.channel,
+      status: data.status,
+      recipientSummary: data.recipientSummary.slice(0, 500),
+      errorMessage: data.errorMessage ? data.errorMessage.slice(0, 1000) : null,
+    })
+    .returning();
+  return row;
+}
+
+export async function listCrmTranscriptBackfillAlertDeliveries(
+  organizationId: string,
+  limit = 10,
+): Promise<CrmTranscriptBackfillAlertDelivery[]> {
+  const safeLimit = Math.min(Math.max(limit, 1), 100);
+  const rows = await db
+    .select()
+    .from(crmTranscriptBackfillAlertDeliveries)
+    .where(
+      eq(crmTranscriptBackfillAlertDeliveries.organizationId, organizationId),
+    )
+    .orderBy(desc(crmTranscriptBackfillAlertDeliveries.attemptedAt))
+    .limit(safeLimit);
+  return rows;
 }
 
 export const storage = {};
