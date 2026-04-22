@@ -83,6 +83,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { insertProjectSchema } from "@shared/schema";
+import { tradeTypeEnum } from "@shared/schema/enums";
 import type { CrmOrganisation, CrmContact } from "@shared/schema";
 import { z } from "zod";
 import { EmptyState } from "@/components/EmptyState";
@@ -190,6 +191,9 @@ export default function ProjectsPage() {
       description: "",
       gcOrganizationId: undefined,
       ownerRepOrganizationId: undefined,
+      programId: "",
+      divisionId: "",
+      primaryTradeType: undefined,
     },
   });
 
@@ -290,6 +294,9 @@ export default function ProjectsPage() {
         description: data.description || undefined,
         gcOrganizationId: selectedGcOrg?.id || undefined,
         ownerRepOrganizationId: selectedOwnerRepOrg?.id || undefined,
+        programId: data.programId || undefined,
+        divisionId: data.divisionId || undefined,
+        primaryTradeType: data.primaryTradeType || undefined,
       };
 
       const result = await createProject.mutateAsync(submitData);
@@ -1053,6 +1060,85 @@ export default function ProjectsPage() {
                   </FormItem>
                 )}
               />
+
+              <Separator className="my-2" />
+
+              <div className="space-y-1">
+                <Label className="text-sm font-medium">Portfolio Rollup</Label>
+                <p className="text-xs text-muted-foreground">
+                  Optional. Used by the Portfolio Rollup dashboard to group
+                  projects by Program, Division, and Trade.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <FormField
+                  control={form.control}
+                  name="programId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Program</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g. Highway 87 Corridor"
+                          {...field}
+                          value={field.value || ""}
+                          data-testid="input-program-id"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="divisionId"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Division</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g. Northern Region"
+                          {...field}
+                          value={field.value || ""}
+                          data-testid="input-division-id"
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="primaryTradeType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Primary Trade</FormLabel>
+                      <Select
+                        value={field.value || "__none__"}
+                        onValueChange={(v) =>
+                          field.onChange(v === "__none__" ? undefined : v)
+                        }
+                      >
+                        <FormControl>
+                          <SelectTrigger data-testid="select-primary-trade-type">
+                            <SelectValue placeholder="Select trade..." />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="__none__">None</SelectItem>
+                          {tradeTypeEnum.enumValues.map((t) => (
+                            <SelectItem key={t} value={t}>
+                              {t.replace(/_/g, " ")}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
 
               <DialogFooter>
                 <Button

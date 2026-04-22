@@ -54,6 +54,9 @@ interface ProjectRow {
   pmLastName: string | null;
   budget: string | null;
   contractAmount: string | null;
+  programId: string | null;
+  divisionId: string | null;
+  primaryTradeType: string | null;
 }
 
 interface PortfolioFilters {
@@ -106,6 +109,9 @@ async function loadProjects(req: AuthRequest, filters: PortfolioFilters): Promis
       pmLastName: users.lastName,
       budget: projects.budget,
       contractAmount: projects.contractAmount,
+      programId: projects.programId,
+      divisionId: projects.divisionId,
+      primaryTradeType: projects.primaryTradeType,
     })
     .from(projects)
     .leftJoin(users, eq(projects.projectManagerId, users.id));
@@ -144,12 +150,24 @@ function pmNameOf(p: ProjectRow): string | null {
 
 function groupKeyFor(p: ProjectRow, by: GroupBy): { key: string; label: string } {
   switch (by) {
-    case "program":
-      return { key: p.clientName || "unassigned", label: p.clientName || "Unassigned Program" };
-    case "division":
-      return { key: p.state || "unassigned", label: p.state || "Unassigned Division" };
+    case "program": {
+      // Task #900: prefer the explicit programId field; fall back to
+      // clientName so existing data still groups sensibly until orgs
+      // backfill the new column.
+      const program = p.programId || p.clientName;
+      return { key: program || "unassigned", label: program || "Unassigned Program" };
+    }
+    case "division": {
+      const division = p.divisionId || p.state;
+      return { key: division || "unassigned", label: division || "Unassigned Division" };
+    }
     case "trade":
-      return { key: "__trade__", label: "Trade (data not yet captured)" };
+      // Task #900: when projects have an explicit primaryTradeType, group
+      // by it; otherwise fall back to the legacy single bucket so existing
+      // dashboard consumers see the same key/label they did before.
+      return p.primaryTradeType
+        ? { key: p.primaryTradeType, label: p.primaryTradeType.replace(/_/g, " ") }
+        : { key: "__trade__", label: "Trade (data not yet captured)" };
     case "pm":
       return {
         key: p.projectManagerId || "unassigned",

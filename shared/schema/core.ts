@@ -458,11 +458,22 @@ export const projects = pgTable("projects", {
   autoChangeOrderThreshold: decimal("auto_change_order_threshold", { precision: 12, scale: 2 }).default("0"),
   safetyOfficerId: varchar("safety_officer_id").references(() => users.id, { onDelete: "set null" }),
   payrollFormVariant: payrollFormVariantEnum("payroll_form_variant").notNull().default("WH_347"),
+  // Task #900: first-class portfolio rollup dimensions. Optional free-form
+  // labels for Program (e.g. "Highway 87 Corridor") and Division (e.g.
+  // "Northern Region") plus an explicit trade type. When null,
+  // `server/portfolioRoutes.ts` falls back to the legacy proxies
+  // (clientName for program, state for division, single bucket for trade).
+  programId: text("program_id"),
+  divisionId: text("division_id"),
+  primaryTradeType: tradeTypeEnum("primary_trade_type"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   statusIdx: index("projects_status_idx").on(table.status),
   gcOrgIdx: index("projects_gc_org_id_idx").on(table.gcOrganizationId),
+  programIdx: index("projects_program_id_idx").on(table.programId),
+  divisionIdx: index("projects_division_id_idx").on(table.divisionId),
+  primaryTradeIdx: index("projects_primary_trade_type_idx").on(table.primaryTradeType),
 }));
 
 export const projectGeofenceZones = pgTable("project_geofence_zones", {
