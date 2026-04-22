@@ -613,7 +613,11 @@ export default function AdminTranscriptBackfillPage() {
     },
   });
 
-  const latestTestAlertQuery = useQuery<{ latest: LatestTestAlert | null }>({
+  const latestTestAlertQuery = useQuery<{
+    latest: LatestTestAlert | null;
+    cooldownSeconds: number;
+    nextAllowedAt: string | null;
+  }>({
     queryKey: TEST_ALERT_LATEST_KEY,
   });
 
@@ -2181,6 +2185,50 @@ export function BackfillNotificationSettingsCard() {
     queryKey: NOTIFICATION_SETTINGS_KEY,
   });
 
+  // Task #1053 — track the per-org test-alert cooldown so the button can be
+  // disabled (with a countdown tooltip) until the cooldown clears. Lives
+  // alongside the button rather than in the parent so a 429 from the
+  // mutation can refresh both the cooldown state and the audit row in one
+  // place.
+  const cooldownQuery = useQuery<{
+    latest: LatestTestAlert | null;
+    cooldownSeconds: number;
+    nextAllowedAt: string | null;
+  }>({
+    queryKey: TEST_ALERT_LATEST_KEY,
+  });
+  const nextAllowedAtIso = cooldownQuery.data?.nextAllowedAt ?? null;
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+  useEffect(() => {
+    if (!nextAllowedAtIso) return;
+    const targetMs = new Date(nextAllowedAtIso).getTime();
+    if (targetMs <= Date.now()) return;
+    setNowMs(Date.now());
+    const tickId = window.setInterval(() => setNowMs(Date.now()), 1000);
+    // Once the cooldown should be over, refresh the audit/cooldown query so
+    // the server-side `nextAllowedAt` clears and the button re-enables.
+    const clearId = window.setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: TEST_ALERT_LATEST_KEY });
+    }, Math.max(250, targetMs - Date.now() + 250));
+    return () => {
+      window.clearInterval(tickId);
+      window.clearTimeout(clearId);
+    };
+  }, [nextAllowedAtIso]);
+  const cooldownRemainingSec = nextAllowedAtIso
+    ? Math.max(
+        0,
+        Math.ceil((new Date(nextAllowedAtIso).getTime() - nowMs) / 1000),
+      )
+    : 0;
+  const isInCooldown = cooldownRemainingSec > 0;
+  const cooldownTooltip = isInCooldown
+    ? `Rate-limited — try again in ${cooldownRemainingSec}s (at ${format(
+        new Date(nextAllowedAtIso!),
+        "p",
+      )})`
+    : "Dispatch sample completion + failure notifications using the saved Slack webhook and email recipients";
+
   // Task #1030 — verify the *currently-saved* destinations end-to-end.
   // Living inside the settings card (rather than the controls card) keeps
   // the verify-after-save flow obvious: configure, save, then test.
@@ -2203,6 +2251,10 @@ export function BackfillNotificationSettingsCard() {
       };
     },
     onSuccess: (data) => {
+      // Task #1053 — a successful send starts a fresh cooldown window on the
+      // server; refresh the audit/cooldown query so the button disables
+      // immediately instead of waiting for the next mount.
+      queryClient.invalidateQueries({ queryKey: TEST_ALERT_LATEST_KEY });
       const { slack, email } = data;
       if (!slack.configured && !email.configured) {
         toast({
@@ -2237,6 +2289,11 @@ export function BackfillNotificationSettingsCard() {
       }
     },
     onError: (err: Error) => {
+      // Task #1053 — refresh the cooldown query so the rate-limit window is
+      // picked up even when the client clock skewed past the previous
+      // `nextAllowedAt`. Covers the 429 case as well as any other failure
+      // that should re-sync the audit row.
+      queryClient.invalidateQueries({ queryKey: TEST_ALERT_LATEST_KEY });
       toast({
         title: "Failed to send test alert",
         description: err.message,
@@ -2351,10 +2408,11 @@ export function BackfillNotificationSettingsCard() {
             disabled={
               testAlertMutation.isPending ||
               saveMutation.isPending ||
-              settingsQuery.isLoading
+              settingsQuery.isLoading ||
+              isInCooldown
             }
             data-testid="button-send-test-alert"
-            title="Dispatch sample completion + failure notifications using the saved Slack webhook and email recipients"
+            title={cooldownTooltip}
           >
             {testAlertMutation.isPending ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
@@ -2363,6 +2421,14 @@ export function BackfillNotificationSettingsCard() {
             )}
             Send test alert
           </Button>
+          {isInCooldown && (
+            <span
+              className="text-xs text-muted-foreground"
+              data-testid="text-test-alert-cooldown"
+            >
+              Available again in {cooldownRemainingSec}s
+            </span>
+          )}
           {settingsQuery.data?.updatedAt && (
             <span
               className="text-xs text-muted-foreground"

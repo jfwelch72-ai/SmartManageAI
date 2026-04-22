@@ -2518,6 +2518,13 @@ router.get(
   },
 );
 
+// Task #1053 — per-org cooldown between test-alert dispatches. The audit
+// trail (Task #1033) made it obvious that the button has no rate limiting,
+// so an admin (or a misclick) can spam Slack channels and email recipients
+// at network speed. 30s is long enough to prevent accidental flooding
+// while still allowing legitimate retesting after fixing settings.
+const TEST_ALERT_COOLDOWN_SECONDS = 30;
+
 // Task #1018 — admin "send test alert" endpoint. Dispatches a sample
 // completion + failure notification through whichever Slack/email
 // destinations are configured so admins can verify their setup without
@@ -2531,6 +2538,33 @@ router.post(
     try {
       const orgId = resolveOrg(req, res);
       if (!orgId) return;
+
+      // Task #1053 — enforce per-org cooldown using the existing audit table
+      // (no new state needed). If the latest recorded send is within the
+      // cooldown window, reject with 429 + Retry-After so the UI can disable
+      // the button until the cooldown clears.
+      const previous = await getLatestCrmTranscriptBackfillTestAlert(orgId);
+      if (previous) {
+        const elapsedMs = Date.now() - new Date(previous.sentAt).getTime();
+        const cooldownMs = TEST_ALERT_COOLDOWN_SECONDS * 1000;
+        if (elapsedMs < cooldownMs) {
+          const retryAfterSeconds = Math.max(
+            1,
+            Math.ceil((cooldownMs - elapsedMs) / 1000),
+          );
+          const nextAllowedAt = new Date(
+            new Date(previous.sentAt).getTime() + cooldownMs,
+          ).toISOString();
+          res.setHeader("Retry-After", String(retryAfterSeconds));
+          res.status(429).json({
+            error: `Test alerts are rate-limited to one every ${TEST_ALERT_COOLDOWN_SECONDS} seconds per organization. Try again in ${retryAfterSeconds}s.`,
+            cooldownSeconds: TEST_ALERT_COOLDOWN_SECONDS,
+            retryAfterSeconds,
+            nextAllowedAt,
+          });
+          return;
+        }
+      }
 
       const operator = req.user?.id
         ? await getCrmTranscriptBackfillOperatorContact(req.user.id)
@@ -2581,7 +2615,22 @@ router.get(
       const orgId = resolveOrg(req, res);
       if (!orgId) return;
       const row = await getLatestCrmTranscriptBackfillTestAlert(orgId);
-      res.json({ latest: row });
+      // Task #1053 — expose the cooldown window (and the next-allowed time
+      // when one is in effect) so the admin page can disable the "Send test
+      // alert" button + show a tooltip without hardcoding the duration.
+      const cooldownMs = TEST_ALERT_COOLDOWN_SECONDS * 1000;
+      let nextAllowedAt: string | null = null;
+      if (row) {
+        const lastSent = new Date(row.sentAt).getTime();
+        if (Date.now() - lastSent < cooldownMs) {
+          nextAllowedAt = new Date(lastSent + cooldownMs).toISOString();
+        }
+      }
+      res.json({
+        latest: row,
+        cooldownSeconds: TEST_ALERT_COOLDOWN_SECONDS,
+        nextAllowedAt,
+      });
     } catch (e) {
       next(e);
     }
