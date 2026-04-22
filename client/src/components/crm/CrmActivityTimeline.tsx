@@ -17,6 +17,9 @@ import {
   PhoneOutgoing,
   GitBranch,
   Reply,
+  Download,
+  Mic,
+  MicOff,
 } from "lucide-react";
 import { format, startOfDay, startOfWeek, startOfMonth, isSameDay } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -362,6 +365,9 @@ function ActivityRow({ item }: { item: UnifiedActivity }) {
         {item.type === "EMAIL" && (
           <EmailActions item={item} />
         )}
+        {item.type === "CALL" && item.meta?.recording && (
+          <CallRecording item={item} />
+        )}
       </div>
     </div>
   );
@@ -402,6 +408,38 @@ function EmailActions({ item }: { item: UnifiedActivity }) {
   );
 }
 
+function CallRecording({ item }: { item: UnifiedActivity }) {
+  const rec = (item.meta?.recording || {}) as {
+    streamUrl?: string;
+    downloadUrl?: string;
+  };
+  if (!rec.streamUrl) return null;
+  return (
+    <div className="mt-1.5 flex items-center gap-2" data-testid={`recording-${item.id}`}>
+      <audio
+        controls
+        preload="none"
+        src={rec.streamUrl}
+        className="h-8 max-w-full"
+        data-testid={`audio-recording-${item.id}`}
+      >
+        Your browser does not support the audio element.
+      </audio>
+      {rec.downloadUrl && (
+        <a
+          href={rec.downloadUrl}
+          download
+          data-testid={`link-download-recording-${item.id}`}
+        >
+          <Button variant="ghost" size="sm" className="h-7 text-xs">
+            <Download className="w-3 h-3 mr-1" /> Download
+          </Button>
+        </a>
+      )}
+    </div>
+  );
+}
+
 function renderBadges(item: UnifiedActivity) {
   const out: JSX.Element[] = [];
   if (item.type === "CALL" && item.meta) {
@@ -410,8 +448,36 @@ function renderBadges(item: UnifiedActivity) {
       const m = Math.floor(dur / 60);
       const s = dur % 60;
       out.push(
-        <Badge key="dur" variant="outline" className="text-xs">
+        <Badge key="dur" variant="outline" className="text-xs" data-testid={`badge-call-duration-${item.id}`}>
           {m}:{s.toString().padStart(2, "0")}
+        </Badge>,
+      );
+    }
+    const rec = item.meta.recording as { durationSeconds?: number } | null | undefined;
+    if (rec) {
+      const rd = rec.durationSeconds || 0;
+      const rm = Math.floor(rd / 60);
+      const rs = rd % 60;
+      out.push(
+        <Badge
+          key="rec"
+          variant="secondary"
+          className="text-xs gap-1"
+          data-testid={`badge-recording-${item.id}`}
+        >
+          <Mic className="h-3 w-3" /> Recording
+          {rd > 0 ? ` · ${rm}:${rs.toString().padStart(2, "0")}` : ""}
+        </Badge>,
+      );
+    } else {
+      out.push(
+        <Badge
+          key="norec"
+          variant="outline"
+          className="text-xs gap-1 text-muted-foreground"
+          data-testid={`badge-no-recording-${item.id}`}
+        >
+          <MicOff className="h-3 w-3" /> No recording
         </Badge>,
       );
     }

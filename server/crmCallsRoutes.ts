@@ -392,9 +392,23 @@ router.post(
   "/api/crm/calls/twilio/webhook",
   async (req, res) => {
     try {
-      // Signature verification when token is configured.
-      if (TWILIO_AUTH_TOKEN) {
+      // Twilio signature verification is mandatory: the webhook writes
+      // RecordingUrl values that the recording proxy later fetches, so an
+      // unauthenticated webhook would let an attacker poison those URLs.
+      // Only allow skipping it in non-production when explicitly opted in.
+      const skipForDev =
+        process.env.NODE_ENV !== "production" &&
+        process.env.TWILIO_WEBHOOK_SKIP_VERIFY === "1";
+      if (!skipForDev) {
+        if (!TWILIO_AUTH_TOKEN) {
+          logWarn("crmCalls webhook rejected: TWILIO_AUTH_TOKEN not configured");
+          return res.status(503).send("Webhook auth not configured");
+        }
         const signature = (req.header("X-Twilio-Signature") || "").trim();
+        if (!signature) {
+          logWarn("crmCalls webhook rejected: missing signature");
+          return res.status(403).send("Forbidden");
+        }
         const baseUrl = process.env.PUBLIC_APP_URL || `https://${req.get("host")}`;
         const fullUrl = `${baseUrl}/api/crm/calls/twilio/webhook`;
         const ok = twilio.validateRequest(
@@ -514,6 +528,110 @@ router.get(
 );
 
 // ---------------------------------------------------------------------------
+// Recording stream/download (proxies Twilio with our credentials so URLs
+// don't leak and access stays gated to the call's organization).
+// ---------------------------------------------------------------------------
+router.get(
+  "/api/crm/calls/:id/recording",
+  requireAuth,
+  requireRole(...PIPELINE_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+
+      const [call] = await db
+        .select({ id: crmCalls.id })
+        .from(crmCalls)
+        .where(and(eq(crmCalls.organizationId, orgId), eq(crmCalls.id, req.params.id)))
+        .limit(1);
+      if (!call) return res.status(404).json({ error: "Call not found" });
+
+      const [rec] = await db
+        .select()
+        .from(crmCallRecordings)
+        .where(eq(crmCallRecordings.callId, call.id))
+        .orderBy(desc(crmCallRecordings.createdAt))
+        .limit(1);
+      if (!rec) return res.status(404).json({ error: "Recording not found" });
+
+      // SSRF guard: only allow https URLs hosted on a known recording provider.
+      // Today that's Twilio's recording API; extend the allowlist if more
+      // providers are integrated later.
+      let parsedUrl: URL;
+      try {
+        parsedUrl = new URL(rec.recordingUrl);
+      } catch {
+        logWarn("crmCalls recording: malformed url", { callId: call.id });
+        return res.status(502).json({ error: "Invalid recording URL" });
+      }
+      const ALLOWED_RECORDING_HOSTS = new Set(["api.twilio.com"]);
+      if (
+        parsedUrl.protocol !== "https:" ||
+        !ALLOWED_RECORDING_HOSTS.has(parsedUrl.hostname.toLowerCase())
+      ) {
+        logWarn("crmCalls recording: host not allowed", {
+          callId: call.id,
+          host: parsedUrl.hostname,
+        });
+        return res.status(502).json({ error: "Recording host not allowed" });
+      }
+
+      // Twilio recording URLs need basic auth; append .mp3 to force audio.
+      const isTwilio = parsedUrl.hostname.toLowerCase() === "api.twilio.com";
+      const targetUrl = parsedUrl.pathname.endsWith(".mp3")
+        ? parsedUrl.toString()
+        : `${parsedUrl.toString()}.mp3`;
+      if (isTwilio && (!TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN)) {
+        return res.status(503).json({ error: "Twilio is not configured." });
+      }
+
+      const headers: Record<string, string> = {};
+      if (isTwilio) {
+        const basic = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64");
+        headers.Authorization = `Basic ${basic}`;
+      }
+      if (req.headers.range) headers.Range = String(req.headers.range);
+
+      const upstream = await fetch(targetUrl, { headers });
+      if (!upstream.ok || !upstream.body) {
+        logWarn("crmCalls recording fetch failed", { status: upstream.status, callId: call.id });
+        return res.status(502).json({ error: "Failed to fetch recording" });
+      }
+
+      res.status(upstream.status);
+      const passthrough = ["content-type", "content-length", "content-range", "accept-ranges"];
+      for (const h of passthrough) {
+        const v = upstream.headers.get(h);
+        if (v) res.setHeader(h, v);
+      }
+      if (!upstream.headers.get("content-type")) res.setHeader("content-type", "audio/mpeg");
+      if (req.query.download) {
+        res.setHeader(
+          "content-disposition",
+          `attachment; filename="call-${call.id}.mp3"`,
+        );
+      }
+
+      // Stream the body to the client.
+      const reader = upstream.body.getReader();
+      const pump = async (): Promise<void> => {
+        const { value, done } = await reader.read();
+        if (done) {
+          res.end();
+          return;
+        }
+        if (value) res.write(Buffer.from(value));
+        return pump();
+      };
+      await pump();
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
 // Unified activity timeline
 // ---------------------------------------------------------------------------
 type ActivityRow = {
@@ -575,7 +693,34 @@ router.get(
           .where(and(...conds))
           .orderBy(desc(crmCalls.startedAt))
           .limit(limit);
+
+        // Fetch recordings for the calls in one query.
+        const callIds = rows.map((r) => r.id);
+        const recordingsByCall = new Map<string, { id: string; durationSeconds: number }>();
+        if (callIds.length) {
+          const recRows = await db
+            .select({
+              id: crmCallRecordings.id,
+              callId: crmCallRecordings.callId,
+              durationSeconds: crmCallRecordings.durationSeconds,
+              createdAt: crmCallRecordings.createdAt,
+            })
+            .from(crmCallRecordings)
+            .where(inArray(crmCallRecordings.callId, callIds))
+            .orderBy(desc(crmCallRecordings.createdAt));
+          for (const rec of recRows) {
+            // Keep the most recent recording per call (first seen due to desc order).
+            if (!recordingsByCall.has(rec.callId)) {
+              recordingsByCall.set(rec.callId, {
+                id: rec.id,
+                durationSeconds: rec.durationSeconds,
+              });
+            }
+          }
+        }
+
         for (const r of rows) {
+          const rec = recordingsByCall.get(r.id) || null;
           out.push({
             id: `call:${r.id}`,
             type: "CALL",
@@ -592,6 +737,14 @@ router.get(
               toNumber: r.toNumber,
               opportunityId: r.opportunityId,
               contactId: r.contactId,
+              recording: rec
+                ? {
+                    id: rec.id,
+                    durationSeconds: rec.durationSeconds,
+                    streamUrl: `/api/crm/calls/${r.id}/recording`,
+                    downloadUrl: `/api/crm/calls/${r.id}/recording?download=1`,
+                  }
+                : null,
             },
           });
         }
