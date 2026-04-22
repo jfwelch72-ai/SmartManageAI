@@ -167,9 +167,8 @@ mispointed `DATABASE_URL`. If you keep your test DB on a name like
 Just commit the schema change. The next vitest run will detect the hash
 mismatch, regenerate the export SQL on the fly, and rebuild the test DB
 in seconds. **No more hand-written idempotent SQL files are needed for
-test-DB sync.** (The `migrations/` directory is still used by
-`scripts/post-merge.sh` to patch the populated dev DB without a
-destructive rebuild.)
+test-DB sync.** The populated dev DB uses an analogous hash-based
+fast-path described in **Dev Database Sync (post-merge)** below.
 
 ### Safety
 
@@ -179,6 +178,68 @@ of `drizzle-kit push --force` and is only safe because the test
 `DATABASE_URL` is expected to point at a dedicated test database.
 **Never point `DATABASE_URL` at a database with data you care about
 when running vitest.**
+
+---
+
+## Dev Database Sync (post-merge)
+
+`scripts/post-merge.sh` runs after every upstream merge against the
+**populated** dev database. Unlike the test DB, this database holds real
+seed/working data, so we can never `DROP SCHEMA public CASCADE` here.
+
+As of April 2026 the post-merge schema-sync step uses the same
+hash-based fast path the test DB does, implemented by
+`scripts/dev-schema-sync.ts`:
+
+1. **Compute a SHA-256 of `shared/schema/*` + `drizzle.config.ts`.**
+   (Identical hashing function as the vitest globalSetup — same files,
+   same byte order, same separators.)
+2. **Read `_dev_schema_meta.schema_hash` from the dev DB.** This marker
+   table is created/updated by the script itself, so the cache and the
+   actual schema state always stay in lock-step.
+3. **If the hashes match, skip everything** (~1-2s warm path). This is
+   the common case: most merges don't touch `shared/schema/*`.
+4. **Otherwise run `drizzle-kit push --force`** to apply an additive
+   diff against the live DB, then stamp the new hash on success. This
+   is the rare path; we cap it at `DEV_SCHEMA_PUSH_TIMEOUT_MS` (default
+   180s) to keep a runaway introspection from hanging the merge.
+
+### Why this replaces the old approach
+
+The previous post-merge script ran `drizzle-kit push --force` with a
+hard 60-second `timeout`, which on this ~470-table schema routinely
+timed out before push could finish introspecting the live DB. To
+compensate, the script also applied a hand-curated whitelist of
+`migrations/add_*.sql` "idempotent fixup" files that captured columns
+push had been failing to add. The whitelist had to be edited by hand
+every time a schema change introduced a NOT NULL column the dev DB
+didn't have.
+
+With the hash-based skip:
+
+- Merges that don't change `shared/schema/*` finish the schema-sync
+  step in well under a minute (typically 1-2s).
+- Merges that do change the schema run a single full push instead of
+  push + a whitelist of fixups.
+- The `migrations/add_*.sql` whitelist in `post-merge.sh` is gone. The
+  files themselves are kept in the repo for historical reference, but
+  the post-merge step no longer depends on them.
+
+### Environment variables
+
+- `SKIP_DEV_SCHEMA_SYNC=1` — skip the script entirely.
+- `FORCE_DEV_SCHEMA_SYNC=1` — run `drizzle-kit push` even when the
+  cached hash matches.
+- `DEV_SCHEMA_PUSH_TIMEOUT_MS` — override the push timeout (default
+  180000 ms).
+
+### Failure mode
+
+The script is intentionally non-blocking: if push fails or times out it
+logs the output and exits 0 **without** stamping the hash, so the next
+post-merge run will try again. The merge itself is never blocked by a
+schema-sync hiccup; startup migrations and runtime guards in the app
+are the ultimate safety net.
 
 ---
 

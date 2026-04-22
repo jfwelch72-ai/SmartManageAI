@@ -3,22 +3,20 @@ set -e
 npm install
 timeout 30 npx tsx scripts/scrub-legacy-roles.ts 2>&1 || echo "[post-merge] legacy role scrub skipped"
 
-# Apply a small set of idempotent SQL migrations that capture schema fixes
-# the Drizzle schema relies on but which `drizzle-kit push` may skip when it
-# times out against this dev DB. The vitest globalSetup no longer needs
-# these (it rebuilds the test DB from `drizzle-kit export`), but they are
-# still useful here to keep the populated dev DB in sync without waiting
-# for a full destructive rebuild. Each file MUST be safe to run repeatedly.
-if [ -n "$DATABASE_URL" ] && command -v psql >/dev/null 2>&1; then
-  for f in \
-    migrations/add_users_quiet_hours_digest_locale_format.sql \
-    migrations/add_offline_entity_types_field_sync.sql; do
-    if [ -f "$f" ]; then
-      echo "[post-merge] Applying idempotent migration $f"
-      psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f "$f" \
-        || echo "[post-merge] Failed to apply $f (continuing)"
-    fi
-  done
-fi
-
-timeout 60 npm run db:push -- --force 2>&1 || echo "[post-merge] db:push skipped or timed out (schema handled by startup migrations)"
+# Sync the populated dev DB schema using a hash-based fast path.
+#
+# `scripts/dev-schema-sync.ts` computes a SHA-256 of `shared/schema/*` and
+# `drizzle.config.ts`, compares it against `_dev_schema_meta.schema_hash`
+# stored inside the dev DB, and:
+#   * skips entirely on a hash hit (~1-2s — the common post-merge case
+#     where the merge didn't change `shared/schema/*`), or
+#   * runs `drizzle-kit push --force` to apply an additive diff and then
+#     stamps the new hash (the rare path; capped by
+#     DEV_SCHEMA_PUSH_TIMEOUT_MS, default 180s).
+#
+# This replaces the previous "apply hand-curated idempotent SQL files
+# then attempt push with a 60s timeout" path, which routinely timed out
+# and required maintaining a whitelist of `migrations/add_*.sql` fixups.
+# See DATABASE_MIGRATION_STRATEGY.md for details.
+timeout 200 npx tsx scripts/dev-schema-sync.ts 2>&1 \
+  || echo "[post-merge] dev schema sync skipped or failed (schema handled by startup migrations)"
