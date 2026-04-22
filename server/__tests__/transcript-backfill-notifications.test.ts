@@ -38,6 +38,7 @@ import {
   describeBackfillOperator,
   notifyBackfillCompletion,
   resolveBackfillNotificationDestinations,
+  sendTestBackfillAlert,
   type BackfillNotificationJob,
 } from "../services/transcriptBackfillNotifications";
 
@@ -256,5 +257,190 @@ describe("notifyBackfillCompletion (Task #1017)", () => {
     await notifyBackfillCompletion(baseJob, null);
     expect(mockSendSlack).not.toHaveBeenCalled();
     expect(mockSendEmail).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Task #1044 — covers `sendTestBackfillAlert`, which the admin "Send test
+ * alert" button on the backfill settings card calls. The dispatcher should
+ * (a) read the saved per-org settings via `resolveBackfillNotificationDestinations`,
+ * (b) report per-channel `configured`/`ok`/`error` shapes the UI can toast on,
+ * and (c) gracefully tolerate transport failures on either channel.
+ *
+ * The Slack POST goes through raw `fetch` (so the helper can surface a real
+ * status), so we stub `global.fetch` here. Email goes through the mocked
+ * `sendEmail` whose return value drives the `ok` flag.
+ */
+describe("sendTestBackfillAlert (Task #1030 / #1044)", () => {
+  const ORIG_FETCH = global.fetch;
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  const operator = {
+    id: "u1",
+    firstName: "Jane",
+    lastName: "Doe",
+    email: "jane@example.com",
+  };
+
+  beforeEach(() => {
+    mockGetSettings.mockReset();
+    mockSendEmail.mockReset();
+    mockSendEmail.mockResolvedValue(true);
+    fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => "ok",
+    } as unknown as Response);
+    global.fetch = fetchMock as unknown as typeof fetch;
+    delete process.env.CRM_BACKFILL_NOTIFY_SLACK_WEBHOOK;
+    delete process.env.CRM_BACKFILL_NOTIFY_EMAIL_TO;
+  });
+  afterEach(() => {
+    global.fetch = ORIG_FETCH;
+  });
+
+  it("targets the saved per-org Slack webhook only when only Slack is saved", async () => {
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: "https://hooks.slack.com/services/ORG",
+      emailRecipients: [],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    const result = await sendTestBackfillAlert("org-1", operator);
+    expect(result.slack).toEqual({ configured: true, ok: true });
+    expect(result.email).toEqual({ configured: false, ok: false });
+    expect(result.operatorDisplay).toBe("Jane Doe");
+    // Both sample alerts (completed + failed) should be POSTed to the saved URL.
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "https://hooks.slack.com/services/ORG",
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  it("targets the saved per-org email recipients only when only email is saved", async () => {
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: null,
+      emailRecipients: ["alerts@example.com", "ops@example.com"],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    const result = await sendTestBackfillAlert("org-1", operator);
+    expect(result.slack).toEqual({ configured: false, ok: false });
+    expect(result.email).toMatchObject({
+      configured: true,
+      ok: true,
+      recipients: ["alerts@example.com", "ops@example.com"],
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    // Two sample alerts → two sendEmail calls, both to the saved recipients.
+    expect(mockSendEmail).toHaveBeenCalledTimes(2);
+    for (const call of mockSendEmail.mock.calls) {
+      expect(call[0]).toMatchObject({
+        to: ["alerts@example.com", "ops@example.com"],
+      });
+      expect(call[0].subject).toMatch(/^\[TEST\] /);
+    }
+  });
+
+  it("dispatches to both channels when both are saved", async () => {
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: "https://hooks.slack.com/services/ORG",
+      emailRecipients: ["alerts@example.com"],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    const result = await sendTestBackfillAlert("org-1", operator);
+    expect(result.slack).toEqual({ configured: true, ok: true });
+    expect(result.email).toMatchObject({
+      configured: true,
+      ok: true,
+      recipients: ["alerts@example.com"],
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(mockSendEmail).toHaveBeenCalledTimes(2);
+  });
+
+  it("returns 'no destinations' shape when neither channel is saved", async () => {
+    mockGetSettings.mockResolvedValue(null);
+    const result = await sendTestBackfillAlert("org-1", operator);
+    expect(result.slack).toEqual({ configured: false, ok: false });
+    expect(result.email).toEqual({ configured: false, ok: false });
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mockSendEmail).not.toHaveBeenCalled();
+  });
+
+  it("flags an invalid Slack URL without attempting a network call", async () => {
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: "https://example.com/not-slack",
+      emailRecipients: [],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    const result = await sendTestBackfillAlert("org-1", operator);
+    expect(result.slack.configured).toBe(true);
+    expect(result.slack.ok).toBe(false);
+    expect(result.slack.error).toMatch(/Invalid Slack webhook URL/i);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("surfaces a Slack transport failure as ok=false with the error message", async () => {
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: "https://hooks.slack.com/services/ORG",
+      emailRecipients: ["alerts@example.com"],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      text: async () => "boom",
+    } as unknown as Response);
+    const result = await sendTestBackfillAlert("org-1", operator);
+    expect(result.slack.configured).toBe(true);
+    expect(result.slack.ok).toBe(false);
+    expect(result.slack.error).toMatch(/500/);
+    expect(result.slack.error).toMatch(/boom/);
+    // Email channel should still succeed independently.
+    expect(result.email.ok).toBe(true);
+  });
+
+  it("surfaces an email transport failure as ok=false with the error message", async () => {
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: "https://hooks.slack.com/services/ORG",
+      emailRecipients: ["alerts@example.com"],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    mockSendEmail.mockRejectedValue(new Error("smtp blew up"));
+    const result = await sendTestBackfillAlert("org-1", operator);
+    expect(result.email.configured).toBe(true);
+    expect(result.email.ok).toBe(false);
+    expect(result.email.error).toBe("smtp blew up");
+    // Slack channel should remain unaffected.
+    expect(result.slack.ok).toBe(true);
+  });
+
+  it("reports email ok=false when the transport returns a falsy result", async () => {
+    mockGetSettings.mockResolvedValue({
+      organizationId: "org-1",
+      slackWebhookUrl: null,
+      emailRecipients: ["alerts@example.com"],
+      updatedAt: new Date(),
+      updatedById: null,
+    });
+    mockSendEmail.mockResolvedValue(false);
+    const result = await sendTestBackfillAlert("org-1", operator);
+    expect(result.email.configured).toBe(true);
+    expect(result.email.ok).toBe(false);
+    expect(result.email.error).toMatch(/non-success/i);
   });
 });

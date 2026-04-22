@@ -2171,7 +2171,9 @@ const NOTIFICATION_SETTINGS_PATH =
   "/api/crm/calls/transcripts/backfill/notification-settings";
 const NOTIFICATION_SETTINGS_KEY = [NOTIFICATION_SETTINGS_PATH] as const;
 
-function BackfillNotificationSettingsCard() {
+// Exported for unit testing (Task #1044). The settings card is rendered from
+// the admin transcript backfill page and otherwise has no consumers.
+export function BackfillNotificationSettingsCard() {
   const { toast } = useToast();
   const settingsQuery = useQuery<BackfillNotificationSettings>({
     queryKey: NOTIFICATION_SETTINGS_KEY,
