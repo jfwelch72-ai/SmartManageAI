@@ -3509,6 +3509,18 @@ router.post(
         req.user?.id ?? null,
       );
       if (!result.ok) {
+        if (result.reason === "COOLDOWN") {
+          // Task #1068 — short per-(delivery, channel) cooldown. Set the
+          // standard Retry-After header (in seconds) and echo the value in
+          // the body so the UI can render a friendly countdown without
+          // having to parse headers from `apiRequest`.
+          res.setHeader("Retry-After", String(result.retryAfterSeconds));
+          return res.status(429).json({
+            error: `Just resent — try again in ${result.retryAfterSeconds} seconds.`,
+            reason: result.reason,
+            retryAfterSeconds: result.retryAfterSeconds,
+          });
+        }
         const statusCode =
           result.reason === "NOT_FOUND" || result.reason === "JOB_MISSING"
             ? 404

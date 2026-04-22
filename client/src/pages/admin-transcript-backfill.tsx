@@ -3638,18 +3638,126 @@ export function BackfillAlertDeliveriesCard() {
   // Task #1050 — track which row's resend is in flight so we can show a
   // per-row spinner instead of disabling the entire list.
   const [resendingId, setResendingId] = useState<string | null>(null);
+
+  // Task #1068 — keep a per-row cooldown countdown so a successful resend
+  // (or a 429 from the server, e.g. if a second admin already clicked) shows
+  // a "try again in N seconds" hint and disables the button locally. State
+  // value is the unix-ms wall-clock the cooldown ends at, ticked once a
+  // second to drive the countdown label.
+  const [cooldownUntil, setCooldownUntil] = useState<Record<string, number>>({});
+  const [, setCooldownTick] = useState(0);
+  // Re-run only when the set of active cooldowns changes (not every tick) so
+  // we don't churn `setInterval` once per second.
+  const hasActiveCooldown = Object.values(cooldownUntil).some(
+    (t) => t > Date.now(),
+  );
+  useEffect(() => {
+    if (!hasActiveCooldown) return;
+    const interval = window.setInterval(() => setCooldownTick((n) => n + 1), 1000);
+    return () => window.clearInterval(interval);
+  }, [hasActiveCooldown]);
+  const remainingSeconds = (deliveryId: string): number => {
+    const until = cooldownUntil[deliveryId];
+    if (!until) return 0;
+    return Math.max(0, Math.ceil((until - Date.now()) / 1000));
+  };
+  const startCooldown = (deliveryId: string, seconds: number) => {
+    setCooldownUntil((prev) => ({
+      ...prev,
+      [deliveryId]: Date.now() + seconds * 1000,
+    }));
+  };
+
   const resendMutation = useMutation({
-    mutationFn: async (deliveryId: string) => {
-      const res = await apiRequest(
-        "POST",
+    mutationFn: async (
+      deliveryId: string,
+    ): Promise<{ deliveryId: string; delivery: BackfillAlertDelivery }> => {
+      // Drop the standard `apiRequest` helper here because it collapses every
+      // non-2xx into a thrown Error with just the message — we need to read
+      // the 429 body's `retryAfterSeconds` to drive the local countdown.
+      const csrfMatch = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+      const headers: Record<string, string> = {};
+      if (csrfMatch) headers["x-csrf-token"] = decodeURIComponent(csrfMatch[1]);
+      const res = await fetch(
         `/api/crm/calls/transcripts/backfill/alert-deliveries/${deliveryId}/resend`,
+        { method: "POST", headers, credentials: "include" },
       );
-      return (await res.json()) as {
-        delivery: BackfillAlertDelivery;
+      const bodyText = await res.text();
+      let parsed: unknown = null;
+      if (bodyText) {
+        try {
+          parsed = JSON.parse(bodyText);
+        } catch {
+          parsed = null;
+        }
+      }
+      const isRecord = (v: unknown): v is Record<string, unknown> =>
+        typeof v === "object" && v !== null;
+      const readString = (v: unknown): string | undefined =>
+        typeof v === "string" ? v : undefined;
+      const readNumber = (v: unknown): number | undefined =>
+        typeof v === "number" && Number.isFinite(v) ? v : undefined;
+
+      if (!res.ok) {
+        const errorMessage =
+          (isRecord(parsed) ? readString(parsed.error) : undefined) ??
+          bodyText ??
+          `${res.status} ${res.statusText}`;
+        const err = new Error(errorMessage) as Error & {
+          status?: number;
+          retryAfterSeconds?: number;
+          deliveryId?: string;
+        };
+        err.status = res.status;
+        err.deliveryId = deliveryId;
+        const bodyRetry = isRecord(parsed)
+          ? readNumber(parsed.retryAfterSeconds)
+          : undefined;
+        if (bodyRetry !== undefined) {
+          err.retryAfterSeconds = bodyRetry;
+        } else {
+          const headerVal = res.headers.get("Retry-After");
+          const headerRetry = headerVal ? parseInt(headerVal, 10) : NaN;
+          if (Number.isFinite(headerRetry)) err.retryAfterSeconds = headerRetry;
+        }
+        throw err;
+      }
+
+      // Narrow the success body to the delivery shape this card consumes.
+      // Anything missing/malformed is treated as a transport failure rather
+      // than rendered as garbage.
+      const deliveryRaw = isRecord(parsed) ? parsed.delivery : undefined;
+      if (!isRecord(deliveryRaw)) {
+        throw new Error("Resend response was missing the delivery payload.");
+      }
+      const id = readString(deliveryRaw.id);
+      const channelRaw = readString(deliveryRaw.channel);
+      const statusRaw = readString(deliveryRaw.status);
+      const recipientSummary = readString(deliveryRaw.recipientSummary);
+      const attemptedAt = readString(deliveryRaw.attemptedAt);
+      const isChannel = (v: string | undefined): v is "slack" | "email" =>
+        v === "slack" || v === "email";
+      const isStatus = (v: string | undefined): v is "success" | "failure" =>
+        v === "success" || v === "failure";
+      if (!id || !attemptedAt || !isChannel(channelRaw) || !isStatus(statusRaw)) {
+        throw new Error("Resend response had an unexpected shape.");
+      }
+      const delivery: BackfillAlertDelivery = {
+        id,
+        jobId: readString(deliveryRaw.jobId) ?? null,
+        channel: channelRaw,
+        status: statusRaw,
+        recipientSummary: recipientSummary ?? "",
+        errorMessage: readString(deliveryRaw.errorMessage) ?? null,
+        attemptedAt,
       };
+      return { deliveryId, delivery };
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ALERT_DELIVERIES_KEY });
+      // The server applies the same 30s window regardless of dispatch
+      // outcome, so always start the local countdown here.
+      startCooldown(data.deliveryId, 30);
       const ok = data.delivery.status === "success";
       toast({
         title: ok ? "Alert resent" : "Resend failed",
@@ -3660,9 +3768,14 @@ export function BackfillAlertDeliveriesCard() {
         variant: ok ? "default" : "destructive",
       });
     },
-    onError: (err: Error) => {
+    onError: (
+      err: Error & { status?: number; retryAfterSeconds?: number; deliveryId?: string },
+    ) => {
+      if (err.status === 429 && err.deliveryId) {
+        startCooldown(err.deliveryId, err.retryAfterSeconds ?? 30);
+      }
       toast({
-        title: "Couldn't resend alert",
+        title: err.status === 429 ? "Slow down" : "Couldn't resend alert",
         description: err.message,
         variant: "destructive",
       });
@@ -3859,25 +3972,40 @@ export function BackfillAlertDeliveriesCard() {
                     </div>
                   )}
                 </div>
-                {d.status === "failure" && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setResendingId(d.id);
-                      resendMutation.mutate(d.id);
-                    }}
-                    disabled={resendingId === d.id && resendMutation.isPending}
-                    data-testid={`button-resend-alert-${d.id}`}
-                  >
-                    {resendingId === d.id && resendMutation.isPending ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4 mr-2" />
-                    )}
-                    Resend
-                  </Button>
-                )}
+                {d.status === "failure" && (() => {
+                  const isPending = resendingId === d.id && resendMutation.isPending;
+                  const cooldownLeft = remainingSeconds(d.id);
+                  const onCooldown = cooldownLeft > 0;
+                  return (
+                    <div className="flex flex-col items-end gap-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setResendingId(d.id);
+                          resendMutation.mutate(d.id);
+                        }}
+                        disabled={isPending || onCooldown}
+                        data-testid={`button-resend-alert-${d.id}`}
+                      >
+                        {isPending ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                        )}
+                        Resend
+                      </Button>
+                      {onCooldown && (
+                        <span
+                          className="text-[11px] text-muted-foreground"
+                          data-testid={`text-resend-cooldown-${d.id}`}
+                        >
+                          Just resent — try again in {cooldownLeft}s
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
               </li>
             ))}
           </ul>

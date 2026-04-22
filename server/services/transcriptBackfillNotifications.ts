@@ -1077,7 +1077,41 @@ export type ResendBackfillAlertResult =
         | "NOT_FAILED"
         | "JOB_MISSING"
         | "CHANNEL_NOT_CONFIGURED";
-    };
+    }
+  | { ok: false; reason: "COOLDOWN"; retryAfterSeconds: number };
+
+// Task #1068 — short per-(delivery, channel) cooldown to keep an admin (or a
+// script driving the admin button) from spamming Slack / Resend with the same
+// alert burst. We key on (orgId, jobId|deliveryId, channel) so the limit also
+// follows the *new* delivery row a successful resend creates — otherwise a
+// fresh failure row would let a fast clicker bypass the cooldown immediately.
+export const RESEND_COOLDOWN_MS = 30_000;
+const resendCooldownTimestamps = new Map<string, number>();
+
+function cooldownKey(
+  orgId: string,
+  jobOrDeliveryId: string,
+  channel: string,
+): string {
+  return `${orgId}::${jobOrDeliveryId}::${channel}`;
+}
+
+// Exposed so tests can reset between cases without poking module internals.
+export function __resetResendCooldownsForTests(): void {
+  resendCooldownTimestamps.clear();
+}
+
+// Lightweight TTL pruning so the in-memory map can't accumulate forever on a
+// long-running process. Called opportunistically each time a fresh cooldown
+// is recorded — cost is proportional to the size of the map and only happens
+// on a successful resend, which is bounded by the cooldown itself.
+function pruneExpiredResendCooldowns(now: number): void {
+  resendCooldownTimestamps.forEach((ts, key) => {
+    if (now - ts >= RESEND_COOLDOWN_MS) {
+      resendCooldownTimestamps.delete(key);
+    }
+  });
+}
 
 export async function resendBackfillAlertDelivery(
   orgId: string,
@@ -1087,6 +1121,9 @@ export async function resendBackfillAlertDelivery(
   // `source='resend'` and the acting admin's id, which lets the in-app
   // history render "Resent by Jane at 3:14pm" alongside the new outcome.
   triggeredById: string | null = null,
+  // Task #1068 — injectable clock for the resend cooldown so tests can
+  // advance time without monkey-patching `Date.now`.
+  now: number = Date.now(),
 ): Promise<ResendBackfillAlertResult> {
   const original = await getCrmTranscriptBackfillAlertDelivery(deliveryId, orgId);
   if (!original) return { ok: false, reason: "NOT_FOUND" };
@@ -1096,8 +1133,36 @@ export async function resendBackfillAlertDelivery(
   // counts/operator context the formatter needs.
   if (!original.jobId) return { ok: false, reason: "JOB_MISSING" };
 
+  // Cooldown check + reservation must be atomic — Node is single-threaded
+  // between awaits, so stamping the timestamp *before* any further awaited
+  // work means two concurrent requests that both pass the check would still
+  // see each other's reservation on the next pass. Without this, two near-
+  // simultaneous clicks could both pass the read and double-fire Slack/Resend.
+  // Anchored on jobId so a resend that produces a brand-new failure row stays
+  // cooled down too. Opportunistically evicts stale keys to keep the in-memory
+  // map from growing without bound on long-running processes.
+  const cdKey = cooldownKey(orgId, original.jobId, original.channel);
+  const last = resendCooldownTimestamps.get(cdKey);
+  if (last !== undefined && now - last < RESEND_COOLDOWN_MS) {
+    const retryAfterSeconds = Math.max(
+      1,
+      Math.ceil((RESEND_COOLDOWN_MS - (now - last)) / 1000),
+    );
+    return { ok: false, reason: "COOLDOWN", retryAfterSeconds };
+  }
+  resendCooldownTimestamps.set(cdKey, now);
+  pruneExpiredResendCooldowns(now);
+
   const job = await getCrmTranscriptBackfillJob(original.jobId, orgId);
-  if (!job) return { ok: false, reason: "JOB_MISSING" };
+  if (!job) {
+    // Roll back the reservation only if we lost it on a precondition failure
+    // before any external dispatch ran — otherwise an admin who hits a
+    // missing-job edge case would be locked out for 30s for no reason.
+    if (resendCooldownTimestamps.get(cdKey) === now) {
+      resendCooldownTimestamps.delete(cdKey);
+    }
+    return { ok: false, reason: "JOB_MISSING" };
+  }
 
   const operator = job.startedById
     ? await getCrmTranscriptBackfillOperatorContact(job.startedById)
@@ -1116,6 +1181,11 @@ export async function resendBackfillAlertDelivery(
     (channel === "slack" && !restricted.slackWebhookUrl) ||
     (channel === "email" && restricted.emailRecipients.length === 0)
   ) {
+    // Roll back the reservation — nothing was dispatched, so there's no
+    // recipient to protect.
+    if (resendCooldownTimestamps.get(cdKey) === now) {
+      resendCooldownTimestamps.delete(cdKey);
+    }
     return { ok: false, reason: "CHANNEL_NOT_CONFIGURED" };
   }
 
@@ -1129,6 +1199,10 @@ export async function resendBackfillAlertDelivery(
       : String(job.completedAt)
     : null;
 
+  // Cooldown was already reserved atomically before any awaited work above;
+  // the dispatch below proceeds under that reservation. A throw from the
+  // notifier still consumes the window, which intentionally prevents
+  // tight-loop retries against a perma-broken channel.
   await notifyBackfillCompletion(
     {
       id: job.id,
