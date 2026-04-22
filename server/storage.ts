@@ -407,6 +407,18 @@ export async function listCrmTranscriptBackfillTestAlerts(opts: {
   organizationId?: string;
   limit?: number;
   offset?: number;
+  // Task #1061 — optional filters so admins debugging long-running patterns
+  // can narrow the panel by sender (free-text match against the resolved
+  // user's name/email/operator snapshot), per-channel result, and a date
+  // range. Each filter is independent and combined with AND.
+  sender?: string;
+  slackOk?: boolean;
+  emailOk?: boolean;
+  // Convenience filter for "either channel failed" (slackOk=false OR
+  // emailOk=false), which can't be expressed by ANDing slackOk/emailOk.
+  anyFailed?: boolean;
+  sentAfter?: Date;
+  sentBefore?: Date;
 }): Promise<{
   rows: CrmTranscriptBackfillTestAlertWithContext[];
   total: number;
@@ -414,9 +426,57 @@ export async function listCrmTranscriptBackfillTestAlerts(opts: {
   const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
   const offset = Math.max(opts.offset ?? 0, 0);
 
-  const whereClause = opts.organizationId
-    ? eq(crmTranscriptBackfillTestAlerts.organizationId, opts.organizationId)
-    : undefined;
+  const conditions: SQL[] = [];
+  if (opts.organizationId) {
+    conditions.push(
+      eq(crmTranscriptBackfillTestAlerts.organizationId, opts.organizationId),
+    );
+  }
+  if (opts.sender && opts.sender.trim().length > 0) {
+    // Case-insensitive substring match against the joined user's first/last
+    // name and email plus the persisted operatorDisplay snapshot (covers
+    // historical rows whose user record may have been deleted).
+    const pattern = `%${opts.sender.trim().toLowerCase()}%`;
+    conditions.push(
+      sql`(
+        lower(coalesce(${users.firstName}, '')) like ${pattern}
+        or lower(coalesce(${users.lastName}, '')) like ${pattern}
+        or lower(coalesce(${users.email}, '')) like ${pattern}
+        or lower(coalesce(${crmTranscriptBackfillTestAlerts.operatorDisplay}, '')) like ${pattern}
+        or lower(coalesce(${users.firstName}, '') || ' ' || coalesce(${users.lastName}, '')) like ${pattern}
+      )`,
+    );
+  }
+  if (typeof opts.slackOk === "boolean") {
+    conditions.push(eq(crmTranscriptBackfillTestAlerts.slackOk, opts.slackOk));
+  }
+  if (typeof opts.emailOk === "boolean") {
+    conditions.push(eq(crmTranscriptBackfillTestAlerts.emailOk, opts.emailOk));
+  }
+  if (opts.anyFailed === true) {
+    conditions.push(
+      sql`(${crmTranscriptBackfillTestAlerts.slackOk} = false or ${crmTranscriptBackfillTestAlerts.emailOk} = false)`,
+    );
+  } else if (opts.anyFailed === false) {
+    // "Both channels ok" — useful as a counterpart so admins can audit
+    // healthy runs too.
+    conditions.push(
+      sql`(${crmTranscriptBackfillTestAlerts.slackOk} = true and ${crmTranscriptBackfillTestAlerts.emailOk} = true)`,
+    );
+  }
+  if (opts.sentAfter) {
+    conditions.push(gte(crmTranscriptBackfillTestAlerts.sentAt, opts.sentAfter));
+  }
+  if (opts.sentBefore) {
+    conditions.push(lte(crmTranscriptBackfillTestAlerts.sentAt, opts.sentBefore));
+  }
+
+  const whereClause =
+    conditions.length === 0
+      ? undefined
+      : conditions.length === 1
+      ? conditions[0]
+      : and(...conditions);
 
   const baseRows = db
     .select({
@@ -455,7 +515,8 @@ export async function listCrmTranscriptBackfillTestAlerts(opts: {
 
   const totalQuery = db
     .select({ count: sql<number>`count(*)::int` })
-    .from(crmTranscriptBackfillTestAlerts);
+    .from(crmTranscriptBackfillTestAlerts)
+    .leftJoin(users, eq(users.id, crmTranscriptBackfillTestAlerts.sentById));
   const [{ count }] = await (whereClause
     ? totalQuery.where(whereClause)
     : totalQuery);

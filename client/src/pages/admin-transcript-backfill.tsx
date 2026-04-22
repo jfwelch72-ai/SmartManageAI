@@ -2623,6 +2623,15 @@ function TestAlertUsageSummary({
     </div>
   );
 }
+// Task #1061 — channel-result filter values for the test-alert history
+// panel. "ANY" means don't filter; the specific values map to slackOk /
+// emailOk booleans on the backend.
+type TestAlertResultFilter =
+  | "ANY"
+  | "SLACK_FAILED"
+  | "EMAIL_FAILED"
+  | "EITHER_FAILED"
+  | "ALL_OK";
 
 function TestAlertHistoryPanel({
   isSuperAdmin,
@@ -2634,11 +2643,28 @@ function TestAlertHistoryPanel({
   const [expanded, setExpanded] = useState(false);
   const [page, setPage] = useState(0);
 
-  // Reset to the first page whenever the org scope changes so a SUPER_ADMIN
-  // doesn't end up staring at an empty page.
+  // Task #1061 — filter controls so admins can narrow the panel by sender,
+  // channel result, and date range without scrolling page by page. Sender is
+  // free-text + debounced; result/date changes apply immediately because
+  // they come from explicit pickers.
+  const [senderInput, setSenderInput] = useState("");
+  const [appliedSender, setAppliedSender] = useState("");
+  const [resultFilter, setResultFilter] =
+    useState<TestAlertResultFilter>("ANY");
+  const [sentAfter, setSentAfter] = useState<Date | undefined>(undefined);
+  const [sentBefore, setSentBefore] = useState<Date | undefined>(undefined);
+
+  useEffect(() => {
+    const t = setTimeout(() => setAppliedSender(senderInput.trim()), 300);
+    return () => clearTimeout(t);
+  }, [senderInput]);
+
+  // Reset to the first page whenever the org scope or any filter changes so
+  // a SUPER_ADMIN (or any admin who just narrowed the view) doesn't end up
+  // staring at an empty page.
   useEffect(() => {
     setPage(0);
-  }, [orgFilter]);
+  }, [orgFilter, appliedSender, resultFilter, sentAfter, sentBefore]);
 
   const queryParams = useMemo(() => {
     const params: Record<string, string> = {
@@ -2648,8 +2674,37 @@ function TestAlertHistoryPanel({
     if (isSuperAdmin && orgFilter !== CROSS_ORG_VALUE) {
       params.organizationId = orgFilter;
     }
+    if (appliedSender) params.sender = appliedSender;
+    // Map the human-friendly result picker into the server's per-channel
+    // booleans. EITHER_FAILED uses the dedicated `anyFailed` param because
+    // it can't be expressed by ANDing slackOk/emailOk.
+    if (resultFilter === "SLACK_FAILED") params.slackOk = "false";
+    else if (resultFilter === "EMAIL_FAILED") params.emailOk = "false";
+    else if (resultFilter === "EITHER_FAILED") params.anyFailed = "true";
+    else if (resultFilter === "ALL_OK") params.anyFailed = "false";
+    if (sentAfter) params.sentAfter = sentAfter.toISOString();
+    if (sentBefore) {
+      // Make the upper bound inclusive of the entire selected day.
+      const end = new Date(sentBefore);
+      end.setHours(23, 59, 59, 999);
+      params.sentBefore = end.toISOString();
+    }
     return params;
-  }, [page, isSuperAdmin, orgFilter]);
+  }, [
+    page,
+    isSuperAdmin,
+    orgFilter,
+    appliedSender,
+    resultFilter,
+    sentAfter,
+    sentBefore,
+  ]);
+
+  const hasActiveFilters =
+    appliedSender.length > 0 ||
+    resultFilter !== "ANY" ||
+    !!sentAfter ||
+    !!sentBefore;
 
   const query = useQuery<TestAlertHistoryResponse>({
     queryKey: [...TEST_ALERT_HISTORY_KEY_BASE, queryParams],
@@ -2689,6 +2744,120 @@ function TestAlertHistoryPanel({
           className="mt-2 space-y-2"
           data-testid="container-test-alert-history"
         >
+          <div
+            className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4"
+            data-testid="test-alert-history-filters"
+          >
+            <div className="space-y-1">
+              <Label
+                htmlFor="test-alert-history-sender"
+                className="text-[11px]"
+              >
+                Sender
+              </Label>
+              <Input
+                id="test-alert-history-sender"
+                value={senderInput}
+                onChange={(e) => setSenderInput(e.target.value)}
+                placeholder="Name or email"
+                className="h-8 text-xs"
+                data-testid="input-test-alert-history-sender"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label
+                htmlFor="test-alert-history-result"
+                className="text-[11px]"
+              >
+                Result
+              </Label>
+              <Select
+                value={resultFilter}
+                onValueChange={(v) =>
+                  setResultFilter(v as TestAlertResultFilter)
+                }
+              >
+                <SelectTrigger
+                  id="test-alert-history-result"
+                  className="h-8 text-xs"
+                  data-testid="select-test-alert-history-result"
+                >
+                  <SelectValue placeholder="Any result" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem
+                    value="ANY"
+                    data-testid="select-test-alert-history-result-option-ANY"
+                  >
+                    Any result
+                  </SelectItem>
+                  <SelectItem
+                    value="SLACK_FAILED"
+                    data-testid="select-test-alert-history-result-option-SLACK_FAILED"
+                  >
+                    Slack failed
+                  </SelectItem>
+                  <SelectItem
+                    value="EMAIL_FAILED"
+                    data-testid="select-test-alert-history-result-option-EMAIL_FAILED"
+                  >
+                    Email failed
+                  </SelectItem>
+                  <SelectItem
+                    value="EITHER_FAILED"
+                    data-testid="select-test-alert-history-result-option-EITHER_FAILED"
+                  >
+                    Either failed
+                  </SelectItem>
+                  <SelectItem
+                    value="ALL_OK"
+                    data-testid="select-test-alert-history-result-option-ALL_OK"
+                  >
+                    All ok
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">Sent after</Label>
+              <DatePicker
+                value={sentAfter ?? null}
+                onChange={(d) => setSentAfter(d)}
+                placeholder="Any date"
+                data-testid="picker-test-alert-history-sent-after"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">Sent before</Label>
+              <DatePicker
+                value={sentBefore ?? null}
+                onChange={(d) => setSentBefore(d)}
+                placeholder="Any date"
+                data-testid="picker-test-alert-history-sent-before"
+              />
+            </div>
+            {hasActiveFilters && (
+              <div className="sm:col-span-2 lg:col-span-4">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={() => {
+                    setSenderInput("");
+                    setAppliedSender("");
+                    setResultFilter("ANY");
+                    setSentAfter(undefined);
+                    setSentBefore(undefined);
+                  }}
+                  data-testid="button-clear-test-alert-history-filters"
+                >
+                  <X className="h-3 w-3 mr-1" />
+                  Clear filters
+                </Button>
+              </div>
+            )}
+          </div>
           {query.isLoading ? (
             <p
               className="text-xs text-muted-foreground"
@@ -2708,7 +2877,9 @@ function TestAlertHistoryPanel({
               className="text-xs text-muted-foreground"
               data-testid="text-test-alert-history-empty"
             >
-              No previous test alerts recorded.
+              {hasActiveFilters
+                ? "No previous test alerts match the current filters."
+                : "No previous test alerts recorded."}
             </p>
           ) : (
             <>

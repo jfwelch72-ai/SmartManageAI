@@ -2960,10 +2960,42 @@ router.get(
         0,
       );
 
+      // Task #1061 — optional filters so admins debugging long-running
+      // patterns (when a channel started failing, who has been hammering
+      // the button) can narrow the panel without scrolling page by page.
+      const senderRaw =
+        typeof req.query.sender === "string" ? req.query.sender.trim() : "";
+      const sender = senderRaw.length > 0 ? senderRaw.slice(0, 200) : undefined;
+
+      const parseBool = (v: unknown): boolean | undefined => {
+        if (typeof v !== "string") return undefined;
+        const s = v.trim().toLowerCase();
+        if (s === "true" || s === "1") return true;
+        if (s === "false" || s === "0") return false;
+        return undefined;
+      };
+      const slackOk = parseBool(req.query.slackOk);
+      const emailOk = parseBool(req.query.emailOk);
+      const anyFailed = parseBool(req.query.anyFailed);
+
+      const parseDate = (v: unknown): Date | undefined => {
+        if (typeof v !== "string" || v.length === 0) return undefined;
+        const d = new Date(v);
+        return Number.isNaN(d.getTime()) ? undefined : d;
+      };
+      const sentAfter = parseDate(req.query.sentAfter);
+      const sentBefore = parseDate(req.query.sentBefore);
+
       const { rows, total } = await listCrmTranscriptBackfillTestAlerts({
         organizationId: scopedOrgId,
         limit,
         offset,
+        sender,
+        slackOk,
+        emailOk,
+        anyFailed,
+        sentAfter,
+        sentBefore,
       });
 
       res.json({
