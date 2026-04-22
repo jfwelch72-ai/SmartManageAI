@@ -379,6 +379,14 @@ export function AppSidebar() {
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={isActive("/my-work")} tooltip="My Work">
+                    <Link href="/my-work" data-testid="sidebar-my-work-fw">
+                      <Inbox className="w-4 h-4 text-primary" />
+                      <span>My Work</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
@@ -456,6 +464,14 @@ export function AppSidebar() {
                     <Sun className="w-4 h-4 text-amber-500" />
                     <span>My Day</span>
                     <MyDayBadge />
+                  </Link>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+              <SidebarMenuItem>
+                <SidebarMenuButton asChild isActive={isActive("/my-work")} tooltip="My Work">
+                  <Link href="/my-work" data-testid="sidebar-my-work">
+                    <Inbox className="w-4 h-4 text-primary" />
+                    <span>My Work</span>
                   </Link>
                 </SidebarMenuButton>
               </SidebarMenuItem>

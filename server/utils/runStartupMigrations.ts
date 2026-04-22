@@ -67,6 +67,7 @@ import { ensureStatusPageTables } from "./ensureStatusPageTables";
 import { backfillStatusProbeDailyHistory } from "./backfillStatusProbeDailyHistory";
 import { ensureMobileOfflineEnumValues } from "./ensureMobileOfflineEnumValues";
 import { ensureCrmEmailLoggingTables } from "./ensureCrmEmailLoggingTables";
+import { ensureUsersManagerIdColumn } from "./ensureUsersManagerIdColumn";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -143,6 +144,7 @@ const migrations: MigrationStep[] = [
   { name: "status_probe_daily_history_backfill", category: "ALTER_TABLE", fn: backfillStatusProbeDailyHistory },
   { name: "mobile_offline_enum_values", category: "ADD_ENUM", fn: ensureMobileOfflineEnumValues },
   { name: "crm_email_logging_tables", category: "CREATE_TABLE", fn: ensureCrmEmailLoggingTables },
+  { name: "users_manager_id_column", category: "ADD_COLUMN", fn: ensureUsersManagerIdColumn },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

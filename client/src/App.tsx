@@ -249,6 +249,7 @@ const CFODashboardPage = lazy(() => import("@/pages/cfo-dashboard"));
 const UnifiedMessagesPage = lazy(() => import("@/pages/unified-messages"));
 const SettingsPage = lazy(() => import("@/pages/settings"));
 const MyDayPage = lazy(() => import("@/pages/my-day"));
+const MyWorkPage = lazy(() => import("@/pages/my-work"));
 const PlanPinsHarnessPage = lazy(() => import("@/pages/test/plan-pins-harness"));
 const TrustPage = lazy(() => import("@/pages/trust").then(m => ({ default: m.TrustPage })));
 const SubProcessorsPage = lazy(() => import("@/pages/trust").then(m => ({ default: m.SubProcessorsPage })));
@@ -389,6 +390,7 @@ function Router() {
       <Route path="/tasks" component={() => <ProtectedRoute component={TasksPage} permission={RoutePermissions.TASKS} />} />
       <Route path="/daily-reports" component={() => <ProtectedRoute component={DailyReportsPage} permission={RoutePermissions.PROJECTS} />} />
       <Route path="/my-day" component={() => <ProtectedRoute component={MyDayPage} />} />
+      <Route path="/my-work" component={() => <ProtectedRoute component={MyWorkPage} />} />
       <Route path="/time-clock" component={() => <ProtectedRoute component={TimeClockPage} permission={RoutePermissions.TIME_CLOCK} />} />
       <Route path="/messages" component={() => <ProtectedRoute component={UnifiedMessagesPage} permission={RoutePermissions.MESSAGES} />} />
       <Route path="/portal-chat" component={() => <ProtectedRoute component={UnifiedMessagesPage} permission={RoutePermissions.MESSAGES} />} />

@@ -226,6 +226,7 @@ import executiveDigestRoutes from "./executiveDigestRoutes";
 import emailCampaignRoutes from "./emailCampaignRoutes";
 import savedViewsRoutes from "./savedViewsRoutes";
 import myDayRoutes from "./myDayRoutes";
+import myWorkRoutes from "./myWorkRoutes";
 import devEmailRoutes from "./devEmailRoutes";
 import statusPageRoutes from "./statusPageRoutes";
 
@@ -459,6 +460,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // My Day — personal work inbox aggregator
   app.use(myDayRoutes);
+  app.use(myWorkRoutes);
 
   // Dev/QA test email outbox — only active when EMAIL_TRANSPORT=noop
   app.use(devEmailRoutes);

@@ -317,6 +317,10 @@ export type PayStubDeduction = typeof payStubDeductions.$inferSelect;
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "set null" }),
+  // Task #887: optional reverse pointer to this user's people-manager (another user
+  // in the same org). Used by the "My Work" team view (?team=direct-reports) so
+  // managers see only their direct reports' work, not the whole org.
+  managerId: varchar("manager_id"),
   firstName: text("first_name").notNull(),
   lastName: text("last_name").notNull(),
   email: text("email").notNull().unique(),
