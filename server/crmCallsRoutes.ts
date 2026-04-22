@@ -58,7 +58,6 @@ import {
   sendTestBackfillAlert,
   getBackfillNotificationConfig,
 } from "./services/transcriptBackfillNotifications";
-import { isValidSlackWebhookUrl } from "./services/slackService";
 import {
   requireAuth,
   requireRole,
@@ -1089,6 +1088,128 @@ function escapeBackfillHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
+/**
+ * Task #1046: Pure builder for the per-admin backfill summary message.
+ *
+ * Extracted out of `notifyBackfillCompletionToOrgAdmins` so the new
+ * "Send test summary" admin endpoint can produce a sample preview in
+ * exactly the same wording / layout as a real run-completion summary.
+ *
+ * `testPrefix` toggles "[Test]" markers on every channel (subject, HTML
+ * heading, and Slack/Teams headline) plus a small footer/banner that
+ * makes it unmistakably clear the message is a preview rather than a
+ * notification about an actual backfill run.
+ */
+export interface BackfillSummaryContentInput {
+  jobId: string;
+  status: "COMPLETED" | "FAILED";
+  total: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  startedAt: Date;
+  completedAt: Date;
+  parentJobId: string | null;
+  orgName: string;
+  operatorName: string;
+  testPrefix?: boolean;
+}
+
+export interface BackfillSummaryContent {
+  subject: string;
+  text: string;
+  html: string;
+  chatTitle: string;
+  chatBody: string;
+  historyUrl: string;
+}
+
+export function buildBackfillSummaryContent(
+  input: BackfillSummaryContentInput,
+): BackfillSummaryContent {
+  const {
+    jobId, status, total, processed, succeeded, failed,
+    startedAt, completedAt, parentJobId, orgName, operatorName,
+    testPrefix = false,
+  } = input;
+
+  const duration = formatBackfillDuration(startedAt, completedAt);
+  const isRetry = !!parentJobId;
+  const runLabel = isRetry ? "Transcript backfill retry" : "Transcript backfill";
+  const statusLabel = status === "COMPLETED" ? "completed" : "failed";
+
+  const baseUrl = process.env.APP_BASE_URL || "";
+  const historyUrl = baseUrl
+    ? `${baseUrl.replace(/\/$/, "")}/admin/transcript-backfill`
+    : "/admin/transcript-backfill";
+
+  const prefix = testPrefix ? "[Test] " : "";
+  const subject = `${prefix}${runLabel} ${statusLabel} — ${succeeded}/${total} succeeded`;
+
+  const testBannerText = testPrefix
+    ? "This is a sample summary triggered from your Notification Preferences. No real backfill ran.\n\n"
+    : "";
+  const text =
+    testBannerText +
+    [
+      `${runLabel} ${statusLabel} for ${orgName}.`,
+      ``,
+      `Status:    ${status}`,
+      `Processed: ${processed} of ${total}`,
+      `Succeeded: ${succeeded}`,
+      `Failed:    ${failed}`,
+      `Duration:  ${duration}`,
+      `Started:   ${startedAt.toISOString()}`,
+      `Finished:  ${completedAt.toISOString()}`,
+      `Operator:  ${operatorName}`,
+      `Job ID:    ${jobId}`,
+      ``,
+      `View history: ${historyUrl}`,
+    ].join("\n");
+
+  const testBannerHtml = testPrefix
+    ? `<p style="margin:0 0 12px;padding:8px 12px;background:#fef3c7;border:1px solid #fcd34d;border-radius:4px;color:#78350f;">
+         <strong>Sample summary.</strong> This is a preview triggered from your Notification Preferences. No real backfill ran.
+       </p>`
+    : "";
+
+  const html = `<!doctype html>
+<html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111;">
+  ${testBannerHtml}
+  <h2 style="margin:0 0 8px;">${escapeBackfillHtml(prefix)}${escapeBackfillHtml(runLabel)} ${escapeBackfillHtml(statusLabel)}</h2>
+  <p style="margin:0 0 16px;color:#444;">Organization: <strong>${escapeBackfillHtml(orgName)}</strong></p>
+  <table cellpadding="6" cellspacing="0" style="border-collapse:collapse;border:1px solid #e5e7eb;">
+    <tbody>
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Status</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(status)}</td></tr>
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Processed</strong></td><td style="border:1px solid #e5e7eb;">${processed} of ${total}</td></tr>
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Succeeded</strong></td><td style="border:1px solid #e5e7eb;">${succeeded}</td></tr>
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Failed</strong></td><td style="border:1px solid #e5e7eb;">${failed}</td></tr>
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Duration</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(duration)}</td></tr>
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Started</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(startedAt.toISOString())}</td></tr>
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Finished</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(completedAt.toISOString())}</td></tr>
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Operator</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(operatorName)}</td></tr>
+      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Job ID</strong></td><td style="border:1px solid #e5e7eb;font-family:monospace;font-size:12px;">${escapeBackfillHtml(jobId)}</td></tr>
+    </tbody>
+  </table>
+  <p style="margin:16px 0 0;"><a href="${escapeBackfillHtml(historyUrl)}" style="color:#2563eb;">View backfill history</a></p>
+</body></html>`;
+
+  const chatTitle = subject;
+  const testChatFooter = testPrefix
+    ? "\n_:test_tube: Sample summary triggered from Notification Preferences. No real backfill ran._"
+    : "";
+  const chatBody =
+    [
+      `*Status:* ${status}`,
+      `*Counts:* ${succeeded} succeeded / ${failed} failed / ${processed} of ${total}`,
+      `*Duration:* ${duration}`,
+      `*Operator:* ${operatorName}`,
+      `*Job ID:* \`${jobId}\``,
+    ].join("\n") + testChatFooter;
+
+  return { subject, text, html, chatTitle, chatBody, historyUrl };
+}
+
 export async function notifyBackfillCompletionToOrgAdmins(jobId: string): Promise<void> {
   try {
     if (!rememberBackfillNotified(jobId)) return;
@@ -1204,7 +1325,6 @@ export async function notifyBackfillCompletionToOrgAdmins(jobId: string): Promis
       .map((r) => r.target);
 
     const completedAt = jobRow.completedAt ?? new Date();
-    const duration = formatBackfillDuration(jobRow.startedAt, completedAt);
     const operatorName =
       [jobRow.operatorFirstName, jobRow.operatorLastName]
         .filter((p): p is string => !!p)
@@ -1213,65 +1333,23 @@ export async function notifyBackfillCompletionToOrgAdmins(jobId: string): Promis
       jobRow.operatorEmail ||
       "an administrator";
     const orgName = orgRow?.name || "your organization";
-    const isRetry = !!jobRow.parentJobId;
-    const runLabel = isRetry ? "Transcript backfill retry" : "Transcript backfill";
-    const statusLabel = jobRow.status === "COMPLETED" ? "completed" : "failed";
 
-    const baseUrl = process.env.APP_BASE_URL || "";
-    const historyUrl = baseUrl
-      ? `${baseUrl.replace(/\/$/, "")}/admin/transcript-backfill`
-      : "/admin/transcript-backfill";
-
-    const subject = `${runLabel} ${statusLabel} — ${jobRow.succeeded}/${jobRow.total} succeeded`;
-
-    const textLines = [
-      `${runLabel} ${statusLabel} for ${orgName}.`,
-      ``,
-      `Status:    ${jobRow.status}`,
-      `Processed: ${jobRow.processed} of ${jobRow.total}`,
-      `Succeeded: ${jobRow.succeeded}`,
-      `Failed:    ${jobRow.failed}`,
-      `Duration:  ${duration}`,
-      `Started:   ${jobRow.startedAt.toISOString()}`,
-      `Finished:  ${completedAt.toISOString()}`,
-      `Operator:  ${operatorName}`,
-      `Job ID:    ${jobRow.id}`,
-      ``,
-      `View history: ${historyUrl}`,
-    ];
-    const text = textLines.join("\n");
-
-    const html = `<!doctype html>
-<html><body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#111;">
-  <h2 style="margin:0 0 8px;">${escapeBackfillHtml(runLabel)} ${escapeBackfillHtml(statusLabel)}</h2>
-  <p style="margin:0 0 16px;color:#444;">Organization: <strong>${escapeBackfillHtml(orgName)}</strong></p>
-  <table cellpadding="6" cellspacing="0" style="border-collapse:collapse;border:1px solid #e5e7eb;">
-    <tbody>
-      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Status</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(jobRow.status)}</td></tr>
-      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Processed</strong></td><td style="border:1px solid #e5e7eb;">${jobRow.processed} of ${jobRow.total}</td></tr>
-      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Succeeded</strong></td><td style="border:1px solid #e5e7eb;">${jobRow.succeeded}</td></tr>
-      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Failed</strong></td><td style="border:1px solid #e5e7eb;">${jobRow.failed}</td></tr>
-      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Duration</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(duration)}</td></tr>
-      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Started</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(jobRow.startedAt.toISOString())}</td></tr>
-      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Finished</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(completedAt.toISOString())}</td></tr>
-      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Operator</strong></td><td style="border:1px solid #e5e7eb;">${escapeBackfillHtml(operatorName)}</td></tr>
-      <tr><td style="border:1px solid #e5e7eb;background:#f9fafb;"><strong>Job ID</strong></td><td style="border:1px solid #e5e7eb;font-family:monospace;font-size:12px;">${escapeBackfillHtml(jobRow.id)}</td></tr>
-    </tbody>
-  </table>
-  <p style="margin:16px 0 0;"><a href="${escapeBackfillHtml(historyUrl)}" style="color:#2563eb;">View backfill history</a></p>
-</body></html>`;
-
-    // Slack/Teams use the same headline + a compact mrkdwn-friendly body so
-    // recipients of any channel see the same key counts and a link back to
-    // the admin history page.
-    const chatTitle = subject;
-    const chatBody = [
-      `*Status:* ${jobRow.status}`,
-      `*Counts:* ${jobRow.succeeded} succeeded / ${jobRow.failed} failed / ${jobRow.processed} of ${jobRow.total}`,
-      `*Duration:* ${duration}`,
-      `*Operator:* ${operatorName}`,
-      `*Job ID:* \`${jobRow.id}\``,
-    ].join("\n");
+    // Task #1046: Centralized message builder so the "Send test" admin
+    // endpoint can produce a sample with identical wording / layout.
+    const { subject, text, html, chatTitle, chatBody, historyUrl } =
+      buildBackfillSummaryContent({
+        jobId: jobRow.id,
+        status: jobRow.status as "COMPLETED" | "FAILED",
+        total: jobRow.total,
+        processed: jobRow.processed,
+        succeeded: jobRow.succeeded,
+        failed: jobRow.failed,
+        startedAt: jobRow.startedAt,
+        completedAt,
+        parentJobId: jobRow.parentJobId,
+        orgName,
+        operatorName,
+      });
 
     const slackTargets = routed.filter((r) => r.channel === "slack").map((r) => r.target);
     const teamsTargets = routed.filter((r) => r.channel === "teams").map((r) => r.target);
@@ -1345,6 +1423,214 @@ function scheduleBackfillCompletionEmail(jobId: string): void {
     notifyBackfillCompletionToOrgAdmins(jobId).catch(() => undefined);
   });
 }
+
+/**
+ * Task #1046 — preview the per-admin transcript backfill summary.
+ *
+ * Lets an org admin send themselves a sample summary in their currently
+ * configured channel (email / Slack / Teams) so they can verify the
+ * webhook URL and see what real run-completion summaries will look like
+ * before the next backfill finishes. Uses the same message builder as
+ * the real dispatcher, with a "[Test]" prefix and a sample-summary
+ * banner so the message is unmistakably a preview.
+ */
+router.post(
+  "/api/notifications/test-backfill-summary",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = req.user?.organizationId;
+      if (!orgId) {
+        return res.status(400).json({ error: "Your account is not associated with an organization." });
+      }
+
+      const channel = (req.user?.crmBackfillSummaryChannel ?? "email") as
+        | "email" | "slack" | "teams" | "none";
+      if (channel === "none") {
+        return res.status(400).json({
+          error: "Your delivery channel is set to \"Don't notify me\". Pick a channel before sending a test summary.",
+        });
+      }
+
+      // Pull org name + the admin's webhook URLs from notification_channel_prefs.
+      const [orgRow] = await db
+        .select({ name: organizations.name })
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .limit(1);
+      const orgName = orgRow?.name || "your organization";
+
+      const [prefsRow] = await db
+        .select({
+          slackWebhookUrl: notificationChannelPrefs.slackWebhookUrl,
+          teamsWebhookUrl: notificationChannelPrefs.teamsWebhookUrl,
+        })
+        .from(notificationChannelPrefs)
+        .where(eq(notificationChannelPrefs.userId, req.user!.id))
+        .limit(1);
+
+      const operatorName =
+        [req.user?.firstName, req.user?.lastName]
+          .filter((p): p is string => !!p)
+          .join(" ")
+          .trim() ||
+        req.user?.email ||
+        "you";
+
+      const now = new Date();
+      const startedAt = new Date(now.getTime() - 4 * 60 * 1000 - 12 * 1000);
+      const sampleId = `sample-${now.getTime().toString(36)}`;
+
+      // A "succeeded with a couple of failures" sample exercises both
+      // the success and failure columns so admins can see what they'll
+      // get for a typical mixed-result run.
+      const content = buildBackfillSummaryContent({
+        jobId: sampleId,
+        status: "COMPLETED",
+        total: 42,
+        processed: 42,
+        succeeded: 39,
+        failed: 3,
+        startedAt,
+        completedAt: now,
+        parentJobId: null,
+        orgName,
+        operatorName,
+        testPrefix: true,
+      });
+
+      if (channel === "email") {
+        const to = (req.user?.email ?? "").trim();
+        if (!to) {
+          return res.status(400).json({
+            error: "Your account has no email address on file, so the sample can't be delivered.",
+          });
+        }
+        try {
+          const ok = await sendEmail({
+            to: [to],
+            subject: content.subject,
+            text: content.text,
+            html: content.html,
+          });
+          if (!ok) {
+            return res.status(502).json({
+              error: "Email transport reported a failure. Check the server logs and try again.",
+            });
+          }
+          return res.json({ ok: true, channel: "email", target: to });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          logWarn("crmCalls: test backfill summary email failed", { orgId, error: message });
+          return res.status(502).json({ error: `Email delivery failed: ${message}` });
+        }
+      }
+
+      if (channel === "slack") {
+        const url = (prefsRow?.slackWebhookUrl ?? "").trim();
+        if (!url) {
+          return res.status(400).json({
+            error: "No Slack webhook URL is configured. Add one in your channel preferences before sending a test.",
+          });
+        }
+        if (!isValidSlackWebhookUrl(url)) {
+          return res.status(400).json({
+            error: "The configured Slack webhook URL is invalid (must start with https://hooks.slack.com/).",
+          });
+        }
+        try {
+          const payload = {
+            blocks: [
+              { type: "header", text: { type: "plain_text", text: content.chatTitle, emoji: true } },
+              { type: "section", text: { type: "mrkdwn", text: content.chatBody } },
+              {
+                type: "actions",
+                elements: [
+                  {
+                    type: "button",
+                    text: { type: "plain_text", text: "View backfill history" },
+                    url: content.historyUrl,
+                    action_id: "open_app",
+                  },
+                ],
+              },
+            ],
+          };
+          const slackRes = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (!slackRes.ok) {
+            const body = await slackRes.text().catch(() => "");
+            return res.status(502).json({
+              error: `Slack webhook returned ${slackRes.status}${body ? `: ${body.slice(0, 200)}` : ""}`,
+            });
+          }
+          return res.json({ ok: true, channel: "slack" });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          logWarn("crmCalls: test backfill summary slack failed", { orgId, error: message });
+          return res.status(502).json({ error: `Slack delivery failed: ${message}` });
+        }
+      }
+
+      // channel === "teams"
+      const url = (prefsRow?.teamsWebhookUrl ?? "").trim();
+      if (!url) {
+        return res.status(400).json({
+          error: "No Microsoft Teams webhook URL is configured. Add one in your channel preferences before sending a test.",
+        });
+      }
+      if (!isValidTeamsWebhookUrl(url)) {
+        return res.status(400).json({
+          error: "The configured Teams webhook URL is invalid (expected a Microsoft Teams or Office 365 connector URL).",
+        });
+      }
+      try {
+        const card = {
+          type: "message",
+          attachments: [
+            {
+              contentType: "application/vnd.microsoft.card.adaptive",
+              content: {
+                $schema: "http://adaptivecards.io/schemas/adaptive-card.json",
+                type: "AdaptiveCard",
+                version: "1.4",
+                body: [
+                  { type: "TextBlock", text: content.chatTitle, weight: "Bolder", size: "Medium", wrap: true },
+                  { type: "TextBlock", text: content.chatBody, wrap: true, spacing: "Small" },
+                ],
+                actions: [
+                  { type: "Action.OpenUrl", title: "View backfill history", url: content.historyUrl },
+                ],
+              },
+            },
+          ],
+        };
+        const teamsRes = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(card),
+        });
+        if (!teamsRes.ok) {
+          const body = await teamsRes.text().catch(() => "");
+          return res.status(502).json({
+            error: `Teams webhook returned ${teamsRes.status}${body ? `: ${body.slice(0, 200)}` : ""}`,
+          });
+        }
+        return res.json({ ok: true, channel: "teams" });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        logWarn("crmCalls: test backfill summary teams failed", { orgId, error: message });
+        return res.status(502).json({ error: `Teams delivery failed: ${message}` });
+      }
+    } catch (e) {
+      next(e);
+    }
+  },
+);
 
 export async function fetchEligibleRecordingBatch(
   orgId: string,

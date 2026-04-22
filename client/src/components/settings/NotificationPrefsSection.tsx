@@ -412,6 +412,35 @@ export default function NotificationPrefsSection() {
     updateBackfillSummaryMutation.mutate({ crmBackfillSummaryOnFailureOnly: next });
   }
 
+  // Task #1046: Let admins fire a sample backfill summary to their currently
+  // selected channel so they can verify webhook URLs and preview formatting
+  // without waiting for a real backfill to finish. Errors (missing webhook,
+  // delivery failure) come back from the server and are surfaced as toasts.
+  const sendTestBackfillSummaryMutation = useMutation({
+    mutationFn: async (): Promise<{ ok: boolean; channel: string; target?: string }> => {
+      const res = await apiRequest("POST", "/api/notifications/test-backfill-summary");
+      return (await res.json()) as { ok: boolean; channel: string; target?: string };
+    },
+    onSuccess: (data) => {
+      const channelLabel =
+        data.channel === "email" ? "email" :
+        data.channel === "slack" ? "Slack" :
+        data.channel === "teams" ? "Microsoft Teams" :
+        data.channel;
+      const description = data.target
+        ? `A sample summary was sent to ${data.target}.`
+        : `A sample summary was sent to your configured ${channelLabel} webhook.`;
+      toast({ title: "Test summary sent", description });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Couldn't send test summary",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Task #748: Super-Admin quiet-hours window for job-metric alert emails.
   // Stored on users.* via PATCH /api/auth/profile alongside the opt-out
   // toggle above. The alert engine consults these fields and skips email
@@ -1824,32 +1853,57 @@ export default function NotificationPrefsSection() {
                       >
                         Delivery channel
                       </Label>
-                      <Select
-                        value={backfillSummaryChannel}
-                        onValueChange={handleBackfillSummaryChannelChange}
-                        disabled={updateBackfillSummaryMutation.isPending}
-                      >
-                        <SelectTrigger
-                          id="backfill-summary-channel"
-                          data-testid="select-backfill-summary-channel"
+                      <div className="flex items-end gap-2">
+                        <div className="flex-1">
+                          <Select
+                            value={backfillSummaryChannel}
+                            onValueChange={handleBackfillSummaryChannelChange}
+                            disabled={updateBackfillSummaryMutation.isPending}
+                          >
+                            <SelectTrigger
+                              id="backfill-summary-channel"
+                              data-testid="select-backfill-summary-channel"
+                            >
+                              <SelectValue placeholder="Select channel" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="email" data-testid="option-backfill-summary-channel-email">
+                                Email
+                              </SelectItem>
+                              <SelectItem value="slack" data-testid="option-backfill-summary-channel-slack">
+                                Slack
+                              </SelectItem>
+                              <SelectItem value="teams" data-testid="option-backfill-summary-channel-teams">
+                                Microsoft Teams
+                              </SelectItem>
+                              <SelectItem value="none" data-testid="option-backfill-summary-channel-none">
+                                Don't notify me
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => sendTestBackfillSummaryMutation.mutate()}
+                          disabled={
+                            backfillSummaryChannel === "none" ||
+                            sendTestBackfillSummaryMutation.isPending ||
+                            updateBackfillSummaryMutation.isPending
+                          }
+                          data-testid="button-send-test-backfill-summary"
                         >
-                          <SelectValue placeholder="Select channel" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="email" data-testid="option-backfill-summary-channel-email">
-                            Email
-                          </SelectItem>
-                          <SelectItem value="slack" data-testid="option-backfill-summary-channel-slack">
-                            Slack
-                          </SelectItem>
-                          <SelectItem value="teams" data-testid="option-backfill-summary-channel-teams">
-                            Microsoft Teams
-                          </SelectItem>
-                          <SelectItem value="none" data-testid="option-backfill-summary-channel-none">
-                            Don't notify me
-                          </SelectItem>
-                        </SelectContent>
-                      </Select>
+                          {sendTestBackfillSummaryMutation.isPending ? (
+                            <Fragment><Loader2 className="h-3 w-3 mr-2 animate-spin" />Sending...</Fragment>
+                          ) : (
+                            <Fragment><Mail className="h-3 w-3 mr-2" />Send test</Fragment>
+                          )}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Sends a sample summary (marked <span className="font-mono">[Test]</span>) to your selected channel so you can verify webhook URLs and preview formatting.
+                      </p>
                     </div>
 
                     <div
