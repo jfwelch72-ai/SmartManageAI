@@ -228,6 +228,7 @@ const CompliancePage = lazy(() => import("@/pages/CompliancePage"));
 const ManageWorkersPage = lazy(() => import("@/pages/manage-workers"));
 const WorkerDetailPage = lazy(() => import("@/pages/worker-detail"));
 const PayrollManagementPage = lazy(() => import("@/pages/payroll-management"));
+const CertifiedPayrollHistoryPage = lazy(() => import("@/pages/certified-payroll-history"));
 const OvertimeRulesPage = lazy(() => import("@/pages/overtime-rules"));
 const ApprovalsPage = lazy(() => import("@/pages/approvals"));
 const AIGovernancePage = lazy(() => import("@/pages/ai-governance"));
@@ -501,6 +502,7 @@ function Router() {
       <Route path="/safety-training" component={() => <ProtectedRoute component={SafetyTrainingPage} permission={RoutePermissions.SAFETY_TRAINING} />} />
       <Route path="/safety" component={() => <ProtectedRoute component={SafetyHubPage} permission={RoutePermissions.SAFETY_TRAINING} />} />
       <Route path="/payroll-management" component={() => <ProtectedRoute component={PayrollManagementPage} permission={RoutePermissions.PAYROLL_MANAGEMENT} featurePerm="canManagePayroll" />} />
+      <Route path="/payroll/certified-history" component={() => <ProtectedRoute component={CertifiedPayrollHistoryPage} permission={RoutePermissions.PAYROLL_MANAGEMENT} featurePerm="canManagePayroll" />} />
       <Route path="/overtime-rules" component={() => <ProtectedRoute component={OvertimeRulesPage} permission={RoutePermissions.PAYROLL_MANAGEMENT} featurePerm="canManagePayroll" />} />
       <Route path="/contracts" component={() => <ProtectedRoute component={ContractsPage} permission={(role?: string) => ["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(role || "")} featurePerm="canManageContracts" />} />
       <Route path="/clause-library" component={() => <ProtectedRoute component={ClauseLibraryPage} permission={(role?: string) => ["ADMIN", "MANAGER"].includes(role || "")} featurePerm="canManageContracts" />} />
