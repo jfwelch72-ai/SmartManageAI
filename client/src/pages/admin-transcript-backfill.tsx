@@ -3426,6 +3426,12 @@ interface BackfillAlertDelivery {
   recipientSummary: string;
   errorMessage: string | null;
   attemptedAt: string;
+  // Task #1069 — provenance of this row. `automatic` rows are produced by
+  // the regular backfill worker and continue to render as before.
+  // `resend` rows include the acting admin so the UI can show
+  // "Resent by Jane" alongside the new outcome.
+  source?: "automatic" | "resend";
+  triggeredBy?: { id: string; displayName: string } | null;
 }
 
 // Task #1079 — per-channel summary of how many active org admins muted the
@@ -3587,6 +3593,21 @@ export function BackfillAlertDeliveriesCard() {
                     >
                       {format(new Date(d.attemptedAt), "PPpp")}
                     </span>
+                    {d.source === "resend" && (
+                      <span
+                        className="text-xs text-muted-foreground"
+                        data-testid={`text-alert-resent-by-${d.id}`}
+                        title={
+                          d.triggeredBy
+                            ? `Manually resent by ${d.triggeredBy.displayName}`
+                            : "Manually resent"
+                        }
+                      >
+                        {d.triggeredBy
+                          ? `· Resent by ${d.triggeredBy.displayName}`
+                          : "· Manually resent"}
+                      </span>
+                    )}
                   </div>
                   <div
                     className="text-xs text-muted-foreground mt-0.5 truncate"

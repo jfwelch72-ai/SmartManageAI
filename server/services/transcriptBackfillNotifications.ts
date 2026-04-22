@@ -584,6 +584,16 @@ export async function notifyOrgAdminsOfAlertDeliveryFailure(
  * doing its bookkeeping. If neither destination is set the function is a
  * no-op.
  */
+// Task #1069 — when this dispatch is itself the result of an admin
+// clicking Resend, callers pass `provenance` so the new delivery rows
+// are tagged with the acting admin's id and `source='resend'`. The
+// regular backfill worker omits this argument and rows continue to be
+// recorded as automatic dispatches.
+export type BackfillCompletionProvenance = {
+  source: "automatic" | "resend";
+  triggeredById: string | null;
+};
+
 export async function notifyBackfillCompletion(
   job: BackfillNotificationJob,
   operator: CrmTranscriptBackfillOperatorContact | null,
@@ -591,6 +601,10 @@ export async function notifyBackfillCompletion(
     | BackfillCancellerContext
     | ResolvedBackfillNotificationDestinations,
   destinationsOverride?: ResolvedBackfillNotificationDestinations,
+  provenance: BackfillCompletionProvenance = {
+    source: "automatic",
+    triggeredById: null,
+  },
 ): Promise<void> {
   // Task #1070 — backwards-compatible signature: accept either
   // `(job, operator, destinationsOverride)` (legacy) or
@@ -642,6 +656,8 @@ export async function notifyBackfillCompletion(
         status,
         recipientSummary,
         errorMessage: errorMessage ?? null,
+        source: provenance.source,
+        triggeredById: provenance.triggeredById,
       });
     } catch (err) {
       logWarn("transcriptBackfillNotifications: failed to record delivery", {
@@ -1066,6 +1082,11 @@ export type ResendBackfillAlertResult =
 export async function resendBackfillAlertDelivery(
   orgId: string,
   deliveryId: string,
+  // Task #1069 — id of the admin who clicked Resend. Propagated through
+  // `notifyBackfillCompletion` so the new delivery row is tagged with
+  // `source='resend'` and the acting admin's id, which lets the in-app
+  // history render "Resent by Jane at 3:14pm" alongside the new outcome.
+  triggeredById: string | null = null,
 ): Promise<ResendBackfillAlertResult> {
   const original = await getCrmTranscriptBackfillAlertDelivery(deliveryId, orgId);
   if (!original) return { ok: false, reason: "NOT_FOUND" };
@@ -1123,6 +1144,13 @@ export async function resendBackfillAlertDelivery(
     },
     operator,
     restricted,
+    // Task #1070 added a `cancelContextOrDestinations` parameter between
+    // `operator` and `destinationsOverride`; positional resolution treats
+    // the 3rd arg as destinations when it lacks a `canceller` field, so we
+    // pass `undefined` for the legacy `destinationsOverride` slot to land
+    // provenance in the correct (5th) parameter position.
+    undefined,
+    { source: "resend", triggeredById },
   );
 
   // `notifyBackfillCompletion` writes the new delivery row itself; pull it

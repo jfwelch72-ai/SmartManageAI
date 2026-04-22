@@ -1037,6 +1037,11 @@ export type CrmTranscriptBackfillAlertDeliveryInsert = {
   status: "success" | "failure";
   recipientSummary: string;
   errorMessage?: string | null;
+  // Task #1069 — provenance of this row. Defaults preserve the prior
+  // behavior (every dispatcher write is treated as automatic with no
+  // acting admin), so existing call sites don't need to pass these.
+  source?: "automatic" | "resend";
+  triggeredById?: string | null;
 };
 
 export async function recordCrmTranscriptBackfillAlertDelivery(
@@ -1051,6 +1056,8 @@ export async function recordCrmTranscriptBackfillAlertDelivery(
       status: data.status,
       recipientSummary: data.recipientSummary.slice(0, 500),
       errorMessage: data.errorMessage ? data.errorMessage.slice(0, 1000) : null,
+      source: data.source ?? "automatic",
+      triggeredById: data.triggeredById ?? null,
     })
     .returning();
   return row;
@@ -1076,20 +1083,56 @@ export async function getCrmTranscriptBackfillAlertDelivery(
   return row || null;
 }
 
+// Task #1069 — when a row was written by an admin clicking Resend we want
+// the history list to render "Resent by Jane" without the client making a
+// second round-trip per row. The list query LEFT JOINs `users` so the
+// triggering admin's name (or email fallback) is available alongside the
+// delivery row. Automatic dispatches keep `triggeredBy = null` and render
+// exactly as they did before.
+export type CrmTranscriptBackfillAlertDeliveryHistoryItem =
+  CrmTranscriptBackfillAlertDelivery & {
+    triggeredBy: {
+      id: string;
+      firstName: string | null;
+      lastName: string | null;
+      email: string;
+    } | null;
+  };
+
 export async function listCrmTranscriptBackfillAlertDeliveries(
   organizationId: string,
   limit = 10,
-): Promise<CrmTranscriptBackfillAlertDelivery[]> {
+): Promise<CrmTranscriptBackfillAlertDeliveryHistoryItem[]> {
   const safeLimit = Math.min(Math.max(limit, 1), 100);
   const rows = await db
-    .select()
+    .select({
+      delivery: crmTranscriptBackfillAlertDeliveries,
+      triggeredById: users.id,
+      triggeredByFirstName: users.firstName,
+      triggeredByLastName: users.lastName,
+      triggeredByEmail: users.email,
+    })
     .from(crmTranscriptBackfillAlertDeliveries)
+    .leftJoin(
+      users,
+      eq(users.id, crmTranscriptBackfillAlertDeliveries.triggeredById),
+    )
     .where(
       eq(crmTranscriptBackfillAlertDeliveries.organizationId, organizationId),
     )
     .orderBy(desc(crmTranscriptBackfillAlertDeliveries.attemptedAt))
     .limit(safeLimit);
-  return rows;
+  return rows.map((r) => ({
+    ...r.delivery,
+    triggeredBy: r.triggeredById
+      ? {
+          id: r.triggeredById,
+          firstName: r.triggeredByFirstName,
+          lastName: r.triggeredByLastName,
+          email: r.triggeredByEmail ?? "",
+        }
+      : null,
+  }));
 }
 
 // Task #1051 — fallback email when alert delivery fails. Looks up active org

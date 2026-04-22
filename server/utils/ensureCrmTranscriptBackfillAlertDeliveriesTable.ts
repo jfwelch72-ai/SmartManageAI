@@ -29,5 +29,15 @@ export async function ensureCrmTranscriptBackfillAlertDeliveriesTable(): Promise
     CREATE INDEX IF NOT EXISTS "crm_transcript_backfill_alert_deliveries_job_idx"
       ON "crm_transcript_backfill_alert_deliveries" ("job_id")
   `);
+  // Task #1069 — record which admin clicked Resend (and that the row was
+  // produced by a manual retry rather than an automatic dispatch) so the
+  // in-app history can render "Resent by Jane at 3:14pm" alongside the
+  // new outcome row. Idempotent ADD COLUMN IF NOT EXISTS keeps this safe
+  // on every cold start, including upgrades from the prior schema.
+  await db.execute(sql`
+    ALTER TABLE "crm_transcript_backfill_alert_deliveries"
+      ADD COLUMN IF NOT EXISTS "triggered_by_id" varchar,
+      ADD COLUMN IF NOT EXISTS "source" text NOT NULL DEFAULT 'automatic'
+  `);
   logInfo("[migration] crm_transcript_backfill_alert_deliveries table ready");
 }

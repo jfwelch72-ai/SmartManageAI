@@ -3426,6 +3426,22 @@ router.get(
           recipientSummary: row.recipientSummary,
           errorMessage: row.errorMessage,
           attemptedAt: row.attemptedAt.toISOString(),
+          // Task #1069 — provenance of this row (`automatic` vs `resend`)
+          // and, for resend rows, a display label for the admin who
+          // clicked Resend so the UI can render "Resent by Jane".
+          source: row.source,
+          triggeredBy: row.triggeredBy
+            ? {
+                id: row.triggeredBy.id,
+                displayName:
+                  [row.triggeredBy.firstName, row.triggeredBy.lastName]
+                    .filter((part): part is string =>
+                      Boolean(part && part.trim()),
+                    )
+                    .join(" ")
+                    .trim() || row.triggeredBy.email,
+              }
+            : null,
         })),
         fallbackMuteSummary,
       });
@@ -3453,7 +3469,13 @@ router.post(
       if (!deliveryId) {
         return res.status(400).json({ error: "Missing delivery id" });
       }
-      const result = await resendBackfillAlertDelivery(orgId, deliveryId);
+      const result = await resendBackfillAlertDelivery(
+        orgId,
+        deliveryId,
+        // Task #1069 — tag the new delivery row with the admin who clicked
+        // Resend so the in-app history can render "Resent by Jane".
+        req.user?.id ?? null,
+      );
       if (!result.ok) {
         const statusCode =
           result.reason === "NOT_FOUND" || result.reason === "JOB_MISSING"
@@ -3470,6 +3492,16 @@ router.post(
         return res.status(statusCode).json({ error: message, reason: result.reason });
       }
       const d = result.delivery;
+      // Task #1069 — surface the same provenance fields as the list
+      // endpoint so the optimistic refresh in the UI sees the new row's
+      // "Resent by Jane" label without waiting for the next list poll.
+      const actor = req.user;
+      const actorDisplayName = actor
+        ? [actor.firstName, actor.lastName]
+            .filter((part): part is string => Boolean(part && part.trim()))
+            .join(" ")
+            .trim() || actor.email || ""
+        : "";
       res.json({
         delivery: {
           id: d.id,
@@ -3482,6 +3514,11 @@ router.post(
             d.attemptedAt instanceof Date
               ? d.attemptedAt.toISOString()
               : new Date(d.attemptedAt as unknown as string).toISOString(),
+          source: d.source ?? "resend",
+          triggeredBy:
+            d.triggeredById && actor
+              ? { id: actor.id, displayName: actorDisplayName }
+              : null,
         },
       });
     } catch (e) {

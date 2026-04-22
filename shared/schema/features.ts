@@ -1906,6 +1906,15 @@ export const crmTranscriptBackfillAlertDeliveries = pgTable(
     recipientSummary: text("recipient_summary").notNull().default(""),
     errorMessage: text("error_message"),
     attemptedAt: timestamp("attempted_at").notNull().defaultNow(),
+    // Task #1069 — provenance for delivery rows. `source='automatic'` is
+    // anything written by the backfill worker's normal completion path;
+    // `source='resend'` is a row written because an admin clicked the
+    // Resend button on the in-app history. `triggeredById` holds the
+    // acting admin's user id for resend rows so the UI can render
+    // "Resent by Jane" alongside the new outcome (and stays NULL for
+    // automatic dispatches so they keep rendering as they always did).
+    triggeredById: varchar("triggered_by_id"),
+    source: text("source").notNull().default("automatic"),
   },
   (table) => ({
     orgAttemptedIdx: index(
