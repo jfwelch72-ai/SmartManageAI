@@ -143,6 +143,8 @@ router.get(
           source: crmCalls.source,
           twilioCallSid: crmCalls.twilioCallSid,
           createdById: crmCalls.createdById,
+          ownerId: crmCalls.ownerId,
+          followUpAt: crmCalls.followUpAt,
           createdAt: crmCalls.createdAt,
           createdByFirstName: users.firstName,
           createdByLastName: users.lastName,
@@ -199,6 +201,7 @@ router.post(
           notes: data.notes || null,
           source: "MANUAL",
           createdById: req.user!.id,
+          ownerId: req.user!.id,
         })
         .returning();
 
@@ -257,15 +260,33 @@ router.patch(
         ids: z.array(z.string()).min(1).max(200),
         outcome: callOutcome.optional().nullable(),
         notes: z.string().max(5000).optional().nullable(),
+        ownerId: z.string().optional().nullable(),
+        followUpAt: z.coerce.date().optional().nullable(),
       });
       const parsed = schema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: "Invalid input", details: parsed.error.errors });
       }
-      const { ids, outcome, notes } = parsed.data;
+      const { ids, outcome, notes, ownerId, followUpAt } = parsed.data;
+
+      // Tenant guard: an ownerId must belong to a user in the same org. Reject
+      // cross-tenant assignments outright instead of silently writing them.
+      if (ownerId) {
+        const [owner] = await db
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.id, ownerId), eq(users.organizationId, orgId)))
+          .limit(1);
+        if (!owner) {
+          return res.status(400).json({ error: "Owner is not a member of this organization" });
+        }
+      }
+
       const update: Record<string, unknown> = { updatedAt: new Date() };
       if (outcome !== undefined) update.outcome = outcome;
       if (notes !== undefined) update.notes = notes;
+      if (ownerId !== undefined) update.ownerId = ownerId;
+      if (followUpAt !== undefined) update.followUpAt = followUpAt;
       if (Object.keys(update).length <= 1) {
         return res.status(400).json({ error: "No fields to update" });
       }
@@ -393,6 +414,7 @@ router.post(
           twilioCallSid: tCall.sid,
           source: "TWILIO",
           createdById: req.user!.id,
+          ownerId: req.user!.id,
         })
         .returning();
 

@@ -1707,6 +1707,11 @@ export const crmCalls = pgTable("crm_calls", {
   twilioRecordingSid: text("twilio_recording_sid"),
   source: text("source").notNull().default("MANUAL"),
   createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  // Task #924: explicit owner so bulk reassignment doesn't lose the original
+  // logger (createdById), and a follow-up timestamp so cleanup workflows can
+  // stamp many calls at once.
+  ownerId: varchar("owner_id").references(() => users.id, { onDelete: "set null" }),
+  followUpAt: timestamp("follow_up_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -1715,6 +1720,8 @@ export const crmCalls = pgTable("crm_calls", {
   contactIdx: index("crm_calls_contact_idx").on(table.contactId),
   startedAtIdx: index("crm_calls_started_at_idx").on(table.startedAt),
   twilioSidIdx: uniqueIndex("crm_calls_twilio_sid_idx").on(table.twilioCallSid),
+  ownerIdx: index("crm_calls_owner_idx").on(table.ownerId),
+  followUpIdx: index("crm_calls_follow_up_at_idx").on(table.followUpAt),
 }));
 export const insertCrmCallSchema = createInsertSchema(crmCalls).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertCrmCall = z.infer<typeof insertCrmCallSchema>;

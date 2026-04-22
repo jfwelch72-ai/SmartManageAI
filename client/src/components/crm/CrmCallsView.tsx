@@ -24,6 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Phone, PhoneIncoming, PhoneOutgoing, X } from "lucide-react";
+import { DatePicker } from "@/components/ui/date-picker";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
@@ -51,9 +52,18 @@ interface CrmCallRow {
   source: string;
   twilioCallSid: string | null;
   createdById: string | null;
+  ownerId: string | null;
+  followUpAt: string | null;
   createdAt: string;
   createdByFirstName: string | null;
   createdByLastName: string | null;
+}
+
+interface OrgUser {
+  id: string;
+  firstName: string | null;
+  lastName: string | null;
+  email: string | null;
 }
 
 const OUTCOME_OPTIONS: { value: string; label: string }[] = [
@@ -91,6 +101,9 @@ export function CrmCallsView() {
   const [bulkOutcome, setBulkOutcome] = useState<string>("__keep__");
   const [bulkNotes, setBulkNotes] = useState<string>("");
   const [bulkNotesEnabled, setBulkNotesEnabled] = useState(false);
+  const [bulkOwner, setBulkOwner] = useState<string>("__keep__");
+  const [bulkFollowUpEnabled, setBulkFollowUpEnabled] = useState(false);
+  const [bulkFollowUpAt, setBulkFollowUpAt] = useState<Date | undefined>(undefined);
 
   const { data: users } = useQuery<OrgUser[]>({
     queryKey: ["/api/users"],
@@ -130,6 +143,20 @@ export function CrmCallsView() {
       return res.json();
     },
   });
+
+  const { data: orgUsers = [] } = useQuery<OrgUser[]>({
+    queryKey: ["/api/users"],
+  });
+
+  const userLabel = (u: OrgUser) => {
+    const name = [u.firstName, u.lastName].filter(Boolean).join(" ").trim();
+    return name || u.email || u.id;
+  };
+  const ownerName = (id: string | null) => {
+    if (!id) return null;
+    const u = orgUsers.find((x) => x.id === id);
+    return u ? userLabel(u) : null;
+  };
 
   const filtered = useMemo(() => {
     const rows = calls ?? [];
@@ -178,7 +205,13 @@ export function CrmCallsView() {
   };
 
   const bulkMutation = useMutation({
-    mutationFn: async (payload: { ids: string[]; outcome?: string | null; notes?: string | null }) => {
+    mutationFn: async (payload: {
+      ids: string[];
+      outcome?: string | null;
+      notes?: string | null;
+      ownerId?: string | null;
+      followUpAt?: string | null;
+    }) => {
       const res = await apiRequest("PATCH", "/api/crm/calls/bulk", payload);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -196,6 +229,9 @@ export function CrmCallsView() {
       setBulkOutcome("__keep__");
       setBulkNotes("");
       setBulkNotesEnabled(false);
+      setBulkOwner("__keep__");
+      setBulkFollowUpEnabled(false);
+      setBulkFollowUpAt(undefined);
       queryClient.invalidateQueries({ queryKey: ["/api/crm/calls"] });
       queryClient.invalidateQueries({ queryKey: ["/api/crm/activity"] });
     },
@@ -222,17 +258,34 @@ export function CrmCallsView() {
       });
       return;
     }
-    const payload: { ids: string[]; outcome?: string | null; notes?: string | null } = { ids };
+    const payload: {
+      ids: string[];
+      outcome?: string | null;
+      notes?: string | null;
+      ownerId?: string | null;
+      followUpAt?: string | null;
+    } = { ids };
     if (bulkOutcome !== "__keep__") {
       payload.outcome = bulkOutcome === "__clear__" ? null : bulkOutcome;
     }
     if (bulkNotesEnabled) {
       payload.notes = bulkNotes.trim() ? bulkNotes : null;
     }
-    if (payload.outcome === undefined && payload.notes === undefined) {
+    if (bulkOwner !== "__keep__") {
+      payload.ownerId = bulkOwner === "__clear__" ? null : bulkOwner;
+    }
+    if (bulkFollowUpEnabled) {
+      payload.followUpAt = bulkFollowUpAt ? bulkFollowUpAt.toISOString() : null;
+    }
+    if (
+      payload.outcome === undefined &&
+      payload.notes === undefined &&
+      payload.ownerId === undefined &&
+      payload.followUpAt === undefined
+    ) {
       toast({
         title: "Nothing to update",
-        description: "Choose an outcome or update notes before applying.",
+        description: "Choose an outcome, owner, follow-up date, or notes before applying.",
         variant: "destructive",
       });
       return;
@@ -393,6 +446,7 @@ export function CrmCallsView() {
                   <th className="py-2 pr-3">Duration</th>
                   <th className="py-2 pr-3">Number</th>
                   <th className="py-2 pr-3">Owner</th>
+                  <th className="py-2 pr-3">Follow-up</th>
                   <th className="py-2 pr-3">Notes</th>
                 </tr>
               </thead>
@@ -439,8 +493,23 @@ export function CrmCallsView() {
                       <td className="py-2 pr-3 text-xs whitespace-nowrap">
                         {(r.direction === "INBOUND" ? r.fromNumber : r.toNumber) || "—"}
                       </td>
-                      <td className="py-2 pr-3 text-xs whitespace-nowrap">
-                        {[r.createdByFirstName, r.createdByLastName].filter(Boolean).join(" ") || "—"}
+                      <td
+                        className="py-2 pr-3 text-xs whitespace-nowrap"
+                        data-testid={`text-owner-${r.id}`}
+                      >
+                        {ownerName(r.ownerId) ||
+                          [r.createdByFirstName, r.createdByLastName].filter(Boolean).join(" ") ||
+                          "—"}
+                      </td>
+                      <td
+                        className="py-2 pr-3 text-xs whitespace-nowrap"
+                        data-testid={`text-follow-up-${r.id}`}
+                      >
+                        {r.followUpAt ? (
+                          format(new Date(r.followUpAt), "MMM d, yyyy")
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </td>
                       <td className="py-2 pr-3 text-xs max-w-xs truncate" title={r.notes ?? ""}>
                         {r.notes || <span className="text-muted-foreground">—</span>}
@@ -459,7 +528,7 @@ export function CrmCallsView() {
           <DialogHeader>
             <DialogTitle>Bulk edit {selected.size} call{selected.size === 1 ? "" : "s"}</DialogTitle>
             <DialogDescription>
-              Apply the same outcome or notes to all selected calls.
+              Apply the same outcome, owner, follow-up date, or notes to all selected calls.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-2">
@@ -479,6 +548,40 @@ export function CrmCallsView() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Owner</label>
+              <Select value={bulkOwner} onValueChange={setBulkOwner}>
+                <SelectTrigger data-testid="select-bulk-owner">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__keep__">Keep current</SelectItem>
+                  <SelectItem value="__clear__">Unassign owner</SelectItem>
+                  {orgUsers.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {userLabel(u)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="flex items-center gap-2 text-sm font-medium">
+                <Checkbox
+                  checked={bulkFollowUpEnabled}
+                  onCheckedChange={(v) => setBulkFollowUpEnabled(!!v)}
+                  data-testid="checkbox-bulk-follow-up-enabled"
+                />
+                Set follow-up date
+              </label>
+              <DatePicker
+                value={bulkFollowUpAt ?? null}
+                onChange={(d) => setBulkFollowUpAt(d)}
+                placeholder="Pick a follow-up date (leave blank to clear)"
+                disabled={!bulkFollowUpEnabled}
+                data-testid="datepicker-bulk-follow-up"
+              />
             </div>
             <div className="space-y-1.5">
               <label className="flex items-center gap-2 text-sm font-medium">
