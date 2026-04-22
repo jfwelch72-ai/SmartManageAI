@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Inbox, Loader2, Trash2, Mail, FilterX, Search, Wifi, WifiOff } from "lucide-react";
-import { format, startOfDay, endOfDay } from "date-fns";
+import { format, startOfDay, endOfDay, parse } from "date-fns";
 import NotFound from "@/pages/not-found";
 import { DatePicker } from "@/components/ui/date-picker";
 
@@ -35,6 +35,60 @@ interface OutboxResponse {
 
 const QUERY_KEY = ["/api/admin/dev/email-outbox"];
 
+type SourceFilter = "all" | "resend" | "smtp";
+
+interface PersistedFilters {
+  recipient: string;
+  subject: string;
+  source: SourceFilter;
+  fromDate: Date | undefined;
+  toDate: Date | undefined;
+}
+
+const FILTER_PARAM_KEYS = ["recipient", "subject", "source", "fromDate", "toDate"] as const;
+
+function parseDateParam(value: string | null): Date | undefined {
+  if (!value) return undefined;
+  const parsed = parse(value, "yyyy-MM-dd", new Date());
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+}
+
+function readFiltersFromUrl(): PersistedFilters {
+  if (typeof window === "undefined") {
+    return { recipient: "", subject: "", source: "all", fromDate: undefined, toDate: undefined };
+  }
+  const params = new URLSearchParams(window.location.search);
+  const sourceRaw = params.get("source");
+  const source: SourceFilter =
+    sourceRaw === "resend" || sourceRaw === "smtp" ? sourceRaw : "all";
+  return {
+    recipient: params.get("recipient") ?? "",
+    subject: params.get("subject") ?? "",
+    source,
+    fromDate: parseDateParam(params.get("fromDate")),
+    toDate: parseDateParam(params.get("toDate")),
+  };
+}
+
+function writeFiltersToUrl(filters: PersistedFilters) {
+  if (typeof window === "undefined") return;
+  const params = new URLSearchParams(window.location.search);
+  for (const key of FILTER_PARAM_KEYS) {
+    params.delete(key);
+  }
+  if (filters.recipient.trim() !== "") params.set("recipient", filters.recipient);
+  if (filters.subject.trim() !== "") params.set("subject", filters.subject);
+  if (filters.source !== "all") params.set("source", filters.source);
+  if (filters.fromDate) params.set("fromDate", format(filters.fromDate, "yyyy-MM-dd"));
+  if (filters.toDate) params.set("toDate", format(filters.toDate, "yyyy-MM-dd"));
+  const query = params.toString();
+  const newUrl = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
+  const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (newUrl !== currentUrl) {
+    window.history.replaceState(window.history.state, "", newUrl);
+  }
+}
+
 export default function AdminEmailOutboxPage() {
   const { toast } = useToast();
   const [streamConnected, setStreamConnected] = useState(false);
@@ -46,12 +100,23 @@ export default function AdminEmailOutboxPage() {
     retry: false,
   });
 
-  const [recipientFilter, setRecipientFilter] = useState("");
-  const [subjectFilter, setSubjectFilter] = useState("");
-  const [sourceFilter, setSourceFilter] = useState<"all" | "resend" | "smtp">("all");
+  const initialFilters = useMemo(() => readFiltersFromUrl(), []);
+  const [recipientFilter, setRecipientFilter] = useState(initialFilters.recipient);
+  const [subjectFilter, setSubjectFilter] = useState(initialFilters.subject);
+  const [sourceFilter, setSourceFilter] = useState<"all" | "resend" | "smtp">(initialFilters.source);
   const [searchQuery, setSearchQuery] = useState("");
-  const [fromDate, setFromDate] = useState<Date | undefined>(undefined);
-  const [toDate, setToDate] = useState<Date | undefined>(undefined);
+  const [fromDate, setFromDate] = useState<Date | undefined>(initialFilters.fromDate);
+  const [toDate, setToDate] = useState<Date | undefined>(initialFilters.toDate);
+
+  useEffect(() => {
+    writeFiltersToUrl({
+      recipient: recipientFilter,
+      subject: subjectFilter,
+      source: sourceFilter,
+      fromDate,
+      toDate,
+    });
+  }, [recipientFilter, subjectFilter, sourceFilter, fromDate, toDate]);
 
   const messages = data?.messages ?? [];
 
