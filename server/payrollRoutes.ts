@@ -1514,6 +1514,12 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
       // back to POST /prevailing-wage-rates so the chosen mapping is
       // persisted for future syncs.
       dolFeedName: string | null;
+      // Task #1437: when this row is still synthetic (no project-specific
+      // mapping yet) but a sibling project in the same org with the same
+      // wage decision has already mapped this feed name, surface the
+      // remembered classificationId so the override dialog can pre-select
+      // it instead of running its fuzzy heuristic.
+      rememberedClassificationId?: string | null;
     }> = [];
 
     // Task #1396: load user-saved mappings for this project so a DOL feed
@@ -1531,6 +1537,40 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
     const mappingByFeedName = new Map<string, string>();
     for (const m of savedMappings) {
       mappingByFeedName.set(m.dolFeedName, m.classificationId);
+    }
+
+    // Task #1437: load mappings from sibling projects in the same org that
+    // share this project's wage decision. These act as "remembered" hints
+    // for synthetic dol-feed rows that haven't yet been mapped on the
+    // current project — letting a Carpenter (Group 1) -> Carpenter mapping
+    // made on one project pre-select on every sibling that pulls the same
+    // wage determination. Project-specific mappings still win because they
+    // resolve the synthetic id to a real one above; this only fills in
+    // when no project-local mapping exists.
+    const siblingMappingByFeedName = new Map<string, string>();
+    if (projectWageDecision) {
+      const siblingMappings = await db.select({
+        dolFeedName: dolClassificationMappings.dolFeedName,
+        classificationId: dolClassificationMappings.classificationId,
+        updatedAt: dolClassificationMappings.updatedAt,
+      })
+        .from(dolClassificationMappings)
+        .innerJoin(projects, eq(projects.id, dolClassificationMappings.projectId))
+        .where(and(
+          eq(dolClassificationMappings.organizationId, orgId),
+          eq(projects.wageDecision, projectWageDecision),
+          // Exclude the current project; its mappings are already loaded
+          // above and used to resolve synthetic ids to real ones.
+          sql`${dolClassificationMappings.projectId} <> ${projectId}`,
+        ))
+        .orderBy(desc(dolClassificationMappings.updatedAt));
+      for (const m of siblingMappings) {
+        // The orderBy DESC means the first occurrence per feed name is the
+        // most-recently-updated mapping, which is the one we want to keep.
+        if (!siblingMappingByFeedName.has(m.dolFeedName)) {
+          siblingMappingByFeedName.set(m.dolFeedName, m.classificationId);
+        }
+      }
     }
 
     const seenClassIds = new Set<string>();
@@ -1649,6 +1689,16 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
               const classificationName = match ? match.name : rate.classification;
               if (seenClassIds.has(classificationId)) continue;
               seenClassIds.add(classificationId);
+              // Task #1437: only synthetic rows benefit from the sibling
+              // hint — once the row resolves to a real classification id
+              // the dialog already targets the right row by id.
+              let rememberedClassificationId: string | null = null;
+              if (!match) {
+                const siblingMappedId = siblingMappingByFeedName.get(norm);
+                if (siblingMappedId && orgClassById.has(siblingMappedId)) {
+                  rememberedClassificationId = siblingMappedId;
+                }
+              }
               classifications.push({
                 classificationId,
                 classificationName,
@@ -1661,6 +1711,7 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
                 wageDecision: projectWageDecision,
                 source: "DOL_FEED",
                 dolFeedName: rate.classification,
+                rememberedClassificationId,
               });
             }
           }

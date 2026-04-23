@@ -121,6 +121,12 @@ interface PrevailingWageClassification {
   // round-trip the feed identity to the POST endpoint and persist the
   // user's chosen mapping for future syncs.
   dolFeedName?: string | null;
+  // Task #1437: when this synthetic dol-feed row hasn't been mapped on
+  // this project yet but a sibling project (same org, same wage decision)
+  // already mapped this feed name, the server forwards the previously
+  // chosen classificationId here so the override dialog can pre-select
+  // it instead of running its fuzzy heuristic.
+  rememberedClassificationId?: string | null;
   // Task #1409: populated when the most recent Davis-Bacon stale-refresh
   // changed this classification's rate. Drives the per-row badge.
   recentRateChange?: PrevailingWageRecentChange | null;
@@ -594,10 +600,22 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
     let suggestedName = "";
     if (isSynthetic) {
       const feedName = c.dolFeedName ?? c.classificationName;
-      const match = findBestClassificationMatch(feedName, orgClassifications);
-      if (match) {
-        suggestedId = match.id;
-        suggestedName = match.name;
+      // Task #1437: a remembered mapping from a sibling project always
+      // wins over the live fuzzy heuristic — once the user has explicitly
+      // chosen a target for this feed name on any project in the org with
+      // the same wage decision, we trust that pick instead of guessing.
+      const remembered = c.rememberedClassificationId
+        ? orgClassifications.find((o) => o.id === c.rememberedClassificationId)
+        : null;
+      if (remembered) {
+        suggestedId = remembered.id;
+        suggestedName = remembered.name;
+      } else {
+        const match = findBestClassificationMatch(feedName, orgClassifications);
+        if (match) {
+          suggestedId = match.id;
+          suggestedName = match.name;
+        }
       }
     }
     setOvSuggestedMatchId(suggestedId);
@@ -620,7 +638,16 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
     if (!overrideOpen || !overrideRow) return;
     if (!overrideRow.classificationId.startsWith("dol-feed:")) return;
     const feedName = overrideRow.dolFeedName ?? overrideRow.classificationName;
-    const match = findBestClassificationMatch(feedName, orgClassifications);
+    // Task #1437: a remembered sibling-project mapping wins over the
+    // fuzzy heuristic when the org classifications list resolves after
+    // the dialog opened, mirroring the priority used in
+    // openOverrideDialog.
+    const remembered = overrideRow.rememberedClassificationId
+      ? orgClassifications.find((o) => o.id === overrideRow.rememberedClassificationId)
+      : null;
+    const match = remembered
+      ? { id: remembered.id, name: remembered.name }
+      : findBestClassificationMatch(feedName, orgClassifications);
     const nextId = match?.id ?? "";
     const nextName = match?.name ?? "";
     if (nextId !== ovSuggestedMatchId) setOvSuggestedMatchId(nextId);

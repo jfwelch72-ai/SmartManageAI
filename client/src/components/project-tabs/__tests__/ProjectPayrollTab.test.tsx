@@ -77,6 +77,7 @@ type Classification = {
   wageDecision: string | null;
   source: "PROJECT_OVERRIDE" | "DOL_FEED";
   dolFeedName?: string | null;
+  rememberedClassificationId?: string | null;
 };
 
 const PROJECT_ID = "proj-1";
@@ -273,6 +274,61 @@ describe("ProjectPayrollTab — DOL override confirmation flow", () => {
     expect(body.confirmCreateClassification).toBe(true);
     expect(body.classificationName).toBe("Specialist Welder");
     expect(body.dolFeedName).toBe("Specialist Welder");
+  });
+
+  it("Task #1437 — remembered sibling-project mapping wins over the fuzzy heuristic when pre-selecting", async () => {
+    // The synthetic feed name "Carpenter (Group 1)" fuzzy-matches the
+    // existing "Carpenter" classification (substring containment, score
+    // > 0.7). But the server forwarded `rememberedClassificationId` from
+    // a sibling project's previously-saved mapping pointing at the more
+    // specific "Carpenter — Form Specialist" row. The dialog must honor
+    // that remembered pick instead of running the fuzzy heuristic.
+    renderTab({
+      classifications: [
+        makeRow({
+          classificationId: "dol-feed:carpenter (group 1)",
+          classificationName: "Carpenter (Group 1)",
+          dolFeedName: "Carpenter (Group 1)",
+          rememberedClassificationId: "cls-carpenter-form",
+        }),
+      ],
+      orgClassifications: [
+        { id: "cls-carpenter", name: "Carpenter" },
+        { id: "cls-carpenter-form", name: "Carpenter — Form Specialist" },
+        { id: "cls-other", name: "Laborer" },
+      ],
+    });
+
+    fireEvent.click(
+      screen.getByTestId("button-promote-override-dol-feed:carpenter (group 1)"),
+    );
+    expect(screen.getByTestId("field-override-mapping")).toBeTruthy();
+    // Pre-selection follows the remembered id, not the fuzzy match.
+    expect(
+      screen
+        .getByTestId("option-override-mapping-cls-carpenter-form")
+        .getAttribute("data-selected"),
+    ).toBe("true");
+    expect(
+      screen
+        .getByTestId("option-override-mapping-cls-carpenter")
+        .getAttribute("data-selected"),
+    ).toBe("false");
+    expect(
+      screen
+        .getByTestId("option-override-mapping-create-new")
+        .getAttribute("data-selected"),
+    ).toBe("false");
+
+    fireEvent.click(screen.getByTestId("button-save-override"));
+
+    const body = await lastPostBody();
+    // Saving propagates the remembered classificationId, not the fuzzy
+    // match's "cls-carpenter".
+    expect(body.classificationId).toBe("cls-carpenter-form");
+    expect(body.confirmCreateClassification).toBeUndefined();
+    expect(body.classificationName).toBeUndefined();
+    expect(body.dolFeedName).toBe("Carpenter (Group 1)");
   });
 
   it('"Use selected" submission posts the picked classificationId without confirmCreateClassification', async () => {
