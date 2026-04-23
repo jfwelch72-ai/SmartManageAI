@@ -107,15 +107,36 @@ test.describe("Heavy Civil feature-flag UI", () => {
       // Wait for the mutation to settle and the cached flags to refresh.
       await expect(applyBtn).not.toBeDisabled({ timeout: 15_000 });
 
-      // Each Heavy Civil toggle should now be checked.
+      // Each Heavy Civil flag should now be reported as enabled. The legacy
+      // admin UI renders a Switch (`feature-flag-toggle-<KEY>` w/
+      // data-state="checked") while the new shared `OrgFeaturePresetsTab`
+      // renders a read-only Badge (`feature-flag-status-<KEY>` w/ text "On").
+      // Accept either so this spec keeps passing on whichever surface is in
+      // use.
       for (const flag of HEAVY_CIVIL_USER_FLAGS) {
+        const status = page.getByTestId(`feature-flag-status-${flag}`);
         const toggle = page.getByTestId(`feature-flag-toggle-${flag}`);
-        await expect(toggle, `toggle for ${flag} should be visible`).toBeVisible();
-        await expect(toggle, `toggle for ${flag} should be on`).toHaveAttribute(
-          "data-state",
-          "checked",
-          { timeout: 10_000 },
-        );
+        const indicator = status.or(toggle).first();
+        await expect(indicator, `enabled indicator for ${flag} should be visible`).toBeVisible({
+          timeout: 10_000,
+        });
+        await expect
+          .poll(
+            async () => {
+              if ((await status.count()) > 0) {
+                return ((await status.textContent()) || "").trim();
+              }
+              if ((await toggle.count()) > 0) {
+                return (await toggle.getAttribute("data-state")) ?? "";
+              }
+              return "";
+            },
+            {
+              message: `flag ${flag} should be enabled (badge "On" or toggle data-state="checked")`,
+              timeout: 10_000,
+            },
+          )
+          .toMatch(/^(On|checked)$/);
       }
 
       // Server view should agree.
