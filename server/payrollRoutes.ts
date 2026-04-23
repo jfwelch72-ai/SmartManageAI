@@ -315,7 +315,7 @@ import { Router, type Response } from "express";
 import { db } from "./db";
 import { eventBus } from "./events";
 import { exportLimiter } from "./rateLimiter";
-import { lookupCachedWageRate, lookupCachedRateByLocale, isWageDeterminationCached, queueWageDecisionSync } from "./integrations/providers/dol_davis_bacon/sync";
+import { lookupCachedWageRate, lookupCachedRateByLocale, isWageDeterminationCached, listCachedDecisionClassifications, queueWageDecisionSync } from "./integrations/providers/dol_davis_bacon/sync";
 import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts, overtimeRules, costLedgerPostings, certifiedPayrollReports, auditLog } from "@shared/schema";
 import { eq, and, gte, lte, sql, desc, inArray, count, asc, isNull, or } from "drizzle-orm";
 import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
@@ -1578,6 +1578,59 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
               error: String(err),
             });
           }
+        }
+      } else {
+        // Brand-new project: wage decision is set but nobody has logged
+        // time yet, so the per-employee resolution path above has nothing
+        // to anchor on. Surface every classification carried by the
+        // cached wage determination so PMs can see the imported
+        // Davis-Bacon table before payroll runs. We match each cached
+        // classification to an existing job_classifications row by name
+        // (case-insensitive) when possible so the "promote to override"
+        // action keeps working; otherwise we emit a synthetic display id
+        // so the row still renders.
+        try {
+          const cachedRates = await listCachedDecisionClassifications(orgId, projectWageDecision);
+          if (cachedRates && cachedRates.length > 0) {
+            const orgClassifications = await db.select({
+              id: jobClassifications.id,
+              name: jobClassifications.name,
+            })
+              .from(jobClassifications)
+              .where(eq(jobClassifications.organizationId, orgId));
+            const classByName = new Map<string, { id: string; name: string }>();
+            for (const c of orgClassifications) {
+              classByName.set(c.name.trim().toLowerCase(), c);
+            }
+
+            for (const rate of cachedRates) {
+              if (!rate || !rate.classification) continue;
+              if (rate.baseRate <= 0) continue;
+              const norm = rate.classification.trim().toLowerCase();
+              const match = classByName.get(norm);
+              const classificationId = match ? match.id : `dol-feed:${norm}`;
+              const classificationName = match ? match.name : rate.classification;
+              if (seenClassIds.has(classificationId)) continue;
+              seenClassIds.add(classificationId);
+              classifications.push({
+                classificationId,
+                classificationName,
+                wageRate: rate.baseRate,
+                fringeRate: rate.fringeRate ?? null,
+                totalRate: rate.totalRate ?? null,
+                overtimeMultiplier: null,
+                effectiveDate: null,
+                expirationDate: null,
+                wageDecision: projectWageDecision,
+                source: "DOL_FEED",
+              });
+            }
+          }
+        } catch (err) {
+          logWarn("Davis-Bacon cached-decision listing failed (project PW summary)", {
+            decision: projectWageDecision,
+            error: String(err),
+          });
         }
       }
     }

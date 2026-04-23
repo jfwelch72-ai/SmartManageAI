@@ -94,10 +94,13 @@ vi.mock("../auth", () => ({
 const lookupCachedWageRateMock = vi.fn();
 const lookupCachedRateByLocaleMock = vi.fn();
 const isWageDeterminationCachedMock = vi.fn();
+const listCachedDecisionClassificationsMock = vi.fn();
 vi.mock("../integrations/providers/dol_davis_bacon/sync", () => ({
   lookupCachedWageRate: (...args: unknown[]) => lookupCachedWageRateMock(...args),
   lookupCachedRateByLocale: (...args: unknown[]) => lookupCachedRateByLocaleMock(...args),
   isWageDeterminationCached: (...args: unknown[]) => isWageDeterminationCachedMock(...args),
+  listCachedDecisionClassifications: (...args: unknown[]) =>
+    listCachedDecisionClassificationsMock(...args),
   fetchWageDetermination: vi.fn(),
   importWageDetermination: vi.fn(),
 }));
@@ -152,6 +155,7 @@ interface Fixtures {
     C: string; // wageDecision="WD-C", one override + one DOL_FEED sibling
     D: string; // wageDecision="WD-D" but NOT cached; no overrides
     E: string; // no wageDecision and no overrides
+    F: string; // wageDecision="WD-F", cached, but NO time entries yet
   };
   classifications: {
     carpA: string;
@@ -161,6 +165,7 @@ interface Fixtures {
     carpC: string; // override on project C
     laborC: string; // DOL_FEED fallback on project C
     glazD: string;
+    carpF: string; // matched cached WD entry on project F
   };
   users: {
     uA1: string; // for project A — but A is overrides-only, so no time needed
@@ -256,6 +261,7 @@ async function seedFixtures(): Promise<Fixtures> {
     C: await insertProject("pC", "WD-C"),
     D: await insertProject("pD", "WD-D"),
     E: await insertProject("pE", null),
+    F: await insertProject("pF", "WD-F"),
   };
 
   const insertClass = async (name: string) => {
@@ -276,6 +282,9 @@ async function seedFixtures(): Promise<Fixtures> {
     carpC: await insertClass("Carpenter-C"),
     laborC: await insertClass("Laborer-C"),
     glazD: await insertClass("Glazier-D"),
+    // Project F: cached WD names "Carpenter-F" (matches this row) plus
+    // "Ironworker-F" (no matching job_classifications row → synthetic id).
+    carpF: await insertClass("Carpenter-F"),
   };
 
   const insertUser = async (label: string) => {
@@ -383,11 +392,13 @@ beforeEach(() => {
   lookupCachedWageRateMock.mockReset();
   lookupCachedRateByLocaleMock.mockReset();
   isWageDeterminationCachedMock.mockReset();
+  listCachedDecisionClassificationsMock.mockReset();
 
   // Defaults — individual tests override.
   lookupCachedWageRateMock.mockResolvedValue(null);
   lookupCachedRateByLocaleMock.mockResolvedValue(null);
   isWageDeterminationCachedMock.mockResolvedValue(true);
+  listCachedDecisionClassificationsMock.mockResolvedValue(null);
 
   // Authenticate as the seeded org admin by default.
   testUser = { id: fx.adminId, role: "ADMIN", organizationId: fx.orgId };
@@ -564,6 +575,112 @@ describe("GET /api/projects/:id/prevailing-wage-summary — source labeling", ()
       (c) => c[2],
     );
     expect(lookedUpClasses).toContain(TEST_PREFIX + "Glazier-D");
+  });
+
+  it("project with a cached wage decision and zero time entries surfaces every classification from the cached determination (Task #1342)", async () => {
+    // Cache hit reports true so the missing-decision banner stays away.
+    isWageDeterminationCachedMock.mockResolvedValue(true);
+    // The per-employee path must NOT fire — there are no time entries
+    // on project F, so the route should never call lookupCachedWageRate.
+    lookupCachedWageRateMock.mockResolvedValue(null);
+    // The cached determination carries two classifications: one whose
+    // name matches a seeded job_classifications row (Carpenter-F → real
+    // UUID + "Override" button works) and one without a matching row
+    // (Ironworker-F → synthetic display id so the row still renders).
+    listCachedDecisionClassificationsMock.mockImplementation(
+      async (_orgId: string, decision: string) => {
+        if (decision !== "WD-F") return null;
+        return [
+          {
+            classification: TEST_PREFIX + "Carpenter-F",
+            baseRate: 47,
+            fringeRate: 8,
+            totalRate: 55,
+          },
+          {
+            classification: TEST_PREFIX + "Ironworker-F",
+            baseRate: 52,
+            fringeRate: 11,
+            totalRate: 63,
+          },
+          // baseRate=0 is treated as "no usable rate" and dropped to
+          // mirror the per-employee branch's `cached.baseRate > 0` guard.
+          {
+            classification: TEST_PREFIX + "Apprentice-F",
+            baseRate: 0,
+            fringeRate: 0,
+            totalRate: 0,
+          },
+        ];
+      },
+    );
+
+    const res = await request(app).get(
+      `/api/projects/${fx.projects.F}/prevailing-wage-summary`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.wageDecision).toBe("WD-F");
+    expect(res.body.wageDecisionCached).toBe(true);
+
+    const classifications = res.body.classifications as Array<{
+      classificationId: string;
+      classificationName: string;
+      source: string;
+      wageRate: number;
+      fringeRate: number | null;
+      totalRate: number | null;
+      wageDecision: string | null;
+    }>;
+
+    // Two usable rows, sorted alphabetically by classificationName.
+    expect(classifications.map((c) => c.classificationName)).toEqual([
+      TEST_PREFIX + "Carpenter-F",
+      TEST_PREFIX + "Ironworker-F",
+    ]);
+    for (const c of classifications) {
+      expect(c.source).toBe("DOL_FEED");
+      expect(c.wageDecision).toBe("WD-F");
+    }
+
+    // Carpenter-F matched the seeded job_classifications row by name,
+    // so its classificationId is the real UUID (no synthetic prefix).
+    expect(classifications[0].classificationId).toBe(fx.classifications.carpF);
+    expect(classifications[0].wageRate).toBe(47);
+    expect(classifications[0].fringeRate).toBe(8);
+    expect(classifications[0].totalRate).toBe(55);
+
+    // Ironworker-F has no matching jobClassifications row → synthetic
+    // display id so the row still renders in the panel.
+    expect(classifications[1].classificationId).toMatch(/^dol-feed:/);
+    expect(classifications[1].wageRate).toBe(52);
+
+    // Cache check fires, list helper fires, but the per-employee
+    // resolver never runs because there are no time entries.
+    expect(isWageDeterminationCachedMock).toHaveBeenCalledWith(
+      fx.orgId,
+      "WD-F",
+    );
+    expect(listCachedDecisionClassificationsMock).toHaveBeenCalledWith(
+      fx.orgId,
+      "WD-F",
+    );
+    expect(lookupCachedWageRateMock).not.toHaveBeenCalled();
+  });
+
+  it("project with a wage decision, zero time entries, and an empty cache returns no DOL_FEED rows", async () => {
+    // Decision is "cached" but the helper returns an empty classification
+    // list — the route must not invent rows out of thin air.
+    isWageDeterminationCachedMock.mockResolvedValue(true);
+    listCachedDecisionClassificationsMock.mockResolvedValue([]);
+
+    const res = await request(app).get(
+      `/api/projects/${fx.projects.F}/prevailing-wage-summary`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.wageDecision).toBe("WD-F");
+    expect(res.body.wageDecisionCached).toBe(true);
+    expect(res.body.classifications).toEqual([]);
+    expect(lookupCachedWageRateMock).not.toHaveBeenCalled();
   });
 
   it("project with no wage decision at all returns wageDecisionCached=null and an empty classifications list", async () => {

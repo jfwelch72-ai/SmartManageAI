@@ -232,6 +232,34 @@ export async function isWageDeterminationCached(
   return !!row;
 }
 
+/**
+ * Return every classification carried by a cached wage determination, or
+ * null if the determination has not been imported for the org. Used by the
+ * project prevailing-wage panel to surface the full Davis-Bacon table on
+ * brand-new projects that have a wage decision set but no time entries
+ * logged yet (so the per-employee DOL_FEED resolution path has nothing
+ * to anchor on).
+ */
+export async function listCachedDecisionClassifications(
+  organizationId: string,
+  decisionNumber: string,
+): Promise<DavisBaconWageRate[] | null> {
+  const entityType = `wage_determination:${decisionNumber}`;
+  const [state] = await db
+    .select()
+    .from(integrationSyncState)
+    .where(
+      and(
+        eq(integrationSyncState.organizationId, organizationId),
+        eq(integrationSyncState.entityType, entityType),
+      ),
+    )
+    .limit(1);
+  const meta = state?.metadata as WageDetermination | undefined;
+  if (!meta || !Array.isArray(meta.rates)) return null;
+  return meta.rates;
+}
+
 export async function lookupCachedWageRate(
   organizationId: string,
   decisionNumber: string,
