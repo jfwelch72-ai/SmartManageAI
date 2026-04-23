@@ -185,6 +185,7 @@ import { validateBody } from "./utils/validation";
 import { logUpdate, logDelete, logAudit } from "./auditLogger";
 import { insertNotification, queueOwnerReassignmentNotification } from "./services/notificationService";
 import { geocodePendingProjects } from "./utils/geocodingService";
+import { queueWageDecisionSync } from "./integrations/providers/dol_davis_bacon/sync";
 
 const router = Router();
 
@@ -1052,6 +1053,20 @@ router.post("/api/projects", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIM
           },
         });
 
+        // Task #1312: when a project is created with a Davis-Bacon wage
+        // decision reference, kick off a background sync so prevailing wage
+        // rates start flowing without the user having to run it manually.
+        const newOrgId = newProject.gcOrganizationId || userOrgId;
+        if (newProject.wageDecision && newOrgId) {
+          queueWageDecisionSync(newOrgId, newProject.wageDecision).catch((err) => {
+            logWarn("queueWageDecisionSync failed (project create)", {
+              projectId: newProject.id,
+              decision: newProject.wageDecision,
+              error: String(err),
+            });
+          });
+        }
+
         res.status(201).json(newProject);
         return;
       } catch (insertError: any) {
@@ -1225,6 +1240,26 @@ router.patch("/api/projects/:code", requireAuth, requireRole("ADMIN", "MANAGER",
           newStatus: updatedProject.status,
         },
       });
+    }
+
+    // Task #1312: when the project's Davis-Bacon wage decision is set or
+    // changed, kick off a background sync so prevailing wage rates can be
+    // resolved on the next certified payroll run without manual import.
+    if (
+      "wageDecision" in validationResult &&
+      updatedProject.wageDecision &&
+      updatedProject.wageDecision !== existingProject.wageDecision
+    ) {
+      const orgIdForSync = updatedProject.gcOrganizationId || req.user!.organizationId;
+      if (orgIdForSync) {
+        queueWageDecisionSync(orgIdForSync, updatedProject.wageDecision).catch((err) => {
+          logWarn("queueWageDecisionSync failed (project update)", {
+            projectId: updatedProject.id,
+            decision: updatedProject.wageDecision,
+            error: String(err),
+          });
+        });
+      }
     }
 
     res.json(updatedProject);

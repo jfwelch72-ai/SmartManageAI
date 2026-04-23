@@ -315,7 +315,7 @@ import { Router, type Response } from "express";
 import { db } from "./db";
 import { eventBus } from "./events";
 import { exportLimiter } from "./rateLimiter";
-import { lookupCachedWageRate, lookupCachedRateByLocale, isWageDeterminationCached } from "./integrations/providers/dol_davis_bacon/sync";
+import { lookupCachedWageRate, lookupCachedRateByLocale, isWageDeterminationCached, queueWageDecisionSync } from "./integrations/providers/dol_davis_bacon/sync";
 import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts, overtimeRules, costLedgerPostings, certifiedPayrollReports, auditLog } from "@shared/schema";
 import { eq, and, gte, lte, sql, desc, inArray, count, asc, isNull, or } from "drizzle-orm";
 import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
@@ -2131,6 +2131,52 @@ router.get("/api/payroll/pay-runs/:id/pay-stubs/:userId", requireAuth, async (re
     stub.netPay = Math.round((stub.totalGross - stub.totalDeductions) * 100) / 100;
 
     res.json(stub);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Task #1312: inline "Import now" action for the certified-payroll missing
+// wage-decision banner. Triggers the Davis-Bacon sync for a single decision
+// number against the org's active connection and waits for the import so the
+// caller can refetch the report and immediately render DOL-feed rates.
+router.post("/api/payroll/wage-decisions/sync", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res, next) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const schema = z.object({
+      decisionNumber: z.string().trim().min(1, "decisionNumber required").max(64),
+    });
+    const parsed = validateBody(schema, req.body, res);
+    if (!parsed) return;
+
+    const outcome = await queueWageDecisionSync(orgId, parsed.decisionNumber, { awaitResult: true });
+
+    if (outcome.status === "no_connection") {
+      return res.status(409).json({
+        status: outcome.status,
+        error: "No active Davis-Bacon (DOL/SAM.gov) integration is connected for this organization.",
+      });
+    }
+    if (outcome.status === "no_credentials") {
+      return res.status(409).json({
+        status: outcome.status,
+        error: "Davis-Bacon connection is missing a SAM.gov API key.",
+      });
+    }
+    if (outcome.status === "failed") {
+      return res.status(502).json({ status: outcome.status, error: outcome.error });
+    }
+    if (outcome.status === "completed" && !outcome.result.success) {
+      return res.status(502).json({
+        status: "failed",
+        error: outcome.result.errors.map((e) => e.message).join("; ") || "Sync failed",
+      });
+    }
+
+    return res.json({ status: outcome.status, decisionNumber: parsed.decisionNumber });
   } catch (error) {
     next(error);
   }

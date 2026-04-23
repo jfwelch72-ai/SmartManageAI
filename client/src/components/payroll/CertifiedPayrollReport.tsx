@@ -7,9 +7,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { useQuery } from "@tanstack/react-query";
-import { FileText, Printer, Download, AlertTriangle, CheckCircle, FileDown } from "lucide-react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { FileText, Printer, Download, AlertTriangle, CheckCircle, FileDown, Loader2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 const VARIANT_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "WH_347", label: "Federal WH-347" },
@@ -299,6 +301,34 @@ export default function CertifiedPayrollReportView({ payRunId, payRunNumber }: {
     enabled: !!payRunId,
   });
 
+  const { toast } = useToast();
+  const importDecisionMutation = useMutation({
+    mutationFn: async (decisionNumber: string) => {
+      const resp = await apiRequest("POST", "/api/payroll/wage-decisions/sync", { decisionNumber });
+      return (await resp.json()) as { status: string; decisionNumber: string };
+    },
+    onSuccess: (data) => {
+      const alreadyCached = data.status === "cached";
+      toast({
+        title: alreadyCached ? "Wage decision already imported" : "Wage decision imported",
+        description: alreadyCached
+          ? `${data.decisionNumber} was already cached from the DOL feed; refreshing the report.`
+          : `${data.decisionNumber} is now cached from the DOL feed.`,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/payroll/pay-runs", payRunId, "certified-report"],
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: "Import failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    },
+  });
+  const pendingDecision = importDecisionMutation.isPending ? importDecisionMutation.variables : null;
+
   useEffect(() => {
     if (!variant && report?.defaultPayrollFormVariant) {
       setVariant(report.defaultPayrollFormVariant);
@@ -482,15 +512,43 @@ export default function CertifiedPayrollReportView({ payRunId, payRunNumber }: {
             <p className="font-medium">
               Wage decision{report.missingWageDecisions.length === 1 ? "" : "s"} not yet imported from DOL
             </p>
-            <ul className="mt-1 list-disc pl-5 space-y-0.5">
-              {report.missingWageDecisions.map((m, i) => (
-                <li key={`${m.projectName}-${m.wageDecision}-${i}`} data-testid={`text-missing-decision-${i}`}>
-                  {m.projectName ? `${m.projectName}: ` : ""}{m.wageDecision}
-                </li>
-              ))}
+            <ul className="mt-1 space-y-1">
+              {report.missingWageDecisions.map((m, i) => {
+                const isPending = pendingDecision === m.wageDecision;
+                return (
+                  <li
+                    key={`${m.projectName}-${m.wageDecision}-${i}`}
+                    className="flex flex-wrap items-center gap-2"
+                    data-testid={`text-missing-decision-${i}`}
+                  >
+                    <span>
+                      {m.projectName ? `${m.projectName}: ` : ""}
+                      <span className="font-mono">{m.wageDecision}</span>
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-6 px-2 text-xs"
+                      disabled={importDecisionMutation.isPending}
+                      onClick={() => importDecisionMutation.mutate(m.wageDecision)}
+                      data-testid={`button-import-decision-${i}`}
+                    >
+                      {isPending ? (
+                        <>
+                          <Loader2 className="w-3 h-3 mr-1 animate-spin" /> Importing…
+                        </>
+                      ) : (
+                        "Import now"
+                      )}
+                    </Button>
+                  </li>
+                );
+              })}
             </ul>
-            <p className="mt-1 text-xs">
-              Run a Davis-Bacon sync for these decisions so prevailing wage rates are applied automatically.
+            <p className="mt-2 text-xs">
+              Davis-Bacon syncs are queued automatically when a project's wage decision is set or
+              edited; use Import now to retry after a connection issue.
             </p>
           </div>
         </div>

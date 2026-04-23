@@ -1,10 +1,11 @@
 import type { SyncResult, SyncError } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { db } from "../../../db";
-import { integrationSyncState } from "@shared/schema";
+import { integrationConnections, integrationSyncState } from "@shared/schema";
 import { and, eq, sql } from "drizzle-orm";
-import { logInfo, logError } from "../../../utils/logger";
+import { logInfo, logError, logWarn } from "../../../utils/logger";
 import { safeFetch } from "../../../utils/safeFetch";
+import { decryptMetadata } from "../../encryption";
 
 const SAM_BASE = "https://api.sam.gov/prod";
 
@@ -253,4 +254,105 @@ export async function lookupCachedWageRate(
   return (
     meta.rates.find((r) => r.classification.trim().toLowerCase() === norm) ?? null
   );
+}
+
+/**
+ * Find the org's active Davis-Bacon integration connection. Returns null if
+ * the org has no connected (or active) connection. Caller should treat null
+ * as "cannot auto-sync" and surface the unimported state instead.
+ */
+async function getActiveDavisBaconConnection(
+  organizationId: string,
+): Promise<IntegrationConnection | null> {
+  const [row] = await db
+    .select()
+    .from(integrationConnections)
+    .where(
+      and(
+        eq(integrationConnections.organizationId, organizationId),
+        eq(integrationConnections.provider, "dol_davis_bacon" as any),
+        eq(integrationConnections.status, "active" as any),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+  const meta = (row.metadata as Record<string, any>) || {};
+  return { ...row, metadata: decryptMetadata(meta) } as IntegrationConnection;
+}
+
+export type WageDecisionSyncQueueResult =
+  | { status: "cached" }
+  | { status: "no_connection" }
+  | { status: "no_credentials" }
+  | { status: "queued" }
+  | { status: "completed"; result: SyncResult }
+  | { status: "failed"; error: string };
+
+/**
+ * Auto-trigger a Davis-Bacon sync for `decisionNumber`. Used when a project
+ * is created/edited and references a decision that hasn't been imported yet,
+ * and by the certified-payroll "Import now" inline action.
+ *
+ * - Returns `cached` if the determination is already in the local cache.
+ * - Returns `no_connection`/`no_credentials` if the org cannot reach SAM.gov.
+ * - When `awaitResult` is true, runs the import inline and returns the
+ *   SyncResult so the caller can show success/failure feedback (used by the
+ *   inline button). Otherwise schedules it as a fire-and-forget background
+ *   task and returns `queued` (used by the project create/update path so the
+ *   request isn't blocked on a slow SAM.gov fetch).
+ */
+export async function queueWageDecisionSync(
+  organizationId: string,
+  decisionNumber: string,
+  opts: { awaitResult?: boolean } = {},
+): Promise<WageDecisionSyncQueueResult> {
+  const decision = (decisionNumber || "").trim();
+  if (!decision) return { status: "no_credentials" };
+
+  if (await isWageDeterminationCached(organizationId, decision)) {
+    return { status: "cached" };
+  }
+
+  const connection = await getActiveDavisBaconConnection(organizationId);
+  if (!connection) {
+    logInfo("Skipping Davis-Bacon auto-sync: no active connection", { organizationId, decision });
+    return { status: "no_connection" };
+  }
+  const meta = (connection.metadata as Record<string, any>) || {};
+  if (!meta.apiKey && !meta.accessToken) {
+    logInfo("Skipping Davis-Bacon auto-sync: missing API key", { organizationId, decision });
+    return { status: "no_credentials" };
+  }
+
+  if (opts.awaitResult) {
+    try {
+      const result = await importWageDetermination(connection, decision, false);
+      return { status: "completed", result };
+    } catch (err) {
+      logError("Davis-Bacon auto-sync failed", { decision, organizationId, error: String(err) });
+      return { status: "failed", error: String(err) };
+    }
+  }
+
+  // Fire-and-forget: kick off the import without blocking the caller.
+  // Errors are logged; subsequent payroll runs surface the still-missing
+  // decision in the warning banner so the user can retry via the inline
+  // "Import now" action.
+  void importWageDetermination(connection, decision, false)
+    .then((result) => {
+      if (!result.success) {
+        logWarn("Davis-Bacon background sync returned errors", {
+          decision,
+          organizationId,
+          errors: result.errors,
+        });
+      } else {
+        logInfo("Davis-Bacon background sync completed", { decision, organizationId });
+      }
+    })
+    .catch((err) => {
+      logError("Davis-Bacon background sync threw", { decision, organizationId, error: String(err) });
+    });
+
+  return { status: "queued" };
 }
