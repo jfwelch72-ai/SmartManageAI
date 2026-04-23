@@ -581,6 +581,33 @@ export async function queueWageDecisionSync(
   // importWageDetermination persists success/failure state on the
   // integration_sync_state row (Task #1332) so the project payroll banner
   // and the failure-notification path below can surface what happened.
+  // Task #1344: also fan an in-app + email notification out to every
+  // active org admin (excluding the connection owner who already gets
+  // the existing tailored notification via notifyDavisBaconAutoSyncFailure).
+  // Uses a dynamic import to avoid a circular dependency
+  // (davisBaconAdminNotifications imports isWageDeterminationCached
+  // from this module).
+  const fanoutToAdmins = async (errMsg: string) => {
+    try {
+      const { notifyOrgAdminsOfWageDecisionSyncFailure } = await import(
+        "../../../services/davisBaconAdminNotifications"
+      );
+      await notifyOrgAdminsOfWageDecisionSyncFailure({
+        organizationId,
+        decisionNumber: decision,
+        errorMessage: errMsg,
+        source: "background_sync",
+        excludeUserId: connection.createdByUserId ?? null,
+      });
+    } catch (err) {
+      logWarn("Davis-Bacon admin failure fanout failed", {
+        decision,
+        organizationId,
+        error: String(err),
+      });
+    }
+  };
+
   void importWageDetermination(connection, decision, false)
     .then(async (result) => {
       if (!result.success) {
@@ -591,6 +618,7 @@ export async function queueWageDecisionSync(
         });
         const errMsg = result.errors.map((e) => e.message).join("; ") || "Sync failed";
         await notifyDavisBaconAutoSyncFailure(connection, decision, errMsg);
+        await fanoutToAdmins(errMsg);
       } else {
         logInfo("Davis-Bacon background sync completed", { decision, organizationId });
       }
@@ -598,6 +626,7 @@ export async function queueWageDecisionSync(
     .catch(async (err) => {
       logError("Davis-Bacon background sync threw", { decision, organizationId, error: String(err) });
       await notifyDavisBaconAutoSyncFailure(connection, decision, String(err));
+      await fanoutToAdmins(String(err));
     });
 
   return { status: "queued" };

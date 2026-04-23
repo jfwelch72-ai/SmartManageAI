@@ -23,6 +23,7 @@ import { emailAccounts, emailCampaigns, emailCampaignContacts } from "@shared/sc
 import { syncImapAccount, syncOutlookAccount, syncGmailAccount, drainAccountProviderPushes } from "../emailRoutes";
 import { processArchivedCertifiedPayrollPurge } from "./certifiedPayrollPurge";
 import { processFailedWageDecisionRetries } from "../integrations/providers/dol_davis_bacon/sync";
+import { processMissingWageDecisionReminders } from "../services/davisBaconAdminNotifications";
 import { processIntegrationSyncRetries, recordSyncFailure, recordSyncSuccess } from "../integrations/syncRetry";
 import { qboSyncEntityType } from "../integrations/providers/qbo/sync";
 import { ensureAllEmailPushSubscriptions } from "../emailPushNotifications";
@@ -64,6 +65,7 @@ let certifiedPayrollDigestTask: ReturnType<typeof cron.schedule> | null = null;
 let swpppOverdueTask: ReturnType<typeof cron.schedule> | null = null;
 let certifiedPayrollPurgeTask: ReturnType<typeof cron.schedule> | null = null;
 let wageDecisionRetryTask: ReturnType<typeof cron.schedule> | null = null;
+let wageDecisionMissingReminderTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -429,6 +431,21 @@ export function startJobRunner() {
     }
   });
 
+  // Task #1344: daily 08:00 UTC fan-out reminder to org admins about
+  // projects whose Davis-Bacon wage decision has been missing for >24h.
+  // The handler itself enforces a 1-per-project-per-week throttle so a
+  // daily cadence is the right responsiveness without spamming admins.
+  wageDecisionMissingReminderTask = cron.schedule("0 8 * * *", async () => {
+    try {
+      const out = await processMissingWageDecisionReminders();
+      if (out.remindersSent > 0) {
+        logInfo("Wage decision missing reminder sweep", out);
+      }
+    } catch (err) {
+      logError("Wage decision missing reminder sweep failed", { error: String(err) });
+    }
+  });
+
   logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, provider email sync, provider push-back drain, periodic report, DB health check, scheduled campaign, project geocoding, weekly CRM birthday digest, and daily CRM birthday email schedulers)");
 }
 
@@ -561,6 +578,10 @@ export function stopJobRunner() {
     certifiedPayrollPurgeTask.stop();
     certifiedPayrollPurgeTask = null;
   }
+  if (wageDecisionMissingReminderTask) {
+    wageDecisionMissingReminderTask.stop();
+    wageDecisionMissingReminderTask = null;
+  }
   if (wageDecisionRetryTask) {
     wageDecisionRetryTask.stop();
     wageDecisionRetryTask = null;
@@ -609,6 +630,11 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   // backoff schedule, so running both would double-trigger retries.
   wage_decision_retry: { fn: async () => { await processFailedWageDecisionRetries(); }, description: "[legacy alias] Davis-Bacon-only wage-decision retry sweep — superseded by integration_sync_retry; manual trigger only" },
   integration_sync_retry: { fn: async () => { await processIntegrationSyncRetries(); }, description: "Re-attempt every failed integration sync (Davis-Bacon, QBO, etc.) whose backoff window is due", schedule: "*/5 * * * *" },
+  // Task #1344: daily fan-out to org admins of any project whose Davis-Bacon
+  // wage decision has been missing from the cache for >24h. Throttled inside
+  // the handler to one reminder per project per week, so a daily cadence
+  // gives us the right responsiveness without spamming admins.
+  wage_decision_missing_reminder: { fn: async () => { await processMissingWageDecisionReminders(); }, description: "Email/in-app reminder to org admins about projects whose Davis-Bacon wage decision is still uncached after 24h (throttled to 1/project/week)", schedule: "0 8 * * *" },
 };
 
 async function processOutbox() {

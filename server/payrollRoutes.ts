@@ -316,6 +316,7 @@ import { db } from "./db";
 import { eventBus } from "./events";
 import { exportLimiter } from "./rateLimiter";
 import { lookupCachedWageRate, lookupCachedRateByLocale, isWageDeterminationCached, listCachedDecisionClassifications, queueWageDecisionSync, getWageDecisionSyncStatus } from "./integrations/providers/dol_davis_bacon/sync";
+import { notifyOrgAdminsOfWageDecisionSyncFailure } from "./services/davisBaconAdminNotifications";
 import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts, overtimeRules, costLedgerPostings, certifiedPayrollReports, auditLog } from "@shared/schema";
 import { eq, and, gte, lte, sql, desc, inArray, count, asc, isNull, or } from "drizzle-orm";
 import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
@@ -2341,12 +2342,32 @@ router.post("/api/payroll/wage-decisions/sync", requireAuth, requireFeaturePermi
       });
     }
     if (outcome.status === "failed") {
+      // Task #1344: also notify org admins (in-app + email) so a failed
+      // manual sync isn't only visible to the user who clicked the button.
+      void notifyOrgAdminsOfWageDecisionSyncFailure({
+        organizationId: orgId,
+        decisionNumber: parsed.decisionNumber,
+        errorMessage: outcome.error,
+        source: "manual_sync",
+      }).catch((err) =>
+        logWarn("Davis-Bacon admin failure fanout failed", { error: String(err) }),
+      );
       return res.status(502).json({ status: outcome.status, error: outcome.error });
     }
     if (outcome.status === "completed" && !outcome.result.success) {
+      const errorMessage =
+        outcome.result.errors.map((e) => e.message).join("; ") || "Sync failed";
+      void notifyOrgAdminsOfWageDecisionSyncFailure({
+        organizationId: orgId,
+        decisionNumber: parsed.decisionNumber,
+        errorMessage,
+        source: "manual_sync",
+      }).catch((err) =>
+        logWarn("Davis-Bacon admin failure fanout failed", { error: String(err) }),
+      );
       return res.status(502).json({
         status: "failed",
-        error: outcome.result.errors.map((e) => e.message).join("; ") || "Sync failed",
+        error: errorMessage,
       });
     }
 
@@ -2368,10 +2389,15 @@ router.get("/api/payroll/missing-wage-decisions", requireAuth, async (req, res, 
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
     if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
 
+    // Task #1344: filter by `gcOrganizationId` (the canonical project↔org
+    // link used elsewhere in the codebase — projects has no
+    // `organization_id` column) so this endpoint and the daily
+    // `wage_decision_missing_reminder` sweep operate on the exact same
+    // candidate set.
     const projectRows = await db
       .select({ id: projects.id, name: projects.name, wageDecision: projects.wageDecision })
       .from(projects)
-      .where(eq(projects.organizationId, orgId));
+      .where(eq(projects.gcOrganizationId, orgId));
 
     // Dedupe cache lookups by decision number — many projects in an org
     // typically reference the same handful of wage decisions, and

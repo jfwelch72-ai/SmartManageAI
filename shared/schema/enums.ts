@@ -116,6 +116,10 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // background, so the integration owner can retry before a payroll deadline
   // instead of discovering it via the missing-decision banner.
   "DAVIS_BACON_AUTO_SYNC_FAILED",
+  // Task #1344: daily reminder fan-out to org admins when a project's
+  // Davis-Bacon wage decision has been missing from the local cache for
+  // more than 24h, throttled to one per project per week.
+  "WAGE_DECISION_MISSING_REMINDER",
 ]);
 
 export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["PENDING", "APPROVED", "DENIED"]);

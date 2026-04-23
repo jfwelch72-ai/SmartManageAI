@@ -572,6 +572,44 @@ export function composeEmailContent(notification: NotificationRecord): {
     };
   }
 
+  // Task #1344: daily reminder when a project's Davis-Bacon wage decision
+  // has been missing for >24h. Deep links to /integrations (so admins can
+  // verify the connection / re-run the import) and /payroll (so they can
+  // pick the project and retry the per-decision sync inline).
+  if (type === "WAGE_DECISION_MISSING_REMINDER") {
+    const integrationsUrl = `${baseUrl}/integrations?provider=dol_davis_bacon`;
+    const payrollUrl = `${baseUrl}/payroll`;
+    const subject = `Wage decision still missing — SmartManageAI`;
+    const messageHtml = escapeHtml(notification.message).replace(/\n/g, "<br>");
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #b91c1c;">${escapeHtml(notification.title)}</h2>
+        <p style="color: #444; line-height: 1.6;">${messageHtml}</p>
+        <p style="margin-top: 20px;">
+          <a href="${integrationsUrl}" style="background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin-right: 8px;" data-testid="link-wage-decision-reminder-integrations">
+            Open Integrations
+          </a>
+          <a href="${payrollUrl}" style="background-color: #ffffff; color: #0070f3; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; border: 1px solid #0070f3;" data-testid="link-wage-decision-reminder-payroll">
+            Open Payroll
+          </a>
+        </p>
+        <hr style="margin-top: 30px; border: none; border-top: 1px solid #eee;">
+        <p style="color: #999; font-size: 12px; line-height: 1.6;">
+          You are receiving this because you are an administrator for your organization.
+          You will receive at most one reminder per project per week until the wage
+          decision is imported.
+        </p>
+      </div>
+    `;
+    return {
+      subject,
+      body: notification.message,
+      actionUrl: integrationsUrl,
+      actionText: "Open Integrations",
+      html,
+    };
+  }
+
   if (type === "CRM_TRANSCRIPT_BACKFILL_REAPED") {
     return {
       subject: `CRM transcript backfill was reaped — SmartManageAI`,
