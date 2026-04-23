@@ -446,11 +446,91 @@ function MaterialCertificationsLinkCard() {
   );
 }
 
+interface TrainingSummary {
+  overdueCount: number;
+  expiringSoonCount: number;
+  maxDaysOverdue: number;
+}
+
+function SafetyTrainingLinkCard() {
+  const { data } = useQuery<TrainingSummary>({ queryKey: ["/api/safety-training/summary"] });
+  const overdue = data?.overdueCount ?? 0;
+  const expiringSoon = data?.expiringSoonCount ?? 0;
+  const maxDays = data?.maxDaysOverdue ?? 0;
+  const total = overdue + expiringSoon;
+  const badges = data ? (
+    <>
+      <Badge variant={total > 0 ? "secondary" : "outline"} data-testid="badge-training-attention-total">
+        {total} attention
+      </Badge>
+      {overdue > 0 && (
+        <Badge variant="destructive" data-testid="badge-training-overdue">
+          <AlertTriangle className="h-3 w-3 mr-1" />{overdue} overdue
+        </Badge>
+      )}
+      {maxDays > 0 && (
+        <Badge variant="outline" className="border-destructive/60 text-destructive bg-destructive/5" data-testid="badge-training-max-days-overdue">
+          {maxDays} {maxDays === 1 ? "day" : "days"}
+        </Badge>
+      )}
+    </>
+  ) : null;
+  return (
+    <LinkCard
+      to="/safety-training"
+      title="Training & Certifications"
+      desc="Manage required courses, assignments, and worker certification status."
+      icon={GraduationCap}
+      badges={badges}
+    />
+  );
+}
+
+interface ComplianceSummary {
+  expiredCount: number;
+  expiringSoonCount: number;
+  maxDaysExpired: number;
+}
+
+function ComplianceLinkCard() {
+  const { data } = useQuery<ComplianceSummary>({ queryKey: ["/api/compliance/summary"] });
+  const expired = data?.expiredCount ?? 0;
+  const expiringSoon = data?.expiringSoonCount ?? 0;
+  const maxDays = data?.maxDaysExpired ?? 0;
+  const total = expired + expiringSoon;
+  const badges = data ? (
+    <>
+      <Badge variant={total > 0 ? "secondary" : "outline"} data-testid="badge-compliance-attention-total">
+        {total} attention
+      </Badge>
+      {expired > 0 && (
+        <Badge variant="destructive" data-testid="badge-compliance-expired">
+          <AlertTriangle className="h-3 w-3 mr-1" />{expired} expired
+        </Badge>
+      )}
+      {maxDays > 0 && (
+        <Badge variant="outline" className="border-destructive/60 text-destructive bg-destructive/5" data-testid="badge-compliance-max-days-expired">
+          {maxDays} {maxDays === 1 ? "day" : "days"}
+        </Badge>
+      )}
+    </>
+  ) : null;
+  return (
+    <LinkCard
+      to="/compliance"
+      title="Compliance & COIs"
+      desc="Track COIs, bonds, DBE certs, licenses, and expirations."
+      icon={FileBadge}
+      badges={badges}
+    />
+  );
+}
+
 function ModulesTab() {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      <LinkCard to="/safety-training" title="Training & Certifications" desc="Manage required courses, assignments, and worker certification status." icon={GraduationCap} />
-      <LinkCard to="/compliance" title="Compliance & COIs" desc="Track COIs, bonds, DBE certs, licenses, and expirations." icon={FileBadge} />
+      <SafetyTrainingLinkCard />
+      <ComplianceLinkCard />
       <SwpppLinkCard />
       <DailyInspectorReportsLinkCard />
       <MaterialCertificationsLinkCard />

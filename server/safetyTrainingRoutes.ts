@@ -154,6 +154,40 @@ router.get("/api/safety-training", async (req: AuthRequest, res, next) => {
   }
 });
 
+// GET /api/safety-training/summary — Task #1362: lightweight aggregate so the
+// Safety Hub Training & Certifications tile can show overdue / expiring-soon
+// counts without fetching every assignment. "Overdue" means an assignment is
+// not yet COMPLETED and either has status='OVERDUE' or its dueDate is in the
+// past. "Expiring soon" means a non-completed assignment whose dueDate is
+// today through 30 days out. `maxDaysOverdue` is the largest gap in days.
+router.get("/api/safety-training/summary", async (req: AuthRequest, res, next) => {
+  try {
+    const orgId = req.user!.organizationId;
+    if (!orgId) {
+      return res.json({ overdueCount: 0, expiringSoonCount: 0, maxDaysOverdue: 0 });
+    }
+    const notCompleted = sql`${safetyTrainingAssignments.status} <> 'COMPLETED'`;
+    const dueDateAsDate = sql`NULLIF(${safetyTrainingAssignments.dueDate}, '')::date`;
+    const isOverdue = sql`(${safetyTrainingAssignments.status} = 'OVERDUE' OR (${dueDateAsDate} IS NOT NULL AND ${dueDateAsDate} < CURRENT_DATE))`;
+    const isExpiringSoon = sql`(${dueDateAsDate} IS NOT NULL AND ${dueDateAsDate} >= CURRENT_DATE AND ${dueDateAsDate} <= CURRENT_DATE + INTERVAL '30 days')`;
+    const [agg] = await db
+      .select({
+        overdueCount: sql<number>`COUNT(*) FILTER (WHERE ${notCompleted} AND ${isOverdue})::int`,
+        expiringSoonCount: sql<number>`COUNT(*) FILTER (WHERE ${notCompleted} AND ${isExpiringSoon})::int`,
+        maxDaysOverdue: sql<number>`COALESCE(MAX(CASE WHEN ${notCompleted} AND ${dueDateAsDate} IS NOT NULL AND ${dueDateAsDate} < CURRENT_DATE THEN (CURRENT_DATE - ${dueDateAsDate}) ELSE NULL END), 0)::int`,
+      })
+      .from(safetyTrainingAssignments)
+      .where(eq(safetyTrainingAssignments.organizationId, orgId));
+    res.json({
+      overdueCount: agg?.overdueCount ?? 0,
+      expiringSoonCount: agg?.expiringSoonCount ?? 0,
+      maxDaysOverdue: agg?.maxDaysOverdue ?? 0,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/safety-training — create training program
 router.post("/api/safety-training", requireAuth, async (req: AuthRequest, res, next) => {
   try {

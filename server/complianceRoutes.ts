@@ -8,6 +8,7 @@ import {
   projects,
 } from "@shared/schema";
 import { and, eq, sql, isNotNull } from "drizzle-orm";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { type AuthRequest, requireAuth, requireFeaturePermission } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 
@@ -332,6 +333,124 @@ router.get(
       });
 
       res.json(items);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+/**
+ * GET /api/compliance/summary
+ *
+ * Task #1362: lightweight aggregate that powers the Safety Hub
+ * "Compliance & COIs" tile badge. Returns the count of expired and
+ * expiring-soon (≤ 30 days) compliance items across the same four
+ * sources as /expirations (DBE certs, surety bonds, CRM org
+ * insurance / WC / license, and project permits) plus
+ * `maxDaysExpired` — the largest days-past-expiration in the set.
+ *
+ * Bonds with status RELEASED/CANCELED and permits with status
+ * RENEWED/CANCELLED are excluded so the counts match the page.
+ */
+router.get(
+  "/summary",
+  requireAuth,
+  requireFeaturePermission("canViewComplianceDashboard"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
+      if (mustDenyAccess) {
+        return res.json({ expiredCount: 0, expiringSoonCount: 0, maxDaysExpired: 0 });
+      }
+
+      const expiredExpr = (col: AnyPgColumn) =>
+        sql`(${col} IS NOT NULL AND ${col} < CURRENT_DATE)`;
+      const expiringExpr = (col: AnyPgColumn) =>
+        sql`(${col} IS NOT NULL AND ${col} >= CURRENT_DATE AND ${col} <= CURRENT_DATE + INTERVAL '30 days')`;
+      const daysExpr = (col: AnyPgColumn) =>
+        sql`COALESCE(MAX(CASE WHEN ${col} IS NOT NULL AND ${col} < CURRENT_DATE THEN (CURRENT_DATE - ${col}) ELSE NULL END), 0)::int`;
+
+      // DBE / CRM org certifications
+      const certWhere = shouldFilter && orgId
+        ? eq(crmOrganisationCertifications.organizationId, orgId)
+        : sql`1=1`;
+      const certCol = crmOrganisationCertifications.expirationDate;
+      const [certAgg] = await db
+        .select({
+          expired: sql<number>`COUNT(*) FILTER (WHERE ${expiredExpr(certCol)})::int`,
+          expiring: sql<number>`COUNT(*) FILTER (WHERE ${expiringExpr(certCol)})::int`,
+          maxDays: daysExpr(certCol),
+        })
+        .from(crmOrganisationCertifications)
+        .where(certWhere);
+
+      // Surety bonds (active only)
+      const bondWhere = shouldFilter && orgId
+        ? eq(suretyBonds.organizationId, orgId)
+        : sql`1=1`;
+      const bondActive = sql`${suretyBonds.status} NOT IN ('RELEASED','CANCELED')`;
+      const bondCol = suretyBonds.expirationDate;
+      const [bondAgg] = await db
+        .select({
+          expired: sql<number>`COUNT(*) FILTER (WHERE ${bondActive} AND ${expiredExpr(bondCol)})::int`,
+          expiring: sql<number>`COUNT(*) FILTER (WHERE ${bondActive} AND ${expiringExpr(bondCol)})::int`,
+          maxDays: sql<number>`COALESCE(MAX(CASE WHEN ${bondActive} AND ${bondCol} IS NOT NULL AND ${bondCol} < CURRENT_DATE THEN (CURRENT_DATE - ${bondCol}) ELSE NULL END), 0)::int`,
+        })
+        .from(suretyBonds)
+        .where(bondWhere);
+
+      // CRM org insurance / WC / license
+      const orgWhere = shouldFilter && orgId
+        ? eq(crmOrganisations.organizationId, orgId)
+        : sql`1=1`;
+      const insCol = crmOrganisations.insuranceExpiration;
+      const wcCol = crmOrganisations.wcInsuranceExpiration;
+      const licCol = crmOrganisations.licenseExpiration;
+      const [orgAgg] = await db
+        .select({
+          expired: sql<number>`(
+            COUNT(*) FILTER (WHERE ${expiredExpr(insCol)})
+            + COUNT(*) FILTER (WHERE ${expiredExpr(wcCol)})
+            + COUNT(*) FILTER (WHERE ${expiredExpr(licCol)})
+          )::int`,
+          expiring: sql<number>`(
+            COUNT(*) FILTER (WHERE ${expiringExpr(insCol)})
+            + COUNT(*) FILTER (WHERE ${expiringExpr(wcCol)})
+            + COUNT(*) FILTER (WHERE ${expiringExpr(licCol)})
+          )::int`,
+          maxDays: sql<number>`GREATEST(${daysExpr(insCol)}, ${daysExpr(wcCol)}, ${daysExpr(licCol)})::int`,
+        })
+        .from(crmOrganisations)
+        .where(orgWhere);
+
+      // Project permits (active only)
+      const permitWhere = shouldFilter && orgId
+        ? eq(projects.gcOrganizationId, orgId)
+        : sql`1=1`;
+      const permitActive = sql`${projectPermits.status} NOT IN ('RENEWED','CANCELLED','CANCELED')`;
+      const permitCol = projectPermits.expiryDate;
+      const [permitAgg] = await db
+        .select({
+          expired: sql<number>`COUNT(*) FILTER (WHERE ${permitActive} AND ${expiredExpr(permitCol)})::int`,
+          expiring: sql<number>`COUNT(*) FILTER (WHERE ${permitActive} AND ${expiringExpr(permitCol)})::int`,
+          maxDays: sql<number>`COALESCE(MAX(CASE WHEN ${permitActive} AND ${permitCol} IS NOT NULL AND ${permitCol} < CURRENT_DATE THEN (CURRENT_DATE - ${permitCol}) ELSE NULL END), 0)::int`,
+        })
+        .from(projectPermits)
+        .innerJoin(projects, eq(projects.id, projectPermits.projectId))
+        .where(permitWhere);
+
+      const expiredCount =
+        (certAgg?.expired ?? 0) + (bondAgg?.expired ?? 0) + (orgAgg?.expired ?? 0) + (permitAgg?.expired ?? 0);
+      const expiringSoonCount =
+        (certAgg?.expiring ?? 0) + (bondAgg?.expiring ?? 0) + (orgAgg?.expiring ?? 0) + (permitAgg?.expiring ?? 0);
+      const maxDaysExpired = Math.max(
+        certAgg?.maxDays ?? 0,
+        bondAgg?.maxDays ?? 0,
+        orgAgg?.maxDays ?? 0,
+        permitAgg?.maxDays ?? 0,
+      );
+
+      res.json({ expiredCount, expiringSoonCount, maxDaysExpired });
     } catch (error) {
       next(error);
     }
