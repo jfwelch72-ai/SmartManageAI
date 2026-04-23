@@ -363,12 +363,18 @@ router.get(
         return res.json({ expiredCount: 0, expiringSoonCount: 0, maxDaysExpired: 0 });
       }
 
+      // Task #1366: cast every column to ::date so the same helpers work
+      // for both `date` columns (cert/bond/permit expirations) and
+      // `timestamp` columns (CRM org insurance/WC/license). Without the
+      // cast, `CURRENT_DATE - <timestamp>` returns an `interval`, which
+      // PG then refuses to COALESCE with the integer literal `0`
+      // ("COALESCE types interval and integer cannot be matched").
       const expiredExpr = (col: AnyPgColumn) =>
-        sql`(${col} IS NOT NULL AND ${col} < CURRENT_DATE)`;
+        sql`(${col} IS NOT NULL AND ${col}::date < CURRENT_DATE)`;
       const expiringExpr = (col: AnyPgColumn) =>
-        sql`(${col} IS NOT NULL AND ${col} >= CURRENT_DATE AND ${col} <= CURRENT_DATE + INTERVAL '30 days')`;
+        sql`(${col} IS NOT NULL AND ${col}::date >= CURRENT_DATE AND ${col}::date <= CURRENT_DATE + INTERVAL '30 days')`;
       const daysExpr = (col: AnyPgColumn) =>
-        sql`COALESCE(MAX(CASE WHEN ${col} IS NOT NULL AND ${col} < CURRENT_DATE THEN (CURRENT_DATE - ${col}) ELSE NULL END), 0)::int`;
+        sql`COALESCE(MAX(CASE WHEN ${col} IS NOT NULL AND ${col}::date < CURRENT_DATE THEN (CURRENT_DATE - ${col}::date) ELSE NULL END), 0)::int`;
 
       // DBE / CRM org certifications
       const certWhere = shouldFilter && orgId
@@ -427,7 +433,12 @@ router.get(
       const permitWhere = shouldFilter && orgId
         ? eq(projects.gcOrganizationId, orgId)
         : sql`1=1`;
-      const permitActive = sql`${projectPermits.status} NOT IN ('RENEWED','CANCELLED','CANCELED')`;
+      // Task #1366: cast `status` to text first so this NOT IN list can
+      // tolerate values that aren't members of the `permit_status` enum
+      // (CANCELLED/CANCELED are kept defensively in case the enum is
+      // extended later — without the cast PG rejects the entire query
+      // with `invalid input value for enum permit_status`).
+      const permitActive = sql`${projectPermits.status}::text NOT IN ('RENEWED','CANCELLED','CANCELED')`;
       const permitCol = projectPermits.expiryDate;
       const [permitAgg] = await db
         .select({
