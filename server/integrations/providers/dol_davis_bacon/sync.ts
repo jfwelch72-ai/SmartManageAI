@@ -148,6 +148,9 @@ export async function importWageDetermination(
       // implicitly resolves the "auto-sync failed" notification/banner.
       // Task #1354: also reset the scheduled-retry bookkeeping so the
       // background retry job stops chasing this decision.
+      // Task #1370: replacing metadata wholesale here naturally drops any
+      // persisted failure-notification coalescing state — required so the
+      // suppression window doesn't outlive the failure that caused it.
       await upsertWageDecisionSyncState(connection, decisionNumber, {
         metadata: payload,
         lastSyncAt: new Date(),
@@ -155,6 +158,10 @@ export async function importWageDetermination(
         retryCount: 0,
         nextRetryAt: null,
       });
+      // Task #1370: drop the in-memory coalesce entry too, otherwise a new
+      // failure shortly after this success would still be considered
+      // "inside the suppression window" by the in-memory check.
+      failureCoalesceMap.delete(coalesceKey(connection.id, decisionNumber));
     }
 
     logInfo("Davis-Bacon wage determination imported", { decisionNumber, rates: det.rates.length, dryRun });
@@ -605,9 +612,13 @@ export async function queueWageDecisionSync(
  * When the window expires, the next failure is delivered with a hint at
  * how many attempts were absorbed during the quiet window.
  *
- * In-memory by design — coalescing is best-effort and does not need to
- * survive restarts; if a worker recycles the user simply receives the
- * next failure email immediately, which is the right fallback.
+ * Task #1370 — The state is mirrored onto the per-decision row in
+ * `integration_sync_state` (under `metadata.failureNotification`) so the
+ * suppression window survives server restarts. The in-memory map is kept
+ * as a hot cache to avoid a DB round-trip on every failure; on a cold
+ * worker we lazily seed it from the persisted value before deciding
+ * whether to suppress. A successful sync overwrites the row's metadata
+ * wholesale, naturally dropping the persisted notification timestamp.
  */
 const COALESCE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
@@ -621,6 +632,77 @@ const failureCoalesceMap = new Map<string, CoalesceState>();
 
 function coalesceKey(connectionId: string, decisionNumber: string): string {
   return `${connectionId}::${decisionNumber}`;
+}
+
+/**
+ * Task #1370 — Read the persisted coalescing state for a (connection,
+ * decision) from the integration_sync_state row's metadata. Returns null
+ * when no row exists or no failureNotification key has been written yet.
+ */
+async function loadPersistedCoalesceState(
+  connectionId: string,
+  decisionNumber: string,
+): Promise<CoalesceState | null> {
+  try {
+    const row = await getWageDecisionRow(connectionId, decisionNumber);
+    const meta = (row?.metadata as Record<string, unknown> | null) ?? null;
+    const persisted = meta && typeof meta === "object" ? (meta as Record<string, unknown>).failureNotification : null;
+    if (!persisted || typeof persisted !== "object") return null;
+    const p = persisted as Record<string, unknown>;
+    if (typeof p.lastNotifiedAt !== "number") return null;
+    return {
+      lastNotifiedAt: p.lastNotifiedAt,
+      suppressedSince: typeof p.suppressedSince === "number" ? p.suppressedSince : 0,
+      suppressedCount: typeof p.suppressedCount === "number" ? p.suppressedCount : 0,
+    };
+  } catch (err) {
+    logWarn("Davis-Bacon coalesce state load failed", { connectionId, decisionNumber, error: String(err) });
+    return null;
+  }
+}
+
+/**
+ * Task #1370 — Persist the coalescing state onto the per-decision row's
+ * metadata, merging with any existing wage-determination payload so we
+ * don't clobber the cached rates. If the row doesn't exist yet (failure
+ * before any successful import), we create a stub row carrying just the
+ * failureNotification key.
+ */
+async function persistCoalesceState(
+  connection: IntegrationConnection,
+  decisionNumber: string,
+  state: CoalesceState,
+): Promise<void> {
+  const entityType = `wage_determination:${decisionNumber}`;
+  try {
+    const existing = await getWageDecisionRow(connection.id, decisionNumber);
+    const now = new Date();
+    if (existing) {
+      const baseMeta =
+        existing.metadata && typeof existing.metadata === "object"
+          ? { ...(existing.metadata as Record<string, unknown>) }
+          : {};
+      baseMeta.failureNotification = state;
+      await db
+        .update(integrationSyncState)
+        .set({ metadata: baseMeta as any, updatedAt: now })
+        .where(eq(integrationSyncState.id, existing.id));
+    } else {
+      await db.insert(integrationSyncState).values({
+        organizationId: connection.organizationId,
+        connectionId: connection.id,
+        entityType,
+        metadata: { failureNotification: state } as any,
+        lastAttemptAt: now,
+      });
+    }
+  } catch (err) {
+    logWarn("Davis-Bacon coalesce state persist failed", {
+      connectionId: connection.id,
+      decisionNumber,
+      error: String(err),
+    });
+  }
 }
 
 /**
@@ -675,7 +757,17 @@ export async function notifyDavisBaconAutoSyncFailure(
   const key = coalesceKey(connection.id, decisionNumber);
   const now = Date.now();
   pruneStaleCoalesceEntries(now);
-  const state = failureCoalesceMap.get(key);
+  // Task #1370: seed the in-memory cache from the persisted row on a cold
+  // worker so a server restart in the middle of an outage doesn't reset
+  // the suppression window.
+  let state = failureCoalesceMap.get(key);
+  if (!state) {
+    const persisted = await loadPersistedCoalesceState(connection.id, decisionNumber);
+    if (persisted) {
+      state = persisted;
+      failureCoalesceMap.set(key, persisted);
+    }
+  }
   if (state && now - state.lastNotifiedAt < COALESCE_WINDOW_MS) {
     state.suppressedCount += 1;
     if (state.suppressedSince === 0) state.suppressedSince = now;
@@ -685,6 +777,10 @@ export async function notifyDavisBaconAutoSyncFailure(
       suppressedCount: state.suppressedCount,
       windowRemainingMs: COALESCE_WINDOW_MS - (now - state.lastNotifiedAt),
     });
+    // Task #1370: persist the bumped suppressedCount so a restart in the
+    // middle of a streak still surfaces the right count when the window
+    // eventually expires and we deliver the next email.
+    await persistCoalesceState(connection, decisionNumber, state);
     return;
   }
 
@@ -711,11 +807,15 @@ export async function notifyDavisBaconAutoSyncFailure(
       relatedEntityId: connection.id,
       relatedEntityType: "INTEGRATION_CONNECTION",
     });
-    failureCoalesceMap.set(key, {
+    const fresh: CoalesceState = {
       lastNotifiedAt: now,
       suppressedSince: 0,
       suppressedCount: 0,
-    });
+    };
+    failureCoalesceMap.set(key, fresh);
+    // Task #1370: persist the new lastNotifiedAt so the suppression window
+    // survives a server restart that happens during an extended outage.
+    await persistCoalesceState(connection, decisionNumber, fresh);
   } catch (err) {
     logError(
       "Failed to deliver Davis-Bacon auto-sync failure notification",
