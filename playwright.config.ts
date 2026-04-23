@@ -36,12 +36,25 @@ export default defineConfig({
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
     video: "retain-on-failure",
-    launchOptions: CHROMIUM_PATH ? { executablePath: CHROMIUM_PATH } : {},
   },
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      use: {
+        ...devices["Desktop Chrome"],
+        // Use a system-installed chromium when present (Replit / minimal CI
+        // images may not ship Playwright's bundled Chromium). Other engines
+        // always use Playwright's bundled binary.
+        launchOptions: CHROMIUM_PATH ? { executablePath: CHROMIUM_PATH } : {},
+      },
+    },
+    {
+      name: "firefox",
+      use: { ...devices["Desktop Firefox"] },
+    },
+    {
+      name: "webkit",
+      use: { ...devices["Desktop Safari"] },
     },
   ],
   webServer: {

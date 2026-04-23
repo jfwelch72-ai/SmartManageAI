@@ -59,27 +59,46 @@ async function dragOnCanvas(
   start: { x: number; y: number },
   end: { x: number; y: number },
   intermediate: { x: number; y: number }[] = [],
+  browserName: string = "chromium",
 ) {
+  // WebKit / Firefox dispatch synthetic mousemove events less aggressively than
+  // Chromium when `steps` is small, which can starve Konva's mousemove handler
+  // (especially for the FREEHAND tool that records every move). Bump step
+  // counts and waits for the non-chromium engines to keep the canvas drawing
+  // path deterministic.
+  const isChromium = browserName === "chromium";
+  const interStep = isChromium ? 4 : 8;
+  const finalStep = isChromium ? 8 : 16;
+  const interWait = isChromium ? 20 : 40;
+  const edgeWait = isChromium ? 50 : 100;
+
   const box = await getCanvasBox(page);
   const sx = box.x + start.x;
   const sy = box.y + start.y;
+  // Hover first so WebKit registers the cursor inside the canvas before the
+  // synthetic mousedown.
+  await page.mouse.move(sx, sy);
   await page.mouse.move(sx, sy);
   await page.mouse.down();
-  await page.waitForTimeout(50);
+  await page.waitForTimeout(edgeWait);
   for (const p of intermediate) {
-    await page.mouse.move(box.x + p.x, box.y + p.y, { steps: 4 });
-    await page.waitForTimeout(20);
+    await page.mouse.move(box.x + p.x, box.y + p.y, { steps: interStep });
+    await page.waitForTimeout(interWait);
   }
-  await page.mouse.move(box.x + end.x, box.y + end.y, { steps: 8 });
-  await page.waitForTimeout(50);
+  await page.mouse.move(box.x + end.x, box.y + end.y, { steps: finalStep });
+  await page.waitForTimeout(edgeWait);
   await page.mouse.up();
-  await page.waitForTimeout(100);
+  await page.waitForTimeout(isChromium ? 100 : 150);
 }
 
 async function clickOnCanvas(page: Page, point: { x: number; y: number }) {
   const box = await getCanvasBox(page);
+  // Two move calls so WebKit reliably dispatches the initial mousemove before
+  // the click sequence.
+  await page.mouse.move(box.x + point.x, box.y + point.y);
   await page.mouse.move(box.x + point.x, box.y + point.y);
   await page.mouse.down();
+  await page.waitForTimeout(30);
   await page.mouse.up();
 }
 
@@ -105,6 +124,7 @@ test.describe("Takeoff markup drawing - Playwright E2E", () => {
 
   test("draws all six markup tools on the canvas and persists them", async ({
     page,
+    browserName,
   }) => {
     const suffix = Date.now();
     await devLogin(page, "ADMIN");
@@ -155,25 +175,25 @@ test.describe("Takeoff markup drawing - Playwright E2E", () => {
 
     // 1) ARROW
     await selectMarkupTool(page, "markup_arrow");
-    await dragOnCanvas(page, { x: 120, y: 120 }, { x: 240, y: 200 });
+    await dragOnCanvas(page, { x: 120, y: 120 }, { x: 240, y: 200 }, [], browserName);
     expectedCount += 1;
     await waitForMarkupCount(page, sheetId, expectedCount);
 
     // 2) RECTANGLE
     await selectMarkupTool(page, "markup_rectangle");
-    await dragOnCanvas(page, { x: 260, y: 130 }, { x: 360, y: 230 });
+    await dragOnCanvas(page, { x: 260, y: 130 }, { x: 360, y: 230 }, [], browserName);
     expectedCount += 1;
     await waitForMarkupCount(page, sheetId, expectedCount);
 
     // 3) CLOUD
     await selectMarkupTool(page, "markup_cloud");
-    await dragOnCanvas(page, { x: 120, y: 240 }, { x: 240, y: 320 });
+    await dragOnCanvas(page, { x: 120, y: 240 }, { x: 240, y: 320 }, [], browserName);
     expectedCount += 1;
     await waitForMarkupCount(page, sheetId, expectedCount);
 
     // 4) HIGHLIGHT
     await selectMarkupTool(page, "markup_highlight");
-    await dragOnCanvas(page, { x: 260, y: 250 }, { x: 380, y: 330 });
+    await dragOnCanvas(page, { x: 260, y: 250 }, { x: 380, y: 330 }, [], browserName);
     expectedCount += 1;
     await waitForMarkupCount(page, sheetId, expectedCount);
 
@@ -188,6 +208,7 @@ test.describe("Takeoff markup drawing - Playwright E2E", () => {
       { x: 120, y: 360 },
       { x: 240, y: 360 },
       freehandIntermediate,
+      browserName,
     );
     expectedCount += 1;
     await waitForMarkupCount(page, sheetId, expectedCount);
