@@ -701,14 +701,14 @@ router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "
       grantedById: req.user!.id,
     }]);
 
-    await logCreate(req, "plan_document", newDoc.id, {
+    await logCreate(req.user!.id, "plan_document", newDoc.id, {
       source: "url",
       sourceUrl: url,
       title,
       projectId,
       fileSize: fileBuffer.length,
       mimeType: contentType,
-    });
+    }, req);
 
     res.status(201).json(newDoc);
   } catch (error: any) {
@@ -885,14 +885,14 @@ router.post("/api/documents/from-cloud", requireAuth, requireRole("SUPER_ADMIN",
       grantedById: req.user!.id,
     }]);
 
-    await logCreate(req, "plan_document", newDoc.id, {
+    await logCreate(req.user!.id, "plan_document", newDoc.id, {
       source: provider,
       sourceFileId: fileId,
       title,
       projectId,
       fileSize: fileBuffer.length,
       mimeType: contentType,
-    });
+    }, req);
 
     res.status(201).json(newDoc);
   } catch (error: any) {
