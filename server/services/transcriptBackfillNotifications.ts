@@ -28,6 +28,7 @@ import {
   listCrmTranscriptBackfillAlertDeliveries,
   listOrgAdminsForAlertFailureFallback,
   pruneAlertFallbackSentBefore,
+  pruneBackfillAlertResendCooldownsBefore,
   recordAlertFallbackSent,
   recordCrmTranscriptBackfillAlertDelivery,
   recordCrmTranscriptBackfillThresholdAlert,
@@ -1397,12 +1398,22 @@ export type AlertFailureDigestRunSummary = {
   // `alert_fallback_sent` ledger after the digest run completes, or null
   // if the prune step was skipped or failed.
   prunedBefore: Date | null;
+  // Task #1137 — set to the cutoff date used to prune the persisted
+  // `crm_transcript_backfill_alert_resend_cooldowns` ledger after the
+  // digest run completes, or null if the prune step was skipped or failed.
+  resendCooldownPrunedBefore: Date | null;
 };
 
 // Task #1082 — keep the persisted dedupe ledger from growing forever. The
 // retention window must be comfortably larger than `FAILURE_FALLBACK_DEDUPE_MS`
 // (1 hour) so housekeeping can never accidentally re-enable a deduped alert.
 const ALERT_FALLBACK_SENT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+// Task #1137 — keep the persisted resend cooldown ledger from growing
+// forever. The retention window must be comfortably larger than
+// `RESEND_COOLDOWN_MS` (30 s) so housekeeping can never accidentally
+// release an active reservation.
+const RESEND_COOLDOWN_RETENTION_MS = 24 * 60 * 60 * 1000; // 1 day
 
 /**
  * Runs the digest: fetches the previous `windowHours` of failures, groups
@@ -1493,6 +1504,29 @@ export async function runAlertFailureDigest(
     );
   }
 
+  // Task #1137 — same housekeeping for the persisted resend cooldown
+  // ledger added in Task #1098. Each successful "Resend" click upserts a
+  // row that's normally only cleared on rollback, so without this the
+  // table grows one row per resent alert delivery forever. The cutoff is
+  // comfortably larger than the 30s cooldown window so an active
+  // reservation can never be deleted out from under a concurrent caller.
+  const resendCooldownPruneCutoff = new Date(
+    now.getTime() - RESEND_COOLDOWN_RETENTION_MS,
+  );
+  let resendCooldownPrunedBefore: Date | null = null;
+  try {
+    await pruneBackfillAlertResendCooldownsBefore(resendCooldownPruneCutoff);
+    resendCooldownPrunedBefore = resendCooldownPruneCutoff;
+  } catch (err) {
+    logWarn(
+      "transcriptBackfillNotifications: resend_cooldowns prune failed",
+      {
+        cutoff: resendCooldownPruneCutoff.toISOString(),
+        error: err instanceof Error ? err.message : String(err),
+      },
+    );
+  }
+
   return {
     windowHours,
     orgsWithFailures: aggregates.length,
@@ -1500,6 +1534,7 @@ export async function runAlertFailureDigest(
     emailsSent,
     totalFailures,
     prunedBefore,
+    resendCooldownPrunedBefore,
   };
 }
 

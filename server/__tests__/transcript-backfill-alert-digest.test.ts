@@ -12,6 +12,7 @@ const {
   mockGetSettings,
   mockRecordDelivery,
   mockPruneAlertFallbackSentBefore,
+  mockPruneBackfillAlertResendCooldownsBefore,
 } = vi.hoisted(() => ({
   mockAggregateFailures: vi.fn(),
   mockListOrgAdmins: vi.fn(),
@@ -19,6 +20,9 @@ const {
   mockGetSettings: vi.fn(),
   mockRecordDelivery: vi.fn().mockResolvedValue({}),
   mockPruneAlertFallbackSentBefore: vi.fn().mockResolvedValue(undefined),
+  mockPruneBackfillAlertResendCooldownsBefore: vi
+    .fn()
+    .mockResolvedValue(undefined),
 }));
 
 vi.mock("../storage", () => ({
@@ -27,6 +31,8 @@ vi.mock("../storage", () => ({
   getCrmTranscriptBackfillNotificationSettings: mockGetSettings,
   recordCrmTranscriptBackfillAlertDelivery: mockRecordDelivery,
   pruneAlertFallbackSentBefore: mockPruneAlertFallbackSentBefore,
+  pruneBackfillAlertResendCooldownsBefore:
+    mockPruneBackfillAlertResendCooldownsBefore,
 }));
 vi.mock("../services/slackService", () => ({
   isValidSlackWebhookUrl: () => true,
@@ -181,6 +187,8 @@ describe("runAlertFailureDigest (Task #1065)", () => {
     mockSendEmail.mockResolvedValue(true);
     mockPruneAlertFallbackSentBefore.mockReset();
     mockPruneAlertFallbackSentBefore.mockResolvedValue(undefined);
+    mockPruneBackfillAlertResendCooldownsBefore.mockReset();
+    mockPruneBackfillAlertResendCooldownsBefore.mockResolvedValue(undefined);
   });
 
   it("is a no-op when no orgs had failures in the window", async () => {
@@ -194,6 +202,7 @@ describe("runAlertFailureDigest (Task #1065)", () => {
       emailsSent: 0,
       totalFailures: 0,
       prunedBefore: new Date("2026-04-15T12:00:00.000Z"),
+      resendCooldownPrunedBefore: new Date("2026-04-21T12:00:00.000Z"),
     });
     expect(mockListOrgAdmins).not.toHaveBeenCalled();
     expect(mockSendEmail).not.toHaveBeenCalled();
@@ -291,5 +300,41 @@ describe("runAlertFailureDigest (Task #1065)", () => {
     expect(summary.orgsNotified).toBe(1);
     expect(summary.prunedBefore).toBeNull();
     expect(mockPruneAlertFallbackSentBefore).toHaveBeenCalledTimes(1);
+  });
+
+  // Task #1137 — same housekeeping for the persisted resend cooldown
+  // ledger added in Task #1098. Without a periodic prune the table grows
+  // one row per resent alert delivery forever.
+  it("prunes the resend cooldown ledger to a 1-day cutoff after the digest run", async () => {
+    mockAggregateFailures.mockResolvedValue([baseEntry]);
+    mockListOrgAdmins.mockResolvedValue([adminA]);
+    const fixedNow = new Date("2026-04-22T12:00:00.000Z");
+    const summary = await runAlertFailureDigest({ now: fixedNow });
+    expect(mockPruneBackfillAlertResendCooldownsBefore).toHaveBeenCalledTimes(1);
+    const cutoff = mockPruneBackfillAlertResendCooldownsBefore.mock
+      .calls[0][0] as Date;
+    // Cutoff is exactly 1 day before `now`, comfortably larger than the
+    // 30-second RESEND_COOLDOWN_MS so housekeeping cannot accidentally
+    // release an active reservation.
+    expect(cutoff.toISOString()).toBe("2026-04-21T12:00:00.000Z");
+    const ageMs = fixedNow.getTime() - cutoff.getTime();
+    expect(ageMs).toBeGreaterThan(30_000);
+    expect(summary.resendCooldownPrunedBefore?.toISOString()).toBe(
+      "2026-04-21T12:00:00.000Z",
+    );
+  });
+
+  it("still returns a successful summary when the resend-cooldown prune throws", async () => {
+    mockAggregateFailures.mockResolvedValue([baseEntry]);
+    mockListOrgAdmins.mockResolvedValue([adminA]);
+    mockPruneBackfillAlertResendCooldownsBefore.mockRejectedValue(
+      new Error("db down"),
+    );
+    const summary = await runAlertFailureDigest();
+    expect(summary.orgsNotified).toBe(1);
+    expect(summary.resendCooldownPrunedBefore).toBeNull();
+    // The fallback-sent prune is independent and still runs successfully.
+    expect(summary.prunedBefore).not.toBeNull();
+    expect(mockPruneBackfillAlertResendCooldownsBefore).toHaveBeenCalledTimes(1);
   });
 });

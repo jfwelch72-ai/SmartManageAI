@@ -1939,4 +1939,23 @@ export async function releaseBackfillAlertResendCooldown(
     );
 }
 
+/**
+ * Task #1137 — best-effort housekeeping for the persisted resend cooldown
+ * ledger. Each successful "Resend" click upserts a row; rows are normally
+ * cleared only when an immediate follow-up rolls back the reservation, so
+ * the table would otherwise grow one row per resent alert delivery
+ * forever. Mirrors `pruneAlertFallbackSentBefore`: callers pass a cutoff
+ * comfortably older than the cooldown window so an active reservation can
+ * never be deleted out from under a concurrent reserver.
+ */
+export async function pruneBackfillAlertResendCooldownsBefore(
+  cutoff: Date,
+): Promise<void> {
+  await db
+    .delete(crmTranscriptBackfillAlertResendCooldowns)
+    .where(
+      lte(crmTranscriptBackfillAlertResendCooldowns.lastResendAt, cutoff),
+    );
+}
+
 export const storage = {};
