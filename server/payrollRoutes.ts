@@ -2850,6 +2850,87 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
       }
     }
 
+    // Task #1450: load unacknowledged Davis-Bacon rate-change flags for
+    // every (org, wage decision) pair referenced on this pay run so the
+    // certified payroll review screen can mirror the badge + banner from
+    // the project prevailing wage panel. Keyed by `${projectId}:${normKey}`
+    // so per-row lookups are O(1) regardless of how many projects the
+    // pay run spans.
+    const rateChangeRowMap = new Map<string, { changeKind: string; detectedAt: string | null }>();
+    type CertifiedRateChangeProject = {
+      projectId: string;
+      projectName: string;
+      wageDecision: string;
+      count: number;
+      latestDetectedAt: string | null;
+      classifications: string[];
+    };
+    const rateChangeProjects: CertifiedRateChangeProject[] = [];
+    {
+      // Build the set of classification names actually present per project
+      // on this pay run so the banner aggregate is scoped to "rates that
+      // could have affected this payroll" rather than every unacknowledged
+      // change on the wage decision.
+      const projectClassificationKeys = new Map<string, Set<string>>();
+      for (const item of lineItems) {
+        const className = classNameMap.get(item.lineItem.userId);
+        if (!className) continue;
+        const set = projectClassificationKeys.get(item.projectId) ?? new Set<string>();
+        set.add(normalizeClassificationKey(className));
+        projectClassificationKeys.set(item.projectId, set);
+      }
+
+      const decisionToProjects = new Map<string, string[]>();
+      for (const [projectId, decision] of Array.from(projectDecisionMap.entries())) {
+        const list = decisionToProjects.get(decision) ?? [];
+        list.push(projectId);
+        decisionToProjects.set(decision, list);
+      }
+      for (const [decision, projIds] of Array.from(decisionToProjects.entries())) {
+        let map: Awaited<ReturnType<typeof loadUnacknowledgedRateChanges>>;
+        try {
+          map = await loadUnacknowledgedRateChanges(orgId, decision);
+        } catch (err) {
+          logWarn("Davis-Bacon rate-change flag lookup failed (certified report)", {
+            decision,
+            error: String(err),
+          });
+          continue;
+        }
+        if (map.size === 0) continue;
+        for (const projectId of projIds) {
+          const presentKeys = projectClassificationKeys.get(projectId) ?? new Set<string>();
+          const classifications: string[] = [];
+          let latest: string | null = null;
+          let count = 0;
+          for (const [normKey, change] of Array.from(map.entries())) {
+            // Always populate the row map for any matching classification
+            // on this project so the per-row badge appears even if the
+            // banner aggregate filters it out (defensive — both should
+            // agree given the same `presentKeys` filter below).
+            if (!presentKeys.has(normKey)) continue;
+            rateChangeRowMap.set(`${projectId}:${normKey}`, {
+              changeKind: change.changeKind,
+              detectedAt: change.detectedAt ? change.detectedAt.toISOString() : null,
+            });
+            classifications.push(change.classification);
+            count += 1;
+            const t = change.detectedAt ? change.detectedAt.toISOString() : null;
+            if (t && (!latest || t > latest)) latest = t;
+          }
+          if (count === 0) continue;
+          rateChangeProjects.push({
+            projectId,
+            projectName: projectNameMap.get(projectId) || "",
+            wageDecision: decision,
+            count,
+            latestDetectedAt: latest,
+            classifications,
+          });
+        }
+      }
+    }
+
     // Task #494: any wage decision referenced by a project on this pay run
     // that has not been imported into the cache. Surfaced as a warning so
     // the contractor can run the DOL Davis-Bacon import before submitting.
@@ -2930,6 +3011,12 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
       const totalDeductions = ficaAmount + withholdingTax + otherDeductions;
       const gross = parseFloat(item.lineItem.grossAmount || item.lineItem.totalAmount);
 
+      // Task #1450: per-row "rate changed recently" flag. Lookup is keyed
+      // by `${projectId}:${normalizedClassificationName}` so each project
+      // on the pay run gets its own (potentially different) badge state.
+      const rateChangeKey = `${item.projectId}:${normalizeClassificationKey(classification)}`;
+      const rateChange = rateChangeRowMap.get(rateChangeKey) ?? null;
+
       employeeRows.push({
         name: `${item.firstName} ${item.lastName}`,
         workClassification: classification,
@@ -2948,6 +3035,7 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
         prevailingRate,
         belowPrevailingWage,
         prevailingRateSource,
+        recentRateChange: rateChange,
       });
     }
 
@@ -3009,6 +3097,11 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
       projectReports,
       defaultPayrollFormVariant,
       missingWageDecisions,
+      // Task #1450: aggregate per-project list of unacknowledged
+      // Davis-Bacon rate-change flags so the certified payroll review
+      // panel can show a "rates changed recently" banner with a per-
+      // project Acknowledge action that mirrors ProjectPayrollTab.
+      recentRateChanges: rateChangeProjects,
     });
   } catch (error) {
     next(error);

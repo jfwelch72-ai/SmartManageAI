@@ -8,7 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { FileText, Printer, Download, AlertTriangle, CheckCircle, FileDown, Loader2 } from "lucide-react";
+import { FileText, Printer, Download, AlertTriangle, CheckCircle, FileDown, Loader2, Bell, BellOff } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -42,6 +42,22 @@ interface CertifiedEmployee {
   prevailingRate: number | null;
   belowPrevailingWage: boolean;
   prevailingRateSource?: PrevailingRateSource;
+  // Task #1450: per-row Davis-Bacon "rate changed recently" flag mirrored
+  // from the project prevailing wage panel. Drives the inline badge so a
+  // PM signing the certified payroll sees that one of these workers'
+  // classifications had its DOL rate change since they last reviewed.
+  recentRateChange?: { changeKind: "added" | "changed" | "removed"; detectedAt: string | null } | null;
+}
+
+// Task #1450: aggregate per-project list of unacknowledged Davis-Bacon
+// rate-change flags surfaced by the certified-report endpoint.
+interface CertifiedRecentRateChangeProject {
+  projectId: string;
+  projectName: string;
+  wageDecision: string;
+  count: number;
+  latestDetectedAt: string | null;
+  classifications: string[];
 }
 
 interface MissingWageDecision {
@@ -85,6 +101,7 @@ interface CertifiedReport {
   projectReports?: ProjectReport[];
   defaultPayrollFormVariant?: string | null;
   missingWageDecisions?: MissingWageDecision[];
+  recentRateChanges?: CertifiedRecentRateChangeProject[];
 }
 
 const sourceLabel = (s?: PrevailingRateSource): string | null => {
@@ -174,7 +191,29 @@ function WH347Table({ employees, totals, header }: { employees: CertifiedEmploye
                     {emp.belowPrevailingWage && <AlertTriangle className="w-3 h-3 text-red-600" />}
                   </div>
                 </TableCell>
-                <TableCell className="text-sm">{emp.workClassification}</TableCell>
+                <TableCell className="text-sm">
+                  <div className="flex items-center gap-2">
+                    <span>{emp.workClassification}</span>
+                    {/* Task #1450: per-row "rate changed recently" badge
+                        mirroring the project prevailing wage panel so PMs
+                        signing the certified payroll see classifications
+                        whose Davis-Bacon rate just shifted. */}
+                    {emp.recentRateChange && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-300"
+                        data-testid={`badge-rate-changed-${i}`}
+                        title={
+                          emp.recentRateChange.detectedAt
+                            ? `Rate ${emp.recentRateChange.changeKind} on ${new Date(emp.recentRateChange.detectedAt).toLocaleString()}`
+                            : `Rate ${emp.recentRateChange.changeKind} on most recent refresh`
+                        }
+                      >
+                        Rate changed recently
+                      </Badge>
+                    )}
+                  </div>
+                </TableCell>
                 <TableCell>{emp.regularHours.toFixed(1)}</TableCell>
                 <TableCell>{emp.overtimeHours > 0 ? emp.overtimeHours.toFixed(1) : "—"}</TableCell>
                 <TableCell className="font-medium">{emp.totalHours.toFixed(1)}</TableCell>
@@ -328,6 +367,44 @@ export default function CertifiedPayrollReportView({ payRunId, payRunNumber }: {
     },
   });
   const pendingDecision = importDecisionMutation.isPending ? importDecisionMutation.variables : null;
+
+  // Task #1450: clear unacknowledged Davis-Bacon "rate changed recently"
+  // flags for one of the projects on this pay run. Mirrors the
+  // ProjectPayrollTab acknowledge action so signing the certified
+  // payroll can dismiss the badges in one click per project.
+  const acknowledgeRateChangesMutation = useMutation({
+    mutationFn: async (projectId: string) => {
+      const resp = await apiRequest(
+        "POST",
+        `/api/projects/${projectId}/prevailing-wage-summary/acknowledge-rate-changes`,
+        {},
+      );
+      return (await resp.json()) as { acknowledged: number };
+    },
+    onSuccess: (data, projectId) => {
+      if (data.acknowledged > 0) {
+        toast({
+          title: "Rate change badges cleared",
+          description: `Acknowledged ${data.acknowledged} classification${data.acknowledged === 1 ? "" : "s"}.`,
+        });
+      }
+      queryClient.invalidateQueries({
+        queryKey: ["/api/payroll/pay-runs", payRunId, "certified-report"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/projects", projectId, "prevailing-wage-summary"],
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: "Failed to acknowledge rate changes",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    },
+  });
+  const pendingAckProjectId =
+    acknowledgeRateChangesMutation.isPending ? acknowledgeRateChangesMutation.variables : null;
 
   useEffect(() => {
     if (!variant && report?.defaultPayrollFormVariant) {
@@ -551,6 +628,78 @@ export default function CertifiedPayrollReportView({ payRunId, payRunNumber }: {
               Davis-Bacon syncs are queued automatically when a project's wage decision is set or
               edited; use Import now to retry after a connection issue.
             </p>
+          </div>
+        </div>
+      )}
+
+      {/* Task #1450: panel-level "rates changed recently" banner mirroring
+          the project prevailing wage panel. One row per project on the
+          pay run that still has unacknowledged Davis-Bacon rate-change
+          flags, each with its own Acknowledge action. */}
+      {report.recentRateChanges && report.recentRateChanges.length > 0 && (
+        <div
+          className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg"
+          data-testid="banner-certified-rates-changed"
+        >
+          <Bell className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 text-sm text-blue-800 dark:text-blue-200">
+            <p className="font-medium">Davis-Bacon rates changed recently</p>
+            <p className="mt-1">
+              The latest auto-refresh updated rates for one or more
+              classifications on this pay run. Review the highlighted lines
+              before signing this certified payroll.
+            </p>
+            <ul className="mt-2 space-y-2">
+              {report.recentRateChanges.map((p) => {
+                const detected = p.latestDetectedAt
+                  ? new Date(p.latestDetectedAt).toLocaleDateString()
+                  : null;
+                const isPending = pendingAckProjectId === p.projectId;
+                return (
+                  <li
+                    key={p.projectId}
+                    className="flex flex-wrap items-center gap-2"
+                    data-testid={`row-recent-rate-change-${p.projectId}`}
+                  >
+                    <span
+                      className="flex-1 min-w-[200px]"
+                      data-testid={`text-recent-rate-change-summary-${p.projectId}`}
+                    >
+                      {p.projectName ? `${p.projectName}: ` : ""}
+                      <span className="font-medium">
+                        {p.count} classification{p.count === 1 ? "" : "s"}
+                      </span>
+                      {" on "}
+                      <span className="font-mono">{p.wageDecision}</span>
+                      {detected ? <> (detected {detected})</> : null}
+                    </span>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-7 px-2 text-xs"
+                      // Disable every Acknowledge button while any project's
+                      // mutation is in flight so a PM can't kick off two
+                      // overlapping POSTs (and so the disabled state is
+                      // consistent across the banner).
+                      disabled={acknowledgeRateChangesMutation.isPending}
+                      onClick={() => acknowledgeRateChangesMutation.mutate(p.projectId)}
+                      data-testid={`button-acknowledge-rate-changes-${p.projectId}`}
+                    >
+                      {isPending ? (
+                        <>
+                          <Loader2 className="w-3 h-3 mr-1 animate-spin" /> Acknowledging…
+                        </>
+                      ) : (
+                        <>
+                          <BellOff className="w-3 h-3 mr-1" /> Acknowledge
+                        </>
+                      )}
+                    </Button>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
         </div>
       )}
