@@ -1,6 +1,5 @@
 import { useState, useMemo, useCallback, useRef } from "react";
-import * as XLSX from "xlsx";
-import Papa from "papaparse";
+import { parseFile, type ParsedRow } from "@/lib/bidTabParser";
 import {
   Dialog,
   DialogContent,
@@ -48,14 +47,6 @@ interface BidTabImportDialogProps {
   defaultCategory?: string;
 }
 
-interface ParsedRow {
-  rowIndex: number;
-  description: string;
-  quantity: number;
-  unit: string;
-  payItemNumberHint?: string | null;
-}
-
 interface MatchSuggestion {
   payItem: {
     id: string;
@@ -97,35 +88,6 @@ const ESTIMATE_CATEGORIES = [
   "METALS", "FINISHES",
 ];
 
-const COLUMN_ALIASES: Record<string, string> = {
-  description: "description",
-  desc: "description",
-  item: "description",
-  "item description": "description",
-  "pay item description": "description",
-  "work description": "description",
-  quantity: "quantity",
-  qty: "quantity",
-  "estimated quantity": "quantity",
-  unit: "unit",
-  uom: "unit",
-  "unit of measure": "unit",
-  "pay item": "payItemNumber",
-  "item number": "payItemNumber",
-  "item no": "payItemNumber",
-  "item #": "payItemNumber",
-};
-
-function detectColumns(headers: string[]): Record<string, number> {
-  const map: Record<string, number> = {};
-  headers.forEach((h, idx) => {
-    const norm = (h ?? "").toString().trim().toLowerCase();
-    const key = COLUMN_ALIASES[norm];
-    if (key && map[key] === undefined) map[key] = idx;
-  });
-  return map;
-}
-
 function normalizeCategory(raw: string | null | undefined, fallback: string): string {
   if (!raw) return fallback;
   const upper = raw.toUpperCase().replace(/[^A-Z]+/g, "_");
@@ -135,81 +97,6 @@ function normalizeCategory(raw: string | null | undefined, fallback: string): st
     if (upper.includes(cat)) return cat;
   }
   return fallback;
-}
-
-async function parseFile(file: File): Promise<ParsedRow[]> {
-  const isCsv =
-    file.name.toLowerCase().endsWith(".csv") ||
-    file.type === "text/csv" ||
-    file.type === "application/csv";
-
-  let rows: any[][] = [];
-
-  if (isCsv) {
-    const text = await file.text();
-    const result = Papa.parse<string[]>(text, { skipEmptyLines: true });
-    rows = result.data as string[][];
-  } else {
-    const buf = await file.arrayBuffer();
-    const wb = XLSX.read(buf, { type: "array" });
-    const sheetName = wb.SheetNames[0];
-    if (!sheetName) return [];
-    const ws = wb.Sheets[sheetName];
-    rows = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1, defval: "" });
-  }
-
-  if (rows.length === 0) return [];
-
-  // Find the header row — first row (within the first 10) that has a recognizable column
-  let headerRowIdx: number | null = null;
-  for (let i = 0; i < Math.min(rows.length, 10); i++) {
-    const headers = (rows[i] ?? []).map((c) =>
-      (c ?? "").toString().trim().toLowerCase(),
-    );
-    if (headers.some((h) => COLUMN_ALIASES[h] === "description")) {
-      headerRowIdx = i;
-      break;
-    }
-  }
-  const headers =
-    headerRowIdx !== null
-      ? (rows[headerRowIdx] ?? []).map((c) => (c ?? "").toString())
-      : [];
-  const cols = detectColumns(headers);
-
-  if (headerRowIdx === null) {
-    // No header detected — assume first column is description, parse from row 0
-    cols.description = 0;
-    const widestRow = rows.reduce(
-      (max, r) => Math.max(max, (r ?? []).length),
-      0,
-    );
-    if (cols.quantity === undefined && widestRow > 1) cols.quantity = 1;
-    if (cols.unit === undefined && widestRow > 2) cols.unit = 2;
-  }
-
-  const startRow = headerRowIdx === null ? 0 : headerRowIdx + 1;
-  const out: ParsedRow[] = [];
-  for (let i = startRow; i < rows.length; i++) {
-    const row = rows[i] ?? [];
-    const description = (row[cols.description] ?? "").toString().trim();
-    if (!description) continue;
-    const qtyRaw = cols.quantity !== undefined ? (row[cols.quantity] ?? "") : "";
-    const qty = parseFloat(qtyRaw.toString().replace(/,/g, ""));
-    const unit = cols.unit !== undefined ? (row[cols.unit] ?? "").toString().trim() : "";
-    const payItemHint =
-      cols.payItemNumber !== undefined
-        ? (row[cols.payItemNumber] ?? "").toString().trim()
-        : "";
-    out.push({
-      rowIndex: out.length,
-      description,
-      quantity: Number.isFinite(qty) && qty > 0 ? qty : 1,
-      unit,
-      payItemNumberHint: payItemHint || null,
-    });
-  }
-  return out;
 }
 
 async function runMatcher(row: ParsedRow): Promise<MatchSuggestion[]> {
