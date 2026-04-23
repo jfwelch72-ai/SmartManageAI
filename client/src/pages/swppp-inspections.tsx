@@ -27,6 +27,7 @@ export default function SwpppInspectionsPage() {
   const canView = useFeaturePermission("canViewSwppp");
   const canAccess = canView || canManage;
   const [projectId, setProjectId] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"ALL" | "OPEN" | "OVERDUE" | "RESOLVED">("ALL");
   const [editing, setEditing] = useState<Editing>(null);
   const [deleteTarget, setDeleteTarget] = useState<SwpppInspection | null>(null);
   const queryKey = ["/api/swppp-inspections", projectId ? { projectId } : {}];
@@ -86,6 +87,28 @@ export default function SwpppInspectionsPage() {
   const hasCorrective = (s: SwpppInspection): boolean =>
     Boolean((s.deficienciesFound && s.deficienciesFound.trim()) || (s.correctiveActions && s.correctiveActions.trim()));
 
+  const statusOf = (s: SwpppInspection): "OPEN" | "OVERDUE" | "RESOLVED" | "NONE" => {
+    if (!hasCorrective(s)) return "NONE";
+    if (s.status === "RESOLVED") return "RESOLVED";
+    return isOverdue(s) ? "OVERDUE" : "OPEN";
+  };
+
+  const counts = data.reduce(
+    (acc, s) => {
+      const st = statusOf(s);
+      if (st === "OPEN") acc.open += 1;
+      else if (st === "OVERDUE") acc.overdue += 1;
+      else if (st === "RESOLVED") acc.resolved += 1;
+      return acc;
+    },
+    { open: 0, overdue: 0, resolved: 0 },
+  );
+
+  const filtered = data.filter((s) => {
+    if (statusFilter === "ALL") return true;
+    return statusOf(s) === statusFilter;
+  });
+
   return (
     <div className="container mx-auto p-4 sm:p-6 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -96,18 +119,47 @@ export default function SwpppInspectionsPage() {
         {canManage && (<Button onClick={() => setEditing("new")} data-testid="button-new-swppp"><Plus className="h-4 w-4 mr-2" />New Inspection</Button>)}
       </div>
 
-      <div className="max-w-md">
-        <Label className="text-xs text-muted-foreground">Filter by project</Label>
-        <ProjectSelect value={projectId} onChange={setProjectId} testId="select-swppp-project-filter" placeholder="All projects" />
+      <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+        <div className="flex-1 max-w-md">
+          <Label className="text-xs text-muted-foreground">Filter by project</Label>
+          <ProjectSelect value={projectId} onChange={setProjectId} testId="select-swppp-project-filter" placeholder="All projects" />
+        </div>
+        <div className="w-full sm:w-48">
+          <Label className="text-xs text-muted-foreground">Status</Label>
+          <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v as typeof statusFilter)}>
+            <SelectTrigger data-testid="select-swppp-status-filter"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">All</SelectItem>
+              <SelectItem value="OPEN">Open</SelectItem>
+              <SelectItem value="OVERDUE">Overdue</SelectItem>
+              <SelectItem value="RESOLVED">Resolved</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
+
+      {!isLoading && (counts.open > 0 || counts.overdue > 0 || counts.resolved > 0) && (
+        <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="summary-swppp-counts">
+          <span className="text-muted-foreground">Corrective actions:</span>
+          <Badge variant={counts.open > 0 ? "secondary" : "outline"} data-testid="count-swppp-open">{counts.open} open</Badge>
+          <Badge variant={counts.overdue > 0 ? "destructive" : "outline"} data-testid="count-swppp-overdue">
+            {counts.overdue > 0 && <AlertTriangle className="h-3 w-3 mr-1" />}{counts.overdue} overdue
+          </Badge>
+          <Badge variant="outline" data-testid="count-swppp-resolved">
+            <CheckCircle2 className="h-3 w-3 mr-1" />{counts.resolved} resolved
+          </Badge>
+        </div>
+      )}
 
       {isLoading ? (
         <div className="flex items-center justify-center py-12 text-muted-foreground"><Loader2 className="animate-spin h-5 w-5 mr-2" />Loading…</div>
       ) : data.length === 0 ? (
         <EmptyState icon={Droplets} title="No SWPPP inspections" description="Log a routine or post-rain inspection to maintain your storm-water compliance record." testId="empty-swppp" />
+      ) : filtered.length === 0 ? (
+        <EmptyState icon={Droplets} title="No matching inspections" description="No inspections match the selected status. Try changing the filter." testId="empty-swppp-filter" />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {data.map((s) => {
+          {filtered.map((s) => {
             const overdue = isOverdue(s);
             const resolved = s.status === "RESOLVED";
             const showCorrectiveControls = canManage && hasCorrective(s);
