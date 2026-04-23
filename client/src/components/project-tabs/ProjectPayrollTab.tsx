@@ -11,7 +11,68 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, FileText, RefreshCw, Plus, Loader2 } from "lucide-react";
+import { AlertTriangle, FileText, RefreshCw, Plus, Loader2, Sparkles } from "lucide-react";
+
+// Task #1398: lightweight fuzzy match used to surface near-duplicate
+// classifications when promoting a DOL feed row. Realistic typos like
+// "Carpenter (Form Carpenter)" vs "Carpenter" should pre-select the
+// existing classification instead of silently defaulting to "Create new".
+function normalizeClassificationName(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const prev = new Array<number>(b.length + 1);
+  const curr = new Array<number>(b.length + 1);
+  for (let j = 0; j <= b.length; j++) prev[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    for (let j = 0; j <= b.length; j++) prev[j] = curr[j];
+  }
+  return prev[b.length];
+}
+
+function classificationSimilarity(a: string, b: string): number {
+  const A = normalizeClassificationName(a);
+  const B = normalizeClassificationName(b);
+  if (!A || !B) return 0;
+  if (A === B) return 1;
+  // Substring containment is a strong signal: e.g. "carpenter" inside
+  // "carpenter form carpenter" should pre-select the existing carpenter row.
+  if (A.includes(B) || B.includes(A)) {
+    const minLen = Math.min(A.length, B.length);
+    const maxLen = Math.max(A.length, B.length);
+    return 0.7 + 0.3 * (minLen / maxLen);
+  }
+  const dist = levenshteinDistance(A, B);
+  return 1 - dist / Math.max(A.length, B.length);
+}
+
+// Threshold above which we treat the candidate as a near-match worth
+// pre-selecting. 0.7 keeps obvious typos in scope while requiring the
+// user to opt in for genuinely new classifications.
+const FUZZY_MATCH_THRESHOLD = 0.7;
+
+function findBestClassificationMatch(
+  feedName: string,
+  candidates: ReadonlyArray<{ id: string; name: string }>,
+): { id: string; name: string; score: number } | null {
+  let best: { id: string; name: string; score: number } | null = null;
+  for (const c of candidates) {
+    const score = classificationSimilarity(feedName, c.name);
+    if (score >= FUZZY_MATCH_THRESHOLD && (!best || score > best.score)) {
+      best = { id: c.id, name: c.name, score };
+    }
+  }
+  return best;
+}
 
 interface OrgJobClassification {
   id: string;
@@ -144,6 +205,12 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
   // DOL feed name". Anything else is a real job_classifications.id.
   const CREATE_NEW_SENTINEL = "__create_new__";
   const [ovMappingChoice, setOvMappingChoice] = useState<string>("");
+  // Task #1398: id of the org classification flagged as a near-match to the
+  // current DOL feed name. Drives the "Looks similar to an existing
+  // classification" badge in the dropdown so users notice the auto pick
+  // instead of blindly accepting "Create new".
+  const [ovSuggestedMatchId, setOvSuggestedMatchId] = useState<string>("");
+  const [ovSuggestedMatchName, setOvSuggestedMatchName] = useState<string>("");
 
   // Task #1382: confirmation step before auto-creating a brand-new job
   // classification from a DOL feed override. Task #1396 merged the choice
@@ -238,9 +305,53 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
     // the DOL feed row is already mapped to an existing org row; otherwise
     // default to "Create new" so the user sees what will happen by default.
     const isSynthetic = c.classificationId.startsWith("dol-feed:");
-    setOvMappingChoice(isSynthetic ? CREATE_NEW_SENTINEL : c.classificationId);
+    // Task #1398: when the row is a synthetic DOL feed entry, look for a
+    // near-match in the existing org classifications so we can pre-select
+    // it (and visually flag it) instead of dropping the user on
+    // "Create new". Below-threshold names still default to "Create new".
+    let suggestedId = "";
+    let suggestedName = "";
+    if (isSynthetic) {
+      const feedName = c.dolFeedName ?? c.classificationName;
+      const match = findBestClassificationMatch(feedName, orgClassifications);
+      if (match) {
+        suggestedId = match.id;
+        suggestedName = match.name;
+      }
+    }
+    setOvSuggestedMatchId(suggestedId);
+    setOvSuggestedMatchName(suggestedName);
+    setOvMappingChoice(
+      isSynthetic
+        ? (suggestedId || CREATE_NEW_SENTINEL)
+        : c.classificationId,
+    );
     setOverrideOpen(true);
   };
+
+  // Task #1398: orgClassifications is loaded asynchronously, so the user
+  // may open the override dialog before the list has arrived (or while a
+  // refetch is in flight). When the list later resolves, recompute the
+  // near-match suggestion so the dialog still pre-selects the right
+  // existing classification instead of stranding the user on
+  // "Create new".
+  useEffect(() => {
+    if (!overrideOpen || !overrideRow) return;
+    if (!overrideRow.classificationId.startsWith("dol-feed:")) return;
+    const feedName = overrideRow.dolFeedName ?? overrideRow.classificationName;
+    const match = findBestClassificationMatch(feedName, orgClassifications);
+    const nextId = match?.id ?? "";
+    const nextName = match?.name ?? "";
+    if (nextId !== ovSuggestedMatchId) setOvSuggestedMatchId(nextId);
+    if (nextName !== ovSuggestedMatchName) setOvSuggestedMatchName(nextName);
+    // Only auto-promote the suggestion if the user has not yet picked an
+    // existing classification — i.e. they are still sitting on the
+    // default "Create new" sentinel. Don't override an explicit choice.
+    if (nextId && ovMappingChoice === CREATE_NEW_SENTINEL) {
+      setOvMappingChoice(nextId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [overrideOpen, overrideRow, orgClassifications]);
 
   if (isLoading) {
     return (
@@ -598,7 +709,17 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
                       value={c.id}
                       data-testid={`option-override-mapping-${c.id}`}
                     >
-                      {c.name}
+                      <span className="inline-flex items-center gap-2">
+                        {c.name}
+                        {c.id === ovSuggestedMatchId ? (
+                          <span
+                            className="inline-flex items-center gap-1 rounded-sm bg-amber-100 dark:bg-amber-900/40 text-amber-900 dark:text-amber-100 px-1.5 py-0.5 text-[10px] font-medium"
+                            data-testid={`badge-override-mapping-similar-${c.id}`}
+                          >
+                            <Sparkles className="w-3 h-3" /> Looks similar
+                          </span>
+                        ) : null}
+                      </span>
                     </SelectItem>
                   ))}
                   <SelectItem
@@ -609,6 +730,19 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
                   </SelectItem>
                 </SelectContent>
               </Select>
+              {ovSuggestedMatchId ? (
+                <p
+                  className="text-xs text-amber-700 dark:text-amber-300 flex items-start gap-1"
+                  data-testid="text-override-mapping-similar"
+                >
+                  <Sparkles className="w-3 h-3 mt-0.5 shrink-0" />
+                  <span>
+                    Looks similar to an existing classification:{" "}
+                    <span className="font-medium">{ovSuggestedMatchName}</span>. Pre-selected to
+                    prevent accidental duplicates.
+                  </span>
+                </p>
+              ) : null}
               <p className="text-xs text-muted-foreground" data-testid="text-override-mapping-hint">
                 {ovMappingChoice === CREATE_NEW_SENTINEL ? (
                   <>
