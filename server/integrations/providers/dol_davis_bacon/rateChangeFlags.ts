@@ -15,7 +15,7 @@
 import { db } from "../../../db";
 import { wageDecisionRateChanges } from "@shared/schema";
 import type { WageDecisionRateChange } from "@shared/schema";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { WageRateDiffEntry } from "../../../services/davisBaconAdminNotifications";
 
 /**
@@ -156,6 +156,45 @@ export async function loadUnacknowledgedRateChanges(
         eq(wageDecisionRateChanges.organizationId, organizationId),
         eq(wageDecisionRateChanges.decisionNumber, decision),
         isNull(wageDecisionRateChanges.acknowledgedAt),
+      ),
+    );
+  for (const r of rows) {
+    out.set(normalizeClassificationKey(r.classification), r);
+  }
+  return out;
+}
+
+/**
+ * Task #1451 — load the most recent *acknowledged* rate-change record per
+ * classification for a given (org, decision) pair. Returns a Map keyed by
+ * normalized classification name so the project prevailing-wage summary
+ * endpoint can surface "Acknowledged by X on Y" audit metadata next to
+ * each row whose previous flag was cleared via PM acknowledgement.
+ *
+ * Because (organizationId, decisionNumber, classification) is unique,
+ * there is at most one record per classification. A subsequent stale-
+ * refresh that re-detects a change for the same classification overwrites
+ * `acknowledgedAt`/`acknowledgedByUserId` back to NULL via the upsert in
+ * `persistRateChangeRecords`, so any row returned here is genuinely the
+ * latest acknowledgement (no stale audit info after a re-arm). Auto-
+ * cleared flags (no-diff refresh) are deleted entirely, so they will
+ * not appear here either.
+ */
+export async function loadAcknowledgedRateChanges(
+  organizationId: string,
+  decisionNumber: string,
+): Promise<Map<string, WageDecisionRateChange>> {
+  const decision = decisionNumber.trim();
+  const out = new Map<string, WageDecisionRateChange>();
+  if (!decision) return out;
+  const rows = await db
+    .select()
+    .from(wageDecisionRateChanges)
+    .where(
+      and(
+        eq(wageDecisionRateChanges.organizationId, organizationId),
+        eq(wageDecisionRateChanges.decisionNumber, decision),
+        isNotNull(wageDecisionRateChanges.acknowledgedAt),
       ),
     );
   for (const r of rows) {

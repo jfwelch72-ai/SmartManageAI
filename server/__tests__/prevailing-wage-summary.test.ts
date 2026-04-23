@@ -709,6 +709,135 @@ describe("GET /api/projects/:id/prevailing-wage-summary — source labeling", ()
   });
 });
 
+describe("GET /api/projects/:id/prevailing-wage-summary — acknowledged rate-change audit (Task #1451)", () => {
+  beforeEach(async () => {
+    await db.execute(sql`DELETE FROM "wage_decision_rate_changes" WHERE organization_id = ${fx.orgId}`);
+    // Project B is wired with WD-B + Carpenter-B/Electrician-B time
+    // entries, so its summary will resolve both classifications via DOL_FEED.
+    lookupCachedWageRateMock.mockImplementation(
+      async (_orgId: string, decision: string, classification: string) => {
+        if (decision !== "WD-B") return null;
+        if (classification.includes("Carpenter-B")) {
+          return { classification, baseRate: 41, fringeRate: 7, totalRate: 48 };
+        }
+        if (classification.includes("Electrician-B")) {
+          return { classification, baseRate: 65, fringeRate: 9, totalRate: 74 };
+        }
+        return null;
+      },
+    );
+    isWageDeterminationCachedMock.mockResolvedValue(true);
+  });
+
+  it("returns lastAcknowledgedRateChange with acknowledger name only for rows the PM acknowledged", async () => {
+    const { persistRateChangeRecords, acknowledgeRateChanges } = await import(
+      "../integrations/providers/dol_davis_bacon/rateChangeFlags"
+    );
+    // Seed two rate-change flags for WD-B (Carpenter-B + Electrician-B),
+    // then PM-acknowledge only Carpenter-B. The endpoint should return
+    // lastAcknowledgedRateChange populated for Carpenter-B and null for
+    // Electrician-B (still flagged, never acknowledged).
+    await persistRateChangeRecords(fx.orgId, "WD-B", [
+      {
+        kind: "changed",
+        classification: TEST_PREFIX + "Carpenter-B",
+        oldBaseRate: 40,
+        newBaseRate: 41,
+        oldFringeRate: 7,
+        newFringeRate: 7,
+        oldTotalRate: 47,
+        newTotalRate: 48,
+      } as any,
+      {
+        kind: "changed",
+        classification: TEST_PREFIX + "Electrician-B",
+        oldBaseRate: 64,
+        newBaseRate: 65,
+        oldFringeRate: 9,
+        newFringeRate: 9,
+        oldTotalRate: 73,
+        newTotalRate: 74,
+      } as any,
+    ]);
+    await acknowledgeRateChanges({
+      organizationId: fx.orgId,
+      decisionNumber: "WD-B",
+      userId: fx.adminId,
+      classifications: [TEST_PREFIX + "Carpenter-B"],
+    });
+
+    const res = await request(app).get(
+      `/api/projects/${fx.projects.B}/prevailing-wage-summary`,
+    );
+    expect(res.status).toBe(200);
+    const classifications = res.body.classifications as Array<{
+      classificationName: string;
+      recentRateChange: unknown;
+      lastAcknowledgedRateChange: {
+        acknowledgedAt: string | null;
+        acknowledgedByUserId: string | null;
+        acknowledgedByName: string | null;
+      } | null;
+    }>;
+    const carp = classifications.find((c) => c.classificationName === TEST_PREFIX + "Carpenter-B");
+    const elec = classifications.find((c) => c.classificationName === TEST_PREFIX + "Electrician-B");
+
+    expect(carp?.lastAcknowledgedRateChange).toBeTruthy();
+    expect(carp?.lastAcknowledgedRateChange?.acknowledgedByUserId).toBe(fx.adminId);
+    // Seeded admin is firstName='Admin', lastName='main'.
+    expect(carp?.lastAcknowledgedRateChange?.acknowledgedByName).toBe("Admin main");
+    expect(carp?.lastAcknowledgedRateChange?.acknowledgedAt).toBeTruthy();
+    // Acknowledged rows clear the per-row badge (loadUnacknowledged...
+    // skips acknowledged rows), so the recentRateChange field is null.
+    expect(carp?.recentRateChange).toBeNull();
+
+    // Electrician-B was never acknowledged, so no audit metadata.
+    expect(elec?.lastAcknowledgedRateChange).toBeNull();
+    expect(elec?.recentRateChange).toBeTruthy();
+  });
+
+  it("does not surface a stale acknowledger after a no-diff auto-clear refresh", async () => {
+    const { persistRateChangeRecords, acknowledgeRateChanges } = await import(
+      "../integrations/providers/dol_davis_bacon/rateChangeFlags"
+    );
+    await persistRateChangeRecords(fx.orgId, "WD-B", [
+      {
+        kind: "changed",
+        classification: TEST_PREFIX + "Carpenter-B",
+        oldBaseRate: 40,
+        newBaseRate: 41,
+        oldFringeRate: 7,
+        newFringeRate: 7,
+        oldTotalRate: 47,
+        newTotalRate: 48,
+      } as any,
+    ]);
+    await acknowledgeRateChanges({
+      organizationId: fx.orgId,
+      decisionNumber: "WD-B",
+      userId: fx.adminId,
+    });
+    // Subsequent no-diff refresh deletes every flag for the (org,
+    // decision) pair — auto-cleared, never PM-acknowledged this time.
+    await persistRateChangeRecords(fx.orgId, "WD-B", []);
+
+    const res = await request(app).get(
+      `/api/projects/${fx.projects.B}/prevailing-wage-summary`,
+    );
+    expect(res.status).toBe(200);
+    const classifications = res.body.classifications as Array<{
+      classificationName: string;
+      recentRateChange: unknown;
+      lastAcknowledgedRateChange: unknown;
+    }>;
+    for (const c of classifications) {
+      expect(c.recentRateChange).toBeNull();
+      // No acknowledgement record exists, so the audit line must be hidden.
+      expect(c.lastAcknowledgedRateChange).toBeNull();
+    }
+  });
+});
+
 describe("GET /api/projects/:id/prevailing-wage-summary — access control", () => {
   it("rejects requests for a project that belongs to a different organization with 404", async () => {
     testUser = {

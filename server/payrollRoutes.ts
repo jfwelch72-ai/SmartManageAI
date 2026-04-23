@@ -316,7 +316,7 @@ import { db } from "./db";
 import { eventBus } from "./events";
 import { exportLimiter } from "./rateLimiter";
 import { lookupCachedWageRate, lookupCachedRateByLocale, isWageDeterminationCached, listCachedDecisionClassifications, queueWageDecisionSync, getWageDecisionSyncStatus } from "./integrations/providers/dol_davis_bacon/sync";
-import { loadUnacknowledgedRateChanges, acknowledgeRateChanges, normalizeClassificationKey } from "./integrations/providers/dol_davis_bacon/rateChangeFlags";
+import { loadUnacknowledgedRateChanges, loadAcknowledgedRateChanges, acknowledgeRateChanges, normalizeClassificationKey } from "./integrations/providers/dol_davis_bacon/rateChangeFlags";
 import { notifyOrgAdminsOfWageDecisionSyncFailure } from "./services/davisBaconAdminNotifications";
 import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts, overtimeRules, costLedgerPostings, certifiedPayrollReports, auditLog, dolClassificationMappings } from "@shared/schema";
 import { eq, and, gte, lte, sql, desc, inArray, count, asc, isNull, or } from "drizzle-orm";
@@ -1741,6 +1741,10 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
     // populated by the Davis-Bacon stale-refresh sweep. Empty when no
     // wage decision is set or when no unacknowledged changes remain.
     let rateChangeMap: Awaited<ReturnType<typeof loadUnacknowledgedRateChanges>> = new Map();
+    // Task #1451: most recent acknowledged rate-change record per
+    // classification, used to render "Acknowledged by X on Y" audit
+    // metadata next to rows whose flag was cleared via PM acknowledgement.
+    let acknowledgedRateChangeMap: Awaited<ReturnType<typeof loadAcknowledgedRateChanges>> = new Map();
     if (projectWageDecision) {
       try {
         wageDecisionCached = await isWageDeterminationCached(orgId, projectWageDecision);
@@ -1785,6 +1789,38 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
           error: String(err),
         });
       }
+      // Task #1451: load acknowledged rate-change records so the panel
+      // can show audit metadata ("Acknowledged by X on Y") under each
+      // row whose flag was cleared via PM acknowledgement.
+      try {
+        acknowledgedRateChangeMap = await loadAcknowledgedRateChanges(orgId, projectWageDecision);
+      } catch (err) {
+        logWarn("Davis-Bacon acknowledged rate-change lookup failed (project PW summary)", {
+          decision: projectWageDecision,
+          error: String(err),
+        });
+      }
+    }
+
+    // Task #1451: resolve acknowledger user ids -> display names in one
+    // batch so we don't N+1 the users table per classification.
+    const acknowledgerUserIds = Array.from(
+      new Set(
+        Array.from(acknowledgedRateChangeMap.values())
+          .map((r) => r.acknowledgedByUserId)
+          .filter((id): id is string => typeof id === "string" && id.length > 0),
+      ),
+    );
+    const acknowledgerNamesById = new Map<string, string>();
+    if (acknowledgerUserIds.length > 0) {
+      const rows = await db
+        .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
+        .from(users)
+        .where(inArray(users.id, acknowledgerUserIds));
+      for (const r of rows) {
+        const name = `${r.firstName ?? ""} ${r.lastName ?? ""}`.trim() || r.email || r.id;
+        acknowledgerNamesById.set(r.id, name);
+      }
     }
 
     // Task #1409: enrich each classification with its rate-change record
@@ -1797,7 +1833,22 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
     const classificationsWithChanges = classifications.map((c) => {
       const lookupKey = normalizeClassificationKey(c.dolFeedName ?? c.classificationName);
       const change = rateChangeMap.get(lookupKey);
-      if (!change) return { ...c, recentRateChange: null };
+      const ack = acknowledgedRateChangeMap.get(lookupKey);
+      // Task #1451: surface the latest acknowledgement (if any). When a
+      // row is currently re-armed (unacknowledged change present), the
+      // upsert in persistRateChangeRecords nulled out acknowledgedAt, so
+      // `ack` will be undefined and we will not show stale audit info.
+      const lastAcknowledgedRateChange = ack
+        ? {
+            acknowledgedAt: ack.acknowledgedAt ? ack.acknowledgedAt.toISOString() : null,
+            acknowledgedByUserId: ack.acknowledgedByUserId ?? null,
+            acknowledgedByName:
+              ack.acknowledgedByUserId && acknowledgerNamesById.has(ack.acknowledgedByUserId)
+                ? acknowledgerNamesById.get(ack.acknowledgedByUserId)!
+                : null,
+          }
+        : null;
+      if (!change) return { ...c, recentRateChange: null, lastAcknowledgedRateChange };
       return {
         ...c,
         recentRateChange: {
@@ -1810,6 +1861,7 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
           newTotalRate: change.newTotalRate != null ? parseFloat(change.newTotalRate) : null,
           detectedAt: change.detectedAt ? change.detectedAt.toISOString() : null,
         },
+        lastAcknowledgedRateChange,
       };
     });
 

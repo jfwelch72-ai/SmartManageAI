@@ -106,6 +106,16 @@ interface PrevailingWageRecentChange {
   detectedAt: string | null;
 }
 
+// Task #1451: most-recent acknowledgement audit metadata for a
+// classification whose rate-change flag was cleared via PM Acknowledge
+// (rather than via auto-clear). `null` when no acknowledgement record
+// exists for this classification on the project's wage decision.
+interface PrevailingWageLastAcknowledgement {
+  acknowledgedAt: string | null;
+  acknowledgedByUserId: string | null;
+  acknowledgedByName: string | null;
+}
+
 interface PrevailingWageClassification {
   classificationId: string;
   classificationName: string;
@@ -130,6 +140,10 @@ interface PrevailingWageClassification {
   // Task #1409: populated when the most recent Davis-Bacon stale-refresh
   // changed this classification's rate. Drives the per-row badge.
   recentRateChange?: PrevailingWageRecentChange | null;
+  // Task #1451: populated when the most recent rate-change flag for this
+  // classification was cleared via PM Acknowledge. Used to render the
+  // "Acknowledged by X on Y" audit line under the row.
+  lastAcknowledgedRateChange?: PrevailingWageLastAcknowledgement | null;
 }
 
 interface PrevailingWageSummary {
@@ -1112,6 +1126,24 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
                         {c.wageDecision && c.source === "DOL_FEED" && (
                           <div className="text-[10px] text-muted-foreground font-mono mt-0.5" data-testid={`text-pw-decision-${c.classificationId}`}>
                             {c.wageDecision}
+                          </div>
+                        )}
+                        {/* Task #1451: audit line for the most recent
+                            PM acknowledgement of a rate-change flag on
+                            this classification. Hidden when there is no
+                            acknowledgement record (auto-cleared rows). */}
+                        {c.lastAcknowledgedRateChange && (
+                          <div
+                            className="text-[10px] text-muted-foreground mt-0.5"
+                            data-testid={`text-pw-acknowledged-${c.classificationId}`}
+                          >
+                            Acknowledged
+                            {c.lastAcknowledgedRateChange.acknowledgedByName
+                              ? ` by ${c.lastAcknowledgedRateChange.acknowledgedByName}`
+                              : ""}
+                            {c.lastAcknowledgedRateChange.acknowledgedAt
+                              ? ` on ${new Date(c.lastAcknowledgedRateChange.acknowledgedAt).toLocaleDateString()}`
+                              : ""}
                           </div>
                         )}
                       </TableCell>

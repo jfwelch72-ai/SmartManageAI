@@ -29,6 +29,7 @@ import { db } from "../db";
 import {
   persistRateChangeRecords,
   loadUnacknowledgedRateChanges,
+  loadAcknowledgedRateChanges,
   acknowledgeRateChanges,
   normalizeClassificationKey,
 } from "../integrations/providers/dol_davis_bacon/rateChangeFlags";
@@ -153,6 +154,48 @@ describe("wage decision rate change flags (Task #1409)", () => {
     for (const r of rows.rows as Array<{ acknowledged_by_user_id: string }>) {
       expect(r.acknowledged_by_user_id).toBe(userId);
     }
+  });
+
+  it("loadAcknowledgedRateChanges returns acknowledged rows with acknowledger id (Task #1451)", async () => {
+    await persistRateChangeRecords(orgId, DECISION, [
+      changed("Carpenter", 30, 32),
+      changed("Electrician", 40, 41),
+    ]);
+    // Initially nothing is acknowledged.
+    expect((await loadAcknowledgedRateChanges(orgId, DECISION)).size).toBe(0);
+
+    await acknowledgeRateChanges({
+      organizationId: orgId,
+      decisionNumber: DECISION,
+      userId,
+      classifications: ["carpenter"],
+    });
+    const ackMap = await loadAcknowledgedRateChanges(orgId, DECISION);
+    expect(ackMap.size).toBe(1);
+    const ack = ackMap.get("carpenter");
+    expect(ack).toBeDefined();
+    expect(ack?.acknowledgedByUserId).toBe(userId);
+    expect(ack?.acknowledgedAt).toBeInstanceOf(Date);
+    // Electrician is still unacknowledged so it must NOT show up here.
+    expect(ackMap.get("electrician")).toBeUndefined();
+  });
+
+  it("loadAcknowledgedRateChanges does not return stale acknowledger after re-arm or auto-clear (Task #1451)", async () => {
+    // Acknowledge a change, then re-arm via a new diff for the same
+    // classification — the upsert nulls out acknowledgedAt so the row
+    // must drop out of loadAcknowledgedRateChanges.
+    await persistRateChangeRecords(orgId, DECISION, [changed("Carpenter", 30, 32)]);
+    await acknowledgeRateChanges({ organizationId: orgId, decisionNumber: DECISION, userId });
+    expect((await loadAcknowledgedRateChanges(orgId, DECISION)).size).toBe(1);
+
+    await persistRateChangeRecords(orgId, DECISION, [changed("Carpenter", 32, 33)]);
+    expect((await loadAcknowledgedRateChanges(orgId, DECISION)).size).toBe(0);
+
+    // Acknowledge again and then run an empty-diff (auto-clear) refresh.
+    await acknowledgeRateChanges({ organizationId: orgId, decisionNumber: DECISION, userId });
+    expect((await loadAcknowledgedRateChanges(orgId, DECISION)).size).toBe(1);
+    await persistRateChangeRecords(orgId, DECISION, []);
+    expect((await loadAcknowledgedRateChanges(orgId, DECISION)).size).toBe(0);
   });
 
   it("acknowledgeRateChanges restricted to a classification list only stamps that subset", async () => {
