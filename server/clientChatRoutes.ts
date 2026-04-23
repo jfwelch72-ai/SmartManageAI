@@ -58,7 +58,7 @@ async function requireClientPortalAuth(req: ClientPortalChatRequest, res: Respon
   }
 }
 
-router.get("/client-portal/chat/threads", requireClientPortalAuth as any, async (req: ClientPortalChatRequest, res: Response) => {
+router.get("/client-portal/chat/threads", requireClientPortalAuth as any, async (req: ClientPortalChatRequest, res: Response, next: NextFunction) => {
   try {
     const access = req.clientAccess!;
 
@@ -93,7 +93,7 @@ router.get("/client-portal/chat/threads", requireClientPortalAuth as any, async 
   }
 });
 
-router.post("/client-portal/chat/threads", requireClientPortalAuth as any, async (req: ClientPortalChatRequest, res: Response) => {
+router.post("/client-portal/chat/threads", requireClientPortalAuth as any, async (req: ClientPortalChatRequest, res: Response, next: NextFunction) => {
   try {
     const access = req.clientAccess!;
     const { subject, category, priority, message } = req.body;
@@ -140,7 +140,7 @@ router.post("/client-portal/chat/threads", requireClientPortalAuth as any, async
   }
 });
 
-router.get("/client-portal/chat/threads/:threadId/messages", requireClientPortalAuth as any, async (req: ClientPortalChatRequest, res: Response) => {
+router.get("/client-portal/chat/threads/:threadId/messages", requireClientPortalAuth as any, async (req: ClientPortalChatRequest, res: Response, next: NextFunction) => {
   try {
     const access = req.clientAccess!;
     const { threadId } = req.params;
@@ -187,7 +187,7 @@ router.get("/client-portal/chat/threads/:threadId/messages", requireClientPortal
   }
 });
 
-router.post("/client-portal/chat/threads/:threadId/messages", requireClientPortalAuth as any, async (req: ClientPortalChatRequest, res: Response) => {
+router.post("/client-portal/chat/threads/:threadId/messages", requireClientPortalAuth as any, async (req: ClientPortalChatRequest, res: Response, next: NextFunction) => {
   try {
     const access = req.clientAccess!;
     const { threadId } = req.params;
@@ -258,7 +258,7 @@ router.post("/client-portal/chat/threads/:threadId/messages", requireClientPorta
   }
 });
 
-router.post("/client-portal/chat/threads/:threadId/read", requireClientPortalAuth as any, async (req: ClientPortalChatRequest, res: Response) => {
+router.post("/client-portal/chat/threads/:threadId/read", requireClientPortalAuth as any, async (req: ClientPortalChatRequest, res: Response, next: NextFunction) => {
   try {
     const access = req.clientAccess!;
     const { threadId } = req.params;
@@ -296,7 +296,7 @@ router.post("/client-portal/chat/threads/:threadId/read", requireClientPortalAut
   }
 });
 
-router.get("/client-portal/chat/events", async (req: ClientPortalChatRequest, res: Response) => {
+router.get("/client-portal/chat/events", async (req: ClientPortalChatRequest, res: Response, next: NextFunction) => {
   const clientEmail = (req.query.email as string) || (req.headers["x-client-email"] as string);
   const clientProjectId = (req.query.projectId as string) || (req.headers["x-client-project-id"] as string);
 

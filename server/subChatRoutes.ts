@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, Response } from "express";
+import { Router, Response, NextFunction } from "express";
 import { db } from "./db";
 import { portalChatThreads, portalChatMessages } from "@shared/schema";
 import { eq, and, desc, asc, sql } from "drizzle-orm";
@@ -10,7 +10,7 @@ import { assertPortalAttachmentUrlAllowed } from "./services/storageKeyOwnership
 
 const router = Router();
 
-router.get("/portal/chat/threads", requirePortalAuth, async (req: PortalRequest, res: Response) => {
+router.get("/portal/chat/threads", requirePortalAuth, async (req: PortalRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.portalToken!;
 
@@ -45,7 +45,7 @@ router.get("/portal/chat/threads", requirePortalAuth, async (req: PortalRequest,
   }
 });
 
-router.post("/portal/chat/threads", requirePortalAuth, async (req: PortalRequest, res: Response) => {
+router.post("/portal/chat/threads", requirePortalAuth, async (req: PortalRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.portalToken!;
     const { subject, category, linkedEntityType, linkedEntityId, priority, message } = req.body;
@@ -91,7 +91,7 @@ router.post("/portal/chat/threads", requirePortalAuth, async (req: PortalRequest
   }
 });
 
-router.get("/portal/chat/threads/:threadId/messages", requirePortalAuth, async (req: PortalRequest, res: Response) => {
+router.get("/portal/chat/threads/:threadId/messages", requirePortalAuth, async (req: PortalRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.portalToken!;
     const { threadId } = req.params;
@@ -138,7 +138,7 @@ router.get("/portal/chat/threads/:threadId/messages", requirePortalAuth, async (
   }
 });
 
-router.post("/portal/chat/threads/:threadId/messages", requirePortalAuth, async (req: PortalRequest, res: Response) => {
+router.post("/portal/chat/threads/:threadId/messages", requirePortalAuth, async (req: PortalRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.portalToken!;
     const { threadId } = req.params;
@@ -206,7 +206,7 @@ router.post("/portal/chat/threads/:threadId/messages", requirePortalAuth, async 
   }
 });
 
-router.post("/portal/chat/threads/:threadId/read", requirePortalAuth, async (req: PortalRequest, res: Response) => {
+router.post("/portal/chat/threads/:threadId/read", requirePortalAuth, async (req: PortalRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.portalToken!;
     const { threadId } = req.params;
