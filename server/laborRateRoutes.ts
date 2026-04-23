@@ -684,7 +684,7 @@ router.post("/prevailing-wage-rates/import-preview", requireAuth, requireRole("A
     const defaultEffectiveDate = req.body.defaultEffectiveDate ? String(req.body.defaultEffectiveDate) : null;
 
     // Verify project belongs to org
-    const [project] = await db.select().from(projects).where(and(eq(projects.id, projectId), eq(projects.organizationId, organizationId)));
+    const [project] = await db.select().from(projects).where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, organizationId)));
     if (!project) return res.status(404).json({ error: "Project not found" });
 
     // Parse file
@@ -861,7 +861,7 @@ router.post("/prevailing-wage-rates/import", requireAuth, requireRole("ADMIN", "
     }
     const { projectId, rows } = payloadParsed.data;
 
-    const [project] = await db.select().from(projects).where(and(eq(projects.id, projectId), eq(projects.organizationId, organizationId)));
+    const [project] = await db.select().from(projects).where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, organizationId)));
     if (!project) return res.status(404).json({ error: "Project not found" });
 
     const orgClassifications = await db
