@@ -9,7 +9,8 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ToggleRight, HardHat, ArrowRight, History, ChevronLeft, ChevronRight } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { ToggleRight, HardHat, ArrowRight, History, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
 import {
   FEATURE_FLAG_LABELS,
   FEATURE_FLAG_DESCRIPTIONS,
@@ -31,6 +32,8 @@ interface LastPresetResponse {
     tradeType: string;
     appliedAt: string;
     appliedBy: { id: string; firstName: string; lastName: string; email: string } | null;
+    isCustomized: boolean;
+    diff: { key: FeatureFlagKey; current: boolean; preset: boolean }[];
   } | null;
 }
 
@@ -279,28 +282,106 @@ export function OrgFeaturePresetsTab() {
             </Button>
           </div>
           {lastApplied ? (
-            <div
-              className="text-sm text-muted-foreground"
-              data-testid="text-last-applied-preset"
-            >
-              Last applied:{" "}
-              <span className="font-medium text-foreground">
-                {tradeLabelMap[lastApplied.tradeType] || lastApplied.tradeType}
-              </span>{" "}
-              on{" "}
-              <span className="font-medium text-foreground">
-                {new Date(lastApplied.appliedAt).toLocaleString()}
-              </span>
-              {lastApplied.appliedBy ? (
-                <>
-                  {" "}by{" "}
-                  <span className="font-medium text-foreground">
-                    {`${lastApplied.appliedBy.firstName} ${lastApplied.appliedBy.lastName}`.trim() ||
-                      lastApplied.appliedBy.email}
-                  </span>
-                </>
-              ) : null}
-              .
+            <div className="space-y-2">
+              <div
+                className="text-sm text-muted-foreground"
+                data-testid="text-last-applied-preset"
+              >
+                {lastApplied.isCustomized ? (
+                  <>
+                    <Badge
+                      variant="outline"
+                      className="mr-2"
+                      data-testid="badge-customized-from-preset"
+                    >
+                      Customized from{" "}
+                      {tradeLabelMap[lastApplied.tradeType] || lastApplied.tradeType}
+                    </Badge>
+                    {lastApplied.diff.length} flag
+                    {lastApplied.diff.length === 1 ? "" : "s"} differ from the preset
+                    that was applied on{" "}
+                    <span className="font-medium text-foreground">
+                      {new Date(lastApplied.appliedAt).toLocaleString()}
+                    </span>
+                    {lastApplied.appliedBy ? (
+                      <>
+                        {" "}by{" "}
+                        <span className="font-medium text-foreground">
+                          {`${lastApplied.appliedBy.firstName} ${lastApplied.appliedBy.lastName}`.trim() ||
+                            lastApplied.appliedBy.email}
+                        </span>
+                      </>
+                    ) : null}
+                    .
+                  </>
+                ) : (
+                  <>
+                    Last applied:{" "}
+                    <span className="font-medium text-foreground">
+                      {tradeLabelMap[lastApplied.tradeType] || lastApplied.tradeType}
+                    </span>{" "}
+                    on{" "}
+                    <span className="font-medium text-foreground">
+                      {new Date(lastApplied.appliedAt).toLocaleString()}
+                    </span>
+                    {lastApplied.appliedBy ? (
+                      <>
+                        {" "}by{" "}
+                        <span className="font-medium text-foreground">
+                          {`${lastApplied.appliedBy.firstName} ${lastApplied.appliedBy.lastName}`.trim() ||
+                            lastApplied.appliedBy.email}
+                        </span>
+                      </>
+                    ) : null}
+                    .
+                  </>
+                )}
+              </div>
+              {lastApplied.isCustomized && lastApplied.diff.length > 0 && (
+                <Collapsible>
+                  <CollapsibleTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      data-testid="button-toggle-customization-diff"
+                    >
+                      <ChevronDown className="h-3 w-3 mr-1" />
+                      Show what changed
+                    </Button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <div
+                      className="mt-2 max-h-72 overflow-y-auto border rounded-md divide-y"
+                      data-testid="list-customization-diff"
+                    >
+                      {lastApplied.diff.map((d) => (
+                        <div
+                          key={d.key}
+                          className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                          data-testid={`customization-diff-row-${d.key}`}
+                        >
+                          <span className="font-medium truncate">
+                            {FEATURE_FLAG_LABELS[d.key] ?? d.key}
+                          </span>
+                          <span className="flex items-center gap-2 shrink-0 text-xs text-muted-foreground">
+                            <span>Preset:</span>
+                            <Badge variant={d.preset ? "default" : "outline"}>
+                              {d.preset ? "On" : "Off"}
+                            </Badge>
+                            <ArrowRight className="h-3 w-3" />
+                            <span>Now:</span>
+                            <Badge variant={d.current ? "default" : "outline"}>
+                              {d.current ? "On" : "Off"}
+                            </Badge>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </CollapsibleContent>
+                </Collapsible>
+              )}
             </div>
           ) : (
             <div

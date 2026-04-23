@@ -272,3 +272,70 @@ export function getFeaturePresetForTrade(tradeType: string): TradeFeaturePreset 
 export function hasExplicitPresetForTrade(tradeType: string): boolean {
   return Object.prototype.hasOwnProperty.call(EXPLICIT_PRESETS, tradeType);
 }
+
+export interface ClosestPresetMatch {
+  tradeType: string;
+  preset: TradeFeaturePreset;
+  distance: number;
+  exact: boolean;
+}
+
+/**
+ * Find the explicit trade preset whose enabled-flag set is closest to the
+ * supplied flag map (Hamming distance). Used to label legacy organizations
+ * whose stored flags drifted away from the preset they were originally
+ * onboarded with — see Task #1271.
+ *
+ * Always returns a single deterministic winner; callers that care about
+ * ambiguity (e.g. backfill attribution) should additionally gate on the
+ * returned `distance` so weak matches don't get labeled.
+ *
+ * Tie-breaking (in order):
+ *   1. If `preferredTradeType` has an explicit preset and ties for closest,
+ *      it wins (so an org's own trade is preferred when distances are equal).
+ *   2. Otherwise the first preset encountered in EXPLICIT_PRESETS insertion
+ *      order wins, which keeps the result stable across calls.
+ */
+export function findClosestPreset(
+  flags: Partial<Record<FeatureFlagKey, boolean>>,
+  preferredTradeType?: string,
+): ClosestPresetMatch | null {
+  let best: ClosestPresetMatch | null = null;
+  for (const [tradeType, preset] of Object.entries(EXPLICIT_PRESETS)) {
+    let distance = 0;
+    for (const key of FEATURE_FLAG_KEYS) {
+      if ((flags[key] ?? false) !== preset[key]) distance++;
+    }
+    if (best === null || distance < best.distance) {
+      best = { tradeType, preset, distance, exact: distance === 0 };
+      continue;
+    }
+    if (
+      distance === best.distance &&
+      preferredTradeType &&
+      tradeType === preferredTradeType
+    ) {
+      best = { tradeType, preset, distance, exact: distance === 0 };
+    }
+  }
+  return best;
+}
+
+/**
+ * Compute the per-flag differences between a flag map and a preset. Returns
+ * only the flags whose value differs from the preset's value.
+ */
+export function diffFlagsAgainstPreset(
+  flags: Partial<Record<FeatureFlagKey, boolean>>,
+  preset: TradeFeaturePreset,
+): Array<{ key: FeatureFlagKey; current: boolean; preset: boolean }> {
+  const diff: Array<{ key: FeatureFlagKey; current: boolean; preset: boolean }> = [];
+  for (const key of FEATURE_FLAG_KEYS) {
+    const current = flags[key] ?? false;
+    const expected = preset[key];
+    if (current !== expected) {
+      diff.push({ key, current, preset: expected });
+    }
+  }
+  return diff;
+}

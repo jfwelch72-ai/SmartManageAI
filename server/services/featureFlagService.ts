@@ -1,7 +1,12 @@
 import { db } from "../db";
 import { safeJsonParse } from "../responseHelper";
 import { organizations, users, featureFlagPresetApplications, FEATURE_FLAG_KEYS, DISABLED_BY_DEFAULT_FLAGS, type FeatureFlagKey } from "@shared/schema";
-import { getFeaturePresetForTrade, hasExplicitPresetForTrade } from "@shared/tradeFeaturePresets";
+import {
+  getFeaturePresetForTrade,
+  hasExplicitPresetForTrade,
+  findClosestPreset,
+  diffFlagsAgainstPreset,
+} from "@shared/tradeFeaturePresets";
 import { eq, or, isNull, sql, desc, notExists } from "drizzle-orm";
 import {logInfo, logWarn } from "../utils/logger";
 
@@ -123,9 +128,16 @@ export async function backfillPresetApplications(): Promise<void> {
       ),
     );
 
+  // Cap how far an org's stored flags may drift from a preset before we still
+  // call the org "customized from" that preset. Beyond this, attribution
+  // becomes unreliable (the org's flags no longer resemble the preset enough
+  // to claim it as the origin), so we leave such orgs without a synthetic
+  // audit row rather than print a misleading "Customized from X" line.
+  const MAX_FUZZY_BACKFILL_DISTANCE = 6;
+
   let inserted = 0;
+  let fuzzyInserted = 0;
   for (const org of candidates) {
-    if (!org.tradeType || !hasExplicitPresetForTrade(org.tradeType)) continue;
     if (!org.featureFlags) continue;
 
     let parsed: FeatureFlagsMap | null;
@@ -136,31 +148,59 @@ export async function backfillPresetApplications(): Promise<void> {
     }
     if (!parsed) continue;
 
-    const preset = getFeaturePresetForTrade(org.tradeType);
-    const matches = FEATURE_FLAG_KEYS.every(
-      (key) => (parsed![key] ?? false) === preset[key],
-    );
-    if (!matches) continue;
+    // Step 1: prefer the org's own trade preset (if explicit) — that's the
+    // preset they were originally onboarded with, even if a few flags drifted.
+    // We still cap the allowable drift so heavily diverged orgs aren't
+    // mislabeled "Customized from <their trade>".
+    let recordedTradeType: string | null = null;
+    let isFuzzy = false;
+    if (org.tradeType && hasExplicitPresetForTrade(org.tradeType)) {
+      const preset = getFeaturePresetForTrade(org.tradeType);
+      let distance = 0;
+      for (const key of FEATURE_FLAG_KEYS) {
+        if ((parsed[key] ?? false) !== preset[key]) distance++;
+      }
+      if (distance === 0 || distance <= MAX_FUZZY_BACKFILL_DISTANCE) {
+        recordedTradeType = org.tradeType;
+        isFuzzy = distance > 0;
+      }
+    }
+
+    // Step 2: org's trade has no explicit preset (or its preset drifted past
+    // the threshold) — fall back to the closest preset across all trades so
+    // they still get a sensible "Last applied" line. findClosestPreset always
+    // returns one deterministic winner (preferring the org's own trade on
+    // ties); we still gate the result on the distance threshold to avoid
+    // weak/incorrect "customized from" attribution.
+    if (!recordedTradeType) {
+      const closest = findClosestPreset(parsed, org.tradeType ?? undefined);
+      if (closest && closest.distance <= MAX_FUZZY_BACKFILL_DISTANCE) {
+        recordedTradeType = closest.tradeType;
+        isFuzzy = !closest.exact;
+      }
+    }
+    if (!recordedTradeType) continue;
 
     try {
       await db.insert(featureFlagPresetApplications).values({
         organizationId: org.id,
-        tradeType: org.tradeType,
+        tradeType: recordedTradeType,
         appliedById: null,
         appliedAt: org.createdAt,
       });
       inserted++;
+      if (isFuzzy) fuzzyInserted++;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       logWarn(
-        `[FeatureFlags] Backfill failed to insert preset application | organizationId=${org.id} tradeType=${org.tradeType} error=${message}`,
+        `[FeatureFlags] Backfill failed to insert preset application | organizationId=${org.id} tradeType=${recordedTradeType} error=${message}`,
       );
     }
   }
 
   if (inserted > 0) {
     logInfo(
-      `[FeatureFlags] Preset application backfill: inserted ${inserted} synthetic audit row(s) for legacy orgs`,
+      `[FeatureFlags] Preset application backfill: inserted ${inserted} synthetic audit row(s) for legacy orgs (${fuzzyInserted} customized from preset)`,
     );
   }
 }
@@ -197,10 +237,27 @@ export async function applyTradePreset(
   return preset;
 }
 
+export interface PresetFlagDiffEntry {
+  key: FeatureFlagKey;
+  current: boolean;
+  preset: boolean;
+}
+
 export interface LastPresetApplication {
   tradeType: string;
   appliedAt: Date;
   appliedBy: { id: string; firstName: string; lastName: string; email: string } | null;
+  /**
+   * True when the org's currently stored feature flags no longer exactly
+   * match the preset that was last applied. UI surfaces this as
+   * "Customized from <Preset>" rather than a flat "Last applied" line.
+   */
+  isCustomized: boolean;
+  /**
+   * Per-flag differences between the currently stored flags and the preset
+   * recorded on the most recent audit row. Empty when isCustomized=false.
+   */
+  diff: PresetFlagDiffEntry[];
 }
 
 export async function getLastPresetApplication(orgId: string): Promise<LastPresetApplication | null> {
@@ -222,6 +279,13 @@ export async function getLastPresetApplication(orgId: string): Promise<LastPrese
 
   if (!row) return null;
 
+  // Compare the org's currently stored flags to the recorded preset so the
+  // Feature Flags tab can show "Customized from <Preset>" when the org
+  // edited individual flags after the preset was applied.
+  const currentFlags = await getFeatureFlags(orgId);
+  const preset = getFeaturePresetForTrade(row.tradeType);
+  const diff = diffFlagsAgainstPreset(currentFlags, preset);
+
   return {
     tradeType: row.tradeType,
     appliedAt: row.appliedAt,
@@ -233,6 +297,8 @@ export async function getLastPresetApplication(orgId: string): Promise<LastPrese
           email: row.userEmail ?? "",
         }
       : null,
+    isCustomized: diff.length > 0,
+    diff,
   };
 }
 
