@@ -15,7 +15,44 @@ import { ProjectSelect, formatDate, todayIso, getErrorMessage, toDateInput } fro
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
-import { SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, type SwpppInspection } from "@shared/schema";
+import {
+  SWPPP_OVERDUE_REMINDER_DEFAULT_CAP,
+  SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS,
+  type SwpppInspection,
+} from "@shared/schema";
+
+function formatNextReminderHint(
+  lastNotifiedAt: string | Date | null | undefined,
+  intervalHours: number,
+  now: Date = new Date(),
+): string | null {
+  if (!lastNotifiedAt) return null;
+  const last = lastNotifiedAt instanceof Date ? lastNotifiedAt : new Date(lastNotifiedAt);
+  if (Number.isNaN(last.getTime())) return null;
+  const safeInterval = Number.isFinite(intervalHours) && intervalHours > 0
+    ? intervalHours
+    : SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS;
+  const nextMs = last.getTime() + safeInterval * 60 * 60 * 1000;
+  const diffMs = nextMs - now.getTime();
+  if (diffMs <= 60 * 1000) return "Next reminder due in the next sweep";
+  const diffMin = Math.round(diffMs / 60000);
+  if (diffMin < 60) return `Next reminder in ~${diffMin}m`;
+  const diffHr = Math.round(diffMs / (60 * 60 * 1000));
+  if (diffHr < 24) return `Next reminder in ~${diffHr}h`;
+  const next = new Date(nextMs);
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000);
+  const dayAfter = new Date(today.getTime() + 48 * 60 * 60 * 1000);
+  if (next.getTime() >= tomorrow.getTime() && next.getTime() < dayAfter.getTime()) {
+    const morningCutoff = new Date(tomorrow);
+    morningCutoff.setHours(12, 0, 0, 0);
+    return next.getTime() < morningCutoff.getTime()
+      ? "Next reminder tomorrow morning"
+      : "Next reminder tomorrow";
+  }
+  return `Next reminder on ${next.toLocaleDateString()}`;
+}
 
 interface SwpppSettings {
   organizationId: string;
@@ -44,6 +81,7 @@ export default function SwpppInspectionsPage() {
     enabled: canAccess,
   });
   const reminderCap = swpppSettings?.overdueReminderMaxCount ?? SWPPP_OVERDUE_REMINDER_DEFAULT_CAP;
+  const reminderIntervalHours = swpppSettings?.overdueReminderIntervalHours ?? SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS;
 
   if (!canAccess) {
     return (
@@ -227,16 +265,32 @@ export default function SwpppInspectionsPage() {
                       <BellOff className="h-3 w-3 mr-1" />
                       Reminders paused — cap of {reminderCap} reached
                     </Badge>
-                  ) : (
-                    <Badge
-                      variant="outline"
-                      className="text-xs"
-                      data-testid={`badge-swppp-reminders-${s.id}`}
-                    >
-                      <BellRing className="h-3 w-3 mr-1" />
-                      Reminder {s.overdueReminderCount} of {reminderCap} sent
-                    </Badge>
-                  )
+                  ) : (() => {
+                    const nextHint = formatNextReminderHint(
+                      s.lastOverdueNotifiedAt as unknown as string | null,
+                      reminderIntervalHours,
+                    );
+                    return (
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Badge
+                          variant="outline"
+                          className="text-xs"
+                          data-testid={`badge-swppp-reminders-${s.id}`}
+                        >
+                          <BellRing className="h-3 w-3 mr-1" />
+                          Reminder {s.overdueReminderCount} of {reminderCap} sent
+                        </Badge>
+                        {nextHint && (
+                          <span
+                            className="text-xs text-muted-foreground"
+                            data-testid={`text-swppp-next-reminder-${s.id}`}
+                          >
+                            {nextHint}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })()
                 )}
                 {resolved && s.resolvedAt && (
                   <div className="text-xs text-emerald-700 dark:text-emerald-400" data-testid={`text-resolved-${s.id}`}>
@@ -343,6 +397,7 @@ function SwpppForm({ existing, onClose, defaultProjectId }: { existing: SwpppIns
   useEffect(() => { setForm(initial(existing, defaultProjectId)); }, [existing, defaultProjectId]);
   const { data: swpppSettings } = useQuery<SwpppSettings>({ queryKey: ["/api/swppp/settings"] });
   const reminderCap = swpppSettings?.overdueReminderMaxCount ?? SWPPP_OVERDUE_REMINDER_DEFAULT_CAP;
+  const reminderIntervalHours = swpppSettings?.overdueReminderIntervalHours ?? SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS;
 
   const resolveMut = useMutation({
     mutationFn: async () => {
@@ -471,15 +526,28 @@ function SwpppForm({ existing, onClose, defaultProjectId }: { existing: SwpppIns
               <BellOff className="h-3.5 w-3.5" />
               Overdue reminders paused — cap of {reminderCap} reached. Move the corrective-action due date forward or reopen the inspection to restart reminders.
             </div>
-          ) : (
-            <div
-              className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
-              data-testid="detail-swppp-reminders"
-            >
-              <BellRing className="h-3.5 w-3.5" />
-              Reminder {existing.overdueReminderCount} of {reminderCap} sent for this overdue corrective action.
-            </div>
-          )
+          ) : (() => {
+            const nextHint = formatNextReminderHint(
+              existing.lastOverdueNotifiedAt as unknown as string | null,
+              reminderIntervalHours,
+            );
+            return (
+              <div
+                className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+                data-testid="detail-swppp-reminders"
+              >
+                <BellRing className="h-3.5 w-3.5" />
+                <span>
+                  Reminder {existing.overdueReminderCount} of {reminderCap} sent for this overdue corrective action.
+                  {nextHint && (
+                    <span className="ml-1" data-testid="detail-swppp-next-reminder">
+                      {nextHint}.
+                    </span>
+                  )}
+                </span>
+              </div>
+            );
+          })()
         )}
         <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-between sm:items-center gap-2">
           <div className="flex items-center gap-2">
