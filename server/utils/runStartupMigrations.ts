@@ -104,6 +104,7 @@ import { ensureCrmTranscriptBackfillTestAlertsTable } from "./ensureCrmTranscrip
 import { ensureCrmAndReportingTables } from "./ensureCrmAndReportingTables";
 import { ensureCrmTranscriptBackfillAlertResendCooldownsTable } from "./ensureCrmTranscriptBackfillAlertResendCooldownsTable";
 import { runCertifiedPayrollBackfillOnce } from "./runCertifiedPayrollBackfillOnce";
+import { runExhaustedSyncRetryAlertsBackfillOnce } from "./runExhaustedSyncRetryAlertsBackfillOnce";
 import { ensureSovStatusEnumValues } from "./ensureSovStatusEnumValues";
 import { ensureAuditActionEnumValues } from "./ensureAuditActionEnumValues";
 import { ensureCalendarEventTypeEnumValues } from "./ensureCalendarEventTypeEnumValues";
@@ -263,6 +264,12 @@ const migrations: MigrationStep[] = [
   // automatically. Subsequent startups read a single row and no-op.
   // Must run AFTER `heavy_civil_tables` so `certified_payroll_reports` exists.
   { name: "certified_payroll_backfill_once", category: "ALTER_TABLE", fn: runCertifiedPayrollBackfillOnce },
+  // Task #1405 — one-shot fan-out of the new "integration sync gave up" admin
+  // alert (Task #1391) for sync rows that were already exhausted before that
+  // feature shipped. Must run AFTER `integration_sync_state_exhausted_notified_column`
+  // so the marker column exists. Idempotent: a `one_shot_jobs` ledger row
+  // makes subsequent startups a single SELECT.
+  { name: "exhausted_sync_retry_alerts_backfill_once", category: "ALTER_TABLE", fn: runExhaustedSyncRetryAlertsBackfillOnce },
   // Task #1119 — audit log for trade-preset applications shown on the
   // Feature Flags tab (Last applied: <preset> on <date> by <user>).
   { name: "feature_flag_preset_applications_table", category: "CREATE_TABLE", fn: ensureFeatureFlagPresetApplicationsTable },

@@ -30,6 +30,7 @@ import {
 } from "@shared/schema";
 import { insertNotification } from "./notificationService";
 import { logError, logInfo } from "../utils/logger";
+import { MAX_SYNC_RETRIES } from "../integrations/syncRetry";
 
 type UserRole = (typeof userRoleEnum.enumValues)[number];
 const ADMIN_ROLES: readonly UserRole[] = ["ADMIN", "SUPER_ADMIN"];
@@ -208,4 +209,206 @@ export async function notifyAdminsOfExhaustedSyncRetry(
   }
 
   return { recipients: delivered, notified: true };
+}
+
+// ---------------------------------------------------------------------------
+// Task #1405 — One-shot backfill so already-exhausted sync rows that pre-date
+// the Task #1391 deploy still produce a heads-up admin alert.
+//
+// recordSyncFailure only fires the new notification on the *transition* into
+// exhausted state. Any row that already had retry_count >= MAX_SYNC_RETRIES
+// when the notification feature shipped would otherwise sit silently — admins
+// would only learn about it the next time they happened to open the
+// Integrations page. This sweep finds those rows, fans out one *summary*
+// notification per (organization, connection), and stamps
+// `exhausted_notified_at` so the regular per-row dedup keeps working.
+// ---------------------------------------------------------------------------
+
+interface BackfillRow {
+  id: string;
+  organization_id: string;
+  connection_id: string;
+  entity_type: string;
+  last_error: string | null;
+}
+
+export interface BackfillExhaustedSyncAlertsResult {
+  candidateRows: number;
+  claimedRows: number;
+  groupsNotified: number;
+  groupsWithoutAdmins: number;
+  recipients: number;
+}
+
+/**
+ * Find every `integration_sync_state` row that is already exhausted but was
+ * never notified (`retry_count >= MAX_SYNC_RETRIES AND exhausted_notified_at
+ * IS NULL`), atomically claim them by stamping `exhausted_notified_at`, group
+ * the claimed rows by (organization, connection), and emit one summary admin
+ * notification per group.
+ *
+ * The atomic claim mirrors `notifyAdminsOfExhaustedSyncRetry` so concurrent
+ * callers (a parallel deploy, a normal `recordSyncFailure` re-run on the
+ * same row) cannot produce a duplicate alert: rows are returned only by the
+ * UPDATE that successfully transitioned the marker from NULL.
+ */
+export async function backfillExhaustedSyncRetryAlerts(): Promise<BackfillExhaustedSyncAlertsResult> {
+  const result: BackfillExhaustedSyncAlertsResult = {
+    candidateRows: 0,
+    claimedRows: 0,
+    groupsNotified: 0,
+    groupsWithoutAdmins: 0,
+    recipients: 0,
+  };
+
+  const now = new Date();
+
+  // Atomic claim: stamp every pre-existing exhausted row in one statement and
+  // return the rows we won the race for. Anything already claimed by a racing
+  // recordSyncFailure (or a previous backfill run) is skipped.
+  const claimResult = await db.execute<BackfillRow>(sql`
+    UPDATE integration_sync_state
+       SET exhausted_notified_at = ${now}, updated_at = ${now}
+     WHERE exhausted_notified_at IS NULL
+       AND retry_count >= ${MAX_SYNC_RETRIES}
+     RETURNING id,
+               organization_id,
+               connection_id,
+               entity_type,
+               last_error
+  `);
+
+  const claimed = claimResult.rows ?? [];
+  result.candidateRows = claimed.length;
+  result.claimedRows = claimed.length;
+  if (claimed.length === 0) return result;
+
+  // Group by (organization_id, connection_id) so each integration gets a
+  // single rolled-up notification rather than one per entity.
+  const groups = new Map<
+    string,
+    {
+      organizationId: string;
+      connectionId: string;
+      rows: BackfillRow[];
+    }
+  >();
+  for (const row of claimed) {
+    const key = `${row.organization_id}::${row.connection_id}`;
+    let group = groups.get(key);
+    if (!group) {
+      group = {
+        organizationId: row.organization_id,
+        connectionId: row.connection_id,
+        rows: [],
+      };
+      groups.set(key, group);
+    }
+    group.rows.push(row);
+  }
+
+  // Cache admin lookups per org so multiple connections owned by the same
+  // org don't re-query the users table.
+  const adminCache = new Map<string, string[]>();
+  async function adminsFor(organizationId: string): Promise<string[]> {
+    const cached = adminCache.get(organizationId);
+    if (cached) return cached;
+    const ids = await getOrgAdminUserIds(organizationId);
+    adminCache.set(organizationId, ids);
+    return ids;
+  }
+
+  for (const group of groups.values()) {
+    const [conn] = await db
+      .select({
+        provider: integrationConnections.provider,
+        displayName: integrationConnections.displayName,
+      })
+      .from(integrationConnections)
+      .where(eq(integrationConnections.id, group.connectionId))
+      .limit(1);
+
+    const adminIds = await adminsFor(group.organizationId);
+    if (adminIds.length === 0) {
+      // Marker is already stamped on every row in the group — they won't be
+      // re-considered by future backfill runs. This matches the behaviour of
+      // the per-row notifier when an org has no admins.
+      result.groupsWithoutAdmins += 1;
+      logInfo("Backfill: no active org admins for exhausted sync alert", {
+        organizationId: group.organizationId,
+        connectionId: group.connectionId,
+        entityCount: group.rows.length,
+      });
+      continue;
+    }
+
+    const integrationLabel =
+      conn?.displayName?.trim() || conn?.provider || "integration";
+    const entityCount = group.rows.length;
+    const entityList = group.rows
+      .map((r) => r.entity_type)
+      .sort();
+    const sampleEntities = entityList.slice(0, 5);
+    const moreSuffix = entityCount > sampleEntities.length
+      ? `, and ${entityCount - sampleEntities.length} more`
+      : "";
+    const lastErrorSample = group.rows.find((r) => r.last_error)?.last_error;
+    const trimmedError = (lastErrorSample ?? "(no error message recorded)").slice(0, 300);
+
+    const title =
+      entityCount === 1
+        ? `Integration sync gave up: ${integrationLabel} (${entityList[0]})`
+        : `Integration sync gave up: ${integrationLabel} (${entityCount} entities)`;
+    const message =
+      `Background sync retries for ${integrationLabel} were already exhausted ` +
+      `for ${entityCount} ${entityCount === 1 ? "entity" : "entities"} ` +
+      `(${sampleEntities.join(", ")}${moreSuffix}). ` +
+      `Sample last error: ${trimmedError}. ` +
+      `Open the Integrations page to review and trigger a manual retry.`;
+
+    // Anchor the related-entity link on the first claimed row so clicking
+    // through the notification opens a real sync state record.
+    const anchorRowId = group.rows[0].id;
+
+    let delivered = 0;
+    for (const userId of adminIds) {
+      try {
+        const payload: InsertNotification = {
+          userId,
+          organizationId: group.organizationId,
+          type: "INTEGRATION_SYNC_RETRIES_EXHAUSTED",
+          title,
+          message,
+          relatedEntityId: anchorRowId,
+          relatedEntityType: "INTEGRATION_SYNC_STATE",
+        };
+        await insertNotification(payload);
+        delivered += 1;
+      } catch (err) {
+        logError(
+          "Backfill: failed to deliver exhausted sync retry summary",
+          {
+            organizationId: group.organizationId,
+            connectionId: group.connectionId,
+            userId,
+          },
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      }
+    }
+
+    if (delivered > 0) {
+      result.groupsNotified += 1;
+      result.recipients += delivered;
+      logInfo("Backfill: integration sync retries exhausted summary sent", {
+        organizationId: group.organizationId,
+        connectionId: group.connectionId,
+        provider: conn?.provider,
+        entityCount,
+        recipients: delivered,
+      });
+    }
+  }
+
+  return result;
 }
