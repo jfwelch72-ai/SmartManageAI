@@ -302,6 +302,7 @@ import { validateBody } from "./utils/validation";
 import { requireAuth, requireRole, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { notifyDocumentEvent } from "./services/documentNotificationService";
+import { assertStorageKeyBelongsToOrg } from "./services/documentRevisionService";
 
 const rfiPatchSchema = z.object({
   subject: z.string().min(1).max(500).optional(),
@@ -1107,6 +1108,14 @@ router.post("/rfi/:id/attachments", requireAuth, requireRole("SUPER_ADMIN", "ADM
     }
 
     if (isObjectPath) {
+      // Caller supplied a storage path directly (not an https:// URL). Verify
+      // the object actually belongs to their org before recording it as an
+      // attachment, otherwise a tenant could attach another tenant's file.
+      try {
+        await assertStorageKeyBelongsToOrg(fileUrl, organizationId, user.id, user.role);
+      } catch (err: any) {
+        return res.status(err?.status || 403).json({ error: err?.message || "Forbidden" });
+      }
       storageKey = fileUrl;
     } else {
       const objectUUID = randomUUID();

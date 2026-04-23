@@ -5,6 +5,8 @@ import { addenda, addendumAcknowledgments } from "@shared/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 import {logInfo, logError, logWarn } from "./utils/logger";
 import { notifyDocumentEvent } from "./services/documentNotificationService";
+import { assertStorageKeyBelongsToOrg } from "./services/documentRevisionService";
+import { ObjectPermission } from "./objectAcl";
 
 const router = Router();
 
@@ -43,6 +45,15 @@ router.post("/projects/:projectId/addenda", requireAuth, async (req, res, next) 
     const { projectId } = req.params;
     const { title, description, relatedDocumentId, storageKey, fileUrl, fileName } = req.body;
     if (!title) return res.status(400).json({ error: "Title is required" });
+
+    const supplied = storageKey || fileUrl;
+    if (supplied) {
+      try {
+        await assertStorageKeyBelongsToOrg(supplied, user.organizationId, user.id, user.role);
+      } catch (err: any) {
+        return res.status(err?.status || 403).json({ error: err?.message || "Forbidden" });
+      }
+    }
 
     const latest = await db.select({ maxNum: sql<number>`coalesce(max(${addenda.addendumNumber}), 0)` })
       .from(addenda)
@@ -102,6 +113,14 @@ router.patch("/addenda/:id", requireAuth, async (req, res, next) => {
     if (title !== undefined) updates.title = title;
     if (description !== undefined) updates.description = description;
     if (relatedDocumentId !== undefined) updates.relatedDocumentId = relatedDocumentId;
+    const newKey = storageKey !== undefined ? storageKey : (fileUrl !== undefined ? fileUrl : undefined);
+    if (newKey) {
+      try {
+        await assertStorageKeyBelongsToOrg(newKey, user.organizationId, user.id, user.role);
+      } catch (err: any) {
+        return res.status(err?.status || 403).json({ error: err?.message || "Forbidden" });
+      }
+    }
     if (storageKey !== undefined) updates.storageKey = storageKey;
     if (fileUrl !== undefined) updates.fileUrl = fileUrl;
     if (fileName !== undefined) updates.fileName = fileName;
@@ -255,7 +274,23 @@ router.get("/addenda/:id/preview-url", requireAuth, async (req, res, next) => {
     try {
       const { ObjectStorageService } = await import("./objectStorage");
       const objectStorageService = new ObjectStorageService();
-      const objectFile = await objectStorageService.getObjectEntityFile(storageKey);
+      const normalized = objectStorageService.normalizeObjectEntityPath(storageKey);
+      const objectFile = await objectStorageService.getObjectEntityFile(normalized);
+
+      // Defense-in-depth: enforce ACL on the underlying object before
+      // streaming bytes so a forged/cross-tenant addendum row cannot leak
+      // another org's file. Mirrors the Task #492 preview-url hardening.
+      const allowed = await objectStorageService.canAccessObjectEntity({
+        userId: user.id,
+        userOrganizationId: user.organizationId,
+        objectFile,
+        requestedPermission: ObjectPermission.READ,
+        userRole: user.effectiveRole || user.role,
+      });
+      if (!allowed) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
       await objectStorageService.downloadObject(objectFile, res, 3600);
     } catch (downloadErr) {
       logWarn("Non-critical operation failed");

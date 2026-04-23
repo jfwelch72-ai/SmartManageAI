@@ -431,6 +431,8 @@ import { z } from "zod";
 import { requireAuth, requireRole, requireRoleOrFeature, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { notifyDocumentEvent } from "./services/documentNotificationService";
+import { assertStorageKeyBelongsToOrg } from "./services/documentRevisionService";
+import { ObjectPermission } from "./objectAcl";
 import { notifyApprovers, notifySubmitter, notifyUsers } from "./services/approvalNotificationService";
 
 const router = Router();
@@ -1414,9 +1416,26 @@ router.get("/submittals/:id/attachments/:attachmentId/download", requireAuth, re
     if (!attachment.storageKey) return res.status(404).json({ error: "No file stored for this attachment" });
 
     try {
+      const user = req.user!;
       const { ObjectStorageService } = await import("./objectStorage");
       const objectStorageService = new ObjectStorageService();
-      const objectFile = await objectStorageService.getObjectEntityFile(attachment.storageKey);
+      const normalized = objectStorageService.normalizeObjectEntityPath(attachment.storageKey);
+      const objectFile = await objectStorageService.getObjectEntityFile(normalized);
+
+      // Defense-in-depth: enforce ACL on the underlying object before issuing
+      // a signed URL so a forged/cross-tenant attachment row cannot leak
+      // another org's bytes.
+      const allowed = await objectStorageService.canAccessObjectEntity({
+        userId: user.id,
+        userOrganizationId: user.organizationId!,
+        objectFile,
+        requestedPermission: ObjectPermission.READ,
+        userRole: (user as any).effectiveRole || user.role,
+      });
+      if (!allowed) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
       const signedUrl = await objectStorageService.getSignedDownloadUrl(objectFile, 3600);
       res.json({ url: signedUrl });
     } catch (innerErr) {
@@ -1498,6 +1517,13 @@ router.post("/submittals/:id/attachments", requireAuth, requireRoleOrFeature(["S
     }
 
     if (isObjectPath) {
+      // Caller supplied a storage path directly. Verify the object belongs to
+      // their org so a tenant cannot attach another tenant's file.
+      try {
+        await assertStorageKeyBelongsToOrg(fileUrl, organizationId, user.id, user.role);
+      } catch (err: any) {
+        return res.status(err?.status || 403).json({ error: err?.message || "Forbidden" });
+      }
       storageKey = fileUrl;
     } else {
       const objectUUID = randomUUID();

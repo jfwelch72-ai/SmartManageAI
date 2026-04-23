@@ -188,6 +188,8 @@ import { validateBody } from "./utils/validation";
 import { logUpdate, logDelete, logAudit } from "./auditLogger";
 import { sanitizeShortText, sanitizeText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
+import { assertStorageKeyBelongsToOrg } from "./services/documentRevisionService";
+import { ObjectPermission } from "./objectAcl";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF, generateWarrantyContractPDF } from "./pdf-service";
 import { getOrganizationBranding } from "./organizationBranding";
 import { sendEmail } from "./email";
@@ -2850,6 +2852,18 @@ router.post("/api/bids/:code/documents", requireAuth, requireRole("ADMIN", "MANA
     if (!parsed.success) return res.status(400).json({ error: "Invalid request body", details: parsed.error.flatten() });
     const data = parsed.data;
 
+    // Verify the storage reference actually belongs to the caller's org so a
+    // tenant cannot register a bid document that points at another tenant's
+    // private object.
+    const supplied = data.objectKey || data.fileUrl;
+    if (supplied) {
+      try {
+        await assertStorageKeyBelongsToOrg(supplied, bid.gcOrganizationId, req.user!.id, req.user!.role);
+      } catch (err: any) {
+        return res.status(err?.status || 403).json({ error: err?.message || "Forbidden" });
+      }
+    }
+
     const [doc] = await db.insert(bidDocuments).values({
       bidId: bid.id,
       title: data.title,
@@ -2910,7 +2924,23 @@ router.get("/api/bids/:code/documents/:docId/preview-url", requireAuth, async (r
 
     const { ObjectStorageService } = await import("./objectStorage");
     const objectStorageService = new ObjectStorageService();
-    const objectFile = await objectStorageService.getObjectEntityFile(storageKey);
+    const normalized = objectStorageService.normalizeObjectEntityPath(storageKey);
+    const objectFile = await objectStorageService.getObjectEntityFile(normalized);
+
+    // Defense-in-depth ACL check on the underlying object before piping bytes,
+    // so a bid document row whose storageKey was forged or imported from
+    // elsewhere cannot leak another tenant's file.
+    const allowed = await objectStorageService.canAccessObjectEntity({
+      userId: req.user!.id,
+      userOrganizationId: req.user!.organizationId!,
+      objectFile,
+      requestedPermission: ObjectPermission.READ,
+      userRole: (req.user as any).effectiveRole || req.user!.role,
+    });
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
     await objectStorageService.downloadObject(objectFile, res, 3600);
   } catch (error) {
     logError("Bid document preview-url error:", {}, error instanceof Error ? error : new Error(String(error)));
@@ -2935,7 +2965,22 @@ router.get("/api/bids/:code/documents/:docId/stream", requireAuth, async (req: A
 
     const { ObjectStorageService } = await import("./objectStorage");
     const objectStorageService = new ObjectStorageService();
-    const objectFile = await objectStorageService.getObjectEntityFile(storageKey);
+    const normalized = objectStorageService.normalizeObjectEntityPath(storageKey);
+    const objectFile = await objectStorageService.getObjectEntityFile(normalized);
+
+    // Defense-in-depth ACL check before streaming, mirroring the preview-url
+    // hardening above.
+    const allowed = await objectStorageService.canAccessObjectEntity({
+      userId: req.user!.id,
+      userOrganizationId: req.user!.organizationId!,
+      objectFile,
+      requestedPermission: ObjectPermission.READ,
+      userRole: (req.user as any).effectiveRole || req.user!.role,
+    });
+    if (!allowed) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
     await objectStorageService.downloadObject(objectFile, res, 3600);
   } catch (error) {
     logError("Bid document stream error:", {}, error instanceof Error ? error : new Error(String(error)));
