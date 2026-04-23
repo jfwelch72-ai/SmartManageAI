@@ -228,6 +228,16 @@ export default function TopHeader() {
                     })
                   )}
                 </ScrollArea>
+                <DropdownMenuSeparator />
+                <Link
+                  href="/notifications"
+                  onClick={() => setNotificationsOpen(false)}
+                  data-testid="link-view-all-notifications"
+                >
+                  <div className="px-3 py-2 text-center text-sm font-medium text-primary hover:underline">
+                    View all notifications
+                  </div>
+                </Link>
               </DropdownMenuContent>
             </DropdownMenu>
           )}
