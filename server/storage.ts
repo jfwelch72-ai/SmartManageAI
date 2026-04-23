@@ -1133,6 +1133,20 @@ export async function recordCrmTranscriptBackfillThresholdAlert(
     });
 }
 
+// Task #1155 — admin "reset breach throttle" affordance. Clears
+// `lastThresholdAlertAt` so the next test-alert breach (Task #1094) re-fires
+// immediately instead of waiting out the throttle window after an admin has
+// already acknowledged the breach. Update-only so we don't materialize a row
+// for an org that has never configured destinations.
+export async function clearCrmTranscriptBackfillThresholdAlert(
+  organizationId: string,
+): Promise<void> {
+  await db
+    .update(crmTranscriptBackfillNotificationSettings)
+    .set({ lastThresholdAlertAt: null })
+    .where(eq(crmTranscriptBackfillNotificationSettings.organizationId, organizationId));
+}
+
 // Task #1045 — persist the most recent test-alert outcome so the settings
 // card can render last-known health without re-firing the test. Stored on
 // the same per-org row as the destinations so it follows the same tenant

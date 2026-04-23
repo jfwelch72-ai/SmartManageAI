@@ -42,6 +42,7 @@ import {
   getCrmTranscriptBackfillJob,
   getCrmTranscriptBackfillJobByIdAcrossOrgs,
   clearCrmTranscriptBackfillTestResult,
+  clearCrmTranscriptBackfillThresholdAlert,
   getCrmTranscriptBackfillNotificationSettings,
   getCrmTranscriptBackfillOperatorContact,
   getLatestCrmTranscriptBackfillTestAlert,
@@ -4105,6 +4106,26 @@ router.delete(
       const orgId = resolveOrg(req, res);
       if (!orgId) return;
       await clearCrmTranscriptBackfillTestResult(orgId);
+      res.json({ success: true });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #1155 — admin "reset breach throttle" affordance. Clears
+// `lastThresholdAlertAt` so the next test-alert breach (Task #1094) can fire
+// immediately instead of waiting out the throttle window after the admin has
+// already acknowledged the alert.
+router.delete(
+  "/api/crm/calls/transcripts/backfill/notification-settings/threshold-alert",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+      await clearCrmTranscriptBackfillThresholdAlert(orgId);
       res.json({ success: true });
     } catch (e) {
       next(e);

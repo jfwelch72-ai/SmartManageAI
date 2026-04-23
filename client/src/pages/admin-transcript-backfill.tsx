@@ -3851,6 +3851,32 @@ export function BackfillNotificationSettingsCard() {
     },
   });
 
+  // Task #1155 — admin "reset breach throttle" affordance. Clears
+  // `lastThresholdAlertAt` so the next test-alert breach (Task #1094) can
+  // re-alert immediately instead of waiting out the hourly throttle window.
+  const resetBreachThrottleMutation = useMutation({
+    mutationFn: async () => {
+      await apiRequest(
+        "DELETE",
+        `${NOTIFICATION_SETTINGS_PATH}/threshold-alert`,
+      );
+    },
+    onSuccess: () => {
+      toast({
+        title: "Breach alert throttle reset",
+        description:
+          "The next test-alert breach (if any) will notify immediately.",
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Couldn't reset the breach throttle",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const lastTestResult = settingsQuery.data?.lastTestResult ?? null;
   const lastTestAt = settingsQuery.data?.lastTestAt ?? null;
 
@@ -3968,6 +3994,22 @@ export function BackfillNotificationSettingsCard() {
               Available again in {cooldownRemainingSec}s
             </span>
           )}
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => resetBreachThrottleMutation.mutate()}
+            disabled={
+              resetBreachThrottleMutation.isPending ||
+              settingsQuery.isLoading
+            }
+            data-testid="button-reset-breach-throttle"
+            title="Clear the hourly throttle so the next test-alert breach re-alerts immediately"
+          >
+            {resetBreachThrottleMutation.isPending && (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            )}
+            Reset breach throttle
+          </Button>
           {settingsQuery.data?.updatedAt && (
             <span
               className="text-xs text-muted-foreground"
