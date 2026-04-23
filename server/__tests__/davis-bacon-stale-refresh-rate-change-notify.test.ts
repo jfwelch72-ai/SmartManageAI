@@ -151,9 +151,10 @@ async function seedStaleRow(decisionNumber: string, rates: { classification: str
 }
 
 async function makeProject(decisionNumber: string, withPm: boolean) {
+  const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
   const [p] = await db.insert(projects).values({
-    name: `${PREFIX}proj`,
-    code: `${PREFIX}p-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    name: `${PREFIX}proj-${suffix}`,
+    code: `${PREFIX}p-${suffix}`,
     clientName: "Acme",
     gcOrganizationId: orgId,
     wageDecision: decisionNumber,
@@ -245,6 +246,96 @@ describe("processStaleWageDecisions rate-change notifications (Task #1400)", () 
     expect(recipients.size).toBe(2);
     for (const n of noteRows) {
       expect(n.relatedEntityId).toBe(proj.id);
+    }
+  });
+});
+
+describe("notifyProjectManagersOfWageRateChange digest (Task #1407)", () => {
+  it("collapses multiple projects per user into a single digest notification", async () => {
+    const decision = "CA20260307";
+    // Three projects all under the same wage decision, all with the
+    // same PM, in an org where one admin user is present.
+    const projA = await makeProject(decision, true);
+    const projB = await makeProject(decision, true);
+    const projC = await makeProject(decision, true);
+
+    const { notifyProjectManagersOfWageRateChange } = await import(
+      "../services/davisBaconAdminNotifications"
+    );
+    await notifyProjectManagersOfWageRateChange({
+      organizationId: orgId,
+      decisionNumber: decision,
+      diff: {
+        changes: [
+          {
+            classification: "Carpenter",
+            kind: "changed",
+            oldBaseRate: 50,
+            newBaseRate: 60,
+            oldFringeRate: 10,
+            newFringeRate: 10,
+            oldTotalRate: 60,
+            newTotalRate: 70,
+          },
+        ],
+      },
+    });
+
+    const noteRows = await rateChangeNotificationsFor(orgId);
+    // 3 projects × 2 recipients (PM + admin) would have been 6
+    // notifications under the old fan-out. Digest collapses to one
+    // notification per recipient = 2.
+    expect(noteRows).toHaveLength(2);
+    const recipients = new Set(noteRows.map((n) => n.userId));
+    expect(recipients.has(pmId)).toBe(true);
+    expect(recipients.has(adminId)).toBe(true);
+    for (const n of noteRows) {
+      // Multi-project digest: title mentions the project count, and
+      // relatedEntityId is null so the email falls back to /payroll.
+      expect(n.title).toContain(decision);
+      expect(n.title).toContain("3 projects");
+      expect(n.relatedEntityId).toBeNull();
+      const msg = String(n.message);
+      // Each affected project is listed in the digest body.
+      for (const p of [projA, projB, projC]) {
+        expect(msg).toContain(p.name || p.code || "");
+      }
+    }
+  });
+
+  it("preserves single-project notification format unchanged", async () => {
+    const decision = "CA20260308";
+    const proj = await makeProject(decision, true);
+
+    const { notifyProjectManagersOfWageRateChange } = await import(
+      "../services/davisBaconAdminNotifications"
+    );
+    await notifyProjectManagersOfWageRateChange({
+      organizationId: orgId,
+      decisionNumber: decision,
+      diff: {
+        changes: [
+          {
+            classification: "Carpenter",
+            kind: "changed",
+            oldBaseRate: 50,
+            newBaseRate: 60,
+            oldFringeRate: 10,
+            newFringeRate: 10,
+            oldTotalRate: 60,
+            newTotalRate: 70,
+          },
+        ],
+      },
+    });
+
+    const noteRows = await rateChangeNotificationsFor(orgId);
+    expect(noteRows).toHaveLength(2);
+    for (const n of noteRows) {
+      // Single-project format: no "N projects" in title, links to project.
+      expect(n.title).toBe(`Davis-Bacon rates changed for ${decision}`);
+      expect(n.relatedEntityId).toBe(proj.id);
+      expect(n.relatedEntityType).toBe("PROJECT");
     }
   });
 });

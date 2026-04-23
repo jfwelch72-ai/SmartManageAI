@@ -439,16 +439,18 @@ function summarizeDiff(diff: WageRateDiff, max = 5): string {
 }
 
 /**
- * Task #1400 — fan a "wage decision rates changed" notification out for
- * every project in `organizationId` whose `wageDecision` matches
- * `decisionNumber`. Recipients per project: the project manager (when
- * set) plus every active org admin (the de-facto payroll administrator
- * audience already used by `processMissingWageDecisionReminders`).
+ * Task #1400 / #1407 — notify the audience for every project in
+ * `organizationId` whose `wageDecision` matches `decisionNumber` that the
+ * cached Davis-Bacon rates just changed. Recipients per project: the
+ * project manager (when set) plus every active org admin.
  *
- * Each (user, project) pair receives at most one in-app + email notification
- * so a PM who is also an org admin does not get a duplicate, and a single
- * admin overseeing N affected projects receives N targeted notifications
- * (each linking to its own project's prevailing wage panel).
+ * Task #1407: a single user is notified at most once per sweep/decision,
+ * even when they're the recipient for many affected projects. When the
+ * user has only one affected project the notification is identical to the
+ * pre-digest behaviour (same title, same message, same relatedEntityId).
+ * When multiple projects roll up for the same user, those projects are
+ * collapsed into one digest notification listing each affected project
+ * alongside the shared rate diff summary.
  */
 export async function notifyProjectManagersOfWageRateChange(
   args: NotifyRateChangeArgs,
@@ -480,9 +482,10 @@ export async function notifyProjectManagersOfWageRateChange(
   const adminIds = await getOrgAdminUserIds(args.organizationId);
   const summary = summarizeDiff(args.diff);
 
-  let notificationsSent = 0;
-  let recipientsNotified = 0;
-
+  // Build userId → projects[] so a single user overseeing N affected
+  // projects receives one digest instead of N near-identical alerts.
+  type ProjectRef = { id: string; name: string; code: string };
+  const byUser = new Map<string, ProjectRef[]>();
   for (const project of affected) {
     const recipients = new Set<string>(adminIds);
     if (project.projectManagerId) recipients.add(project.projectManagerId);
@@ -494,43 +497,86 @@ export async function notifyProjectManagersOfWageRateChange(
       });
       continue;
     }
-
-    const title = `Davis-Bacon rates changed for ${decision}`;
-    const message =
-      `The latest auto-refresh of wage decision ${decision} returned ` +
-      `different rates for ${args.diff.changes.length} classification(s) ` +
-      `affecting project "${project.name || project.code}". Review certified ` +
-      `payrolls and pay items before your next submission.\n\n${summary}`;
-
-    let delivered = 0;
+    const ref: ProjectRef = {
+      id: project.id,
+      name: project.name || "",
+      code: project.code || "",
+    };
     for (const userId of recipients) {
-      try {
-        await insertNotification({
-          userId,
-          organizationId: args.organizationId,
-          type: "WAGE_DECISION_RATES_CHANGED",
-          title,
-          message,
-          relatedEntityId: project.id,
-          relatedEntityType: "PROJECT",
-        } as InsertNotification);
-        delivered += 1;
-      } catch (err) {
-        logError(
-          "Failed to deliver wage rate change notification",
-          {
-            organizationId: args.organizationId,
-            projectId: project.id,
-            userId,
-            decisionNumber: decision,
-          },
-          err instanceof Error ? err : new Error(String(err)),
-        );
-      }
+      const list = byUser.get(userId) ?? [];
+      list.push(ref);
+      byUser.set(userId, list);
     }
-    if (delivered > 0) {
+  }
+
+  let notificationsSent = 0;
+  let recipientsNotified = 0;
+
+  const MAX_PROJECTS_LISTED = 10;
+
+  for (const [userId, userProjects] of byUser) {
+    let title: string;
+    let message: string;
+    let relatedEntityId: string | null;
+    let relatedEntityType: string | null;
+
+    if (userProjects.length === 1) {
+      const project = userProjects[0];
+      // Preserve the pre-digest single-project format byte-for-byte so
+      // existing clients/tests continue to see the same payload.
+      title = `Davis-Bacon rates changed for ${decision}`;
+      message =
+        `The latest auto-refresh of wage decision ${decision} returned ` +
+        `different rates for ${args.diff.changes.length} classification(s) ` +
+        `affecting project "${project.name || project.code}". Review certified ` +
+        `payrolls and pay items before your next submission.\n\n${summary}`;
+      relatedEntityId = project.id;
+      relatedEntityType = "PROJECT";
+    } else {
+      title = `Davis-Bacon rates changed for ${decision} — ${userProjects.length} projects`;
+      const listed = userProjects
+        .slice(0, MAX_PROJECTS_LISTED)
+        .map((p) => `• ${p.name || p.code}`)
+        .join("\n");
+      const overflow =
+        userProjects.length > MAX_PROJECTS_LISTED
+          ? `\n…and ${userProjects.length - MAX_PROJECTS_LISTED} more project(s).`
+          : "";
+      message =
+        `The latest auto-refresh of wage decision ${decision} returned ` +
+        `different rates for ${args.diff.changes.length} classification(s) ` +
+        `affecting ${userProjects.length} of your projects. Review certified ` +
+        `payrolls and pay items before your next submission.\n\n` +
+        `Affected projects:\n${listed}${overflow}\n\n${summary}`;
+      // Leave relatedEntityId null for digests so the email template falls
+      // back to the payroll deep-link instead of pointing to one project.
+      relatedEntityId = null;
+      relatedEntityType = null;
+    }
+
+    try {
+      await insertNotification({
+        userId,
+        organizationId: args.organizationId,
+        type: "WAGE_DECISION_RATES_CHANGED",
+        title,
+        message,
+        relatedEntityId,
+        relatedEntityType,
+      } as InsertNotification);
       notificationsSent += 1;
-      recipientsNotified += delivered;
+      recipientsNotified += 1;
+    } catch (err) {
+      logError(
+        "Failed to deliver wage rate change notification",
+        {
+          organizationId: args.organizationId,
+          userId,
+          decisionNumber: decision,
+          projectCount: userProjects.length,
+        },
+        err instanceof Error ? err : new Error(String(err)),
+      );
     }
   }
 
