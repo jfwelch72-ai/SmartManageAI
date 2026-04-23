@@ -1709,7 +1709,7 @@ router.post("/api/projects/:id/prevailing-wage-summary/sync", requireAuth, async
       return res.status(400).json({ error: "Project has no wage decision set" });
     }
 
-    const outcome = await queueWageDecisionSync(orgId, decisionNumber, { awaitResult: true });
+    const outcome = await queueWageDecisionSync(orgId, decisionNumber, { awaitResult: true, manualRetry: true });
 
     if (outcome.status === "no_connection") {
       return res.status(409).json({
@@ -2293,7 +2293,7 @@ router.post("/api/payroll/wage-decisions/sync", requireAuth, requireFeaturePermi
     const parsed = validateBody(schema, req.body, res);
     if (!parsed) return;
 
-    const outcome = await queueWageDecisionSync(orgId, parsed.decisionNumber, { awaitResult: true });
+    const outcome = await queueWageDecisionSync(orgId, parsed.decisionNumber, { awaitResult: true, manualRetry: true });
 
     if (outcome.status === "no_connection") {
       return res.status(409).json({

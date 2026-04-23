@@ -7170,6 +7170,13 @@ export const integrationSyncState = pgTable("integration_sync_state", {
   // success so a successful sync naturally clears any prior failure state.
   lastAttemptAt: timestamp("last_attempt_at"),
   lastError: text("last_error"),
+  // Task #1354: scheduled-retry bookkeeping for failed background syncs
+  // (initially: Davis-Bacon wage decisions). retryCount is the number of
+  // failed attempts since the last success; nextRetryAt is when the
+  // background retry job should re-attempt (null when the row is healthy
+  // or has exhausted the max retry attempts and needs manual intervention).
+  retryCount: integer("retry_count").notNull().default(0),
+  nextRetryAt: timestamp("next_retry_at"),
   metadata: json("metadata"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

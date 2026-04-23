@@ -22,6 +22,7 @@ import { eventBus } from "../events";
 import { emailAccounts, emailCampaigns, emailCampaignContacts } from "@shared/schema";
 import { syncImapAccount, syncOutlookAccount, syncGmailAccount, drainAccountProviderPushes } from "../emailRoutes";
 import { processArchivedCertifiedPayrollPurge } from "./certifiedPayrollPurge";
+import { processFailedWageDecisionRetries } from "../integrations/providers/dol_davis_bacon/sync";
 import { ensureAllEmailPushSubscriptions } from "../emailPushNotifications";
 import { sendEmail } from "../services/emailService";
 import { processDueExecutions } from "../services/sequenceService";
@@ -60,6 +61,7 @@ let portfolioKpiSnapshotTask: ReturnType<typeof cron.schedule> | null = null;
 let certifiedPayrollDigestTask: ReturnType<typeof cron.schedule> | null = null;
 let swpppOverdueTask: ReturnType<typeof cron.schedule> | null = null;
 let certifiedPayrollPurgeTask: ReturnType<typeof cron.schedule> | null = null;
+let wageDecisionRetryTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -408,6 +410,21 @@ export function startJobRunner() {
     }
   });
 
+  // Task #1354: every 5 minutes, re-attempt failed Davis-Bacon wage
+  // decision syncs whose backoff window is due. Successful retries
+  // automatically clear the project payroll banner and the in-app
+  // notification; exhausted rows are left for manual intervention.
+  wageDecisionRetryTask = cron.schedule("*/5 * * * *", async () => {
+    try {
+      const out = await processFailedWageDecisionRetries();
+      if (out.attempted > 0) {
+        logInfo("Davis-Bacon wage decision retry sweep", out);
+      }
+    } catch (err) {
+      logError("Davis-Bacon wage decision retry sweep failed", { error: String(err) });
+    }
+  });
+
   logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, provider email sync, provider push-back drain, periodic report, DB health check, scheduled campaign, project geocoding, weekly CRM birthday digest, and daily CRM birthday email schedulers)");
 }
 
@@ -540,6 +557,10 @@ export function stopJobRunner() {
     certifiedPayrollPurgeTask.stop();
     certifiedPayrollPurgeTask = null;
   }
+  if (wageDecisionRetryTask) {
+    wageDecisionRetryTask.stop();
+    wageDecisionRetryTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -577,6 +598,7 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   certified_payroll_digest: { fn: () => processCertifiedPayrollWeeklyDigest(), description: "Email payroll administrators a digest of certified payroll PDFs (per-org cadence/time/timezone)", schedule: "0 * * * *" },
   swppp_overdue_corrective_actions: { fn: () => processSwpppOverdueCorrectiveActions(), description: "Notify assignees and project managers when SWPPP corrective actions pass their due date without being resolved", schedule: "0 7 * * *" },
   certified_payroll_purge: { fn: async () => { await processArchivedCertifiedPayrollPurge(); }, description: "Hard-delete archived certified payroll PDFs (and object-storage files) older than each org's retention window (default 3 years)", schedule: "30 3 * * *" },
+  wage_decision_retry: { fn: async () => { await processFailedWageDecisionRetries(); }, description: "Re-attempt failed Davis-Bacon wage-decision syncs on an exponential backoff up to MAX_WAGE_DECISION_RETRIES", schedule: "*/5 * * * *" },
 };
 
 async function processOutbox() {
