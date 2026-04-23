@@ -1690,6 +1690,79 @@ export async function listOrgAdminAlertFailureModes(
   return out;
 }
 
+// Task #1139 — let an ADMIN change another active admin's
+// `alertFailureEmailMode` inline from the transcript-backfill page so ops
+// leads can fix coverage gaps (e.g. "the org went all-digest, nobody is
+// on real-time anymore") without paging the affected admin or
+// impersonating them. Returns `null` when the target user does not exist,
+// is in a different org, is not an active admin, or any other lookup
+// guard fails — the route layer maps that to a 404 so callers cannot use
+// this endpoint to probe cross-tenant user IDs. When the requested mode
+// equals the current mode we still return the (unchanged) before/after so
+// the caller can render a clear "no-op" toast and skip audit logging.
+export type UpdateOrgAdminAlertFailureModeResult = {
+  previousMode: OrgAdminAlertFailureMode["alertFailureEmailMode"];
+  newMode: OrgAdminAlertFailureMode["alertFailureEmailMode"];
+  email: string;
+  firstName: string | null;
+  lastName: string | null;
+  changed: boolean;
+} | null;
+
+export async function updateOrgAdminAlertFailureMode(
+  organizationId: string,
+  targetUserId: string,
+  newMode: OrgAdminAlertFailureMode["alertFailureEmailMode"],
+): Promise<UpdateOrgAdminAlertFailureModeResult> {
+  const [target] = await db
+    .select({
+      id: users.id,
+      email: users.email,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      organizationId: users.organizationId,
+      role: users.role,
+      isActive: users.isActive,
+      alertFailureEmailMode: users.alertFailureEmailMode,
+    })
+    .from(users)
+    .where(eq(users.id, targetUserId));
+  if (!target) return null;
+  if (target.organizationId !== organizationId) return null;
+  if (target.role !== "ADMIN") return null;
+  if (target.isActive === false) return null;
+  const previousRaw = target.alertFailureEmailMode ?? "both";
+  const previousMode: OrgAdminAlertFailureMode["alertFailureEmailMode"] =
+    previousRaw === "realtime" ||
+    previousRaw === "digest" ||
+    previousRaw === "none"
+      ? previousRaw
+      : "both";
+  const email = (target.email ?? "").trim();
+  if (previousMode === newMode) {
+    return {
+      previousMode,
+      newMode,
+      email,
+      firstName: target.firstName ?? null,
+      lastName: target.lastName ?? null,
+      changed: false,
+    };
+  }
+  await db
+    .update(users)
+    .set({ alertFailureEmailMode: newMode, updatedAt: new Date() })
+    .where(eq(users.id, targetUserId));
+  return {
+    previousMode,
+    newMode,
+    email,
+    firstName: target.firstName ?? null,
+    lastName: target.lastName ?? null,
+    changed: true,
+  };
+}
+
 // Task #1065 — daily digest of recent alert delivery failures.
 //
 // Aggregates the last N hours of `crm_transcript_backfill_alert_deliveries`

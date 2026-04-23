@@ -4512,6 +4512,177 @@ function adminDisplayName(row: BackfillAdminAlertFailureModeRow): string {
   return parts.length > 0 ? parts.join(" ") : row.email;
 }
 
+// Task #1139 — per-row inline action: lets ops leads change another
+// admin's `alertFailureEmailMode` without leaving the page. The Select
+// only stages the new mode; the actual PATCH only fires after the
+// confirmation dialog is accepted (so misclicks can't silently re-route
+// a teammate's alert subscription). The mutation invalidates the parent
+// card's query so the row instantly reflects the new badge.
+const ADMIN_ALERT_FAILURE_MODE_OPTIONS: Array<{
+  value: BackfillAdminAlertFailureModeRow["alertFailureEmailMode"];
+  label: string;
+}> = [
+  { value: "both", label: "Real-time + digest" },
+  { value: "realtime", label: "Real-time only" },
+  { value: "digest", label: "Digest only" },
+  { value: "none", label: "None" },
+];
+
+function AdminAlertFailureModeChangeAction({
+  row,
+}: {
+  row: BackfillAdminAlertFailureModeRow;
+}) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState<
+    BackfillAdminAlertFailureModeRow["alertFailureEmailMode"]
+  >(row.alertFailureEmailMode);
+
+  // Reset the staged value whenever the dialog reopens or the row's
+  // current mode shifts (e.g. another tab updated it during a refetch).
+  useEffect(() => {
+    if (open) setPending(row.alertFailureEmailMode);
+  }, [open, row.alertFailureEmailMode]);
+
+  const mutation = useMutation({
+    mutationFn: async (
+      mode: BackfillAdminAlertFailureModeRow["alertFailureEmailMode"],
+    ) => {
+      const res = await apiRequest(
+        "PATCH",
+        `${ADMIN_ALERT_FAILURE_MODES_PATH}/${row.id}`,
+        { alertFailureEmailMode: mode },
+      );
+      return (await res.json()) as {
+        alertFailureEmailMode: BackfillAdminAlertFailureModeRow["alertFailureEmailMode"];
+        previousMode: BackfillAdminAlertFailureModeRow["alertFailureEmailMode"];
+        changed: boolean;
+      };
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({
+        queryKey: [ADMIN_ALERT_FAILURE_MODES_PATH],
+      });
+      const newLabel = modeBadgeProps(data.alertFailureEmailMode).label;
+      toast({
+        title: data.changed
+          ? "Alert-failure mode updated"
+          : "No change applied",
+        description: data.changed
+          ? `${adminDisplayName(row)} is now on "${newLabel}".`
+          : `${adminDisplayName(row)} was already on "${newLabel}".`,
+      });
+      setOpen(false);
+    },
+    onError: (err: unknown) => {
+      toast({
+        title: "Failed to update alert-failure mode",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const currentLabel = modeBadgeProps(row.alertFailureEmailMode).label;
+  const pendingLabel = modeBadgeProps(pending).label;
+  const isNoOp = pending === row.alertFailureEmailMode;
+
+  return (
+    <AlertDialog open={open} onOpenChange={setOpen}>
+      <AlertDialogTrigger asChild>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          className="h-7 px-2 text-xs"
+          data-testid={`button-change-admin-alert-failure-mode-${row.id}`}
+        >
+          Change
+        </Button>
+      </AlertDialogTrigger>
+      <AlertDialogContent
+        data-testid={`dialog-change-admin-alert-failure-mode-${row.id}`}
+      >
+        <AlertDialogHeader>
+          <AlertDialogTitle>Change alert-failure email mode?</AlertDialogTitle>
+          <AlertDialogDescription>
+            This updates the per-failure / digest stream that{" "}
+            <span className="font-medium">{adminDisplayName(row)}</span>{" "}
+            ({row.email}) receives when a transcript-backfill alert fails to
+            deliver. Their notification preferences page will reflect the new
+            value, and the change is recorded in the audit log under your
+            account.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <div className="space-y-2 py-1">
+          <Label
+            htmlFor={`select-admin-alert-failure-mode-${row.id}`}
+            className="text-xs text-muted-foreground"
+          >
+            Currently: <span className="font-medium">{currentLabel}</span>
+          </Label>
+          <Select
+            value={pending}
+            onValueChange={(v) =>
+              setPending(
+                v as BackfillAdminAlertFailureModeRow["alertFailureEmailMode"],
+              )
+            }
+          >
+            <SelectTrigger
+              id={`select-admin-alert-failure-mode-${row.id}`}
+              data-testid={`select-admin-alert-failure-mode-${row.id}`}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ADMIN_ALERT_FAILURE_MODE_OPTIONS.map((opt) => (
+                <SelectItem
+                  key={opt.value}
+                  value={opt.value}
+                  data-testid={`option-admin-alert-failure-mode-${row.id}-${opt.value}`}
+                >
+                  {opt.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid={`text-admin-alert-failure-mode-pending-${row.id}`}
+          >
+            New mode: <span className="font-medium">{pendingLabel}</span>
+          </p>
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel
+            disabled={mutation.isPending}
+            data-testid={`button-cancel-change-admin-alert-failure-mode-${row.id}`}
+          >
+            Cancel
+          </AlertDialogCancel>
+          <AlertDialogAction
+            disabled={mutation.isPending || isNoOp}
+            onClick={(e) => {
+              // Keep the dialog open until the mutation resolves so the
+              // user sees the spinner; we close it ourselves in onSuccess.
+              e.preventDefault();
+              mutation.mutate(pending);
+            }}
+            data-testid={`button-confirm-change-admin-alert-failure-mode-${row.id}`}
+          >
+            {mutation.isPending ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : null}
+            Confirm change
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  );
+}
+
 // Task #1102 — the card auto-refreshes every 30s so when an admin updates
 // their fallback / digest preferences in another tab the recipient list on
 // this page reflects the change without requiring a manual reload. Window
@@ -4796,6 +4967,7 @@ export function BackfillAdminAlertFailureModesCard() {
                           {badge.description}
                         </TooltipContent>
                       </Tooltip>
+                      <AdminAlertFailureModeChangeAction row={row} />
                     </div>
                   </li>
                 );

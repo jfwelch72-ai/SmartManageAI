@@ -47,6 +47,7 @@ import {
   getLatestCrmTranscriptBackfillTestAlert,
   listCrmTranscriptBackfillAlertDeliveries,
   listOrgAdminAlertFailureModes,
+  updateOrgAdminAlertFailureMode,
   summarizeOrgAdminAlertFailureFallbackMutes,
   listCrmTranscriptBackfillTestAlerts,
   getCrmTranscriptBackfillTestAlertUsageSummary,
@@ -80,7 +81,9 @@ import {
   requireRole,
   requireRoleOrFeature,
   type AuthRequest,
+  invalidateAuthCache,
 } from "./auth";
+import { logUpdate } from "./auditLogger";
 import { getOrgIdForFilter, isSuperAdmin } from "./orgFilter";
 import { isFeatureEnabled } from "./services/featureFlagService";
 import { logError, logInfo, logWarn } from "./utils/logger";
@@ -3172,6 +3175,98 @@ router.get(
         slackRecipientCount,
         emailRecipientCount,
         fullyOptedOutCount,
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #1139 — let an ADMIN flip another active org admin's
+// `alertFailureEmailMode` directly from the transcript-backfill page so
+// ops leads can re-balance coverage (e.g. drag someone off "digest only"
+// when the org has no real-time recipients left) without paging the
+// affected admin or impersonating them. The change is audit-logged via
+// `logUpdate` so the resulting record matches what the user's own
+// notification-preferences PATCH writes — no silent overrides — and the
+// auth cache for the target user is invalidated so their next request
+// reflects the new mode immediately. Storage-level guards (org match +
+// active ADMIN) keep this from leaking into a cross-tenant probe; both
+// failure modes return 404.
+const ADMIN_ALERT_FAILURE_MODE_VALUES = [
+  "both",
+  "realtime",
+  "digest",
+  "none",
+] as const;
+
+router.patch(
+  "/api/crm/calls/transcripts/backfill/admin-alert-failure-modes/:userId",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+      const actingUserId = req.user?.id;
+      if (!actingUserId) {
+        res.status(401).json({ error: "Not authenticated" });
+        return;
+      }
+      const targetUserId = req.params.userId;
+      if (!targetUserId) {
+        res.status(400).json({ error: "Missing user id" });
+        return;
+      }
+      const bodySchema = z.object({
+        alertFailureEmailMode: z.enum(ADMIN_ALERT_FAILURE_MODE_VALUES),
+      });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          error: "Invalid input",
+          details: parsed.error.errors,
+        });
+        return;
+      }
+      const result = await updateOrgAdminAlertFailureMode(
+        orgId,
+        targetUserId,
+        parsed.data.alertFailureEmailMode,
+      );
+      if (!result) {
+        // Storage rejected for any of: missing user, wrong org, non-ADMIN,
+        // or inactive. We deliberately collapse those into a single 404
+        // so this endpoint cannot be used to probe cross-tenant ids.
+        res
+          .status(404)
+          .json({ error: "Admin not found in this organization" });
+        return;
+      }
+      if (result.changed) {
+        // Mirror the self-service profile PATCH: write a `users` UPDATE
+        // audit row attributed to the acting admin so the change is
+        // discoverable from the existing audit trail.
+        await logUpdate(
+          actingUserId,
+          "users",
+          targetUserId,
+          { alertFailureEmailMode: result.previousMode },
+          { alertFailureEmailMode: result.newMode },
+          req,
+        );
+        // Bust the target user's cached `requireAuth` payload so a tab
+        // they have open elsewhere sees the new mode on the next request.
+        invalidateAuthCache(targetUserId);
+      }
+      res.json({
+        userId: targetUserId,
+        previousMode: result.previousMode,
+        alertFailureEmailMode: result.newMode,
+        changed: result.changed,
+        email: result.email,
+        firstName: result.firstName,
+        lastName: result.lastName,
       });
     } catch (e) {
       next(e);
