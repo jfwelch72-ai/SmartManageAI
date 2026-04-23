@@ -87,6 +87,11 @@ const TYPES_WITH_IN_APP_TOGGLE = new Set<string>([
   // mute toggle so owners can silence them the same way SWPPP
   // overdue alerts can be muted.
   "DAVIS_BACON_AUTO_SYNC_FAILED",
+  // Task #1408 — Davis-Bacon wage rate change alerts (sent per
+  // affected project by the daily stale-refresh sweep) can be
+  // noisy for PMs juggling many projects; expose a per-type mute
+  // toggle and matching one-click email footer link.
+  "WAGE_DECISION_RATES_CHANGED",
 ]);
 
 const CRM_CONTACT_REASSIGNED = "CRM_CONTACT_REASSIGNED";
@@ -141,7 +146,15 @@ const NOTIFICATION_TYPE_GROUPS: { label: string; types: string[] }[] = [
     // The email footer's one-click mute link disables both channels at
     // once for convenience during a flood.
     label: "Integrations",
-    types: ["DAVIS_BACON_AUTO_SYNC_FAILED", "INTEGRATION_SYNC_RETRIES_EXHAUSTED"],
+    types: [
+      "DAVIS_BACON_AUTO_SYNC_FAILED",
+      // Task #1408 — Per-type email toggle for the Davis-Bacon wage
+      // rate change alert email (Task #1400). Lives next to the
+      // auto-sync failure toggle so all Davis-Bacon noise can be
+      // tuned together.
+      "WAGE_DECISION_RATES_CHANGED",
+      "INTEGRATION_SYNC_RETRIES_EXHAUSTED",
+    ],
   },
   {
     label: "Admin Alerts",
@@ -155,6 +168,8 @@ const TYPE_LABEL_OVERRIDES: Record<string, string> = {
   SWPPP_OVERDUE_CORRECTIVE_ACTION: "SWPPP corrective action overdue",
   // Task #1361 — Friendlier label for the Davis-Bacon failure alert.
   DAVIS_BACON_AUTO_SYNC_FAILED: "Davis-Bacon auto-sync failed",
+  // Task #1408 — Friendlier label for the wage-decision rate change alert.
+  WAGE_DECISION_RATES_CHANGED: "Davis-Bacon wage rates changed",
   // Task #1379 — Friendlier label for the generic integration sync
   // retry exhaustion alert (covers QuickBooks, STACK CT, Zapier, …).
   INTEGRATION_SYNC_RETRIES_EXHAUSTED: "Integration auto-sync gave up",
@@ -2426,6 +2441,10 @@ export default function NotificationPrefsSection() {
                       // email's one-click mute link.
                       : type === "DAVIS_BACON_AUTO_SYNC_FAILED"
                       ? "section-davis-bacon-auto-sync-failed-prefs"
+                      // Task #1408 — anchor for the Davis-Bacon wage rate
+                      // change email's one-click mute link.
+                      : type === "WAGE_DECISION_RATES_CHANGED"
+                      ? "section-wage-decision-rates-changed-prefs"
                       : undefined;
                     return (
                       <div key={type} id={rowId} className="flex items-center justify-between py-1" data-testid={`row-in-app-pref-${type}`}>

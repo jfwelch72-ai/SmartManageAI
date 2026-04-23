@@ -13,6 +13,7 @@ import { hasFeature } from "./featureAccess";
 import { isFeatureEnabled } from "./featureFlagService";
 import { buildSwpppMuteUrl } from "../utils/swpppMuteToken";
 import { buildDavisBaconMuteUrl } from "../utils/davisBaconMuteToken";
+import { buildWageDecisionRatesChangedMuteUrl } from "../utils/wageDecisionRatesChangedMuteToken";
 import { buildIntegrationSyncMuteUrl } from "../utils/integrationSyncMuteToken";
 
 type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
@@ -702,6 +703,18 @@ export function composeEmailContent(
       : `${baseUrl}/payroll`;
     const subject = `Davis-Bacon wage rates changed — SmartManageAI`;
     const messageHtml = escapeHtml(notification.message).replace(/\n/g, "<br>");
+
+    // Task #1408 — One-click mute footer link, modeled after the Davis-
+    // Bacon auto-sync failure mute (Task #1361). The signed token is
+    // bound to the recipient's userId so the endpoint can only mute
+    // *their* WAGE_DECISION_RATES_CHANGED preferences (no cross-tenant
+    // abuse). A plain settings deep link is included as a transparent
+    // fallback.
+    const muteUrl = baseUrl
+      ? buildWageDecisionRatesChangedMuteUrl(baseUrl, notification.userId)
+      : "";
+    const settingsUrl = `${baseUrl}/settings/notifications#section-wage-decision-rates-changed-prefs`;
+
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #b91c1c;">${escapeHtml(notification.title)}</h2>
@@ -716,6 +729,7 @@ export function composeEmailContent(
           You are receiving this because you are listed as the project manager,
           or as an administrator for your organization. Review certified payrolls
           and pay items affected by the rate change before your next submission.
+          ${muteUrl ? `<br><a href="${muteUrl}" style="color: #0070f3; text-decoration: underline;" data-testid="link-mute-wage-decision-rates-changed">Mute wage rate change alerts (email + in-app)</a> &middot; ` : ""}<a href="${settingsUrl}" style="color: #999; text-decoration: underline;">Manage notification settings</a>
         </p>
       </div>
     `;

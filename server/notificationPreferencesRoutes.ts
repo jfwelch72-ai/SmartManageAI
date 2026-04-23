@@ -57,6 +57,7 @@ import { hasFeature } from "./services/featureAccess";
 import { buildDigestCsv } from "./utils/jobMetricAlerts";
 import { verifySwpppMuteToken } from "./utils/swpppMuteToken";
 import { verifyDavisBaconMuteToken } from "./utils/davisBaconMuteToken";
+import { verifyWageDecisionRatesChangedMuteToken } from "./utils/wageDecisionRatesChangedMuteToken";
 import { logInfo } from "./utils/logger";
 
 const router = Router();
@@ -572,6 +573,60 @@ router.get("/api/notifications/mute/davis-bacon-auto-sync-failed", async (req, r
     return res.redirect(`/settings/notifications?muted=davis_bacon_auto_sync_failed${settingsAnchor}`);
   } catch (error) {
     logError("Failed to mute Davis-Bacon auto-sync failure alerts via email link", { error: String(error) });
+    next(error);
+  }
+});
+
+/**
+ * Task #1408 — One-click "mute Davis-Bacon wage rate change alerts" link
+ * rendered in the footer of WAGE_DECISION_RATES_CHANGED emails. Mirrors
+ * the Davis-Bacon auto-sync failure mute endpoint above: signed JWT
+ * bound to the recipient's userId so it can ONLY mute the recipient's
+ * own preferences (no cross-tenant abuse), upserts both email + in-app
+ * to disabled, then redirects back to the settings page anchored to
+ * the matching toggle.
+ */
+router.get("/api/notifications/mute/wage-decision-rates-changed", async (req, res, next) => {
+  try {
+    const token = typeof req.query.token === "string" ? req.query.token : "";
+    const payload = token ? verifyWageDecisionRatesChangedMuteToken(token) : null;
+    const settingsAnchor = "#section-wage-decision-rates-changed-prefs";
+
+    if (!payload) {
+      return res.redirect(`/settings/notifications?mute=invalid${settingsAnchor}`);
+    }
+
+    const now = new Date();
+    await db
+      .insert(notificationTypePrefs)
+      .values({
+        userId: payload.userId,
+        notificationType: "WAGE_DECISION_RATES_CHANGED",
+        emailEnabled: false,
+        smsEnabled: false,
+        pushEnabled: false,
+        teamsEnabled: false,
+        slackEnabled: false,
+        inAppEnabled: false,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [notificationTypePrefs.userId, notificationTypePrefs.notificationType],
+        set: {
+          emailEnabled: false,
+          inAppEnabled: false,
+          updatedAt: now,
+        },
+      });
+
+    logInfo("Wage-decision rate change alerts muted via email link", {
+      userId: payload.userId,
+      source: "email_one_click",
+    });
+
+    return res.redirect(`/settings/notifications?muted=wage_decision_rates_changed${settingsAnchor}`);
+  } catch (error) {
+    logError("Failed to mute wage-decision rate change alerts via email link", { error: String(error) });
     next(error);
   }
 });
