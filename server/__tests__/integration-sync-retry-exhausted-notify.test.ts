@@ -23,6 +23,7 @@ import {
   organizations,
   integrationConnections,
   integrationSyncState,
+  integrationSyncAlertMutes,
   notifications,
   notificationChannelPrefs,
   users,
@@ -56,6 +57,7 @@ async function cleanup() {
   for (const id of ids) {
     await db.delete(notifications).where(eq(notifications.organizationId, id));
     await db.delete(integrationSyncState).where(eq(integrationSyncState.organizationId, id));
+    await db.delete(integrationSyncAlertMutes).where(eq(integrationSyncAlertMutes.organizationId, id));
     await db.delete(integrationConnections).where(eq(integrationConnections.organizationId, id));
     await db.delete(notificationChannelPrefs).where(
       sql`${notificationChannelPrefs.userId} IN (SELECT id FROM users WHERE organization_id = ${id})`,
@@ -88,6 +90,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await db.delete(notifications).where(eq(notifications.organizationId, orgId));
   await db.delete(integrationSyncState).where(eq(integrationSyncState.organizationId, orgId));
+  await db.delete(integrationSyncAlertMutes).where(eq(integrationSyncAlertMutes.organizationId, orgId));
   await db.delete(integrationConnections).where(eq(integrationConnections.organizationId, orgId));
   await db.delete(notificationChannelPrefs).where(
     sql`${notificationChannelPrefs.userId} IN (SELECT id FROM users WHERE organization_id = ${orgId})`,
@@ -305,6 +308,86 @@ describe("recordSyncFailure exhaustion → admin fan-out", () => {
     expect(row.exhaustedNotifiedAt).toBeNull();
     expect(row.retryCount).toBe(0);
     expect(row.lastError).toBeNull();
+  });
+
+  // Task #1404 — mute fan-out for a chronically broken integration.
+  it("suppresses fan-out when an entity-scoped mute is active, still stamps the marker", async () => {
+    const admin = await makeUser("ADMIN", "a");
+    const conn = await makeConnection("QuickBooks Online");
+    const entity = "qbo_sync:customers";
+
+    await db.insert(integrationSyncAlertMutes).values({
+      organizationId: orgId,
+      connectionId: conn.id,
+      entityType: entity,
+      mutedByUserId: admin.id,
+      reason: "triage",
+    });
+
+    await db.insert(integrationSyncState).values({
+      organizationId: orgId,
+      connectionId: conn.id,
+      entityType: entity,
+      lastError: "upstream 500",
+      retryCount: MAX_SYNC_RETRIES,
+      nextRetryAt: null,
+    });
+    const row = await getRow(conn.id, entity);
+
+    const out = await notifyAdminsOfExhaustedSyncRetry({
+      syncStateId: row.id,
+      organizationId: orgId,
+      connectionId: conn.id,
+      entityType: entity,
+      lastError: "upstream 500",
+    });
+
+    expect(out.muted).toBe(true);
+    expect(out.notified).toBe(true);
+    expect(out.recipients).toBe(0);
+
+    await new Promise((r) => setTimeout(r, 50));
+    const notes = await db.select().from(notifications).where(eq(notifications.organizationId, orgId));
+    expect(notes.length).toBe(0);
+
+    const after = await getRow(conn.id, entity);
+    expect(after.exhaustedNotifiedAt).toBeTruthy();
+  });
+
+  it("suppresses fan-out when a connection-wide mute is active (entityType IS NULL matches all)", async () => {
+    const admin = await makeUser("ADMIN", "a");
+    const conn = await makeConnection("QuickBooks Online");
+    const entity = "qbo_sync:estimates";
+
+    await db.insert(integrationSyncAlertMutes).values({
+      organizationId: orgId,
+      connectionId: conn.id,
+      entityType: null,
+      mutedByUserId: admin.id,
+    });
+
+    await db.insert(integrationSyncState).values({
+      organizationId: orgId,
+      connectionId: conn.id,
+      entityType: entity,
+      lastError: "upstream 500",
+      retryCount: MAX_SYNC_RETRIES,
+      nextRetryAt: null,
+    });
+    const row = await getRow(conn.id, entity);
+
+    const out = await notifyAdminsOfExhaustedSyncRetry({
+      syncStateId: row.id,
+      organizationId: orgId,
+      connectionId: conn.id,
+      entityType: entity,
+      lastError: "upstream 500",
+    });
+
+    expect(out.muted).toBe(true);
+    expect(out.recipients).toBe(0);
+    const notes = await db.select().from(notifications).where(eq(notifications.organizationId, orgId));
+    expect(notes.length).toBe(0);
   });
 
   it("succeeds quietly when the org has no admins", async () => {

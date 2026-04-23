@@ -2,7 +2,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { AlertCircle, AlertTriangle, Clock, Loader2, RefreshCw } from "lucide-react";
+import { AlertCircle, AlertTriangle, BellOff, Clock, Loader2, RefreshCw, Volume2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -19,11 +19,23 @@ interface SyncRetry {
   nextRetryAt: string | null;
   maxRetries: number;
   exhausted: boolean;
+  muted: boolean;
+  muteScope: "connection" | "entity" | null;
+}
+
+interface SyncRetryMute {
+  id: string;
+  connectionId: string;
+  entityType: string | null;
+  mutedByUserId: string | null;
+  reason: string | null;
+  createdAt: string;
 }
 
 interface SyncRetryResponse {
   retries: SyncRetry[];
   maxRetries: number;
+  mutes: SyncRetryMute[];
 }
 
 function formatRelative(iso: string | null): string {
@@ -75,6 +87,43 @@ export function SyncRetryPanel() {
     },
   });
 
+  // Task #1404 — mute/unmute "integration sync gave up" admin alerts per
+  // connection (or per connection + entityType) without disabling the
+  // underlying retries. The backend is authoritative; we refetch on
+  // success so the row badge and retry list update together.
+  const muteMutation = useMutation({
+    mutationFn: async (args: { connectionId: string; entityType?: string }) => {
+      const res = await apiRequest("POST", `/api/integrations/sync-retries/mute`, args);
+      return res.json();
+    },
+    onSuccess: (_data, vars) => {
+      toast({
+        title: "Alerts muted",
+        description: vars.entityType
+          ? "You won't get emails for this entity until you unmute."
+          : "You won't get emails for this integration until you unmute.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/sync-retries"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to mute alerts", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const unmuteMutation = useMutation({
+    mutationFn: async (muteId: string) => {
+      const res = await apiRequest("DELETE", `/api/integrations/sync-retries/mute/${muteId}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Alerts unmuted", description: "You'll get emails again if the sync gives up." });
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/sync-retries"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to unmute alerts", description: err.message, variant: "destructive" });
+    },
+  });
+
   if (isLoading) {
     return (
       <Card data-testid="card-sync-retries-loading">
@@ -86,11 +135,26 @@ export function SyncRetryPanel() {
   }
 
   const retries = data?.retries ?? [];
-  if (retries.length === 0) {
+  const mutes = data?.mutes ?? [];
+  if (retries.length === 0 && mutes.length === 0) {
     return null;
   }
 
   const exhaustedCount = retries.filter(r => r.exhausted).length;
+  const mutesByKey = new Map<string, SyncRetryMute>();
+  for (const m of mutes) {
+    const key = m.entityType === null ? `${m.connectionId}::*` : `${m.connectionId}::${m.entityType}`;
+    mutesByKey.set(key, m);
+  }
+  const muteIdForRetry = (r: SyncRetry): string | null => {
+    if (r.muteScope === "connection") {
+      return mutesByKey.get(`${r.connectionId}::*`)?.id ?? null;
+    }
+    if (r.muteScope === "entity") {
+      return mutesByKey.get(`${r.connectionId}::${r.entityType}`)?.id ?? null;
+    }
+    return null;
+  };
 
   return (
     <Card data-testid="card-sync-retries">
@@ -116,6 +180,12 @@ export function SyncRetryPanel() {
       <CardContent className="space-y-3">
         {retries.map(retry => {
           const isPending = retryMutation.isPending && retryMutation.variables === retry.id;
+          const activeMuteId = muteIdForRetry(retry);
+          const isMutePending =
+            (muteMutation.isPending &&
+              muteMutation.variables?.connectionId === retry.connectionId &&
+              muteMutation.variables?.entityType === retry.entityType) ||
+            (unmuteMutation.isPending && unmuteMutation.variables === activeMuteId);
           return (
             <div
               key={retry.id}
@@ -142,6 +212,16 @@ export function SyncRetryPanel() {
                         Attempt {retry.retryCount} of {retry.maxRetries}
                       </Badge>
                     )}
+                    {retry.muted && (
+                      <Badge
+                        variant="outline"
+                        className="gap-1 border-muted-foreground/40 text-muted-foreground"
+                        data-testid={`badge-retry-muted-${retry.id}`}
+                      >
+                        <BellOff className="h-3 w-3" />
+                        {retry.muteScope === "connection" ? "Alerts muted (integration)" : "Alerts muted"}
+                      </Badge>
+                    )}
                   </div>
                   {retry.lastError && (
                     <p className="text-xs text-muted-foreground line-clamp-2" data-testid={`text-retry-error-${retry.id}`}>
@@ -160,20 +240,60 @@ export function SyncRetryPanel() {
                     )}
                   </div>
                 </div>
-                <Button
-                  size="sm"
-                  variant={retry.exhausted ? "default" : "outline"}
-                  onClick={() => retryMutation.mutate(retry.id)}
-                  disabled={isPending}
-                  data-testid={`button-retry-now-${retry.id}`}
-                >
-                  {isPending ? (
-                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                <div className="flex items-center gap-2 flex-wrap">
+                  {activeMuteId ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => unmuteMutation.mutate(activeMuteId)}
+                      disabled={isMutePending}
+                      data-testid={`button-unmute-${retry.id}`}
+                    >
+                      {isMutePending ? (
+                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                      ) : (
+                        <Volume2 className="h-3 w-3 mr-1" />
+                      )}
+                      Unmute alerts
+                    </Button>
                   ) : (
-                    <RefreshCw className="h-3 w-3 mr-1" />
+                    retry.exhausted && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          muteMutation.mutate({
+                            connectionId: retry.connectionId,
+                            entityType: retry.entityType,
+                          })
+                        }
+                        disabled={isMutePending}
+                        data-testid={`button-mute-${retry.id}`}
+                      >
+                        {isMutePending ? (
+                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                        ) : (
+                          <BellOff className="h-3 w-3 mr-1" />
+                        )}
+                        Mute alerts
+                      </Button>
+                    )
                   )}
-                  Retry now
-                </Button>
+                  <Button
+                    size="sm"
+                    variant={retry.exhausted ? "default" : "outline"}
+                    onClick={() => retryMutation.mutate(retry.id)}
+                    disabled={isPending}
+                    data-testid={`button-retry-now-${retry.id}`}
+                  >
+                    {isPending ? (
+                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                    ) : (
+                      <RefreshCw className="h-3 w-3 mr-1" />
+                    )}
+                    Retry now
+                  </Button>
+                </div>
               </div>
             </div>
           );

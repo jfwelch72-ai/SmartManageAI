@@ -1,5 +1,5 @@
 import { db } from "../db";
-import { users, notificationChannelPrefs, notificationTypePrefs, notificationTypeEnum } from "@shared/schema";
+import { users, notificationChannelPrefs, notificationTypePrefs, notificationTypeEnum, integrationSyncState, integrationConnections } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import { sendNotificationEmail } from "../email";
 import { sendEmail } from "./emailService";
@@ -13,6 +13,7 @@ import { hasFeature } from "./featureAccess";
 import { isFeatureEnabled } from "./featureFlagService";
 import { buildSwpppMuteUrl } from "../utils/swpppMuteToken";
 import { buildDavisBaconMuteUrl } from "../utils/davisBaconMuteToken";
+import { buildIntegrationSyncMuteUrl } from "../utils/integrationSyncMuteToken";
 
 type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
 
@@ -109,7 +110,25 @@ function escapeHtml(s: string): string {
     .replace(/'/g, "&#39;");
 }
 
-export function composeEmailContent(notification: NotificationRecord): {
+/**
+ * Extra context an async caller can feed the composer. Required for the
+ * INTEGRATION_SYNC_RETRIES_EXHAUSTED one-click mute link because the
+ * notification row only stores the sync-state PK — we need the
+ * connectionId + entityType to sign the token. SMS/push callers skip
+ * this (their templates don't render the mute footer).
+ */
+export interface ComposeEmailExtras {
+  integrationSyncContext?: {
+    connectionId: string;
+    entityType: string;
+    integrationLabel: string;
+  };
+}
+
+export function composeEmailContent(
+  notification: NotificationRecord,
+  extras: ComposeEmailExtras = {},
+): {
   subject: string;
   body: string;
   actionUrl?: string;
@@ -572,6 +591,67 @@ export function composeEmailContent(notification: NotificationRecord): {
     };
   }
 
+  // Task #1404: admin heads-up the first time an integration sync row
+  // exhausts MAX_SYNC_RETRIES. Renders a "mute alerts for this
+  // integration" footer link (signed JWT bound to the recipient's
+  // userId + connectionId + entityType) so an admin can silence the
+  // noise for a chronically broken connection while they investigate,
+  // instead of every distinct entity exhaustion paging the whole admin
+  // group.
+  if (type === "INTEGRATION_SYNC_RETRIES_EXHAUSTED") {
+    const actionUrl = `${baseUrl}/integrations#section-sync-retries`;
+    const subject = `Integration sync gave up — SmartManageAI`;
+    const actionText = "Open Integrations";
+    const messageHtml = escapeHtml(notification.message).replace(/\n/g, "<br>");
+
+    const ctx = extras.integrationSyncContext;
+    const entityMuteUrl =
+      baseUrl && ctx
+        ? buildIntegrationSyncMuteUrl(baseUrl, notification.userId, ctx.connectionId, ctx.entityType)
+        : "";
+    const connectionMuteUrl =
+      baseUrl && ctx
+        ? buildIntegrationSyncMuteUrl(baseUrl, notification.userId, ctx.connectionId, null)
+        : "";
+    const settingsUrl = `${baseUrl}/integrations#section-sync-retries`;
+    const labelHtml = ctx ? escapeHtml(ctx.integrationLabel) : "this integration";
+    const entityHtml = ctx ? escapeHtml(ctx.entityType) : "";
+
+    const muteFooterHtml = ctx
+      ? `<br>
+          <a href="${entityMuteUrl}" style="color: #0070f3; text-decoration: underline;" data-testid="link-mute-integration-sync-entity">
+            Mute alerts for ${labelHtml}${entityHtml ? ` (${entityHtml})` : ""}
+          </a>
+          &middot;
+          <a href="${connectionMuteUrl}" style="color: #0070f3; text-decoration: underline;" data-testid="link-mute-integration-sync-connection">
+            Mute all alerts for ${labelHtml}
+          </a> &middot; `
+      : "";
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #b91c1c;">${escapeHtml(notification.title)}</h2>
+        <p style="color: #444; line-height: 1.6;">${messageHtml}</p>
+        <p style="margin-top: 20px;">
+          <a href="${actionUrl}" style="background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+            ${escapeHtml(actionText)}
+          </a>
+        </p>
+        <hr style="margin-top: 30px; border: none; border-top: 1px solid #eee;">
+        <p style="color: #999; font-size: 12px; line-height: 1.6;">
+          You are receiving this because you are an administrator for your organization.${muteFooterHtml}<a href="${settingsUrl}" style="color: #999; text-decoration: underline;">Review sync retries</a>
+        </p>
+      </div>
+    `;
+    return {
+      subject,
+      body: notification.message,
+      actionUrl,
+      actionText,
+      html,
+    };
+  }
+
   // Task #1344: daily reminder when a project's Davis-Bacon wage decision
   // has been missing for >24h. Deep links to /integrations (so admins can
   // verify the connection / re-run the import) and /payroll (so they can
@@ -701,9 +781,52 @@ export function composeEmailContent(notification: NotificationRecord): {
   };
 }
 
+/**
+ * Task #1404 — for INTEGRATION_SYNC_RETRIES_EXHAUSTED emails we need
+ * connectionId + entityType + integration label to sign the one-click
+ * mute token. The notification row only stores the sync-state PK
+ * (relatedEntityId), so look the rest up here. Failures are non-fatal —
+ * the email still ships, just without the mute footer.
+ */
+async function loadIntegrationSyncContext(
+  notification: NotificationRecord,
+): Promise<ComposeEmailExtras["integrationSyncContext"] | undefined> {
+  if (notification.type !== "INTEGRATION_SYNC_RETRIES_EXHAUSTED") return undefined;
+  if (notification.relatedEntityType !== "INTEGRATION_SYNC_STATE") return undefined;
+  const syncStateId = notification.relatedEntityId;
+  if (!syncStateId) return undefined;
+  try {
+    const [row] = await db
+      .select({
+        connectionId: integrationSyncState.connectionId,
+        entityType: integrationSyncState.entityType,
+        provider: integrationConnections.provider,
+        displayName: integrationConnections.displayName,
+      })
+      .from(integrationSyncState)
+      .innerJoin(integrationConnections, eq(integrationConnections.id, integrationSyncState.connectionId))
+      .where(eq(integrationSyncState.id, syncStateId))
+      .limit(1);
+    if (!row) return undefined;
+    const integrationLabel = row.displayName?.trim() || row.provider || "integration";
+    return { connectionId: row.connectionId, entityType: row.entityType, integrationLabel };
+  } catch (err) {
+    logError("notificationDelivery: failed to load integration sync context for mute link", {
+      userId: notification.userId,
+      syncStateId,
+      error: String(err),
+    });
+    return undefined;
+  }
+}
+
 async function deliverEmail(userEmail: string, notification: NotificationRecord): Promise<void> {
   try {
-    const { subject, body, actionUrl, actionText, html } = composeEmailContent(notification);
+    const integrationSyncContext = await loadIntegrationSyncContext(notification);
+    const { subject, body, actionUrl, actionText, html } = composeEmailContent(
+      notification,
+      integrationSyncContext ? { integrationSyncContext } : {},
+    );
     if (html) {
       await sendEmail({ to: userEmail, subject, html, text: body });
     } else {

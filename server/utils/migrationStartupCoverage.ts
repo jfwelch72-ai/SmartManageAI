@@ -238,4 +238,8 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
     helper: "ensureIntegrationSyncStateExhaustedNotifiedColumn",
     note: "Companion ALTER TYPE ADD VALUE for INTEGRATION_SYNC_RETRIES_EXHAUSTED is handled by ensureNotificationEnumValues",
   },
+  // Task #1404 — per-connection (and optional per-entityType) mute state
+  // for the INTEGRATION_SYNC_RETRIES_EXHAUSTED admin fan-out so a
+  // chronically broken integration stops spamming admins during triage.
+  "0052_integration_sync_alert_mutes.sql": { helper: "ensureIntegrationSyncAlertMutes" },
 };

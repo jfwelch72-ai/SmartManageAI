@@ -8,8 +8,9 @@ import { getConnectionHealth } from "./integrations/healthService";
 import * as outboxService from "./integrations/outboxService";
 import { logInfo, logError } from "./utils/logger";
 import { getCanonicalBaseUrl } from "./utils/routeHelpers";
-import { eq, and, desc, isNotNull } from "drizzle-orm";
-import { integrationConnections, type IntegrationConnection, integrationSyncState, qboAccountMappings, qboSyncSchedules, zapierWebhooks, ZAPIER_EVENT_TYPES, projects } from "@shared/schema";
+import { eq, and, desc, isNotNull, isNull } from "drizzle-orm";
+import { integrationConnections, type IntegrationConnection, integrationSyncState, integrationSyncAlertMutes, qboAccountMappings, qboSyncSchedules, zapierWebhooks, ZAPIER_EVENT_TYPES, projects, users as usersTable } from "@shared/schema";
+import { verifyIntegrationSyncMuteToken } from "./utils/integrationSyncMuteToken";
 import { db } from "./db";
 import { decryptMetadata } from "./integrations/encryption";
 import type { AuthRequest } from "./auth";
@@ -933,24 +934,56 @@ router.get("/sync-retries", requireAuth, async (req, res, next) => {
       ))
       .orderBy(desc(integrationSyncState.lastAttemptAt));
 
+    // Task #1404 — surface the active mute state alongside each row so
+    // the panel can show what's silenced (and expose an unmute action).
+    const muteRows = await db
+      .select()
+      .from(integrationSyncAlertMutes)
+      .where(eq(integrationSyncAlertMutes.organizationId, user.organizationId));
+
+    const connectionWideMutes = new Set<string>();
+    const entityMutes = new Map<string, string>(); // `${connectionId}::${entityType}` -> mute id
+    for (const m of muteRows) {
+      if (m.entityType === null) {
+        connectionWideMutes.add(m.connectionId);
+      } else {
+        entityMutes.set(`${m.connectionId}::${m.entityType}`, m.id);
+      }
+    }
+
     const retries = rows
       .filter(r => r.retryCount > 0 || r.nextRetryAt !== null)
-      .map(r => ({
-        id: r.id,
-        connectionId: r.connectionId,
-        provider: r.provider,
-        connectionDisplayName: r.connectionDisplayName,
-        connectionStatus: r.connectionStatus,
-        entityType: r.entityType,
-        lastError: r.lastError,
-        lastAttemptAt: r.lastAttemptAt,
-        retryCount: r.retryCount,
-        nextRetryAt: r.nextRetryAt,
-        maxRetries: MAX_SYNC_RETRIES,
-        exhausted: r.retryCount >= MAX_SYNC_RETRIES,
-      }));
+      .map(r => {
+        const connectionMuted = connectionWideMutes.has(r.connectionId);
+        const entityMuteId = entityMutes.get(`${r.connectionId}::${r.entityType}`) ?? null;
+        return {
+          id: r.id,
+          connectionId: r.connectionId,
+          provider: r.provider,
+          connectionDisplayName: r.connectionDisplayName,
+          connectionStatus: r.connectionStatus,
+          entityType: r.entityType,
+          lastError: r.lastError,
+          lastAttemptAt: r.lastAttemptAt,
+          retryCount: r.retryCount,
+          nextRetryAt: r.nextRetryAt,
+          maxRetries: MAX_SYNC_RETRIES,
+          exhausted: r.retryCount >= MAX_SYNC_RETRIES,
+          muted: connectionMuted || entityMuteId !== null,
+          muteScope: connectionMuted ? "connection" : entityMuteId ? "entity" : null,
+        };
+      });
 
-    res.json({ retries, maxRetries: MAX_SYNC_RETRIES });
+    const mutes = muteRows.map((m) => ({
+      id: m.id,
+      connectionId: m.connectionId,
+      entityType: m.entityType,
+      mutedByUserId: m.mutedByUserId,
+      reason: m.reason,
+      createdAt: m.createdAt,
+    }));
+
+    res.json({ retries, maxRetries: MAX_SYNC_RETRIES, mutes });
   } catch (err) {
     next(err);
   }
@@ -1003,6 +1036,220 @@ router.post("/sync-retries/:id/retry-now", requireAuth, async (req, res, next) =
 
     res.json({ success: true });
   } catch (err) {
+    next(err);
+  }
+});
+
+// Task #1404 — Admin mute affordances for the INTEGRATION_SYNC_RETRIES_EXHAUSTED
+// fan-out. A chronically broken integration (revoked credentials, vendor
+// outage, etc.) can produce one fresh admin page per distinct entity —
+// and every manual retry re-arms the marker so the next exhaustion
+// re-fires. These endpoints let org admins silence the alert while they
+// investigate, with two scopes:
+//   * connection-wide (entityType omitted) — quiet every entity on the
+//     connection.
+//   * entity-scoped — quiet only the specific failing entity.
+// The mute is shared across the org (not per-recipient like the
+// Davis-Bacon mute) so one admin clicking "mute" stops paging everyone.
+const muteBodySchema = z.object({
+  connectionId: z.string().min(1),
+  entityType: z.string().min(1).optional(),
+  reason: z.string().max(500).optional(),
+});
+
+async function ensureConnectionBelongsToOrg(
+  connectionId: string,
+  organizationId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: integrationConnections.id })
+    .from(integrationConnections)
+    .where(and(
+      eq(integrationConnections.id, connectionId),
+      eq(integrationConnections.organizationId, organizationId),
+    ))
+    .limit(1);
+  return !!row;
+}
+
+async function upsertSyncAlertMute(args: {
+  organizationId: string;
+  connectionId: string;
+  entityType: string | null;
+  mutedByUserId: string | null;
+  reason?: string | null;
+}): Promise<{ created: boolean; id: string }> {
+  // Can't rely on drizzle onConflict because the unique index is a
+  // COALESCE expression; fall back to "check-then-insert".
+  const existingWhere = and(
+    eq(integrationSyncAlertMutes.connectionId, args.connectionId),
+    args.entityType === null
+      ? isNull(integrationSyncAlertMutes.entityType)
+      : eq(integrationSyncAlertMutes.entityType, args.entityType),
+  );
+  const [existing] = await db
+    .select({ id: integrationSyncAlertMutes.id })
+    .from(integrationSyncAlertMutes)
+    .where(existingWhere)
+    .limit(1);
+  if (existing) {
+    await db
+      .update(integrationSyncAlertMutes)
+      .set({
+        mutedByUserId: args.mutedByUserId,
+        reason: args.reason ?? null,
+        updatedAt: new Date(),
+      })
+      .where(eq(integrationSyncAlertMutes.id, existing.id));
+    return { created: false, id: existing.id };
+  }
+  const [ins] = await db
+    .insert(integrationSyncAlertMutes)
+    .values({
+      organizationId: args.organizationId,
+      connectionId: args.connectionId,
+      entityType: args.entityType,
+      mutedByUserId: args.mutedByUserId,
+      reason: args.reason ?? null,
+    })
+    .returning({ id: integrationSyncAlertMutes.id });
+  return { created: true, id: ins.id };
+}
+
+router.post("/sync-retries/mute", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Only admins can mute integration sync alerts" });
+    }
+    const parsed = muteBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid mute request", details: parsed.error.flatten() });
+    }
+    if (!(await ensureConnectionBelongsToOrg(parsed.data.connectionId, user.organizationId))) {
+      return res.status(404).json({ error: "Connection not found" });
+    }
+    const result = await upsertSyncAlertMute({
+      organizationId: user.organizationId,
+      connectionId: parsed.data.connectionId,
+      entityType: parsed.data.entityType ?? null,
+      mutedByUserId: user.id,
+      reason: parsed.data.reason ?? null,
+    });
+    logIntegrationAudit("sync_retry.mute_created", {
+      orgId: user.organizationId,
+      userId: user.id,
+      connectionId: parsed.data.connectionId,
+      entityType: parsed.data.entityType ?? null,
+      replaced: !result.created,
+    });
+    res.json({ success: true, muteId: result.id, created: result.created });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/sync-retries/mute/:id", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Only admins can unmute integration sync alerts" });
+    }
+    const [row] = await db
+      .select()
+      .from(integrationSyncAlertMutes)
+      .where(and(
+        eq(integrationSyncAlertMutes.id, req.params.id),
+        eq(integrationSyncAlertMutes.organizationId, user.organizationId),
+      ))
+      .limit(1);
+    if (!row) return res.status(404).json({ error: "Mute not found" });
+
+    await db
+      .delete(integrationSyncAlertMutes)
+      .where(eq(integrationSyncAlertMutes.id, row.id));
+
+    logIntegrationAudit("sync_retry.mute_deleted", {
+      orgId: user.organizationId,
+      userId: user.id,
+      connectionId: row.connectionId,
+      entityType: row.entityType,
+    });
+
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Task #1404 — One-click "mute alerts for this integration" link
+ * rendered in INTEGRATION_SYNC_RETRIES_EXHAUSTED emails. The signed
+ * token binds recipient userId + connectionId + (optional) entityType
+ * so a forwarded email can't mute arbitrary connections; we additionally
+ * re-check the recipient's admin role + org membership before inserting
+ * a mute row (the mute affects the whole org).
+ */
+router.get("/mute-sync-alerts", async (req, res, next) => {
+  try {
+    const token = typeof req.query.token === "string" ? req.query.token : "";
+    const payload = token ? verifyIntegrationSyncMuteToken(token) : null;
+    const anchor = "#section-sync-retries";
+
+    if (!payload) {
+      return res.redirect(`/integrations?mute=invalid${anchor}`);
+    }
+
+    const [user] = await db
+      .select({
+        id: usersTable.id,
+        organizationId: usersTable.organizationId,
+        role: usersTable.role,
+        isActive: usersTable.isActive,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, payload.userId))
+      .limit(1);
+
+    if (!user || !user.isActive || !user.organizationId) {
+      return res.redirect(`/integrations?mute=invalid${anchor}`);
+    }
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.redirect(`/integrations?mute=forbidden${anchor}`);
+    }
+
+    // Connection must still belong to the recipient's org.
+    if (!(await ensureConnectionBelongsToOrg(payload.connectionId, user.organizationId))) {
+      return res.redirect(`/integrations?mute=invalid${anchor}`);
+    }
+
+    await upsertSyncAlertMute({
+      organizationId: user.organizationId,
+      connectionId: payload.connectionId,
+      entityType: payload.entityType,
+      mutedByUserId: user.id,
+      reason: "Muted via email one-click",
+    });
+
+    logIntegrationAudit("sync_retry.mute_created_via_email", {
+      orgId: user.organizationId,
+      userId: user.id,
+      connectionId: payload.connectionId,
+      entityType: payload.entityType,
+    });
+
+    logInfo("Integration sync alerts muted via email link", {
+      userId: user.id,
+      connectionId: payload.connectionId,
+      entityType: payload.entityType,
+    });
+
+    const scope = payload.entityType ? "entity" : "connection";
+    return res.redirect(
+      `/integrations?muted=sync_retry_exhausted&scope=${scope}&connection=${encodeURIComponent(payload.connectionId)}${anchor}`,
+    );
+  } catch (err) {
+    logError("Failed to mute integration sync alerts via email link", { error: String(err) });
     next(err);
   }
 });

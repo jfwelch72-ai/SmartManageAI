@@ -18,10 +18,11 @@
 //     clear `exhausted_notified_at`, re-arming the alert for any future
 //     re-exhaustion.
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "../db";
 import {
   integrationConnections,
+  integrationSyncAlertMutes,
   integrationSyncState,
   userRoleEnum,
   users,
@@ -61,6 +62,39 @@ export interface NotifyExhaustedRetryResult {
    *  (or the row was re-armed by clearSyncRetryState/recordSyncSuccess
    *  before this call could claim it). */
   notified: boolean;
+  /** True when an active mute row for (connectionId, entityType) or for
+   *  the whole connection silenced the fan-out. The atomic claim still
+   *  stamps `exhausted_notified_at` so repeat failures on the muted row
+   *  don't keep retrying the fan-out path — when the admin clears the
+   *  mute, a subsequent re-exhaustion (after manual retry /
+   *  recordSyncSuccess re-arms the marker) will produce a fresh alert. */
+  muted?: boolean;
+}
+
+/**
+ * Task #1404 — look for an active mute row for this (connectionId,
+ * entityType). Connection-wide mutes (entity_type IS NULL) match every
+ * entity; otherwise the exact entity_type must match. Returning early
+ * here means admins don't get paged until the mute is cleared.
+ */
+async function isMuted(
+  connectionId: string,
+  entityType: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ id: integrationSyncAlertMutes.id })
+    .from(integrationSyncAlertMutes)
+    .where(
+      and(
+        eq(integrationSyncAlertMutes.connectionId, connectionId),
+        or(
+          isNull(integrationSyncAlertMutes.entityType),
+          eq(integrationSyncAlertMutes.entityType, entityType),
+        ),
+      ),
+    )
+    .limit(1);
+  return !!row;
 }
 
 /**
@@ -88,6 +122,21 @@ export async function notifyAdminsOfExhaustedSyncRetry(
   `);
   if ((claimResult.rows?.length ?? 0) === 0) {
     return { recipients: 0, notified: false };
+  }
+
+  // Task #1404 — respect per-connection / per-entity mutes. The row is
+  // still claimed above (so repeat failures don't keep retrying the
+  // fan-out while muted); clearing the mute combined with a successful
+  // sync or manual retry re-arms the marker and the next exhaustion
+  // produces a fresh alert.
+  if (await isMuted(args.connectionId, args.entityType)) {
+    logInfo("Exhausted sync retry fan-out suppressed by active mute", {
+      organizationId: args.organizationId,
+      syncStateId: args.syncStateId,
+      connectionId: args.connectionId,
+      entityType: args.entityType,
+    });
+    return { recipients: 0, notified: true, muted: true };
   }
 
   const [conn] = await db

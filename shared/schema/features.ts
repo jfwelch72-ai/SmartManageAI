@@ -7195,6 +7195,34 @@ export const insertIntegrationSyncStateSchema = createInsertSchema(integrationSy
 export type InsertIntegrationSyncState = z.infer<typeof insertIntegrationSyncStateSchema>;
 export type IntegrationSyncState = typeof integrationSyncState.$inferSelect;
 
+// Task #1404 — per-connection (and optional per-entityType) mute state for
+// the INTEGRATION_SYNC_RETRIES_EXHAUSTED admin fan-out. When a row exists
+// for (connectionId, entityType=null) every exhaustion on that connection
+// is silenced; when entityType is set the mute is scoped to that single
+// entity. notifyAdminsOfExhaustedSyncRetry checks this table before
+// fanning out; admins clear the row from the integrations page.
+//
+// Uniqueness is enforced by a partial expression index defined in the
+// migration / ensure helper (COALESCE(entity_type, '')) because Postgres
+// treats NULLs as distinct in a plain UNIQUE constraint.
+export const integrationSyncAlertMutes = pgTable("integration_sync_alert_mutes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  connectionId: varchar("connection_id").notNull().references(() => integrationConnections.id, { onDelete: "cascade" }),
+  entityType: text("entity_type"),
+  mutedByUserId: varchar("muted_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  reason: text("reason"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("integration_sync_alert_mutes_org_idx").on(table.organizationId),
+  connectionIdx: index("integration_sync_alert_mutes_connection_idx").on(table.connectionId),
+}));
+
+export const insertIntegrationSyncAlertMuteSchema = createInsertSchema(integrationSyncAlertMutes).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertIntegrationSyncAlertMute = z.infer<typeof insertIntegrationSyncAlertMuteSchema>;
+export type IntegrationSyncAlertMute = typeof integrationSyncAlertMutes.$inferSelect;
+
 export const qboAccountMappings = pgTable("qbo_account_mappings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),

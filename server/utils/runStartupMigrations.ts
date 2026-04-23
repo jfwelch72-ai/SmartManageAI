@@ -9,6 +9,7 @@ import { ensureMessageColumns } from "./ensureMessageColumns";
 import { ensureNotificationEnumValues } from "./ensureNotificationEnumValues";
 import { ensureIntegrationSyncStateFailureColumns } from "./ensureIntegrationSyncStateFailureColumns";
 import { ensureIntegrationSyncStateExhaustedNotifiedColumn } from "./ensureIntegrationSyncStateExhaustedNotifiedColumn";
+import { ensureIntegrationSyncAlertMutes } from "./ensureIntegrationSyncAlertMutes";
 import { ensureEstimateCategoryEnumValues } from "./ensureEstimateCategoryEnumValues";
 import { ensureTakeoffEnhancements } from "./ensureTakeoffEnhancements";
 import { ensureFieldWorkerPermColumns } from "./ensureFieldWorkerPermColumns";
@@ -127,6 +128,9 @@ const migrations: MigrationStep[] = [
   // wage decision and surface it in the Project payroll banner.
   { name: "integration_sync_state_failure_columns", category: "ADD_COLUMN", fn: ensureIntegrationSyncStateFailureColumns },
   { name: "integration_sync_state_exhausted_notified_column", category: "ADD_COLUMN", fn: ensureIntegrationSyncStateExhaustedNotifiedColumn },
+  // Task #1404 — per-connection / per-entity mute state for the
+  // INTEGRATION_SYNC_RETRIES_EXHAUSTED admin fan-out.
+  { name: "integration_sync_alert_mutes", category: "CREATE_TABLE", fn: ensureIntegrationSyncAlertMutes },
   { name: "estimate_category_enum_values", category: "ADD_ENUM", fn: ensureEstimateCategoryEnumValues },
   // Task #1144 — close baseline-migration gaps for ALTER TYPE ADD VALUE
   // operations that `reconcileSchemaDrift` cannot replay (it creates missing
