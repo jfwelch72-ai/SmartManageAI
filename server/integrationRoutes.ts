@@ -16,7 +16,7 @@ import type { AuthRequest } from "./auth";
 import { importChartOfAccounts, exportCustomers, exportInvoice, importPaymentStatus, exportPayroll, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "./integrations/providers/qbo";
 import { exportHaulTickets, exportSuretyPremiums, exportCertifiedPayroll } from "./integrations/providers/qbo/sync";
 import { parseEbsxJson, importBidPackage, exportEstimateAsEbsx } from "./integrations/providers/aashtoware";
-import { importWageDetermination } from "./integrations/providers/dol_davis_bacon";
+import { importWageDetermination, listSuppressedFailureNotifications } from "./integrations/providers/dol_davis_bacon";
 import { searchDirectory as searchDbeDirectory, refreshCertifications as refreshDbeCertifications, verifyCertification as verifyDbeCertification } from "./integrations/providers/dbe_directory";
 import { verifyOrganizationBonds } from "./integrations/providers/surety_verification";
 import { importProjects as stackctImportProjects, exportProjects as stackctExportProjects, importPlans as stackctImportPlans, exportPlans as stackctExportPlans, importEstimates as stackctImportEstimates, exportEstimates as stackctExportEstimates, acquireTokenWithCredentials as stackctAcquireToken } from "./integrations/providers/stackct";
@@ -778,6 +778,92 @@ router.post("/connections/:id/sync", requireAuth, async (req, res, next) => {
 
     logInfo("Sync operation completed", { operation, dryRun, duration, success: result?.success });
     res.json({ ...result, dryRun, duration });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Dev-only seed endpoint used by the e2e suite (Task #1384) to deterministically
+ * stage `metadata.failureNotification` rows on a Davis-Bacon connection so
+ * the integrations-page panel can be exercised without having to drive an
+ * actual SAM.gov failure streak. Gated by `NODE_ENV === "development"`.
+ */
+router.post(
+  "/dev/davis-bacon/seed-suppressed-failure",
+  (req, res, next) => {
+    if (process.env.NODE_ENV !== "development") {
+      return res.status(404).json({ error: "Not found" });
+    }
+    next();
+  },
+  requireAuth,
+  async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      const { connectionId, decisionNumber, suppressedCount, suppressedSince, lastNotifiedAt, clear } = req.body || {};
+      if (!connectionId || typeof decisionNumber !== "string") {
+        return res.status(400).json({ error: "connectionId and decisionNumber are required" });
+      }
+      const connection = await connectionService.getConnection(connectionId, user.organizationId);
+      if (!connection) return res.status(404).json({ error: "Connection not found" });
+      const entityType = `wage_determination:${decisionNumber}`;
+      const [existing] = await db
+        .select()
+        .from(integrationSyncState)
+        .where(and(
+          eq(integrationSyncState.connectionId, connectionId),
+          eq(integrationSyncState.entityType, entityType),
+        ))
+        .limit(1);
+      const baseMeta: Record<string, unknown> =
+        existing?.metadata && typeof existing.metadata === "object"
+          ? { ...(existing.metadata as Record<string, unknown>) }
+          : {};
+      if (clear) {
+        delete baseMeta.failureNotification;
+      } else {
+        baseMeta.failureNotification = {
+          lastNotifiedAt: typeof lastNotifiedAt === "number" ? lastNotifiedAt : Date.now(),
+          suppressedSince: typeof suppressedSince === "number" ? suppressedSince : Date.now(),
+          suppressedCount: typeof suppressedCount === "number" ? suppressedCount : 1,
+        };
+      }
+      if (existing) {
+        await db.update(integrationSyncState)
+          .set({ metadata: baseMeta as any, updatedAt: new Date() })
+          .where(eq(integrationSyncState.id, existing.id));
+      } else {
+        await db.insert(integrationSyncState).values({
+          organizationId: user.organizationId,
+          connectionId,
+          entityType,
+          metadata: baseMeta as any,
+          lastAttemptAt: new Date(),
+        });
+      }
+      res.json({ ok: true });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+/**
+ * Task #1384 — Real-time visibility into how many Davis-Bacon auto-sync
+ * failure alerts the coalescing window is currently absorbing for each
+ * (connection, decision). Powers the "X alerts suppressed since…" badge
+ * on the integrations UI so admins managing an active SAM.gov outage
+ * don't have to wait for the next email to know the upstream is noisy.
+ */
+router.get("/davis-bacon/suppressed-failures", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    const items = await listSuppressedFailureNotifications(user.organizationId);
+    res.json({ items });
   } catch (err) {
     next(err);
   }

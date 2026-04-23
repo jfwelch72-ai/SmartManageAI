@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button";
 import {
   CheckCircle, XCircle, Loader2, Link2, Unlink,
   ChevronDown, ChevronUp, Shield, ShieldCheck, ShieldAlert,
-  Lock, KeyRound, Info, BellOff,
+  Lock, KeyRound, Info, BellOff, BellRing,
 } from "lucide-react";
-import type { Connection, Provider, SecurityAuditEntry, PROVIDER_DESCRIPTIONS as _PD } from "./types";
+import type { Connection, Provider, SecurityAuditEntry, SuppressedFailuresResponse, PROVIDER_DESCRIPTIONS as _PD } from "./types";
 import { PROVIDER_DESCRIPTIONS } from "./types";
 
 type NotificationPreferencesResponse = {
@@ -43,6 +43,81 @@ export function DavisBaconAlertsMutedBadge() {
         Failure alerts muted
       </Badge>
     </a>
+  );
+}
+
+/**
+ * Task #1384 — Real-time visibility for admins managing an active
+ * SAM.gov outage. Renders a small panel listing each (decision,
+ * suppressed-count, suppressed-since) so they can see how noisy the
+ * upstream is *without* having to wait for the next coalesced email.
+ *
+ * The list is filtered to the given connection so a multi-connection
+ * org (rare today, but possible) doesn't see another connection's
+ * decisions on this card. Hides itself when there's nothing to show.
+ */
+export function DavisBaconSuppressedFailuresPanel({
+  connectionId,
+}: {
+  connectionId: string;
+}) {
+  const { data } = useQuery<SuppressedFailuresResponse>({
+    queryKey: ["/api/integrations/davis-bacon/suppressed-failures"],
+    refetchInterval: 30_000,
+  });
+  const items = (data?.items ?? []).filter((i) => i.connectionId === connectionId);
+  if (items.length === 0) return null;
+
+  const totalSuppressed = items.reduce((acc, i) => acc + i.suppressedCount, 0);
+  const earliestSince = items.reduce<number | null>((acc, i) => {
+    const ts = i.suppressedSince ?? i.lastNotifiedAt;
+    if (!ts) return acc;
+    if (acc === null || ts < acc) return ts;
+    return acc;
+  }, null);
+
+  return (
+    <div
+      className="rounded-md border border-amber-200 dark:border-amber-900 bg-amber-50/60 dark:bg-amber-950/30 px-3 py-2 text-xs space-y-1.5"
+      data-testid={`panel-davis-bacon-suppressed-failures-${connectionId}`}
+    >
+      <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300 font-medium">
+        <BellRing className="h-3.5 w-3.5 shrink-0" />
+        <span data-testid={`text-davis-bacon-suppressed-summary-${connectionId}`}>
+          {totalSuppressed === 1
+            ? "1 failure alert suppressed"
+            : `${totalSuppressed} failure alerts suppressed`}
+          {earliestSince ? ` since ${new Date(earliestSince).toLocaleString()}` : ""}
+        </span>
+      </div>
+      <ul className="space-y-0.5 text-amber-700 dark:text-amber-400">
+        {items.map((i) => {
+          const since = i.suppressedSince ?? i.lastNotifiedAt;
+          return (
+            <li
+              key={i.decisionNumber}
+              className="flex items-center justify-between gap-2"
+              data-testid={`row-davis-bacon-suppressed-${i.decisionNumber}`}
+            >
+              <span className="font-mono truncate">{i.decisionNumber}</span>
+              <span className="shrink-0">
+                <span data-testid={`text-davis-bacon-suppressed-count-${i.decisionNumber}`}>
+                  {i.suppressedCount}
+                </span>
+                {since ? (
+                  <>
+                    {" since "}
+                    <span data-testid={`text-davis-bacon-suppressed-since-${i.decisionNumber}`}>
+                      {new Date(since).toLocaleString()}
+                    </span>
+                  </>
+                ) : null}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
   );
 }
 
@@ -290,6 +365,9 @@ export function ProviderCardGrid({
                 <TokenStatusBadge status={conn.tokenStatus} encrypted={conn.tokensEncrypted} />
               )}
               {provider.key === "dol_davis_bacon" && <DavisBaconAlertsMutedBadge />}
+              {provider.key === "dol_davis_bacon" && conn && (
+                <DavisBaconSuppressedFailuresPanel connectionId={conn.id} />
+              )}
               {isPending && isOAuth && (
                 <p className="text-xs text-yellow-600 dark:text-yellow-400">
                   Authorization required — click below to complete setup.

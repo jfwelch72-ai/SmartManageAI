@@ -3,5 +3,10 @@ export {
   fetchWageDetermination,
   importWageDetermination,
   lookupCachedWageRate,
+  listSuppressedFailureNotifications,
 } from "./sync";
-export type { DavisBaconWageRate, WageDetermination } from "./sync";
+export type {
+  DavisBaconWageRate,
+  WageDetermination,
+  SuppressedFailureEntry,
+} from "./sync";

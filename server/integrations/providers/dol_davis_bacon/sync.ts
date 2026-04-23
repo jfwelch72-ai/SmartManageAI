@@ -827,6 +827,75 @@ export function __resetDavisBaconFailureCoalesceForTests(): void {
   failureCoalesceMap.clear();
 }
 
+export interface SuppressedFailureEntry {
+  connectionId: string;
+  decisionNumber: string;
+  suppressedCount: number;
+  suppressedSince: number | null;
+  lastNotifiedAt: number;
+}
+
+/**
+ * Task #1384 — Surface the persisted `metadata.failureNotification`
+ * counts to the integrations UI so admins watching an active SAM.gov
+ * outage can see, in real time, how many auto-sync failures are being
+ * absorbed by the coalescing window before the next email is delivered.
+ *
+ * Returns one entry per (connection, decision) row with a non-zero
+ * `suppressedCount`. A successful sync overwrites the row's metadata
+ * wholesale (see `markRowSuccess` in `importWageDetermination`), so the
+ * suppressed count for a healthy decision naturally returns to zero
+ * without any explicit cleanup here.
+ */
+export async function listSuppressedFailureNotifications(
+  organizationId: string,
+): Promise<SuppressedFailureEntry[]> {
+  try {
+    const rows = await db
+      .select()
+      .from(integrationSyncState)
+      .where(
+        and(
+          eq(integrationSyncState.organizationId, organizationId),
+          sql`${integrationSyncState.entityType} LIKE 'wage_determination:%'`,
+        ),
+      );
+    const out: SuppressedFailureEntry[] = [];
+    for (const row of rows) {
+      const meta = (row.metadata as Record<string, unknown> | null) ?? null;
+      if (!meta || typeof meta !== "object") continue;
+      const fn = (meta as Record<string, unknown>).failureNotification as
+        | Record<string, unknown>
+        | undefined
+        | null;
+      if (!fn || typeof fn !== "object") continue;
+      const suppressedCount =
+        typeof fn.suppressedCount === "number" ? fn.suppressedCount : 0;
+      if (suppressedCount <= 0) continue;
+      const lastNotifiedAt =
+        typeof fn.lastNotifiedAt === "number" ? fn.lastNotifiedAt : 0;
+      const suppressedSince =
+        typeof fn.suppressedSince === "number" && fn.suppressedSince > 0
+          ? fn.suppressedSince
+          : null;
+      out.push({
+        connectionId: row.connectionId,
+        decisionNumber: row.entityType.slice("wage_determination:".length),
+        suppressedCount,
+        suppressedSince,
+        lastNotifiedAt,
+      });
+    }
+    return out;
+  } catch (err) {
+    logWarn("Davis-Bacon listSuppressedFailureNotifications failed", {
+      organizationId,
+      error: String(err),
+    });
+    return [];
+  }
+}
+
 /**
  * Task #1332: in-app notification to the integration owner when an
  * automatic Davis-Bacon sync queued during project create/update fails.

@@ -105,6 +105,18 @@ export interface ZapierWebhook {
   createdAt: string;
 }
 
+export interface SuppressedFailureItem {
+  connectionId: string;
+  decisionNumber: string;
+  suppressedCount: number;
+  suppressedSince: number | null;
+  lastNotifiedAt: number;
+}
+
+export interface SuppressedFailuresResponse {
+  items: SuppressedFailureItem[];
+}
+
 export const PROVIDER_DESCRIPTIONS: Record<string, string> = {
   qbo: "Sync invoices, customers, and chart of accounts with QuickBooks Online.",
   google: "Connect Gmail and Google Calendar for email ingestion and scheduling.",
