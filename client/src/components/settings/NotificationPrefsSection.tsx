@@ -2378,8 +2378,14 @@ export default function NotificationPrefsSection() {
                     // delivering the in-app row.
                     const inAppOverride = typeChannelOverrides[type]?.inAppEnabled;
                     const inAppEnabled = inAppOverride ?? true;
+                    // Task #1287 — Anchor target for the one-click mute
+                    // link rendered in SWPPP overdue email footers, so
+                    // the deep-link scrolls straight to the toggle.
+                    const rowId = type === "SWPPP_OVERDUE_CORRECTIVE_ACTION"
+                      ? "section-swppp-overdue-prefs"
+                      : undefined;
                     return (
-                      <div key={type} className="flex items-center justify-between py-1" data-testid={`row-in-app-pref-${type}`}>
+                      <div key={type} id={rowId} className="flex items-center justify-between py-1" data-testid={`row-in-app-pref-${type}`}>
                         <span className="text-sm">{label}</span>
                         <Switch
                           checked={inAppEnabled}

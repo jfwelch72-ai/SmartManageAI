@@ -11,6 +11,7 @@ import { sendSlackMessage } from "./slackService";
 import { logError } from "../utils/logger";
 import { hasFeature } from "./featureAccess";
 import { isFeatureEnabled } from "./featureFlagService";
+import { buildSwpppMuteUrl } from "../utils/swpppMuteToken";
 
 type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
 
@@ -222,11 +223,40 @@ export function composeEmailContent(notification: NotificationRecord): {
   // adjust the due date in one click.
   if (notification.relatedEntityType === "SWPPP_OVERDUE_CORRECTIVE_ACTION") {
     const actionUrl = `${baseUrl}/swppp-inspections${notification.relatedEntityId ? `?inspectionId=${encodeURIComponent(notification.relatedEntityId)}` : ""}`;
+    const subject = `SWPPP Corrective Action Overdue — SmartManageAI`;
+    const actionText = "Open SWPPP Inspection";
+
+    // Task #1287 — One-click mute footer link. The signed token is
+    // bound to the recipient's userId so the endpoint can only mute
+    // *their* SWPPP overdue preferences (no cross-tenant abuse). A
+    // plain settings deep-link is included as a transparent fallback.
+    const muteUrl = baseUrl ? buildSwpppMuteUrl(baseUrl, notification.userId) : "";
+    const settingsUrl = `${baseUrl}/settings/notifications#section-swppp-overdue-prefs`;
+
+    const messageHtml = escapeHtml(notification.message).replace(/\n/g, "<br>");
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">${escapeHtml(subject)}</h2>
+        <p style="color: #666; line-height: 1.6;">${messageHtml}</p>
+        <p style="margin-top: 20px;">
+          <a href="${actionUrl}" style="background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+            ${escapeHtml(actionText)}
+          </a>
+        </p>
+        <hr style="margin-top: 30px; border: none; border-top: 1px solid #eee;">
+        <p style="color: #999; font-size: 12px; line-height: 1.6;">
+          You are receiving this because SWPPP overdue alerts are enabled in your SmartManageAI notification preferences.
+          ${muteUrl ? `<br><a href="${muteUrl}" style="color: #0070f3; text-decoration: underline;" data-testid="link-mute-swppp-overdue">Mute SWPPP overdue alerts in your preferences</a> &middot; ` : ""}<a href="${settingsUrl}" style="color: #999; text-decoration: underline;">Manage notification settings</a>
+        </p>
+      </div>
+    `;
+
     return {
-      subject: `SWPPP Corrective Action Overdue — SmartManageAI`,
+      subject,
       body: notification.message,
       actionUrl,
-      actionText: "Open SWPPP Inspection",
+      actionText,
+      html,
     };
   }
 

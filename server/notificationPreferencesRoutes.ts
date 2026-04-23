@@ -55,6 +55,8 @@ import { isValidTeamsWebhookUrl } from "./services/teamsService";
 import { isValidSlackWebhookUrl } from "./services/slackService";
 import { hasFeature } from "./services/featureAccess";
 import { buildDigestCsv } from "./utils/jobMetricAlerts";
+import { verifySwpppMuteToken } from "./utils/swpppMuteToken";
+import { logInfo } from "./utils/logger";
 
 const router = Router();
 
@@ -461,5 +463,64 @@ router.get(
     }
   },
 );
+
+/**
+ * Task #1287 — One-click "mute SWPPP overdue alerts" link rendered in
+ * the footer of SWPPP overdue emails. Authentication is via a signed
+ * JWT bound to the recipient's userId, so the endpoint can ONLY mute
+ * the recipient's own preferences (no cross-tenant abuse).
+ *
+ * Hitting the link upserts the user's per-type override row to disable
+ * both email and in-app delivery for SWPPP_OVERDUE_CORRECTIVE_ACTION,
+ * then redirects to the notification preferences page anchored to the
+ * SWPPP toggle so the user can re-enable or fine-tune the choice.
+ */
+router.get("/api/notifications/mute/swppp-overdue", async (req, res, next) => {
+  try {
+    const token = typeof req.query.token === "string" ? req.query.token : "";
+    const payload = token ? verifySwpppMuteToken(token) : null;
+    // Query string MUST come before the fragment per RFC 3986; otherwise
+    // the browser treats the `?...` as part of the fragment, breaking
+    // both the anchor scroll and any client-side query parsing.
+    const settingsAnchor = "#section-swppp-overdue-prefs";
+
+    if (!payload) {
+      return res.redirect(`/settings/notifications?mute=invalid${settingsAnchor}`);
+    }
+
+    const now = new Date();
+    await db
+      .insert(notificationTypePrefs)
+      .values({
+        userId: payload.userId,
+        notificationType: "SWPPP_OVERDUE_CORRECTIVE_ACTION",
+        emailEnabled: false,
+        smsEnabled: false,
+        pushEnabled: false,
+        teamsEnabled: false,
+        slackEnabled: false,
+        inAppEnabled: false,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [notificationTypePrefs.userId, notificationTypePrefs.notificationType],
+        set: {
+          emailEnabled: false,
+          inAppEnabled: false,
+          updatedAt: now,
+        },
+      });
+
+    logInfo("SWPPP overdue alerts muted via email link", {
+      userId: payload.userId,
+      source: "email_one_click",
+    });
+
+    return res.redirect(`/settings/notifications?muted=swppp_overdue${settingsAnchor}`);
+  } catch (error) {
+    logError("Failed to mute SWPPP overdue alerts via email link", { error: String(error) });
+    next(error);
+  }
+});
 
 export default router;
