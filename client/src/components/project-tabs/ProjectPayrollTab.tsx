@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -104,6 +104,31 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
   const { data, isLoading } = useQuery<PrevailingWageSummary>({
     queryKey: summaryKey,
   });
+
+  // Task #1373: when a background auto-retry is pending, the banner shows
+  // "next auto-retry at <time>" but won't update on its own once that time
+  // passes. Schedule a refetch shortly after `wageDecisionNextRetryAt`
+  // elapses so the UI flips to either the success state or the next
+  // attempt without requiring the user to navigate or reload. Gated on
+  // the retry-pending state so healthy projects don't poll needlessly.
+  const nextRetryAtRaw = data?.wageDecisionNextRetryAt ?? null;
+  const retryExhaustedRaw = data?.wageDecisionRetryExhausted ?? false;
+  const hasFailure = !!data?.wageDecisionLastError && !!data?.wageDecision;
+  useEffect(() => {
+    if (!hasFailure || retryExhaustedRaw || !nextRetryAtRaw) return;
+    const due = new Date(nextRetryAtRaw).getTime();
+    if (Number.isNaN(due)) return;
+    // Add a small buffer so the server-side retry has a chance to run
+    // before we ask for the latest summary.
+    const delay = Math.max(due - Date.now() + 2000, 1000);
+    const timer = setTimeout(() => {
+      queryClient.invalidateQueries({ queryKey: summaryKey });
+    }, delay);
+    return () => clearTimeout(timer);
+    // summaryKey is derived from projectId; including projectId keeps the
+    // dependency list stable without re-running on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, nextRetryAtRaw, retryExhaustedRaw, hasFailure]);
 
   const [overrideOpen, setOverrideOpen] = useState(false);
   const [overrideRow, setOverrideRow] = useState<PrevailingWageClassification | null>(null);
