@@ -1472,10 +1472,54 @@ function writeCatalog(t: AgencyTemplate): { code: string; count: number; path: s
 
 // Agencies for which we ship real, fetched-from-source catalogs. Skip them
 // here so a `tsx scripts/generate-dot-pay-items.ts` run never overwrites the
-// authoritative data produced by `scripts/fetch-dot-pay-items.ts`.
+// authoritative data produced by `scripts/fetch-dot-pay-items.ts` or
+// `scripts/import-dot-pay-items.ts`.
 const REAL_DATA_AGENCIES = new Set(["FHWA", "NCDOT"]);
 
+// As real published spec-book drops are staged into
+// `server/data/dot/pay-items/<AGENCY>.json` (via fetch-dot-pay-items.ts or
+// import-dot-pay-items.ts), add the agency code here. Once an agency is in
+// REAL_DATA_AGENCIES it will be skipped by this generator even with
+// --force-regenerate, so the authoritative file cannot be silently clobbered
+// by a stray run.
+//
+// This generator is retained ONLY as a fallback for agencies that do not yet
+// have a real drop staged. It must never be invoked as part of normal builds,
+// CI, or post-merge automation. A run without --force-regenerate is a no-op
+// that prints a loud warning.
+
+function printRetirementWarning(): void {
+  const bar = "=".repeat(78);
+  console.error(bar);
+  console.error("WARNING: scripts/generate-dot-pay-items.ts is RETIRED.");
+  console.error("");
+  console.error("This generator produces SYNTHETIC pay-item catalogs. The agency JSON files");
+  console.error("under server/data/dot/pay-items/ are being migrated to real published");
+  console.error("spec-book drops (see scripts/import-dot-pay-items.ts and");
+  console.error("scripts/fetch-dot-pay-items.ts). Running this script can silently overwrite");
+  console.error("authoritative data for any agency not yet listed in REAL_DATA_AGENCIES,");
+  console.error("and is almost certainly NOT what you want.");
+  console.error("");
+  console.error("If you genuinely need to regenerate the synthetic baseline for an agency");
+  console.error("that has no real drop yet, re-run with:");
+  console.error("");
+  console.error("    tsx scripts/generate-dot-pay-items.ts --force-regenerate");
+  console.error("");
+  console.error("Agencies listed in REAL_DATA_AGENCIES are skipped even with that flag.");
+  console.error(bar);
+}
+
 function main(): void {
+  const argv = process.argv.slice(2);
+  const forceRegenerate = argv.includes("--force-regenerate");
+  if (!forceRegenerate) {
+    printRetirementWarning();
+    process.exit(2);
+  }
+
+  printRetirementWarning();
+  console.error("--force-regenerate set; proceeding to overwrite synthetic catalogs.");
+
   const summaries: { code: string; count: number; path: string; skipped?: boolean }[] = [];
   for (const t of TEMPLATES) {
     if (REAL_DATA_AGENCIES.has(t.code)) {
