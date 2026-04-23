@@ -12,7 +12,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Switch } from "@/components/ui/switch";
-import { ToggleRight, HardHat, ArrowRight, History, ChevronLeft, ChevronRight, ChevronDown, ShieldAlert, Undo2, RotateCcw, CheckCircle2 } from "lucide-react";
+import { ToggleRight, HardHat, ArrowRight, History, ChevronLeft, ChevronRight, ChevronDown, ShieldAlert, Undo2, RotateCcw, CheckCircle2, Download } from "lucide-react";
 import {
   FEATURE_FLAG_LABELS,
   FEATURE_FLAG_DESCRIPTIONS,
@@ -799,6 +799,29 @@ export function OrgFeaturePresetsTab({
                 Clear filters
               </Button>
             )}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 px-2 text-xs ml-auto"
+              asChild
+              data-testid="button-preset-history-download-csv"
+            >
+              <a
+                href={(() => {
+                  const params = new URLSearchParams();
+                  if (historyKindFilter !== "all") params.set("kind", historyKindFilter);
+                  if (historyTradeFilter !== "all") params.set("tradeType", historyTradeFilter);
+                  if (historyAppliedByFilter !== "all") params.set("appliedById", historyAppliedByFilter);
+                  const qs = params.toString();
+                  return `/api/feature-flags/${orgId}/preset-history.csv${qs ? `?${qs}` : ""}`;
+                })()}
+                download
+              >
+                <Download className="h-3 w-3 mr-1" />
+                Download CSV
+              </a>
+            </Button>
           </div>
           {historyLoading ? (
             <div className="space-y-2">

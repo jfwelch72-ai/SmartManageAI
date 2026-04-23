@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requireRole } from "./auth";
-import { FEATURE_FLAG_KEYS, tradeTypeEnum, type FeatureFlagKey } from "@shared/schema";
+import { FEATURE_FLAG_KEYS, FEATURE_FLAG_LABELS, tradeTypeEnum, type FeatureFlagKey } from "@shared/schema";
 import * as flagService from "./services/featureFlagService";
 import { logError } from "./utils/logger";
 
@@ -106,6 +106,97 @@ router.get("/:orgId/preset-history-filters", requireAuth, async (req, res, next)
     res.json(options);
   } catch (err) {
     next(err);
+  }
+});
+
+function csvEscape(value: string | null | undefined): string {
+  let s = value == null ? "" : String(value);
+  if (s === "") return "";
+  // Spreadsheet formula-injection hardening: cells starting with =, +, -, @,
+  // tab, or carriage return are interpreted as formulas by Excel / Google
+  // Sheets and can exfiltrate data or run commands when the CSV is opened.
+  // Prefix a single quote so the cell renders literally instead.
+  if (/^[=+\-@\t\r]/.test(s)) {
+    s = "'" + s;
+  }
+  if (/[",\n\r]/.test(s)) {
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  return s;
+}
+
+router.get("/:orgId/preset-history.csv", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (user.role !== "SUPER_ADMIN" && (user.role !== "ADMIN" || user.organizationId !== req.params.orgId)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    // Mirror /preset-history filter parsing exactly so the CSV always
+    // matches what the admin sees on screen.
+    const kindParam = typeof req.query.kind === "string" ? req.query.kind : undefined;
+    const kind =
+      kindParam === "apply" || kindParam === "reset_drift" ? kindParam : undefined;
+    const tradeTypeParam = typeof req.query.tradeType === "string" ? req.query.tradeType.trim() : "";
+    const tradeType = tradeTypeParam && (tradeTypeEnum.enumValues as readonly string[]).includes(tradeTypeParam)
+      ? tradeTypeParam
+      : undefined;
+    const appliedByIdParam = typeof req.query.appliedById === "string" ? req.query.appliedById.trim() : "";
+    const appliedById = appliedByIdParam || undefined;
+
+    const today = new Date().toISOString().slice(0, 10);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="preset-history-${today}.csv"`,
+    );
+
+    const headers = [
+      "ID",
+      "Kind",
+      "Trade Type",
+      "Applied At",
+      "Applied By Name",
+      "Applied By Email",
+      "Flag Keys",
+      "Flag Labels",
+    ];
+    res.write(headers.join(",") + "\n");
+
+    for await (const item of flagService.streamPresetApplications(
+      req.params.orgId,
+      kind,
+      tradeType,
+      appliedById,
+    )) {
+      const name = item.appliedBy
+        ? `${item.appliedBy.firstName} ${item.appliedBy.lastName}`.trim() ||
+          item.appliedBy.email
+        : "";
+      const email = item.appliedBy?.email ?? "";
+      const flagKeys = item.flagKeys ?? [];
+      const flagLabels = flagKeys.map(
+        (k) => FEATURE_FLAG_LABELS[k as FeatureFlagKey] ?? k,
+      );
+      const row = [
+        item.id,
+        item.kind,
+        item.tradeType,
+        item.appliedAt instanceof Date ? item.appliedAt.toISOString() : String(item.appliedAt ?? ""),
+        name,
+        email,
+        flagKeys.join("; "),
+        flagLabels.join("; "),
+      ].map(csvEscape);
+      res.write(row.join(",") + "\n");
+    }
+
+    res.end();
+  } catch (err) {
+    if (!res.headersSent) {
+      return next(err);
+    }
+    logError("Preset history CSV export failed mid-stream", undefined, err as Error);
+    res.end();
   }
 });
 

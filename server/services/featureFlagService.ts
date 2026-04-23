@@ -503,6 +503,79 @@ export async function listPresetApplications(
   };
 }
 
+/**
+ * Task #1460 — async-iterate every preset history audit row that matches
+ * the given filters, in newest-first order. Used by the CSV export route to
+ * stream rows out without holding the entire result set in memory or being
+ * capped by the paginated `listPresetApplications` page size.
+ */
+export async function* streamPresetApplications(
+  orgId: string,
+  kind?: PresetApplicationKind,
+  tradeType?: string,
+  appliedById?: string,
+  batchSize: number = 500,
+): AsyncGenerator<PresetApplicationHistoryItem> {
+  const safeBatch = Math.min(2000, Math.max(1, Math.floor(batchSize)));
+  const conditions = [eq(featureFlagPresetApplications.organizationId, orgId)];
+  if (kind === "apply" || kind === "reset_drift") {
+    conditions.push(eq(featureFlagPresetApplications.kind, kind));
+  }
+  if (tradeType) {
+    conditions.push(eq(featureFlagPresetApplications.tradeType, tradeType));
+  }
+  if (appliedById) {
+    conditions.push(eq(featureFlagPresetApplications.appliedById, appliedById));
+  }
+  const whereClause = conditions.length === 1 ? conditions[0] : and(...conditions);
+
+  let offset = 0;
+  while (true) {
+    const rows = await db
+      .select({
+        id: featureFlagPresetApplications.id,
+        tradeType: featureFlagPresetApplications.tradeType,
+        appliedAt: featureFlagPresetApplications.appliedAt,
+        appliedById: featureFlagPresetApplications.appliedById,
+        kind: featureFlagPresetApplications.kind,
+        flagKeys: featureFlagPresetApplications.flagKeys,
+        userFirstName: users.firstName,
+        userLastName: users.lastName,
+        userEmail: users.email,
+        userId: users.id,
+      })
+      .from(featureFlagPresetApplications)
+      .leftJoin(users, eq(users.id, featureFlagPresetApplications.appliedById))
+      .where(whereClause)
+      .orderBy(desc(featureFlagPresetApplications.appliedAt))
+      .limit(safeBatch)
+      .offset(offset);
+
+    if (rows.length === 0) return;
+
+    for (const row of rows) {
+      yield {
+        id: row.id,
+        tradeType: row.tradeType,
+        appliedAt: row.appliedAt,
+        appliedBy: row.userId
+          ? {
+              id: row.userId,
+              firstName: row.userFirstName ?? "",
+              lastName: row.userLastName ?? "",
+              email: row.userEmail ?? "",
+            }
+          : null,
+        kind: (row.kind === "reset_drift" ? "reset_drift" : "apply") as PresetApplicationKind,
+        flagKeys: row.flagKeys ?? null,
+      };
+    }
+
+    if (rows.length < safeBatch) return;
+    offset += rows.length;
+  }
+}
+
 export interface PresetHistoryFilterOptions {
   tradeTypes: string[];
   appliedBy: { id: string; firstName: string; lastName: string; email: string }[];
