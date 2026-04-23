@@ -23,6 +23,26 @@ import {
 import { eq, and, desc, asc } from "drizzle-orm";
 import { logAudit } from "./auditLogger";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
+import { queueWageDecisionSync } from "./integrations/providers/dol_davis_bacon/sync";
+import { logWarn } from "./utils/logger";
+
+// Task #1331: when a prevailing wage rate row references a Davis-Bacon
+// decision number that hasn't been imported yet, kick off a background sync
+// using the same helper as the project create/update path so the certified
+// payroll generator can resolve the rate without the user clicking
+// "Import now". Fire-and-forget; failures are logged but do not block the
+// API response.
+function triggerWageDecisionSync(organizationId: string, decision: string | null | undefined, context: Record<string, unknown>): void {
+  const trimmed = (decision ?? "").trim();
+  if (!trimmed) return;
+  queueWageDecisionSync(organizationId, trimmed).catch((err) => {
+    logWarn("queueWageDecisionSync failed (prevailing wage rate)", {
+      ...context,
+      decision: trimmed,
+      error: String(err),
+    });
+  });
+}
 
 const router = Router();
 
@@ -565,6 +585,11 @@ router.post("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER
       newValue: typeof rate === 'string' ? rate : JSON.stringify(rate)
     }, req);
 
+    triggerWageDecisionSync(organizationId, rate.wageDecision, {
+      route: "POST /prevailing-wage-rates",
+      rateId: rate.id,
+    });
+
     res.status(201).json(rate);
   } catch (error) {
     next(error);
@@ -928,6 +953,10 @@ router.post("/prevailing-wage-rates/import", requireAuth, requireRole("ADMIN", "
     let updated = 0;
     let skipped = 0;
     const errors: { rowNumber?: number; message: string }[] = [];
+    // Task #1331: collect every distinct wage decision actually persisted by
+    // this import so we can queue a Davis-Bacon sync per decision after the
+    // loop completes (deduped via a Set).
+    const decisionsToSync = new Set<string>();
 
     // First pass: validate + de-duplicate by classificationId (last-row-wins).
     type ValidatedRow = z.infer<typeof importRowSchema>;
@@ -1134,6 +1163,10 @@ router.post("/prevailing-wage-rates/import", requireAuth, requireRole("ADMIN", "
               oldValue: JSON.stringify(existing),
               newValue: JSON.stringify(u),
             }, req);
+            const dec = (u.wageDecision ?? "").trim();
+            if (dec && dec !== (existing.wageDecision ?? "").trim()) {
+              decisionsToSync.add(dec);
+            }
           }
         } else {
           const data = insertPrevailingWageRateSchema.parse({
@@ -1163,6 +1196,8 @@ router.post("/prevailing-wage-rates/import", requireAuth, requireRole("ADMIN", "
               action: "CREATE",
               newValue: JSON.stringify(c),
             }, req);
+            const dec = (c.wageDecision ?? "").trim();
+            if (dec) decisionsToSync.add(dec);
           }
         }
       } catch (rowErr: unknown) {
@@ -1170,6 +1205,17 @@ router.post("/prevailing-wage-rates/import", requireAuth, requireRole("ADMIN", "
         const message = rowErr instanceof Error ? rowErr.message : "Failed to import row";
         errors.push({ rowNumber, message });
       }
+    }
+
+    // Task #1331: queue Davis-Bacon syncs for any wage decisions newly
+    // referenced by the rows we just created or updated. queueWageDecisionSync
+    // short-circuits on `cached`, so it's safe to fire for every distinct
+    // decision; the helper will skip those already in the local cache.
+    for (const decision of decisionsToSync) {
+      triggerWageDecisionSync(organizationId, decision, {
+        route: "POST /prevailing-wage-rates/import",
+        projectId,
+      });
     }
 
     res.json({ created, updated, skipped, errors, classificationsCreated });
@@ -1249,6 +1295,16 @@ router.patch("/prevailing-wage-rates/:id", requireAuth, requireRole("ADMIN", "MA
       oldValue: typeof existing === 'string' ? existing : JSON.stringify(existing),
       newValue: typeof updated === 'string' ? updated : JSON.stringify(updated)
     }, req);
+
+    if (
+      updated.wageDecision &&
+      (updated.wageDecision ?? "").trim() !== (existing.wageDecision ?? "").trim()
+    ) {
+      triggerWageDecisionSync(organizationId, updated.wageDecision, {
+        route: "PATCH /prevailing-wage-rates/:id",
+        rateId: updated.id,
+      });
+    }
 
     res.json(updated);
   } catch (error) {
