@@ -133,7 +133,13 @@ export const auditActionEnum = pgEnum("audit_action", [
   "hiring.candidate_stage_changed", "hiring.candidate_hired",
   "hiring.interview_scheduled", "hiring.integration_connected",
   "OVERTIME_REQUEST_CREATED", "OVERTIME_REQUEST_APPROVED", "OVERTIME_REQUEST_REJECTED",
-  "RESOLVE", "REOPEN"
+  "RESOLVE", "REOPEN",
+  // Task #1180: explicit history actions for the certified payroll
+  // archive / unarchive admin endpoints in `server/payrollRoutes.ts`.
+  // Without these, the route's `logAudit` call silently fails at the
+  // DB layer (audit_action is a Postgres enum) and admins lose any
+  // record of who archived a report and why.
+  "ARCHIVE", "UNARCHIVE"
 ]);
 export const clockEventTypeEnum = pgEnum("clock_event_type", ["CLOCK_IN", "CLOCK_OUT", "ADJUSTMENT", "ADMIN_OVERRIDE", "AUTO_CLOCK_OUT"]);
 export const shiftApprovalStatusEnum = pgEnum("shift_approval_status", ["PENDING", "APPROVED", "REJECTED"]);

@@ -95,6 +95,7 @@ import { ensureCrmAndReportingTables } from "./ensureCrmAndReportingTables";
 import { ensureCrmTranscriptBackfillAlertResendCooldownsTable } from "./ensureCrmTranscriptBackfillAlertResendCooldownsTable";
 import { runCertifiedPayrollBackfillOnce } from "./runCertifiedPayrollBackfillOnce";
 import { ensureSovStatusEnumValues } from "./ensureSovStatusEnumValues";
+import { ensureAuditActionEnumValues } from "./ensureAuditActionEnumValues";
 import { ensureCalendarEventTypeEnumValues } from "./ensureCalendarEventTypeEnumValues";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
@@ -118,6 +119,9 @@ const migrations: MigrationStep[] = [
   // operations that `reconcileSchemaDrift` cannot replay (it creates missing
   // enum *types* but not missing values on existing types).
   { name: "sov_status_enum_values", category: "ADD_ENUM", fn: ensureSovStatusEnumValues },
+  // Task #1180 — adds ARCHIVE / UNARCHIVE values used by the certified
+  // payroll archive admin endpoints in `server/payrollRoutes.ts`.
+  { name: "audit_action_enum_values", category: "ADD_ENUM", fn: ensureAuditActionEnumValues },
   { name: "calendar_event_type_enum_values", category: "ADD_ENUM", fn: ensureCalendarEventTypeEnumValues },
   { name: "takeoff_enhancements", category: "ADD_COLUMN", fn: ensureTakeoffEnhancements },
   { name: "field_worker_perm_columns", category: "ADD_COLUMN", fn: ensureFieldWorkerPermColumns },
