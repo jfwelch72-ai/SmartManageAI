@@ -114,6 +114,15 @@ describe("GET /api/crm/calls/transcripts/backfill/notification-config (Task #107
     expect(res.body).toHaveProperty("slack");
     expect(res.body).toHaveProperty("email");
     expect(res.body).toHaveProperty("usingEnvFallback");
+
+    // Task #1130 — the response must also carry the operator's originally
+    // requested staleness window (or null if env was unset/invalid) so the
+    // admin UI can render a "(clamped from X)" hint when the two diverge.
+    expect(res.body).toHaveProperty("heartbeatStaleRequestedMs");
+    expect(
+      res.body.heartbeatStaleRequestedMs === null ||
+        typeof res.body.heartbeatStaleRequestedMs === "number",
+    ).toBe(true);
   });
 
   it("rejects unauthenticated callers with 401", async () => {

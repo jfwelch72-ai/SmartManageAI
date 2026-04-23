@@ -1084,6 +1084,69 @@ export function resolveBackfillHeartbeatStaleMs(
   }
   return ms;
 }
+
+// Task #1130 — structured resolution detail for the notification-config
+// response so the admin UI can render "(clamped from X)" when ops set
+// e.g. "20" expecting a 20-second window and the resolver rounded it up
+// to the 30-second floor. Pure / non-emitting — the WARN side of Task
+// #1130 is already covered by the per-bucket `warn(...)` calls inside
+// `resolveBackfillHeartbeatStaleMs` (Task #1126), so we deliberately do
+// NOT emit additional log lines here. `requestedMs` is null when the
+// env var is unset OR could not be parsed as a positive finite number.
+// `clamped` is true only when a parseable value fell outside [MIN, MAX].
+export type BackfillHeartbeatStaleResolution = {
+  effectiveMs: number;
+  requestedMs: number | null;
+  rawEnv: string | null;
+  invalid: boolean;
+  clamped: boolean;
+};
+
+export function resolveBackfillHeartbeatStaleConfig(): BackfillHeartbeatStaleResolution {
+  const raw = process.env.CRM_BACKFILL_HEARTBEAT_STALE_SECONDS;
+  // Task #1130 — empty/whitespace is intentionally treated identically to
+  // "env var unset": no WARN, no `invalid` flag. Secret managers and
+  // docker-compose `${VAR:-}` patterns commonly materialize unset vars as
+  // an empty string, so warning on `""` would generate false-positive
+  // boot noise on every deploy that hasn't explicitly opted in. Only
+  // _explicit_ but unparseable values (e.g. "abc", "0", "-30") trip the
+  // invalid path below.
+  if (!raw || !raw.trim()) {
+    return {
+      effectiveMs: DEFAULT_BACKFILL_HEARTBEAT_STALE_MS,
+      requestedMs: null,
+      rawEnv: null,
+      invalid: false,
+      clamped: false,
+    };
+  }
+  const trimmed = raw.trim();
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return {
+      effectiveMs: DEFAULT_BACKFILL_HEARTBEAT_STALE_MS,
+      requestedMs: null,
+      rawEnv: trimmed,
+      invalid: true,
+      clamped: false,
+    };
+  }
+  const requestedMs = Math.round(parsed * 1000);
+  let effectiveMs = requestedMs;
+  if (effectiveMs < MIN_BACKFILL_HEARTBEAT_STALE_MS) {
+    effectiveMs = MIN_BACKFILL_HEARTBEAT_STALE_MS;
+  } else if (effectiveMs > MAX_BACKFILL_HEARTBEAT_STALE_MS) {
+    effectiveMs = MAX_BACKFILL_HEARTBEAT_STALE_MS;
+  }
+  return {
+    effectiveMs,
+    requestedMs,
+    rawEnv: trimmed,
+    invalid: false,
+    clamped: requestedMs !== effectiveMs,
+  };
+}
+
 // Task #1131 — the heartbeat-staleness window used to be a module-level
 // `const` captured at import time, then read directly from at least six
 // worker sites (resume, cancel, reap, completion-email paths). That made
@@ -1109,6 +1172,12 @@ export function __setBackfillHeartbeatStaleMsForTests(ms: number | null): void {
   currentBackfillHeartbeatStaleMs =
     ms === null ? resolveBackfillHeartbeatStaleMs() : ms;
 }
+
+// Task #1130 — boot-time snapshot of the structured resolution so the
+// notification-config endpoint can surface the operator's originally-
+// requested value alongside the (potentially clamped) effective value.
+// Captured once at module load, mirroring `currentBackfillHeartbeatStaleMs`.
+export const BACKFILL_HEARTBEAT_STALE_RESOLUTION = resolveBackfillHeartbeatStaleConfig();
 
 /**
  * @deprecated Use `getBackfillHeartbeatStaleMs()` instead. This export is
@@ -3029,7 +3098,19 @@ router.get(
       // admin UI's cross-org Cancel hint can render the live value instead
       // of a hardcoded "5 minutes" string.
       const cfg = await getBackfillNotificationConfig(orgId);
-      res.json({ ...cfg, heartbeatStaleMs: getBackfillHeartbeatStaleMs() });
+      // Task #1130 — also surface the operator's originally-requested value
+      // (or null if the env was unset/invalid) so the admin UI can render a
+      // "(clamped from X)" hint when ops set e.g. "20" expecting a 20-second
+      // window and the resolver rounded it up to the 30-second floor. The
+      // effective `heartbeatStaleMs` comes from the live accessor (Task
+      // #1131) so test-time overrides via `__setBackfillHeartbeatStaleMsForTests`
+      // are reflected here too.
+      res.json({
+        ...cfg,
+        heartbeatStaleMs: getBackfillHeartbeatStaleMs(),
+        heartbeatStaleRequestedMs:
+          BACKFILL_HEARTBEAT_STALE_RESOLUTION.requestedMs,
+      });
     } catch (e) {
       next(e);
     }

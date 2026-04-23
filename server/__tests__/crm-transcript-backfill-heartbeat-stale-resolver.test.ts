@@ -13,7 +13,10 @@
  * notice misconfigurations the moment the process boots.
  */
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { resolveBackfillHeartbeatStaleMs } from "../crmCallsRoutes";
+import {
+  resolveBackfillHeartbeatStaleMs,
+  resolveBackfillHeartbeatStaleConfig,
+} from "../crmCallsRoutes";
 
 const ENV_KEY = "CRM_BACKFILL_HEARTBEAT_STALE_SECONDS";
 const DEFAULT_MS = 5 * 60 * 1000;
@@ -148,6 +151,84 @@ describe("resolveBackfillHeartbeatStaleMs startup warnings (Task #1126)", () => 
       rawValue: "7200",
       requestedMs: 7_200_000,
       clampedMs: MAX_MS,
+    });
+  });
+});
+
+// Task #1130 — the structured resolver also captures *why* the env value got
+// overridden so the notification-config endpoint can tell admins their
+// stated intent was clamped instead of silently pretending everything is
+// fine. (The actual WARN side-effect is exercised by the Task #1126 suite
+// above; this suite pins the pure structured shape used by the API.)
+describe("resolveBackfillHeartbeatStaleConfig (Task #1130)", () => {
+  it("reports an unset env as a non-invalid, non-clamped default", () => {
+    delete process.env[ENV_KEY];
+    expect(resolveBackfillHeartbeatStaleConfig()).toEqual({
+      effectiveMs: DEFAULT_MS,
+      requestedMs: null,
+      rawEnv: null,
+      invalid: false,
+      clamped: false,
+    });
+  });
+
+  it("flags non-numeric input as invalid (warn-worthy)", () => {
+    process.env[ENV_KEY] = "not-a-number";
+    expect(resolveBackfillHeartbeatStaleConfig()).toEqual({
+      effectiveMs: DEFAULT_MS,
+      requestedMs: null,
+      rawEnv: "not-a-number",
+      invalid: true,
+      clamped: false,
+    });
+  });
+
+  it("flags zero/negative input as invalid (warn-worthy)", () => {
+    process.env[ENV_KEY] = "0";
+    expect(resolveBackfillHeartbeatStaleConfig()).toMatchObject({
+      effectiveMs: DEFAULT_MS,
+      requestedMs: null,
+      invalid: true,
+      clamped: false,
+    });
+    process.env[ENV_KEY] = "-30";
+    expect(resolveBackfillHeartbeatStaleConfig()).toMatchObject({
+      effectiveMs: DEFAULT_MS,
+      requestedMs: null,
+      invalid: true,
+    });
+  });
+
+  it("flags below-floor values as clamped and exposes the requested ms", () => {
+    process.env[ENV_KEY] = "20"; // 20s — the canonical "ops set 20 expecting 20s" case from the task
+    expect(resolveBackfillHeartbeatStaleConfig()).toEqual({
+      effectiveMs: MIN_MS,
+      requestedMs: 20 * 1000,
+      rawEnv: "20",
+      invalid: false,
+      clamped: true,
+    });
+  });
+
+  it("flags above-ceiling values as clamped and exposes the requested ms", () => {
+    process.env[ENV_KEY] = "7200"; // 2 hours — the other canonical case from the task
+    expect(resolveBackfillHeartbeatStaleConfig()).toEqual({
+      effectiveMs: MAX_MS,
+      requestedMs: 7200 * 1000,
+      rawEnv: "7200",
+      invalid: false,
+      clamped: true,
+    });
+  });
+
+  it("does NOT flag in-range values as clamped or invalid", () => {
+    process.env[ENV_KEY] = "600"; // 10 minutes
+    expect(resolveBackfillHeartbeatStaleConfig()).toEqual({
+      effectiveMs: 10 * 60 * 1000,
+      requestedMs: 10 * 60 * 1000,
+      rawEnv: "600",
+      invalid: false,
+      clamped: false,
     });
   });
 });

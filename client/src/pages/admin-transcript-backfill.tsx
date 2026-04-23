@@ -209,6 +209,13 @@ interface NotificationConfig {
   // instead of a hardcoded "5 minutes". Optional so older deploys/tests that
   // don't include it gracefully fall back to the default.
   heartbeatStaleMs?: number;
+  // Task #1130 — operator's originally-requested staleness window in ms,
+  // before clamping to the [30s, 60min] band. Null when the env var is
+  // unset or could not be parsed (the resolver fell back to the default).
+  // When this differs from `heartbeatStaleMs` the admin UI renders a
+  // subtle "(clamped from X)" hint so ops can spot a silently-overridden
+  // env value without reading the source.
+  heartbeatStaleRequestedMs?: number | null;
 }
 
 // Task #1078 — render the heartbeat staleness window in the most natural unit
@@ -1483,6 +1490,25 @@ export default function AdminTranscriptBackfillPage() {
               Cancel asks the worker to stop after the current recording
               (&ldquo;Cancellation requested&rdquo;). If its heartbeat is older
               than {formatHeartbeatStaleWindow(notificationConfig?.heartbeatStaleMs)}{" "}
+              {/* Task #1130 — annotate the threshold when the resolver had
+                  to clamp the env value (e.g. ops set "20" expecting 20s and
+                  it got rounded up to the 30-second floor) so admins see the
+                  effective number alongside their stated intent without
+                  cross-referencing the boot logs. */}
+              {typeof notificationConfig?.heartbeatStaleRequestedMs === "number" &&
+                notificationConfig.heartbeatStaleRequestedMs !==
+                  notificationConfig.heartbeatStaleMs && (
+                  <span
+                    className="text-muted-foreground/80"
+                    data-testid="text-cross-org-cancel-hint-clamped"
+                  >
+                    (clamped from{" "}
+                    {formatHeartbeatStaleWindow(
+                      notificationConfig.heartbeatStaleRequestedMs,
+                    )}
+                    ){" "}
+                  </span>
+                )}
               the worker is presumed dead and the row is reaped immediately to
               FAILED (&ldquo;Backfill marked as failed&rdquo;).
             </p>
