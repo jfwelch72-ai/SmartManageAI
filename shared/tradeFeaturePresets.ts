@@ -74,9 +74,14 @@ const GC_PRESET = buildPreset([
   INTEGRATION_FLAGS,
 ]);
 
+// Specialty trades (roofing, concrete, demolition, masonry, etc.) are field-heavy
+// crews that invoice through QuickBooks — both MOBILE_OFFLINE_V2 and the QBO
+// integration are part of their day-one workflow.
 const SPECIALTY_TRADE_PRESET = buildPreset([
   CORE_FLAGS,
   INTEGRATION_FLAGS,
+  FINANCE_CORE_FLAGS,
+  ["MOBILE_OFFLINE_V2"] as FeatureFlagKey[],
 ]);
 
 const TECH_TRADE_PRESET = buildPreset([
@@ -86,15 +91,22 @@ const TECH_TRADE_PRESET = buildPreset([
   ["MOBILE_OFFLINE_V2"] as FeatureFlagKey[],
 ]);
 
+// Finish trades (drywall, paint, flooring, glazing) are small-business shops
+// that almost universally book revenue through QuickBooks Online.
 const FINISH_TRADE_PRESET = buildPreset([
   CORE_FLAGS,
   INTEGRATION_FLAGS,
+  FINANCE_CORE_FLAGS,
   ["MOBILE_OFFLINE_V2"] as FeatureFlagKey[],
 ]);
 
+// Civil sitework crews need QBO for accounting alongside their mobile workflow;
+// the heavy-civil DOT bundle is intentionally not enabled here so private-site
+// civil contractors aren't pushed into DOT-only modules.
 const CIVIL_PRESET = buildPreset([
   CORE_FLAGS,
   INTEGRATION_FLAGS,
+  FINANCE_CORE_FLAGS,
   ["MOBILE_OFFLINE_V2"] as FeatureFlagKey[],
 ]);
 
@@ -127,17 +139,36 @@ const STRUCTURAL_PRESET = buildPreset([
   ["MOBILE_OFFLINE_V2", "BIM_VIEWER"] as FeatureFlagKey[],
 ]);
 
+// MEP coordination (HVAC, mechanical piping, plumbing systems, fire protection,
+// low-voltage, electrical raceway) is the primary commercial use case for the
+// 3D BIM viewer — clash detection between trades is a near-universal need.
 const MEP_PRESET = buildPreset([
   CORE_FLAGS,
   INTEGRATION_FLAGS,
   FINANCE_CORE_FLAGS,
-  ["MOBILE_OFFLINE_V2"] as FeatureFlagKey[],
+  ["MOBILE_OFFLINE_V2", "BIM_VIEWER"] as FeatureFlagKey[],
 ]);
 
+// Support trades (survey, testing/inspection, commissioning, temporary
+// facilities, general conditions) operate primarily in the field and need
+// the offline-capable mobile experience to capture data on site.
 const SUPPORT_PRESET = buildPreset([
   CORE_FLAGS,
   INTEGRATION_FLAGS,
+  ["MOBILE_OFFLINE_V2"] as FeatureFlagKey[],
 ]);
+
+// Notes on intentional opt-ins (NOT bundled into any non-GC preset):
+//   - HIRING_* flags: hiring is a back-office function that smaller trades
+//     prefer to leave off until they actually staff up; GC keeps the bundle.
+//   - EXECUTIVE_DIGEST: leadership weekly digest, GC-only.
+//   - SMS_NOTIFICATIONS, VIDEO_CALLS, TWILIO_INTEGRATION: paid third-party
+//     services (Twilio, Daily.co) — must be opted-in by the customer.
+//   - LIDAR_SCANNER: specialized as-built capture; structural/heavy-civil
+//     enable it explicitly, others opt in.
+//   - REVENUE_RECOGNITION, SSO, AUDIT_EXPORT, DATA_RETENTION,
+//     PRIVACY_COMPLIANCE, AI_GOVERNANCE: enterprise-tier compliance modules
+//     that don't belong in a starter preset for a smaller subcontractor.
 
 const EXPLICIT_PRESETS: Record<string, TradeFeaturePreset> = {
   GENERAL_CONTRACTOR: GC_PRESET,

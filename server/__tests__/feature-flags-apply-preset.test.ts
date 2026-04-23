@@ -167,4 +167,98 @@ describe("POST /api/feature-flags/:orgId/apply-preset", () => {
     expect(res.status).toBe(400);
     expect(String(res.body?.error || "")).toMatch(/invalid/i);
   });
+
+  // Coverage for a non-Heavy-Civil preset: HVAC_SYSTEMS resolves to MEP_PRESET,
+  // which must include the "must-have" trade flags (mobile + BIM for clash
+  // detection + QBO accounting) and must NOT enable any Heavy Civil / DOT flag.
+  it("ADMIN same-org: HVAC_SYSTEMS (MEP) preset enables BIM, mobile, and QBO without Heavy Civil flags", async () => {
+    const admin = await loginAs("ADMIN");
+    expect(admin.orgId).toBeTruthy();
+
+    const apply = await request(app)
+      .post(`/api/feature-flags/${admin.orgId}/apply-preset`)
+      .set("Cookie", admin.cookie)
+      .send({ tradeType: "HVAC_SYSTEMS" });
+    expect(apply.status, `apply-preset failed: ${apply.text}`).toBe(200);
+
+    const sa = await loginAs("SUPER_ADMIN");
+    const flagsRes = await request(app)
+      .get(`/api/feature-flags/${admin.orgId}`)
+      .set("Cookie", sa.cookie);
+    expect(flagsRes.status).toBe(200);
+    const body = flagsRes.body as FlagsResponse;
+
+    const mepMustHave = [
+      "MOBILE_OFFLINE_V2",
+      "BIM_VIEWER",
+      "INTEGRATION_QBO",
+      "DOCUMENT_CONTROL",
+      "APPROVALS_FRAMEWORK",
+    ] as const;
+    for (const flag of mepMustHave) {
+      expect(body.flags[flag], `MEP preset should enable ${flag}`).toBe(true);
+    }
+
+    // No Heavy Civil flag should be enabled by an MEP preset.
+    for (const flag of HEAVY_CIVIL_USER_FLAGS) {
+      expect(body.flags[flag], `MEP preset must NOT enable ${flag}`).toBe(false);
+    }
+    expect(body.flags["HEAVY_CIVIL_PRESET"]).toBe(false);
+  });
+
+  // Table-driven coverage for the Specialty / Finish / Civil / Support preset
+  // families to ensure each one enables its newly-bundled "must-have" flags
+  // and never silently leaks Heavy Civil / DOT flags.
+  const PRESET_FAMILY_CASES: Array<{
+    name: string;
+    tradeType: string;
+    mustHave: readonly string[];
+  }> = [
+    {
+      name: "Specialty (ROOFING)",
+      tradeType: "ROOFING",
+      mustHave: ["MOBILE_OFFLINE_V2", "INTEGRATION_QBO", "DOCUMENT_CONTROL"],
+    },
+    {
+      name: "Finish (PAINTING)",
+      tradeType: "PAINTING",
+      mustHave: ["MOBILE_OFFLINE_V2", "INTEGRATION_QBO", "DOCUMENT_CONTROL"],
+    },
+    {
+      name: "Civil (EARTHWORK)",
+      tradeType: "EARTHWORK",
+      mustHave: ["MOBILE_OFFLINE_V2", "INTEGRATION_QBO", "DOCUMENT_CONTROL"],
+    },
+    {
+      name: "Support (SURVEY_AND_LAYOUT)",
+      tradeType: "SURVEY_AND_LAYOUT",
+      mustHave: ["MOBILE_OFFLINE_V2", "DOCUMENT_CONTROL", "APPROVALS_FRAMEWORK"],
+    },
+  ];
+
+  for (const tc of PRESET_FAMILY_CASES) {
+    it(`ADMIN same-org: ${tc.name} preset enables its must-have flags and no Heavy Civil flags`, async () => {
+      const admin = await loginAs("ADMIN");
+      const apply = await request(app)
+        .post(`/api/feature-flags/${admin.orgId}/apply-preset`)
+        .set("Cookie", admin.cookie)
+        .send({ tradeType: tc.tradeType });
+      expect(apply.status, `apply-preset failed: ${apply.text}`).toBe(200);
+
+      const sa = await loginAs("SUPER_ADMIN");
+      const flagsRes = await request(app)
+        .get(`/api/feature-flags/${admin.orgId}`)
+        .set("Cookie", sa.cookie);
+      expect(flagsRes.status).toBe(200);
+      const body = flagsRes.body as FlagsResponse;
+
+      for (const flag of tc.mustHave) {
+        expect(body.flags[flag], `${tc.name} should enable ${flag}`).toBe(true);
+      }
+      for (const flag of HEAVY_CIVIL_USER_FLAGS) {
+        expect(body.flags[flag], `${tc.name} must NOT enable ${flag}`).toBe(false);
+      }
+      expect(body.flags["HEAVY_CIVIL_PRESET"]).toBe(false);
+    });
+  }
 });
