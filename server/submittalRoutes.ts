@@ -975,11 +975,23 @@ router.post("/submittals/:id/files", requireAuth, requireRoleOrFeature(["SUPER_A
 
     const { fileUrl, fileName, fileSize, mimeType, description } = validationResult.data;
 
+    // Verify the supplied fileUrl actually points at an object owned by the
+    // caller's org. Without this check a tenant could clobber another
+    // tenant's ACL by aiming this endpoint at someone else's storage key.
+    if (!req.user!.organizationId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    try {
+      await assertStorageKeyBelongsToOrg(fileUrl, req.user!.organizationId, req.user!.id, req.user!.role);
+    } catch (err: any) {
+      return res.status(err?.status || 403).json({ error: err?.message || "Forbidden" });
+    }
+
     const { ObjectStorageService } = await import("./objectStorage");
     const objectStorageService = new ObjectStorageService();
     const objectKey = await objectStorageService.trySetObjectEntityAclPolicy(fileUrl, {
       owner: req.user!.id,
-      organizationId: req.user!.organizationId!,
+      organizationId: req.user!.organizationId,
       visibility: "private",
     });
 
@@ -1092,6 +1104,18 @@ router.delete("/submittals/:id/files/:fileId", requireAuth, requireRoleOrFeature
     const userRole = req.user!.role;
     if (file.uploadedById !== req.user!.id && !["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(userRole)) {
       return res.status(403).json({ error: "You don't have permission to delete this file" });
+    }
+
+    // Defense in depth: ensure the stored objectKey/fileUrl actually belongs
+    // to the caller's org. Even though the parent submittal is org-scoped,
+    // historical rows could reference another tenant's storage key.
+    const storageRef: string | undefined = file.objectKey || file.fileUrl;
+    if (storageRef && req.user!.organizationId) {
+      try {
+        await assertStorageKeyBelongsToOrg(storageRef, req.user!.organizationId, req.user!.id, userRole);
+      } catch (err: any) {
+        return res.status(err?.status || 403).json({ error: err?.message || "Forbidden" });
+      }
     }
 
     const updatedAttachments = currentAttachments.filter((_: any, i: number) => i !== fileIndex);
