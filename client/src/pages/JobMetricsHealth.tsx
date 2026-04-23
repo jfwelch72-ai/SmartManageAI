@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ArrowLeft, RefreshCw, Cake, XCircle, Activity, BarChart3, Play, ListChecks, FileStack, HardHat } from "lucide-react";
+import { ArrowLeft, RefreshCw, Cake, XCircle, Activity, BarChart3, Play, ListChecks, FileStack, HardHat, Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -103,6 +103,25 @@ const ALL_JOBS_KEY = ["/api/admin/metrics/jobs"] as const;
 const REGISTRY_KEY = ["/api/admin/jobs"] as const;
 const WAGE_STALE_LAST_RUN_KEY = ["/api/admin/jobs/wage_decision_stale_refresh/last-run"] as const;
 const WAGE_STALE_JOB = "wage_decision_stale_refresh";
+const WAGE_ORPHAN_LAST_RUN_KEY = ["/api/admin/jobs/wage_decision_orphan_sweep/last-run"] as const;
+const WAGE_RETRY_JOB = "wage_decision_retry";
+
+interface OrphanWageDecisionSweepResult {
+  candidates: number;
+  deleted: number;
+  retentionDays: number;
+}
+
+interface OrphanWageDecisionSweepRecord {
+  ranAt: string;
+  durationMs: number;
+  result: OrphanWageDecisionSweepResult;
+}
+
+interface WageDecisionOrphanLastRunResponse {
+  lastRun: OrphanWageDecisionSweepRecord | null;
+  recent?: OrphanWageDecisionSweepRecord[];
+}
 
 interface StaleWageDecisionSweepResult {
   candidates: number;
@@ -182,6 +201,14 @@ export default function JobMetricsHealth() {
     refetchInterval: 30000,
   });
 
+  // Task #1429 — orphan-row cleanup runs inside the wage-decision retry
+  // sweep but its counters are tracked separately so operators can see
+  // at a glance whether the retention window is doing what they expect.
+  const { data: wageOrphanLastRun, isLoading: wageOrphanLoading } = useQuery<WageDecisionOrphanLastRunResponse>({
+    queryKey: WAGE_ORPHAN_LAST_RUN_KEY,
+    refetchInterval: 30000,
+  });
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [runningJob, setRunningJob] = useState<string | null>(null);
@@ -202,6 +229,7 @@ export default function JobMetricsHealth() {
       queryClient.invalidateQueries({ queryKey: ALL_JOBS_KEY });
       queryClient.invalidateQueries({ queryKey: BIRTHDAY_KEY });
       queryClient.invalidateQueries({ queryKey: WAGE_STALE_LAST_RUN_KEY });
+      queryClient.invalidateQueries({ queryKey: WAGE_ORPHAN_LAST_RUN_KEY });
     },
     onError: (err: unknown, jobName) => {
       const description =
@@ -600,6 +628,124 @@ export default function JobMetricsHealth() {
                         <span>
                           cand {s.result.candidates} · ok {s.result.succeeded} · fail{" "}
                           {s.result.failed} · {s.durationMs}ms
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-wage-decision-orphan-sweep">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Trash2 className="h-4 w-4" /> Davis-Bacon orphan row cleanup
+              </CardTitle>
+              <CardDescription>
+                Cleanup that drops cached <code>wage_determination:*</code> rows no
+                project references anymore and whose last touch is older than the
+                retention window
+                {wageOrphanLastRun?.lastRun ? (
+                  <>
+                    {" "}(currently{" "}
+                    <span data-testid="text-wage-orphan-retention-days">
+                      {wageOrphanLastRun.lastRun.result.retentionDays}
+                    </span>{" "}
+                    days)
+                  </>
+                ) : null}
+                . Runs as part of the wage-decision retry sweep
+                (<code>{WAGE_RETRY_JOB}</code>); use “Run now” to trigger that sweep
+                manually. Super Admin only.
+              </CardDescription>
+            </div>
+            <Button
+              onClick={() => runJobMutation.mutate(WAGE_RETRY_JOB)}
+              disabled={runJobMutation.isPending}
+              data-testid="button-run-wage-decision-orphan-sweep"
+            >
+              <RefreshCw
+                className={`h-4 w-4 mr-1 ${
+                  runJobMutation.isPending && runningJob === WAGE_RETRY_JOB
+                    ? "animate-spin"
+                    : ""
+                }`}
+              />
+              {runJobMutation.isPending && runningJob === WAGE_RETRY_JOB
+                ? "Running…"
+                : "Run now"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {wageOrphanLoading ? (
+            <Skeleton className="h-24 w-full" data-testid="skeleton-wage-orphan" />
+          ) : !wageOrphanLastRun?.lastRun ? (
+            <div
+              className="text-sm text-muted-foreground"
+              data-testid="text-wage-orphan-no-run"
+            >
+              No cleanup has been recorded yet. The sweep runs every time the
+              wage-decision retry job ticks — use “Run now” to trigger it
+              immediately.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="text-sm text-muted-foreground">
+                Last cleanup:{" "}
+                <span className="font-medium text-foreground" data-testid="text-wage-orphan-ran-at">
+                  {new Date(wageOrphanLastRun.lastRun.ranAt).toLocaleString()}
+                </span>{" "}
+                <span data-testid="text-wage-orphan-relative">
+                  ({formatRelative(new Date(wageOrphanLastRun.lastRun.ranAt).getTime())})
+                </span>{" "}
+                · finished in{" "}
+                <span data-testid="text-wage-orphan-duration">
+                  {wageOrphanLastRun.lastRun.durationMs}ms
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm">
+                {(
+                  [
+                    ["candidates", "Candidates considered"],
+                    ["deleted", "Rows deleted"],
+                    ["retentionDays", "Retention (days)"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <div key={key} data-testid={`stat-wage-orphan-${key}`}>
+                    <div className="text-muted-foreground">{label}</div>
+                    <div
+                      className="font-medium text-lg"
+                      data-testid={`text-wage-orphan-${key}`}
+                    >
+                      {wageOrphanLastRun.lastRun!.result[key]}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {wageOrphanLastRun.recent && wageOrphanLastRun.recent.length > 1 && (
+                <div className="pt-2" data-testid="wage-orphan-recent-history">
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                    Recent cleanups
+                  </div>
+                  <div className="text-xs border rounded-md divide-y">
+                    {wageOrphanLastRun.recent.slice(0, 10).map((s, idx) => (
+                      <div
+                        key={`${s.ranAt}-${idx}`}
+                        className="flex items-center justify-between gap-2 px-2 py-1"
+                        data-testid={`row-wage-orphan-recent-${idx}`}
+                      >
+                        <span className="text-muted-foreground">
+                          {new Date(s.ranAt).toLocaleString()}
+                        </span>
+                        <span>
+                          cand {s.result.candidates} · del {s.result.deleted} ·{" "}
+                          {s.durationMs}ms
                         </span>
                       </div>
                     ))}

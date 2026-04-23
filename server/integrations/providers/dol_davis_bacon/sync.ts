@@ -985,6 +985,8 @@ export async function sweepOrphanedWageDecisionRows(
   now: Date = new Date(),
 ): Promise<number> {
   const cutoff = new Date(now.getTime() - ORPHAN_WAGE_DECISION_RETENTION_MS);
+  const sweepStartedAt = Date.now();
+  let candidates = 0;
   let deleted = 0;
   try {
     // Pull only candidate rows whose *most recent* touch (the greater of
@@ -998,7 +1000,7 @@ export async function sweepOrphanedWageDecisionRows(
     // double check below also re-validates the per-row touch timestamps
     // before the actual delete, so a brand-new row with both timestamps
     // null is left alone.
-    const candidates = await db
+    const candidateRows = await db
       .select()
       .from(integrationSyncState)
       .where(
@@ -1007,7 +1009,12 @@ export async function sweepOrphanedWageDecisionRows(
           sql`GREATEST(COALESCE(${integrationSyncState.lastSyncAt}, '-infinity'::timestamp), COALESCE(${integrationSyncState.lastAttemptAt}, '-infinity'::timestamp)) < ${cutoff}`,
         ),
       );
-    if (candidates.length === 0) return 0;
+    candidates = candidateRows.length;
+    if (candidateRows.length === 0) {
+      // Fall through to the recordOrphanSweepSample call below so the
+      // dashboard sees every tick (including the common "no candidates"
+      // case) instead of silently dropping empty runs.
+    } else {
 
     // Build a per-org set of referenced decision numbers. Scoping by org
     // matches how `integration_sync_state` rows are partitioned and means
@@ -1028,7 +1035,7 @@ export async function sweepOrphanedWageDecisionRows(
     }
 
     const cutoffMs = cutoff.getTime();
-    for (const row of candidates) {
+    for (const row of candidateRows) {
       const decisionNumber = row.entityType.slice("wage_determination:".length).trim();
       if (!decisionNumber) continue;
       if (referenced.has(`${row.organizationId}::${decisionNumber}`)) continue;
@@ -1053,11 +1060,27 @@ export async function sweepOrphanedWageDecisionRows(
     if (deleted > 0) {
       logInfo("Davis-Bacon orphaned wage decision rows pruned", { deleted });
     }
+    }
   } catch (err) {
     logWarn("Davis-Bacon orphaned wage decision sweep failed", {
       error: String(err),
     });
   }
+  // Task #1429 — surface the per-run cleanup counts on the admin Jobs
+  // dashboard so a misconfigured retention window or a sudden spike in
+  // deletions doesn't go unnoticed. Persisted via the standard
+  // `recordJobMetrics` path so the history survives restarts. We always
+  // record (even on the early-return path) so dashboard consumers see
+  // every tick, including the common "no candidates" case.
+  recordOrphanSweepSample({
+    ranAt: new Date().toISOString(),
+    durationMs: Date.now() - sweepStartedAt,
+    result: {
+      candidates,
+      deleted,
+      retentionDays: Math.round(ORPHAN_WAGE_DECISION_RETENTION_MS / (24 * 60 * 60 * 1000)),
+    },
+  });
   return deleted;
 }
 
@@ -1509,6 +1532,95 @@ export async function __resetLastStaleWageDecisionSweepForTests(): Promise<void>
       .where(eq(jobMetricSamples.job, WAGE_DECISION_STALE_REFRESH_JOB));
   } catch {
     // Best-effort — tests that don't care about persistence shouldn't fail.
+  }
+}
+
+/**
+ * Task #1429 — `wage_decision_orphan_sweep` job alias for the
+ * `recordJobMetrics` history. The orphan cleanup runs as part of the
+ * wage-decision retry sweep but its counters are tracked under their
+ * own job name so the admin Jobs dashboard can render them in a
+ * dedicated card alongside the stale-refresh metrics.
+ */
+export const WAGE_DECISION_ORPHAN_SWEEP_JOB = "wage_decision_orphan_sweep";
+
+export interface OrphanWageDecisionSweepResult {
+  candidates: number;
+  deleted: number;
+  retentionDays: number;
+}
+
+export interface OrphanWageDecisionSweepRecord {
+  ranAt: string;
+  durationMs: number;
+  result: OrphanWageDecisionSweepResult;
+}
+
+function rowToOrphanSweepRecord(row: {
+  recordedAt: Date | string;
+  counters: unknown;
+}): OrphanWageDecisionSweepRecord {
+  const c = (row.counters ?? {}) as Record<string, unknown>;
+  const num = (k: string): number => {
+    const v = c[k];
+    return typeof v === "number" && Number.isFinite(v) ? v : 0;
+  };
+  return {
+    ranAt: new Date(row.recordedAt).toISOString(),
+    durationMs: num("durationMs"),
+    result: {
+      candidates: num("candidates"),
+      deleted: num("deleted"),
+      retentionDays: num("retentionDays"),
+    },
+  };
+}
+
+function recordOrphanSweepSample(record: OrphanWageDecisionSweepRecord): void {
+  recordJobMetrics(WAGE_DECISION_ORPHAN_SWEEP_JOB, {
+    candidates: record.result.candidates,
+    deleted: record.result.deleted,
+    retentionDays: record.result.retentionDays,
+    durationMs: record.durationMs,
+  });
+}
+
+export async function getLastOrphanedWageDecisionSweep(): Promise<OrphanWageDecisionSweepRecord | null> {
+  try {
+    const [row] = await db
+      .select({
+        recordedAt: jobMetricSamples.recordedAt,
+        counters: jobMetricSamples.counters,
+      })
+      .from(jobMetricSamples)
+      .where(eq(jobMetricSamples.job, WAGE_DECISION_ORPHAN_SWEEP_JOB))
+      .orderBy(desc(jobMetricSamples.recordedAt))
+      .limit(1);
+    return row ? rowToOrphanSweepRecord(row) : null;
+  } catch (err) {
+    logError("Failed to load last wage decision orphan sweep", { error: String(err) });
+    return null;
+  }
+}
+
+export async function getRecentOrphanedWageDecisionSweeps(
+  limit = 10,
+): Promise<OrphanWageDecisionSweepRecord[]> {
+  const safeLimit = Math.max(1, Math.min(50, Math.floor(limit)));
+  try {
+    const rows = await db
+      .select({
+        recordedAt: jobMetricSamples.recordedAt,
+        counters: jobMetricSamples.counters,
+      })
+      .from(jobMetricSamples)
+      .where(eq(jobMetricSamples.job, WAGE_DECISION_ORPHAN_SWEEP_JOB))
+      .orderBy(desc(jobMetricSamples.recordedAt))
+      .limit(safeLimit);
+    return rows.map(rowToOrphanSweepRecord);
+  } catch (err) {
+    logError("Failed to load recent wage decision orphan sweeps", { error: String(err) });
+    return [];
   }
 }
 

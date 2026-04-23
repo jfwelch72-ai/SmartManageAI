@@ -1234,6 +1234,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   );
 
+  // Task #1429: surface the most recent `wage_decision_orphan_sweep`
+  // counts on the admin Jobs dashboard so a misconfigured retention
+  // window or a sudden spike in deletions doesn't go unnoticed. The
+  // orphan cleanup runs as part of the wage-decision retry sweep but
+  // its counters are tracked under a dedicated job alias.
+  app.get(
+    "/api/admin/jobs/wage_decision_orphan_sweep/last-run",
+    requireAuth,
+    requireRole("SUPER_ADMIN"),
+    async (_req: AuthRequest, res: Response, next: NextFunction) => {
+      try {
+        const {
+          getLastOrphanedWageDecisionSweep,
+          getRecentOrphanedWageDecisionSweeps,
+        } = await import("./integrations/providers/dol_davis_bacon/sync");
+        const [lastRun, recent] = await Promise.all([
+          getLastOrphanedWageDecisionSweep(),
+          getRecentOrphanedWageDecisionSweeps(10),
+        ]);
+        res.json({ lastRun, recent });
+      } catch (err: any) {
+        next(err);
+      }
+    },
+  );
+
   app.post("/api/admin/jobs/:jobName/run", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const { jobName } = req.params;

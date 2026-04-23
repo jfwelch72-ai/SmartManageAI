@@ -250,6 +250,60 @@ describe("sweepOrphanedWageDecisionRows (Task #1392)", () => {
     expect(syncRows).toHaveLength(1);
   });
 
+  it("records a per-run sample (deleted, candidates, duration) via recordJobMetrics (Task #1429)", async () => {
+    syncRows.push(
+      makeSyncRow({
+        id: "orphan-old",
+        organizationId: "org-1",
+        entityType: "wage_determination:CA20230099",
+        lastSyncAt: new Date(NOW.getTime() - 120 * 24 * 60 * 60 * 1000),
+      }),
+      // A second row that's referenced — should be a candidate but
+      // NOT deleted, so the recorded sample should show
+      // candidates=2, deleted=1.
+      makeSyncRow({
+        id: "referenced-old",
+        organizationId: "org-1",
+        entityType: "wage_determination:CA20230001",
+        lastSyncAt: new Date(NOW.getTime() - 200 * 24 * 60 * 60 * 1000),
+      }),
+    );
+    projectRows.push({ gcOrganizationId: "org-1", wageDecision: "CA20230001" });
+
+    const sync = await import(
+      "../integrations/providers/dol_davis_bacon/sync"
+    );
+    const { resetJobMetrics, getJobMetrics } = await import("../utils/jobMetrics");
+    resetJobMetrics();
+
+    await sync.sweepOrphanedWageDecisionRows(NOW);
+
+    const metrics = getJobMetrics(sync.WAGE_DECISION_ORPHAN_SWEEP_JOB);
+    expect(metrics.samples).toHaveLength(1);
+    expect(metrics.samples[0].counters.candidates).toBe(2);
+    expect(metrics.samples[0].counters.deleted).toBe(1);
+    expect(metrics.samples[0].counters.retentionDays).toBe(90);
+    expect(typeof metrics.samples[0].counters.durationMs).toBe("number");
+  });
+
+  it("records an empty-run sample even when there are no candidates (Task #1429)", async () => {
+    // No rows at all — the sweep should still record a sample with
+    // candidates=0/deleted=0 so the dashboard doesn't drop empty ticks.
+    const sync = await import(
+      "../integrations/providers/dol_davis_bacon/sync"
+    );
+    const { resetJobMetrics, getJobMetrics } = await import("../utils/jobMetrics");
+    resetJobMetrics();
+
+    await sync.sweepOrphanedWageDecisionRows(NOW);
+
+    const metrics = getJobMetrics(sync.WAGE_DECISION_ORPHAN_SWEEP_JOB);
+    expect(metrics.samples).toHaveLength(1);
+    expect(metrics.samples[0].counters.candidates).toBe(0);
+    expect(metrics.samples[0].counters.deleted).toBe(0);
+    expect(metrics.samples[0].counters.retentionDays).toBe(90);
+  });
+
   it("falls back to lastAttemptAt when lastSyncAt is null", async () => {
     syncRows.push(
       makeSyncRow({
