@@ -12,6 +12,8 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import { PayItemMatchReasonChips } from "@/components/dot/PayItemMatchReasonChips";
+import { PayItemMatchExplain } from "@/components/dot/PayItemMatchExplain";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 
 interface FacetEntry { value: string; count: number; }
 interface PayItemFacets { categories: FacetEntry[]; specSections: FacetEntry[]; }
@@ -47,9 +49,13 @@ interface MatchSuggestion {
   agency: DotAgency;
   specBook: DotSpecBook;
   score: number;
-  matchReason: "alias" | "fuzzy";
+  matchReason: "alias" | "history" | "fuzzy";
   aliasText: string | null;
   matchedTokens: string[];
+  historyAccepts?: number;
+  historyRejects?: number;
+  agencyAccepts?: number;
+  orgAffinityAccepts?: number;
 }
 
 interface Props {
@@ -278,7 +284,7 @@ export function PayItemPicker({
     // resolve directly. Skip if the suggestion text is already an exact alias
     // for this seed (case-insensitive).
     const trimmed = seedKey.trim();
-    if (s.matchReason !== "fuzzy" || trimmed.length < 3) return;
+    if (s.matchReason === "alias" || s.matchReason === "history" || trimmed.length < 3) return;
     if (s.aliasText && s.aliasText.toLowerCase() === trimmed.toLowerCase()) return;
     toast({
       title: "Remember this match?",
@@ -326,43 +332,59 @@ export function PayItemPicker({
             ) : (
               <div className="divide-y max-h-56 overflow-y-auto">
                 {suggestions.map((s) => (
-                  <button
-                    key={s.payItem.id}
-                    onClick={() => handleSuggestionClick(s)}
-                    className="w-full text-left p-3 hover-elevate active-elevate-2 flex items-start justify-between gap-3"
-                    data-testid={`button-suggestion-${s.payItem.id}`}
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-sm font-medium">{s.payItem.itemNumber}</span>
-                        <Badge variant="outline" className="text-xs">{s.agency.code}{s.agency.stateCode ? ` · ${s.agency.stateCode}` : ""}</Badge>
-                        <span className="ml-auto text-xs text-muted-foreground" data-testid={`text-suggestion-score-${s.payItem.id}`}>
-                          {Math.round(s.score * 100)}% match
-                        </span>
-                      </div>
-                      <div className="text-sm mt-0.5 truncate">{s.payItem.description}</div>
-                      <div className="text-xs text-muted-foreground mt-0.5">
-                        {s.payItem.category ?? "Uncategorized"}
-                        {s.payItem.specSection ? ` · §${s.payItem.specSection}` : ""}
-                      </div>
-                      <div className="mt-1.5">
-                        <PayItemMatchReasonChips
-                          matchReason={s.matchReason}
-                          aliasText={s.aliasText}
-                          matchedTokens={s.matchedTokens}
-                          payItem={s.payItem}
-                          seedDescription={seedKey}
-                          seedUnit={seedUnit ?? null}
-                          seedCategory={seedCategory ?? null}
-                          testIdPrefix={`suggestion-${s.payItem.id}`}
-                          size="xs"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex flex-col items-end gap-1">
-                      <Badge variant="outline">{s.payItem.unit}</Badge>
-                    </div>
-                  </button>
+                  <HoverCard key={s.payItem.id} openDelay={120} closeDelay={80}>
+                    <HoverCardTrigger asChild>
+                      <button
+                        onClick={() => handleSuggestionClick(s)}
+                        className="w-full text-left p-3 hover-elevate active-elevate-2 flex items-start justify-between gap-3"
+                        data-testid={`button-suggestion-${s.payItem.id}`}
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-sm font-medium">{s.payItem.itemNumber}</span>
+                            <Badge variant="outline" className="text-xs">{s.agency.code}{s.agency.stateCode ? ` · ${s.agency.stateCode}` : ""}</Badge>
+                            <span className="ml-auto text-xs text-muted-foreground" data-testid={`text-suggestion-score-${s.payItem.id}`}>
+                              {Math.round(s.score * 100)}% match
+                            </span>
+                          </div>
+                          <div className="text-sm mt-0.5 truncate">{s.payItem.description}</div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {s.payItem.category ?? "Uncategorized"}
+                            {s.payItem.specSection ? ` · §${s.payItem.specSection}` : ""}
+                          </div>
+                          <div className="mt-1.5">
+                            <PayItemMatchReasonChips
+                              matchReason={s.matchReason === "history" ? "fuzzy" : s.matchReason}
+                              aliasText={s.aliasText}
+                              matchedTokens={s.matchedTokens}
+                              payItem={s.payItem}
+                              seedDescription={seedKey}
+                              seedUnit={seedUnit ?? null}
+                              seedCategory={seedCategory ?? null}
+                              testIdPrefix={`suggestion-${s.payItem.id}`}
+                              size="xs"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-1">
+                          <Badge variant="outline">{s.payItem.unit}</Badge>
+                        </div>
+                      </button>
+                    </HoverCardTrigger>
+                    <HoverCardContent
+                      side="left"
+                      align="start"
+                      className="w-96"
+                      data-testid={`hovercard-suggestion-${s.payItem.id}`}
+                    >
+                      <PayItemMatchExplain
+                        suggestion={s}
+                        seedDescription={seedKey}
+                        seedUnit={seedUnit ?? null}
+                        testIdPrefix={`suggestion-${s.payItem.id}`}
+                      />
+                    </HoverCardContent>
+                  </HoverCard>
                 ))}
               </div>
             )}
