@@ -137,6 +137,14 @@ interface PrevailingWageClassification {
   // chosen classificationId here so the override dialog can pre-select
   // it instead of running its fuzzy heuristic.
   rememberedClassificationId?: string | null;
+  // Task #1466: identifies the sibling project whose past mapping produced
+  // `rememberedClassificationId`, so the override dialog can render a
+  // "Pre-selected from your earlier mapping on <project name>" hint
+  // attributing the auto-suggestion. Only present when the pre-selection
+  // came from a sibling project (not from a project-local mapping or a
+  // fuzzy-only name match).
+  rememberedFromProjectId?: string | null;
+  rememberedFromProjectName?: string | null;
   // Task #1409: populated when the most recent Davis-Bacon stale-refresh
   // changed this classification's rate. Drives the per-row badge.
   recentRateChange?: PrevailingWageRecentChange | null;
@@ -1268,7 +1276,30 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
                   </SelectItem>
                 </SelectContent>
               </Select>
-              {ovSuggestedMatchId ? (
+              {ovSuggestedMatchId &&
+              overrideRow.rememberedClassificationId === ovSuggestedMatchId &&
+              overrideRow.rememberedFromProjectName ? (
+                // Task #1466: when the pre-selection came from a sibling
+                // project's previously-saved mapping (not a fuzzy name
+                // match), attribute it to that project so users can spot
+                // when a sibling's pick is wrong for the current project.
+                <p
+                  className="text-xs text-blue-700 dark:text-blue-300 flex items-start gap-1"
+                  data-testid="text-override-mapping-remembered"
+                >
+                  <Sparkles className="w-3 h-3 mt-0.5 shrink-0" />
+                  <span>
+                    Pre-selected from your earlier mapping on{" "}
+                    <span
+                      className="font-medium"
+                      data-testid="text-override-mapping-remembered-project"
+                    >
+                      {overrideRow.rememberedFromProjectName}
+                    </span>
+                    .
+                  </span>
+                </p>
+              ) : ovSuggestedMatchId ? (
                 <p
                   className="text-xs text-amber-700 dark:text-amber-300 flex items-start gap-1"
                   data-testid="text-override-mapping-similar"

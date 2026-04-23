@@ -1520,6 +1520,13 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
       // remembered classificationId so the override dialog can pre-select
       // it instead of running its fuzzy heuristic.
       rememberedClassificationId?: string | null;
+      // Task #1466: identify the sibling project that originally produced the
+      // remembered mapping so the override dialog can render a "Pre-selected
+      // from your earlier mapping on <project name>" hint, building user
+      // trust in the auto-suggestion (and making it easier to spot when a
+      // sibling's pick is wrong for the current project).
+      rememberedFromProjectId?: string | null;
+      rememberedFromProjectName?: string | null;
     }> = [];
 
     // Task #1396: load user-saved mappings for this project so a DOL feed
@@ -1547,12 +1554,20 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
     // wage determination. Project-specific mappings still win because they
     // resolve the synthetic id to a real one above; this only fills in
     // when no project-local mapping exists.
-    const siblingMappingByFeedName = new Map<string, string>();
+    // Task #1466: track not just the remembered classification id but the
+    // sibling project (id + name) that produced it, so the client can
+    // attribute the pre-selection to a specific past project.
+    const siblingMappingByFeedName = new Map<
+      string,
+      { classificationId: string; projectId: string; projectName: string }
+    >();
     if (projectWageDecision) {
       const siblingMappings = await db.select({
         dolFeedName: dolClassificationMappings.dolFeedName,
         classificationId: dolClassificationMappings.classificationId,
         updatedAt: dolClassificationMappings.updatedAt,
+        sourceProjectId: projects.id,
+        sourceProjectName: projects.name,
       })
         .from(dolClassificationMappings)
         .innerJoin(projects, eq(projects.id, dolClassificationMappings.projectId))
@@ -1568,7 +1583,11 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
         // The orderBy DESC means the first occurrence per feed name is the
         // most-recently-updated mapping, which is the one we want to keep.
         if (!siblingMappingByFeedName.has(m.dolFeedName)) {
-          siblingMappingByFeedName.set(m.dolFeedName, m.classificationId);
+          siblingMappingByFeedName.set(m.dolFeedName, {
+            classificationId: m.classificationId,
+            projectId: m.sourceProjectId,
+            projectName: m.sourceProjectName,
+          });
         }
       }
     }
@@ -1693,10 +1712,16 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
               // hint — once the row resolves to a real classification id
               // the dialog already targets the right row by id.
               let rememberedClassificationId: string | null = null;
+              let rememberedFromProjectId: string | null = null;
+              let rememberedFromProjectName: string | null = null;
               if (!match) {
-                const siblingMappedId = siblingMappingByFeedName.get(norm);
-                if (siblingMappedId && orgClassById.has(siblingMappedId)) {
-                  rememberedClassificationId = siblingMappedId;
+                const siblingMapped = siblingMappingByFeedName.get(norm);
+                if (siblingMapped && orgClassById.has(siblingMapped.classificationId)) {
+                  rememberedClassificationId = siblingMapped.classificationId;
+                  // Task #1466: forward the source project so the dialog can
+                  // explain which past project drove the pre-selection.
+                  rememberedFromProjectId = siblingMapped.projectId;
+                  rememberedFromProjectName = siblingMapped.projectName;
                 }
               }
               classifications.push({
@@ -1712,6 +1737,8 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
                 source: "DOL_FEED",
                 dolFeedName: rate.classification,
                 rememberedClassificationId,
+                rememberedFromProjectId,
+                rememberedFromProjectName,
               });
             }
           }

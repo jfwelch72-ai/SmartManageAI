@@ -78,6 +78,8 @@ type Classification = {
   source: "PROJECT_OVERRIDE" | "DOL_FEED";
   dolFeedName?: string | null;
   rememberedClassificationId?: string | null;
+  rememberedFromProjectId?: string | null;
+  rememberedFromProjectName?: string | null;
 };
 
 const PROJECT_ID = "proj-1";
@@ -329,6 +331,59 @@ describe("ProjectPayrollTab — DOL override confirmation flow", () => {
     expect(body.confirmCreateClassification).toBeUndefined();
     expect(body.classificationName).toBeUndefined();
     expect(body.dolFeedName).toBe("Carpenter (Group 1)");
+  });
+
+  it("Task #1466 — sibling-remembered pre-selection shows attribution hint with the source project name", async () => {
+    renderTab({
+      classifications: [
+        makeRow({
+          classificationId: "dol-feed:carpenter (group 1)",
+          classificationName: "Carpenter (Group 1)",
+          dolFeedName: "Carpenter (Group 1)",
+          rememberedClassificationId: "cls-carpenter-form",
+          rememberedFromProjectId: "proj-sibling",
+          rememberedFromProjectName: "I-95 Phase 2",
+        }),
+      ],
+      orgClassifications: [
+        { id: "cls-carpenter", name: "Carpenter" },
+        { id: "cls-carpenter-form", name: "Carpenter — Form Specialist" },
+      ],
+    });
+
+    fireEvent.click(
+      screen.getByTestId("button-promote-override-dol-feed:carpenter (group 1)"),
+    );
+    // The remembered-attribution hint must render and call out the sibling
+    // project name; the generic "Looks similar" fuzzy hint must NOT render
+    // because the pre-selection was driven by a remembered mapping.
+    const hint = screen.getByTestId("text-override-mapping-remembered");
+    expect(hint).toBeTruthy();
+    expect(
+      screen.getByTestId("text-override-mapping-remembered-project").textContent,
+    ).toBe("I-95 Phase 2");
+    expect(screen.queryByTestId("text-override-mapping-similar")).toBeNull();
+  });
+
+  it("Task #1466 — fuzzy-only pre-selection does NOT render the remembered-attribution hint", async () => {
+    renderTab({
+      classifications: [
+        makeRow({
+          classificationId: "dol-feed:Carpenter",
+          classificationName: "Carpenter",
+          dolFeedName: "Carpenter",
+          // No rememberedClassificationId / rememberedFromProjectName — the
+          // pre-selection comes purely from the local fuzzy heuristic.
+        }),
+      ],
+      orgClassifications: [{ id: "cls-existing-carpenter", name: "Carpenter" }],
+    });
+
+    fireEvent.click(screen.getByTestId("button-promote-override-dol-feed:Carpenter"));
+    expect(screen.queryByTestId("text-override-mapping-remembered")).toBeNull();
+    // The standard "Looks similar" fuzzy hint should still render so users
+    // know the suggestion came from the local name-match heuristic.
+    expect(screen.getByTestId("text-override-mapping-similar")).toBeTruthy();
   });
 
   it('"Use selected" submission posts the picked classificationId without confirmCreateClassification', async () => {
