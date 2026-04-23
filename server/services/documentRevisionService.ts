@@ -114,9 +114,16 @@ export async function createRevision(
   checksum?: string
 ) {
   // Verify the target document exists and belongs to the caller's org so a
-  // user cannot create a revision against another tenant's document.
+  // user cannot create a revision against another tenant's document. Task
+  // #491 makes plan_documents.project_id nullable for org-scoped uploads,
+  // so we accept ownership via either the document's own organizationId
+  // (org-scoped) or the parent project's gcOrganizationId (project-scoped).
   const [docOwnerRow] = await db
-    .select({ docId: planDocuments.id, projectOrg: projects.gcOrganizationId })
+    .select({
+      docId: planDocuments.id,
+      docOrg: planDocuments.organizationId,
+      projectOrg: projects.gcOrganizationId,
+    })
     .from(planDocuments)
     .leftJoin(projects, eq(planDocuments.projectId, projects.id))
     .where(eq(planDocuments.id, documentId))
@@ -124,7 +131,13 @@ export async function createRevision(
   if (!docOwnerRow) {
     throw Object.assign(new Error("Document not found"), { status: 404 });
   }
-  if (docOwnerRow.projectOrg && docOwnerRow.projectOrg !== orgId) {
+  const ownerOrg = docOwnerRow.docOrg ?? docOwnerRow.projectOrg ?? null;
+  if (!ownerOrg) {
+    // A document with no resolvable tenant cannot prove ownership; refuse
+    // to write to it rather than silently leak revisions cross-tenant.
+    throw Object.assign(new Error("Forbidden"), { status: 403 });
+  }
+  if (ownerOrg !== orgId) {
     throw Object.assign(new Error("Forbidden"), { status: 403 });
   }
 
@@ -190,11 +203,13 @@ export async function createRevision(
         uploaderName = [userRow.firstName, userRow.lastName].filter(Boolean).join(" ") || null;
       }
 
-      const [proj] = await db.select({ code: projects.code })
-        .from(projects)
-        .where(eq(projects.id, doc.projectId))
-        .limit(1);
-      if (proj) projectCode = proj.code;
+      if (doc.projectId) {
+        const [proj] = await db.select({ code: projects.code })
+          .from(projects)
+          .where(eq(projects.id, doc.projectId))
+          .limit(1);
+        if (proj) projectCode = proj.code;
+      }
 
       const event: DocumentRevisionCreatedEvent = {
         type: "document.revision_created",

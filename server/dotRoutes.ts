@@ -1541,6 +1541,32 @@ router.post(
   },
 );
 
+// Task #491 — PATCH allows attaching/detaching the planDocuments parent
+// (and editing scalar fields) without losing revision history. The
+// document itself owns the file uploads + revisions, so swapping the FK
+// is the only mutation needed at the cert level.
+router.patch(
+  "/api/crm/organisations/:crmOrgId/certifications/:id",
+  requireAuth,
+  requireFeaturePermission("canCreateCRMContacts"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const { id: _id, organizationId: _o, crmOrganisationId: _c, createdAt: _ca, updatedAt: _u, ...patch } = req.body || {};
+    const conditions: SQL[] = [eq(crmOrganisationCertifications.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(crmOrganisationCertifications.organizationId, ctx.orgId!));
+    const [prev] = await db.select().from(crmOrganisationCertifications).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
+    const [row] = await db.update(crmOrganisationCertifications)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(and(...conditions))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Not found" });
+    await dotAudit(req, "UPDATE", "crm_organisation_certification", row.id, prev, row);
+    res.json(row);
+  },
+);
+
 router.delete(
   "/api/crm/organisations/:crmOrgId/certifications/:id",
   requireAuth,

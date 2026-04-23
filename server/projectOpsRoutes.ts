@@ -337,26 +337,72 @@ router.get("/api/projects/:code/documents/:docId/stream", requireAuth, async (re
 
 router.post("/api/documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "SUPERINTENDENT"), async (req: AuthRequest, res, next) => {
   try {
+    // Task #491 — POST /api/documents now accepts either a project-scoped
+    // upload (legacy default — `projectId` provided) or an org-scoped
+    // upload (`scope: "ORG"` with no project). Org-scoped uploads inherit
+    // the caller's organization so the row carries tenant ownership even
+    // without a project FK.
+    const requestedScope: string = req.body?.scope === "ORG" ? "ORG" : "PROJECT";
+    const incomingProjectId: string | null | undefined = req.body?.projectId ?? null;
+    const callerOrgId = req.user!.organizationId;
+
+    if (requestedScope === "ORG") {
+      if (!callerOrgId) {
+        res.status(400).json({ error: "Organization context required for org-scoped documents" });
+        return;
+      }
+    } else if (!incomingProjectId) {
+      res.status(400).json({ error: "projectId is required for project-scoped documents" });
+      return;
+    }
+
     const validationResult = insertPlanDocumentSchema.extend({
       uploadedById: z.string().optional(),
+      projectId: z.string().nullish(),
+      organizationId: z.string().nullish(),
+      scope: z.enum(["PROJECT", "ORG"]).optional(),
     }).safeParse({
       ...req.body,
+      scope: requestedScope,
+      projectId: requestedScope === "ORG" ? null : incomingProjectId,
+      organizationId: requestedScope === "ORG" ? callerOrgId : (req.body?.organizationId ?? callerOrgId ?? null),
       uploadedById: req.user!.id,
     });
-    
+
     if (!validationResult.success) {
       res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
       return;
     }
 
+    // For project-scoped uploads, verify the project belongs to the caller's
+    // tenant (or to the super-admin's selected target org). This keeps the
+    // existing tenant-isolation guarantees intact for the legacy path.
+    if (requestedScope === "PROJECT" && validationResult.data.projectId) {
+      const [proj] = await db.select({ org: projects.gcOrganizationId })
+        .from(projects)
+        .where(eq(projects.id, validationResult.data.projectId))
+        .limit(1);
+      if (!proj) {
+        res.status(404).json({ error: "Project not found" });
+        return;
+      }
+      if (req.user!.role !== "SUPER_ADMIN" && proj.org !== callerOrgId) {
+        res.status(403).json({ error: "Forbidden" });
+        return;
+      }
+      // Stamp the row with the project's tenant so org-scoped queries can
+      // find the document without a project join.
+      validationResult.data.organizationId = proj.org;
+    }
+
     const { ObjectStorageService } = await import("./objectStorage");
     const objectStorageService = new ObjectStorageService();
-    
+
     const objectKey = await objectStorageService.trySetObjectEntityAclPolicy(
       validationResult.data.fileUrl,
       {
         owner: req.user!.id,
-        organizationId: req.user!.organizationId!,
+        organizationId: callerOrgId!,
         visibility: "private",
       }
     );
@@ -857,15 +903,21 @@ router.get("/api/documents/:documentId", requireAuth, async (req: AuthRequest, r
       res.status(404).json({ error: "Document not found" });
       return;
     }
-    const [project] = await db
-      .select({ organizationId: projects.gcOrganizationId })
-      .from(projects)
-      .where(eq(projects.id, document.projectId))
-      .limit(1);
+    // Resolve tenant ownership: org-scoped docs (Task #491) carry their own
+    // organizationId; project-scoped docs inherit it from the parent project.
+    let documentOrgId: string | null = document.organizationId ?? null;
+    if (!documentOrgId && document.projectId) {
+      const [project] = await db
+        .select({ organizationId: projects.gcOrganizationId })
+        .from(projects)
+        .where(eq(projects.id, document.projectId))
+        .limit(1);
+      documentOrgId = project?.organizationId ?? null;
+    }
     if (req.user!.role !== "SUPER_ADMIN") {
-      // Deny by default: a doc without a resolvable project cannot prove
-      // tenant ownership, so non-superadmins cannot read it.
-      if (!project || project.organizationId !== req.user!.organizationId) {
+      // Deny by default: a doc without a resolvable tenant cannot prove
+      // ownership, so non-superadmins cannot read it.
+      if (!documentOrgId || documentOrgId !== req.user!.organizationId) {
         res.status(403).json({ error: "Forbidden" });
         return;
       }
@@ -893,14 +945,20 @@ router.delete("/api/documents/:documentId", requireAuth, async (req: AuthRequest
       return;
     }
 
-    const [project] = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.id, document.projectId))
-      .limit(1);
-
-    if (!project) {
-      res.status(404).json({ error: "Project not found" });
+    // Task #491 — org-scoped docs (e.g. CRM org certifications) have no
+    // parent project, so resolve tenant ownership from the document's
+    // organizationId fallback before requiring a project row.
+    let documentOrgId: string | null = document.organizationId ?? null;
+    if (!documentOrgId && document.projectId) {
+      const [project] = await db
+        .select({ organizationId: projects.gcOrganizationId })
+        .from(projects)
+        .where(eq(projects.id, document.projectId))
+        .limit(1);
+      documentOrgId = project?.organizationId ?? null;
+    }
+    if (userRole !== "SUPER_ADMIN" && (!documentOrgId || documentOrgId !== req.user!.organizationId)) {
+      res.status(403).json({ error: "Forbidden" });
       return;
     }
 

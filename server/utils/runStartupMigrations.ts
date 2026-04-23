@@ -38,6 +38,8 @@ import { ensureCertifiedPayrollArchivedRetention } from "./ensureCertifiedPayrol
 import { ensureCertifiedPayrollDigestScheduleColumns } from "./ensureCertifiedPayrollDigestScheduleColumns";
 import { ensureMaterialCertColumns } from "./ensureMaterialCertColumns";
 import { ensureHeavyCivilDocumentColumns } from "./ensureHeavyCivilDocumentColumns";
+import { ensurePlanDocumentsOrgScope } from "./ensurePlanDocumentsOrgScope";
+import { ensureCrmOrgCertDocumentColumn } from "./ensureCrmOrgCertDocumentColumn";
 import { ensureHeavyCivilEnumValues } from "./ensureHeavyCivilEnumValues";
 import { ensureHeavyCivilTables } from "./ensureHeavyCivilTables";
 import { ensureProjectHealthSnapshotColumns } from "./ensureProjectHealthSnapshotColumns";
@@ -159,6 +161,14 @@ const migrations: MigrationStep[] = [
   { name: "project_health_snapshot_columns", category: "ADD_COLUMN", fn: ensureProjectHealthSnapshotColumns },
   { name: "heavy_civil_tables", category: "CREATE_TABLE", fn: ensureHeavyCivilTables },
   { name: "heavy_civil_document_columns", category: "ADD_COLUMN", fn: ensureHeavyCivilDocumentColumns },
+  // Task #491 — relax plan_documents.project_id NOT NULL and add scope/
+  // organization_id discriminator so DBE/MBE/WBE certification uploads can
+  // be org-scoped first-class plan_documents rows with revision history.
+  { name: "plan_documents_org_scope", category: "ALTER_TABLE", fn: ensurePlanDocumentsOrgScope },
+  // Task #491 — adds crm_organisation_certifications.document_id FK so
+  // re-uploading a cert keeps a full revision history instead of clobbering
+  // the legacy document_url.
+  { name: "crm_org_cert_document_column", category: "ADD_COLUMN", fn: ensureCrmOrgCertDocumentColumn },
   { name: "crm_enhancement_tables", category: "CREATE_TABLE", fn: ensureCrmEnhancementTables },
   { name: "crm_organisation_cert_columns", category: "ADD_COLUMN", fn: ensureCrmOrganisationCertColumns },
   { name: "email_account_push_columns", category: "ADD_COLUMN", fn: ensureEmailAccountPushColumns },

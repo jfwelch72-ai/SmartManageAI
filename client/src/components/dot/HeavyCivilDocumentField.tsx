@@ -111,7 +111,8 @@ function RevisionHistoryList({ revisions, testId }: { revisions: DocumentRevisio
 }
 
 async function createDocumentAndInitialRevision(opts: {
-  projectId: string;
+  projectId?: string | null;
+  scope?: "PROJECT" | "ORG";
   title: string;
   type: string;
   fileUrl: string;
@@ -119,8 +120,10 @@ async function createDocumentAndInitialRevision(opts: {
   fileSize?: number;
   mimeType?: string;
 }): Promise<CreatedDoc> {
+  const isOrgScoped = opts.scope === "ORG";
   const docRes = await apiRequest("POST", "/api/documents", {
-    projectId: opts.projectId,
+    scope: isOrgScoped ? "ORG" : "PROJECT",
+    projectId: isOrgScoped ? null : opts.projectId,
     title: opts.title,
     type: opts.type,
     fileUrl: opts.fileUrl,
@@ -163,7 +166,11 @@ async function uploadAndCreateRevision(opts: {
 
 interface SingleProps {
   documentId: string | null | undefined;
-  projectId: string;
+  // `projectId` is required for project-scoped uploads. Pass `scope="ORG"`
+  // (and omit/null `projectId`) for org-scoped uploads such as CRM
+  // organisation certifications introduced in Task #491.
+  projectId?: string | null;
+  scope?: "PROJECT" | "ORG";
   title: string;
   docType?: string;
   label?: string;
@@ -175,6 +182,7 @@ interface SingleProps {
 export function HeavyCivilDocumentField({
   documentId,
   projectId,
+  scope = "PROJECT",
   title,
   docType = "OTHER",
   label = "Attachment",
@@ -182,6 +190,8 @@ export function HeavyCivilDocumentField({
   onChange,
   disabled,
 }: SingleProps) {
+  const isOrgScoped = scope === "ORG";
+  const canUpload = isOrgScoped || !!projectId;
   const { toast } = useToast();
   const [busy, setBusy] = useState(false);
 
@@ -208,12 +218,13 @@ export function HeavyCivilDocumentField({
         await queryClient.invalidateQueries({ queryKey: ["/api/documents", documentId, "revisions"] });
         toast({ title: "New revision uploaded" });
       } else {
-        if (!projectId) {
+        if (!isOrgScoped && !projectId) {
           toast({ title: "Select a project first", variant: "destructive" });
           return;
         }
         const doc = await createDocumentAndInitialRevision({
-          projectId,
+          projectId: isOrgScoped ? null : projectId,
+          scope: isOrgScoped ? "ORG" : "PROJECT",
           title,
           type: docType,
           fileUrl: f.uploadURL,
@@ -311,14 +322,14 @@ export function HeavyCivilDocumentField({
             onComplete={handleComplete}
             testId={`uploader-${testId}`}
           >
-            <Button type="button" size="sm" variant="outline" disabled={disabled || busy || !projectId}>
+            <Button type="button" size="sm" variant="outline" disabled={disabled || busy || !canUpload}>
               {busy ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-2" />}
               Upload
             </Button>
           </ObjectUploader>
         </div>
       )}
-      {!projectId && !documentId && (
+      {!canUpload && !documentId && (
         <p className="text-xs text-muted-foreground">Select a project before uploading.</p>
       )}
     </div>

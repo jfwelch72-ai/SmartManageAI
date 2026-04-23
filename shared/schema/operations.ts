@@ -96,10 +96,20 @@ export const procurementItems = pgTable("procurement_items", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-// Plan Documents table
+// Plan Documents scope discriminator (Task #491). PROJECT-scoped docs live
+// inside a project (most heavy-civil flows). ORG-scoped docs are owned by
+// an organization directly (e.g. CRM organisation certifications, which
+// follow the company across many projects).
+export const planDocumentScopeEnum = pgEnum("plan_document_scope", ["PROJECT", "ORG"]);
+
+// Plan Documents table — `projectId` is nullable for ORG-scoped documents.
+// All rows carry `organizationId` so tenant ownership is recoverable even
+// when no project is attached.
 export const planDocuments = pgTable("plan_documents", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  scope: planDocumentScopeEnum("scope").notNull().default("PROJECT"),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").references(() => organizations.id, { onDelete: "cascade" }),
   type: documentTypeEnum("type").notNull().default("OTHER"),
   title: text("title").notNull(),
   fileName: text("file_name").notNull(),

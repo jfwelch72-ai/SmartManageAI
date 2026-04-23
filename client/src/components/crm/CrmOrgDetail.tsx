@@ -23,6 +23,7 @@ import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Calendar as CalendarIcon } from "lucide-react";
 import type { CrmOrganisation as CrmOrganization, CrmContact, CrmOrganisationNote, VendorPricingCatalog, RentalEquipmentCatalog, Project } from "@shared/schema";
 import { CrmCustomFieldsDisplay } from "./CrmCustomFieldsForm";
+import { CrmOrgCertificationsTab } from "./CrmOrgCertificationsTab";
 import { EnrollSequenceDialog } from "./EnrollSequenceDialog";
 import { format, formatDistanceToNow, parseISO } from "date-fns";
 import { cn } from "@/lib/utils";
@@ -553,6 +554,9 @@ export function CrmOrgDetail({
                 )}
                 <SelectItem value="communications" data-testid="tab-communications">
                   Communications
+                </SelectItem>
+                <SelectItem value="certifications" data-testid="tab-certifications">
+                  Certifications
                 </SelectItem>
               </SelectContent>
             </Select>
@@ -1586,6 +1590,10 @@ export function CrmOrgDetail({
                   </div>
                 </div>
               )}
+            </TabsContent>
+
+            <TabsContent value="certifications" className="mt-4">
+              {selectedOrg?.id && <CrmOrgCertificationsTab crmOrgId={selectedOrg.id} />}
             </TabsContent>
           </Tabs>
         </DialogContent>

@@ -9748,6 +9748,11 @@ export const crmOrganisationCertifications = pgTable("crm_organisation_certifica
   effectiveDate: date("effective_date"),
   expirationDate: date("expiration_date"),
   documentUrl: text("document_url"),
+  // Task #491 — link to the org-scoped plan_documents row that owns the
+  // upload + revision history for this certification. `documentUrl` stays
+  // for backwards compatibility with existing rows; new uploads write
+  // through the planDocuments + document_revisions versioning system.
+  documentId: varchar("document_id").references(() => planDocuments.id, { onDelete: "set null" }),
   notes: text("notes"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

@@ -367,7 +367,9 @@ export interface DocumentRevisionCreatedEvent extends EventEnvelope {
     documentId: string;
     revisionId: string;
     revisionNumber: number;
-    projectId: string;
+    // Task #491 — `projectId`/`projectCode` are nullable when the document
+    // is org-scoped (e.g. a CRM organisation certification with no project).
+    projectId: string | null;
     projectCode: string;
     documentTitle: string;
     sourceType: string;
