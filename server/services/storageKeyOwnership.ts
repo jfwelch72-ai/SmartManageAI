@@ -101,3 +101,26 @@ export async function assertStorageKeyBelongsToOrg(
     throw Object.assign(new Error("Forbidden"), { status: 403 });
   }
 }
+
+/**
+ * Tenancy gate for client-supplied attachment URLs on portal/sub/client chat
+ * send paths (Task #1356). The portal threads do not have a per-conversation
+ * proxy URL form, so the only acceptable client-supplied value is an
+ * `/objects/<entity>` reference whose underlying object belongs to the same
+ * organization as the thread. Anything else (bare paths, absolute URLs,
+ * sibling org `/objects/` keys) is rejected so we don't leak object existence
+ * across tenants via the embedded URL.
+ */
+export async function assertPortalAttachmentUrlAllowed(
+  url: string | null | undefined,
+  ctx: { orgId: string; userId?: string; userRole?: string },
+): Promise<void> {
+  if (typeof url !== "string" || url.length === 0) return;
+  if (!url.startsWith("/objects/")) {
+    throw Object.assign(
+      new Error("Attachment URL must reference an object owned by your organization"),
+      { status: 403 },
+    );
+  }
+  await assertStorageKeyBelongsToOrg(url, ctx.orgId, ctx.userId, ctx.userRole);
+}

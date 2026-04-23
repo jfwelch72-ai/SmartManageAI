@@ -10,6 +10,7 @@ import { generatePortalToken, hashPortalToken, requirePortalAuth, requirePortalP
 import { getOrgIdForFilter } from "./orgFilter";
 import { emitPortalChatMessage, emitPortalChatThreadUpdate } from "./portalChatEvents";
 import { sendEmail } from "./email";
+import { assertPortalAttachmentUrlAllowed } from "./services/storageKeyOwnership";
 
 const router = Router();
 
@@ -504,6 +505,18 @@ router.post("/team/chat/threads/:threadId/messages", requireAuth, async (req: Au
 
     if (thread.status !== "OPEN") {
       return res.status(403).json({ error: "Thread is not open for new messages" });
+    }
+
+    // Task #1356 — gate client-supplied attachment URL against the thread's org.
+    try {
+      await assertPortalAttachmentUrlAllowed(attachmentUrl, {
+        orgId: thread.organizationId,
+        userId: user.id,
+        userRole: user.role,
+      });
+    } catch (err: any) {
+      const status = err?.status || 500;
+      return res.status(status).json({ error: err?.message || "Forbidden" });
     }
 
     const isInternalNote = isInternal === true;

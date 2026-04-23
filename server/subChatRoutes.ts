@@ -6,6 +6,7 @@ import { eq, and, desc, asc, sql } from "drizzle-orm";
 import { requirePortalAuth, type PortalRequest } from "./portalAuth";
 import { notifyChatTeamMembers } from "./portalRoutes";
 import { registerPortalSseClient, emitPortalChatMessage, emitPortalChatThreadUpdate } from "./portalChatEvents";
+import { assertPortalAttachmentUrlAllowed } from "./services/storageKeyOwnership";
 
 const router = Router();
 
@@ -162,6 +163,14 @@ router.post("/portal/chat/threads/:threadId/messages", requirePortalAuth, async 
 
     if (thread.status !== "OPEN") {
       return res.status(403).json({ error: "Thread is not open for new messages" });
+    }
+
+    // Task #1356 — gate client-supplied attachment URL against the thread's org.
+    try {
+      await assertPortalAttachmentUrlAllowed(attachmentUrl, { orgId: thread.organizationId });
+    } catch (err: any) {
+      const status = err?.status || 500;
+      return res.status(status).json({ error: err?.message || "Forbidden" });
     }
 
     const [msg] = await db.insert(portalChatMessages).values({
