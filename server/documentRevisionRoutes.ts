@@ -49,16 +49,23 @@ router.post("/:docId/revisions", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"
     if (!orgId) return;
     const { sourceType, storageKey, checksum, metadata } = req.body;
     if (!storageKey) return res.status(400).json({ error: "storageKey required" });
-    const revision = await docService.createRevision(
-      orgId,
-      req.params.docId,
-      sourceType || "upload",
-      storageKey,
-      user.id,
-      metadata,
-      checksum
-    );
-    res.status(201).json(revision);
+    try {
+      const revision = await docService.createRevision(
+        orgId,
+        req.params.docId,
+        sourceType || "upload",
+        storageKey,
+        user.id,
+        metadata,
+        checksum
+      );
+      res.status(201).json(revision);
+    } catch (err: any) {
+      if (err?.status && typeof err.status === "number") {
+        return res.status(err.status).json({ error: err.message || "Request failed" });
+      }
+      throw err;
+    }
   } catch (err) {
     next(err);
   }
@@ -66,6 +73,8 @@ router.post("/:docId/revisions", requireAuth, requireRole("SUPER_ADMIN", "ADMIN"
 
 router.get("/revisions/:id/preview-url", requireAuth, async (req: AuthRequest, res, next) => {
   try {
+    const user = getUserOrThrow(req, res);
+    if (!user) return;
     const orgId = getOrgId(req, res);
     if (!orgId) return;
     const revision = await docService.getRevisionById(orgId, req.params.id);
@@ -74,8 +83,24 @@ router.get("/revisions/:id/preview-url", requireAuth, async (req: AuthRequest, r
 
     try {
       const { ObjectStorageService } = await import("./objectStorage");
+      const { ObjectPermission } = await import("./objectAcl");
       const objectStorageService = new ObjectStorageService();
-      const objectFile = await objectStorageService.getObjectEntityFile(revision.storageKey);
+      const normalized = objectStorageService.normalizeObjectEntityPath(revision.storageKey);
+      const objectFile = await objectStorageService.getObjectEntityFile(normalized);
+
+      // Task #492: enforce ACL on the underlying object before streaming so a
+      // malformed/cross-tenant revision row cannot leak another org's bytes.
+      const allowed = await objectStorageService.canAccessObjectEntity({
+        userId: user.id,
+        userOrganizationId: orgId,
+        objectFile,
+        requestedPermission: ObjectPermission.READ,
+        userRole: user.effectiveRole || user.role,
+      });
+      if (!allowed) {
+        return res.status(403).json({ error: "Forbidden" });
+      }
+
       await objectStorageService.downloadObject(objectFile, res, 3600);
     } catch (downloadErr) {
       logWarn("Non-critical operation failed");
