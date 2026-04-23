@@ -120,6 +120,13 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // Davis-Bacon wage decision has been missing from the local cache for
   // more than 24h, throttled to one per project per week.
   "WAGE_DECISION_MISSING_REMINDER",
+  // Task #1391: heads-up to org admins the first time a generic integration
+  // sync row exhausts MAX_SYNC_RETRIES (no more automatic backoff retries
+  // will fire) so the failure is investigated even if nobody happens to
+  // open the Integrations page. One notification per (sync_state row,
+  // exhaustion event) — re-armed only when the row is manually retried or
+  // a future sync succeeds and clears the failure state.
+  "INTEGRATION_SYNC_RETRIES_EXHAUSTED",
 ]);
 
 export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["PENDING", "APPROVED", "DENIED"]);

@@ -175,4 +175,13 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   "0048_integration_sync_state_failure_tracking.sql": { helper: "ensureIntegrationSyncStateFailureColumns",
     note: "Companion ALTER TYPE ADD VALUE for DAVIS_BACON_AUTO_SYNC_FAILED is handled by ensureNotificationEnumValues",
   },
+  // Task #1391 — adds integration_sync_state.exhausted_notified_at so the
+  // generic retry sweep / recordSyncFailure can fan one-and-only-one
+  // admin notification per exhaustion event. The companion ALTER TYPE
+  // ADD VALUE for INTEGRATION_SYNC_RETRIES_EXHAUSTED is handled by
+  // ensureNotificationEnumValues.
+  "0051_integration_sync_state_exhausted_notified.sql": {
+    helper: "ensureIntegrationSyncStateExhaustedNotifiedColumn",
+    note: "Companion ALTER TYPE ADD VALUE for INTEGRATION_SYNC_RETRIES_EXHAUSTED is handled by ensureNotificationEnumValues",
+  },
 };

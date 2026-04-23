@@ -7177,6 +7177,12 @@ export const integrationSyncState = pgTable("integration_sync_state", {
   // or has exhausted the max retry attempts and needs manual intervention).
   retryCount: integer("retry_count").notNull().default(0),
   nextRetryAt: timestamp("next_retry_at"),
+  // Task #1391: timestamp recorded the first time a sync row hits
+  // MAX_SYNC_RETRIES so we only fan out the "exhausted retries" admin
+  // notification once per exhaustion event. Cleared by recordSyncSuccess
+  // and clearSyncRetryState (manual retry) so a future re-exhaustion
+  // re-fires the notification.
+  exhaustedNotifiedAt: timestamp("exhausted_notified_at"),
   metadata: json("metadata"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

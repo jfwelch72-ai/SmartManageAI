@@ -28,6 +28,7 @@ import { and, eq, isNotNull, lte, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 import { logError, logInfo, logWarn } from "../utils/logger";
 import { decryptMetadata } from "./encryption";
+import { notifyAdminsOfExhaustedSyncRetry } from "../services/integrationSyncRetryNotifications";
 
 type SyncStateInsert = typeof integrationSyncState.$inferInsert;
 type SyncStateUpdate = Partial<SyncStateInsert>;
@@ -59,6 +60,12 @@ interface UpsertPatch {
   lastError?: string | null;
   retryCount?: number;
   nextRetryAt?: Date | null;
+  // Task #1391 — when set, also overwrites exhausted_notified_at so the
+  // success/manual-retry paths can re-arm the admin alert for any future
+  // exhaustion. Left undefined on the failure path so we never *clear*
+  // the marker by accident; `notifyAdminsOfExhaustedSyncRetry` is the
+  // sole writer that *sets* it (atomically, with its own dedup guard).
+  exhaustedNotifiedAt?: Date | null;
   bumpAttempt?: boolean;
 }
 
@@ -87,6 +94,7 @@ async function upsertSyncStateRow(
     if (patch.lastError !== undefined) update.lastError = patch.lastError;
     if (patch.retryCount !== undefined) update.retryCount = patch.retryCount;
     if (patch.nextRetryAt !== undefined) update.nextRetryAt = patch.nextRetryAt;
+    if (patch.exhaustedNotifiedAt !== undefined) update.exhaustedNotifiedAt = patch.exhaustedNotifiedAt;
     await db
       .update(integrationSyncState)
       .set(update)
@@ -103,6 +111,7 @@ async function upsertSyncStateRow(
       lastError: patch.lastError ?? null,
       retryCount: patch.retryCount ?? 0,
       nextRetryAt: patch.nextRetryAt ?? null,
+      exhaustedNotifiedAt: patch.exhaustedNotifiedAt ?? null,
     };
     await db.insert(integrationSyncState).values(insert);
   }
@@ -150,6 +159,47 @@ export async function recordSyncFailure(
     nextRetryAt: nextAt,
   });
 
+  // Task #1391 — when this failure transitioned the row from "still
+  // retrying" to "exhausted", fire the org-admin heads-up. The notify
+  // helper claims `exhausted_notified_at` atomically so concurrent
+  // failures racing on the same row only fan out one alert. Failures
+  // are non-fatal — we never want a notification problem to mask the
+  // underlying sync failure for the caller.
+  if (exhausted) {
+    try {
+      // Re-read the row id (recordSyncFailure operates by
+      // (connection, entityType) but the notifier needs the PK).
+      const [row] = await db
+        .select({
+          id: integrationSyncState.id,
+          lastError: integrationSyncState.lastError,
+        })
+        .from(integrationSyncState)
+        .where(
+          and(
+            eq(integrationSyncState.connectionId, connection.id),
+            eq(integrationSyncState.entityType, entityType),
+          ),
+        )
+        .limit(1);
+      if (row) {
+        await notifyAdminsOfExhaustedSyncRetry({
+          syncStateId: row.id,
+          organizationId: connection.organizationId,
+          connectionId: connection.id,
+          entityType,
+          lastError: row.lastError,
+        });
+      }
+    } catch (err) {
+      logWarn("Failed to fan out exhausted sync retry notification", {
+        connectionId: connection.id,
+        entityType,
+        error: String(err),
+      });
+    }
+  }
+
   return { retryCount: nextCount, nextRetryAt: nextAt, exhausted };
 }
 
@@ -170,6 +220,9 @@ export async function recordSyncSuccess(
     lastError: null,
     retryCount: 0,
     nextRetryAt: null,
+    // Task #1391 — clear the "exhausted notified" marker so a future
+    // re-exhaustion of this entity re-fires the admin heads-up.
+    exhaustedNotifiedAt: null,
   });
 }
 
@@ -186,6 +239,10 @@ export async function clearSyncRetryState(
   await upsertSyncStateRow(connection, entityType, {
     retryCount: 0,
     nextRetryAt: null,
+    // Task #1391 — manual "Retry" re-arms the admin alert so a future
+    // re-exhaustion produces a fresh notification instead of being
+    // silently swallowed by the previous run's marker.
+    exhaustedNotifiedAt: null,
     bumpAttempt: false,
   });
 }

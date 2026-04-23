@@ -8,6 +8,7 @@ import { ensureEquipmentColumns } from "./ensureEquipmentColumns";
 import { ensureMessageColumns } from "./ensureMessageColumns";
 import { ensureNotificationEnumValues } from "./ensureNotificationEnumValues";
 import { ensureIntegrationSyncStateFailureColumns } from "./ensureIntegrationSyncStateFailureColumns";
+import { ensureIntegrationSyncStateExhaustedNotifiedColumn } from "./ensureIntegrationSyncStateExhaustedNotifiedColumn";
 import { ensureEstimateCategoryEnumValues } from "./ensureEstimateCategoryEnumValues";
 import { ensureTakeoffEnhancements } from "./ensureTakeoffEnhancements";
 import { ensureFieldWorkerPermColumns } from "./ensureFieldWorkerPermColumns";
@@ -125,6 +126,7 @@ const migrations: MigrationStep[] = [
   // so the Davis-Bacon background sync can persist failure state per
   // wage decision and surface it in the Project payroll banner.
   { name: "integration_sync_state_failure_columns", category: "ADD_COLUMN", fn: ensureIntegrationSyncStateFailureColumns },
+  { name: "integration_sync_state_exhausted_notified_column", category: "ADD_COLUMN", fn: ensureIntegrationSyncStateExhaustedNotifiedColumn },
   { name: "estimate_category_enum_values", category: "ADD_ENUM", fn: ensureEstimateCategoryEnumValues },
   // Task #1144 — close baseline-migration gaps for ALTER TYPE ADD VALUE
   // operations that `reconcileSchemaDrift` cannot replay (it creates missing

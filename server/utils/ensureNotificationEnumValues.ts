@@ -35,6 +35,11 @@ const REQUIRED_NOTIFICATION_TYPES = [
   // Task #1332: heads-up when a background Davis-Bacon (DOL/SAM.gov) sync
   // queued by project create/update fails.
   "DAVIS_BACON_AUTO_SYNC_FAILED",
+  // Task #1344: daily reminder fan-out for missing wage decisions.
+  "WAGE_DECISION_MISSING_REMINDER",
+  // Task #1391: heads-up to org admins the first time a generic
+  // integration sync row exhausts MAX_SYNC_RETRIES.
+  "INTEGRATION_SYNC_RETRIES_EXHAUSTED",
 ];
 
 export async function ensureNotificationEnumValues(): Promise<void> {
