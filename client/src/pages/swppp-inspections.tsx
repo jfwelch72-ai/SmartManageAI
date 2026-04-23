@@ -134,6 +134,18 @@ export default function SwpppInspectionsPage() {
     return due.getTime() < today.getTime();
   };
 
+  const daysOverdue = (s: SwpppInspection): number => {
+    if (!s.correctiveActionDueDate) return 0;
+    const due = new Date(s.correctiveActionDueDate as unknown as string);
+    if (Number.isNaN(due.getTime())) return 0;
+    due.setHours(0, 0, 0, 0);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const diffMs = today.getTime() - due.getTime();
+    if (diffMs <= 0) return 0;
+    return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  };
+
   const hasCorrective = (s: SwpppInspection): boolean =>
     Boolean((s.deficienciesFound && s.deficienciesFound.trim()) || (s.correctiveActions && s.correctiveActions.trim()));
 
@@ -253,6 +265,15 @@ export default function SwpppInspectionsPage() {
                   <div className={`text-xs ${overdue ? "text-destructive font-medium" : ""}`}>
                     <span className="text-muted-foreground">Due:</span> {formatDate(s.correctiveActionDueDate)}
                     {overdue && <span className="ml-1">(overdue)</span>}
+                    {overdue && (() => {
+                      const days = daysOverdue(s);
+                      if (days <= 0) return null;
+                      return (
+                        <span className="ml-1" data-testid={`text-swppp-days-overdue-${s.id}`}>
+                          — {days} {days === 1 ? "day" : "days"} overdue
+                        </span>
+                      );
+                    })()}
                   </div>
                 )}
                 {!resolved && overdue && (s.overdueReminderCount ?? 0) > 0 && (
