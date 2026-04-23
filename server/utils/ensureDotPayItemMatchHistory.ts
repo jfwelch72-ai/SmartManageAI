@@ -36,6 +36,17 @@ export async function ensureDotPayItemMatchHistory(): Promise<void> {
       CREATE INDEX IF NOT EXISTS dot_pay_item_match_history_org_agency_idx
         ON dot_pay_item_match_history(organization_id, agency_id)
     `);
+    // Task #1247 — batch_id groups all rows recorded by a single bid-tab
+    // import so the user can one-click "undo" the whole batch from the
+    // post-import toast. Nullable for back-compat with existing rows.
+    await db.execute(sql`
+      ALTER TABLE dot_pay_item_match_history
+        ADD COLUMN IF NOT EXISTS batch_id varchar
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS dot_pay_item_match_history_org_batch_idx
+        ON dot_pay_item_match_history(organization_id, batch_id)
+    `);
     console.log("[migration] dot_pay_item_match_history table ready");
   } catch (err) {
     logError(

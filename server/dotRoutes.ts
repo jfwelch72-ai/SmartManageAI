@@ -1,4 +1,5 @@
 import express, { Router, type Response } from "express";
+import crypto from "node:crypto";
 import { db } from "./db";
 import {
   dotAgencies,
@@ -781,18 +782,176 @@ router.post(
       userId,
     }));
 
-    if (valuesToInsert.length === 0) return res.json({ recorded: 0 });
+    if (valuesToInsert.length === 0) return res.json({ recorded: 0, batchId: null, ids: [] });
 
+    // Task #1247 — tag every row from this POST with a shared batch_id so
+    // the client can offer a one-click "undo" toast right after import.
+    const batchId = crypto.randomUUID();
     const inserted = await db
       .insert(dotPayItemMatchHistory)
-      .values(valuesToInsert)
+      .values(valuesToInsert.map((v) => ({ ...v, batchId })))
       .returning({ id: dotPayItemMatchHistory.id });
     await dotAudit(req, "CREATE", "dot_pay_item_match_history_batch", orgId, null, {
+      batchId,
       count: inserted.length,
       accepted: valuesToInsert.filter((v) => v.accepted).length,
       rejected: valuesToInsert.filter((v) => !v.accepted).length,
     });
-    return res.json({ recorded: inserted.length });
+    return res.json({
+      recorded: inserted.length,
+      batchId,
+      ids: inserted.map((r) => r.id),
+    });
+  },
+);
+
+// Task #1247 — undo a whole bid-tab feedback batch (org-scoped). Used by the
+// "Remembered N pay-item choices — Undo" toast in the bid-tab import dialog.
+router.delete(
+  "/api/dot/pay-items/match/feedback/batch/:batchId",
+  requireAuth,
+  requireAnyFeaturePermission("canViewDotLibrary", "canManageDotLibrary"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    // Mirror the recent-decisions GET: super-admins must pass
+    // ?organizationId=... to scope deletes to a target org. Normal users
+    // are pinned to their own org. This keeps cross-tenant safety intact
+    // while still letting super-admins manage another org's recent
+    // decisions from the "view as" flow.
+    let targetOrgId: string | null = ctx.orgId;
+    if (ctx.isSuperAdmin) {
+      targetOrgId = superAdminTargetOrgId(req);
+      if (!targetOrgId) return res.status(400).json({ error: "Provide ?organizationId=... when deleting as super admin" });
+    }
+    if (!targetOrgId) return res.status(400).json({ error: "An organization context is required" });
+
+    const batchId = String(req.params.batchId ?? "").trim();
+    if (!batchId) return res.status(400).json({ error: "batchId is required" });
+
+    const deleted = await db
+      .delete(dotPayItemMatchHistory)
+      .where(and(
+        eq(dotPayItemMatchHistory.organizationId, targetOrgId),
+        eq(dotPayItemMatchHistory.batchId, batchId),
+      ))
+      .returning({ id: dotPayItemMatchHistory.id });
+    if (deleted.length > 0) {
+      await dotAudit(req, "DELETE", "dot_pay_item_match_history_batch", batchId, { count: deleted.length }, null);
+    }
+    return res.json({ deleted: deleted.length });
+  },
+);
+
+// Task #1247 — delete a single feedback row (used by the "Recent decisions"
+// list on the DOT library page so users can scrub a one-off mis-match).
+router.delete(
+  "/api/dot/pay-items/match-history/:id",
+  requireAuth,
+  requireAnyFeaturePermission("canViewDotLibrary", "canManageDotLibrary"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    let targetOrgId: string | null = ctx.orgId;
+    if (ctx.isSuperAdmin) {
+      targetOrgId = superAdminTargetOrgId(req);
+      if (!targetOrgId) return res.status(400).json({ error: "Provide ?organizationId=... when deleting as super admin" });
+    }
+    if (!targetOrgId) return res.status(400).json({ error: "An organization context is required" });
+
+    const id = String(req.params.id ?? "").trim();
+    if (!id) return res.status(400).json({ error: "id is required" });
+
+    const deleted = await db
+      .delete(dotPayItemMatchHistory)
+      .where(and(
+        eq(dotPayItemMatchHistory.organizationId, targetOrgId),
+        eq(dotPayItemMatchHistory.id, id),
+      ))
+      .returning({ id: dotPayItemMatchHistory.id });
+    if (deleted.length === 0) return res.status(404).json({ error: "Decision not found" });
+    await dotAudit(req, "DELETE", "dot_pay_item_match_history", id, null, null);
+    return res.json({ deleted: deleted.length });
+  },
+);
+
+// Task #1247 — recent feedback rows for the org (most recent ~50). Powers the
+// "Recent decisions" panel on the DOT library page so users can scrub a
+// specific row that the matcher remembered incorrectly.
+router.get(
+  "/api/dot/pay-items/match-history/recent",
+  requireAuth,
+  requireAnyFeaturePermission("canViewDotLibrary", "canManageDotLibrary"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const limit = Math.max(1, Math.min(100, parseInt(String(req.query.limit ?? "50"), 10) || 50));
+
+    let targetOrgId: string | null = ctx.orgId;
+    if (ctx.isSuperAdmin) {
+      targetOrgId = superAdminTargetOrgId(req);
+      if (!targetOrgId) return res.json({ items: [] });
+    }
+    if (!targetOrgId) return res.json({ items: [] });
+
+    const rows = await db
+      .select({
+        id: dotPayItemMatchHistory.id,
+        payItemId: dotPayItemMatchHistory.payItemId,
+        descriptionRaw: dotPayItemMatchHistory.descriptionRaw,
+        accepted: dotPayItemMatchHistory.accepted,
+        batchId: dotPayItemMatchHistory.batchId,
+        createdAt: dotPayItemMatchHistory.createdAt,
+      })
+      .from(dotPayItemMatchHistory)
+      .where(eq(dotPayItemMatchHistory.organizationId, targetOrgId))
+      .orderBy(desc(dotPayItemMatchHistory.createdAt))
+      .limit(limit);
+
+    if (rows.length === 0) return res.json({ items: [] });
+
+    const itemIds = [...new Set(rows.map((r) => r.payItemId))];
+    const [items, overrides] = await Promise.all([
+      db.select().from(dotPayItems).where(inArray(dotPayItems.id, itemIds)),
+      db
+        .select()
+        .from(dotPayItemOverrides)
+        .where(and(
+          eq(dotPayItemOverrides.organizationId, targetOrgId),
+          inArray(dotPayItemOverrides.payItemId, itemIds),
+        )),
+    ]);
+    const itemById = new Map(items.map((i) => [i.id, i]));
+    const overrideByItem = new Map(overrides.map((o) => [o.payItemId, o]));
+    const aIds = [...new Set(items.map((i) => i.agencyId))];
+    const ags = aIds.length
+      ? await db.select().from(dotAgencies).where(inArray(dotAgencies.id, aIds))
+      : [];
+    const agencyById = new Map(ags.map((a) => [a.id, a]));
+
+    const out = rows
+      .map((r) => {
+        const item = itemById.get(r.payItemId);
+        if (!item) return null;
+        const ov = overrideByItem.get(r.payItemId);
+        return {
+          id: r.id,
+          batchId: r.batchId,
+          accepted: r.accepted,
+          descriptionRaw: r.descriptionRaw,
+          createdAt: r.createdAt,
+          payItem: {
+            id: item.id,
+            itemNumber: item.itemNumber,
+            description: ov?.customDescription ?? item.description,
+            unit: ov?.customUnit ?? item.unit,
+          },
+          agency: agencyById.get(item.agencyId) ?? null,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+
+    return res.json({ items: out });
   },
 );
 

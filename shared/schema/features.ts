@@ -9684,11 +9684,17 @@ export const dotPayItemMatchHistory = pgTable("dot_pay_item_match_history", {
   descriptionRaw: text("description_raw").notNull(),
   accepted: boolean("accepted").notNull(),
   userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  // Task #1247 — every row recorded by a single bid-tab import shares a
+  // batch_id so the user can one-click "undo" the whole batch from a toast
+  // right after the import completes. Nullable for back-compat with rows
+  // recorded before this column existed.
+  batchId: varchar("batch_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   orgDescIdx: index("dot_pay_item_match_history_org_desc_idx").on(table.organizationId, table.descriptionNormalized),
   orgItemIdx: index("dot_pay_item_match_history_org_item_idx").on(table.organizationId, table.payItemId),
   orgAgencyIdx: index("dot_pay_item_match_history_org_agency_idx").on(table.organizationId, table.agencyId),
+  orgBatchIdx: index("dot_pay_item_match_history_org_batch_idx").on(table.organizationId, table.batchId),
 }));
 export const insertDotPayItemMatchHistorySchema = createInsertSchema(dotPayItemMatchHistory).omit({ id: true, createdAt: true });
 export type InsertDotPayItemMatchHistory = z.infer<typeof insertDotPayItemMatchHistorySchema>;

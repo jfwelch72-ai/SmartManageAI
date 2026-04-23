@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Building2, BookOpen, Hash, Search, Wand2, Tag, Trash2, Layers, FolderTree, Pencil, TrendingUp, Sparkles } from "lucide-react";
+import { Loader2, Building2, BookOpen, Hash, Search, Wand2, Tag, Trash2, Layers, FolderTree, Pencil, TrendingUp, Sparkles, History, Check, X } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -174,6 +174,7 @@ export default function DotLibraryPage() {
           <TabsTrigger value="agencies" data-testid="tab-agencies">Agencies</TabsTrigger>
           <TabsTrigger value="aliases" data-testid="tab-aliases">Saved aliases</TabsTrigger>
           <TabsTrigger value="top-matches" data-testid="tab-top-matches">Top auto-matches</TabsTrigger>
+          <TabsTrigger value="recent-decisions" data-testid="tab-recent-decisions">Recent decisions</TabsTrigger>
           <TabsTrigger value="how" data-testid="tab-how-it-works">How it works</TabsTrigger>
         </TabsList>
 
@@ -212,6 +213,10 @@ export default function DotLibraryPage() {
 
         <TabsContent value="top-matches" className="space-y-3">
           <TopAutoMatchesSection canManage={!!canManageLib} />
+        </TabsContent>
+
+        <TabsContent value="recent-decisions" className="space-y-3">
+          <RecentDecisionsSection />
         </TabsContent>
 
         <TabsContent value="how">
@@ -687,6 +692,119 @@ function TopAutoMatchesSection({ canManage }: { canManage: boolean }) {
             </div>
           );
         })}
+      </div>
+    </div>
+  );
+}
+
+interface RecentDecisionRow {
+  id: string;
+  batchId: string | null;
+  accepted: boolean;
+  descriptionRaw: string;
+  createdAt: string;
+  payItem: { id: string; itemNumber: string; description: string; unit: string };
+  agency: { id: string; code: string; name: string; stateCode: string | null } | null;
+}
+
+interface RecentDecisionsResponse {
+  items: RecentDecisionRow[];
+}
+
+function RecentDecisionsSection() {
+  const { toast } = useToast();
+  const { data, isLoading } = useQuery<RecentDecisionsResponse>({
+    queryKey: ["/api/dot/pay-items/match-history/recent", { limit: 50 }],
+    queryFn: async () => {
+      const r = await fetch("/api/dot/pay-items/match-history/recent?limit=50", { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to load recent decisions");
+      return r.json();
+    },
+  });
+  const items = data?.items ?? [];
+
+  const deleteMut = useMutation<unknown, Error, RecentDecisionRow>({
+    mutationFn: async (row) => {
+      return apiRequest("DELETE", `/api/dot/pay-items/match-history/${encodeURIComponent(row.id)}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dot/pay-items/match-history/recent"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dot/pay-items/match-history/top"] });
+      toast({ title: "Decision removed", description: "That match decision will no longer influence future suggestions." });
+    },
+    onError: (err) => toast({ title: "Couldn't remove decision", description: err.message, variant: "destructive" }),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12 text-muted-foreground">
+        <Loader2 className="animate-spin h-5 w-5 mr-2" />Loading recent decisions…
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <EmptyState
+        icon={History}
+        title="No recent decisions"
+        description="As your team imports bid tabs and accepts (or rejects) DOT pay-item suggestions, the most recent decisions will appear here so you can scrub a one-off mis-match."
+        testId="empty-state-recent-decisions"
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        The most recent {items.length} pay-item match decision{items.length === 1 ? "" : "s"} recorded for your org. Delete a row to stop it from boosting (or suppressing) that pay item in future imports.
+      </p>
+      <div className="border rounded-md divide-y">
+        {items.map((row) => (
+          <div
+            key={row.id}
+            className="flex items-start justify-between gap-3 p-3"
+            data-testid={`row-recent-decision-${row.id}`}
+          >
+            <div className="flex-1 min-w-0 space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                {row.accepted ? (
+                  <Badge variant="secondary" className="gap-1 text-[10px]" data-testid={`badge-decision-accepted-${row.id}`}>
+                    <Check className="h-3 w-3" /> accepted
+                  </Badge>
+                ) : (
+                  <Badge variant="outline" className="gap-1 text-[10px]" data-testid={`badge-decision-rejected-${row.id}`}>
+                    <X className="h-3 w-3" /> rejected
+                  </Badge>
+                )}
+                <Badge variant="outline" className="font-mono text-[11px]">{row.payItem.itemNumber}</Badge>
+                <span className="text-sm font-medium truncate">{row.payItem.description}</span>
+                <Badge variant="secondary" className="text-[10px]">{row.payItem.unit}</Badge>
+                {row.agency && (
+                  <span className="text-[11px] text-muted-foreground">
+                    {row.agency.code}{row.agency.stateCode ? ` · ${row.agency.stateCode}` : ""}
+                  </span>
+                )}
+              </div>
+              <div className="text-[11px] text-muted-foreground italic truncate" data-testid={`text-decision-source-${row.id}`}>
+                from: &ldquo;{row.descriptionRaw}&rdquo;
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                {new Date(row.createdAt).toLocaleString()}
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={deleteMut.isPending}
+              onClick={() => deleteMut.mutate(row)}
+              data-testid={`button-delete-decision-${row.id}`}
+              title="Forget this decision"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ))}
       </div>
     </div>
   );

@@ -49,6 +49,7 @@ import {
 } from "lucide-react";
 import { apiRequest, queryClient, bidEstimateKey } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import { PayItemMatchReasonChips } from "@/components/dot/PayItemMatchReasonChips";
 import { PayItemMatchExplain } from "@/components/dot/PayItemMatchExplain";
@@ -447,10 +448,18 @@ export function BidTabImportDialog({
           agencyId: r.topMatch!.agency.id,
           accepted: r.accepted,
         }));
+      let feedbackBatchId: string | null = null;
+      let feedbackRecorded = 0;
       if (decisions.length > 0) {
         try {
-          await apiRequest("POST", "/api/dot/pay-items/match/feedback", { decisions });
+          const fbRes = await apiRequest("POST", "/api/dot/pay-items/match/feedback", { decisions });
+          const fbData = (await fbRes.json().catch(() => null)) as
+            | { recorded?: number; batchId?: string | null }
+            | null;
+          feedbackBatchId = fbData?.batchId ?? null;
+          feedbackRecorded = fbData?.recorded ?? 0;
           queryClient.invalidateQueries({ queryKey: ["/api/dot/pay-items/match-history/top"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/dot/pay-items/match-history/recent"] });
         } catch {
           // Recording feedback is best-effort; never block the import on it.
         }
@@ -464,6 +473,41 @@ export function BidTabImportDialog({
         title: "Bid tab imported",
         description: `${payloads.length} line item(s) added — ${withDot} with DOT pay item links, ${payloads.length - withDot} without.`,
       });
+      // Task #1247 — separate, undoable toast covers the silent learning step.
+      // We surface it as a second toast (not the import description) so the
+      // Undo action only affects the learning rows, never the imported lines.
+      if (feedbackBatchId && feedbackRecorded > 0) {
+        const undoBatchId = feedbackBatchId;
+        toast({
+          title: "Remembered pay-item choices",
+          description: `Saved ${feedbackRecorded} match decision${feedbackRecorded === 1 ? "" : "s"} to improve future suggestions.`,
+          action: (
+            <ToastAction
+              altText="Undo remembered pay-item choices"
+              data-testid="button-undo-match-feedback"
+              onClick={async () => {
+                try {
+                  await apiRequest(
+                    "DELETE",
+                    `/api/dot/pay-items/match/feedback/batch/${encodeURIComponent(undoBatchId)}`,
+                  );
+                  queryClient.invalidateQueries({ queryKey: ["/api/dot/pay-items/match-history/top"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/dot/pay-items/match-history/recent"] });
+                  toast({ title: "Undone", description: "Those match decisions were removed." });
+                } catch (e) {
+                  toast({
+                    title: "Couldn't undo",
+                    description: e instanceof Error ? e.message : "Try again from the DOT Library page.",
+                    variant: "destructive",
+                  });
+                }
+              }}
+            >
+              Undo
+            </ToastAction>
+          ),
+        });
+      }
       handleOpenChange(false);
     } catch (err) {
       const message =
