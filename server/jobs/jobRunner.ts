@@ -3283,7 +3283,10 @@ export async function processSwpppOverdueCorrectiveActions(opts: { now?: Date } 
       notifs.push({
         userId,
         organizationId: item.organizationId,
-        type: "REMINDER" as const,
+        // Task #1260 — Use the dedicated SWPPP overdue type so users can
+        // mute these alerts in their notification preferences without
+        // also silencing every other generic REMINDER notification.
+        type: "SWPPP_OVERDUE_CORRECTIVE_ACTION" as const,
         title,
         message,
         relatedEntityType: "SWPPP_OVERDUE_CORRECTIVE_ACTION",

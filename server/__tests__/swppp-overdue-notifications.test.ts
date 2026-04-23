@@ -145,7 +145,9 @@ describe("processSwpppOverdueCorrectiveActions", () => {
     expect(userIds).toEqual(["user-assignee", "user-pm"]);
     for (const n of flat) {
       expect(n.organizationId).toBe("org-1");
-      expect(n.type).toBe("REMINDER");
+      // Task #1260 — fans out under the dedicated SWPPP overdue type so
+      // users can mute it independently of the generic REMINDER stream.
+      expect(n.type).toBe("SWPPP_OVERDUE_CORRECTIVE_ACTION");
       expect(n.relatedEntityType).toBe("SWPPP_OVERDUE_CORRECTIVE_ACTION");
       expect(n.relatedEntityId).toBe("insp-1");
       expect(n.title).toContain("3 days overdue");
@@ -361,7 +363,7 @@ describe("SWPPP overdue email composition", () => {
     const result = composeEmailContent({
       id: "n1",
       userId: "u1",
-      type: "REMINDER",
+      type: "SWPPP_OVERDUE_CORRECTIVE_ACTION",
       title: "SWPPP corrective action 3 days overdue: I-95 Widening",
       message: "I-95 Widening — corrective action was due 2026-04-20 (3 days overdue).\nRepair silt fence",
       relatedEntityType: "SWPPP_OVERDUE_CORRECTIVE_ACTION",
@@ -377,7 +379,7 @@ describe("SWPPP overdue email composition", () => {
     const result = composeEmailContent({
       id: "n1",
       userId: "u1",
-      type: "REMINDER",
+      type: "SWPPP_OVERDUE_CORRECTIVE_ACTION",
       title: "SWPPP corrective action overdue",
       message: "Project — overdue.",
       relatedEntityType: "SWPPP_OVERDUE_CORRECTIVE_ACTION",

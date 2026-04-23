@@ -2763,6 +2763,13 @@ export const notificationTypePrefs = pgTable("notification_type_prefs", {
   pushEnabled: boolean("push_enabled").notNull().default(false),
   teamsEnabled: boolean("teams_enabled").notNull().default(false),
   slackEnabled: boolean("slack_enabled").notNull().default(false),
+  // Task #1260 — Per-type opt-out for the in-app notification feed.
+  // Nullable so legacy rows continue to behave as "in-app on" (the
+  // historical default). When `false`, the notifications row is still
+  // inserted so outbound channels (email/push/SMS/Teams/Slack) can be
+  // delivered independently per their own per-type prefs; the in-app
+  // feed and unread-count endpoints filter the row out at read time.
+  inAppEnabled: boolean("in_app_enabled"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

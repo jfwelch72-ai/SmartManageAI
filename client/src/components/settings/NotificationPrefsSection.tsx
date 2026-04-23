@@ -52,13 +52,25 @@ interface TypeOverride {
   emailEnabled: boolean;
   smsEnabled?: boolean;
   pushEnabled?: boolean;
+  // Task #1260 — Per-type in-app feed opt-out. `null` means "not set"
+  // (legacy default — show in-app); `false` suppresses the in-app row.
+  inAppEnabled?: boolean | null;
 }
 
 interface TypeChannelPrefs {
   emailEnabled?: boolean;
   smsEnabled?: boolean;
   pushEnabled?: boolean;
+  inAppEnabled?: boolean | null;
 }
+
+// Task #1260 — Notification types that expose a dedicated in-app
+// suppression switch in the settings UI. Most types are always
+// delivered to the in-app feed; this list opts specific types into
+// the user-controllable "in-app" toggle row.
+const TYPES_WITH_IN_APP_TOGGLE = new Set<string>([
+  "SWPPP_OVERDUE_CORRECTIVE_ACTION",
+]);
 
 const CRM_CONTACT_REASSIGNED = "CRM_CONTACT_REASSIGNED";
 
@@ -99,6 +111,13 @@ const NOTIFICATION_TYPE_GROUPS: { label: string; types: string[] }[] = [
     types: ["GENERAL", "DELAY_SUBMITTED", "DELAY_ACKNOWLEDGED", "MATERIAL_OVERAGE"],
   },
   {
+    // Task #1260 — Surface SWPPP overdue alerts as their own preference
+    // row so PMs and assignees can mute them without silencing every
+    // other generic REMINDER notification they rely on.
+    label: "SWPPP & Compliance",
+    types: ["SWPPP_OVERDUE_CORRECTIVE_ACTION"],
+  },
+  {
     label: "Admin Alerts",
     types: ["CRM_TRANSCRIPT_BACKFILL_REAPED"],
   },
@@ -106,6 +125,8 @@ const NOTIFICATION_TYPE_GROUPS: { label: string; types: string[] }[] = [
 
 const TYPE_LABEL_OVERRIDES: Record<string, string> = {
   CRM_TRANSCRIPT_BACKFILL_REAPED: "CRM transcript backfill reaped",
+  // Task #1260 — Friendlier label than the auto title-cased enum value.
+  SWPPP_OVERDUE_CORRECTIVE_ACTION: "SWPPP corrective action overdue",
 };
 
 /**
@@ -1174,6 +1195,9 @@ export default function NotificationPrefsSection() {
           emailEnabled: o.emailEnabled,
           smsEnabled: o.smsEnabled,
           pushEnabled: o.pushEnabled,
+          // Task #1260 — Hydrate the per-type in-app override so the
+          // SWPPP overdue switch reflects the user's last saved choice.
+          inAppEnabled: o.inAppEnabled ?? null,
         };
       }
       setTypeChannelOverrides(overrides);
@@ -2334,6 +2358,42 @@ export default function NotificationPrefsSection() {
                       </Tooltip>
                     )}
                   </div>
+                </div>
+              </div>
+
+              {/*
+                Task #1260 — Dedicated controls for notification types whose
+                in-app feed delivery should be user-mutable (e.g. SWPPP
+                overdue corrective actions). Always rendered so users can
+                opt out of in-app alerts even if they have email turned off
+                at the channel level.
+              */}
+              <div>
+                <h3 className="text-sm font-semibold mb-1 text-muted-foreground uppercase tracking-wide">In-App Alerts by Type</h3>
+                <p className="text-xs text-muted-foreground mb-3">Silence specific notification types in your in-app feed without affecting other reminders.</p>
+                <div className="space-y-2" data-testid="section-type-in-app-prefs">
+                  {Array.from(TYPES_WITH_IN_APP_TOGGLE).map((type) => {
+                    const label = TYPE_LABEL_OVERRIDES[type] ?? type.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
+                    // NULL means "not set" — preserve the legacy default of
+                    // delivering the in-app row.
+                    const inAppOverride = typeChannelOverrides[type]?.inAppEnabled;
+                    const inAppEnabled = inAppOverride ?? true;
+                    return (
+                      <div key={type} className="flex items-center justify-between py-1" data-testid={`row-in-app-pref-${type}`}>
+                        <span className="text-sm">{label}</span>
+                        <Switch
+                          checked={inAppEnabled}
+                          onCheckedChange={(checked) =>
+                            setTypeChannelOverrides((prev) => ({
+                              ...prev,
+                              [type]: { ...prev[type], inAppEnabled: checked },
+                            }))
+                          }
+                          data-testid={`switch-in-app-pref-${type}`}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 

@@ -70,9 +70,16 @@ const channelPrefsSchema = z.object({
   birthdayReminderCadence: z.enum(BIRTHDAY_REMINDER_CADENCES).optional(),
 });
 
+// Task #1260 — `inAppEnabled` is per-type only (the in-app feed has no
+// channel-level master switch — the notifications row IS the in-app feed).
+// Stored as a tri-state boolean | null so a NULL means "use the default".
+const typeOverrideSchema = channelPrefsSchema.partial().extend({
+  inAppEnabled: z.boolean().nullable().optional(),
+});
+
 const typePrefsSchema = z.record(
   z.enum(notificationTypeEnum.enumValues),
-  channelPrefsSchema.partial()
+  typeOverrideSchema
 );
 
 const preferencesBodySchema = z.object({
@@ -136,6 +143,9 @@ router.get("/api/notifications/preferences", requireAuth, async (req: AuthReques
         pushEnabled: r.pushEnabled,
         teamsEnabled: r.teamsEnabled,
         slackEnabled: r.slackEnabled,
+        // Task #1260 — surface the per-type in-app suppression so the
+        // settings UI can render an "in-app" switch alongside email.
+        inAppEnabled: r.inAppEnabled,
       })),
       enterpriseNotificationsEnabled,
       twilioConfigured,
@@ -229,6 +239,11 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
         const teamsVal = enterpriseNotifs ? (prefs.teamsEnabled ?? channel.teamsEnabled) : false;
         const slackVal = enterpriseNotifs ? (prefs.slackEnabled ?? channel.slackEnabled) : false;
 
+        // Task #1260 — Per-type in-app opt-out. Defaults to NULL when the
+        // client hasn't sent a value, which preserves the historical
+        // "in-app always on" behavior for legacy and unconfigured rows.
+        const inAppVal = prefs.inAppEnabled ?? null;
+
         if (enterpriseNotifs) {
           await db
             .insert(notificationTypePrefs)
@@ -240,6 +255,7 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
               pushEnabled: prefs.pushEnabled ?? channel.pushEnabled,
               teamsEnabled: teamsVal,
               slackEnabled: slackVal,
+              inAppEnabled: inAppVal,
               updatedAt: now,
             })
             .onConflictDoUpdate({
@@ -250,6 +266,7 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
                 pushEnabled: prefs.pushEnabled ?? channel.pushEnabled,
                 teamsEnabled: teamsVal,
                 slackEnabled: slackVal,
+                inAppEnabled: inAppVal,
                 updatedAt: now,
               },
             });
@@ -264,6 +281,7 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
               pushEnabled: prefs.pushEnabled ?? channel.pushEnabled,
               teamsEnabled: false,
               slackEnabled: false,
+              inAppEnabled: inAppVal,
               updatedAt: now,
             })
             .onConflictDoUpdate({
@@ -271,6 +289,7 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
               set: {
                 emailEnabled: prefs.emailEnabled ?? channel.emailEnabled,
                 pushEnabled: prefs.pushEnabled ?? channel.pushEnabled,
+                inAppEnabled: inAppVal,
                 updatedAt: now,
               },
             });

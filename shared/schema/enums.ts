@@ -86,6 +86,10 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "CRM_STAGE_CHANGE", "CRM_IDLE_OPPORTUNITY",
   "TASK_MENTIONED",
   "DEADLINE_WARNING", "REMINDER",
+  // Task #1260 — Dedicated type for SWPPP corrective action overdue
+  // notifications. Previously these piggy-backed on REMINDER, which
+  // forced users to silence all reminders to mute SWPPP overdue alerts.
+  "SWPPP_OVERDUE_CORRECTIVE_ACTION",
   "TAKEOFF_ISSUE_ASSIGNED", "TAKEOFF_ISSUE_STATUS_CHANGED",
   "EQUIPMENT_RENTAL_REQUEST_RECEIVED", "EQUIPMENT_RENTAL_REQUEST_RESPONDED",
   "BID_SUBMITTED", "BID_STATUS_CHANGED", "BID_ASSIGNED", "BID_DUE_DATE_APPROACHING",

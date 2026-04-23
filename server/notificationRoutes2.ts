@@ -49,18 +49,53 @@
 import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
-import { notifications } from "@shared/schema";
+import { notifications, notificationTypePrefs } from "@shared/schema";
 import { requireAuth, type AuthRequest } from "./auth";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql, notInArray } from "drizzle-orm";
+
+type NotificationType = NonNullable<typeof notifications.$inferSelect.type>;
 
 const router = Router();
+
+/**
+ * Task #1260 — Returns the set of notification types whose in-app feed
+ * delivery the user has explicitly muted (`inAppEnabled = false`). The
+ * notification is still inserted (so email/push/sms/Teams/Slack can be
+ * routed independently by `deliverNotification`), but it is hidden
+ * from the in-app feed and the unread badge.
+ *
+ * NULL `inAppEnabled` is treated as "not configured", which preserves
+ * the historical always-show-in-feed behavior.
+ */
+async function loadInAppMutedTypes(userId: string): Promise<NotificationType[]> {
+  const rows = await db
+    .select({
+      notificationType: notificationTypePrefs.notificationType,
+      inAppEnabled: notificationTypePrefs.inAppEnabled,
+    })
+    .from(notificationTypePrefs)
+    .where(eq(notificationTypePrefs.userId, userId));
+  return rows
+    .filter((r) => r.inAppEnabled === false)
+    .map((r) => r.notificationType as NotificationType);
+}
 
 router.get("/api/notifications", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = req.user!.organizationId;
-    const conditions = orgId
+    const baseConditions = orgId
       ? and(eq(notifications.userId, req.user!.id), eq(notifications.organizationId, orgId))
       : and(eq(notifications.userId, req.user!.id), sql`${notifications.organizationId} IS NULL`);
+
+    const mutedTypes = await loadInAppMutedTypes(req.user!.id);
+    // Task #1260 — strip in-app-muted types from the feed without
+    // affecting any other delivery channel for those notifications.
+    const conditions = mutedTypes.length > 0
+      ? and(
+          baseConditions,
+          sql`(${notifications.type} IS NULL OR ${notInArray(notifications.type, mutedTypes)})`,
+        )
+      : baseConditions;
 
     const userNotifications = await db
       .select()
@@ -80,10 +115,17 @@ router.get("/api/notifications/unread-count", requireAuth, async (req: AuthReque
     const orgId = req.user!.organizationId;
     const orgFilter = orgId ? sql` AND ${notifications.organizationId} = ${orgId}` : sql` AND ${notifications.organizationId} IS NULL`;
 
+    // Task #1260 — exclude in-app-muted types from the unread badge so
+    // the count matches what the user actually sees in their feed.
+    const mutedTypes = await loadInAppMutedTypes(req.user!.id);
+    const muteFilter = mutedTypes.length > 0
+      ? sql` AND (${notifications.type} IS NULL OR ${notInArray(notifications.type, mutedTypes)})`
+      : sql``;
+
     const [result] = await db
       .select({ count: sql<number>`count(*)::int` })
       .from(notifications)
-      .where(sql`${notifications.userId} = ${req.user!.id} AND ${notifications.isRead} = false${orgFilter}`);
+      .where(sql`${notifications.userId} = ${req.user!.id} AND ${notifications.isRead} = false${orgFilter}${muteFilter}`);
 
     res.json({ count: result.count });
   } catch (error) {
