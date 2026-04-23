@@ -1127,11 +1127,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     requireRole("SUPER_ADMIN"),
     async (_req: AuthRequest, res: Response, next: NextFunction) => {
       try {
-        const { getLastStaleWageDecisionSweep, getWageDecisionStaleAfterDays } = await import(
-          "./integrations/providers/dol_davis_bacon/sync"
-        );
+        const {
+          getLastStaleWageDecisionSweep,
+          getRecentStaleWageDecisionSweeps,
+          getWageDecisionStaleAfterDays,
+        } = await import("./integrations/providers/dol_davis_bacon/sync");
+        // Task #1410 — sweep history is now persisted to
+        // `job_metric_samples`, so the dashboard stays accurate across
+        // restarts/deploys instead of showing "No sweep recorded yet"
+        // until the next 06:00 UTC tick. We also surface the last 10
+        // sweeps so operators can spot trends.
+        const [lastRun, recent] = await Promise.all([
+          getLastStaleWageDecisionSweep(),
+          getRecentStaleWageDecisionSweeps(10),
+        ]);
         res.json({
-          lastRun: getLastStaleWageDecisionSweep(),
+          lastRun,
+          recent,
           staleAfterDays: getWageDecisionStaleAfterDays(),
         });
       } catch (err: any) {

@@ -114,12 +114,15 @@ interface StaleWageDecisionSweepResult {
   staleAfterDays: number;
 }
 
+interface StaleWageDecisionSweepRecord {
+  ranAt: string;
+  durationMs: number;
+  result: StaleWageDecisionSweepResult;
+}
+
 interface WageDecisionLastRunResponse {
-  lastRun: {
-    ranAt: string;
-    durationMs: number;
-    result: StaleWageDecisionSweepResult;
-  } | null;
+  lastRun: StaleWageDecisionSweepRecord | null;
+  recent?: StaleWageDecisionSweepRecord[];
   staleAfterDays: number;
 }
 
@@ -538,9 +541,9 @@ export default function JobMetricsHealth() {
               className="text-sm text-muted-foreground"
               data-testid="text-wage-stale-no-run"
             >
-              No sweep recorded yet on this server process. The job has not run since the
-              server started — use “Run now” to trigger it manually, or wait for the next
-              06:00 UTC tick.
+              No sweep has ever been recorded. Sweep summaries are persisted across
+              restarts, so this means the job has truly never run yet — use “Run now” to
+              trigger it manually, or wait for the next 06:00 UTC tick.
             </div>
           ) : (
             <div className="space-y-3">
@@ -579,6 +582,30 @@ export default function JobMetricsHealth() {
                   </div>
                 ))}
               </div>
+              {wageStaleLastRun.recent && wageStaleLastRun.recent.length > 1 && (
+                <div className="pt-2" data-testid="wage-stale-recent-history">
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                    Recent sweeps
+                  </div>
+                  <div className="text-xs border rounded-md divide-y">
+                    {wageStaleLastRun.recent.slice(0, 10).map((s, idx) => (
+                      <div
+                        key={`${s.ranAt}-${idx}`}
+                        className="flex items-center justify-between gap-2 px-2 py-1"
+                        data-testid={`row-wage-stale-recent-${idx}`}
+                      >
+                        <span className="text-muted-foreground">
+                          {new Date(s.ranAt).toLocaleString()}
+                        </span>
+                        <span>
+                          cand {s.result.candidates} · ok {s.result.succeeded} · fail{" "}
+                          {s.result.failed} · {s.durationMs}ms
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </CardContent>

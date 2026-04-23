@@ -4,6 +4,9 @@ import { db } from "../../../db";
 import { integrationConnections, integrationSyncState } from "@shared/schema";
 import { and, eq, isNull, lt, sql } from "drizzle-orm";
 import { logInfo, logError, logWarn } from "../../../utils/logger";
+import { recordJobMetrics } from "../../../utils/jobMetrics";
+import { jobMetricSamples } from "@shared/schema";
+import { desc } from "drizzle-orm";
 import { safeFetch } from "../../../utils/safeFetch";
 import { decryptMetadata } from "../../encryption";
 import { insertNotification } from "../../../services/notificationService";
@@ -1106,25 +1109,114 @@ export interface StaleWageDecisionSweepResult {
 
 /**
  * Task #1401 — Surface the most recent `wage_decision_stale_refresh`
- * sweep result on the admin Jobs dashboard. We keep the latest run in a
- * module-level variable (process-local, like the existing job metrics
- * surface) so operators can confirm at a glance that prevailing wage
- * rates are being kept fresh without grepping logs.
+ * sweep result on the admin Jobs dashboard.
+ *
+ * Task #1410 — The sweep summary is now persisted to the
+ * `job_metric_samples` table (via `recordJobMetrics`) so the "last run"
+ * record survives server restarts and redeploys. The dashboard reads
+ * directly from the table on demand, which means a freshly-deployed
+ * instance still shows the previous night's sweep instead of the
+ * misleading "No sweep recorded yet" placeholder it used to render
+ * until the next 06:00 UTC tick. We also expose a short rolling
+ * history so operators can spot trends (e.g. a stuck DOL endpoint
+ * piling up `failed`) without grepping logs.
  */
+export const WAGE_DECISION_STALE_REFRESH_JOB = "wage_decision_stale_refresh";
+
 export interface StaleWageDecisionSweepRecord {
   ranAt: string;
   durationMs: number;
   result: StaleWageDecisionSweepResult;
 }
 
-let lastStaleSweep: StaleWageDecisionSweepRecord | null = null;
-
-export function getLastStaleWageDecisionSweep(): StaleWageDecisionSweepRecord | null {
-  return lastStaleSweep;
+function rowToSweepRecord(row: {
+  recordedAt: Date | string;
+  counters: unknown;
+}): StaleWageDecisionSweepRecord {
+  const c = (row.counters ?? {}) as Record<string, unknown>;
+  const num = (k: string): number => {
+    const v = c[k];
+    return typeof v === "number" && Number.isFinite(v) ? v : 0;
+  };
+  return {
+    ranAt: new Date(row.recordedAt).toISOString(),
+    durationMs: num("durationMs"),
+    result: {
+      candidates: num("candidates"),
+      attempted: num("attempted"),
+      succeeded: num("succeeded"),
+      failed: num("failed"),
+      skippedNoConnection: num("skippedNoConnection"),
+      skippedNoCredentials: num("skippedNoCredentials"),
+      staleAfterDays: num("staleAfterDays"),
+    },
+  };
 }
 
-export function __resetLastStaleWageDecisionSweepForTests(): void {
-  lastStaleSweep = null;
+export async function getLastStaleWageDecisionSweep(): Promise<StaleWageDecisionSweepRecord | null> {
+  try {
+    const [row] = await db
+      .select({
+        recordedAt: jobMetricSamples.recordedAt,
+        counters: jobMetricSamples.counters,
+      })
+      .from(jobMetricSamples)
+      .where(eq(jobMetricSamples.job, WAGE_DECISION_STALE_REFRESH_JOB))
+      .orderBy(desc(jobMetricSamples.recordedAt))
+      .limit(1);
+    return row ? rowToSweepRecord(row) : null;
+  } catch (err) {
+    logError("Failed to load last wage decision stale sweep", { error: String(err) });
+    return null;
+  }
+}
+
+export async function getRecentStaleWageDecisionSweeps(
+  limit = 10,
+): Promise<StaleWageDecisionSweepRecord[]> {
+  const safeLimit = Math.max(1, Math.min(50, Math.floor(limit)));
+  try {
+    const rows = await db
+      .select({
+        recordedAt: jobMetricSamples.recordedAt,
+        counters: jobMetricSamples.counters,
+      })
+      .from(jobMetricSamples)
+      .where(eq(jobMetricSamples.job, WAGE_DECISION_STALE_REFRESH_JOB))
+      .orderBy(desc(jobMetricSamples.recordedAt))
+      .limit(safeLimit);
+    return rows.map(rowToSweepRecord);
+  } catch (err) {
+    logError("Failed to load recent wage decision stale sweeps", { error: String(err) });
+    return [];
+  }
+}
+
+/**
+ * Test helper kept for backward compatibility with Task #1401 callers.
+ * Wipes any persisted sweep rows so each test starts clean.
+ */
+export async function __resetLastStaleWageDecisionSweepForTests(): Promise<void> {
+  try {
+    await db
+      .delete(jobMetricSamples)
+      .where(eq(jobMetricSamples.job, WAGE_DECISION_STALE_REFRESH_JOB));
+  } catch {
+    // Best-effort — tests that don't care about persistence shouldn't fail.
+  }
+}
+
+function recordSweepSample(record: StaleWageDecisionSweepRecord): void {
+  recordJobMetrics(WAGE_DECISION_STALE_REFRESH_JOB, {
+    candidates: record.result.candidates,
+    attempted: record.result.attempted,
+    succeeded: record.result.succeeded,
+    failed: record.result.failed,
+    skippedNoConnection: record.result.skippedNoConnection,
+    skippedNoCredentials: record.result.skippedNoCredentials,
+    staleAfterDays: record.result.staleAfterDays,
+    durationMs: record.durationMs,
+  });
 }
 
 /**
@@ -1183,11 +1275,11 @@ export async function processStaleWageDecisions(
 
   result.candidates = rows.length;
   if (rows.length === 0) {
-    lastStaleSweep = {
+    recordSweepSample({
       ranAt: new Date().toISOString(),
       durationMs: Date.now() - sweepStartedAt,
       result: { ...result },
-    };
+    });
     return result;
   }
 
@@ -1314,10 +1406,10 @@ export async function processStaleWageDecisions(
     }
   }
 
-  lastStaleSweep = {
+  recordSweepSample({
     ranAt: new Date().toISOString(),
     durationMs: Date.now() - sweepStartedAt,
     result: { ...result },
-  };
+  });
   return result;
 }
