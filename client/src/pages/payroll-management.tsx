@@ -40,6 +40,7 @@ import DeductionsTab from "@/components/payroll/DeductionsTab";
 import PayStubView from "@/components/payroll/PayStubView";
 import { CertifiedPayrollButton } from "@/components/payroll/CertifiedPayrollReport";
 import { MissingWageDecisionsBanner } from "@/components/payroll/MissingWageDecisionsBanner";
+import { SuppressedWageDecisionsBanner } from "@/components/payroll/SuppressedWageDecisionsBanner";
 
 interface PayrollOverview {
   currentPeriod: { start: string; end: string; workWeekStart: string };
@@ -255,6 +256,7 @@ export default function PayrollManagementPage() {
       </div>
 
       <MissingWageDecisionsBanner />
+      <SuppressedWageDecisionsBanner />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className="block md:hidden mb-4">
