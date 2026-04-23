@@ -1,8 +1,8 @@
 import { db } from "../db";
 import { safeJsonParse } from "../responseHelper";
 import { organizations, users, featureFlagPresetApplications, FEATURE_FLAG_KEYS, DISABLED_BY_DEFAULT_FLAGS, type FeatureFlagKey } from "@shared/schema";
-import { getFeaturePresetForTrade } from "@shared/tradeFeaturePresets";
-import { eq, or, isNull, sql, desc } from "drizzle-orm";
+import { getFeaturePresetForTrade, hasExplicitPresetForTrade } from "@shared/tradeFeaturePresets";
+import { eq, or, isNull, sql, desc, notExists } from "drizzle-orm";
 import {logInfo, logWarn } from "../utils/logger";
 
 export type FeatureFlagsMap = Partial<Record<FeatureFlagKey, boolean>>;
@@ -88,6 +88,80 @@ export async function backfillMissingFeatureFlags(): Promise<void> {
   const count = (result as unknown as { rowCount?: number }).rowCount ?? 0;
   if (count > 0) {
     logInfo(`Feature flag backfill: enabled all flags for ${count} org(s) with missing data`);
+  }
+}
+
+/**
+ * Task #1185: backfill synthetic preset-application audit rows for organizations
+ * onboarded before Task #1119 shipped the `feature_flag_preset_applications`
+ * audit table. Their flags were set during AI onboarding via `applyTradePreset`
+ * but no audit row exists, so the Feature Flags tab shows
+ * "No trade preset has been applied to this organization yet." even though the
+ * flags do reflect a preset.
+ *
+ * For each org that currently has zero audit rows, if its trade has an explicit
+ * preset and its stored feature flags exactly match that preset, insert a
+ * synthetic row attributed to "system" (appliedById=null) at the org's
+ * createdAt timestamp. Idempotent: orgs that already have any audit row are
+ * skipped, so this is safe to call on every startup.
+ */
+export async function backfillPresetApplications(): Promise<void> {
+  const candidates = await db
+    .select({
+      id: organizations.id,
+      tradeType: organizations.tradeType,
+      featureFlags: organizations.featureFlags,
+      createdAt: organizations.createdAt,
+    })
+    .from(organizations)
+    .where(
+      notExists(
+        db
+          .select({ id: featureFlagPresetApplications.id })
+          .from(featureFlagPresetApplications)
+          .where(eq(featureFlagPresetApplications.organizationId, organizations.id)),
+      ),
+    );
+
+  let inserted = 0;
+  for (const org of candidates) {
+    if (!org.tradeType || !hasExplicitPresetForTrade(org.tradeType)) continue;
+    if (!org.featureFlags) continue;
+
+    let parsed: FeatureFlagsMap | null;
+    try {
+      parsed = safeJsonParse(org.featureFlags, null) as FeatureFlagsMap | null;
+    } catch {
+      parsed = null;
+    }
+    if (!parsed) continue;
+
+    const preset = getFeaturePresetForTrade(org.tradeType);
+    const matches = FEATURE_FLAG_KEYS.every(
+      (key) => (parsed![key] ?? false) === preset[key],
+    );
+    if (!matches) continue;
+
+    try {
+      await db.insert(featureFlagPresetApplications).values({
+        organizationId: org.id,
+        tradeType: org.tradeType,
+        appliedById: null,
+        appliedAt: org.createdAt,
+      });
+      inserted++;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logWarn(
+        `[FeatureFlags] Backfill failed to insert preset application | organizationId=${org.id} tradeType=${org.tradeType} error=${message}`,
+      );
+    }
+  }
+
+  if (inserted > 0) {
+    logInfo(
+      `[FeatureFlags] Preset application backfill: inserted ${inserted} synthetic audit row(s) for legacy orgs`,
+    );
   }
 }
 

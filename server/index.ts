@@ -28,7 +28,7 @@ import {
   reportGanttPdfBrowserDisconnected,
   startGanttPdfHealthMonitor,
 } from "./gantt-pdf-alerts";
-import { backfillMissingFeatureFlags } from "./services/featureFlagService";
+import { backfillMissingFeatureFlags, backfillPresetApplications } from "./services/featureFlagService";
 import { runStartupMigrations } from "./utils/runStartupMigrations";
 import { seedBuiltInPresets } from "./dashboardRoutes";
 import { persistErrorLog } from "./services/errorLogService";
@@ -316,6 +316,7 @@ app.use((req, res, next) => {
     console.error("[startup] Failed to seed project templates:", err);
   }
   await backfillMissingFeatureFlags();
+  await backfillPresetApplications();
 
   // Task #722: re-arm any CRM contact reassignment summaries that were
   // buffered before the previous restart so the bundled notification still

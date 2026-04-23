@@ -268,3 +268,7 @@ const EXPLICIT_PRESETS: Record<string, TradeFeaturePreset> = {
 export function getFeaturePresetForTrade(tradeType: string): TradeFeaturePreset {
   return EXPLICIT_PRESETS[tradeType] ?? SPECIALTY_TRADE_PRESET;
 }
+
+export function hasExplicitPresetForTrade(tradeType: string): boolean {
+  return Object.prototype.hasOwnProperty.call(EXPLICIT_PRESETS, tradeType);
+}
