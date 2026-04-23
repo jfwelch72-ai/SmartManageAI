@@ -1,7 +1,7 @@
 import type { SyncResult, SyncError } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { db } from "../../../db";
-import { integrationSyncState, dotPayItems, dotPayItemOverrides, estimateLineItems } from "@shared/schema";
+import { integrationSyncState, dotPayItems, dotPayItemOverrides, estimateLineItems, estimates, projects, bids } from "@shared/schema";
 import { and, eq } from "drizzle-orm";
 import { logInfo, logError } from "../../../utils/logger";
 
@@ -187,6 +187,32 @@ export async function exportEstimateAsEbsx(
 ): Promise<SyncResult & { payload?: EbsxBidPackage }> {
   const errors: SyncError[] = [];
   try {
+    // Cross-tenant guard: the estimate's owning organization (derived via
+    // bid.gcOrganizationId or project.gcOrganizationId) MUST match the
+    // connection's organizationId. The `estimates` table has no
+    // organizationId column, so we resolve it through the parent.
+    const [estimate] = await db
+      .select({ id: estimates.id, bidId: estimates.bidId, projectId: estimates.projectId })
+      .from(estimates)
+      .where(eq(estimates.id, estimateId));
+    if (!estimate) {
+      errors.push({ message: "Estimate not found" });
+      return { success: false, entityType: "ebsx_export", direction: "export", created: 0, updated: 0, skipped: 0, errors };
+    }
+    let ownerOrgId: string | null = null;
+    if (estimate.bidId) {
+      const [bid] = await db.select({ org: bids.gcOrganizationId }).from(bids).where(eq(bids.id, estimate.bidId));
+      ownerOrgId = bid?.org ?? null;
+    }
+    if (!ownerOrgId && estimate.projectId) {
+      const [project] = await db.select({ org: projects.gcOrganizationId }).from(projects).where(eq(projects.id, estimate.projectId));
+      ownerOrgId = project?.org ?? null;
+    }
+    if (!ownerOrgId || ownerOrgId !== connection.organizationId) {
+      errors.push({ message: "Estimate is not owned by the connection's organization" });
+      return { success: false, entityType: "ebsx_export", direction: "export", created: 0, updated: 0, skipped: 0, errors };
+    }
+
     const lines = await db
       .select({
         itemNumber: estimateLineItems.payItemNumber,

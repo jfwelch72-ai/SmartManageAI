@@ -309,6 +309,47 @@ function normalizeLineItemData(data: any): any {
 
 const router = Router();
 
+// ---------------------------------------------------------------------------
+// Cross-tenant ownership helpers.
+//
+// The `estimates` table has NO `organizationId` column. The owning
+// organization is derived from the parent project (`projects.gcOrganizationId`)
+// or parent bid (`bids.gcOrganizationId`). Every endpoint that loads an
+// estimate by id MUST verify ownership through one of these helpers, otherwise
+// any authenticated user could read or mutate another tenant's estimate.
+// SUPER_ADMIN callers (no `organizationId` on the user record) bypass the
+// org check intentionally.
+// ---------------------------------------------------------------------------
+const verifyEstimateOrgAccess = async (estimateId: string, user: AuthRequest["user"]) => {
+  const estimate = await db.query.estimates.findFirst({
+    where: eq(estimates.id, estimateId),
+  });
+  if (!estimate) return null;
+  if (user!.organizationId) {
+    const bid = estimate.bidId ? await db.query.bids.findFirst({ where: eq(bids.id, estimate.bidId) }) : null;
+    const project = estimate.projectId ? await db.query.projects.findFirst({ where: eq(projects.id, estimate.projectId) }) : null;
+    const ownerOrgId = bid?.gcOrganizationId || project?.gcOrganizationId;
+    if (ownerOrgId && ownerOrgId !== user!.organizationId) return null;
+    // If neither bid nor project exists, deny by default (orphan estimate).
+    if (!ownerOrgId) return null;
+  }
+  return estimate;
+};
+
+const verifyProjectOrgAccess = async (projectId: string, user: AuthRequest["user"]) => {
+  const project = await db.query.projects.findFirst({ where: eq(projects.id, projectId) });
+  if (!project) return null;
+  if (user!.organizationId && project.gcOrganizationId !== user!.organizationId) return null;
+  return project;
+};
+
+const verifyBidOrgAccess = async (bidId: string, user: AuthRequest["user"]) => {
+  const bid = await db.query.bids.findFirst({ where: eq(bids.id, bidId) });
+  if (!bid) return null;
+  if (user!.organizationId && bid.gcOrganizationId !== user!.organizationId) return null;
+  return bid;
+};
+
 // Get active estimate for a project
 router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthRequest, res, next) => {
     try {
@@ -409,10 +450,8 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
-      // Check project exists
-      const project = await db.query.projects.findFirst({
-        where: eq(projects.id, projectId),
-      });
+      // Check project exists and is owned by caller's org
+      const project = await verifyProjectOrgAccess(projectId, req.user);
 
       if (!project) {
         return res.status(404).json({ error: "Project not found" });
@@ -453,10 +492,8 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
-      // Check bid exists
-      const bid = await db.query.bids.findFirst({
-        where: eq(bids.id, bidId),
-      });
+      // Check bid exists and is owned by caller's org
+      const bid = await verifyBidOrgAccess(bidId, req.user);
 
       if (!bid) {
         return res.status(404).json({ error: "Bid not found" });
@@ -531,10 +568,8 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
-      // Check bid exists
-      const bid = await db.query.bids.findFirst({
-        where: eq(bids.id, bidId),
-      });
+      // Check bid exists and is owned by caller's org
+      const bid = await verifyBidOrgAccess(bidId, req.user);
 
       if (!bid) {
         return res.status(404).json({ error: "Bid not found" });
@@ -575,6 +610,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       if (!hasEstimateAccess(req.user!.role)) {
         return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      // Verify project is owned by caller's org (cross-tenant guard)
+      const projectOwner = await verifyProjectOrgAccess(projectId, req.user);
+      if (!projectOwner) {
+        return res.status(404).json({ error: "Project not found" });
       }
 
       // Verify estimate belongs to project
@@ -1033,6 +1074,12 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
 
       if (!hasEstimateAccess(req.user!.role)) {
         return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      // Verify bid is owned by caller's org (cross-tenant guard)
+      const bidOwner = await verifyBidOrgAccess(bidId, req.user);
+      if (!bidOwner) {
+        return res.status(404).json({ error: "Bid not found" });
       }
 
       // Verify estimate belongs to this bid
@@ -1685,10 +1732,8 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
-      // Verify estimate exists and is editable
-      const estimate = await db.query.estimates.findFirst({
-        where: eq(estimates.id, estimateId),
-      });
+      // Verify estimate exists, is editable, AND owned by caller's org
+      const estimate = await verifyEstimateOrgAccess(estimateId, req.user);
 
       if (!estimate) {
         return res.status(404).json({ error: "Estimate not found" });
@@ -1879,9 +1924,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         });
       }
 
-      const estimate = await db.query.estimates.findFirst({
-        where: eq(estimates.id, estimateId),
-      });
+      const estimate = await verifyEstimateOrgAccess(estimateId, req.user);
       if (!estimate) {
         return res.status(404).json({ error: "Estimate not found" });
       }
@@ -2026,10 +2069,8 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
-      // Verify estimate exists
-      const estimate = await db.query.estimates.findFirst({
-        where: eq(estimates.id, estimateId),
-      });
+      // Verify estimate exists AND owned by caller's org
+      const estimate = await verifyEstimateOrgAccess(estimateId, req.user);
 
       if (!estimate) {
         return res.status(404).json({ error: "Estimate not found" });
@@ -2220,10 +2261,8 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
-      // Verify estimate exists
-      const estimate = await db.query.estimates.findFirst({
-        where: eq(estimates.id, estimateId),
-      });
+      // Verify estimate exists AND owned by caller's org
+      const estimate = await verifyEstimateOrgAccess(estimateId, req.user);
 
       if (!estimate) {
         return res.status(404).json({ error: "Estimate not found" });
@@ -2248,20 +2287,6 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
   });
 
   const lineItemUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
-
-  const verifyEstimateOrgAccess = async (estimateId: string, user: AuthRequest["user"]) => {
-    const estimate = await db.query.estimates.findFirst({
-      where: eq(estimates.id, estimateId),
-    });
-    if (!estimate) return null;
-    if (user!.organizationId) {
-      const bid = estimate.bidId ? await db.query.bids.findFirst({ where: eq(bids.id, estimate.bidId) }) : null;
-      const project = estimate.projectId ? await db.query.projects.findFirst({ where: eq(projects.id, estimate.projectId) }) : null;
-      const ownerOrgId = bid?.gcOrganizationId || project?.gcOrganizationId;
-      if (ownerOrgId && ownerOrgId !== user!.organizationId) return null;
-    }
-    return estimate;
-  };
 
   router.post("/api/estimates/:estimateId/line-items/:lineItemId/upload-photo", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), lineItemUpload.single("photo"), async (req: AuthRequest, res, next) => {
     try {
@@ -3028,10 +3053,8 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
-      // Get estimate
-      const estimate = await db.query.estimates.findFirst({
-        where: eq(estimates.id, estimateId),
-      });
+      // Get estimate (org-scoped)
+      const estimate = await verifyEstimateOrgAccess(estimateId, req.user);
 
       if (!estimate) {
         return res.status(404).json({ error: "Estimate not found" });
@@ -3149,10 +3172,8 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         return res.status(403).json({ error: "Insufficient permissions" });
       }
 
-      // Get estimate and project data
-      const estimate = await db.query.estimates.findFirst({
-        where: eq(estimates.id, estimateId),
-      });
+      // Get estimate and project data (org-scoped)
+      const estimate = await verifyEstimateOrgAccess(estimateId, req.user);
 
       if (!estimate) {
         return res.status(404).json({ error: "Estimate not found" });
@@ -3653,10 +3674,8 @@ Provide comprehensive financial analysis and recommendations.`
       const underlaymentSqFt = safeNumber(req.body.underlaymentSqFt);
       const totalMaterialCost = safeNumber(req.body.totalMaterialCost);
 
-      // Verify estimate exists
-      const estimate = await db.query.estimates.findFirst({
-        where: eq(estimates.id, estimateId),
-      });
+      // Verify estimate exists AND owned by caller's org
+      const estimate = await verifyEstimateOrgAccess(estimateId, req.user);
 
       if (!estimate) {
         return res.status(404).json({ error: "Estimate not found" });
@@ -3850,16 +3869,15 @@ router.post("/api/estimates/:estimateId/insert-assembly", requireAuth, requireRo
 
     if (!assemblyId) return res.status(400).json({ error: "assemblyId is required" });
 
-    const [estimate] = await db.select().from(estimates).where(eq(estimates.id, estimateId));
-    if (!estimate) return res.status(404).json({ error: "Estimate not found" });
-
     if (!hasEstimateAccess(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
-    const { bids } = await import("@shared/schema");
-    const [bid] = await db.select().from(bids).where(eq(bids.id, estimate.bidId));
-    if (!bid || bid.gcOrganizationId !== req.user!.organizationId) {
-      return res.status(403).json({ error: "Access denied" });
+
+    // Verify estimate exists AND owned by caller's org
+    // (works for both bid-linked and project-linked estimates)
+    const estimate = await verifyEstimateOrgAccess(estimateId, req.user);
+    if (!estimate) {
+      return res.status(404).json({ error: "Estimate not found" });
     }
 
     const { libraryAssemblies, libraryAssemblyItems } = await import("@shared/schema");
