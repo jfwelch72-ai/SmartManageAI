@@ -113,11 +113,15 @@ Recommended values:
    ("…if its heartbeat is older than X minutes the worker is presumed dead…")
    should now show the new window.
 
-If the env var is missing, blank, non-numeric, or `<= 0`, the resolver
-silently falls back to the 5-minute default — there is no startup error. If
-you set a value outside the `[30, 3600]` range, it is silently clamped to the
-nearest bound. To confirm what the server actually resolved, check the
-`heartbeatStaleMs` field on the notification-config response (step 3).
+If the env var is missing or blank, the resolver falls back to the 5-minute
+default silently — that case is treated as "ops did not opt in" and is not
+worth a log line. If the env var **is** set but is non-numeric, `<= 0`, or
+outside the `[30, 3600]` range, the resolver still falls back / clamps but
+also emits a `warn`-level log line at startup naming the bad value and the
+default-or-clamped value it used (Task #1126). Grep the boot logs for
+`CRM_BACKFILL_HEARTBEAT_STALE_SECONDS` to catch misconfigurations
+immediately. To confirm what the server actually resolved post-clamp, check
+the `heartbeatStaleMs` field on the notification-config response (step 3).
 
 ---
 

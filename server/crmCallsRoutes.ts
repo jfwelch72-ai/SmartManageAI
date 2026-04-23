@@ -1017,16 +1017,71 @@ const MAX_BACKFILL_ERROR_SAMPLES = 50;
 const DEFAULT_BACKFILL_HEARTBEAT_STALE_MS = 5 * 60 * 1000;
 const MIN_BACKFILL_HEARTBEAT_STALE_MS = 30 * 1000;
 const MAX_BACKFILL_HEARTBEAT_STALE_MS = 60 * 60 * 1000;
-export function resolveBackfillHeartbeatStaleMs(): number {
+// Task #1126 — when ops sets a bad value (non-numeric, negative, or out of
+// the [30s, 60min] band) the resolver previously fell back / clamped silently.
+// The runbook (docs/runbooks/crm-transcript-backfill-heartbeat.md) tells ops
+// to verify via the notification-config endpoint, but a startup warning
+// catches misconfigurations the moment the process boots. The optional
+// `warn` parameter exists so unit tests can assert on the emitted warnings
+// without spying on the global logger; production callers omit it and the
+// resolver emits via `logWarn`.
+export function resolveBackfillHeartbeatStaleMs(
+  warn: (message: string, context?: Record<string, unknown>) => void = (
+    message,
+    context,
+  ) => logWarn(message, context),
+): number {
   const raw = process.env.CRM_BACKFILL_HEARTBEAT_STALE_SECONDS;
-  if (!raw || !raw.trim()) return DEFAULT_BACKFILL_HEARTBEAT_STALE_MS;
-  const parsed = Number(raw.trim());
+  if (raw === undefined || raw === "" || !raw.trim()) {
+    return DEFAULT_BACKFILL_HEARTBEAT_STALE_MS;
+  }
+  const trimmed = raw.trim();
+  const parsed = Number(trimmed);
   if (!Number.isFinite(parsed) || parsed <= 0) {
+    warn(
+      "crmCalls: CRM_BACKFILL_HEARTBEAT_STALE_SECONDS is invalid; falling back to default",
+      {
+        rawValue: raw,
+        defaultMs: DEFAULT_BACKFILL_HEARTBEAT_STALE_MS,
+        minMs: MIN_BACKFILL_HEARTBEAT_STALE_MS,
+        maxMs: MAX_BACKFILL_HEARTBEAT_STALE_MS,
+        runbook:
+          "docs/runbooks/crm-transcript-backfill-heartbeat.md",
+      },
+    );
     return DEFAULT_BACKFILL_HEARTBEAT_STALE_MS;
   }
   const ms = Math.round(parsed * 1000);
-  if (ms < MIN_BACKFILL_HEARTBEAT_STALE_MS) return MIN_BACKFILL_HEARTBEAT_STALE_MS;
-  if (ms > MAX_BACKFILL_HEARTBEAT_STALE_MS) return MAX_BACKFILL_HEARTBEAT_STALE_MS;
+  if (ms < MIN_BACKFILL_HEARTBEAT_STALE_MS) {
+    warn(
+      "crmCalls: CRM_BACKFILL_HEARTBEAT_STALE_SECONDS below minimum; clamping",
+      {
+        rawValue: raw,
+        requestedMs: ms,
+        clampedMs: MIN_BACKFILL_HEARTBEAT_STALE_MS,
+        minMs: MIN_BACKFILL_HEARTBEAT_STALE_MS,
+        maxMs: MAX_BACKFILL_HEARTBEAT_STALE_MS,
+        runbook:
+          "docs/runbooks/crm-transcript-backfill-heartbeat.md",
+      },
+    );
+    return MIN_BACKFILL_HEARTBEAT_STALE_MS;
+  }
+  if (ms > MAX_BACKFILL_HEARTBEAT_STALE_MS) {
+    warn(
+      "crmCalls: CRM_BACKFILL_HEARTBEAT_STALE_SECONDS above maximum; clamping",
+      {
+        rawValue: raw,
+        requestedMs: ms,
+        clampedMs: MAX_BACKFILL_HEARTBEAT_STALE_MS,
+        minMs: MIN_BACKFILL_HEARTBEAT_STALE_MS,
+        maxMs: MAX_BACKFILL_HEARTBEAT_STALE_MS,
+        runbook:
+          "docs/runbooks/crm-transcript-backfill-heartbeat.md",
+      },
+    );
+    return MAX_BACKFILL_HEARTBEAT_STALE_MS;
+  }
   return ms;
 }
 export const BACKFILL_HEARTBEAT_STALE_MS = resolveBackfillHeartbeatStaleMs();
