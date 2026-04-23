@@ -237,9 +237,32 @@ export const PER_JOB_DEFAULTS: Record<string, PerJobDefaults> = {
   },
 
   // Orphan wage-decision row pruning — runs as a side effect of the
-  // nightly stale refresh sweep above, so it inherits the same `0 6
-  // * * *` cadence. Same DAILY_STALL policy applies.
-  wage_decision_orphan_sweep: { stall: DAILY_STALL },
+  // wage-decision retry sweep (`processFailedWageDecisionRetries`),
+  // which is the parent `wage_decision_retry` job. That job has no
+  // cron of its own anymore (Task #1368 superseded it with the
+  // generic `integration_sync_retry` sweep) so in practice the
+  // orphan sweep only publishes samples when an operator clicks
+  // "Run job now". DAILY_STALL keeps the engine quiet between rare
+  // manual runs while still alerting if a once-it-was-running cadence
+  // disappears for a full day.
+  //
+  // Task #1463 — spike rule on `deleted` so a misconfigured retention
+  // window or a buggy code path that suddenly removes a large batch
+  // of rows in a single tick pages Super Admins before the table is
+  // decimated. 5× baseline with a 10-row absolute floor avoids
+  // flapping on the routine "1-row vs 0-baseline" case while still
+  // catching genuine over-deletes.
+  wage_decision_orphan_sweep: {
+    stall: DAILY_STALL,
+    spikes: {
+      deleted: {
+        multiplier: 5,
+        minAbsolute: 10,
+        dedupeMinutes: 24 * 60,
+        emailWhenAbove: 10,
+      },
+    },
+  },
 
   // Retention-policy sweep that hard-deletes rows past their org's
   // retention window — `0 2 * * *`.
