@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Calendar, FileText, CheckCircle2, Clock, Loader2, Lock, MessageSquare, AlertCircle, ClipboardCheck } from "lucide-react";
+import { Calendar, FileText, CheckCircle2, Clock, Loader2, Lock, MessageSquare, AlertCircle, ClipboardCheck, ShieldAlert } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import type { PayrollSettings } from "./types";
 import { DAYS_OF_WEEK, DIGEST_CADENCES, DIGEST_WEEKDAYS, COMMON_TIMEZONES } from "./types";
@@ -69,6 +69,48 @@ export function CompanyNotificationsTab() {
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "Failed to update payroll settings", variant: "destructive" });
     }
+  });
+
+  // SWPPP overdue reminder settings (Task #1286) — admins can dial
+  // how many follow-up reminders the nightly job sends per overdue
+  // cycle and the minimum interval between them.
+  type SwpppSettings = {
+    organizationId: string;
+    overdueReminderMaxCount: number;
+    overdueReminderIntervalHours: number;
+    defaults: { overdueReminderMaxCount: number; overdueReminderIntervalHours: number };
+    bounds: {
+      maxCount: { min: number; max: number };
+      intervalHours: { min: number; max: number };
+    };
+  };
+  const { data: swpppSettings, isLoading: loadingSwppp } = useQuery<SwpppSettings>({
+    queryKey: ["/api/swppp/settings"],
+    enabled: !!user && ["ADMIN", "MANAGER"].includes(user.role),
+  });
+  const [swpppForm, setSwpppForm] = useState({
+    overdueReminderMaxCount: 5,
+    overdueReminderIntervalHours: 22,
+  });
+  useEffect(() => {
+    if (swpppSettings) {
+      setSwpppForm({
+        overdueReminderMaxCount: swpppSettings.overdueReminderMaxCount,
+        overdueReminderIntervalHours: swpppSettings.overdueReminderIntervalHours,
+      });
+    }
+  }, [swpppSettings]);
+  const updateSwpppMutation = useMutation({
+    mutationFn: async (data: typeof swpppForm) => {
+      return await apiRequest("PUT", "/api/swppp/settings", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/swppp/settings"] });
+      toast({ title: "SWPPP reminder settings updated" });
+    },
+    onError: (error: any) => {
+      toast({ title: "Error", description: error.message || "Failed to update SWPPP reminder settings", variant: "destructive" });
+    },
   });
 
   useEffect(() => {
@@ -498,6 +540,96 @@ export function CompanyNotificationsTab() {
                     Upgrade to unlock these channels for your organization.
                   </AlertDescription>
                 </Alert>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="lg:col-span-2" data-testid="card-swppp-overdue-reminders">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <ShieldAlert className="h-5 w-5" />
+                SWPPP Overdue Reminders
+              </CardTitle>
+              <CardDescription>
+                Choose how aggressively the nightly job nags assignees about overdue
+                SWPPP corrective actions. Defaults: {swpppSettings?.defaults.overdueReminderMaxCount ?? 5} reminders,
+                every {swpppSettings?.defaults.overdueReminderIntervalHours ?? 22} hours.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {loadingSwppp ? (
+                <Skeleton className="h-24" />
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="swppp-max-count">Maximum follow-up reminders per overdue cycle</Label>
+                      <Input
+                        id="swppp-max-count"
+                        type="number"
+                        min={swpppSettings?.bounds.maxCount.min ?? 1}
+                        max={swpppSettings?.bounds.maxCount.max ?? 365}
+                        value={swpppForm.overdueReminderMaxCount}
+                        onChange={(e) => {
+                          const min = swpppSettings?.bounds.maxCount.min ?? 1;
+                          const max = swpppSettings?.bounds.maxCount.max ?? 365;
+                          const raw = parseInt(e.target.value, 10);
+                          const next = Number.isFinite(raw) ? raw : min;
+                          setSwpppForm((prev) => ({
+                            ...prev,
+                            overdueReminderMaxCount: Math.min(max, Math.max(min, next)),
+                          }));
+                        }}
+                        data-testid="input-swppp-max-count"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        After this many reminders the job stops escalating until the
+                        item is closed or its due date changes.
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="swppp-interval-hours">Minimum hours between reminders</Label>
+                      <Input
+                        id="swppp-interval-hours"
+                        type="number"
+                        min={swpppSettings?.bounds.intervalHours.min ?? 1}
+                        max={swpppSettings?.bounds.intervalHours.max ?? 720}
+                        value={swpppForm.overdueReminderIntervalHours}
+                        onChange={(e) => {
+                          const min = swpppSettings?.bounds.intervalHours.min ?? 1;
+                          const max = swpppSettings?.bounds.intervalHours.max ?? 720;
+                          const raw = parseInt(e.target.value, 10);
+                          const next = Number.isFinite(raw) ? raw : min;
+                          setSwpppForm((prev) => ({
+                            ...prev,
+                            overdueReminderIntervalHours: Math.min(max, Math.max(min, next)),
+                          }));
+                        }}
+                        data-testid="input-swppp-interval-hours"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Set just under your daily cron interval (e.g. 22h for a
+                        nightly job) so cron jitter doesn't skip a day.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex justify-end">
+                    <Button
+                      onClick={() => updateSwpppMutation.mutate(swpppForm)}
+                      disabled={updateSwpppMutation.isPending}
+                      data-testid="button-save-swppp-reminders"
+                    >
+                      {updateSwpppMutation.isPending ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          Saving...
+                        </>
+                      ) : (
+                        "Save SWPPP Reminder Settings"
+                      )}
+                    </Button>
+                  </div>
+                </>
               )}
             </CardContent>
           </Card>

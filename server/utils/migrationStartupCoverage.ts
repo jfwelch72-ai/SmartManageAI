@@ -161,4 +161,7 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   "0044_dot_pay_item_match_history.sql": { helper: "ensureDotPayItemMatchHistory" },
   "0044_swppp_overdue_notification_marker.sql": { helper: "ensureSwpppOverdueNotificationColumn" },
   "0044_certified_payroll_archived_retention.sql": { helper: "ensureCertifiedPayrollArchivedRetention" },
+  // Task #1286 — per-org SWPPP overdue reminder cap + interval columns
+  // on the organizations table. See ensureSwpppOverdueReminderSettings.
+  "0046_swppp_overdue_reminder_settings.sql": { helper: "ensureSwpppOverdueReminderSettings" },
 };

@@ -8,7 +8,7 @@ import { recordJobMetrics, loadJobMetricsFromDb, pruneJobMetricsDb } from "../ut
 import { evaluateJobMetricAlerts, sendJobMetricAlertQuietHoursDigests } from "../utils/jobMetricAlerts";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
-import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, type InsertNotification } from "@shared/schema";
+import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, type InsertNotification } from "@shared/schema";
 import { getEffectivePermissions } from "../auth";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
@@ -3156,19 +3156,24 @@ export async function processCertifiedPayrollWeeklyDigest(opts: { now?: Date } =
 // so the email composer can deep-link to the inspection list filtered
 // to the right project.
 
-// Cap the total number of overdue fanouts (initial + daily reminders)
-// per overdue cycle so we don't spam an inbox indefinitely. Configurable
-// via env var primarily for tests/operational tuning.
+// Default cap on total follow-up reminders per overdue cycle. Used as a
+// fallback when an organization has no per-org override configured.
+// Task #1286 promoted this from a hard-coded constant to a per-org
+// column on `organizations` (swppp_overdue_reminder_max_count); admins
+// can dial it up or down per tenant from the SWPPP settings card on the
+// company-notifications tab. The env var is preserved so tests and
+// operators can still override the default for fresh orgs.
 const SWPPP_OVERDUE_REMINDER_CAP = Math.max(
   1,
-  Number.parseInt(process.env.SWPPP_OVERDUE_REMINDER_CAP ?? "5", 10) || 5,
+  Number.parseInt(process.env.SWPPP_OVERDUE_REMINDER_CAP ?? String(SWPPP_OVERDUE_REMINDER_DEFAULT_CAP), 10) || SWPPP_OVERDUE_REMINDER_DEFAULT_CAP,
 );
-// Minimum gap between consecutive reminder fanouts. Set just under 24h
-// so a daily cron at the same wall-clock time still triggers the next
-// reminder (cron jitter would otherwise push the next eligible run
-// past 24h and skip a day). 22h is the same convention used by other
-// daily-cadence digests in this codebase.
-const SWPPP_OVERDUE_REMINDER_INTERVAL_MS = 22 * 60 * 60 * 1000;
+// Default minimum gap (in hours) between consecutive reminder fanouts.
+// 22h is the same convention used by other daily-cadence digests in
+// this codebase — it sits just under 24h so a daily cron at the same
+// wall-clock time still triggers the next reminder (cron jitter would
+// otherwise push the next eligible run past 24h and skip a day).
+// Per-org override lives on `organizations.swppp_overdue_reminder_interval_hours`.
+const SWPPP_OVERDUE_REMINDER_INTERVAL_HOURS = SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS;
 
 export async function processSwpppOverdueCorrectiveActions(opts: { now?: Date } = {}) {
   const now = opts.now ?? new Date();
@@ -3177,13 +3182,20 @@ export async function processSwpppOverdueCorrectiveActions(opts: { now?: Date } 
   // wall-clock instants — an item due "today" is not overdue until
   // tomorrow.
   const todayStr = now.toISOString().slice(0, 10);
-  const reminderCutoff = new Date(now.getTime() - SWPPP_OVERDUE_REMINDER_INTERVAL_MS);
 
   // Pick up:
   //   - Brand new overdue items (lastOverdueNotifiedAt IS NULL), or
   //   - Items that already had at least one fanout but are still under
-  //     the cap and whose last fanout was long enough ago to send a
-  //     follow-up reminder.
+  //     their org's cap and whose last fanout was long enough ago
+  //     (per the org's interval setting) to send a follow-up reminder.
+  //
+  // Task #1286 — the cap and interval are joined in from
+  // `organizations` so each tenant can tune its escalation policy
+  // independently. COALESCE guards against any DB drift where the
+  // columns are missing or NULL despite the NOT NULL DEFAULT.
+  const orgCapExpr = sql<number>`COALESCE(${organizations.swpppOverdueReminderMaxCount}, ${SWPPP_OVERDUE_REMINDER_CAP})`;
+  const orgIntervalExpr = sql<number>`COALESCE(${organizations.swpppOverdueReminderIntervalHours}, ${SWPPP_OVERDUE_REMINDER_INTERVAL_HOURS})`;
+
   const overdue = await db
     .select({
       id: swpppInspections.id,
@@ -3195,8 +3207,11 @@ export async function processSwpppOverdueCorrectiveActions(opts: { now?: Date } 
       correctiveActions: swpppInspections.correctiveActions,
       lastOverdueNotifiedAt: swpppInspections.lastOverdueNotifiedAt,
       overdueReminderCount: swpppInspections.overdueReminderCount,
+      reminderMaxCount: orgCapExpr,
+      reminderIntervalHours: orgIntervalExpr,
     })
     .from(swpppInspections)
+    .innerJoin(organizations, eq(swpppInspections.organizationId, organizations.id))
     .where(and(
       eq(swpppInspections.status, "OPEN"),
       isNotNull(swpppInspections.correctiveActionDueDate),
@@ -3204,8 +3219,8 @@ export async function processSwpppOverdueCorrectiveActions(opts: { now?: Date } 
       or(
         isNull(swpppInspections.lastOverdueNotifiedAt),
         and(
-          lt(swpppInspections.overdueReminderCount, SWPPP_OVERDUE_REMINDER_CAP),
-          lte(swpppInspections.lastOverdueNotifiedAt, reminderCutoff),
+          sql`${swpppInspections.overdueReminderCount} < ${orgCapExpr}`,
+          sql`${swpppInspections.lastOverdueNotifiedAt} <= (${now}::timestamp - (${orgIntervalExpr} * interval '1 hour'))`,
         ),
       ),
     ));
@@ -3272,10 +3287,13 @@ export async function processSwpppOverdueCorrectiveActions(opts: { now?: Date } 
       : "overdue";
     // Tag follow-ups with "Reminder K of N" so the recipient can tell
     // at a glance that escalation is ongoing. K = previous follow-up
-    // count + 1, capped by SWPPP_OVERDUE_REMINDER_CAP. Initial fanout
-    // wording is unchanged from Task #1173.
+    // count + 1, capped by the org-specific reminder cap (Task #1286).
+    // Initial fanout wording is unchanged from Task #1173. The cap
+    // falls back to the legacy default when the joined org column is
+    // missing (e.g. in tests that mock the DB without the new field).
     const followupNumber = (item.overdueReminderCount ?? 0) + 1;
-    const reminderTag = isFollowUp ? ` (Reminder ${followupNumber} of ${SWPPP_OVERDUE_REMINDER_CAP})` : "";
+    const orgReminderCap = Number(item.reminderMaxCount ?? SWPPP_OVERDUE_REMINDER_CAP) || SWPPP_OVERDUE_REMINDER_CAP;
+    const reminderTag = isFollowUp ? ` (Reminder ${followupNumber} of ${orgReminderCap})` : "";
     const title = `SWPPP corrective action ${overdueLabel}: ${projectName}${reminderTag}`;
     const message = `${projectName} — corrective action was due ${dueStr || "(no date)"} (${overdueLabel}).\n${correctiveActionLabel}`;
 

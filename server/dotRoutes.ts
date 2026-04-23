@@ -14,6 +14,11 @@ import {
   haulTickets,
   dailyInspectorReports,
   swpppInspections,
+  SWPPP_OVERDUE_REMINDER_DEFAULT_CAP,
+  SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS,
+  SWPPP_OVERDUE_REMINDER_MAX_CAP,
+  SWPPP_OVERDUE_REMINDER_MIN_INTERVAL_HOURS,
+  SWPPP_OVERDUE_REMINDER_MAX_INTERVAL_HOURS,
   materialCertifications,
   insertDotAgencySchema,
   insertDotSpecBookSchema,
@@ -2142,6 +2147,105 @@ router.delete(
     const [deleted] = await db.delete(swpppInspections).where(and(...conditions)).returning();
     if (deleted) await dotAudit(req, "DELETE", "swppp_inspection", deleted.id, deleted, null);
     res.status(204).end();
+  },
+);
+
+// =========================
+// SWPPP Overdue Reminder Settings (Task #1286)
+// =========================
+// Per-org escalation policy for the nightly SWPPP overdue corrective
+// action sweep (`processSwpppOverdueCorrectiveActions` in jobRunner).
+// Admins can choose how many follow-up reminders are sent per overdue
+// cycle (`maxCount`) and the minimum gap in hours between consecutive
+// fanouts (`intervalHours`). Defaults match the legacy hard-coded
+// constants (5 reminders, 22h cadence) so unconfigured orgs see no
+// behavior change.
+router.get(
+  "/api/swppp/settings",
+  requireAuth,
+  requireAnyFeaturePermission("canViewSwppp", "canManageSwppp"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const targetOrg = ctx.isSuperAdmin ? superAdminTargetOrgId(req) : ctx.orgId;
+    if (!targetOrg) {
+      return res.status(400).json({ error: "Organization context required" });
+    }
+    const [row] = await db
+      .select({
+        organizationId: organizations.id,
+        overdueReminderMaxCount: organizations.swpppOverdueReminderMaxCount,
+        overdueReminderIntervalHours: organizations.swpppOverdueReminderIntervalHours,
+      })
+      .from(organizations)
+      .where(eq(organizations.id, targetOrg))
+      .limit(1);
+    if (!row) return res.status(404).json({ error: "Organization not found" });
+    res.json({
+      organizationId: row.organizationId,
+      overdueReminderMaxCount: row.overdueReminderMaxCount ?? SWPPP_OVERDUE_REMINDER_DEFAULT_CAP,
+      overdueReminderIntervalHours: row.overdueReminderIntervalHours ?? SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS,
+      defaults: {
+        overdueReminderMaxCount: SWPPP_OVERDUE_REMINDER_DEFAULT_CAP,
+        overdueReminderIntervalHours: SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS,
+      },
+      bounds: {
+        maxCount: { min: 1, max: SWPPP_OVERDUE_REMINDER_MAX_CAP },
+        intervalHours: { min: SWPPP_OVERDUE_REMINDER_MIN_INTERVAL_HOURS, max: SWPPP_OVERDUE_REMINDER_MAX_INTERVAL_HOURS },
+      },
+    });
+  },
+);
+
+router.put(
+  "/api/swppp/settings",
+  requireAuth,
+  requireFeaturePermission("canManageSwppp"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const targetOrg = ctx.isSuperAdmin ? superAdminTargetOrgId(req) : ctx.orgId;
+    if (!targetOrg) {
+      return res.status(400).json({ error: "Organization context required" });
+    }
+    const updateSchema = z.object({
+      overdueReminderMaxCount: z.number().int().min(1).max(SWPPP_OVERDUE_REMINDER_MAX_CAP),
+      overdueReminderIntervalHours: z.number().int()
+        .min(SWPPP_OVERDUE_REMINDER_MIN_INTERVAL_HOURS)
+        .max(SWPPP_OVERDUE_REMINDER_MAX_INTERVAL_HOURS),
+    });
+    const data = validateBody(updateSchema, req.body, res);
+    if (!data) return;
+
+    const [before] = await db
+      .select({
+        overdueReminderMaxCount: organizations.swpppOverdueReminderMaxCount,
+        overdueReminderIntervalHours: organizations.swpppOverdueReminderIntervalHours,
+      })
+      .from(organizations)
+      .where(eq(organizations.id, targetOrg))
+      .limit(1);
+    if (!before) return res.status(404).json({ error: "Organization not found" });
+
+    const [updated] = await db
+      .update(organizations)
+      .set({
+        swpppOverdueReminderMaxCount: data.overdueReminderMaxCount,
+        swpppOverdueReminderIntervalHours: data.overdueReminderIntervalHours,
+        updatedAt: new Date(),
+      })
+      .where(eq(organizations.id, targetOrg))
+      .returning({
+        organizationId: organizations.id,
+        overdueReminderMaxCount: organizations.swpppOverdueReminderMaxCount,
+        overdueReminderIntervalHours: organizations.swpppOverdueReminderIntervalHours,
+      });
+    await dotAudit(req, "UPDATE", "swppp_overdue_reminder_settings", targetOrg, before, updated);
+    res.json({
+      organizationId: updated.organizationId,
+      overdueReminderMaxCount: updated.overdueReminderMaxCount,
+      overdueReminderIntervalHours: updated.overdueReminderIntervalHours,
+    });
   },
 );
 

@@ -84,6 +84,7 @@ import { ensurePdfAlertSharedTables } from "./ensurePdfAlertSharedTables";
 import { ensureProjectKpiSnapshotsTable } from "./ensureProjectKpiSnapshotsTable";
 import { ensureSwpppCorrectiveActionStatus } from "./ensureSwpppCorrectiveActionStatus";
 import { ensureSwpppOverdueNotificationColumn } from "./ensureSwpppOverdueNotificationColumn";
+import { ensureSwpppOverdueReminderSettings } from "./ensureSwpppOverdueReminderSettings";
 import { ensureCrmTranscriptBackfillJobsTable } from "./ensureCrmTranscriptBackfillJobsTable";
 import { ensureCrmTranscriptBackfillNotificationSettingsTable } from "./ensureCrmTranscriptBackfillNotificationSettingsTable";
 import { ensureFeatureFlagPresetApplicationsTable } from "./ensureFeatureFlagPresetApplicationsTable";
@@ -203,6 +204,8 @@ const migrations: MigrationStep[] = [
   // Task #1173 — adds the per-inspection dedupe marker the SWPPP overdue
   // notification sweep relies on. Idempotent ADD COLUMN IF NOT EXISTS.
   { name: "swppp_overdue_notification_column", category: "ADD_COLUMN", fn: ensureSwpppOverdueNotificationColumn },
+  // Task #1286 — per-org SWPPP overdue reminder cap + interval columns.
+  { name: "swppp_overdue_reminder_settings", category: "ADD_COLUMN", fn: ensureSwpppOverdueReminderSettings },
   { name: "crm_transcript_backfill_jobs_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillJobsTable },
   { name: "crm_transcript_backfill_notification_settings_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillNotificationSettingsTable },
   // Task #1022 — must run AFTER the jobs table since it FK-references it.
