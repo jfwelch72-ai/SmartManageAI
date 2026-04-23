@@ -87,6 +87,7 @@ import { ensureSwpppOverdueNotificationColumn } from "./ensureSwpppOverdueNotifi
 import { ensureCrmTranscriptBackfillJobsTable } from "./ensureCrmTranscriptBackfillJobsTable";
 import { ensureCrmTranscriptBackfillNotificationSettingsTable } from "./ensureCrmTranscriptBackfillNotificationSettingsTable";
 import { ensureFeatureFlagPresetApplicationsTable } from "./ensureFeatureFlagPresetApplicationsTable";
+import { ensureFeatureFlagManualChangesTable } from "./ensureFeatureFlagManualChangesTable";
 import { ensureDotPayItemMatchHistory } from "./ensureDotPayItemMatchHistory";
 import { ensureCrmTranscriptBackfillNotificationsTable } from "./ensureCrmTranscriptBackfillNotificationsTable";
 import { ensureCrmTranscriptBackfillAlertDeliveriesTable } from "./ensureCrmTranscriptBackfillAlertDeliveriesTable";
@@ -240,6 +241,7 @@ const migrations: MigrationStep[] = [
   // Task #1119 — audit log for trade-preset applications shown on the
   // Feature Flags tab (Last applied: <preset> on <date> by <user>).
   { name: "feature_flag_preset_applications_table", category: "CREATE_TABLE", fn: ensureFeatureFlagPresetApplicationsTable },
+  { name: "feature_flag_manual_changes_table", category: "CREATE_TABLE", fn: ensureFeatureFlagManualChangesTable },
   // Task #1164 — match-history table for boosting frequently-accepted DOT pay
   // items. Must run AFTER `dot_tables` so dot_pay_items / dot_agencies exist.
   { name: "dot_pay_item_match_history", category: "CREATE_TABLE", fn: ensureDotPayItemMatchHistory },

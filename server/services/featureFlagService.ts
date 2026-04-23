@@ -1,6 +1,6 @@
 import { db } from "../db";
 import { safeJsonParse } from "../responseHelper";
-import { organizations, users, featureFlagPresetApplications, FEATURE_FLAG_KEYS, DISABLED_BY_DEFAULT_FLAGS, type FeatureFlagKey } from "@shared/schema";
+import { organizations, users, featureFlagPresetApplications, featureFlagManualChanges, FEATURE_FLAG_KEYS, DISABLED_BY_DEFAULT_FLAGS, type FeatureFlagKey } from "@shared/schema";
 import {
   getFeaturePresetForTrade,
   hasExplicitPresetForTrade,
@@ -40,13 +40,36 @@ export async function isFeatureEnabled(orgId: string, flag: FeatureFlagKey): Pro
   return flags[flag] === true;
 }
 
-export async function setFeatureFlag(orgId: string, flag: FeatureFlagKey, enabled: boolean): Promise<FeatureFlagsMap> {
+export async function setFeatureFlag(
+  orgId: string,
+  flag: FeatureFlagKey,
+  enabled: boolean,
+  changedByUserId?: string | null,
+): Promise<FeatureFlagsMap> {
   const currentFlags = await getFeatureFlags(orgId);
+  const previousValue = currentFlags[flag] ?? false;
   currentFlags[flag] = enabled;
 
   await db.update(organizations)
     .set({ featureFlags: JSON.stringify(currentFlags), updatedAt: new Date() })
     .where(eq(organizations.id, orgId));
+
+  if (previousValue !== enabled) {
+    try {
+      await db.insert(featureFlagManualChanges).values({
+        organizationId: orgId,
+        flagKey: flag,
+        previousValue,
+        newValue: enabled,
+        changedById: changedByUserId ?? null,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logWarn(
+        `[FeatureFlags] Failed to record manual flag change audit row | organizationId=${orgId} flag=${flag} changedByUserId=${changedByUserId ?? "null"} error=${message}`,
+      );
+    }
+  }
 
   logInfo(`Feature flag ${flag} set to ${enabled}`, { organizationId: orgId });
   return currentFlags;
@@ -314,6 +337,78 @@ export interface PresetApplicationHistoryPage {
   total: number;
   page: number;
   pageSize: number;
+}
+
+export interface ManualFlagChangeItem {
+  id: string;
+  flagKey: string;
+  previousValue: boolean;
+  newValue: boolean;
+  changedAt: Date;
+  changedBy: { id: string; firstName: string; lastName: string; email: string } | null;
+}
+
+export interface ManualFlagChangeHistoryPage {
+  items: ManualFlagChangeItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export async function listManualFlagChanges(
+  orgId: string,
+  page: number = 1,
+  pageSize: number = 20,
+): Promise<ManualFlagChangeHistoryPage> {
+  const safePage = Math.max(1, Math.floor(page));
+  const safePageSize = Math.min(100, Math.max(1, Math.floor(pageSize)));
+  const offset = (safePage - 1) * safePageSize;
+
+  const rows = await db
+    .select({
+      id: featureFlagManualChanges.id,
+      flagKey: featureFlagManualChanges.flagKey,
+      previousValue: featureFlagManualChanges.previousValue,
+      newValue: featureFlagManualChanges.newValue,
+      changedAt: featureFlagManualChanges.changedAt,
+      changedById: featureFlagManualChanges.changedById,
+      userFirstName: users.firstName,
+      userLastName: users.lastName,
+      userEmail: users.email,
+      userId: users.id,
+    })
+    .from(featureFlagManualChanges)
+    .leftJoin(users, eq(users.id, featureFlagManualChanges.changedById))
+    .where(eq(featureFlagManualChanges.organizationId, orgId))
+    .orderBy(desc(featureFlagManualChanges.changedAt))
+    .limit(safePageSize)
+    .offset(offset);
+
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(featureFlagManualChanges)
+    .where(eq(featureFlagManualChanges.organizationId, orgId));
+
+  return {
+    items: rows.map((row) => ({
+      id: row.id,
+      flagKey: row.flagKey,
+      previousValue: row.previousValue,
+      newValue: row.newValue,
+      changedAt: row.changedAt,
+      changedBy: row.userId
+        ? {
+            id: row.userId,
+            firstName: row.userFirstName ?? "",
+            lastName: row.userLastName ?? "",
+            email: row.userEmail ?? "",
+          }
+        : null,
+    })),
+    total: Number(count) || 0,
+    page: safePage,
+    pageSize: safePageSize,
+  };
 }
 
 export async function listPresetApplications(

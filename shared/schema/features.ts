@@ -10295,3 +10295,22 @@ export const featureFlagPresetApplications = pgTable("feature_flag_preset_applic
 export const insertFeatureFlagPresetApplicationSchema = createInsertSchema(featureFlagPresetApplications).omit({ id: true, appliedAt: true });
 export type InsertFeatureFlagPresetApplication = z.infer<typeof insertFeatureFlagPresetApplicationSchema>;
 export type FeatureFlagPresetApplication = typeof featureFlagPresetApplications.$inferSelect;
+
+// Task #1290: audit log of individual feature-flag flips made via the
+// per-flag toggle (outside of trade preset application). Surfaces a "Manual
+// flag changes" list on the Feature Flags tab so support engineers can see
+// who flipped which flag, when, and from what value.
+export const featureFlagManualChanges = pgTable("feature_flag_manual_changes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  flagKey: text("flag_key").notNull(),
+  previousValue: boolean("previous_value").notNull(),
+  newValue: boolean("new_value").notNull(),
+  changedById: varchar("changed_by_id").references(() => users.id, { onDelete: "set null" }),
+  changedAt: timestamp("changed_at").notNull().defaultNow(),
+}, (t) => ({
+  orgChangedAtIdx: index("ffmc_org_changed_at_idx").on(t.organizationId, t.changedAt),
+}));
+export const insertFeatureFlagManualChangeSchema = createInsertSchema(featureFlagManualChanges).omit({ id: true, changedAt: true });
+export type InsertFeatureFlagManualChange = z.infer<typeof insertFeatureFlagManualChangeSchema>;
+export type FeatureFlagManualChange = typeof featureFlagManualChanges.$inferSelect;

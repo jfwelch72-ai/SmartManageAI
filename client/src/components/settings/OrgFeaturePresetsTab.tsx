@@ -10,7 +10,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { ToggleRight, HardHat, ArrowRight, History, ChevronLeft, ChevronRight, ChevronDown } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { ToggleRight, HardHat, ArrowRight, History, ChevronLeft, ChevronRight, ChevronDown, ShieldAlert } from "lucide-react";
 import {
   FEATURE_FLAG_LABELS,
   FEATURE_FLAG_DESCRIPTIONS,
@@ -59,6 +60,22 @@ interface PresetHistoryResponse {
   pageSize: number;
 }
 
+interface ManualFlagChangeItem {
+  id: string;
+  flagKey: FeatureFlagKey;
+  previousValue: boolean;
+  newValue: boolean;
+  changedAt: string;
+  changedBy: { id: string; firstName: string; lastName: string; email: string } | null;
+}
+
+interface ManualFlagChangeHistoryResponse {
+  items: ManualFlagChangeItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 interface FlagDiff {
   key: FeatureFlagKey;
   label: string;
@@ -81,11 +98,13 @@ export function OrgFeaturePresetsTab({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingTradeType, setPendingTradeType] = useState<string | null>(null);
   const [historyPage, setHistoryPage] = useState(1);
+  const [manualPage, setManualPage] = useState(1);
   const HISTORY_PAGE_SIZE = 10;
 
   const isSuperAdminView = !!overrideOrgId;
   const canManage =
     !!user && (user.role === "ADMIN" || (isSuperAdminView && user.role === "SUPER_ADMIN"));
+  const canToggleIndividualFlags = isSuperAdminView && user?.role === "SUPER_ADMIN";
 
   const { data: tradeConfig, isLoading: tradeConfigLoading } = useQuery<TradeConfigResponse>({
     queryKey: ["/api/organization/trade-config"],
@@ -131,6 +150,18 @@ export function OrgFeaturePresetsTab({
     enabled: canManage && !!orgId,
   });
 
+  const { data: manualChangesData, isLoading: manualChangesLoading } = useQuery<ManualFlagChangeHistoryResponse>({
+    queryKey: ["/api/feature-flags", orgId, "manual-flag-changes", manualPage, HISTORY_PAGE_SIZE],
+    queryFn: async () => {
+      const res = await apiRequest(
+        "GET",
+        `/api/feature-flags/${orgId}/manual-flag-changes?page=${manualPage}&pageSize=${HISTORY_PAGE_SIZE}`,
+      );
+      return res.json();
+    },
+    enabled: canManage && !!orgId,
+  });
+
   const tradeTypeOptions = tradeConfig?.tradeTypes ?? FALLBACK_TRADE_TYPE_OPTIONS;
   const tradeLabelMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -159,6 +190,26 @@ export function OrgFeaturePresetsTab({
     },
     onError: (err: Error) => {
       toast({ title: "Failed to apply preset", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const toggleFlagMutation = useMutation({
+    mutationFn: async ({ flag, enabled }: { flag: FeatureFlagKey; enabled: boolean }) => {
+      const res = await apiRequest("PATCH", `/api/feature-flags/${orgId}`, { flag, enabled });
+      return res.json();
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/feature-flags"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId, "last-preset"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId, "manual-flag-changes"] });
+      setManualPage(1);
+      toast({
+        title: vars.enabled ? "Flag turned on" : "Flag turned off",
+        description: `${FEATURE_FLAG_LABELS[vars.flag] ?? vars.flag} is now ${vars.enabled ? "on" : "off"}.`,
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to update flag", description: err.message, variant: "destructive" });
     },
   });
 
@@ -425,8 +476,17 @@ export function OrgFeaturePresetsTab({
         <CardHeader>
           <CardTitle>Current Feature Flags</CardTitle>
           <CardDescription>
-            These flags are currently active for your organization. Toggling individual flags is
-            limited to platform admins; use a preset above to change the bundle.
+            {canToggleIndividualFlags ? (
+              <>
+                Flip individual flags below. Each change is recorded in the manual flag changes log
+                with who and when. For non-platform admins this view stays read-only.
+              </>
+            ) : (
+              <>
+                These flags are currently active for your organization. Toggling individual flags is
+                limited to platform admins; use a preset above to change the bundle.
+              </>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -468,12 +528,32 @@ export function OrgFeaturePresetsTab({
                               </div>
                             )}
                           </div>
-                          <Badge
-                            variant={enabled ? "default" : "outline"}
-                            data-testid={`feature-flag-status-${key}`}
-                          >
-                            {enabled ? "On" : "Off"}
-                          </Badge>
+                          {canToggleIndividualFlags ? (
+                            <div className="flex items-center gap-2 shrink-0">
+                              <Badge
+                                variant={enabled ? "default" : "outline"}
+                                data-testid={`feature-flag-status-${key}`}
+                              >
+                                {enabled ? "On" : "Off"}
+                              </Badge>
+                              <Switch
+                                checked={enabled}
+                                disabled={toggleFlagMutation.isPending}
+                                onCheckedChange={(next) =>
+                                  toggleFlagMutation.mutate({ flag: key, enabled: next })
+                                }
+                                data-testid={`switch-feature-flag-${key}`}
+                                aria-label={`Toggle ${label}`}
+                              />
+                            </div>
+                          ) : (
+                            <Badge
+                              variant={enabled ? "default" : "outline"}
+                              data-testid={`feature-flag-status-${key}`}
+                            >
+                              {enabled ? "On" : "Off"}
+                            </Badge>
+                          )}
                         </div>
                       );
                     })}
@@ -573,6 +653,127 @@ export function OrgFeaturePresetsTab({
                         historyData.page * historyData.pageSize >= historyData.total
                       }
                       data-testid="button-preset-history-next"
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-manual-flag-changes">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <ShieldAlert className="h-5 w-5" />
+            Manual flag changes
+          </CardTitle>
+          <CardDescription>
+            Every individual flag flip made outside of a trade preset, newest first. Only platform
+            admins can make these changes.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {manualChangesLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : !manualChangesData || manualChangesData.items.length === 0 ? (
+            <div
+              className="text-sm text-muted-foreground py-4 text-center"
+              data-testid="text-manual-flag-changes-empty"
+            >
+              No manual flag changes recorded yet.
+            </div>
+          ) : (
+            <>
+              <div className="border rounded-md divide-y" data-testid="list-manual-flag-changes">
+                {manualChangesData.items.map((item) => {
+                  const who = item.changedBy
+                    ? `${item.changedBy.firstName} ${item.changedBy.lastName}`.trim() ||
+                      item.changedBy.email
+                    : "Unknown user";
+                  const label = FEATURE_FLAG_LABELS[item.flagKey] ?? item.flagKey;
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 px-3 py-2 text-sm"
+                      data-testid={`row-manual-flag-change-${item.id}`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                        <span
+                          className="font-medium truncate"
+                          data-testid={`text-manual-flag-label-${item.id}`}
+                        >
+                          {label}
+                        </span>
+                        <span className="flex items-center gap-1 shrink-0">
+                          <Badge
+                            variant={item.previousValue ? "default" : "outline"}
+                            data-testid={`badge-manual-flag-prev-${item.id}`}
+                          >
+                            {item.previousValue ? "On" : "Off"}
+                          </Badge>
+                          <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                          <Badge
+                            variant={item.newValue ? "default" : "outline"}
+                            data-testid={`badge-manual-flag-new-${item.id}`}
+                          >
+                            {item.newValue ? "On" : "Off"}
+                          </Badge>
+                        </span>
+                        <span
+                          className="text-muted-foreground truncate"
+                          data-testid={`text-manual-flag-user-${item.id}`}
+                        >
+                          {who}
+                        </span>
+                      </div>
+                      <span
+                        className="text-muted-foreground shrink-0"
+                        data-testid={`text-manual-flag-time-${item.id}`}
+                      >
+                        {new Date(item.changedAt).toLocaleString()}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              {manualChangesData.total > manualChangesData.pageSize && (
+                <div className="flex items-center justify-between mt-3">
+                  <div
+                    className="text-xs text-muted-foreground"
+                    data-testid="text-manual-flag-changes-pagination-summary"
+                  >
+                    Page {manualChangesData.page} of{" "}
+                    {Math.max(1, Math.ceil(manualChangesData.total / manualChangesData.pageSize))} •{" "}
+                    {manualChangesData.total} total
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setManualPage((p) => Math.max(1, p - 1))}
+                      disabled={manualChangesData.page <= 1}
+                      data-testid="button-manual-flag-changes-prev"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Prev
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setManualPage((p) => p + 1)}
+                      disabled={
+                        manualChangesData.page * manualChangesData.pageSize >=
+                        manualChangesData.total
+                      }
+                      data-testid="button-manual-flag-changes-next"
                     >
                       Next
                       <ChevronRight className="h-4 w-4" />
