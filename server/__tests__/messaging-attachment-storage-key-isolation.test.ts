@@ -326,3 +326,133 @@ describe("Task #1347 — chat attachment URL tenancy", () => {
     expect(res.status).not.toBe(201);
   });
 });
+
+describe("Task #1351 — chat edit attachment URL tenancy", () => {
+  async function createMessage(opts: { content: string; attachmentUrl?: string | null; attachmentName?: string | null }) {
+    const sendRes = await request(app)
+      .post(`/api/conversations/${orgA.conversationId}/messages`)
+      .set("Cookie", `auth_token=${orgA.token}`)
+      .set("Content-Type", "application/json")
+      .send({
+        content: opts.content,
+        ...(opts.attachmentUrl !== undefined ? { attachmentUrl: opts.attachmentUrl } : {}),
+        ...(opts.attachmentName !== undefined ? { attachmentName: opts.attachmentName } : {}),
+      });
+    expect(sendRes.status).toBe(201);
+    return sendRes.body as { id: string; attachmentUrl: string | null };
+  }
+
+  it("rejects an edit that swaps attachmentUrl to another org's /objects/ key", async () => {
+    const created = await createMessage({ content: "original text" });
+
+    const editRes = await request(app)
+      .patch(`/api/messages/${created.id}`)
+      .set("Cookie", `auth_token=${orgA.token}`)
+      .set("Content-Type", "application/json")
+      .send({
+        content: "still my text",
+        attachmentUrl: orgB.storageKey,
+        attachmentName: "leak.bin",
+        attachmentType: "application/octet-stream",
+      });
+
+    expect(editRes.status).toBe(403);
+
+    // Confirm the persisted row was NOT mutated to point at Org B's key.
+    const [row] = await db.select({ attachmentUrl: messages.attachmentUrl }).from(messages).where(eq(messages.id, created.id));
+    expect(row?.attachmentUrl).not.toBe(orgB.storageKey);
+
+    await db.delete(messages).where(eq(messages.id, created.id)).catch(() => {});
+  });
+
+  it("rejects an edit that swaps voiceUrl to another org's /objects/ key", async () => {
+    const created = await createMessage({ content: "text only" });
+
+    const editRes = await request(app)
+      .patch(`/api/messages/${created.id}`)
+      .set("Cookie", `auth_token=${orgA.token}`)
+      .set("Content-Type", "application/json")
+      .send({
+        content: "text only",
+        voiceUrl: orgB.storageKey,
+      });
+
+    expect(editRes.status).toBe(403);
+
+    const [row] = await db.select({ voiceUrl: messages.voiceUrl }).from(messages).where(eq(messages.id, created.id));
+    expect(row?.voiceUrl ?? null).toBeNull();
+
+    await db.delete(messages).where(eq(messages.id, created.id)).catch(() => {});
+  });
+
+  it("rejects an edit that points attachmentUrl at a sibling conversation's proxy URL", async () => {
+    const created = await createMessage({ content: "to be tampered" });
+    const fakeOtherConv = `00000000-0000-0000-0000-000000000999`;
+
+    const editRes = await request(app)
+      .patch(`/api/messages/${created.id}`)
+      .set("Cookie", `auth_token=${orgA.token}`)
+      .set("Content-Type", "application/json")
+      .send({
+        content: "to be tampered",
+        attachmentUrl: `/api/conversations/${fakeOtherConv}/files/leak.png`,
+      });
+
+    expect(editRes.status).toBe(403);
+
+    await db.delete(messages).where(eq(messages.id, created.id)).catch(() => {});
+  });
+
+  it("rejects an edit that points attachmentUrl at an unrelated absolute URL", async () => {
+    const created = await createMessage({ content: "to be tampered 2" });
+
+    const editRes = await request(app)
+      .patch(`/api/messages/${created.id}`)
+      .set("Cookie", `auth_token=${orgA.token}`)
+      .set("Content-Type", "application/json")
+      .send({
+        content: "to be tampered 2",
+        attachmentUrl: "https://evil.example.com/leak.png",
+      });
+
+    expect(editRes.status).toBe(403);
+
+    await db.delete(messages).where(eq(messages.id, created.id)).catch(() => {});
+  });
+
+  it("accepts an edit that swaps attachmentUrl to the caller's own /objects/ key", async () => {
+    const created = await createMessage({ content: "ok" });
+
+    const editRes = await request(app)
+      .patch(`/api/messages/${created.id}`)
+      .set("Cookie", `auth_token=${orgA.token}`)
+      .set("Content-Type", "application/json")
+      .send({
+        content: "ok",
+        attachmentUrl: orgA.storageKey,
+        attachmentName: "own.bin",
+        attachmentType: "application/octet-stream",
+      });
+
+    expect(editRes.status).toBe(200);
+    expect(editRes.body.attachmentUrl).toBe(orgA.storageKey);
+
+    await db.delete(messages).where(eq(messages.id, created.id)).catch(() => {});
+  });
+
+  it("still allows a plain content-only edit (no attachment fields)", async () => {
+    const created = await createMessage({ content: "before" });
+
+    const editRes = await request(app)
+      .patch(`/api/messages/${created.id}`)
+      .set("Cookie", `auth_token=${orgA.token}`)
+      .set("Content-Type", "application/json")
+      .send({ content: "after" });
+
+    expect(editRes.status).toBe(200);
+    expect(editRes.body.content).toBe("after");
+    expect(editRes.body.isEdited).toBe(true);
+
+    await db.delete(messages).where(eq(messages.id, created.id)).catch(() => {});
+  });
+});

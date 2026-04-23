@@ -454,6 +454,42 @@ import { fileTypeFromBuffer } from "file-type";
 
 const router = Router();
 
+// ── Tenancy gate for client-supplied attachment / voice URLs (Task #1347, #1351) ──
+// The chat history embeds these URLs verbatim and pushes them out over realtime
+// to all participants. Without validation, Org A could post or edit a message in
+// their own conversation referencing an Org B object — leaking the existence/path
+// of that object even though the read endpoints would still ACL-check on access.
+// Allowed forms:
+//   1. /api/conversations/<this-conversation>/files/<filename>
+//   2. /api/conversations/<this-conversation>/voice/<filename>
+//   3. /objects/<entity>  — must belong to caller's org per stored ACL/intent
+// Anything else (including a sibling conversation in the same org) is rejected
+// so we don't leak object existence across tenants OR across conversations.
+async function validateMessageMediaUrl(
+  url: string,
+  kind: "attachment" | "voice",
+  ctx: { conversationId: string; orgId: string; userId: string; role?: string },
+): Promise<void> {
+  if (typeof url !== "string" || url.length === 0) return;
+  const subPath = kind === "voice" ? "voice" : "files";
+  const expectedPrefix = `/api/conversations/${ctx.conversationId}/${subPath}/`;
+  if (url.startsWith(expectedPrefix)) {
+    const filename = url.slice(expectedPrefix.length);
+    if (!filename || filename.includes("/") || filename.includes("..")) {
+      throw Object.assign(new Error("Invalid attachment URL"), { status: 400 });
+    }
+    return;
+  }
+  if (url.startsWith("/objects/")) {
+    await assertStorageKeyBelongsToOrg(url, ctx.orgId, ctx.userId, ctx.role);
+    return;
+  }
+  throw Object.assign(
+    new Error(`${kind === "voice" ? "Voice" : "Attachment"} URL must reference this conversation or an object owned by your organization`),
+    { status: 403 },
+  );
+}
+
 // ── Max voice payload: 2 min × 128 kbps / 8 = 1,920,000 bytes ≈ 2 MB ──
 // This is a conservative upper-bound for WebM/Opus compressed audio at 2 minutes.
 const MAX_VOICE_BYTES = 2 * 1024 * 1024;
@@ -1153,47 +1189,14 @@ const messagingSetup = (async () => {
         return;
       }
 
-      // ── Tenancy gate for client-supplied attachment / voice URLs (Task #1347) ──
-      // The chat history embeds these URLs verbatim and pushes them out over realtime
-      // to all participants. Without validation, Org A could post a message in their
-      // own conversation referencing an Org B object — leaking the existence/path of
-      // that object even though the read endpoints would still ACL-check on access.
-      // Allowed forms:
-      //   1. /api/conversations/<this-conversation>/files/<filename>
-      //   2. /api/conversations/<this-conversation>/voice/<filename>
-      //   3. /objects/<entity>  — must belong to caller's org per stored ACL/intent
-      // Anything else (including a sibling conversation in the same org) is rejected
-      // so we don't leak object existence across tenants OR across conversations.
-      const validateMessageMediaUrl = async (url: string, kind: "attachment" | "voice"): Promise<void> => {
-        if (typeof url !== "string" || url.length === 0) return;
-        const subPath = kind === "voice" ? "voice" : "files";
-        const expectedPrefix = `/api/conversations/${conversationId}/${subPath}/`;
-        if (url.startsWith(expectedPrefix)) {
-          const filename = url.slice(expectedPrefix.length);
-          // Reject path-traversal or nested paths — filename only.
-          if (!filename || filename.includes("/") || filename.includes("..")) {
-            throw Object.assign(new Error("Invalid attachment URL"), { status: 400 });
-          }
-          return;
-        }
-        if (url.startsWith("/objects/")) {
-          await assertStorageKeyBelongsToOrg(url, orgId!, userId, req.user?.role);
-          return;
-        }
-        throw Object.assign(
-          new Error(`${kind === "voice" ? "Voice" : "Attachment"} URL must reference this conversation or an object owned by your organization`),
-          { status: 403 },
-        );
-      };
-
       if (!orgId && (attachmentUrl || voiceUrl)) {
         res.status(400).json({ error: "Organization required" });
         return;
       }
 
       try {
-        if (attachmentUrl) await validateMessageMediaUrl(attachmentUrl, "attachment");
-        if (voiceUrl) await validateMessageMediaUrl(voiceUrl, "voice");
+        if (attachmentUrl) await validateMessageMediaUrl(attachmentUrl, "attachment", { conversationId, orgId: orgId!, userId, role: req.user?.role });
+        if (voiceUrl) await validateMessageMediaUrl(voiceUrl, "voice", { conversationId, orgId: orgId!, userId, role: req.user?.role });
       } catch (err: any) {
         const status = err?.status === 400 ? 400 : 403;
         res.status(status).json({ error: err?.message || "Forbidden" });
@@ -2046,6 +2049,11 @@ const messagingSetup = (async () => {
   // ── EDIT MESSAGE — sender or channel admin only ──
   const editMessageSchema = z.object({
     content: z.string().min(1).max(10000),
+    attachmentUrl: z.string().max(2000).nullable().optional(),
+    attachmentName: z.string().max(500).nullable().optional(),
+    attachmentType: z.string().max(200).nullable().optional(),
+    attachmentSize: z.union([z.number(), z.string()]).nullable().optional(),
+    voiceUrl: z.string().max(2000).nullable().optional(),
   });
 
   router.patch("/api/messages/:msgId", requireAuth, async (req: AuthRequest, res, next) => {
@@ -2055,7 +2063,7 @@ const messagingSetup = (async () => {
       const { msgId } = req.params;
       const validation = editMessageSchema.safeParse(req.body);
       if (!validation.success) return res.status(400).json({ error: "Content cannot be empty" });
-      const { content } = validation.data;
+      const { content, attachmentUrl, attachmentName, attachmentType, attachmentSize, voiceUrl } = validation.data;
 
       if (!content?.trim()) return res.status(400).json({ error: "Content cannot be empty" });
 
@@ -2079,9 +2087,39 @@ const messagingSetup = (async () => {
         if (!admin) return res.status(403).json({ error: "Only the sender or a channel admin can edit messages" });
       }
 
+      // ── Tenancy gate for any edit-supplied attachment / voice URL (Task #1351) ──
+      // Without this, the sender (or a channel admin) could swap a message's
+      // attachmentUrl/voiceUrl to point at another org's object after creation,
+      // re-introducing the cross-tenant leak that #1347 closed on the send path.
+      if ((attachmentUrl !== undefined && attachmentUrl !== null) || (voiceUrl !== undefined && voiceUrl !== null)) {
+        if (!orgId) return res.status(400).json({ error: "Organization required" });
+        try {
+          if (attachmentUrl) {
+            await validateMessageMediaUrl(attachmentUrl, "attachment", { conversationId: msg.conversationId, orgId, userId, role: req.user?.role });
+          }
+          if (voiceUrl) {
+            await validateMessageMediaUrl(voiceUrl, "voice", { conversationId: msg.conversationId, orgId, userId, role: req.user?.role });
+          }
+        } catch (err: any) {
+          const status = err?.status === 400 ? 400 : 403;
+          return res.status(status).json({ error: err?.message || "Forbidden" });
+        }
+      }
+
+      const updateSet: Record<string, unknown> = {
+        content: sanitizeText(content),
+        isEdited: true,
+        editedAt: new Date(),
+      };
+      if (attachmentUrl !== undefined) updateSet.attachmentUrl = attachmentUrl || null;
+      if (attachmentName !== undefined) updateSet.attachmentName = attachmentName || null;
+      if (attachmentType !== undefined) updateSet.attachmentType = attachmentType || null;
+      if (attachmentSize !== undefined) updateSet.attachmentSize = attachmentSize == null ? null : Number(attachmentSize);
+      if (voiceUrl !== undefined) updateSet.voiceUrl = voiceUrl || null;
+
       const [updated] = await db
         .update(messages)
-        .set({ content: sanitizeText(content), isEdited: true, editedAt: new Date() })
+        .set(updateSet)
         .where(eq(messages.id, msgId))
         .returning();
 
