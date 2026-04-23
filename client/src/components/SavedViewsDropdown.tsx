@@ -29,6 +29,13 @@ export type ViewType = "table" | "kanban" | "calendar" | "map";
 export interface AppliedView<F = Record<string, any>> {
   view: ViewType;
   filters: F;
+  /**
+   * Bag of page-specific options that should be saved alongside the view +
+   * filters and restored when the view is applied (e.g. My Work's default
+   * `grouping`). Keys listed in `extraFields` are forwarded to the server on
+   * save and read back on apply.
+   */
+  extras?: Record<string, unknown>;
 }
 
 interface SavedView {
@@ -40,6 +47,9 @@ interface SavedView {
   isShared: boolean;
   creatorName: string | null;
   creatorInitials: string | null;
+  // Pages with extra columns on their dedicated table (e.g. `grouping` on
+  // `my_work_saved_views`) surface those values straight on the row.
+  [extra: string]: unknown;
 }
 
 export interface BuiltInView<F = Record<string, any>> {
@@ -62,6 +72,13 @@ interface Props<F = Record<string, any>> {
    * path here. When overridden, requests omit the `viewKey` param entirely.
    */
   apiBasePath?: string;
+  /**
+   * Names of additional fields to (a) include on save from `current.extras`
+   * and (b) read back from the saved-view row into `extras` on apply.
+   * Used by My Work to round-trip the `grouping` column without polluting
+   * the generic shape of saved views.
+   */
+  extraFields?: string[];
 }
 
 export default function SavedViewsDropdown<F extends Record<string, any> = Record<string, any>>({
@@ -71,6 +88,7 @@ export default function SavedViewsDropdown<F extends Record<string, any> = Recor
   builtInViews = [],
   defaultFilters,
   apiBasePath,
+  extraFields,
 }: Props<F>) {
   const usingDedicatedEndpoint = typeof apiBasePath === "string" && apiBasePath.length > 0;
   const basePath = usingDedicatedEndpoint ? apiBasePath! : "/api/saved-views";
@@ -100,6 +118,16 @@ export default function SavedViewsDropdown<F extends Record<string, any> = Recor
     },
   });
 
+  const buildExtraPayload = (): Record<string, unknown> => {
+    if (!extraFields || extraFields.length === 0) return {};
+    const out: Record<string, unknown> = {};
+    const src = current.extras ?? {};
+    for (const k of extraFields) {
+      if (k in src) out[k] = src[k];
+    }
+    return out;
+  };
+
   const createMutation = useMutation({
     mutationFn: async (data: { name: string; isShared: boolean }) => {
       const body: Record<string, unknown> = {
@@ -107,6 +135,7 @@ export default function SavedViewsDropdown<F extends Record<string, any> = Recor
         view: current.view,
         filters: current.filters,
         isShared: data.isShared,
+        ...buildExtraPayload(),
       };
       if (!usingDedicatedEndpoint) body.viewKey = viewKey;
       const res = await apiRequest("POST", basePath, body);
@@ -166,6 +195,7 @@ export default function SavedViewsDropdown<F extends Record<string, any> = Recor
       const res = await apiRequest("PATCH", `${basePath}/${sv.id}`, {
         view: current.view,
         filters: current.filters,
+        ...buildExtraPayload(),
       });
       return res.json();
     },
@@ -203,7 +233,13 @@ export default function SavedViewsDropdown<F extends Record<string, any> = Recor
       const parsed = JSON.parse(sv.filtersJson || "{}");
       filters = { ...defaultFilters, ...parsed } as F;
     } catch {}
-    onApply({ view: sv.view, filters });
+    const extras: Record<string, unknown> = {};
+    if (extraFields && extraFields.length > 0) {
+      for (const k of extraFields) {
+        if (k in sv) extras[k] = (sv as Record<string, unknown>)[k];
+      }
+    }
+    onApply({ view: sv.view, filters, extras });
   };
 
   const canModify = (sv: SavedView) => sv.userId === currentUserId || isAdmin;

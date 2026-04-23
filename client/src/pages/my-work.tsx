@@ -541,10 +541,15 @@ export default function MyWorkPage() {
             apiBasePath="/api/me/work/views"
             defaultFilters={DEFAULT_FILTERS}
             builtInViews={BUILT_IN_VIEWS}
-            current={{ view, filters }}
+            extraFields={["grouping"]}
+            current={{ view, filters, extras: { grouping } }}
             onApply={(applied) => {
               handleViewChange(applied.view === "map" ? "table" : applied.view);
               setFilters({ ...DEFAULT_FILTERS, ...(applied.filters as Partial<Filters>) });
+              const g = applied.extras?.grouping;
+              if (typeof g === "string" && (GROUPING_OPTIONS as readonly string[]).includes(g)) {
+                handleGroupingChange(g as Grouping);
+              }
             }}
           />
         </div>

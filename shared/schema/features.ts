@@ -9341,6 +9341,10 @@ export const myWorkSavedViews = pgTable("my_work_saved_views", {
   name: text("name").notNull(),
   view: text("view").notNull(),
   filtersJson: text("filters_json").notNull().default("{}"),
+  // Per-view default grouping (e.g. "none" | "project" | "status" | "due-week").
+  // Nullable so older rows that pre-date the column simply fall back to the
+  // user's last-used grouping when the view is applied.
+  grouping: text("grouping"),
   isShared: boolean("is_shared").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({

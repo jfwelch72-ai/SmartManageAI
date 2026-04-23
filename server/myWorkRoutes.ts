@@ -1082,6 +1082,19 @@ router.get("/api/me/work", requireAuth, async (req: AuthRequest, res: Response, 
  * ------------------------------------------------------------------ */
 
 const MY_WORK_VIEW_VALUES = ["table", "kanban", "calendar"] as const;
+const MY_WORK_GROUPING_VALUES = ["none", "project", "status", "due-week"] as const;
+// `null` is allowed so a saved view can explicitly carry "no preference" and
+// fall back to the user's local default. The empty string is normalized to
+// null to keep the column tidy.
+const groupingSchema = z
+  .enum(MY_WORK_GROUPING_VALUES)
+  .nullable()
+  .or(z.literal(""));
+function normalizeGrouping(g: unknown): string | null | undefined {
+  if (g === undefined) return undefined;
+  if (g === null || g === "") return null;
+  return g as string;
+}
 
 function isAdminRole(role: string | null | undefined): boolean {
   return role === "ADMIN" || role === "SUPER_ADMIN";
@@ -1141,8 +1154,10 @@ router.post("/api/me/work/views", requireAuth, async (req: AuthRequest, res: Res
       view: z.enum(MY_WORK_VIEW_VALUES),
       filters: z.record(z.any()).optional(),
       isShared: z.boolean().optional(),
+      grouping: groupingSchema.optional(),
     });
     const parsed = schema.parse(req.body);
+    const grouping = normalizeGrouping(parsed.grouping);
     const [created] = await db
       .insert(myWorkSavedViews)
       .values({
@@ -1152,6 +1167,7 @@ router.post("/api/me/work/views", requireAuth, async (req: AuthRequest, res: Res
         view: parsed.view,
         filtersJson: JSON.stringify(parsed.filters || {}),
         isShared: parsed.isShared === true,
+        grouping: grouping ?? null,
       })
       .returning();
     return res.status(201).json(created);
@@ -1177,6 +1193,7 @@ router.patch("/api/me/work/views/:id", requireAuth, async (req: AuthRequest, res
       isShared: z.boolean().optional(),
       filters: z.record(z.any()).optional(),
       view: z.enum(MY_WORK_VIEW_VALUES).optional(),
+      grouping: groupingSchema.optional(),
     });
     const parsed = schema.parse(req.body);
 
@@ -1200,6 +1217,7 @@ router.patch("/api/me/work/views/:id", requireAuth, async (req: AuthRequest, res
     if (parsed.isShared !== undefined) updates.isShared = parsed.isShared;
     if (parsed.view !== undefined) updates.view = parsed.view;
     if (parsed.filters !== undefined) updates.filtersJson = JSON.stringify(parsed.filters);
+    if (parsed.grouping !== undefined) updates.grouping = normalizeGrouping(parsed.grouping) ?? null;
 
     if (Object.keys(updates).length === 0) {
       return res.json(existing);
