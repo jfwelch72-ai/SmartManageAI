@@ -437,18 +437,24 @@ export async function listPresetApplications(
   page: number = 1,
   pageSize: number = 20,
   kind?: PresetApplicationKind,
+  tradeType?: string,
+  appliedById?: string,
 ): Promise<PresetApplicationHistoryPage> {
   const safePage = Math.max(1, Math.floor(page));
   const safePageSize = Math.min(100, Math.max(1, Math.floor(pageSize)));
   const offset = (safePage - 1) * safePageSize;
 
-  const whereClause =
-    kind === "apply" || kind === "reset_drift"
-      ? and(
-          eq(featureFlagPresetApplications.organizationId, orgId),
-          eq(featureFlagPresetApplications.kind, kind),
-        )
-      : eq(featureFlagPresetApplications.organizationId, orgId);
+  const conditions = [eq(featureFlagPresetApplications.organizationId, orgId)];
+  if (kind === "apply" || kind === "reset_drift") {
+    conditions.push(eq(featureFlagPresetApplications.kind, kind));
+  }
+  if (tradeType) {
+    conditions.push(eq(featureFlagPresetApplications.tradeType, tradeType));
+  }
+  if (appliedById) {
+    conditions.push(eq(featureFlagPresetApplications.appliedById, appliedById));
+  }
+  const whereClause = conditions.length === 1 ? conditions[0] : and(...conditions);
 
   const rows = await db
     .select({
@@ -495,6 +501,58 @@ export async function listPresetApplications(
     page: safePage,
     pageSize: safePageSize,
   };
+}
+
+export interface PresetHistoryFilterOptions {
+  tradeTypes: string[];
+  appliedBy: { id: string; firstName: string; lastName: string; email: string }[];
+}
+
+/**
+ * Task #1422 — return the distinct trade types and users that appear on the
+ * Preset history audit rows for an organization, so the Preset history card
+ * can populate its "trade type" and "applied by" filter dropdowns with only
+ * the values that will actually match a row (instead of every trade in the
+ * enum or every user in the org).
+ */
+export async function getPresetHistoryFilterOptions(
+  orgId: string,
+): Promise<PresetHistoryFilterOptions> {
+  const tradeRows = await db
+    .selectDistinct({ tradeType: featureFlagPresetApplications.tradeType })
+    .from(featureFlagPresetApplications)
+    .where(eq(featureFlagPresetApplications.organizationId, orgId));
+
+  const userRows = await db
+    .selectDistinct({
+      id: users.id,
+      firstName: users.firstName,
+      lastName: users.lastName,
+      email: users.email,
+    })
+    .from(featureFlagPresetApplications)
+    .innerJoin(users, eq(users.id, featureFlagPresetApplications.appliedById))
+    .where(eq(featureFlagPresetApplications.organizationId, orgId));
+
+  const tradeTypes = tradeRows
+    .map((r) => r.tradeType)
+    .filter((t): t is string => !!t)
+    .sort();
+
+  const appliedBy = userRows
+    .map((r) => ({
+      id: r.id,
+      firstName: r.firstName ?? "",
+      lastName: r.lastName ?? "",
+      email: r.email ?? "",
+    }))
+    .sort((a, b) => {
+      const nameA = `${a.firstName} ${a.lastName}`.trim().toLowerCase() || a.email.toLowerCase();
+      const nameB = `${b.firstName} ${b.lastName}`.trim().toLowerCase() || b.email.toLowerCase();
+      return nameA.localeCompare(nameB);
+    });
+
+  return { tradeTypes, appliedBy };
 }
 
 /**

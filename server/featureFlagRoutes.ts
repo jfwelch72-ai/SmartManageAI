@@ -76,8 +76,34 @@ router.get("/:orgId/preset-history", requireAuth, async (req, res, next) => {
     const kindParam = typeof req.query.kind === "string" ? req.query.kind : undefined;
     const kind =
       kindParam === "apply" || kindParam === "reset_drift" ? kindParam : undefined;
-    const history = await flagService.listPresetApplications(req.params.orgId, page, pageSize, kind);
+    const tradeTypeParam = typeof req.query.tradeType === "string" ? req.query.tradeType.trim() : "";
+    const tradeType = tradeTypeParam && (tradeTypeEnum.enumValues as readonly string[]).includes(tradeTypeParam)
+      ? tradeTypeParam
+      : undefined;
+    const appliedByIdParam = typeof req.query.appliedById === "string" ? req.query.appliedById.trim() : "";
+    const appliedById = appliedByIdParam || undefined;
+    const history = await flagService.listPresetApplications(
+      req.params.orgId,
+      page,
+      pageSize,
+      kind,
+      tradeType,
+      appliedById,
+    );
     res.json(history);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:orgId/preset-history-filters", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (user.role !== "SUPER_ADMIN" && (user.role !== "ADMIN" || user.organizationId !== req.params.orgId)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    const options = await flagService.getPresetHistoryFilterOptions(req.params.orgId);
+    res.json(options);
   } catch (err) {
     next(err);
   }

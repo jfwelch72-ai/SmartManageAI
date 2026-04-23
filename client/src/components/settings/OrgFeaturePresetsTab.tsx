@@ -67,6 +67,11 @@ interface PresetHistoryResponse {
   pageSize: number;
 }
 
+interface PresetHistoryFiltersResponse {
+  tradeTypes: string[];
+  appliedBy: { id: string; firstName: string; lastName: string; email: string }[];
+}
+
 interface ManualFlagChangeItem {
   id: string;
   flagKey: FeatureFlagKey;
@@ -106,6 +111,8 @@ export function OrgFeaturePresetsTab({
   const [pendingTradeType, setPendingTradeType] = useState<string | null>(null);
   const [historyPage, setHistoryPage] = useState(1);
   const [historyKindFilter, setHistoryKindFilter] = useState<"all" | "apply" | "reset_drift">("all");
+  const [historyTradeFilter, setHistoryTradeFilter] = useState<string>("all");
+  const [historyAppliedByFilter, setHistoryAppliedByFilter] = useState<string>("all");
   const [manualPage, setManualPage] = useState(1);
   const HISTORY_PAGE_SIZE = 10;
   const [resetAllConfirmOpen, setResetAllConfirmOpen] = useState(false);
@@ -156,6 +163,8 @@ export function OrgFeaturePresetsTab({
       historyPage,
       HISTORY_PAGE_SIZE,
       historyKindFilter,
+      historyTradeFilter,
+      historyAppliedByFilter,
     ],
     queryFn: async () => {
       const params = new URLSearchParams({
@@ -165,9 +174,27 @@ export function OrgFeaturePresetsTab({
       if (historyKindFilter !== "all") {
         params.set("kind", historyKindFilter);
       }
+      if (historyTradeFilter !== "all") {
+        params.set("tradeType", historyTradeFilter);
+      }
+      if (historyAppliedByFilter !== "all") {
+        params.set("appliedById", historyAppliedByFilter);
+      }
       const res = await apiRequest(
         "GET",
         `/api/feature-flags/${orgId}/preset-history?${params.toString()}`,
+      );
+      return res.json();
+    },
+    enabled: canManage && !!orgId,
+  });
+
+  const { data: historyFiltersData } = useQuery<PresetHistoryFiltersResponse>({
+    queryKey: ["/api/feature-flags", orgId, "preset-history-filters"],
+    queryFn: async () => {
+      const res = await apiRequest(
+        "GET",
+        `/api/feature-flags/${orgId}/preset-history-filters`,
       );
       return res.json();
     },
@@ -202,6 +229,7 @@ export function OrgFeaturePresetsTab({
       queryClient.invalidateQueries({ queryKey: ["/api/feature-flags"] });
       queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId, "last-preset"] });
       queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId, "preset-history"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId, "preset-history-filters"] });
       setHistoryPage(1);
       const label = tradeLabelMap[tradeType] || tradeType;
       toast({
@@ -246,6 +274,7 @@ export function OrgFeaturePresetsTab({
       queryClient.invalidateQueries({ queryKey: ["/api/feature-flags"] });
       queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId, "last-preset"] });
       queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId, "preset-history"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId, "preset-history-filters"] });
       setHistoryPage(1);
       const count = data.reset?.length ?? 0;
       toast({
@@ -690,6 +719,86 @@ export function OrgFeaturePresetsTab({
                 Drift resets
               </ToggleGroupItem>
             </ToggleGroup>
+            <Select
+              value={historyTradeFilter}
+              onValueChange={(value) => {
+                if (value === historyTradeFilter) return;
+                setHistoryTradeFilter(value);
+                setHistoryPage(1);
+              }}
+            >
+              <SelectTrigger
+                className="h-8 w-auto min-w-[10rem] text-xs"
+                data-testid="select-preset-history-trade"
+              >
+                <SelectValue placeholder="Any trade" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" data-testid="select-item-preset-history-trade-all">
+                  Any trade
+                </SelectItem>
+                {(historyFiltersData?.tradeTypes ?? []).map((t) => (
+                  <SelectItem
+                    key={t}
+                    value={t}
+                    data-testid={`select-item-preset-history-trade-${t}`}
+                  >
+                    {tradeLabelMap[t] || t}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={historyAppliedByFilter}
+              onValueChange={(value) => {
+                if (value === historyAppliedByFilter) return;
+                setHistoryAppliedByFilter(value);
+                setHistoryPage(1);
+              }}
+            >
+              <SelectTrigger
+                className="h-8 w-auto min-w-[10rem] text-xs"
+                data-testid="select-preset-history-applied-by"
+              >
+                <SelectValue placeholder="Anyone" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all" data-testid="select-item-preset-history-applied-by-all">
+                  Anyone
+                </SelectItem>
+                {(historyFiltersData?.appliedBy ?? []).map((u) => {
+                  const name = `${u.firstName} ${u.lastName}`.trim() || u.email;
+                  return (
+                    <SelectItem
+                      key={u.id}
+                      value={u.id}
+                      data-testid={`select-item-preset-history-applied-by-${u.id}`}
+                    >
+                      {name}
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+            {(historyKindFilter !== "all" ||
+              historyTradeFilter !== "all" ||
+              historyAppliedByFilter !== "all") && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 px-2 text-xs"
+                onClick={() => {
+                  setHistoryKindFilter("all");
+                  setHistoryTradeFilter("all");
+                  setHistoryAppliedByFilter("all");
+                  setHistoryPage(1);
+                }}
+                data-testid="button-preset-history-clear-filters"
+              >
+                Clear filters
+              </Button>
+            )}
           </div>
           {historyLoading ? (
             <div className="space-y-2">
@@ -702,11 +811,34 @@ export function OrgFeaturePresetsTab({
               className="text-sm text-muted-foreground py-4 text-center"
               data-testid="text-preset-history-empty"
             >
-              {historyKindFilter === "apply"
-                ? "No preset applications recorded yet."
-                : historyKindFilter === "reset_drift"
-                  ? "No drift resets recorded yet."
-                  : "No preset history recorded yet."}
+              {(() => {
+                const filtered =
+                  historyKindFilter !== "all" ||
+                  historyTradeFilter !== "all" ||
+                  historyAppliedByFilter !== "all";
+                if (filtered) {
+                  const parts: string[] = [];
+                  if (historyKindFilter === "apply") parts.push("preset applications");
+                  else if (historyKindFilter === "reset_drift") parts.push("drift resets");
+                  else parts.push("preset history");
+                  if (historyTradeFilter !== "all") {
+                    parts.push(
+                      `for ${tradeLabelMap[historyTradeFilter] || historyTradeFilter}`,
+                    );
+                  }
+                  if (historyAppliedByFilter !== "all") {
+                    const u = historyFiltersData?.appliedBy.find(
+                      (x) => x.id === historyAppliedByFilter,
+                    );
+                    const name = u
+                      ? `${u.firstName} ${u.lastName}`.trim() || u.email
+                      : "this user";
+                    parts.push(`by ${name}`);
+                  }
+                  return `No ${parts.join(" ")} match these filters.`;
+                }
+                return "No preset history recorded yet.";
+              })()}
             </div>
           ) : (
             <>
