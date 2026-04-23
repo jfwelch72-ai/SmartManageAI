@@ -34,6 +34,8 @@ function tableName(t: unknown): string {
   return "<unknown>";
 }
 
+const whereCallsByTable: Record<string, unknown[]> = {};
+
 function makeSelectChain() {
   let resolvedTable = "<unknown>";
   const chain: Record<string, unknown> = {};
@@ -41,7 +43,10 @@ function makeSelectChain() {
     resolvedTable = tableName(t);
     return chain;
   };
-  chain.where = () => chain;
+  chain.where = (predicate: unknown) => {
+    (whereCallsByTable[resolvedTable] ??= []).push(predicate);
+    return chain;
+  };
   chain.innerJoin = () => chain;
   chain.leftJoin = () => chain;
   chain.limit = () => chain;
@@ -96,10 +101,33 @@ let processSwpppOverdueCorrectiveActions: typeof import("../jobs/jobRunner")["pr
 
 beforeEach(async () => {
   for (const k of Object.keys(selectByTable)) delete selectByTable[k];
+  for (const k of Object.keys(whereCallsByTable)) delete whereCallsByTable[k];
   insertedNotifications.length = 0;
   updateCalls.length = 0;
   ({ processSwpppOverdueCorrectiveActions } = await import("../jobs/jobRunner"));
 });
+
+// Walk a drizzle SQL/condition object collecting referenced column names.
+// Drizzle columns expose both `.name` and `.table`, so we use that as the
+// signature. We recurse into arrays and `queryChunks` (the array drizzle
+// uses for sql`` template literals + composite conditions).
+function collectColumnNames(node: unknown, acc: Set<string> = new Set(), seen: Set<unknown> = new Set()): Set<string> {
+  if (!node || typeof node !== "object") return acc;
+  if (seen.has(node)) return acc;
+  seen.add(node);
+  const obj = node as Record<string, unknown>;
+  if (typeof obj.name === "string" && obj.table && typeof obj.table === "object") {
+    acc.add(obj.name);
+  }
+  if (Array.isArray(node)) {
+    for (const x of node) collectColumnNames(x, acc, seen);
+    return acc;
+  }
+  for (const key of ["queryChunks", "chunks", "left", "right", "value", "values", "expr", "condition"]) {
+    if (key in obj) collectColumnNames(obj[key], acc, seen);
+  }
+  return acc;
+}
 
 function queueOverdueInspections(rows: Row[]) {
   (selectByTable["swppp_inspections"] ??= []).push(rows);
@@ -345,6 +373,144 @@ describe("processSwpppOverdueCorrectiveActions", () => {
     expect(insertedNotifications).toHaveLength(0);
     expect(updateCalls).toHaveLength(1);
     expect(updateCalls[0].values.lastOverdueNotifiedAt).toEqual(NOW);
+  });
+
+  it("uses the per-org cap (N) in the 'Reminder K of N' tag", async () => {
+    // Task #1286 — orgs can dial the follow-up cap up or down via
+    // `organizations.swppp_overdue_reminder_max_count`. The job's
+    // SELECT projects that value as `reminderMaxCount`, and the title
+    // builder must use it instead of the legacy hard-coded default of
+    // 5. We simulate an org with cap=2 sending its 2nd (final) follow-
+    // up: previous count is 1, so this fanout is "Reminder 2 of 2".
+    // If the COALESCE / org-cap projection regresses to the legacy
+    // default, the title would read "Reminder 2 of 5" and this test
+    // would fail.
+    const yesterday = new Date(NOW.getTime() - 23 * 60 * 60 * 1000);
+    queueOverdueInspections([
+      {
+        id: "insp-cap",
+        organizationId: "org-tight",
+        projectId: "proj-1",
+        inspectionDate: "2026-04-15",
+        correctiveActionDueDate: "2026-04-20",
+        correctiveActionAssigneeId: "user-assignee",
+        correctiveActions: "Repair silt fence on east berm",
+        lastOverdueNotifiedAt: yesterday,
+        overdueReminderCount: 1,
+        // Per-org overrides as projected by the SELECT.
+        reminderMaxCount: 2,
+        reminderIntervalHours: 22,
+      },
+    ]);
+    queueProjects([
+      { id: "proj-1", organizationId: "org-tight", name: "I-95 Widening", projectManagerId: "user-pm" },
+    ]);
+
+    await processSwpppOverdueCorrectiveActions({ now: NOW });
+
+    const flat = insertedNotifications.flat() as Array<{ title: string }>;
+    expect(flat.length).toBe(2);
+    for (const n of flat) {
+      expect(n.title).toContain("Reminder 2 of 2");
+      expect(n.title).not.toContain("of 5");
+    }
+    // Sanity: the SELECT must join `organizations` and gate the
+    // follow-up cadence on the org-level columns. Detect a regression
+    // to hard-coded constants by inspecting the WHERE predicate the
+    // job built against `swppp_inspections`.
+    const wheres = whereCallsByTable["swppp_inspections"] ?? [];
+    expect(wheres.length).toBeGreaterThan(0);
+    const cols = new Set<string>();
+    for (const w of wheres) collectColumnNames(w, cols);
+    expect(cols.has("swppp_overdue_reminder_max_count")).toBe(true);
+  });
+
+  it("stops fanout at the per-org cap boundary (count == cap yields zero notifications)", async () => {
+    // Boundary case for Task #1286: when overdue_reminder_count
+    // already equals the per-org cap, the SQL gate
+    // `${overdueReminderCount} < ${orgCapExpr}` is false, so the
+    // SELECT returns no rows for that inspection. We model that here
+    // by leaving the swppp_inspections queue empty and asserting:
+    //   (a) no notifications and no updates fire, AND
+    //   (b) the WHERE predicate references BOTH
+    //       `overdue_reminder_count` and the per-org column
+    //       `swppp_overdue_reminder_max_count`. (b) is the regression
+    //       guard — if the cap comparison ever regresses to a
+    //       hard-coded literal, the per-org column would no longer
+    //       appear in the predicate and an at-cap row could leak
+    //       through with the wrong escalation policy.
+    queueOverdueInspections([]);
+
+    await processSwpppOverdueCorrectiveActions({ now: NOW });
+
+    expect(insertedNotifications).toHaveLength(0);
+    expect(updateCalls).toHaveLength(0);
+
+    const wheres = whereCallsByTable["swppp_inspections"] ?? [];
+    expect(wheres.length).toBeGreaterThan(0);
+    const cols = new Set<string>();
+    for (const w of wheres) collectColumnNames(w, cols);
+    expect(cols.has("overdue_reminder_count")).toBe(true);
+    expect(cols.has("swppp_overdue_reminder_max_count")).toBe(true);
+  });
+
+  it("respects a per-org shorter interval and re-fires sooner than the legacy 22h", async () => {
+    // Task #1286 — orgs can shrink the follow-up gap via
+    // `organizations.swppp_overdue_reminder_interval_hours`. Here we
+    // simulate an org with a 6h interval whose last fanout was 7h
+    // ago. Under the legacy hard-coded 22h gate this row would NOT be
+    // returned by the SELECT; under the per-org gate it should be.
+    // We assert two things:
+    //   1. The SELECT WHERE predicate references the org-level
+    //      interval column (proves the join + COALESCE is wired up;
+    //      a regression to a hard-coded interval would drop this
+    //      reference).
+    //   2. The row is processed and a follow-up reminder is fanned
+    //      out (the mock returns whatever rows we queue, so this
+    //      additionally verifies the rest of the pipeline accepts
+    //      the per-org-projected fields without error).
+    const sevenHoursAgo = new Date(NOW.getTime() - 7 * 60 * 60 * 1000);
+    queueOverdueInspections([
+      {
+        id: "insp-fast",
+        organizationId: "org-fast",
+        projectId: "proj-1",
+        inspectionDate: "2026-04-15",
+        correctiveActionDueDate: "2026-04-20",
+        correctiveActionAssigneeId: "user-assignee",
+        correctiveActions: "Repair silt fence on east berm",
+        lastOverdueNotifiedAt: sevenHoursAgo,
+        overdueReminderCount: 0,
+        reminderMaxCount: 5,
+        reminderIntervalHours: 6,
+      },
+    ]);
+    queueProjects([
+      { id: "proj-1", organizationId: "org-fast", name: "I-95 Widening", projectManagerId: "user-pm" },
+    ]);
+
+    await processSwpppOverdueCorrectiveActions({ now: NOW });
+
+    const wheres = whereCallsByTable["swppp_inspections"] ?? [];
+    expect(wheres.length).toBeGreaterThan(0);
+    const cols = new Set<string>();
+    for (const w of wheres) collectColumnNames(w, cols);
+    // Both halves of the cadence gate must reference org-level
+    // columns. If the interval predicate regresses to e.g.
+    // `interval '22 hour'`, the column reference disappears and
+    // shorter per-org intervals stop taking effect.
+    expect(cols.has("swppp_overdue_reminder_interval_hours")).toBe(true);
+    expect(cols.has("last_overdue_notified_at")).toBe(true);
+
+    const flat = insertedNotifications.flat() as Array<{ title: string }>;
+    expect(flat.length).toBe(2);
+    // First follow-up under the per-org cap of 5.
+    for (const n of flat) {
+      expect(n.title).toContain("Reminder 1 of 5");
+    }
+    // Follow-up branch should bump the counter, not just stamp the marker.
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].values.overdueReminderCount).toBeDefined();
   });
 
   it("does nothing when no inspections are overdue", async () => {
