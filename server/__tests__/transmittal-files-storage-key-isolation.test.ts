@@ -290,4 +290,120 @@ describe("Task #1343 — transmittal attachment storage-key tenancy", () => {
 
     expect([403, 404]).toContain(res.status);
   });
+
+  // Task #1336 — defense-in-depth tenancy gate on DELETE
+  it("rejects DELETE /api/transmittals/:id/files/:fileId when stored objectKey belongs to another org", async () => {
+    // Plant a legacy attachment on Org A's transmittal whose stored
+    // objectKey/fileUrl actually belongs to Org B. The parent-transmittal
+    // tenancy check would let Org A through; the new defense-in-depth
+    // assertStorageKeyBelongsToOrg call must catch this.
+    const planted = {
+      id: `file_planted_${Date.now()}`,
+      fileUrl: orgB.storageKey,
+      fileName: "planted.bin",
+      fileSize: 5,
+      mimeType: "application/octet-stream",
+      description: "",
+      uploadedById: orgA.userId,
+      uploadedByName: "Transmittal Tester-A",
+      uploadedAt: new Date().toISOString(),
+      objectKey: orgB.storageKey,
+    };
+    await db
+      .update(documentTransmittals)
+      .set({ attachmentsJson: JSON.stringify([planted]) })
+      .where(eq(documentTransmittals.id, orgA.transmittalId));
+
+    const res = await request(app)
+      .delete(`/api/transmittals/${orgA.transmittalId}/files/${planted.id}`)
+      .set("Cookie", `auth_token=${orgA.token}`);
+
+    expect([403, 404]).toContain(res.status);
+    expect(res.status).not.toBe(204);
+
+    // Row should still be present — DELETE must not have mutated state.
+    const [row] = await db
+      .select({ attachmentsJson: documentTransmittals.attachmentsJson })
+      .from(documentTransmittals)
+      .where(eq(documentTransmittals.id, orgA.transmittalId));
+    const remaining = row?.attachmentsJson ? JSON.parse(row.attachmentsJson) : [];
+    expect(remaining.find((f: any) => f.id === planted.id)).toBeTruthy();
+
+    // Reset for any subsequent tests
+    await db
+      .update(documentTransmittals)
+      .set({ attachmentsJson: null })
+      .where(eq(documentTransmittals.id, orgA.transmittalId))
+      .catch(() => {});
+  });
+
+  it("rejects DELETE /api/transmittals/:id/files/:fileId when no storage reference is recorded", async () => {
+    // Legacy/corrupt row with neither objectKey nor fileUrl: cannot prove
+    // tenancy, so DELETE must fail closed.
+    const planted: any = {
+      id: `file_noref_${Date.now()}`,
+      fileName: "legacy.bin",
+      fileSize: 5,
+      mimeType: "application/octet-stream",
+      description: "",
+      uploadedById: orgA.userId,
+      uploadedByName: "Transmittal Tester-A",
+      uploadedAt: new Date().toISOString(),
+    };
+    await db
+      .update(documentTransmittals)
+      .set({ attachmentsJson: JSON.stringify([planted]) })
+      .where(eq(documentTransmittals.id, orgA.transmittalId));
+
+    const res = await request(app)
+      .delete(`/api/transmittals/${orgA.transmittalId}/files/${planted.id}`)
+      .set("Cookie", `auth_token=${orgA.token}`);
+
+    expect(res.status).toBe(403);
+
+    const [row] = await db
+      .select({ attachmentsJson: documentTransmittals.attachmentsJson })
+      .from(documentTransmittals)
+      .where(eq(documentTransmittals.id, orgA.transmittalId));
+    const remaining = row?.attachmentsJson ? JSON.parse(row.attachmentsJson) : [];
+    expect(remaining.find((f: any) => f.id === planted.id)).toBeTruthy();
+
+    await db
+      .update(documentTransmittals)
+      .set({ attachmentsJson: null })
+      .where(eq(documentTransmittals.id, orgA.transmittalId))
+      .catch(() => {});
+  });
+
+  it("allows DELETE /api/transmittals/:id/files/:fileId when stored objectKey belongs to caller org", async () => {
+    const planted = {
+      id: `file_owned_${Date.now()}`,
+      fileUrl: orgA.storageKey,
+      fileName: "owned.bin",
+      fileSize: 5,
+      mimeType: "application/octet-stream",
+      description: "",
+      uploadedById: orgA.userId,
+      uploadedByName: "Transmittal Tester-A",
+      uploadedAt: new Date().toISOString(),
+      objectKey: orgA.storageKey,
+    };
+    await db
+      .update(documentTransmittals)
+      .set({ attachmentsJson: JSON.stringify([planted]) })
+      .where(eq(documentTransmittals.id, orgA.transmittalId));
+
+    const res = await request(app)
+      .delete(`/api/transmittals/${orgA.transmittalId}/files/${planted.id}`)
+      .set("Cookie", `auth_token=${orgA.token}`);
+
+    expect(res.status).toBe(204);
+
+    const [row] = await db
+      .select({ attachmentsJson: documentTransmittals.attachmentsJson })
+      .from(documentTransmittals)
+      .where(eq(documentTransmittals.id, orgA.transmittalId));
+    const remaining = row?.attachmentsJson ? JSON.parse(row.attachmentsJson) : [];
+    expect(remaining.find((f: any) => f.id === planted.id)).toBeFalsy();
+  });
 });

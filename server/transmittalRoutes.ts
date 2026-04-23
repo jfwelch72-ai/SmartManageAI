@@ -719,6 +719,28 @@ router.delete("/transmittals/:id/files/:fileId", requireAuth, requireRole("SUPER
       return res.status(403).json({ error: "You don't have permission to delete this file" });
     }
 
+    // Defense in depth (Task #1336): even though the parent transmittal already
+    // belongs to the caller's org, verify the stored objectKey/fileUrl belongs
+    // to the caller's org before mutating the attachments row. This protects
+    // against legacy rows that may have been planted with a foreign objectKey
+    // before POST-time tenancy checks were added.
+    if (!isSuperAdmin && orgId) {
+      const storageRef =
+        (typeof file.objectKey === "string" && file.objectKey) ||
+        (typeof file.fileUrl === "string" && file.fileUrl) ||
+        "";
+      if (!storageRef) {
+        // Fail closed: a legacy row with no resolvable storage key cannot be
+        // proven to belong to the caller's org, so we refuse to mutate it.
+        return res.status(403).json({ error: "Cannot verify file ownership" });
+      }
+      try {
+        await assertStorageKeyBelongsToOrg(storageRef, orgId, req.user!.id, userRole);
+      } catch (err: any) {
+        return res.status(err?.status || 403).json({ error: err?.message || "Forbidden" });
+      }
+    }
+
     const updatedAttachments = currentAttachments.filter((_: any, i: number) => i !== fileIndex);
 
     await db.update(documentTransmittals).set({
