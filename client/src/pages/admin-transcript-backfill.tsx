@@ -1661,6 +1661,11 @@ export default function AdminTranscriptBackfillPage() {
 
       <BackfillAlertDeliveriesCard />
 
+      <BackfillAlertFailuresDigestCard
+        onJumpToJob={handleJumpToHistoryRow}
+        isJumping={isJumping}
+      />
+
       {job && (
         <Card data-testid="card-progress">
           <CardHeader className="pb-3">
@@ -5224,6 +5229,254 @@ export function BackfillAdminAlertFailureModesCard() {
               })}
             </ul>
           </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Task #1077 — windowed (24h / 7d) "recent failures" rollup. Mirrors the
+// daily digest email's per-channel totals + recent-failures sample so an
+// admin who clicks the digest's deep link sees the same numbers in-app.
+// Sources its data from the same aggregation helper the digest scheduler
+// uses (`aggregateRecentCrmTranscriptBackfillAlertFailures`).
+// ---------------------------------------------------------------------------
+interface BackfillAlertFailuresDigest {
+  windowHours: number;
+  since: string;
+  total: number;
+  slackCount: number;
+  emailCount: number;
+  recentFailures: Array<{
+    jobId: string | null;
+    channel: "slack" | "email";
+    recipientSummary: string;
+    errorMessage: string | null;
+    attemptedAt: string;
+  }>;
+}
+
+const FAILURES_DIGEST_WINDOWS: Array<{
+  hours: number;
+  label: string;
+  testId: string;
+}> = [
+  { hours: 24, label: "Last 24h", testId: "tab-failures-window-24h" },
+  { hours: 168, label: "Last 7d", testId: "tab-failures-window-7d" },
+];
+
+function failuresDigestKey(windowHours: number) {
+  return [
+    "/api/crm/calls/transcripts/backfill/alert-failures-digest",
+    windowHours,
+  ] as const;
+}
+
+function failuresDigestPath(windowHours: number) {
+  return `/api/crm/calls/transcripts/backfill/alert-failures-digest?windowHours=${windowHours}`;
+}
+
+function BackfillAlertFailuresDigestCard({
+  onJumpToJob,
+  isJumping,
+}: {
+  onJumpToJob: (jobId: string) => void | Promise<void>;
+  isJumping: boolean;
+}) {
+  const [windowHours, setWindowHours] = useState<number>(24);
+  const queryKey = failuresDigestKey(windowHours);
+  const failuresQuery = useQuery<BackfillAlertFailuresDigest>({
+    queryKey,
+    queryFn: async () => {
+      const res = await apiRequest("GET", failuresDigestPath(windowHours));
+      return (await res.json()) as BackfillAlertFailuresDigest;
+    },
+  });
+
+  const data = failuresQuery.data;
+  const failures = data?.recentFailures ?? [];
+
+  return (
+    <Card data-testid="card-alert-failures-digest">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <CardTitle>Recent alert failures</CardTitle>
+            <CardDescription>
+              Same per-channel rollup the daily digest email sends — pick a
+              window to see what's failed in that range. Use this to drill
+              in from the digest's deep link without losing context.
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => queryClient.invalidateQueries({ queryKey })}
+            disabled={failuresQuery.isFetching}
+            data-testid="button-refresh-alert-failures-digest"
+          >
+            {failuresQuery.isFetching ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4 mr-2" />
+            )}
+            Refresh
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div
+          className="inline-flex rounded-md border bg-muted/40 p-0.5"
+          role="tablist"
+          data-testid="group-failures-window"
+        >
+          {FAILURES_DIGEST_WINDOWS.map((w) => {
+            const active = w.hours === windowHours;
+            return (
+              <button
+                key={w.hours}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setWindowHours(w.hours)}
+                className={`px-3 py-1 text-xs rounded ${
+                  active
+                    ? "bg-background shadow-sm font-medium"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                data-testid={w.testId}
+              >
+                {w.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {failuresQuery.isLoading ? (
+          <Loader2
+            className="h-6 w-6 animate-spin text-muted-foreground"
+            data-testid="status-loading-alert-failures-digest"
+          />
+        ) : failuresQuery.isError ? (
+          <div
+            className="text-sm text-destructive"
+            data-testid="text-alert-failures-digest-error"
+          >
+            Failed to load recent alert failures.
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <Badge
+                variant={data && data.total > 0 ? "destructive" : "secondary"}
+                data-testid="badge-failures-total"
+              >
+                {data?.total ?? 0} total
+              </Badge>
+              <Badge
+                variant="outline"
+                data-testid="badge-failures-slack-count"
+              >
+                Slack: {data?.slackCount ?? 0}
+              </Badge>
+              <Badge
+                variant="outline"
+                data-testid="badge-failures-email-count"
+              >
+                Email: {data?.emailCount ?? 0}
+              </Badge>
+              {data?.since && (
+                <span
+                  className="text-xs text-muted-foreground"
+                  data-testid="text-failures-since"
+                  title={data.since}
+                >
+                  since {format(new Date(data.since), "PPpp")}
+                </span>
+              )}
+            </div>
+
+            {failures.length === 0 ? (
+              <div
+                className="text-sm text-muted-foreground"
+                data-testid="text-alert-failures-digest-empty"
+              >
+                No alert delivery failures in this window.
+              </div>
+            ) : (
+              <ul
+                className="divide-y"
+                data-testid="list-alert-failures-digest"
+              >
+                {failures.map((f, idx) => {
+                  // The aggregator doesn't surface a row id, so build a
+                  // stable-ish key from the attempt timestamp + channel +
+                  // job id. The list is small (≤20) and read-only.
+                  const rowKey = `${f.attemptedAt}-${f.channel}-${f.jobId ?? "no-job"}-${idx}`;
+                  return (
+                    <li
+                      key={rowKey}
+                      className="py-2.5 flex items-start gap-3"
+                      data-testid={`row-alert-failure-${idx}`}
+                    >
+                      <AlertTriangle
+                        className="h-4 w-4 mt-0.5 text-destructive shrink-0"
+                        data-testid={`icon-alert-failure-digest-${idx}`}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                          <Badge
+                            variant={
+                              f.channel === "slack" ? "secondary" : "outline"
+                            }
+                            data-testid={`badge-failure-channel-${idx}`}
+                          >
+                            {f.channel}
+                          </Badge>
+                          <span
+                            className="text-xs text-muted-foreground"
+                            data-testid={`text-failure-attempted-at-${idx}`}
+                            title={f.attemptedAt}
+                          >
+                            {format(new Date(f.attemptedAt), "PPpp")}
+                          </span>
+                        </div>
+                        <div
+                          className="text-xs text-muted-foreground mt-0.5 truncate"
+                          data-testid={`text-failure-recipients-${idx}`}
+                          title={f.recipientSummary}
+                        >
+                          To: {f.recipientSummary || "(unspecified)"}
+                        </div>
+                        {f.errorMessage && (
+                          <div
+                            className="text-xs text-destructive mt-0.5 break-words"
+                            data-testid={`text-failure-error-${idx}`}
+                          >
+                            {f.errorMessage}
+                          </div>
+                        )}
+                        {f.jobId && (
+                          <button
+                            type="button"
+                            onClick={() => onJumpToJob(f.jobId!)}
+                            disabled={isJumping}
+                            className="text-[11px] text-primary hover:underline mt-0.5 font-mono truncate inline-flex items-center gap-1 disabled:opacity-60"
+                            title={`Jump to job ${f.jobId}`}
+                            data-testid={`link-failure-job-${idx}`}
+                          >
+                            <ArrowRight className="h-3 w-3" />
+                            job: {f.jobId}
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
         )}
       </CardContent>
     </Card>

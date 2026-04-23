@@ -46,6 +46,7 @@ import {
   getCrmTranscriptBackfillNotificationSettings,
   getCrmTranscriptBackfillOperatorContact,
   getLatestCrmTranscriptBackfillTestAlert,
+  aggregateRecentCrmTranscriptBackfillAlertFailures,
   listCrmTranscriptBackfillAlertDeliveries,
   listOrgAdminAlertFailureModes,
   updateOrgAdminAlertFailureMode,
@@ -4301,6 +4302,59 @@ router.get(
             : null,
         })),
         fallbackMuteSummary,
+      });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #1077 — windowed failure rollup for the admin transcript-backfill page,
+// matching what the daily digest email sends. Sourced from the *same*
+// aggregation helper the digest scheduler uses (see
+// `runAlertFailureDigest`), so the in-app numbers and the email numbers
+// can never drift. Defaults to the same 24h window the scheduler uses;
+// the UI also exposes a 7d view by passing `windowHours=168`.
+router.get(
+  "/api/crm/calls/transcripts/backfill/alert-failures-digest",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+      const rawHours = parseInt(String(req.query.windowHours ?? "24"), 10);
+      const windowHours = Math.min(
+        Math.max(Number.isFinite(rawHours) ? rawHours : 24, 1),
+        720,
+      );
+      const rawSample = parseInt(String(req.query.recentSampleLimit ?? "20"), 10);
+      const recentSampleLimit = Math.min(
+        Math.max(Number.isFinite(rawSample) ? rawSample : 20, 1),
+        50,
+      );
+      const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
+      const aggregates = await aggregateRecentCrmTranscriptBackfillAlertFailures(
+        since,
+        { recentSampleLimit },
+      );
+      // The aggregator returns one entry per org with at least one failure;
+      // pick out this caller's org (or synthesize an empty rollup so the UI
+      // can still render the windowed totals as zero).
+      const entry = aggregates.find((e) => e.organizationId === orgId);
+      res.json({
+        windowHours,
+        since: since.toISOString(),
+        total: entry?.total ?? 0,
+        slackCount: entry?.slackCount ?? 0,
+        emailCount: entry?.emailCount ?? 0,
+        recentFailures: (entry?.recentFailures ?? []).map((f) => ({
+          jobId: f.jobId,
+          channel: f.channel,
+          recipientSummary: f.recipientSummary,
+          errorMessage: f.errorMessage,
+          attemptedAt: f.attemptedAt.toISOString(),
+        })),
       });
     } catch (e) {
       next(e);
