@@ -25,6 +25,13 @@ const REQUIRED_NOTIFICATION_TYPES = [
   // Task #1005: heads-up notification when a CRM transcript backfill job is
   // reaped to FAILED on boot because it exceeded the max-resumable age.
   "CRM_TRANSCRIPT_BACKFILL_REAPED",
+  // Task #1144 — values originally added by baseline migrations
+  // 0012_tm_workflow_enhancements.sql and 0014_drawing_sets_and_revisions.sql.
+  // Without these, long-lived dev DBs created before those migrations would
+  // 500 the moment the TM auto-invoice or document-revision notification path
+  // tried to insert a row.
+  "TM_INVOICE_AUTO_CREATED",
+  "DOCUMENT_REVISION_CREATED",
 ];
 
 export async function ensureNotificationEnumValues(): Promise<void> {

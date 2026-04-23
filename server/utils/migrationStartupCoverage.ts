@@ -45,45 +45,98 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   "0005_dusty_kulan_gath.sql": { skip: "drizzle-kit baseline snapshot" },
 
   // --- pre-existing custom migrations (baseline before Task #1127) --------
-  // These predate the startup-coverage check. Schema drift for any missing
-  // columns/tables is caught by `reconcileSchemaDrift` (Task #1075). New
-  // migrations after Task #1127 must use `helper` or a specific `skip`.
-  "0000_add_passkey_credentials.sql": { skip: "baseline; covered by drizzle-kit migrate" },
+  // Task #1144 audit: every `skip` below documents *why* a startup helper is
+  // unnecessary. The two safe categories are:
+  //   (A) idempotent CREATE TABLE / ADD COLUMN — `reconcileSchemaDrift`
+  //       (Task #1075) auto-creates missing columns and `synthesizeMissing
+  //       Tables` (Task #1138) auto-creates missing tables (with FKs +
+  //       indexes) directly from the Drizzle schema on fresh dev DBs.
+  //   (B) one-off DDL whose end-state is already encoded in the Drizzle
+  //       schema — e.g. `ALTER COLUMN TYPE`, `ALTER COLUMN DROP NOT NULL`,
+  //       or backfill `UPDATE`s. Fresh dev DBs create the column with the
+  //       target type/nullability directly, so no replay is needed.
+  // Anything that mutates an *existing* enum's values (`ALTER TYPE ADD
+  // VALUE`) does NOT fall into either category — `reconcileSchemaDrift`
+  // creates missing enum types but never adds values to existing ones — so
+  // those baselines must be promoted to a `helper` entry below.
+  "0000_add_passkey_credentials.sql": {
+    skip: "(A) CREATE TABLE + indexes auto-applied by reconcileSchemaDrift table synthesis (Task #1138)",
+  },
   "0001_add_estimate_line_item_subcontractors.sql": { helper: "ensureEstimateSubcontractorTables" },
-  "0002_add_change_order_cost_breakdown.sql": { skip: "baseline; covered by drizzle-kit migrate" },
-  "0003_add_talent_pool_and_pipeline_stages.sql": { skip: "baseline; covered by drizzle-kit migrate" },
-  "0004_add_overhead_enhancements.sql": { skip: "baseline; covered by drizzle-kit migrate" },
+  "0002_add_change_order_cost_breakdown.sql": {
+    skip: "(A) idempotent ADD COLUMN with defaults — reconcileSchemaDrift auto-adds (Task #1075)",
+  },
+  "0003_add_talent_pool_and_pipeline_stages.sql": {
+    skip: "(A)+(B) new enums/tables auto-synthesized; ALTER COLUMN TYPE on hiring_candidates is one-off (fresh DB creates as TEXT directly)",
+  },
+  "0004_add_overhead_enhancements.sql": {
+    skip: "(A) new enum + new table + ADD COLUMN — all auto-applied by reconcileSchemaDrift",
+  },
   "0005_add_leave_management.sql": { helper: "ensureSiteLeaveTable" },
-  "0006_add_aia_billing_tables.sql": { skip: "baseline; covered by drizzle-kit migrate" },
-  "0007_change_order_ux_gaps.sql": { skip: "baseline; covered by drizzle-kit migrate" },
-  "0008_change_order_portal_comments.sql": { skip: "baseline; covered by drizzle-kit migrate" },
-  "0009_subcontract_management.sql": { skip: "baseline; covered by drizzle-kit migrate" },
-  "0010_asset_property_management.sql": { skip: "baseline; covered by drizzle-kit migrate" },
-  "0011_crm_win_probability.sql": { skip: "baseline; covered by drizzle-kit migrate" },
+  "0006_add_aia_billing_tables.sql": { helper: "ensureSovStatusEnumValues",
+    note: "Task #1144 — adds UNDER_REVIEW/REJECTED to sov_status; new tables auto-synthesized by reconcileSchemaDrift",
+  },
+  "0007_change_order_ux_gaps.sql": {
+    skip: "(A)+(B) cost_code_id ADD COLUMN auto-applied; FK + (project_id, change_order_number) unique index are not in the Drizzle schema, so they are intentionally DB-only enforcement and not replayed at startup",
+  },
+  "0008_change_order_portal_comments.sql": {
+    skip: "(A)+(B) new table auto-synthesized; ALTER COLUMN DROP NOT NULL is one-off — fresh DBs create change_order_revisions.revised_by_id as nullable directly from the Drizzle schema",
+  },
+  "0009_subcontract_management.sql": {
+    skip: "(A) ADD COLUMN + new tables — all auto-applied by reconcileSchemaDrift",
+  },
+  "0010_asset_property_management.sql": {
+    skip: "(A) new enums + new tables — all auto-applied by reconcileSchemaDrift",
+  },
+  "0011_crm_win_probability.sql": {
+    skip: "(A) idempotent ADD COLUMN — reconcileSchemaDrift auto-adds (Task #1075)",
+  },
   "0012_add_expected_delivery_date.sql": { helper: "ensurePurchaseOrderColumns" },
-  "0012_tm_workflow_enhancements.sql": { skip: "baseline; covered by drizzle-kit migrate" },
+  "0012_tm_workflow_enhancements.sql": { helper: "ensureNotificationEnumValues",
+    note: "Task #1144 — TM_INVOICE_AUTO_CREATED added to ensureNotificationEnumValues; ADD COLUMNs auto-applied by reconcileSchemaDrift",
+  },
   "0013_equipment_depreciation_fuel_logs.sql": { helper: "ensureEquipmentColumns" },
   "0013_messaging_entity_linking.sql": { helper: "ensureMessageColumns" },
-  "0014_drawing_sets_and_revisions.sql": { skip: "baseline; covered by drizzle-kit migrate" },
-  "0015_payroll_workforce_fixes.sql": { skip: "baseline; covered by drizzle-kit migrate" },
-  "0016_add_cost_transactions.sql": { skip: "baseline; covered by drizzle-kit migrate" },
-  "0016_calendar_cleanup.sql": { skip: "baseline; covered by drizzle-kit migrate" },
-  "0017_media_ai_columns.sql": { skip: "baseline; covered by drizzle-kit migrate" },
-  "0018_toolbox_safety_tables.sql": { skip: "baseline; covered by drizzle-kit migrate" },
-  "0019_osha_incidents_table.sql": { skip: "baseline; covered by drizzle-kit migrate" },
+  "0014_drawing_sets_and_revisions.sql": { helper: "ensureNotificationEnumValues",
+    note: "Task #1144 — DOCUMENT_REVISION_CREATED added to ensureNotificationEnumValues; new geofence_enforcement enum + drawing_sets/drawing_set_items tables auto-synthesized by reconcileSchemaDrift",
+  },
+  "0015_payroll_workforce_fixes.sql": {
+    skip: "(A) idempotent ADD COLUMN with defaults — reconcileSchemaDrift auto-adds (Task #1075)",
+  },
+  "0016_add_cost_transactions.sql": {
+    skip: "(A) new enums + cost_transactions table — all auto-applied by reconcileSchemaDrift",
+  },
+  "0016_calendar_cleanup.sql": { helper: "ensureCalendarEventTypeEnumValues",
+    note: "Task #1144 — adds MEETING/PROJECT_DEADLINE values to existing calendar_event_type enum (not handled by reconcileSchemaDrift)",
+  },
+  "0017_media_ai_columns.sql": {
+    skip: "(A) idempotent ADD COLUMN — reconcileSchemaDrift auto-adds (Task #1075)",
+  },
+  "0018_toolbox_safety_tables.sql": {
+    skip: "(A) new tables — auto-synthesized by reconcileSchemaDrift table synthesis (Task #1138)",
+  },
+  "0019_osha_incidents_table.sql": {
+    skip: "(A) new osha_incidents table — auto-synthesized by reconcileSchemaDrift table synthesis (Task #1138)",
+  },
   "0020_add_video_calls_and_budget_amount.sql": { helper: "ensureVideoCallTables" },
-  "0021_add_notification_organization_id.sql": { skip: "baseline; covered by drizzle-kit migrate" },
+  "0021_add_notification_organization_id.sql": {
+    skip: "(A)+(B) ADD COLUMN auto-applied; one-off backfill UPDATE only matters for legacy rows (no fresh-DB rows to backfill)",
+  },
   "0022_fix_missing_tables_and_columns.sql": { helper: "ensureMissingDrizzleTables" },
   "0023_auto_change_orders_takeoff_delta.sql": { helper: "ensureTakeoffEnhancements" },
   "0024_create_workflow_tables.sql": { helper: "ensureWorkflowTables" },
   "0025_consolidate_roles_and_permissions.sql": { helper: "ensurePermissionPresetsTable" },
   "0026_replace_active_projects_only_with_project_scope.sql": { helper: "ensureFieldWorkerPermColumns" },
-  "0027_add_project_note_pages.sql": { skip: "baseline; covered by drizzle-kit migrate" },
-  "0028_drop_project_spec_index.sql": { skip: "baseline; idempotent DROP INDEX, no startup helper needed" },
+  "0027_add_project_note_pages.sql": {
+    skip: "(A) note_block_type enum + project_note_pages/blocks tables — all auto-applied by reconcileSchemaDrift",
+  },
+  "0028_drop_project_spec_index.sql": { skip: "idempotent DROP INDEX — no startup helper needed (no schema state to ensure)" },
   "0029_certified_payroll_signer_and_fringes.sql": { helper: "ensurePayrollFormVariantColumn" },
   "0030_geocode_status_columns.sql": { helper: "ensureGeocodeStatusColumns" },
   "0030_project_email_distribution_lists.sql": { helper: "ensureProjectEmailDistributionLists" },
-  "0031_org_distribution_lists.sql": { skip: "baseline; covered by drizzle-kit migrate" },
+  "0031_org_distribution_lists.sql": { helper: "ensureProjectEmailDistributionLists",
+    note: "Task #1144 — ensureProjectEmailDistributionLists already issues both the DROP NOT NULL on project_id and the partial unique index `project_email_lists_org_name_uniq` from this migration",
+  },
   "0032_backfill_crm_contact_timezones.sql": { helper: "ensureCrmContactTimezoneBackfill" },
   "0033_crm_contact_owner_id.sql": { helper: "ensureCrmOrganisationOwnerColumn" },
   "0034_scheduling_module_enhancements.sql": { helper: "ensureSchedulingModuleEnhancements" },
@@ -99,6 +152,7 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   "0039_alert_delivery_resend_actor.sql": {
     skip: "idempotent ADD COLUMN IF NOT EXISTS picked up by reconcileSchemaDrift (Task #1075)",
   },
+  "0041_test_alert_threshold_columns.sql": { helper: "ensureCrmTranscriptBackfillNotificationSettingsTable" },
   "0040_certified_payroll_generated_by_nullable.sql": {
     skip: "one-off ALTER COLUMN DROP NOT NULL; safe to apply via drizzle-kit migrate",
   },

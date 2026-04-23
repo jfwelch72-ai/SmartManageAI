@@ -92,6 +92,8 @@ import { ensureCrmTranscriptBackfillTestAlertsTable } from "./ensureCrmTranscrip
 import { ensureCrmAndReportingTables } from "./ensureCrmAndReportingTables";
 import { ensureCrmTranscriptBackfillAlertResendCooldownsTable } from "./ensureCrmTranscriptBackfillAlertResendCooldownsTable";
 import { runCertifiedPayrollBackfillOnce } from "./runCertifiedPayrollBackfillOnce";
+import { ensureSovStatusEnumValues } from "./ensureSovStatusEnumValues";
+import { ensureCalendarEventTypeEnumValues } from "./ensureCalendarEventTypeEnumValues";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -110,6 +112,11 @@ const migrations: MigrationStep[] = [
   { name: "message_columns", category: "ADD_COLUMN", fn: ensureMessageColumns },
   { name: "notification_enum_values", category: "ADD_ENUM", fn: ensureNotificationEnumValues },
   { name: "estimate_category_enum_values", category: "ADD_ENUM", fn: ensureEstimateCategoryEnumValues },
+  // Task #1144 — close baseline-migration gaps for ALTER TYPE ADD VALUE
+  // operations that `reconcileSchemaDrift` cannot replay (it creates missing
+  // enum *types* but not missing values on existing types).
+  { name: "sov_status_enum_values", category: "ADD_ENUM", fn: ensureSovStatusEnumValues },
+  { name: "calendar_event_type_enum_values", category: "ADD_ENUM", fn: ensureCalendarEventTypeEnumValues },
   { name: "takeoff_enhancements", category: "ADD_COLUMN", fn: ensureTakeoffEnhancements },
   { name: "field_worker_perm_columns", category: "ADD_COLUMN", fn: ensureFieldWorkerPermColumns },
   { name: "peer_rating_columns", category: "ADD_COLUMN", fn: ensurePeerRatingColumns },
