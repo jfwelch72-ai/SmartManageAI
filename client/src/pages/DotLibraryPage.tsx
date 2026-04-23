@@ -595,6 +595,8 @@ function TopAutoMatchesSection({ canManage }: { canManage: boolean }) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/dot/pay-item-overrides"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dot/pay-items/match"] });
+      // Refetch top auto-matches so hasAlias flips to true without a page refresh.
+      queryClient.invalidateQueries({ queryKey: ["/api/dot/pay-items/match-history/top"] });
       toast({ title: "Alias saved", description: "Future imports of that description will jump straight to this pay item." });
     },
     onError: (err) => toast({ title: "Couldn't save alias", description: err.message, variant: "destructive" }),
