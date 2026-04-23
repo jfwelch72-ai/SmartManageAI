@@ -1117,6 +1117,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   );
 
+  // Task #1401: surface the most recent `wage_decision_stale_refresh`
+  // sweep summary on the admin Jobs dashboard so operators can confirm
+  // at a glance that prevailing wage rates are being kept fresh and
+  // quickly spot cred/quota issues without grepping logs.
+  app.get(
+    "/api/admin/jobs/wage_decision_stale_refresh/last-run",
+    requireAuth,
+    requireRole("SUPER_ADMIN"),
+    async (_req: AuthRequest, res: Response, next: NextFunction) => {
+      try {
+        const { getLastStaleWageDecisionSweep, getWageDecisionStaleAfterDays } = await import(
+          "./integrations/providers/dol_davis_bacon/sync"
+        );
+        res.json({
+          lastRun: getLastStaleWageDecisionSweep(),
+          staleAfterDays: getWageDecisionStaleAfterDays(),
+        });
+      } catch (err: any) {
+        next(err);
+      }
+    },
+  );
+
   app.post("/api/admin/jobs/:jobName/run", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const { jobName } = req.params;

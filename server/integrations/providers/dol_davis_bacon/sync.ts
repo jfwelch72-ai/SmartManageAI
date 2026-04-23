@@ -1105,6 +1105,29 @@ export interface StaleWageDecisionSweepResult {
 }
 
 /**
+ * Task #1401 — Surface the most recent `wage_decision_stale_refresh`
+ * sweep result on the admin Jobs dashboard. We keep the latest run in a
+ * module-level variable (process-local, like the existing job metrics
+ * surface) so operators can confirm at a glance that prevailing wage
+ * rates are being kept fresh without grepping logs.
+ */
+export interface StaleWageDecisionSweepRecord {
+  ranAt: string;
+  durationMs: number;
+  result: StaleWageDecisionSweepResult;
+}
+
+let lastStaleSweep: StaleWageDecisionSweepRecord | null = null;
+
+export function getLastStaleWageDecisionSweep(): StaleWageDecisionSweepRecord | null {
+  return lastStaleSweep;
+}
+
+export function __resetLastStaleWageDecisionSweepForTests(): void {
+  lastStaleSweep = null;
+}
+
+/**
  * Task #1380 — Background sweep that re-syncs every cached wage
  * determination whose `lastSyncAt` has crossed the configured staleness
  * threshold (default 30 days, controlled by DOL_DAVIS_BACON_STALE_AFTER_DAYS).
@@ -1130,6 +1153,7 @@ export async function processStaleWageDecisions(
 ): Promise<StaleWageDecisionSweepResult> {
   const staleAfterDays = opts.staleAfterDays ?? getWageDecisionStaleAfterDays();
   const cutoff = new Date(now.getTime() - staleAfterDays * 24 * 60 * 60 * 1000);
+  const sweepStartedAt = Date.now();
 
   const result: StaleWageDecisionSweepResult = {
     candidates: 0,
@@ -1158,7 +1182,14 @@ export async function processStaleWageDecisions(
     );
 
   result.candidates = rows.length;
-  if (rows.length === 0) return result;
+  if (rows.length === 0) {
+    lastStaleSweep = {
+      ranAt: new Date().toISOString(),
+      durationMs: Date.now() - sweepStartedAt,
+      result: { ...result },
+    };
+    return result;
+  }
 
   const connectionCache = new Map<string, IntegrationConnection | null>();
   async function getConnection(connectionId: string): Promise<IntegrationConnection | null> {
@@ -1245,5 +1276,10 @@ export async function processStaleWageDecisions(
     }
   }
 
+  lastStaleSweep = {
+    ranAt: new Date().toISOString(),
+    durationMs: Date.now() - sweepStartedAt,
+    result: { ...result },
+  };
   return result;
 }

@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ArrowLeft, RefreshCw, Cake, XCircle, Activity, BarChart3, Play, ListChecks, FileStack } from "lucide-react";
+import { ArrowLeft, RefreshCw, Cake, XCircle, Activity, BarChart3, Play, ListChecks, FileStack, HardHat } from "lucide-react";
 import { useMemo, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -101,6 +101,27 @@ function formatTimestamp(ts: number | null): string {
 const BIRTHDAY_KEY = ["/api/admin/metrics/jobs", BIRTHDAY_JOB] as const;
 const ALL_JOBS_KEY = ["/api/admin/metrics/jobs"] as const;
 const REGISTRY_KEY = ["/api/admin/jobs"] as const;
+const WAGE_STALE_LAST_RUN_KEY = ["/api/admin/jobs/wage_decision_stale_refresh/last-run"] as const;
+const WAGE_STALE_JOB = "wage_decision_stale_refresh";
+
+interface StaleWageDecisionSweepResult {
+  candidates: number;
+  attempted: number;
+  succeeded: number;
+  failed: number;
+  skippedNoConnection: number;
+  skippedNoCredentials: number;
+  staleAfterDays: number;
+}
+
+interface WageDecisionLastRunResponse {
+  lastRun: {
+    ranAt: string;
+    durationMs: number;
+    result: StaleWageDecisionSweepResult;
+  } | null;
+  staleAfterDays: number;
+}
 
 function bucketSamples(samples: JobMetricSample[], counters: readonly string[]) {
   const now = Date.now();
@@ -153,6 +174,11 @@ export default function JobMetricsHealth() {
     queryKey: REGISTRY_KEY,
   });
 
+  const { data: wageStaleLastRun, isLoading: wageStaleLoading } = useQuery<WageDecisionLastRunResponse>({
+    queryKey: WAGE_STALE_LAST_RUN_KEY,
+    refetchInterval: 30000,
+  });
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [runningJob, setRunningJob] = useState<string | null>(null);
@@ -172,6 +198,7 @@ export default function JobMetricsHealth() {
       });
       queryClient.invalidateQueries({ queryKey: ALL_JOBS_KEY });
       queryClient.invalidateQueries({ queryKey: BIRTHDAY_KEY });
+      queryClient.invalidateQueries({ queryKey: WAGE_STALE_LAST_RUN_KEY });
     },
     onError: (err: unknown, jobName) => {
       const description =
@@ -464,6 +491,96 @@ export default function JobMetricsHealth() {
               </div>
             )}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-wage-decision-stale-refresh">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <HardHat className="h-4 w-4" /> Davis-Bacon wage decision auto-refresh
+              </CardTitle>
+              <CardDescription>
+                Daily sweep at 06:00 UTC that re-syncs cached prevailing wage
+                determinations whose <code>lastSyncAt</code> is older than{" "}
+                <span data-testid="text-wage-stale-after-days">
+                  {wageStaleLastRun?.staleAfterDays ?? "—"}
+                </span>{" "}
+                days (controlled by <code>DOL_DAVIS_BACON_STALE_AFTER_DAYS</code>). Rows
+                currently in the failure-backoff lane are skipped so a flaky DOL endpoint
+                isn't hammered. Super Admin only.
+              </CardDescription>
+            </div>
+            <Button
+              onClick={() => runJobMutation.mutate(WAGE_STALE_JOB)}
+              disabled={runJobMutation.isPending}
+              data-testid="button-run-wage-decision-stale-refresh"
+            >
+              <RefreshCw
+                className={`h-4 w-4 mr-1 ${
+                  runJobMutation.isPending && runningJob === WAGE_STALE_JOB
+                    ? "animate-spin"
+                    : ""
+                }`}
+              />
+              {runJobMutation.isPending && runningJob === WAGE_STALE_JOB
+                ? "Running…"
+                : "Run now"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {wageStaleLoading ? (
+            <Skeleton className="h-24 w-full" data-testid="skeleton-wage-stale" />
+          ) : !wageStaleLastRun?.lastRun ? (
+            <div
+              className="text-sm text-muted-foreground"
+              data-testid="text-wage-stale-no-run"
+            >
+              No sweep recorded yet on this server process. The job has not run since the
+              server started — use “Run now” to trigger it manually, or wait for the next
+              06:00 UTC tick.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="text-sm text-muted-foreground">
+                Last sweep:{" "}
+                <span className="font-medium text-foreground" data-testid="text-wage-stale-ran-at">
+                  {new Date(wageStaleLastRun.lastRun.ranAt).toLocaleString()}
+                </span>{" "}
+                <span data-testid="text-wage-stale-relative">
+                  ({formatRelative(new Date(wageStaleLastRun.lastRun.ranAt).getTime())})
+                </span>{" "}
+                · finished in{" "}
+                <span data-testid="text-wage-stale-duration">
+                  {wageStaleLastRun.lastRun.durationMs}ms
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-sm">
+                {(
+                  [
+                    ["candidates", "Candidates"],
+                    ["attempted", "Attempted"],
+                    ["succeeded", "Succeeded"],
+                    ["failed", "Failed"],
+                    ["skippedNoConnection", "Skipped (no connection)"],
+                    ["skippedNoCredentials", "Skipped (no credentials)"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <div key={key} data-testid={`stat-wage-stale-${key}`}>
+                    <div className="text-muted-foreground">{label}</div>
+                    <div
+                      className="font-medium text-lg"
+                      data-testid={`text-wage-stale-${key}`}
+                    >
+                      {wageStaleLastRun.lastRun!.result[key]}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
