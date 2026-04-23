@@ -22,6 +22,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
   Table,
   TableBody,
   TableCell,
@@ -41,6 +51,7 @@ import { apiRequest, queryClient, bidEstimateKey } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import { PayItemMatchReasonChips } from "@/components/dot/PayItemMatchReasonChips";
+import { PayItemMatchExplain } from "@/components/dot/PayItemMatchExplain";
 
 interface BidTabImportDialogProps {
   estimateId: string;
@@ -65,6 +76,8 @@ interface MatchSuggestion {
   matchedTokens: string[];
   historyAccepts?: number;
   historyRejects?: number;
+  agencyAccepts?: number;
+  orgAffinityAccepts?: number;
 }
 
 interface MatchResponse {
@@ -100,6 +113,102 @@ function normalizeCategory(raw: string | null | undefined, fallback: string): st
     if (upper.includes(cat)) return cat;
   }
   return fallback;
+}
+
+function AlternatesPopover({
+  row,
+  onChoose,
+}: {
+  row: ReviewRow;
+  onChoose: (payItemId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-8 text-xs"
+          data-testid={`button-alternates-${row.rowIndex}`}
+        >
+          {row.alternates.length} other
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        className="w-[28rem] p-0"
+        data-testid={`popover-alternates-${row.rowIndex}`}
+      >
+        <div className="px-3 py-2 border-b">
+          <div className="text-xs font-medium">Alternate suggestions</div>
+          <div className="text-[11px] text-muted-foreground">
+            Hover an item to see why it was suggested. Click to use it instead.
+          </div>
+        </div>
+        <ScrollArea className="max-h-80">
+          <div className="p-2 space-y-1">
+            {row.alternates.map((a) => (
+              <HoverCard key={a.payItem.id} openDelay={120} closeDelay={80}>
+                <HoverCardTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChoose(a.payItem.id);
+                      setOpen(false);
+                    }}
+                    className="w-full text-left rounded p-2 hover-elevate active-elevate-2 focus:outline-none focus:ring-1 focus:ring-ring"
+                    data-testid={`button-alternate-${row.rowIndex}-${a.payItem.id}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-xs font-semibold">
+                        {a.payItem.itemNumber}
+                      </span>
+                      <Badge variant="outline" className="text-[10px]">
+                        {a.payItem.unit}
+                      </Badge>
+                      <span className="ml-auto text-[11px] tabular-nums text-muted-foreground">
+                        {(a.score * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">
+                      {a.payItem.description}
+                    </div>
+                    <div className="mt-1">
+                      <PayItemMatchReasonChips
+                        matchReason={a.matchReason === "history" ? "fuzzy" : a.matchReason}
+                        aliasText={a.aliasText}
+                        matchedTokens={a.matchedTokens}
+                        payItem={a.payItem}
+                        seedDescription={row.description}
+                        seedUnit={row.unit || null}
+                        seedCategory={null}
+                        testIdPrefix={`bid-tab-alt-${row.rowIndex}-${a.payItem.id}`}
+                        size="2xs"
+                      />
+                    </div>
+                  </button>
+                </HoverCardTrigger>
+                <HoverCardContent
+                  side="left"
+                  align="start"
+                  className="w-96"
+                  data-testid={`hovercard-alternate-${row.rowIndex}-${a.payItem.id}`}
+                >
+                  <PayItemMatchExplain
+                    suggestion={a}
+                    seedDescription={row.description}
+                    seedUnit={row.unit || null}
+                    testIdPrefix={`alt-${row.rowIndex}-${a.payItem.id}`}
+                  />
+                </HoverCardContent>
+              </HoverCard>
+            ))}
+          </div>
+        </ScrollArea>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 async function runMatcher(row: ParsedRow): Promise<MatchSuggestion[]> {
@@ -590,43 +699,64 @@ export function BidTabImportDialog({
                           </span>
                         )}
                         {r.status === "matched" && r.topMatch && (
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span
-                                className="font-mono text-xs font-semibold"
-                                data-testid={`text-top-match-number-${r.rowIndex}`}
+                          <HoverCard openDelay={120} closeDelay={80}>
+                            <HoverCardTrigger asChild>
+                              <button
+                                type="button"
+                                className="text-left w-full rounded hover:bg-muted/40 focus:outline-none focus:ring-1 focus:ring-ring px-1 -mx-1"
+                                data-testid={`button-explain-top-match-${r.rowIndex}`}
+                                aria-label="Show why this pay item was suggested"
                               >
-                                {r.topMatch.payItem.itemNumber}
-                              </span>
-                              <Badge variant="outline" className="text-[10px]">
-                                {r.topMatch.payItem.unit}
-                              </Badge>
-                              {r.topMatch.payItem.specSection && (
-                                <span className="text-[10px] text-muted-foreground">
-                                  §{r.topMatch.payItem.specSection}
-                                </span>
-                              )}
-                            </div>
-                            <div
-                              className="text-xs text-muted-foreground mt-0.5 line-clamp-2"
-                              data-testid={`text-top-match-desc-${r.rowIndex}`}
+                                <div className="flex items-center gap-2">
+                                  <span
+                                    className="font-mono text-xs font-semibold"
+                                    data-testid={`text-top-match-number-${r.rowIndex}`}
+                                  >
+                                    {r.topMatch.payItem.itemNumber}
+                                  </span>
+                                  <Badge variant="outline" className="text-[10px]">
+                                    {r.topMatch.payItem.unit}
+                                  </Badge>
+                                  {r.topMatch.payItem.specSection && (
+                                    <span className="text-[10px] text-muted-foreground">
+                                      §{r.topMatch.payItem.specSection}
+                                    </span>
+                                  )}
+                                </div>
+                                <div
+                                  className="text-xs text-muted-foreground mt-0.5 line-clamp-2"
+                                  data-testid={`text-top-match-desc-${r.rowIndex}`}
+                                >
+                                  {r.topMatch.payItem.description}
+                                </div>
+                                <div className="mt-1">
+                                  <PayItemMatchReasonChips
+                                    matchReason={r.topMatch.matchReason === "history" ? "fuzzy" : r.topMatch.matchReason}
+                                    aliasText={r.topMatch.aliasText}
+                                    matchedTokens={r.topMatch.matchedTokens}
+                                    payItem={r.topMatch.payItem}
+                                    seedDescription={r.description}
+                                    seedUnit={r.unit || null}
+                                    seedCategory={null}
+                                    testIdPrefix={`bid-tab-${r.rowIndex}`}
+                                    size="2xs"
+                                  />
+                                </div>
+                              </button>
+                            </HoverCardTrigger>
+                            <HoverCardContent
+                              align="start"
+                              className="w-96"
+                              data-testid={`hovercard-top-match-${r.rowIndex}`}
                             >
-                              {r.topMatch.payItem.description}
-                            </div>
-                            <div className="mt-1">
-                              <PayItemMatchReasonChips
-                                matchReason={r.topMatch.matchReason}
-                                aliasText={r.topMatch.aliasText}
-                                matchedTokens={r.topMatch.matchedTokens}
-                                payItem={r.topMatch.payItem}
+                              <PayItemMatchExplain
+                                suggestion={r.topMatch}
                                 seedDescription={r.description}
                                 seedUnit={r.unit || null}
-                                seedCategory={null}
-                                testIdPrefix={`bid-tab-${r.rowIndex}`}
-                                size="2xs"
+                                testIdPrefix={`top-${r.rowIndex}`}
                               />
-                            </div>
-                          </div>
+                            </HoverCardContent>
+                          </HoverCard>
                         )}
                       </TableCell>
                       <TableCell>
@@ -669,27 +799,10 @@ export function BidTabImportDialog({
                       </TableCell>
                       <TableCell>
                         {r.alternates.length > 0 ? (
-                          <Select
-                            onValueChange={(v) => swapToAlternate(r.rowIndex, v)}
-                          >
-                            <SelectTrigger
-                              className="h-8 text-xs"
-                              data-testid={`select-alternate-${r.rowIndex}`}
-                            >
-                              <SelectValue placeholder={`${r.alternates.length} other`} />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {r.alternates.map((a) => (
-                                <SelectItem key={a.payItem.id} value={a.payItem.id}>
-                                  <span className="font-mono">{a.payItem.itemNumber}</span>{" "}
-                                  · {(a.score * 100).toFixed(0)}% ·{" "}
-                                  <span className="text-muted-foreground">
-                                    {a.payItem.description.slice(0, 40)}
-                                  </span>
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                          <AlternatesPopover
+                            row={r}
+                            onChoose={(payItemId) => swapToAlternate(r.rowIndex, payItemId)}
+                          />
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>
                         )}

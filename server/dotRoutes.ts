@@ -652,8 +652,9 @@ router.post(
           score += sign * (sign > 0 ? 0.8 : 0.6) * mag;
           if (sign > 0) learned = true;
         }
-        const agencyAccepts = sameDescAgencyAccepts.get(p.id);
-        if (agencyAccepts && agencyAccepts.get(p.agencyId)) {
+        const agencyAcceptsMap = sameDescAgencyAccepts.get(p.id);
+        const agencyAccepts = agencyAcceptsMap?.get(p.agencyId) ?? 0;
+        if (agencyAccepts > 0) {
           score += 0.15;
         }
         const affinity = orgItemAccepts.get(p.id) ?? 0;
@@ -672,6 +673,8 @@ router.post(
           matchedTokens: [...qTokens].filter((t) => pTokens.has(t)),
           historyAccepts: sda,
           historyRejects: sdr,
+          agencyAccepts,
+          orgAffinityAccepts: affinity,
         };
       })
       .filter((r) => r.score > 0)
@@ -717,6 +720,8 @@ router.post(
           matchedTokens: s.matchedTokens,
           historyAccepts: s.historyAccepts,
           historyRejects: s.historyRejects,
+          agencyAccepts: s.agencyAccepts,
+          orgAffinityAccepts: s.orgAffinityAccepts,
         };
       })
       .filter((m): m is NonNullable<typeof m> => m !== null);
