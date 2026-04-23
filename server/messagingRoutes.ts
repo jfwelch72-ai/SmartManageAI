@@ -1969,7 +1969,7 @@ const messagingSetup = (async () => {
       const projectIds = [...new Set(rfiRows.map(r => r.projectId).filter(Boolean))] as string[];
       const projectCodes = new Map<string, string>();
       if (projectIds.length > 0) {
-        const projRows = await db.select({ id: projectsTable.id, projectCode: projectsTable.projectCode }).from(projectsTable).where(inArray(projectsTable.id, projectIds));
+        const projRows = await db.select({ id: projectsTable.id, projectCode: projectsTable.code }).from(projectsTable).where(inArray(projectsTable.id, projectIds));
         for (const p of projRows) if (p.projectCode) projectCodes.set(p.id, p.projectCode);
       }
       for (const r of rfiRows) entityMeta.set(r.id, { label: r.subject, identifier: r.rfiNumber, projectCode: r.projectId ? projectCodes.get(r.projectId) : undefined });
@@ -1979,7 +1979,7 @@ const messagingSetup = (async () => {
       const projectIds = [...new Set(coRows.map(r => r.projectId).filter(Boolean))] as string[];
       const projectCodes = new Map<string, string>();
       if (projectIds.length > 0) {
-        const projRows = await db.select({ id: projectsTable.id, projectCode: projectsTable.projectCode }).from(projectsTable).where(inArray(projectsTable.id, projectIds));
+        const projRows = await db.select({ id: projectsTable.id, projectCode: projectsTable.code }).from(projectsTable).where(inArray(projectsTable.id, projectIds));
         for (const p of projRows) if (p.projectCode) projectCodes.set(p.id, p.projectCode);
       }
       for (const r of coRows) entityMeta.set(r.id, { label: r.description || "Change Order", identifier: `CO ${r.changeOrderNumber}`, projectCode: r.projectId ? projectCodes.get(r.projectId) : undefined });
@@ -1989,7 +1989,7 @@ const messagingSetup = (async () => {
       const projectIds = [...new Set(taskRows.map(r => r.projectId).filter(Boolean))] as string[];
       const projectCodes = new Map<string, string>();
       if (projectIds.length > 0) {
-        const projRows = await db.select({ id: projectsTable.id, projectCode: projectsTable.projectCode }).from(projectsTable).where(inArray(projectsTable.id, projectIds));
+        const projRows = await db.select({ id: projectsTable.id, projectCode: projectsTable.code }).from(projectsTable).where(inArray(projectsTable.id, projectIds));
         for (const p of projRows) if (p.projectCode) projectCodes.set(p.id, p.projectCode);
       }
       for (const r of taskRows) entityMeta.set(r.id, { label: r.title, identifier: "Task", projectCode: r.projectId ? projectCodes.get(r.projectId) : undefined });
@@ -2353,7 +2353,7 @@ const messagingSetup = (async () => {
         const [rfi] = await db.select({ projectId: rfis.projectId }).from(rfis)
           .where(and(eq(rfis.id, entityId), eq(rfis.organizationId, orgId))).limit(1);
         if (rfi?.projectId) {
-          const [proj] = await db.select({ projectCode: projectsTable.projectCode }).from(projectsTable)
+          const [proj] = await db.select({ projectCode: projectsTable.code }).from(projectsTable)
             .where(eq(projectsTable.id, rfi.projectId)).limit(1);
           projectCode = proj?.projectCode || null;
         }
@@ -2362,7 +2362,7 @@ const messagingSetup = (async () => {
           .innerJoin(projectsTable, eq(changeOrders.projectId, projectsTable.id))
           .where(and(eq(changeOrders.id, entityId), eq(projectsTable.gcOrganizationId, orgId))).limit(1);
         if (co?.projectId) {
-          const [proj] = await db.select({ projectCode: projectsTable.projectCode }).from(projectsTable)
+          const [proj] = await db.select({ projectCode: projectsTable.code }).from(projectsTable)
             .where(eq(projectsTable.id, co.projectId)).limit(1);
           projectCode = proj?.projectCode || null;
         }
@@ -2370,7 +2370,7 @@ const messagingSetup = (async () => {
         const [task] = await db.select({ projectId: tasks.projectId }).from(tasks)
           .where(and(eq(tasks.id, entityId), eq(tasks.organizationId, orgId))).limit(1);
         if (task?.projectId) {
-          const [proj] = await db.select({ projectCode: projectsTable.projectCode }).from(projectsTable)
+          const [proj] = await db.select({ projectCode: projectsTable.code }).from(projectsTable)
             .where(eq(projectsTable.id, task.projectId)).limit(1);
           projectCode = proj?.projectCode || null;
         }

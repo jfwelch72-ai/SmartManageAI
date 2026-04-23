@@ -376,17 +376,17 @@ export async function buildAISnapshotData(
   // Get email classification breakdown
   const emailClassificationStats = await db
     .select({
-      classification: emailMessages.aiClassification,
+      classification: emailMessages.classification,
       count: sql<number>`count(*)::int`,
     })
     .from(emailMessages)
     .where(
       and(
         eq(emailMessages.organizationId, organizationId),
-        isNotNull(emailMessages.aiClassification)
+        isNotNull(emailMessages.classification)
       )
     )
-    .groupBy(emailMessages.aiClassification);
+    .groupBy(emailMessages.classification);
 
   const categorizedByType: Record<string, number> = {};
   for (const stat of emailClassificationStats) {
@@ -448,7 +448,7 @@ export async function buildAISnapshotData(
       count: sql<number>`count(*)::int`,
     })
     .from(crmOrganisations)
-    .where(eq(crmOrganisations.owningOrganizationId, organizationId))
+    .where(eq(crmOrganisations.organizationId, organizationId))
     .groupBy(crmOrganisations.type);
 
   const contactsByType: Record<string, number> = {};

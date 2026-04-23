@@ -3965,9 +3965,14 @@ router.get("/api/estimates/:estimateId/match-review", requireAuth, async (req: A
     })
     .from(estimateLineItems)
     .innerJoin(estimates, eq(estimates.id, estimateLineItems.estimateId))
+    .leftJoin(projects, eq(projects.id, estimates.projectId))
+    .leftJoin(bids, eq(bids.id, estimates.bidId))
     .where(and(
       eq(estimateLineItems.estimateId, req.params.estimateId),
-      eq(estimates.organizationId, organizationId),
+      or(
+        eq(projects.gcOrganizationId, organizationId),
+        eq(bids.gcOrganizationId, organizationId),
+      ),
       sql`${estimateLineItems.vendorMatchConfidence} IN ('LOW', 'FUZZY', 'NO_MATCH')`
     ))
     .orderBy(estimateLineItems.vendorMatchConfidence);
@@ -4024,8 +4029,18 @@ router.post("/api/estimates/:estimateId/match-review/:lineItemId/accept", requir
       return res.status(400).json({ error: "vendorPricingId required" });
     }
 
-    const [estimate] = await db.select().from(estimates)
-      .where(and(eq(estimates.id, req.params.estimateId), eq(estimates.organizationId, organizationId))).limit(1);
+    const [estimateRow] = await db.select({ estimate: estimates })
+      .from(estimates)
+      .leftJoin(projects, eq(projects.id, estimates.projectId))
+      .leftJoin(bids, eq(bids.id, estimates.bidId))
+      .where(and(
+        eq(estimates.id, req.params.estimateId),
+        or(
+          eq(projects.gcOrganizationId, organizationId),
+          eq(bids.gcOrganizationId, organizationId),
+        ),
+      )).limit(1);
+    const estimate = estimateRow?.estimate;
     if (!estimate) return res.status(404).json({ error: "Estimate not found" });
 
     const [catalogItem] = await db.select().from(vendorPricingCatalogs).where(and(eq(vendorPricingCatalogs.id, vendorPricingId), eq(vendorPricingCatalogs.organizationId, organizationId))).limit(1);

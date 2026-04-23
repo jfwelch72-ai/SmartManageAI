@@ -1479,8 +1479,8 @@ router.get("/hustler/unified-inbox", requireAuth, requireRole("HUSTLER"), async 
         type: notifications.type,
         message: notifications.message,
         isRead: notifications.isRead,
-        entityType: notifications.entityType,
-        entityId: notifications.entityId,
+        entityType: notifications.relatedEntityType,
+        entityId: notifications.relatedEntityId,
         createdAt: notifications.createdAt,
         organizationId: notifications.organizationId,
       })

@@ -1219,11 +1219,11 @@ router.get("/billing-integration/po-costs/:projectId", async (req: AuthRequest, 
       .orderBy(desc(purchaseOrders.createdAt));
 
     const poItems = await db.select({
-      poId: purchaseOrderItems.purchaseOrderId,
+      poId: purchaseOrderItems.poId,
       costCode: purchaseOrderItems.costCode,
-      totalPrice: purchaseOrderItems.totalPrice,
+      totalPrice: sql<string>`COALESCE(${purchaseOrderItems.quantity}, 0) * COALESCE(${purchaseOrderItems.unitCost}, 0)`,
     }).from(purchaseOrderItems)
-      .innerJoin(purchaseOrders, eq(purchaseOrderItems.purchaseOrderId, purchaseOrders.id))
+      .innerJoin(purchaseOrders, eq(purchaseOrderItems.poId, purchaseOrders.id))
       .where(and(eq(purchaseOrders.projectId, projectId), inArray(purchaseOrders.status, committedStatuses)));
 
     const committedByCostCode: Record<string, number> = {};

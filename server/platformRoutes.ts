@@ -1806,7 +1806,7 @@ router.get("/platform/organizations/:orgId/projects", requireAuth, requireSuperA
       id: projects.id,
       name: projects.name,
       status: projects.status,
-      projectNumber: projects.projectNumber,
+      projectNumber: projects.code,
       clientName: projects.clientName,
       contractAmount: projects.contractAmount,
       budgetAmount: projects.budgetAmount,
@@ -1834,11 +1834,11 @@ router.get("/platform/organizations/:orgId/bids", requireAuth, requireSuperAdmin
     const { orgId } = req.params;
     const orgBids = await db.select({
       id: bids.id,
-      projectName: bids.projectName,
+      projectName: bids.name,
       status: bids.status,
       bidAmount: bids.bidAmount,
       clientName: bids.clientName,
-      bidDate: bids.bidDate,
+      bidDate: bids.dueDate,
       createdAt: bids.createdAt,
     }).from(bids)
       .innerJoin(users, eq(bids.estimatorId, users.id))

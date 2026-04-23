@@ -199,7 +199,7 @@ export async function getPreferredSendHourForContact(
 ): Promise<number | null> {
   // Pull OPEN/CLICK events for this contact's sequence executions (same org).
   const events = await db
-    .select({ createdAt: crmSequenceEmailEvents.createdAt })
+    .select({ createdAt: crmSequenceEmailEvents.occurredAt })
     .from(crmSequenceEmailEvents)
     .innerJoin(
       crmSequenceStepExecutions,

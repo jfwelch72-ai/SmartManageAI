@@ -3515,7 +3515,7 @@ Please provide:
           notes: equipmentFuelLogs.notes,
           createdAt: equipmentFuelLogs.createdAt,
           projectName: projects.name,
-          submittedByName: users.fullName,
+          submittedByName: sql<string>`${users.firstName} || ' ' || ${users.lastName}`,
         })
         .from(equipmentFuelLogs)
         .leftJoin(projects, eq(equipmentFuelLogs.projectId, projects.id))

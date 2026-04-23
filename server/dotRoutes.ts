@@ -379,7 +379,7 @@ router.get(
       .from(estimateLineItems)
       .innerJoin(estimates, eq(estimates.id, estimateLineItems.estimateId))
       .innerJoin(bids, eq(bids.id, estimates.bidId))
-      .where(and(eq(estimateLineItems.dotPayItemId, payItemId), eq(bids.organizationId, orgId)))
+      .where(and(eq(estimateLineItems.dotPayItemId, payItemId), eq(bids.gcOrganizationId, orgId)))
       .orderBy(desc(estimateLineItems.updatedAt))
       .limit(1);
     if (!row) return res.json({ unitPrice: null });

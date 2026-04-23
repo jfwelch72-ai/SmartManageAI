@@ -193,7 +193,7 @@ export async function logEmailMessageForCrm(c: LogCandidate): Promise<{ logged: 
       .select({
         id: crmContacts.id,
         email: crmContacts.email,
-        crmOrganisationId: crmContacts.crmOrganisationId,
+        crmOrganisationId: crmContacts.organisationId,
       })
       .from(crmContacts)
       .where(

@@ -193,7 +193,7 @@ export async function exportEstimateAsEbsx(
         description: estimateLineItems.description,
         unit: estimateLineItems.unit,
         quantity: estimateLineItems.quantity,
-        unitPrice: estimateLineItems.unitPrice,
+        unitPrice: sql<string>`COALESCE(${estimateLineItems.materialCost}, 0) + COALESCE(${estimateLineItems.laborCost}, 0) + COALESCE(${estimateLineItems.equipmentCost}, 0)`,
         specSection: estimateLineItems.specSection,
       })
       .from(estimateLineItems)
