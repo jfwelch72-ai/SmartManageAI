@@ -448,6 +448,7 @@ import multer from "multer";
 import { randomUUID } from "crypto";
 import { z } from "zod";
 import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "./objectStorage";
+import { assertStorageKeyBelongsToOrg } from "./services/storageKeyOwnership";
 import { registerSseClient, emitMessageNew, emitMessageEdited, emitMessageDeleted, emitMessageReaction, emitTyping, emitCallStarted, emitCallJoined, emitCallLeft, emitCallEnded } from "./messagingEvents";
 import { fileTypeFromBuffer } from "file-type";
 
@@ -1149,6 +1150,53 @@ const messagingSetup = (async () => {
       const isParticipant = await ensureParticipant(conversationId, userId);
       if (!isParticipant) {
         res.status(403).json({ error: "Not a participant of this conversation" });
+        return;
+      }
+
+      // ── Tenancy gate for client-supplied attachment / voice URLs (Task #1347) ──
+      // The chat history embeds these URLs verbatim and pushes them out over realtime
+      // to all participants. Without validation, Org A could post a message in their
+      // own conversation referencing an Org B object — leaking the existence/path of
+      // that object even though the read endpoints would still ACL-check on access.
+      // Allowed forms:
+      //   1. /api/conversations/<this-conversation>/files/<filename>
+      //   2. /api/conversations/<this-conversation>/voice/<filename>
+      //   3. /objects/<entity>  — must belong to caller's org per stored ACL/intent
+      // Anything else (including a sibling conversation in the same org) is rejected
+      // so we don't leak object existence across tenants OR across conversations.
+      const validateMessageMediaUrl = async (url: string, kind: "attachment" | "voice"): Promise<void> => {
+        if (typeof url !== "string" || url.length === 0) return;
+        const subPath = kind === "voice" ? "voice" : "files";
+        const expectedPrefix = `/api/conversations/${conversationId}/${subPath}/`;
+        if (url.startsWith(expectedPrefix)) {
+          const filename = url.slice(expectedPrefix.length);
+          // Reject path-traversal or nested paths — filename only.
+          if (!filename || filename.includes("/") || filename.includes("..")) {
+            throw Object.assign(new Error("Invalid attachment URL"), { status: 400 });
+          }
+          return;
+        }
+        if (url.startsWith("/objects/")) {
+          await assertStorageKeyBelongsToOrg(url, orgId!, userId, req.user?.role);
+          return;
+        }
+        throw Object.assign(
+          new Error(`${kind === "voice" ? "Voice" : "Attachment"} URL must reference this conversation or an object owned by your organization`),
+          { status: 403 },
+        );
+      };
+
+      if (!orgId && (attachmentUrl || voiceUrl)) {
+        res.status(400).json({ error: "Organization required" });
+        return;
+      }
+
+      try {
+        if (attachmentUrl) await validateMessageMediaUrl(attachmentUrl, "attachment");
+        if (voiceUrl) await validateMessageMediaUrl(voiceUrl, "voice");
+      } catch (err: any) {
+        const status = err?.status === 400 ? 400 : 403;
+        res.status(status).json({ error: err?.message || "Forbidden" });
         return;
       }
 
