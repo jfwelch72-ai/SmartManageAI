@@ -349,6 +349,168 @@ router.post("/classifications/:id/merge", requireAuth, requireRole("ADMIN"), asy
   }
 });
 
+// ==================== DOL CLASSIFICATION MAPPINGS ====================
+//
+// Task #1411: PMs need a way to review, re-target, and clear the
+// per-project DOL feed -> job_classifications mappings persisted by
+// task #1396. Without this, picking the wrong classification once meant
+// editing the database directly. The endpoints below scope every read
+// and write to (organizationId, projectId) so a tenant can never see or
+// touch another org's mappings, even by guessing an id.
+
+async function assertProjectInOrg(projectId: string, organizationId: string): Promise<boolean> {
+  const [proj] = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, organizationId)));
+  return !!proj;
+}
+
+router.get(
+  "/dol-classification-mappings",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER", "ESTIMATOR"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) return res.status(400).json({ error: "Organization required" });
+      const projectId = typeof req.query.projectId === "string" ? req.query.projectId : "";
+      if (!projectId) return res.status(400).json({ error: "projectId is required" });
+      if (!(await assertProjectInOrg(projectId, organizationId))) {
+        return res.status(404).json({ error: "Project not found" });
+      }
+
+      const rows = await db
+        .select({
+          id: dolClassificationMappings.id,
+          projectId: dolClassificationMappings.projectId,
+          dolFeedName: dolClassificationMappings.dolFeedName,
+          classificationId: dolClassificationMappings.classificationId,
+          createdAt: dolClassificationMappings.createdAt,
+          updatedAt: dolClassificationMappings.updatedAt,
+          classification: {
+            id: jobClassifications.id,
+            name: jobClassifications.name,
+            code: jobClassifications.code,
+          },
+        })
+        .from(dolClassificationMappings)
+        .leftJoin(jobClassifications, eq(dolClassificationMappings.classificationId, jobClassifications.id))
+        .where(and(
+          eq(dolClassificationMappings.organizationId, organizationId),
+          eq(dolClassificationMappings.projectId, projectId),
+        ))
+        .orderBy(asc(dolClassificationMappings.dolFeedName));
+
+      res.json(rows);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+const patchDolMappingSchema = z.object({
+  classificationId: z.string().min(1, "classificationId is required"),
+});
+
+router.patch(
+  "/dol-classification-mappings/:id",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER", "ESTIMATOR"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) return res.status(400).json({ error: "Organization required" });
+      const { id } = req.params;
+      const parsed = patchDolMappingSchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+
+      const [existing] = await db
+        .select()
+        .from(dolClassificationMappings)
+        .where(and(
+          eq(dolClassificationMappings.id, id),
+          eq(dolClassificationMappings.organizationId, organizationId),
+        ));
+      if (!existing) return res.status(404).json({ error: "Mapping not found" });
+
+      // Verify the new classification belongs to the same org so users
+      // can't re-point a mapping at another tenant's classification by id.
+      const [target] = await db
+        .select({ id: jobClassifications.id })
+        .from(jobClassifications)
+        .where(and(
+          eq(jobClassifications.id, parsed.data.classificationId),
+          eq(jobClassifications.organizationId, organizationId),
+        ));
+      if (!target) return res.status(404).json({ error: "Target classification not found" });
+
+      const [updated] = await db
+        .update(dolClassificationMappings)
+        .set({ classificationId: parsed.data.classificationId, updatedAt: new Date() })
+        .where(and(
+          eq(dolClassificationMappings.id, id),
+          eq(dolClassificationMappings.organizationId, organizationId),
+        ))
+        .returning();
+
+      await logAudit({
+        userId: req.user!.id,
+        entityType: "dol_classification_mapping",
+        entityId: id,
+        action: "UPDATE",
+        oldValue: JSON.stringify(existing),
+        newValue: JSON.stringify(updated),
+      }, req);
+
+      res.json(updated);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.delete(
+  "/dol-classification-mappings/:id",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER", "ESTIMATOR"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const organizationId = req.user!.organizationId;
+      if (!organizationId) return res.status(400).json({ error: "Organization required" });
+      const { id } = req.params;
+
+      const [existing] = await db
+        .select()
+        .from(dolClassificationMappings)
+        .where(and(
+          eq(dolClassificationMappings.id, id),
+          eq(dolClassificationMappings.organizationId, organizationId),
+        ));
+      if (!existing) return res.status(404).json({ error: "Mapping not found" });
+
+      await db
+        .delete(dolClassificationMappings)
+        .where(and(
+          eq(dolClassificationMappings.id, id),
+          eq(dolClassificationMappings.organizationId, organizationId),
+        ));
+
+      await logAudit({
+        userId: req.user!.id,
+        entityType: "dol_classification_mapping",
+        entityId: id,
+        action: "DELETE",
+        oldValue: JSON.stringify(existing),
+      }, req);
+
+      res.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 // ==================== EMPLOYEE CLASSIFICATIONS ====================
 
 router.get("/employee-classifications", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res: Response, next: NextFunction) => {

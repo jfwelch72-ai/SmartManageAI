@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, FileText, RefreshCw, Plus, Loader2, Sparkles } from "lucide-react";
+import { AlertTriangle, FileText, RefreshCw, Plus, Loader2, Sparkles, Pencil, Trash2 } from "lucide-react";
 
 // Task #1398: lightweight fuzzy match used to surface near-duplicate
 // classifications when promoting a DOL feed row. Realistic typos like
@@ -156,6 +156,237 @@ function SourceBadge({ source }: { source: PrevailingRateSource }) {
     <Badge variant="secondary" className="text-xs" data-testid={`badge-source-dol-feed`}>
       DOL feed
     </Badge>
+  );
+}
+
+interface SavedDolMapping {
+  id: string;
+  projectId: string;
+  dolFeedName: string;
+  classificationId: string;
+  createdAt: string;
+  updatedAt: string;
+  classification: { id: string; name: string; code: string | null } | null;
+}
+
+// Task #1411: management surface for the DOL feed -> classification
+// mappings persisted by task #1396. PMs need to be able to review what
+// they previously saved, re-target a wrong pick, or clear a mapping so
+// the next sync falls back to the default name-match / create-new
+// behavior. Lives inside the Prevailing Wage card so it sits next to
+// the place those mappings were created.
+function SavedDolMappingsSection({
+  projectId,
+  orgClassifications,
+  onMappingsChanged,
+}: {
+  projectId: string;
+  orgClassifications: ReadonlyArray<OrgJobClassification>;
+  onMappingsChanged: () => void;
+}) {
+  const { toast } = useToast();
+  const mappingsKey = ["/api/labor-rates/dol-classification-mappings", { projectId }];
+  const { data: mappings = [], isLoading } = useQuery<SavedDolMapping[]>({
+    queryKey: mappingsKey,
+  });
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editChoice, setEditChoice] = useState<string>("");
+
+  const updateMutation = useMutation({
+    mutationFn: async (vars: { id: string; classificationId: string }) => {
+      return await apiRequest("PATCH", `/api/labor-rates/dol-classification-mappings/${vars.id}`, {
+        classificationId: vars.classificationId,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Mapping updated", description: "DOL feed mapping re-pointed." });
+      queryClient.invalidateQueries({ queryKey: mappingsKey });
+      onMappingsChanged();
+      setEditingId(null);
+      setEditChoice("");
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to update mapping", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      return await apiRequest("DELETE", `/api/labor-rates/dol-classification-mappings/${id}`);
+    },
+    onSuccess: () => {
+      toast({
+        title: "Mapping removed",
+        description: "Future syncs will fall back to name match or create a new classification.",
+      });
+      queryClient.invalidateQueries({ queryKey: mappingsKey });
+      onMappingsChanged();
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to remove mapping", description: err.message, variant: "destructive" });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <div className="border-t pt-4 mt-2">
+        <h3 className="text-sm font-medium mb-2">Saved DOL classification mappings</h3>
+        <Skeleton className="h-16 w-full" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-t pt-4 mt-2 space-y-2" data-testid="section-dol-mappings">
+      <div>
+        <h3 className="text-sm font-medium">Saved DOL classification mappings</h3>
+        <p className="text-xs text-muted-foreground">
+          DOL feed names you've mapped to org classifications. Removing a mapping causes the next
+          sync to fall back to name-match or create a new classification.
+        </p>
+      </div>
+      {mappings.length === 0 ? (
+        <p className="text-sm text-muted-foreground" data-testid="text-no-dol-mappings">
+          No saved mappings yet. Promote a DOL feed row above to create one.
+        </p>
+      ) : (
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>DOL feed name</TableHead>
+                <TableHead>Mapped classification</TableHead>
+                <TableHead className="text-right w-[180px]">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {mappings.map((m) => {
+                const isEditing = editingId === m.id;
+                return (
+                  <TableRow key={m.id} data-testid={`row-dol-mapping-${m.id}`}>
+                    <TableCell
+                      className="font-mono text-xs"
+                      data-testid={`text-dol-mapping-feed-${m.id}`}
+                    >
+                      {m.dolFeedName}
+                    </TableCell>
+                    <TableCell>
+                      {isEditing ? (
+                        <Select value={editChoice} onValueChange={setEditChoice}>
+                          <SelectTrigger
+                            className="h-8"
+                            data-testid={`select-dol-mapping-${m.id}`}
+                          >
+                            <SelectValue placeholder="Select a classification..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {orgClassifications.map((c) => (
+                              <SelectItem
+                                key={c.id}
+                                value={c.id}
+                                data-testid={`option-dol-mapping-${m.id}-${c.id}`}
+                              >
+                                {c.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <span
+                          className="text-sm"
+                          data-testid={`text-dol-mapping-classification-${m.id}`}
+                        >
+                          {m.classification?.name ?? (
+                            <span className="text-muted-foreground italic">Unknown</span>
+                          )}
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {isEditing ? (
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingId(null);
+                              setEditChoice("");
+                            }}
+                            data-testid={`button-dol-mapping-cancel-${m.id}`}
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => {
+                              if (!editChoice) {
+                                toast({
+                                  title: "Pick a classification",
+                                  description: "Select a classification to re-point this mapping to.",
+                                  variant: "destructive",
+                                });
+                                return;
+                              }
+                              if (editChoice === m.classificationId) {
+                                setEditingId(null);
+                                setEditChoice("");
+                                return;
+                              }
+                              updateMutation.mutate({ id: m.id, classificationId: editChoice });
+                            }}
+                            disabled={updateMutation.isPending}
+                            data-testid={`button-dol-mapping-save-${m.id}`}
+                          >
+                            {updateMutation.isPending ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              "Save"
+                            )}
+                          </Button>
+                        </div>
+                      ) : (
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setEditingId(m.id);
+                              setEditChoice(m.classificationId);
+                            }}
+                            data-testid={`button-dol-mapping-edit-${m.id}`}
+                          >
+                            <Pencil className="w-3.5 h-3.5 mr-1" /> Re-map
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              if (
+                                !confirm(
+                                  `Remove the mapping for "${m.dolFeedName}"? Future syncs will fall back to name-match or create a new classification.`,
+                                )
+                              ) {
+                                return;
+                              }
+                              deleteMutation.mutate(m.id);
+                            }}
+                            disabled={deleteMutation.isPending}
+                            data-testid={`button-dol-mapping-delete-${m.id}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                          </Button>
+                        </div>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -680,6 +911,15 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
             </div>
           </>
         )}
+
+        <SavedDolMappingsSection
+          projectId={projectId}
+          orgClassifications={orgClassifications}
+          onMappingsChanged={() => {
+            queryClient.invalidateQueries({ queryKey: summaryKey });
+            queryClient.invalidateQueries({ queryKey: ["/api/labor-rates/prevailing-wage-rates"] });
+          }}
+        />
       </CardContent>
 
       <Dialog open={overrideOpen} onOpenChange={(o) => { setOverrideOpen(o); if (!o) setOverrideRow(null); }}>
