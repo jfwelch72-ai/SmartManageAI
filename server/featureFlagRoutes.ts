@@ -113,11 +113,88 @@ router.patch("/:orgId", requireAuth, async (req, res, next) => {
     }
 
     if (req.body.flags && typeof req.body.flags === "object") {
-      const updated = await flagService.setAllFeatureFlags(req.params.orgId, req.body.flags);
+      const incoming = req.body.flags as Record<string, unknown>;
+      const cleaned: Partial<Record<FeatureFlagKey, boolean>> = {};
+      for (const [k, v] of Object.entries(incoming)) {
+        if (!FEATURE_FLAG_KEYS.includes(k as FeatureFlagKey)) {
+          return res.status(400).json({ error: `Invalid flag: ${k}` });
+        }
+        if (typeof v !== "boolean") {
+          return res.status(400).json({ error: `Flag ${k} must be a boolean` });
+        }
+        cleaned[k as FeatureFlagKey] = v;
+      }
+      const updated = await flagService.setAllFeatureFlags(req.params.orgId, cleaned);
       return res.json({ flags: updated });
     }
 
     res.status(400).json({ error: "Provide { flag, enabled } or { flags: {...} }" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:orgId/reset-drift", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (
+      user.role !== "SUPER_ADMIN" &&
+      (user.role !== "ADMIN" || user.organizationId !== req.params.orgId)
+    ) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+
+    const last = await flagService.getLastPresetApplication(req.params.orgId);
+    if (!last) {
+      return res
+        .status(400)
+        .json({ error: "No preset has been applied to this organization yet" });
+    }
+    if (!last.diff || last.diff.length === 0) {
+      return res.json({ flags: await flagService.getFeatureFlags(req.params.orgId), reset: [] });
+    }
+
+    const drifted: Record<string, { current: boolean; preset: boolean }> = {};
+    for (const d of last.diff) drifted[d.key] = { current: d.current, preset: d.preset };
+
+    const body = (req.body ?? {}) as { keys?: unknown; all?: unknown };
+    let targetKeys: FeatureFlagKey[];
+
+    if (body.all === true) {
+      targetKeys = last.diff.map((d) => d.key);
+    } else if (Array.isArray(body.keys)) {
+      const requested = body.keys;
+      const cleaned: FeatureFlagKey[] = [];
+      for (const k of requested) {
+        if (typeof k !== "string") {
+          return res.status(400).json({ error: "keys must be strings" });
+        }
+        if (!FEATURE_FLAG_KEYS.includes(k as FeatureFlagKey)) {
+          return res.status(400).json({ error: `Invalid flag: ${k}` });
+        }
+        if (!(k in drifted)) {
+          return res
+            .status(400)
+            .json({ error: `Flag ${k} is not currently drifted from the preset` });
+        }
+        cleaned.push(k as FeatureFlagKey);
+      }
+      targetKeys = cleaned;
+    } else {
+      return res
+        .status(400)
+        .json({ error: "Provide { keys: [...] } or { all: true }" });
+    }
+
+    if (targetKeys.length === 0) {
+      return res.json({ flags: await flagService.getFeatureFlags(req.params.orgId), reset: [] });
+    }
+
+    const patch: Partial<Record<FeatureFlagKey, boolean>> = {};
+    for (const k of targetKeys) patch[k] = drifted[k].preset;
+
+    const updated = await flagService.setAllFeatureFlags(req.params.orgId, patch);
+    res.json({ flags: updated, reset: targetKeys });
   } catch (err) {
     next(err);
   }

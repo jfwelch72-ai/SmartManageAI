@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Switch } from "@/components/ui/switch";
-import { ToggleRight, HardHat, ArrowRight, History, ChevronLeft, ChevronRight, ChevronDown, ShieldAlert } from "lucide-react";
+import { ToggleRight, HardHat, ArrowRight, History, ChevronLeft, ChevronRight, ChevronDown, ShieldAlert, Undo2, RotateCcw } from "lucide-react";
 import {
   FEATURE_FLAG_LABELS,
   FEATURE_FLAG_DESCRIPTIONS,
@@ -100,6 +100,8 @@ export function OrgFeaturePresetsTab({
   const [historyPage, setHistoryPage] = useState(1);
   const [manualPage, setManualPage] = useState(1);
   const HISTORY_PAGE_SIZE = 10;
+  const [resetAllConfirmOpen, setResetAllConfirmOpen] = useState(false);
+  const [pendingResetKey, setPendingResetKey] = useState<FeatureFlagKey | null>(null);
 
   const isSuperAdminView = !!overrideOrgId;
   const canManage =
@@ -210,6 +212,31 @@ export function OrgFeaturePresetsTab({
     },
     onError: (err: Error) => {
       toast({ title: "Failed to update flag", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const resetFlagsMutation = useMutation({
+    mutationFn: async (payload: { keys?: FeatureFlagKey[]; all?: boolean }) => {
+      const res = await apiRequest("POST", `/api/feature-flags/${orgId}/reset-drift`, payload);
+      return res.json() as Promise<{ flags: Partial<Record<FeatureFlagKey, boolean>>; reset: FeatureFlagKey[] }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/feature-flags"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId, "last-preset"] });
+      const count = data.reset?.length ?? 0;
+      toast({
+        title: count === 1 ? "Flag reset to preset" : "Flags reset to preset",
+        description:
+          count === 1
+            ? "The flag now matches the preset value."
+            : `${count} flag${count === 1 ? "" : "s"} now match the preset value.`,
+      });
+      setResetAllConfirmOpen(false);
+      setPendingResetKey(null);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to reset flags", description: err.message, variant: "destructive" });
+      setPendingResetKey(null);
     },
   });
 
@@ -417,18 +444,32 @@ export function OrgFeaturePresetsTab({
               </div>
               {lastApplied.isCustomized && lastApplied.diff.length > 0 && (
                 <Collapsible>
-                  <CollapsibleTrigger asChild>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <CollapsibleTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-7 px-2 text-xs"
+                        data-testid="button-toggle-customization-diff"
+                      >
+                        <ChevronDown className="h-3 w-3 mr-1" />
+                        Show what changed
+                      </Button>
+                    </CollapsibleTrigger>
                     <Button
                       type="button"
-                      variant="ghost"
+                      variant="outline"
                       size="sm"
                       className="h-7 px-2 text-xs"
-                      data-testid="button-toggle-customization-diff"
+                      onClick={() => setResetAllConfirmOpen(true)}
+                      disabled={resetFlagsMutation.isPending}
+                      data-testid="button-reset-all-to-preset"
                     >
-                      <ChevronDown className="h-3 w-3 mr-1" />
-                      Show what changed
+                      <RotateCcw className="h-3 w-3 mr-1" />
+                      Reset all to preset
                     </Button>
-                  </CollapsibleTrigger>
+                  </div>
                   <CollapsibleContent>
                     <div
                       className="mt-2 max-h-72 overflow-y-auto border rounded-md divide-y"
@@ -453,6 +494,25 @@ export function OrgFeaturePresetsTab({
                             <Badge variant={d.current ? "default" : "outline"}>
                               {d.current ? "On" : "Off"}
                             </Badge>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs ml-1"
+                              onClick={() => {
+                                setPendingResetKey(d.key);
+                                resetFlagsMutation.mutate({ keys: [d.key] });
+                              }}
+                              disabled={
+                                resetFlagsMutation.isPending && pendingResetKey === d.key
+                              }
+                              data-testid={`button-reset-flag-${d.key}`}
+                            >
+                              <Undo2 className="h-3 w-3 mr-1" />
+                              {resetFlagsMutation.isPending && pendingResetKey === d.key
+                                ? "Resetting..."
+                                : "Reset to preset"}
+                            </Button>
                           </span>
                         </div>
                       ))}
@@ -833,6 +893,71 @@ export function OrgFeaturePresetsTab({
               data-testid="button-confirm-apply-preset"
             >
               {applyPresetMutation.isPending ? "Applying..." : "Apply Preset"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={resetAllConfirmOpen}
+        onOpenChange={setResetAllConfirmOpen}
+      >
+        <AlertDialogContent className="max-w-lg" data-testid="dialog-confirm-reset-all">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Reset all drifted flags to{" "}
+              {lastApplied ? tradeLabelMap[lastApplied.tradeType] || lastApplied.tradeType : ""} preset?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {lastApplied && lastApplied.diff.length > 0
+                ? `${lastApplied.diff.filter((d) => d.preset).length} flag${lastApplied.diff.filter((d) => d.preset).length === 1 ? "" : "s"} will be turned on and ${lastApplied.diff.filter((d) => !d.preset).length} flag${lastApplied.diff.filter((d) => !d.preset).length === 1 ? "" : "s"} will be turned off to match the preset.`
+                : "No drifted flags to reset."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {lastApplied && lastApplied.diff.length > 0 && (
+            <div
+              className="max-h-72 overflow-y-auto border rounded-md divide-y"
+              data-testid="list-reset-all-diff"
+            >
+              {lastApplied.diff.map((d) => (
+                <div
+                  key={d.key}
+                  className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                  data-testid={`reset-all-diff-row-${d.key}`}
+                >
+                  <span className="font-medium truncate">
+                    {FEATURE_FLAG_LABELS[d.key] ?? d.key}
+                  </span>
+                  <span className="flex items-center gap-2 shrink-0">
+                    <Badge variant={d.current ? "default" : "outline"}>
+                      {d.current ? "On" : "Off"}
+                    </Badge>
+                    <ArrowRight className="h-3 w-3 text-muted-foreground" />
+                    <Badge variant={d.preset ? "default" : "outline"}>
+                      {d.preset ? "On" : "Off"}
+                    </Badge>
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-reset-all">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (!lastApplied || lastApplied.diff.length === 0) return;
+                setPendingResetKey(null);
+                resetFlagsMutation.mutate({ all: true });
+              }}
+              disabled={
+                resetFlagsMutation.isPending ||
+                !lastApplied ||
+                lastApplied.diff.length === 0
+              }
+              data-testid="button-confirm-reset-all"
+            >
+              {resetFlagsMutation.isPending ? "Resetting..." : "Reset all to preset"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
