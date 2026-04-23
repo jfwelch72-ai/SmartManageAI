@@ -6,10 +6,45 @@ import { Button } from "@/components/ui/button";
 import {
   CheckCircle, XCircle, Loader2, Link2, Unlink,
   ChevronDown, ChevronUp, Shield, ShieldCheck, ShieldAlert,
-  Lock, KeyRound, Info,
+  Lock, KeyRound, Info, BellOff,
 } from "lucide-react";
 import type { Connection, Provider, SecurityAuditEntry, PROVIDER_DESCRIPTIONS as _PD } from "./types";
 import { PROVIDER_DESCRIPTIONS } from "./types";
+
+type NotificationPreferencesResponse = {
+  typeOverrides?: Array<{
+    notificationType: string;
+    emailEnabled?: boolean | null;
+    inAppEnabled?: boolean | null;
+  }>;
+};
+
+export function DavisBaconAlertsMutedBadge() {
+  const { data } = useQuery<NotificationPreferencesResponse>({
+    queryKey: ["/api/notifications/preferences"],
+  });
+  const override = data?.typeOverrides?.find(
+    (o) => o.notificationType === "DAVIS_BACON_AUTO_SYNC_FAILED",
+  );
+  const muted = !!override && override.emailEnabled === false;
+  if (!muted) return null;
+  return (
+    <a
+      href="/settings/notifications#section-davis-bacon-auto-sync-failed-prefs"
+      className="inline-flex"
+      data-testid="link-davis-bacon-alerts-muted"
+    >
+      <Badge
+        variant="outline"
+        className="gap-1 cursor-pointer hover-elevate"
+        data-testid="badge-davis-bacon-alerts-muted"
+      >
+        <BellOff className="h-3 w-3" />
+        Failure alerts muted
+      </Badge>
+    </a>
+  );
+}
 
 export function SecurityBanner() {
   const [expanded, setExpanded] = useState(false);
@@ -254,6 +289,7 @@ export function ProviderCardGrid({
               {isConnected && conn && (
                 <TokenStatusBadge status={conn.tokenStatus} encrypted={conn.tokensEncrypted} />
               )}
+              {provider.key === "dol_davis_bacon" && <DavisBaconAlertsMutedBadge />}
               {isPending && isOAuth && (
                 <p className="text-xs text-yellow-600 dark:text-yellow-400">
                   Authorization required — click below to complete setup.
