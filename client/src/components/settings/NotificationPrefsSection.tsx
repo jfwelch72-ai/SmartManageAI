@@ -68,8 +68,20 @@ interface TypeChannelPrefs {
 // suppression switch in the settings UI. Most types are always
 // delivered to the in-app feed; this list opts specific types into
 // the user-controllable "in-app" toggle row.
+//
+// Task #1288 — Extend the mute toggle beyond SWPPP to the rest of the
+// noisy reminder family (deadline warnings, daily progress logs, and
+// the residual generic REMINDER type). These all flow through the
+// same `notification_type_prefs.in_app_enabled` plumbing introduced
+// in Task #1260: insert always lands the row, and the feed/unread
+// endpoints (`server/notificationRoutes2.ts`) strip muted types via
+// the `loadInAppMutedTypes` filter, so no generator-side change is
+// required.
 const TYPES_WITH_IN_APP_TOGGLE = new Set<string>([
   "SWPPP_OVERDUE_CORRECTIVE_ACTION",
+  "DEADLINE_WARNING",
+  "DAILY_PROGRESS_LOGGED",
+  "REMINDER",
 ]);
 
 const CRM_CONTACT_REASSIGNED = "CRM_CONTACT_REASSIGNED";

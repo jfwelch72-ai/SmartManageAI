@@ -240,6 +240,75 @@ describe("GET /api/notifications hides in-app-muted types", () => {
   });
 });
 
+describe("Task #1288 — mute plumbing covers the extended reminder family", () => {
+  it("inserts and dispatches DEADLINE_WARNING regardless of in-app pref", async () => {
+    // Same invariant as the SWPPP test above: mute is read-time only,
+    // so even a user with DEADLINE_WARNING muted still has the row
+    // written to `notifications` and routed through `deliverNotification`
+    // (which honors per-channel email/push/etc. prefs separately).
+    await insertNotifications([
+      {
+        userId: "user-deadline-muted",
+        organizationId: "org-1",
+        type: "DEADLINE_WARNING",
+        title: "Deadline approaching",
+        message: "RFI #42 is due in 24h",
+      },
+    ]);
+
+    const inserted = (insertedByTable["notifications"] ?? []).flat() as Array<{ userId: string; type: string }>;
+    expect(inserted).toHaveLength(1);
+    expect(inserted[0].userId).toBe("user-deadline-muted");
+    expect(inserted[0].type).toBe("DEADLINE_WARNING");
+
+    await vi.runAllTimersAsync();
+    expect(
+      (deliveredRecords as Array<{ userId: string; type: string }>).map((r) => ({
+        userId: r.userId,
+        type: r.type,
+      })),
+    ).toEqual([{ userId: "user-deadline-muted", type: "DEADLINE_WARNING" }]);
+  });
+
+  it("hides DEADLINE_WARNING from the feed when the user muted it", async () => {
+    selectQueue.push({
+      table: "notification_type_prefs",
+      rows: [
+        { notificationType: "DEADLINE_WARNING", inAppEnabled: false },
+        { notificationType: "DAILY_PROGRESS_LOGGED", inAppEnabled: null },
+      ],
+    });
+    selectQueue.push({
+      table: "notifications",
+      rows: [{ id: "n1", userId: "u1", type: "DAILY_PROGRESS_LOGGED", title: "p" }],
+    });
+
+    const { statusCode } = await callRoute("get", "/api/notifications", {
+      id: "u1",
+      organizationId: "org-1",
+    });
+    expect(statusCode).toBe(200);
+    const where = describeWhere(lastWhereByTable["notifications"]);
+    // Confirm the muted type was wired into the NOT IN clause.
+    expect(where).toContain("not in");
+    expect(where).toContain("deadline_warning");
+  });
+
+  it("does NOT add a feed mute filter when DEADLINE_WARNING pref is null", async () => {
+    selectQueue.push({
+      table: "notification_type_prefs",
+      rows: [
+        { notificationType: "DEADLINE_WARNING", inAppEnabled: null },
+        { notificationType: "REMINDER", inAppEnabled: true },
+      ],
+    });
+    selectQueue.push({ table: "notifications", rows: [] });
+
+    await callRoute("get", "/api/notifications", { id: "u2", organizationId: "org-1" });
+    expect(describeWhere(lastWhereByTable["notifications"])).not.toContain("not in");
+  });
+});
+
 describe("GET /api/notifications/unread-count honors the same mute set", () => {
   it("appends a NOT IN filter to the count query when the user has muted types", async () => {
     selectQueue.push({
