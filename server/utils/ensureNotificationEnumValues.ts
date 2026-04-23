@@ -35,6 +35,9 @@ const REQUIRED_NOTIFICATION_TYPES = [
   // Task #1332: heads-up when a background Davis-Bacon (DOL/SAM.gov) sync
   // queued by project create/update fails.
   "DAVIS_BACON_AUTO_SYNC_FAILED",
+  // Task #1260: dedicated SWPPP overdue corrective-action fanout type so
+  // users can mute it independently of the generic REMINDER notifications.
+  "SWPPP_OVERDUE_CORRECTIVE_ACTION",
   // Task #1344: daily reminder fan-out for missing wage decisions.
   "WAGE_DECISION_MISSING_REMINDER",
   // Task #1391: heads-up to org admins the first time a generic

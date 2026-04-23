@@ -161,6 +161,43 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   "0044_dot_pay_item_match_history.sql": { helper: "ensureDotPayItemMatchHistory" },
   "0044_swppp_overdue_notification_marker.sql": { helper: "ensureSwpppOverdueNotificationColumn" },
   "0044_certified_payroll_archived_retention.sql": { helper: "ensureCertifiedPayrollArchivedRetention" },
+  // Task #1247 — batch_id column + (organization_id, batch_id) index on
+  // dot_pay_item_match_history so the post-import toast can one-click
+  // "undo" a whole bid-tab import batch. Mirrored inside
+  // ensureDotPayItemMatchHistory alongside the original CREATE TABLE.
+  "0045_dot_pay_item_match_history_batch_id.sql": {
+    helper: "ensureDotPayItemMatchHistory",
+    note: "Task #1247 — batch_id column + org_batch index are applied by ensureDotPayItemMatchHistory",
+  },
+  // Task #1260 — dedicated SWPPP_OVERDUE_CORRECTIVE_ACTION enum value +
+  // nullable notification_type_prefs.in_app_enabled column. The enum
+  // value is added by ensureNotificationEnumValues; the nullable
+  // ADD COLUMN is auto-applied by reconcileSchemaDrift (Task #1075).
+  "0045_swppp_overdue_notification_pref.sql": {
+    helper: "ensureNotificationEnumValues",
+    note: "Task #1260 — SWPPP_OVERDUE_CORRECTIVE_ACTION added to ensureNotificationEnumValues; companion notification_type_prefs.in_app_enabled nullable ADD COLUMN auto-applied by reconcileSchemaDrift",
+  },
+  // Task #1259 — swppp_inspections.overdue_reminder_count counter for
+  // the follow-up reminder cap. Idempotent ADD COLUMN with a default so
+  // reconcileSchemaDrift (Task #1075) auto-applies it on fresh dev DBs.
+  "0045_swppp_overdue_reminder_count.sql": {
+    skip: "(A) idempotent ADD COLUMN with default — reconcileSchemaDrift auto-adds (Task #1075)",
+  },
+  // Task #491 — plan_documents org scope (new enum, scope/organization_id
+  // columns, DROP NOT NULL on project_id, backfill, index) plus the
+  // companion crm_organisation_certifications.document_id FK. Mirrored
+  // at boot by ensurePlanDocumentsOrgScope (+ ensureCrmOrgCertDocumentColumn
+  // for the FK column) so fresh checkouts don't need drizzle-kit.
+  "0046_plan_documents_org_scope.sql": {
+    helper: "ensurePlanDocumentsOrgScope",
+    note: "Task #491 — plan_documents DDL applied by ensurePlanDocumentsOrgScope; companion crm_organisation_certifications.document_id column is applied by ensureCrmOrgCertDocumentColumn (also registered in runStartupMigrations.ts)",
+  },
+  // Task #494 — nullable projects.wage_decision text column used by the
+  // WH-347 generator to fall back to cached DOL prevailing-wage rates.
+  // Idempotent ADD COLUMN auto-applied by reconcileSchemaDrift.
+  "0046_projects_wage_decision.sql": {
+    skip: "(A) idempotent nullable ADD COLUMN — reconcileSchemaDrift auto-adds (Task #1075)",
+  },
   // Task #1286 — per-org SWPPP overdue reminder cap + interval columns
   // on the organizations table. See ensureSwpppOverdueReminderSettings.
   "0046_swppp_overdue_reminder_settings.sql": { helper: "ensureSwpppOverdueReminderSettings" },
@@ -174,6 +211,23 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   // failed Davis-Bacon background syncs surface to the integration owner.
   "0048_integration_sync_state_failure_tracking.sql": { helper: "ensureIntegrationSyncStateFailureColumns",
     note: "Companion ALTER TYPE ADD VALUE for DAVIS_BACON_AUTO_SYNC_FAILED is handled by ensureNotificationEnumValues",
+  },
+  // Task #1354 — adds integration_sync_state.retry_count +
+  // next_retry_at columns used by the generic failed-sync retry sweep
+  // (processFailedWageDecisionRetries). Both are idempotent ADD COLUMN
+  // statements (retry_count has a default of 0; next_retry_at is
+  // nullable) so reconcileSchemaDrift (Task #1075) picks them up on
+  // fresh dev DBs.
+  "0049_integration_sync_state_retry_backoff.sql": {
+    skip: "(A) idempotent ADD COLUMN (one default, one nullable) — reconcileSchemaDrift auto-adds (Task #1075)",
+  },
+  // Task #1344 — companion ALTER TYPE ADD VALUE for the
+  // WAGE_DECISION_MISSING_REMINDER notification_type used by the daily
+  // missing-wage-decision reminder fan-out. Handled by
+  // ensureNotificationEnumValues.
+  "0050_wage_decision_missing_reminder.sql": {
+    helper: "ensureNotificationEnumValues",
+    note: "Task #1344 — WAGE_DECISION_MISSING_REMINDER already listed in ensureNotificationEnumValues",
   },
   // Task #1391 — adds integration_sync_state.exhausted_notified_at so the
   // generic retry sweep / recordSyncFailure can fan one-and-only-one
