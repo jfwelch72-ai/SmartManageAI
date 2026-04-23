@@ -1,8 +1,8 @@
 import type { SyncResult, SyncError } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { db } from "../../../db";
-import { integrationConnections, integrationSyncState } from "@shared/schema";
-import { and, eq, isNull, lt, sql } from "drizzle-orm";
+import { integrationConnections, integrationSyncState, projects } from "@shared/schema";
+import { and, eq, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { logInfo, logError, logWarn } from "../../../utils/logger";
 import { recordJobMetrics } from "../../../utils/jobMetrics";
 import { jobMetricSamples } from "@shared/schema";
@@ -809,6 +809,112 @@ export async function sweepStaleFailureNotifications(
 }
 
 /**
+ * Task #1392 — Default retention window for orphaned wage-decision rows.
+ * A `wage_determination:*` row in `integration_sync_state` becomes
+ * "orphaned" once no project in the same org references the decision via
+ * `projects.wageDecision`. Once the row is also long-untouched (most
+ * recent of `lastSyncAt`/`lastAttemptAt` older than this threshold) it
+ * is safe to delete — any future project that brings the decision back
+ * in will trigger a fresh `queueWageDecisionSync` and recreate the row
+ * from scratch.
+ */
+const ORPHAN_WAGE_DECISION_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+
+/**
+ * Sweep orphaned `wage_determination:*` rows out of
+ * `integration_sync_state`. A row is dropped only when both:
+ *   - No project (in any org, scoped per-row by organizationId) currently
+ *     carries the decision number in `projects.wageDecision`, AND
+ *   - The most recent of `lastSyncAt` / `lastAttemptAt` is older than
+ *     `ORPHAN_WAGE_DECISION_RETENTION_MS` (default 90 days).
+ *
+ * Rows that have never been synced or attempted (both timestamps null)
+ * are left alone — they were just created and a concurrent flow may
+ * still own them. Returns the number of rows removed. Folded into
+ * `processFailedWageDecisionRetries` so the existing wage-decision retry
+ * job naturally drives the cleanup without a separate cron entry.
+ */
+export async function sweepOrphanedWageDecisionRows(
+  now: Date = new Date(),
+): Promise<number> {
+  const cutoff = new Date(now.getTime() - ORPHAN_WAGE_DECISION_RETENTION_MS);
+  let deleted = 0;
+  try {
+    // Pull only candidate rows whose *most recent* touch (the greater of
+    // lastSyncAt and lastAttemptAt) is older than the retention cutoff.
+    // GREATEST + a sentinel '-infinity' lets us treat each null as
+    // "infinitely old" so a row with one populated timestamp is judged
+    // purely on that timestamp. When both are null the GREATEST is
+    // '-infinity', which is < cutoff — but that case should never reach
+    // the deletion branch in practice (rows are stamped with
+    // lastAttemptAt on insert by upsertWageDecisionSyncState). The JS-side
+    // double check below also re-validates the per-row touch timestamps
+    // before the actual delete, so a brand-new row with both timestamps
+    // null is left alone.
+    const candidates = await db
+      .select()
+      .from(integrationSyncState)
+      .where(
+        and(
+          sql`${integrationSyncState.entityType} LIKE 'wage_determination:%'`,
+          sql`GREATEST(COALESCE(${integrationSyncState.lastSyncAt}, '-infinity'::timestamp), COALESCE(${integrationSyncState.lastAttemptAt}, '-infinity'::timestamp)) < ${cutoff}`,
+        ),
+      );
+    if (candidates.length === 0) return 0;
+
+    // Build a per-org set of referenced decision numbers. Scoping by org
+    // matches how `integration_sync_state` rows are partitioned and means
+    // org A deleting its last referencing project doesn't accidentally
+    // wipe org B's row for the same decision number.
+    const referencedRows = await db
+      .select({
+        organizationId: projects.gcOrganizationId,
+        wageDecision: projects.wageDecision,
+      })
+      .from(projects)
+      .where(isNotNull(projects.wageDecision));
+    const referenced = new Set<string>();
+    for (const r of referencedRows) {
+      const decision = (r.wageDecision ?? "").trim();
+      if (!decision || !r.organizationId) continue;
+      referenced.add(`${r.organizationId}::${decision}`);
+    }
+
+    const cutoffMs = cutoff.getTime();
+    for (const row of candidates) {
+      const decisionNumber = row.entityType.slice("wage_determination:".length).trim();
+      if (!decisionNumber) continue;
+      if (referenced.has(`${row.organizationId}::${decisionNumber}`)) continue;
+      // Defensive re-check: skip rows whose newest touch isn't actually
+      // older than the cutoff (e.g. a brand-new row with both timestamps
+      // null, or a row whose lastAttemptAt is recent even though
+      // lastSyncAt is ancient — the SQL GREATEST should already exclude
+      // these but we re-validate in JS to be safe).
+      const newestTouch = Math.max(
+        row.lastSyncAt?.getTime() ?? -Infinity,
+        row.lastAttemptAt?.getTime() ?? -Infinity,
+      );
+      if (!Number.isFinite(newestTouch) || newestTouch >= cutoffMs) continue;
+      await db
+        .delete(integrationSyncState)
+        .where(eq(integrationSyncState.id, row.id));
+      // Also evict any in-memory coalesce entry for this (connection, decision)
+      // pair so a future re-add doesn't inherit a stale suppression window.
+      failureCoalesceMap.delete(coalesceKey(row.connectionId, decisionNumber));
+      deleted += 1;
+    }
+    if (deleted > 0) {
+      logInfo("Davis-Bacon orphaned wage decision rows pruned", { deleted });
+    }
+  } catch (err) {
+    logWarn("Davis-Bacon orphaned wage decision sweep failed", {
+      error: String(err),
+    });
+  }
+  return deleted;
+}
+
+/**
  * Drop coalesce entries that are older than 2x the coalesce window so
  * a long-running worker can't accumulate unbounded keys for connections
  * or decisions that no longer fail. Cheap O(n) sweep — n is bounded
@@ -1064,6 +1170,11 @@ export async function processFailedWageDecisionRetries(
   // Done before the retry sweep so a stale key on a row that's about to be
   // resync'd doesn't leak past this run.
   await sweepStaleFailureNotifications(now);
+  // Task #1392: also drop entire `wage_determination:*` rows that no project
+  // in the org references anymore and whose last touch is older than the
+  // retention window. Keeps the integration_sync_state table from growing
+  // unbounded as projects come and go.
+  await sweepOrphanedWageDecisionRows(now);
   const out: SyncRetrySweepResult = await processIntegrationSyncRetries(now, {
     entityTypePattern: "wage_determination:%",
   });
