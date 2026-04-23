@@ -3241,6 +3241,9 @@ router.put("/api/payroll/settings", requireAuth, requireRole("ADMIN", "SUPER_ADM
       signerTitle: z.string().nullable().optional(),
       contractorAddress: z.string().nullable().optional(),
       defaultFringeOption: z.enum(["PLAN", "CASH", "NONE"]).optional(),
+      // Task #1178: 0 disables the auto-purge job for this org; cap at
+      // 36500 days (~100 years) to keep the column inside int range.
+      archivedReportRetentionDays: z.number().int().min(0).max(36500).optional(),
     });
 
     const data = updateSchema.parse(req.body);
@@ -3599,5 +3602,11 @@ router.get("/api/payroll/current-week-summary", requireAuth, requireRole("ADMIN"
     next(error);
   }
 });
+
+// Task #1178: nightly auto-purge of archived certified payroll PDFs.
+// Implementation lives in `server/jobs/certifiedPayrollPurge.ts` so it can
+// be unit-tested without booting the Express route surface — re-exported
+// here for discoverability per the task brief.
+export { processArchivedCertifiedPayrollPurge } from "./jobs/certifiedPayrollPurge";
 
 export default router;

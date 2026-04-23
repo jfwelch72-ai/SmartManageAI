@@ -21,6 +21,7 @@ import { bids } from "@shared/schema";
 import { eventBus } from "../events";
 import { emailAccounts, emailCampaigns, emailCampaignContacts } from "@shared/schema";
 import { syncImapAccount, syncOutlookAccount, syncGmailAccount, drainAccountProviderPushes } from "../emailRoutes";
+import { processArchivedCertifiedPayrollPurge } from "./certifiedPayrollPurge";
 import { ensureAllEmailPushSubscriptions } from "../emailPushNotifications";
 import { sendEmail } from "../services/emailService";
 import { processDueExecutions } from "../services/sequenceService";
@@ -58,6 +59,7 @@ let jobMetricQuietDigestTask: ReturnType<typeof cron.schedule> | null = null;
 let portfolioKpiSnapshotTask: ReturnType<typeof cron.schedule> | null = null;
 let certifiedPayrollDigestTask: ReturnType<typeof cron.schedule> | null = null;
 let swpppOverdueTask: ReturnType<typeof cron.schedule> | null = null;
+let certifiedPayrollPurgeTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -377,6 +379,22 @@ export function startJobRunner() {
     }
   });
 
+  // Task #1178: nightly cleanup at 03:30 UTC — hard-deletes archived
+  // certified payroll PDFs (and their object-storage blobs) older than
+  // each org's configured retention window. Runs after the 02:00 retention
+  // job and well before business hours so the daily storage cost reclaim
+  // shows up in tomorrow's metrics.
+  certifiedPayrollPurgeTask = cron.schedule("30 3 * * *", async () => {
+    try {
+      const result = await processArchivedCertifiedPayrollPurge();
+      if (result.rowsPurged > 0) {
+        logInfo("Archived certified payroll auto-purge run", result);
+      }
+    } catch (err) {
+      logError("Archived certified payroll auto-purge failed", { error: String(err) });
+    }
+  });
+
   // Task #693: daily morning email reminder routed to each contact's owner
   // (createdById) so account managers see today's birthdays without having to
   // open the CRM. Per-user opt-in/opt-out is handled by the existing
@@ -517,6 +535,10 @@ export function stopJobRunner() {
     swpppOverdueTask.stop();
     swpppOverdueTask = null;
   }
+  if (certifiedPayrollPurgeTask) {
+    certifiedPayrollPurgeTask.stop();
+    certifiedPayrollPurgeTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -553,6 +575,7 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   job_metric_quiet_digest: { fn: async () => { await sendJobMetricAlertQuietHoursDigests({ recordSends: true }); }, description: "Send digest of job-metric alerts that fired while a Super Admin was in quiet hours", schedule: "*/15 * * * *" },
   certified_payroll_digest: { fn: () => processCertifiedPayrollWeeklyDigest(), description: "Email payroll administrators a weekly digest of certified payroll PDFs generated in the last 7 days", schedule: "0 8 * * 1" },
   swppp_overdue_corrective_actions: { fn: () => processSwpppOverdueCorrectiveActions(), description: "Notify assignees and project managers when SWPPP corrective actions pass their due date without being resolved", schedule: "0 7 * * *" },
+  certified_payroll_purge: { fn: async () => { await processArchivedCertifiedPayrollPurge(); }, description: "Hard-delete archived certified payroll PDFs (and object-storage files) older than each org's retention window (default 3 years)", schedule: "30 3 * * *" },
 };
 
 async function processOutbox() {

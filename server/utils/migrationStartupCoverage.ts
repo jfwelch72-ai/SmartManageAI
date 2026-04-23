@@ -160,4 +160,5 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   "0043_certified_payroll_archive_columns.sql": { helper: "ensureCertifiedPayrollArchiveColumns" },
   "0044_dot_pay_item_match_history.sql": { helper: "ensureDotPayItemMatchHistory" },
   "0044_swppp_overdue_notification_marker.sql": { helper: "ensureSwpppOverdueNotificationColumn" },
+  "0044_certified_payroll_archived_retention.sql": { helper: "ensureCertifiedPayrollArchivedRetention" },
 };

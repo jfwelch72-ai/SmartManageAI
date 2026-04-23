@@ -137,6 +137,11 @@ export const organizationPayrollSettings = pgTable("organization_payroll_setting
   signerTitle: text("signer_title"),
   contractorAddress: text("contractor_address"),
   defaultFringeOption: text("default_fringe_option").notNull().default("PLAN"),
+  // Task #1178: retention window (in days) after which archived certified
+  // payroll PDFs are auto-purged by the nightly cleanup job. Default is
+  // 1095 days (~3 years), matching Davis-Bacon record retention. Setting
+  // to 0 disables the auto-purge for the org.
+  archivedReportRetentionDays: integer("archived_report_retention_days").notNull().default(1095),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
