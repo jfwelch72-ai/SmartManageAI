@@ -287,10 +287,8 @@ export function BidTabImportDialog({
       return;
     }
     setPhase("saving");
-    let succeeded = 0;
     let withDot = 0;
-    let failed = 0;
-    for (const r of toImport) {
+    const payloads = toImport.map((r) => {
       const useDot = r.accepted && r.selectedPayItemId && r.topMatch;
       const match = useDot ? r.topMatch! : null;
       const category = normalizeCategory(match?.payItem.category ?? null, globalCategory);
@@ -314,31 +312,37 @@ export function BidTabImportDialog({
         payload.dotSpecBookId = match.specBook.id;
         payload.payItemNumber = match.payItem.itemNumber;
         payload.specSection = match.payItem.specSection ?? null;
+        withDot++;
       }
-      try {
-        await apiRequest("POST", `/api/estimates/${estimateId}/line-items`, payload);
-        succeeded++;
-        if (match) withDot++;
-      } catch (err) {
-        failed++;
-      }
-    }
-    if (bidId) {
-      await queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
-    } else {
-      await queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId] });
-    }
-    toast({
-      title: failed === 0 ? "Bid tab imported" : "Bid tab import finished with errors",
-      description:
-        failed === 0
-          ? `${succeeded} line item(s) added — ${withDot} with DOT pay item links, ${succeeded - withDot} without.`
-          : `${succeeded} added (${withDot} with DOT links), ${failed} failed. Review and retry the failed rows.`,
-      variant: failed === 0 ? "default" : "destructive",
+      return payload;
     });
-    if (failed === 0) {
+
+    try {
+      await apiRequest(
+        "POST",
+        `/api/estimates/${estimateId}/line-items/bulk`,
+        { lineItems: payloads },
+      );
+      if (bidId) {
+        await queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
+      } else {
+        await queryClient.invalidateQueries({ queryKey: ["/api/estimates", estimateId] });
+      }
+      toast({
+        title: "Bid tab imported",
+        description: `${payloads.length} line item(s) added — ${withDot} with DOT pay item links, ${payloads.length - withDot} without.`,
+      });
       handleOpenChange(false);
-    } else {
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "The import was rolled back — no line items were saved. Review the rows and try again.";
+      toast({
+        title: "Bid tab import failed",
+        description: message,
+        variant: "destructive",
+      });
       setPhase("review");
     }
   };

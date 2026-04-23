@@ -1849,6 +1849,173 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
     }
   });
 
+  // Bulk create line items in a single transaction. Used by the bid-tab importer
+  // so a 200-row import is one round-trip and an all-or-nothing insert.
+  router.post("/api/estimates/:estimateId/line-items/bulk", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
+    try {
+      const { estimateId } = req.params;
+
+      if (!hasEstimateAccess(req.user!.role)) {
+        return res.status(403).json({ error: "Insufficient permissions" });
+      }
+
+      const rawItems: any[] | null = Array.isArray(req.body?.lineItems)
+        ? req.body.lineItems
+        : Array.isArray(req.body)
+          ? req.body
+          : null;
+
+      if (!rawItems) {
+        return res.status(400).json({
+          error: "Request body must be an array of line items or { lineItems: [...] }",
+        });
+      }
+      if (rawItems.length === 0) {
+        return res.status(400).json({ error: "lineItems must not be empty" });
+      }
+      if (rawItems.length > 1000) {
+        return res.status(400).json({
+          error: "Cannot create more than 1000 line items in a single request",
+        });
+      }
+
+      const estimate = await db.query.estimates.findFirst({
+        where: eq(estimates.id, estimateId),
+      });
+      if (!estimate) {
+        return res.status(404).json({ error: "Estimate not found" });
+      }
+
+      const decimalFields = [
+        'quantity', 'materialCost', 'laborHours', 'laborCost',
+        'equipmentHours', 'equipmentCost', 'consumablesCost',
+        'subcontractCost', 'overheadAllocation', 'profitAllocation', 'totalCost',
+        'computedQuantity', 'laborRateUsed',
+        'concreteDepthInches', 'dimensionWidthInches', 'dimensionHeightInches',
+        'concreteWasteFactor', 'calculatedConcreteYards',
+        'stoneDepthInches', 'stoneWasteFactor', 'calculatedStoneTons',
+        'excavationDepthInches', 'excavationWidthInches', 'excavationSwellFactor', 'calculatedExcavationYards',
+        'wireMeshCoverageSF', 'wireMeshWasteFactor', 'calculatedWireMeshRolls',
+        'rebarSpacingInches', 'rebarLengthFeet', 'rebarWasteFactor', 'calculatedRebarCount', 'calculatedRebarLinearFeet',
+        'dowelSpacingInches', 'dowelLengthInches', 'jointLengthFeet', 'calculatedDowelCount',
+        'sealerCoverageSFPerGallon', 'sealerWasteFactor', 'calculatedSealerGallons',
+        'underlaymentOverlapInches', 'underlaymentWasteFactor', 'calculatedUnderlaymentSF',
+      ];
+
+      const validatedRows: any[] = [];
+      for (let i = 0; i < rawItems.length; i++) {
+        const lineItem = rawItems[i] ?? {};
+
+        const materialInputs: MaterialCalculationInputs = {
+          quantity: Number(lineItem.quantity) || 0,
+          unit: lineItem.unit || '',
+          concreteDepthInches: lineItem.concreteDepthInches,
+          dimensionWidthInches: lineItem.dimensionWidthInches,
+          dimensionHeightInches: lineItem.dimensionHeightInches,
+          concreteWasteFactor: lineItem.concreteWasteFactor,
+          requiresStoneBase: lineItem.requiresStoneBase,
+          stoneDepthInches: lineItem.stoneDepthInches,
+          stoneWasteFactor: lineItem.stoneWasteFactor,
+          requiresExcavation: lineItem.requiresExcavation,
+          excavationDepthInches: lineItem.excavationDepthInches,
+          excavationWidthInches: lineItem.excavationWidthInches,
+          excavationSwellFactor: lineItem.excavationSwellFactor,
+          requiresWireMesh: lineItem.requiresWireMesh,
+          wireMeshCoverageSF: lineItem.wireMeshCoverageSF,
+          wireMeshWasteFactor: lineItem.wireMeshWasteFactor,
+          requiresRebar: lineItem.requiresRebar,
+          rebarSpacingInches: lineItem.rebarSpacingInches,
+          rebarLengthFeet: lineItem.rebarLengthFeet,
+          rebarWasteFactor: lineItem.rebarWasteFactor,
+          requiresDowels: lineItem.requiresDowels,
+          dowelSpacingInches: lineItem.dowelSpacingInches,
+          jointLengthFeet: lineItem.jointLengthFeet,
+          requiresSealer: lineItem.requiresSealer,
+          sealerCoverageSFPerGallon: lineItem.sealerCoverageSFPerGallon,
+          sealerCoats: lineItem.sealerCoats,
+          sealerWasteFactor: lineItem.sealerWasteFactor,
+          requiresUnderlayment: lineItem.requiresUnderlayment,
+          underlaymentOverlapInches: lineItem.underlaymentOverlapInches,
+          underlaymentWasteFactor: lineItem.underlaymentWasteFactor,
+        };
+
+        const materialResults = calculateMaterials(materialInputs);
+
+        const totalCost = (
+          Number(lineItem.materialCost || 0) +
+          Number(lineItem.laborCost || 0) +
+          Number(lineItem.equipmentCost || 0) +
+          Number(lineItem.consumablesCost || 0) +
+          Number(lineItem.subcontractCost || 0) +
+          Number(lineItem.overheadAllocation || 0) +
+          Number(lineItem.profitAllocation || 0)
+        ).toString();
+
+        const dotCheck = await validateDotPayItemLink(lineItem);
+        if (!dotCheck.ok) {
+          return res.status(400).json({ error: `Row ${i + 1}: ${dotCheck.error}` });
+        }
+
+        const normalizedLineItem = normalizeLineItemData(lineItem);
+
+        const parseInput: Record<string, any> = {
+          ...normalizedLineItem,
+          estimateId,
+          source: normalizedLineItem.source ?? "MANUAL",
+          totalCost,
+          calculatedConcreteYards: materialResults.calculatedConcreteYards ?? null,
+          calculatedStoneTons: materialResults.calculatedStoneTons ?? null,
+          calculatedExcavationYards: materialResults.calculatedExcavationYards ?? null,
+          calculatedWireMeshRolls: materialResults.calculatedWireMeshRolls ?? null,
+          calculatedRebarCount: materialResults.calculatedRebarCount ?? null,
+          calculatedRebarLinearFeet: materialResults.calculatedRebarLinearFeet ?? null,
+          calculatedDowelCount: materialResults.calculatedDowelCount ?? null,
+          calculatedSealerGallons: materialResults.calculatedSealerGallons ?? null,
+          calculatedUnderlaymentSF: materialResults.calculatedUnderlaymentSF ?? null,
+          materialRequirementsJson: generateMaterialRequirementsJson(materialResults),
+          equipmentRequirementsJson: generateEquipmentRequirementsJson(materialResults),
+        };
+
+        for (const field of decimalFields) {
+          if (parseInput[field] !== undefined && parseInput[field] !== null && typeof parseInput[field] === 'number') {
+            parseInput[field] = String(parseInput[field]);
+          }
+        }
+
+        try {
+          validatedRows.push(insertEstimateLineItemSchema.parse(parseInput));
+        } catch (err: any) {
+          return res.status(400).json({
+            error: `Row ${i + 1}: validation failed`,
+            details: err?.errors ?? String(err),
+          });
+        }
+      }
+
+      const inserted = await db.transaction(async (tx) => {
+        return await tx.insert(estimateLineItems).values(validatedRows).returning();
+      });
+
+      if (req.user?.organizationId) {
+        matchVendorPricing(inserted, req.user.organizationId).catch(() => {});
+      }
+
+      try {
+        await createEstimateSnapshot(estimateId, req.user!.id);
+      } catch (snapshotErr) {
+        logError(
+          "[Snapshot] Failed to create snapshot after bulk line item create:",
+          {},
+          snapshotErr instanceof Error ? snapshotErr : new Error(String(snapshotErr)),
+        );
+      }
+
+      res.status(201).json({ lineItems: inserted, count: inserted.length });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   // Update line item
   router.put("/api/estimates/:estimateId/line-items/:lineItemId", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
     try {
