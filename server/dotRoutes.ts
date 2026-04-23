@@ -134,7 +134,7 @@ function requireOrgFeatureFlag(flag: FeatureFlagKey) {
 
 async function dotAudit(
   req: AuthRequest,
-  action: "CREATE" | "UPDATE" | "DELETE" | "APPROVE" | "REJECT" | "SUBMIT",
+  action: "CREATE" | "UPDATE" | "DELETE" | "APPROVE" | "REJECT" | "SUBMIT" | "RESOLVE" | "REOPEN",
   entityType: string,
   entityId: string,
   oldValue: unknown,
