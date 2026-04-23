@@ -232,6 +232,67 @@ describe("Task #1381 — project-content media storage-key tenancy", () => {
     expect(rowsA.length).toBe(0);
   });
 
+  it("rejects POST /api/projects/:code/media when project belongs to another org (even with caller's own storage key)", async () => {
+    const res = await request(app)
+      .post(`/api/projects/${orgB.projectCode}/media`)
+      .set("Cookie", `auth_token=${orgA.token}`)
+      .set("Content-Type", "application/json")
+      .send({
+        type: "IMAGE",
+        fileName: "cross-tenant-project.jpg",
+        fileUrl: orgA.storageKey,
+        fileSize: 5,
+        mimeType: "image/jpeg",
+        caption: "should not be saved on org B's project",
+      });
+
+    expect([403, 404]).toContain(res.status);
+    expect(res.status).not.toBe(201);
+
+    const rowsB = await db
+      .select({ id: media.id })
+      .from(media)
+      .where(eq(media.projectId, orgB.projectId));
+    expect(rowsB.length).toBe(0);
+  });
+
+  it("rejects GET /api/projects/:code/media when project belongs to another org", async () => {
+    const res = await request(app)
+      .get(`/api/projects/${orgB.projectCode}/media`)
+      .set("Cookie", `auth_token=${orgA.token}`);
+
+    expect([403, 404]).toContain(res.status);
+  });
+
+  it("rejects DELETE /api/media/:id when media's project belongs to another org", async () => {
+    const [seeded] = await db
+      .insert(media)
+      .values({
+        projectId: orgB.projectId,
+        uploadedById: orgB.userId,
+        type: "IMAGE",
+        fileName: "org-b-photo.jpg",
+        fileUrl: orgB.storageKey,
+        fileSize: 5,
+        mimeType: "image/jpeg",
+      })
+      .returning();
+
+    const res = await request(app)
+      .delete(`/api/media/${seeded.id}`)
+      .set("Cookie", `auth_token=${orgA.token}`);
+
+    expect([403, 404]).toContain(res.status);
+
+    const stillThere = await db
+      .select({ id: media.id })
+      .from(media)
+      .where(eq(media.id, seeded.id));
+    expect(stillThere.length).toBe(1);
+
+    await db.delete(media).where(eq(media.id, seeded.id)).catch(() => {});
+  });
+
   it("accepts POST /api/projects/:code/media when fileUrl belongs to caller org", async () => {
     const res = await request(app)
       .post(`/api/projects/${orgA.projectCode}/media`)

@@ -201,6 +201,8 @@ router.get("/api/projects/:code/media", requireAuth, async (req: AuthRequest, re
       return;
     }
 
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
+
     const allMedia = await db
       .select()
       .from(media)
@@ -229,6 +231,8 @@ router.post("/api/projects/:code/media", requireAuth, requireRole("ADMIN", "MANA
       res.status(404).json({ error: "Project not found" });
       return;
     }
+
+    if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
     const sanitizedBody = {
       ...req.body,
@@ -319,6 +323,19 @@ router.delete("/api/media/:id", requireAuth, requireRole("ADMIN", "MANAGER", "SU
     if (!mediaItem) {
       res.status(404).json({ error: "Media not found" });
       return;
+    }
+
+    if (mediaItem.projectId) {
+      const [mediaProject] = await db
+        .select({ gcOrganizationId: projects.gcOrganizationId })
+        .from(projects)
+        .where(eq(projects.id, mediaItem.projectId))
+        .limit(1);
+      if (!mediaProject) {
+        res.status(404).json({ error: "Media not found" });
+        return;
+      }
+      if (!verifyOrgAccess(req, res, mediaProject.gcOrganizationId)) return;
     }
 
     const canDelete = req.user!.role === "ADMIN" || 
