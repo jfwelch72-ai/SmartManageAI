@@ -27,9 +27,20 @@ jobs:
       - name: Run TypeScript type checking
         run: npm run typecheck || npx tsc --noEmit
 
-      # TODO: Enable tests when test suite is configured
-      # - name: Run tests
-      #   run: npm test
+      # Task #1294 — run the jsdom-based estimate-component vitest suite on
+      # every PR so regressions to the BidTabImportDialog suggestion-reason
+      # popover surface (covered by
+      # client/src/components/estimate/__tests__/BidTabImportDialog.popover-signals.test.tsx,
+      # added in Task #1280) fail the PR check instead of slipping through.
+      # SKIP_TEST_DB_PUSH=1 bypasses the server-suite globalSetup that would
+      # otherwise require a live test database — these specs run entirely in
+      # jsdom and do not touch the DB. Scoped to client/src/components/estimate
+      # rather than the full client/ tree to avoid pulling in unrelated suites
+      # with pre-existing failures outside this task's scope.
+      - name: Run estimate frontend component tests
+        env:
+          SKIP_TEST_DB_PUSH: "1"
+        run: npx vitest run client/src/components/estimate
 
       - name: Build application
         run: npm run build
