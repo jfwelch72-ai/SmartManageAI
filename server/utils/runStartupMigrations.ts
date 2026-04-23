@@ -89,6 +89,7 @@ import { ensureUsersCrmBackfillSummaryPreferenceColumns } from "./ensureUsersCrm
 import { ensureCrmTranscriptBackfillTestAlertsTable } from "./ensureCrmTranscriptBackfillTestAlertsTable";
 import { ensureCrmAndReportingTables } from "./ensureCrmAndReportingTables";
 import { ensureCrmTranscriptBackfillAlertResendCooldownsTable } from "./ensureCrmTranscriptBackfillAlertResendCooldownsTable";
+import { runCertifiedPayrollBackfillOnce } from "./runCertifiedPayrollBackfillOnce";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -207,6 +208,12 @@ const migrations: MigrationStep[] = [
   // `shared/schema/operations.ts` so fresh checkouts don't 500 the moment the
   // transcript-backfill notification service tries to reserve a cooldown.
   { name: "crm_transcript_backfill_alert_resend_cooldowns_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillAlertResendCooldownsTable },
+  // Task #1118 — first-deploy auto-trigger for the certified-payroll PDF
+  // backfill. Runs once per environment (gated by a `one_shot_jobs` ledger
+  // row) so tenants get their pre-audit-table PDFs into the history tab
+  // automatically. Subsequent startups read a single row and no-op.
+  // Must run AFTER `heavy_civil_tables` so `certified_payroll_reports` exists.
+  { name: "certified_payroll_backfill_once", category: "ALTER_TABLE", fn: runCertifiedPayrollBackfillOnce },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

@@ -21,6 +21,10 @@
  *   npx tsx server/scripts/backfill-certified-payroll-reports.ts            # all orgs, real run
  *   npx tsx server/scripts/backfill-certified-payroll-reports.ts --dry-run  # report only
  *   npx tsx server/scripts/backfill-certified-payroll-reports.ts --org=<id> # single org
+ *
+ * Programmatic use: see `runCertifiedPayrollBackfill` below — the post-deploy
+ * one-shot runner in `server/utils/runCertifiedPayrollBackfillOnce.ts` calls
+ * it directly so every tenant gets backfilled without an admin running tsx.
  */
 
 import { and, eq, inArray } from "drizzle-orm";
@@ -29,6 +33,22 @@ import { db, pool } from "../db";
 import { certifiedPayrollReports, organizations, payRuns } from "@shared/schema";
 import { payrollFormVariantValues, type PayrollFormVariant } from "@shared/schema/enums";
 import { objectStorageClient } from "../objectStorage";
+
+export interface BackfillOptions {
+  dryRun?: boolean;
+  orgFilter?: string | null;
+}
+
+export interface BackfillStats {
+  inserted: number;
+  alreadyPresent: number;
+  missingPayRun: number;
+  skippedNonMatching: number;
+  totalListed: number;
+  orgsScanned: number;
+  dryRun: boolean;
+  skippedReason?: "no_private_dir";
+}
 
 interface CliOptions {
   dryRun: boolean;
@@ -90,12 +110,33 @@ function parseRelativeKey(relativeKey: string): ParsedKey | null {
   };
 }
 
-async function main() {
-  const opts = parseArgs(process.argv.slice(2));
+/**
+ * Run the certified-payroll backfill. Returns a stats object describing what
+ * was inserted/skipped. Safe to call repeatedly — existing object_keys are
+ * always skipped. When PRIVATE_OBJECT_DIR is unset, returns immediately with
+ * `skippedReason="no_private_dir"` instead of throwing, so the post-deploy
+ * runner can no-op cleanly in environments that don't use object storage.
+ */
+export async function runCertifiedPayrollBackfill(
+  options: BackfillOptions = {},
+): Promise<BackfillStats> {
+  const dryRun = !!options.dryRun;
+  const orgFilter = options.orgFilter ?? null;
+
+  const stats: BackfillStats = {
+    inserted: 0,
+    alreadyPresent: 0,
+    missingPayRun: 0,
+    skippedNonMatching: 0,
+    totalListed: 0,
+    orgsScanned: 0,
+    dryRun,
+  };
+
   const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
   if (!privateDir) {
-    console.error("PRIVATE_OBJECT_DIR is not set; nothing to scan.");
-    process.exit(1);
+    stats.skippedReason = "no_private_dir";
+    return stats;
   }
 
   const rawParts = privateDir.replace(/^\//, "").split("/");
@@ -107,32 +148,30 @@ async function main() {
   // (instead of the whole private bucket) keeps each call bounded for large
   // production buckets.
   let orgIds: string[];
-  if (opts.orgFilter) {
-    orgIds = [opts.orgFilter];
+  if (orgFilter) {
+    orgIds = [orgFilter];
   } else {
     const orgRows = await db.select({ id: organizations.id }).from(organizations);
     orgIds = orgRows.map((r) => r.id);
   }
-  console.log(`[backfill-cpr] bucket=${bucketName} basePrefix=${basePrefix} orgs=${orgIds.length} dryRun=${opts.dryRun}`);
+  console.log(`[backfill-cpr] bucket=${bucketName} basePrefix=${basePrefix} orgs=${orgIds.length} dryRun=${dryRun}`);
 
   const bucket = objectStorageClient.bucket(bucketName);
 
   // Bucket the discovered keys by orgId so we can validate pay runs in batches.
   type Candidate = { fullKey: string; relative: string; parsed: ParsedKey; size: number; createdAt: Date };
   const candidatesByOrg = new Map<string, Candidate[]>();
-  let skippedNonMatching = 0;
-  let totalListed = 0;
 
   for (const orgId of orgIds) {
     const listPrefix = `${basePrefix}${orgId}/payroll/certified/`;
     const [files] = await bucket.getFiles({ prefix: listPrefix });
     if (files.length === 0) continue;
-    totalListed += files.length;
+    stats.totalListed += files.length;
 
     for (const file of files) {
       const gcsName = file.name;
       if (!gcsName.toLowerCase().endsWith(".pdf")) {
-        skippedNonMatching++;
+        stats.skippedNonMatching++;
         continue;
       }
       const relative = basePrefix && gcsName.startsWith(basePrefix)
@@ -140,13 +179,13 @@ async function main() {
         : gcsName;
       const parsed = parseRelativeKey(relative);
       if (!parsed) {
-        skippedNonMatching++;
+        stats.skippedNonMatching++;
         continue;
       }
       // Defensive: GCS only returned objects under this org's prefix, but skip
       // anything whose parsed orgId disagrees (e.g. surprising bucket layout).
       if (parsed.orgId !== orgId) {
-        skippedNonMatching++;
+        stats.skippedNonMatching++;
         continue;
       }
 
@@ -164,11 +203,8 @@ async function main() {
       candidatesByOrg.set(parsed.orgId, list);
     }
   }
-  console.log(`[backfill-cpr] listed ${totalListed} object(s) across ${candidatesByOrg.size} org(s) with PDFs`);
-
-  let inserted = 0;
-  let alreadyPresent = 0;
-  let missingPayRun = 0;
+  stats.orgsScanned = candidatesByOrg.size;
+  console.log(`[backfill-cpr] listed ${stats.totalListed} object(s) across ${stats.orgsScanned} org(s) with PDFs`);
 
   for (const [orgId, candidates] of candidatesByOrg) {
     if (candidates.length === 0) continue;
@@ -194,11 +230,11 @@ async function main() {
     const toInsert: typeof certifiedPayrollReports.$inferInsert[] = [];
     for (const c of candidates) {
       if (existingKeys.has(c.fullKey)) {
-        alreadyPresent++;
+        stats.alreadyPresent++;
         continue;
       }
       if (!validPayRunIds.has(c.parsed.payRunId)) {
-        missingPayRun++;
+        stats.missingPayRun++;
         continue;
       }
       toInsert.push({
@@ -216,9 +252,9 @@ async function main() {
 
     if (toInsert.length === 0) continue;
 
-    if (opts.dryRun) {
+    if (dryRun) {
       console.log(`[backfill-cpr] org=${orgId} would insert ${toInsert.length} row(s)`);
-      inserted += toInsert.length;
+      stats.inserted += toInsert.length;
       continue;
     }
 
@@ -227,22 +263,47 @@ async function main() {
     for (let i = 0; i < toInsert.length; i += CHUNK) {
       const slice = toInsert.slice(i, i + CHUNK);
       await db.insert(certifiedPayrollReports).values(slice);
-      inserted += slice.length;
+      stats.inserted += slice.length;
     }
     console.log(`[backfill-cpr] org=${orgId} inserted ${toInsert.length} row(s)`);
   }
 
   console.log(
-    `[backfill-cpr] done. inserted=${inserted} alreadyPresent=${alreadyPresent} ` +
-      `missingPayRun=${missingPayRun} skippedNonMatching=${skippedNonMatching} dryRun=${opts.dryRun}`
+    `[backfill-cpr] done. inserted=${stats.inserted} alreadyPresent=${stats.alreadyPresent} ` +
+      `missingPayRun=${stats.missingPayRun} skippedNonMatching=${stats.skippedNonMatching} dryRun=${dryRun}`,
   );
+
+  return stats;
 }
 
-main()
-  .catch((err) => {
-    console.error("[backfill-cpr] failed", err);
-    process.exitCode = 1;
-  })
-  .finally(async () => {
-    await pool.end().catch(() => {});
-  });
+async function main() {
+  const opts = parseArgs(process.argv.slice(2));
+  const stats = await runCertifiedPayrollBackfill(opts);
+  if (stats.skippedReason === "no_private_dir") {
+    console.error("PRIVATE_OBJECT_DIR is not set; nothing to scan.");
+    process.exit(1);
+  }
+}
+
+// Only run as a CLI when invoked directly (e.g. `npx tsx`). Importing this
+// file from the startup runner must NOT close the shared pg pool.
+const isDirectInvocation = (() => {
+  try {
+    const entry = process.argv[1] || "";
+    return entry.endsWith("backfill-certified-payroll-reports.ts")
+      || entry.endsWith("backfill-certified-payroll-reports.js");
+  } catch {
+    return false;
+  }
+})();
+
+if (isDirectInvocation) {
+  main()
+    .catch((err) => {
+      console.error("[backfill-cpr] failed", err);
+      process.exitCode = 1;
+    })
+    .finally(async () => {
+      await pool.end().catch(() => {});
+    });
+}
