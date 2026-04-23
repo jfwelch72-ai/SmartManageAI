@@ -117,6 +117,24 @@ export interface SuppressedFailuresResponse {
   items: SuppressedFailureItem[];
 }
 
+/**
+ * Task #1442 — Recent suppression-reset audit history surfaced on the
+ * integrations panel so admins can see who already reset a row before
+ * they click Reset themselves.
+ */
+export interface SuppressionResetItem {
+  connectionId: string;
+  decisionNumber: string;
+  cleared: boolean;
+  userId: string | null;
+  userName: string | null;
+  timestamp: string;
+}
+
+export interface SuppressionResetsResponse {
+  items: SuppressionResetItem[];
+}
+
 export const PROVIDER_DESCRIPTIONS: Record<string, string> = {
   qbo: "Sync invoices, customers, and chart of accounts with QuickBooks Online.",
   google: "Connect Gmail and Google Calendar for email ingestion and scheduling.",

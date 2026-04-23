@@ -3,12 +3,12 @@ import { requireAuth, requireRole } from "./auth";
 import { getAllProviders, getProvider } from "./integrations/registry";
 import * as connectionService from "./integrations/connectionService";
 import * as importExportService from "./integrations/importExportService";
-import { logIntegrationAudit, getSecurityAuditLog } from "./integrations/audit";
+import { logIntegrationAudit, getSecurityAuditLog, recordSuppressionReset, listSuppressionResets } from "./integrations/audit";
 import { getConnectionHealth } from "./integrations/healthService";
 import * as outboxService from "./integrations/outboxService";
 import { logInfo, logError } from "./utils/logger";
 import { getCanonicalBaseUrl } from "./utils/routeHelpers";
-import { eq, and, desc, isNotNull, isNull } from "drizzle-orm";
+import { eq, and, desc, isNotNull, isNull, inArray } from "drizzle-orm";
 import { integrationConnections, type IntegrationConnection, integrationSyncState, integrationSyncAlertMutes, qboAccountMappings, qboSyncSchedules, zapierWebhooks, ZAPIER_EVENT_TYPES, projects, users as usersTable } from "@shared/schema";
 import { verifyIntegrationSyncMuteToken } from "./utils/integrationSyncMuteToken";
 import { db } from "./db";
@@ -913,6 +913,18 @@ router.post("/davis-bacon/suppressed-failures/reset", requireAuth, async (req, r
       cleared,
     });
 
+    // Task #1442 — also push into the per-org reset history buffer so
+    // the integrations panel can show "Last reset by X at Y" on each
+    // suppressed-failure row, preventing two admins from racing each
+    // other on the same row during an outage.
+    recordSuppressionReset({
+      orgId: user.organizationId,
+      userId: user.id,
+      connectionId,
+      decisionNumber,
+      cleared,
+    });
+
     res.json({ success: true, cleared });
   } catch (err) {
     next(err);
@@ -956,7 +968,86 @@ router.post("/davis-bacon/suppressed-failures/reset-all", requireAuth, async (re
       decisionNumbers,
     });
 
+    // Task #1442 — also push every cleared decision into the per-org
+    // reset history buffer so the "Last reset by X" line on the panel
+    // reflects bulk resets too, not just per-row clicks.
+    for (const decisionNumber of decisionNumbers) {
+      recordSuppressionReset({
+        orgId: user.organizationId,
+        userId: user.id,
+        connectionId,
+        decisionNumber,
+        cleared: true,
+      });
+    }
+
     res.json({ success: true, cleared, decisionNumbers });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Task #1442 — Recent `davis_bacon.suppression_reset` history scoped
+ * to the caller's org. The integrations UI uses this to surface
+ * "Last reset by X at Y" on each suppressed-failure row so two admins
+ * managing an outage don't race each other on the same (connection,
+ * decision). Includes both successful and no-op (`cleared=false`)
+ * resets — the no-op case is still useful evidence that a teammate
+ * just clicked the button.
+ */
+router.get("/davis-bacon/suppression-resets", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    // Clamp `limit` to a sane positive range so a negative/NaN query
+    // value can't surprise the buffer accessor or return an oddly
+    // sized payload.
+    const rawLimit = parseInt(req.query.limit as string, 10);
+    const limit =
+      Number.isFinite(rawLimit) && rawLimit > 0
+        ? Math.min(rawLimit, 200)
+        : 100;
+    const entries = listSuppressionResets(user.organizationId, limit);
+
+    const userIds = Array.from(
+      new Set(entries.map((e) => e.userId).filter((u): u is string => !!u)),
+    );
+    const nameById: Record<string, string> = {};
+    if (userIds.length > 0) {
+      const rows = await db
+        .select({
+          id: usersTable.id,
+          firstName: usersTable.firstName,
+          lastName: usersTable.lastName,
+        })
+        .from(usersTable)
+        .where(
+          and(
+            inArray(usersTable.id, userIds),
+            // Defence in depth: only resolve names within the caller's
+            // org even though the buffer entries are already org-scoped.
+            eq(usersTable.organizationId, user.organizationId),
+          ),
+        );
+      for (const r of rows) {
+        const name = `${r.firstName} ${r.lastName}`.trim();
+        nameById[r.id] = name || r.id;
+      }
+    }
+
+    const items = entries.map((e) => ({
+      connectionId: e.connectionId,
+      decisionNumber: e.decisionNumber,
+      cleared: e.cleared,
+      userId: e.userId ?? null,
+      userName: e.userId ? nameById[e.userId] ?? null : null,
+      timestamp: e.timestamp,
+    }));
+
+    res.json({ items });
   } catch (err) {
     next(err);
   }

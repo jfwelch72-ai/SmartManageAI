@@ -8,7 +8,7 @@ import {
   ChevronDown, ChevronUp, Shield, ShieldCheck, ShieldAlert,
   Lock, KeyRound, Info, BellOff, BellRing, RotateCcw,
 } from "lucide-react";
-import type { Connection, Provider, SecurityAuditEntry, SuppressedFailuresResponse, PROVIDER_DESCRIPTIONS as _PD } from "./types";
+import type { Connection, Provider, SecurityAuditEntry, SuppressedFailuresResponse, SuppressionResetsResponse, SuppressionResetItem, PROVIDER_DESCRIPTIONS as _PD } from "./types";
 import { PROVIDER_DESCRIPTIONS } from "./types";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -128,6 +128,14 @@ export function DavisBaconSuppressedFailuresPanel({
     queryKey: ["/api/integrations/davis-bacon/suppressed-failures"],
     refetchInterval: 30_000,
   });
+  // Task #1442 — recent suppression-reset audit history for the org so
+  // we can show "Last reset by Jane 4 minutes ago" on each row, which
+  // stops two admins from racing each other on the same decision
+  // during an active outage.
+  const { data: resetsData } = useQuery<SuppressionResetsResponse>({
+    queryKey: ["/api/integrations/davis-bacon/suppression-resets"],
+    refetchInterval: 30_000,
+  });
   const { toast } = useToast();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const resetMutation = useMutation({
@@ -153,6 +161,11 @@ export function DavisBaconSuppressedFailuresPanel({
       });
       queryClient.invalidateQueries({
         queryKey: ["/api/integrations/davis-bacon/suppressed-failures"],
+      });
+      // Task #1442 — also refresh the reset history so the just-clicked
+      // row immediately shows "Last reset by you a few seconds ago".
+      queryClient.invalidateQueries({
+        queryKey: ["/api/integrations/davis-bacon/suppression-resets"],
       });
     },
     onError: (err: unknown) => {
@@ -203,6 +216,16 @@ export function DavisBaconSuppressedFailuresPanel({
   });
   const items = (data?.items ?? []).filter((i) => i.connectionId === connectionId);
   if (items.length === 0) return null;
+
+  // Pre-index the most recent reset per (connection, decision) so each
+  // row lookup is O(1). The server returns entries newest-first, so the
+  // first match wins.
+  const latestResetByDecision: Record<string, SuppressionResetItem> = {};
+  for (const r of resetsData?.items ?? []) {
+    if (r.connectionId !== connectionId) continue;
+    if (latestResetByDecision[r.decisionNumber]) continue;
+    latestResetByDecision[r.decisionNumber] = r;
+  }
 
   const totalSuppressed = items.reduce((acc, i) => acc + i.suppressedCount, 0);
   const earliestSince = items.reduce<number | null>((acc, i) => {
@@ -283,51 +306,70 @@ export function DavisBaconSuppressedFailuresPanel({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <ul className="space-y-0.5 text-amber-700 dark:text-amber-400">
+      {/* Task #1442 — bumped from space-y-0.5 to space-y-1 to give each
+          row room for its "Last reset by X at Y" sub-line. */}
+      <ul className="space-y-1 text-amber-700 dark:text-amber-400">
         {items.map((i) => {
           const since = i.suppressedSince ?? i.lastNotifiedAt;
+          const lastReset = latestResetByDecision[i.decisionNumber];
           return (
             <li
               key={i.decisionNumber}
-              className="flex items-center justify-between gap-2"
+              className="space-y-0.5"
               data-testid={`row-davis-bacon-suppressed-${i.decisionNumber}`}
             >
-              <span className="font-mono truncate">{i.decisionNumber}</span>
-              <span className="shrink-0 flex items-center gap-2">
-                <span>
-                  <span data-testid={`text-davis-bacon-suppressed-count-${i.decisionNumber}`}>
-                    {i.suppressedCount}
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono truncate">{i.decisionNumber}</span>
+                <span className="shrink-0 flex items-center gap-2">
+                  <span>
+                    <span data-testid={`text-davis-bacon-suppressed-count-${i.decisionNumber}`}>
+                      {i.suppressedCount}
+                    </span>
+                    {since ? (
+                      <>
+                        {" since "}
+                        <span data-testid={`text-davis-bacon-suppressed-since-${i.decisionNumber}`}>
+                          {new Date(since).toLocaleString()}
+                        </span>
+                      </>
+                    ) : null}
                   </span>
-                  {since ? (
-                    <>
-                      {" since "}
-                      <span data-testid={`text-davis-bacon-suppressed-since-${i.decisionNumber}`}>
-                        {new Date(since).toLocaleString()}
-                      </span>
-                    </>
-                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 px-2 text-xs gap-1"
+                    disabled={
+                      resetMutation.isPending &&
+                      resetMutation.variables === i.decisionNumber
+                    }
+                    onClick={() => resetMutation.mutate(i.decisionNumber)}
+                    data-testid={`button-davis-bacon-reset-suppression-${i.decisionNumber}`}
+                    title="Force-deliver the next failure now instead of waiting for the 1h window to expire"
+                  >
+                    {resetMutation.isPending &&
+                    resetMutation.variables === i.decisionNumber ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <RotateCcw className="h-3 w-3" />
+                    )}
+                    Reset
+                  </Button>
                 </span>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-6 px-2 text-xs gap-1"
-                  disabled={
-                    resetMutation.isPending &&
-                    resetMutation.variables === i.decisionNumber
-                  }
-                  onClick={() => resetMutation.mutate(i.decisionNumber)}
-                  data-testid={`button-davis-bacon-reset-suppression-${i.decisionNumber}`}
-                  title="Force-deliver the next failure now instead of waiting for the 1h window to expire"
+              </div>
+              {lastReset ? (
+                <div
+                  className="pl-1 text-[11px] text-amber-600/80 dark:text-amber-500/80"
+                  data-testid={`text-davis-bacon-last-reset-${i.decisionNumber}`}
                 >
-                  {resetMutation.isPending &&
-                  resetMutation.variables === i.decisionNumber ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <RotateCcw className="h-3 w-3" />
-                  )}
-                  Reset
-                </Button>
-              </span>
+                  Last reset by{" "}
+                  <span className="font-medium">
+                    {lastReset.userName ?? "another admin"}
+                  </span>
+                  {" at "}
+                  {new Date(lastReset.timestamp).toLocaleString()}
+                  {lastReset.cleared ? "" : " (no active suppression)"}
+                </div>
+              ) : null}
             </li>
           );
         })}

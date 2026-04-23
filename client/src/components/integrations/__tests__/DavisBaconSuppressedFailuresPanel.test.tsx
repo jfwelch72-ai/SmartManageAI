@@ -32,11 +32,22 @@ vi.mock("@/hooks/use-toast", () => ({
 }));
 
 import { DavisBaconSuppressedFailuresPanel } from "../IntegrationProviderCard";
-import type { SuppressedFailuresResponse } from "../types";
+import type { SuppressedFailuresResponse, SuppressionResetsResponse } from "../types";
 
-function renderPanel(connectionId: string, response: SuppressedFailuresResponse) {
+function renderPanel(
+  connectionId: string,
+  response: SuppressedFailuresResponse,
+  resets: SuppressionResetsResponse = { items: [] },
+) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   qc.setQueryData(["/api/integrations/davis-bacon/suppressed-failures"], response);
+  // Task #1442 — pre-seed the reset-history query so the panel's
+  // useQuery doesn't try to fetch (the test QueryClient has no default
+  // queryFn).
+  qc.setQueryData(
+    ["/api/integrations/davis-bacon/suppression-resets"],
+    resets,
+  );
   const utils = render(
     <QueryClientProvider client={qc}>
       <DavisBaconSuppressedFailuresPanel connectionId={connectionId} />
@@ -349,6 +360,139 @@ describe("DavisBaconSuppressedFailuresPanel", () => {
         }),
       );
     });
+  });
+
+  it("shows 'Last reset by X at Y' for rows with recent reset history (Task #1442)", () => {
+    const tStart = new Date("2026-04-23T14:34:00Z").getTime();
+    const resetTs = "2026-04-23T14:56:00.000Z";
+    renderPanel(
+      "conn-1",
+      {
+        items: [
+          {
+            connectionId: "conn-1",
+            decisionNumber: "CA20260111",
+            suppressedCount: 5,
+            suppressedSince: tStart,
+            lastNotifiedAt: tStart - 60_000,
+          },
+          {
+            connectionId: "conn-1",
+            decisionNumber: "CA20260222",
+            suppressedCount: 3,
+            suppressedSince: tStart,
+            lastNotifiedAt: tStart - 60_000,
+          },
+        ],
+      },
+      {
+        items: [
+          {
+            connectionId: "conn-1",
+            decisionNumber: "CA20260111",
+            cleared: true,
+            userId: "u-jane",
+            userName: "Jane Doe",
+            timestamp: resetTs,
+          },
+          // Older reset for the same decision must not override the
+          // most-recent one above (server returns newest-first).
+          {
+            connectionId: "conn-1",
+            decisionNumber: "CA20260111",
+            cleared: true,
+            userId: "u-bob",
+            userName: "Bob Smith",
+            timestamp: "2026-04-22T10:00:00.000Z",
+          },
+          // Reset for a different connection on the same org must be
+          // ignored on this card.
+          {
+            connectionId: "conn-other",
+            decisionNumber: "CA20260111",
+            cleared: true,
+            userId: "u-mallory",
+            userName: "Mallory",
+            timestamp: resetTs,
+          },
+        ],
+      },
+    );
+
+    const line = screen.getByTestId("text-davis-bacon-last-reset-CA20260111");
+    expect(line.textContent).toContain("Jane Doe");
+    expect(line.textContent).toContain(new Date(resetTs).toLocaleString());
+    expect(line.textContent).not.toContain("Bob Smith");
+    // Decision without a reset shows nothing.
+    expect(
+      screen.queryByTestId("text-davis-bacon-last-reset-CA20260222"),
+    ).toBeNull();
+  });
+
+  it("annotates a no-op reset (cleared=false) so admins know it didn't change state", () => {
+    const tStart = new Date("2026-04-23T14:34:00Z").getTime();
+    renderPanel(
+      "conn-1",
+      {
+        items: [
+          {
+            connectionId: "conn-1",
+            decisionNumber: "CA20260333",
+            suppressedCount: 1,
+            suppressedSince: tStart,
+            lastNotifiedAt: tStart - 60_000,
+          },
+        ],
+      },
+      {
+        items: [
+          {
+            connectionId: "conn-1",
+            decisionNumber: "CA20260333",
+            cleared: false,
+            userId: "u-jane",
+            userName: "Jane Doe",
+            timestamp: "2026-04-23T14:55:00.000Z",
+          },
+        ],
+      },
+    );
+    const line = screen.getByTestId("text-davis-bacon-last-reset-CA20260333");
+    expect(line.textContent).toContain("Jane Doe");
+    expect(line.textContent).toContain("no active suppression");
+  });
+
+  it("falls back to 'another admin' when the reset author has no name", () => {
+    const tStart = new Date("2026-04-23T14:34:00Z").getTime();
+    renderPanel(
+      "conn-1",
+      {
+        items: [
+          {
+            connectionId: "conn-1",
+            decisionNumber: "CA20260444",
+            suppressedCount: 1,
+            suppressedSince: tStart,
+            lastNotifiedAt: tStart - 60_000,
+          },
+        ],
+      },
+      {
+        items: [
+          {
+            connectionId: "conn-1",
+            decisionNumber: "CA20260444",
+            cleared: true,
+            userId: null,
+            userName: null,
+            timestamp: "2026-04-23T14:55:00.000Z",
+          },
+        ],
+      },
+    );
+    expect(
+      screen.getByTestId("text-davis-bacon-last-reset-CA20260444").textContent,
+    ).toContain("another admin");
   });
 
   it("clears itself when a successful sync resolves the streak", async () => {

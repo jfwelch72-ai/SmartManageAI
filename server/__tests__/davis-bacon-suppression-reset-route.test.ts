@@ -31,9 +31,13 @@ vi.mock("../auth", () => ({
 }));
 
 const auditMock = vi.fn();
+const recordSuppressionResetMock = vi.fn();
+const listSuppressionResetsMock = vi.fn(() => []);
 vi.mock("../integrations/audit", () => ({
   logIntegrationAudit: auditMock,
   getSecurityAuditLog: () => [],
+  recordSuppressionReset: (...args: unknown[]) => recordSuppressionResetMock(...args),
+  listSuppressionResets: (...args: unknown[]) => listSuppressionResetsMock(...args),
 }));
 
 const resetMock = vi.fn();
@@ -113,6 +117,9 @@ let app: Express;
 beforeEach(async () => {
   resetMock.mockReset();
   auditMock.mockReset();
+  recordSuppressionResetMock.mockReset();
+  listSuppressionResetsMock.mockReset();
+  listSuppressionResetsMock.mockReturnValue([]);
   getConnectionMock.mockReset();
   testUser = null;
 
@@ -192,6 +199,16 @@ describe("POST /api/integrations/davis-bacon/suppressed-failures/reset (Task #14
     expect(resetMock.mock.calls[0][1]).toBe("CA20260001");
     expect(auditMock).toHaveBeenCalledWith(
       "davis_bacon.suppression_reset",
+      expect.objectContaining({
+        orgId: "org-1",
+        userId: "u-admin",
+        connectionId: "conn-1",
+        decisionNumber: "CA20260001",
+        cleared: true,
+      }),
+    );
+    // Task #1442 — also pushed into the per-org reset history buffer.
+    expect(recordSuppressionResetMock).toHaveBeenCalledWith(
       expect.objectContaining({
         orgId: "org-1",
         userId: "u-admin",

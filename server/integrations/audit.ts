@@ -80,3 +80,55 @@ export function logIntegrationAudit(
 export function getSecurityAuditLog(limit: number = 50): SecurityAuditEntry[] {
   return securityAuditLog.slice(0, limit);
 }
+
+/**
+ * Task #1442 — Per-org ring buffer of recent Davis-Bacon
+ * `davis_bacon.suppression_reset` events. The integrations panel reads
+ * this so admins can see "Jane reset CA20260111 4 minutes ago" before
+ * they click Reset themselves during an active outage and end up
+ * stomping on each other.
+ *
+ * Stored in-memory (matching the rest of this file) — the audit logger
+ * is the canonical record; this buffer is just a fast lookup for the
+ * UI's most-recent-N display.
+ */
+export interface SuppressionResetAuditEntry {
+  orgId: string;
+  connectionId: string;
+  decisionNumber: string;
+  userId?: string;
+  cleared: boolean;
+  timestamp: string;
+}
+
+const suppressionResetLog: SuppressionResetAuditEntry[] = [];
+const MAX_SUPPRESSION_RESET_LOG_SIZE = 500;
+
+export function recordSuppressionReset(
+  entry: Omit<SuppressionResetAuditEntry, "timestamp">,
+): void {
+  suppressionResetLog.unshift({
+    ...entry,
+    timestamp: new Date().toISOString(),
+  });
+  if (suppressionResetLog.length > MAX_SUPPRESSION_RESET_LOG_SIZE) {
+    suppressionResetLog.length = MAX_SUPPRESSION_RESET_LOG_SIZE;
+  }
+}
+
+export function listSuppressionResets(
+  orgId: string,
+  limit: number = 50,
+): SuppressionResetAuditEntry[] {
+  const out: SuppressionResetAuditEntry[] = [];
+  for (const e of suppressionResetLog) {
+    if (e.orgId !== orgId) continue;
+    out.push(e);
+    if (out.length >= limit) break;
+  }
+  return out;
+}
+
+export function _clearSuppressionResetLogForTests(): void {
+  suppressionResetLog.length = 0;
+}
