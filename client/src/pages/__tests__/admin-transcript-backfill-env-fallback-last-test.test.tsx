@@ -23,7 +23,9 @@ import React from "react";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-const apiRequestMock = vi.fn(async () => new Response("{}", { status: 200 }));
+const { apiRequestMock } = vi.hoisted(() => ({
+  apiRequestMock: vi.fn(async () => new Response("{}", { status: 200 })),
+}));
 
 vi.mock("@/hooks/use-auth", () => ({
   useAuth: () => ({
