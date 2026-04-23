@@ -1204,6 +1204,119 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   );
 
+  // Task #1448 — Generic "one-shot jobs" admin API. Lists every job
+  // registered via `registerOneShotJob` joined with its `one_shot_jobs`
+  // ledger row so Super Admins can see what has run and re-fan any of
+  // them from a single panel without per-job endpoints. Importing the
+  // runner modules here is what triggers their top-level
+  // `registerOneShotJob` calls in case startup migrations haven't been
+  // executed yet (defense-in-depth — they normally have by request time).
+  app.get(
+    "/api/admin/jobs/one-shot",
+    requireAuth,
+    requireRole("SUPER_ADMIN"),
+    async (_req: AuthRequest, res: Response, next: NextFunction) => {
+      try {
+        await import("./utils/runCertifiedPayrollBackfillOnce");
+        await import("./utils/runExhaustedSyncRetryAlertsBackfillOnce");
+        const {
+          getRegisteredOneShotJobs,
+          readOneShotJobLedger,
+        } = await import("./utils/oneShotJobRegistry");
+
+        const [descriptors, ledger] = await Promise.all([
+          Promise.resolve(getRegisteredOneShotJobs()),
+          readOneShotJobLedger(),
+        ]);
+        const ledgerByName = new Map(ledger.map((row) => [row.name, row]));
+        const seen = new Set<string>();
+
+        const jobs = descriptors.map((d) => {
+          seen.add(d.name);
+          const row = ledgerByName.get(d.name) ?? null;
+          return {
+            name: d.name,
+            title: d.title,
+            description: d.description,
+            registered: true,
+            completedAt: row?.completedAt ?? null,
+            details: row?.details ?? null,
+          };
+        });
+
+        // Surface ledger rows that no longer have a registered runner so ops
+        // can see (and clean up) stale flags from removed jobs.
+        for (const row of ledger) {
+          if (seen.has(row.name)) continue;
+          jobs.push({
+            name: row.name,
+            title: row.name,
+            description:
+              "Ledger row for a job that is no longer registered in this build. " +
+              "Re-running is unavailable; the row can be cleared from psql if obsolete.",
+            registered: false,
+            completedAt: row.completedAt,
+            details: row.details,
+          });
+        }
+
+        res.json({ jobs });
+      } catch (err: any) {
+        next(err);
+      }
+    },
+  );
+
+  app.post(
+    "/api/admin/jobs/one-shot/:name/rerun",
+    requireAuth,
+    requireRole("SUPER_ADMIN"),
+    async (req: AuthRequest, res: Response, next: NextFunction) => {
+      try {
+        await import("./utils/runCertifiedPayrollBackfillOnce");
+        await import("./utils/runExhaustedSyncRetryAlertsBackfillOnce");
+        const { getOneShotJob, runOneShotJob } = await import(
+          "./utils/oneShotJobRegistry"
+        );
+
+        const name = String(req.params.name ?? "");
+        if (!getOneShotJob(name)) {
+          return res
+            .status(404)
+            .json({ error: `Unknown one-shot job: ${name}` });
+        }
+
+        const outcome = await runOneShotJob(name);
+
+        const { logAudit } = await import("./auditLogger");
+        await logAudit(
+          {
+            userId: req.user!.id,
+            action: "EXECUTE",
+            entityType: "background_job",
+            entityId: name,
+            newValue:
+              `Manual one-shot re-run via admin panel ` +
+              `(status=${outcome.status}, ledgerCleared=${outcome.ledgerCleared}, ` +
+              `durationMs=${outcome.durationMs}` +
+              `${outcome.error ? `, error=${outcome.error}` : ""})`,
+          },
+          req,
+        );
+
+        logInfo(
+          `[admin] one-shot job ${name} re-run by ${req.user!.id} — ` +
+            `status=${outcome.status}, ledgerCleared=${outcome.ledgerCleared}, ` +
+            `${outcome.durationMs}ms`,
+        );
+
+        res.json(outcome);
+      } catch (err: any) {
+        next(err);
+      }
+    },
+  );
+
   // Task #1401: surface the most recent `wage_decision_stale_refresh`
   // sweep summary on the admin Jobs dashboard so operators can confirm
   // at a glance that prevailing wage rates are being kept fresh and

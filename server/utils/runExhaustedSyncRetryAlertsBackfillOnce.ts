@@ -12,6 +12,10 @@ import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError, logInfo, logWarn } from "./logger";
 import { backfillExhaustedSyncRetryAlerts } from "../services/integrationSyncRetryNotifications";
+import {
+  registerOneShotJob,
+  type OneShotJobRunResult,
+} from "./oneShotJobRegistry";
 
 export const JOB_NAME = "backfill_exhausted_sync_retry_alerts_v1";
 
@@ -92,3 +96,35 @@ export async function runExhaustedSyncRetryAlertsBackfillOnce(): Promise<RunExha
     return { status: "bookkeeping_error", error: err instanceof Error ? err.message : String(err) };
   }
 }
+
+// Task #1448 — register this job in the generic one-shot registry. Re-runs
+// must clear the ledger row first because the once-runner short-circuits
+// when the ledger row already exists (otherwise the re-run would be a no-op
+// SELECT). The structured result from the once-runner is mapped onto the
+// registry's normalized OneShotJobRunResult shape so the admin UI can show
+// stats / error reason.
+registerOneShotJob({
+  name: JOB_NAME,
+  title: "Exhausted sync retry alerts backfill",
+  description:
+    "Re-fans the \"integration sync gave up\" admin summary alert (Task #1391) " +
+    "for any integration_sync_state row that was already exhausted before the " +
+    "notification feature shipped. Use after a notification provider outage " +
+    "or for staging re-tests. (Task #1405)",
+  run: async (): Promise<OneShotJobRunResult> => {
+    // The shared `runOneShotJob` registry helper has already cleared the
+    // ledger row before invoking us, so the once-runner will actually
+    // perform work instead of short-circuiting on the SELECT check.
+    const result = await runExhaustedSyncRetryAlertsBackfillOnce();
+    if (result.status === "completed") {
+      return {
+        status: "completed",
+        details: { elapsedMs: result.elapsedMs, ...result.stats },
+      };
+    }
+    if (result.status === "skipped_already_complete") {
+      return { status: "skipped_already_complete" };
+    }
+    return { status: result.status, error: result.error };
+  },
+});

@@ -5,6 +5,11 @@ import {
   runCertifiedPayrollBackfill,
   type BackfillStats,
 } from "../scripts/backfill-certified-payroll-reports";
+import {
+  registerOneShotJob,
+  readOneShotJobLedgerRow,
+  type OneShotJobRunResult,
+} from "./oneShotJobRegistry";
 
 export const JOB_NAME = "backfill_certified_payroll_reports_v1";
 
@@ -131,3 +136,34 @@ export async function runCertifiedPayrollBackfillOnce(): Promise<void> {
     );
   }
 }
+
+// Task #1448 — register this job in the generic one-shot registry so the
+// admin "One-shot jobs" panel can surface and re-run it without a bespoke
+// endpoint or UI card.
+registerOneShotJob({
+  name: JOB_NAME,
+  title: "Certified payroll PDF backfill",
+  description:
+    "Scans object storage for previously generated certified payroll PDFs " +
+    "and inserts matching `certified_payroll_reports` rows so they appear in " +
+    "the audit table. (Task #1118)",
+  run: async (): Promise<OneShotJobRunResult> => {
+    // The once-runner intentionally swallows internal failures so it can
+    // never crash startup — it only writes a `one_shot_jobs` ledger row when
+    // the backfill (or its no_private_dir short-circuit) actually succeeds.
+    // For manual re-runs we need a truthful status, so infer success from
+    // the post-run ledger row: a row means the runner marked itself complete,
+    // absence means the runner caught and logged an error.
+    await runCertifiedPayrollBackfillOnce();
+    const ledger = await readOneShotJobLedgerRow(JOB_NAME);
+    if (!ledger) {
+      return {
+        status: "failed",
+        error:
+          "Certified payroll backfill did not mark itself complete — see " +
+          "server logs for the underlying error.",
+      };
+    }
+    return { status: "completed", details: ledger.details ?? undefined };
+  },
+});

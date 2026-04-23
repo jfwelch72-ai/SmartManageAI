@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Building2, Users, TrendingUp, Activity, ChevronRight, Database, Clock, Server, DollarSign, FileText } from "lucide-react";
+import { Building2, Users, TrendingUp, Activity, ChevronRight, Database, Clock, Server, DollarSign, FileText, ListChecks } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -422,6 +422,18 @@ export default function PlatformAdminDashboard() {
                 Background job metrics
               </CardTitle>
               <CardDescription>Birthday digest delivery health and counters from other tracked jobs</CardDescription>
+            </CardHeader>
+          </Card>
+        </Link>
+
+        <Link href="/admin/one-shot-jobs">
+          <Card className="hover-elevate cursor-pointer transition-colors" data-testid="link-admin-one-shot-jobs">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <ListChecks className="h-5 w-5" />
+                One-shot jobs
+              </CardTitle>
+              <CardDescription>Post-deploy backfills with last-completion details and one-click re-run</CardDescription>
             </CardHeader>
           </Card>
         </Link>
