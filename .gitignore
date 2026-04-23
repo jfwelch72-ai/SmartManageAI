@@ -14,3 +14,14 @@ audit/reports/*.md
 test-results/
 nohup.out
 .env.test
+
+# Staged DOT pay-item drops (see incoming/README.md). Drops are large,
+# agency-licensed, and not committed; only the regenerated catalog JSONs
+# under server/data/dot/pay-items/ are tracked.
+incoming/*.csv
+incoming/*.tsv
+incoming/*.xml
+incoming/*.xlsx
+incoming/*.xls
+incoming/*.pdf
+incoming/*.zip
