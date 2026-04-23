@@ -600,9 +600,19 @@ export function composeEmailContent(
   // instead of every distinct entity exhaustion paging the whole admin
   // group.
   if (type === "INTEGRATION_SYNC_RETRIES_EXHAUSTED") {
-    const actionUrl = `${baseUrl}/integrations#section-sync-retries`;
+    // Task #1414 — Deep-link directly to the affected row in the
+    // "Integration sync retries" panel using the syncStateId stored on
+    // the notification's relatedEntityId. The panel renders a stable
+    // anchor `id="sync-retry-<id>"` per row that scrolls into view +
+    // briefly highlights on hash navigation. Falls back to the panel
+    // section anchor when no relatedEntityId is present (defensive).
+    const rowAnchor =
+      notification.relatedEntityType === "INTEGRATION_SYNC_STATE" && notification.relatedEntityId
+        ? `sync-retry-${notification.relatedEntityId}`
+        : "section-sync-retries";
+    const actionUrl = `${baseUrl}/integrations#${rowAnchor}`;
     const subject = `Integration sync gave up — SmartManageAI`;
-    const actionText = "Open Integrations";
+    const actionText = "Open Integration Sync Retry";
     const messageHtml = escapeHtml(notification.message).replace(/\n/g, "<br>");
 
     const ctx = extras.integrationSyncContext;
@@ -615,6 +625,10 @@ export function composeEmailContent(
         ? buildIntegrationSyncMuteUrl(baseUrl, notification.userId, ctx.connectionId, null)
         : "";
     const settingsUrl = `${baseUrl}/integrations#section-sync-retries`;
+    // Task #1414 — deep link to the per-admin opt-out toggle for this
+    // email channel, so the recipient can silence just the email
+    // without disabling the in-app bell.
+    const emailPrefsUrl = `${baseUrl}/settings/notifications#section-integration-sync-exhausted-email-prefs`;
     const labelHtml = ctx ? escapeHtml(ctx.integrationLabel) : "this integration";
     const entityHtml = ctx ? escapeHtml(ctx.entityType) : "";
 
@@ -640,7 +654,7 @@ export function composeEmailContent(
         </p>
         <hr style="margin-top: 30px; border: none; border-top: 1px solid #eee;">
         <p style="color: #999; font-size: 12px; line-height: 1.6;">
-          You are receiving this because you are an administrator for your organization.${muteFooterHtml}<a href="${settingsUrl}" style="color: #999; text-decoration: underline;">Review sync retries</a>
+          You are receiving this because you are an administrator for your organization.${muteFooterHtml}<a href="${settingsUrl}" style="color: #999; text-decoration: underline;">Review sync retries</a> &middot; <a href="${emailPrefsUrl}" style="color: #999; text-decoration: underline;" data-testid="link-integration-sync-exhausted-email-prefs">Manage email preferences</a>
         </p>
       </div>
     `;
@@ -920,7 +934,13 @@ function deliverSlack(webhookUrl: string | null, notification: NotificationRecor
 export async function deliverNotification(notification: NotificationRecord): Promise<void> {
   try {
     const [userRow] = await db
-      .select({ email: users.email, phone: users.phone, organizationId: users.organizationId })
+      .select({
+        email: users.email,
+        phone: users.phone,
+        organizationId: users.organizationId,
+        // Task #1414 — per-admin opt-out for the "sync gave up" email.
+        integrationSyncExhaustedEmailOptOut: users.integrationSyncExhaustedEmailOptOut,
+      })
       .from(users)
       .where(eq(users.id, notification.userId))
       .limit(1);
@@ -934,9 +954,20 @@ export async function deliverNotification(notification: NotificationRecord): Pro
       enterpriseNotifications = await hasFeature(userRow.organizationId, "ENTERPRISE_NOTIFICATIONS");
     }
 
+    // Task #1414 — INTEGRATION_SYNC_RETRIES_EXHAUSTED is a "sync gave up"
+    // admin alert that admins might miss for days. Email delivery defaults
+    // ON regardless of `notificationDelivery` channel preferences (most
+    // admins haven't tuned them) — admins opt out via
+    // users.integration_sync_exhausted_email_opt_out. The in-app
+    // notification ships through the regular path either way.
+    const forceEmailForExhaustedSync =
+      notification.type === "INTEGRATION_SYNC_RETRIES_EXHAUSTED" &&
+      !userRow.integrationSyncExhaustedEmailOptOut &&
+      !!userRow.email;
+
     const tasks: Promise<void>[] = [];
 
-    if (prefs.emailEnabled) {
+    if (prefs.emailEnabled || forceEmailForExhaustedSync) {
       tasks.push(deliverEmail(userRow.email, notification));
     }
     if (prefs.smsEnabled && enterpriseNotifications && isTwilioConfigured()) {

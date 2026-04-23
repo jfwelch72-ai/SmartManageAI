@@ -1058,6 +1058,11 @@ const upload = multer({
         alertFailureEmailMode: z
           .enum(["both", "realtime", "digest", "none"])
           .optional(),
+        // Task #1414 — per-admin opt-out for the
+        // INTEGRATION_SYNC_RETRIES_EXHAUSTED transactional email. Default
+        // is `false` (admin receives the email); flipping to `true`
+        // silences it while leaving the in-app bell intact.
+        integrationSyncExhaustedEmailOptOut: z.boolean().optional(),
       });
       const parsed = profileSchema.safeParse(req.body);
       if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
@@ -1078,7 +1083,8 @@ const upload = multer({
         crmBackfillSummaryOnFailureOnly,
         crmAlertFailureFallbackEnabled,
         crmAlertFailureFallbackMutedChannels,
-        alertFailureEmailMode } = parsed.data;
+        alertFailureEmailMode,
+        integrationSyncExhaustedEmailOptOut } = parsed.data;
       const updateData: Record<string, unknown> = { updatedAt: new Date() };
       if (firstName !== undefined) updateData.firstName = firstName;
       if (lastName !== undefined) updateData.lastName = lastName;
@@ -1116,6 +1122,9 @@ const upload = multer({
         );
       }
       if (alertFailureEmailMode !== undefined) updateData.alertFailureEmailMode = alertFailureEmailMode;
+      if (integrationSyncExhaustedEmailOptOut !== undefined) {
+        updateData.integrationSyncExhaustedEmailOptOut = integrationSyncExhaustedEmailOptOut;
+      }
 
       const [updated] = await db.update(users).set(updateData).where(eq(users.id, userId)).returning();
       if (!updated) { res.status(404).json({ error: "User not found" }); return; }

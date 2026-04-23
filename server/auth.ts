@@ -223,6 +223,16 @@ export async function authMiddleware(
       // can render the persisted toggle and per-channel mutes.
       crmAlertFailureFallbackEnabled: user.crmAlertFailureFallbackEnabled,
       crmAlertFailureFallbackMutedChannels: user.crmAlertFailureFallbackMutedChannels,
+      // Task #1076 — per-admin opt-in for the two streams of CRM
+      // transcript-backfill alert delivery failure emails. Surfaced so
+      // Notification Preferences can render the persisted value after a
+      // /api/auth/me refetch (PATCH /api/auth/profile already returns
+      // it, but the middleware-cached `req.user` was missing it).
+      alertFailureEmailMode: user.alertFailureEmailMode,
+      // Task #1414 — per-admin opt-out for the
+      // INTEGRATION_SYNC_RETRIES_EXHAUSTED transactional email so the
+      // settings toggle reflects the saved state across reloads.
+      integrationSyncExhaustedEmailOptOut: user.integrationSyncExhaustedEmailOptOut,
       effectiveRole,
       isHustlerOwner,
     };

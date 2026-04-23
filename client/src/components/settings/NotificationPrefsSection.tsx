@@ -606,6 +606,60 @@ export default function NotificationPrefsSection() {
     updateAlertFailureEmailModeMutation.mutate(mode);
   }
 
+  // Task #1414 — Per-admin opt-out for the
+  // INTEGRATION_SYNC_RETRIES_EXHAUSTED transactional email. The fan-out
+  // (server/services/integrationSyncRetryNotifications.ts) emails admins
+  // by default regardless of their `notificationDelivery` channel
+  // preferences because admins might miss the in-app bell for days.
+  // Flipping this toggle silences the email while keeping the in-app
+  // notification intact.
+  const [
+    integrationSyncExhaustedEmailOptOut,
+    setIntegrationSyncExhaustedEmailOptOut,
+  ] = useState(false);
+  useEffect(() => {
+    if (authUser) {
+      setIntegrationSyncExhaustedEmailOptOut(
+        Boolean(authUser.integrationSyncExhaustedEmailOptOut ?? false),
+      );
+    }
+  }, [authUser]);
+  const updateIntegrationSyncExhaustedEmailOptOutMutation = useMutation({
+    mutationFn: async (optOut: boolean) => {
+      return await apiRequest("PATCH", "/api/auth/profile", {
+        integrationSyncExhaustedEmailOptOut: optOut,
+      });
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      toast({
+        title: variables
+          ? "You won't receive integration sync exhaustion emails"
+          : "You'll receive integration sync exhaustion emails",
+        description: variables
+          ? "The in-app notification still appears in your bell when an integration sync gives up."
+          : "We'll email you whenever an integration sync gives up after retrying.",
+      });
+    },
+    onError: (error: Error) => {
+      setIntegrationSyncExhaustedEmailOptOut(
+        Boolean(authUser?.integrationSyncExhaustedEmailOptOut ?? false),
+      );
+      toast({
+        title: "Failed to update preference",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+  function handleIntegrationSyncExhaustedEmailOptOutChange(receiveEmails: boolean) {
+    // The Switch represents "send me these emails" (i.e. !optOut) so the
+    // affirmative state matches the safer default. Flip it for storage.
+    const optOut = !receiveEmails;
+    setIntegrationSyncExhaustedEmailOptOut(optOut);
+    updateIntegrationSyncExhaustedEmailOptOutMutation.mutate(optOut);
+  }
+
   // Task #1086 — preview the per-admin alert-delivery-failure emails
   // (real-time + daily digest). Mirrors the Task #1046 backfill-summary
   // test button: fires a sample to the current admin only, marked
@@ -2346,6 +2400,45 @@ export default function NotificationPrefsSection() {
                   </div>
                 </div>
               )}
+
+              {/*
+                Task #1414 — Per-admin opt-out toggle for the
+                INTEGRATION_SYNC_RETRIES_EXHAUSTED transactional email.
+                Email delivery defaults ON regardless of channel
+                preferences because admins might miss the in-app bell
+                for days; flipping this switch off silences just the
+                email while leaving the in-app notification intact.
+                Anchor id matches the email footer's "Manage email
+                preferences" deep-link target.
+              */}
+              <div
+                id="section-integration-sync-exhausted-email-prefs"
+                data-testid="section-integration-sync-exhausted-email-prefs"
+              >
+                <h3 className="text-sm font-semibold mb-1 text-muted-foreground uppercase tracking-wide">
+                  Integration sync exhaustion email
+                </h3>
+                <p className="text-xs text-muted-foreground mb-3">
+                  When an integration sync (QuickBooks, STACK CT, Zapier, …) gives up after exhausting its automatic retries, we email org admins by default so the failure isn't missed. The in-app notification always appears in your bell either way.
+                </p>
+                <div className="flex items-center justify-between py-1">
+                  <div className="space-y-0.5 pr-4">
+                    <Label htmlFor="switch-integration-sync-exhausted-email" className="text-sm">
+                      Email me when an integration sync gives up
+                    </Label>
+                    <p className="text-xs text-muted-foreground">
+                      Recommended for org admins. Turn off if you only want the in-app bell.
+                    </p>
+                  </div>
+                  <Switch
+                    id="switch-integration-sync-exhausted-email"
+                    checked={!integrationSyncExhaustedEmailOptOut}
+                    onCheckedChange={handleIntegrationSyncExhaustedEmailOptOutChange}
+                    disabled={updateIntegrationSyncExhaustedEmailOptOutMutation.isPending}
+                    data-testid="switch-integration-sync-exhausted-email"
+                  />
+                </div>
+              </div>
 
               <div data-testid="section-crm-contact-reassigned-prefs">
                 <h3 className="text-sm font-semibold mb-1 text-muted-foreground uppercase tracking-wide">CRM Contact Reassigned</h3>

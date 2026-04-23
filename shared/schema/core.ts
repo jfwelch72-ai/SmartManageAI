@@ -495,6 +495,16 @@ export const users = pgTable("users", {
   alertFailureEmailMode: alertFailureEmailModeEnum(
     "alert_failure_email_mode",
   ).notNull().default("both"),
+  // Task #1414 — Per-admin opt-out toggle for the
+  // INTEGRATION_SYNC_RETRIES_EXHAUSTED transactional email. The fan-out
+  // ships this email by default (regardless of `notificationDelivery`
+  // channel preferences) because admins might miss the in-app bell for
+  // days; flipping this column to `true` silences the email for that
+  // admin while leaving the in-app notification intact. Mirrors the
+  // CRM `alert_failure_email_mode` opt-out pattern.
+  integrationSyncExhaustedEmailOptOut: boolean(
+    "integration_sync_exhausted_email_opt_out",
+  ).notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

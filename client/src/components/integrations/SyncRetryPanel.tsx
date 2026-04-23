@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -65,13 +66,50 @@ function formatEntityType(entityType: string): string {
     .replace(/_/g, " ");
 }
 
+// Task #1414 — When the "Integration sync gave up" email's CTA deep-links
+// to /integrations#sync-retry-<syncStateId>, we read the hash on mount
+// (and on hash changes) so the row both scrolls into view and renders a
+// brief ring highlight, making the email's "click here to fix it" flow
+// land users directly on the offending row instead of just the panel.
+function useSyncRetryHashAnchor(): { focusedId: string | null } {
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  useEffect(() => {
+    function syncFromHash() {
+      const hash = typeof window !== "undefined" ? window.location.hash : "";
+      const match = /^#sync-retry-(.+)$/.exec(hash);
+      setFocusedId(match ? decodeURIComponent(match[1]) : null);
+    }
+    syncFromHash();
+    if (typeof window === "undefined") return;
+    window.addEventListener("hashchange", syncFromHash);
+    return () => window.removeEventListener("hashchange", syncFromHash);
+  }, []);
+  return { focusedId };
+}
+
 export function SyncRetryPanel() {
   const { toast } = useToast();
+  const { focusedId } = useSyncRetryHashAnchor();
+  const focusedRowRef = useRef<HTMLDivElement | null>(null);
+  const lastScrolledIdRef = useRef<string | null>(null);
 
   const { data, isLoading } = useQuery<SyncRetryResponse>({
     queryKey: ["/api/integrations/sync-retries"],
     refetchInterval: 30_000,
   });
+
+  // Scroll the email-deep-linked row into view once it's rendered.
+  // Depending on `data` (in addition to `focusedId`) ensures the
+  // scroll re-fires when the rows finish loading after mount, so the
+  // hash anchor isn't lost to a render-vs-effect race.
+  useEffect(() => {
+    if (!focusedId) return;
+    if (lastScrolledIdRef.current === focusedId) return;
+    if (focusedRowRef.current) {
+      focusedRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      lastScrolledIdRef.current = focusedId;
+    }
+  }, [focusedId, data]);
 
   const retryMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -186,10 +224,16 @@ export function SyncRetryPanel() {
               muteMutation.variables?.connectionId === retry.connectionId &&
               muteMutation.variables?.entityType === retry.entityType) ||
             (unmuteMutation.isPending && unmuteMutation.variables === activeMuteId);
+          const isFocused = focusedId === retry.id;
           return (
             <div
               key={retry.id}
-              className="border rounded-lg p-3 space-y-2"
+              id={`sync-retry-${retry.id}`}
+              ref={isFocused ? focusedRowRef : undefined}
+              className={
+                "border rounded-lg p-3 space-y-2 scroll-mt-24 transition-shadow" +
+                (isFocused ? " ring-2 ring-amber-500 ring-offset-2 dark:ring-offset-background" : "")
+              }
               data-testid={`row-sync-retry-${retry.id}`}
             >
               <div className="flex items-start justify-between gap-3 flex-wrap">
