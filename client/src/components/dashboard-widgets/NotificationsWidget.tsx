@@ -45,10 +45,12 @@ function CertifiedPayrollDigestItem({
   notification,
   onDismiss,
   isDismissing,
+  onView,
 }: {
   notification: Notification;
   onDismiss: () => void;
   isDismissing: boolean;
+  onView: () => void;
 }) {
   const { startDate, endDate } = parseDigestRange(notification.relatedEntityId);
   const { header, rows } = parseDigestMessage(notification.message);
@@ -116,7 +118,7 @@ function CertifiedPayrollDigestItem({
           <p className="text-xs text-muted-foreground">
             {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true })}
           </p>
-          <Link href={href}>
+          <Link href={href} onClick={() => onView()}>
             <Button
               variant="outline"
               size="sm"
@@ -244,6 +246,7 @@ export function NotificationsWidget({ config }: { config?: Record<string, unknow
                     notification={notification}
                     onDismiss={() => markAsReadMutation.mutate(notification.id)}
                     isDismissing={markAsReadMutation.isPending}
+                    onView={() => markAsReadMutation.mutate(notification.id)}
                   />
                 );
               }
