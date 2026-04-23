@@ -299,7 +299,10 @@ export async function isWageDeterminationCached(
 ): Promise<boolean> {
   const entityType = `wage_determination:${decisionNumber}`;
   const [row] = await db
-    .select({ id: integrationSyncState.id })
+    .select({
+      lastSyncAt: integrationSyncState.lastSyncAt,
+      lastError: integrationSyncState.lastError,
+    })
     .from(integrationSyncState)
     .where(
       and(
@@ -308,7 +311,14 @@ export async function isWageDeterminationCached(
       ),
     )
     .limit(1);
-  return !!row;
+  // A row exists for every attempt (including failures), so existence alone
+  // is not enough. Treat the determination as cached only when a successful
+  // import has stamped `lastSyncAt` and no `lastError` is currently recorded —
+  // otherwise a prior failure would permanently short-circuit retries.
+  if (!row) return false;
+  if (row.lastError) return false;
+  if (!row.lastSyncAt) return false;
+  return true;
 }
 
 /**
