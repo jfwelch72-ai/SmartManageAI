@@ -527,6 +527,38 @@ export function composeEmailContent(notification: NotificationRecord): {
     };
   }
 
+  // Task #1353: Davis-Bacon auto-sync failure email. Owners that aren't
+  // actively in the app may miss the in-app banner from Task #1332 for
+  // hours, so we surface the failure via the standard email delivery
+  // pipeline as well. Deep-links to the integrations page so the owner can
+  // re-check credentials or trigger a manual retry.
+  if (type === "DAVIS_BACON_AUTO_SYNC_FAILED") {
+    const actionUrl = `${baseUrl}/integrations?provider=dol_davis_bacon`;
+    const subject = `Davis-Bacon auto-sync failed — SmartManageAI`;
+    const actionText = "Open Integrations";
+    const messageHtml = escapeHtml(notification.message).replace(/\n/g, "<br>");
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #b91c1c;">${escapeHtml(notification.title)}</h2>
+        <p style="color: #444; line-height: 1.6;">${messageHtml}</p>
+        <p style="margin-top: 20px;">
+          <a href="${actionUrl}" style="background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+            ${escapeHtml(actionText)}
+          </a>
+        </p>
+        <hr style="margin-top: 30px; border: none; border-top: 1px solid #eee;">
+        <p style="color: #999; font-size: 12px;">You are receiving this because you own the Davis-Bacon integration connection for your organization. Adjust delivery in your SmartManageAI notification preferences.</p>
+      </div>
+    `;
+    return {
+      subject,
+      body: notification.message,
+      actionUrl,
+      actionText,
+      html,
+    };
+  }
+
   if (type === "CRM_TRANSCRIPT_BACKFILL_REAPED") {
     return {
       subject: `CRM transcript backfill was reaped — SmartManageAI`,
