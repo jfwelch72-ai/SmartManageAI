@@ -1082,7 +1082,17 @@ export default function AdminTranscriptBackfillPage() {
     try {
       const params = new URLSearchParams();
       if (statusFilter !== "ALL") params.set("status", statusFilter);
-      if (appliedOperator) params.set("operator", appliedOperator);
+      // Task #1141 — mirror the history fetch's filter precedence exactly so
+      // the exported CSV matches the on-screen view: the operator quick-pick
+      // takes precedence over the free-text operator input (they are
+      // mutually exclusive server-side too), and the "Cancelled by"
+      // quick-pick is independent.
+      if (operatorId !== "ALL") {
+        params.set("startedById", operatorId);
+      } else if (appliedOperator) {
+        params.set("operator", appliedOperator);
+      }
+      if (cancellerId !== "ALL") params.set("cancelledById", cancellerId);
       if (startedAfter) params.set("startedAfter", startedAfter.toISOString());
       if (startedBefore) {
         const end = new Date(startedBefore);
