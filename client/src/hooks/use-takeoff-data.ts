@@ -474,13 +474,40 @@ export function useTakeoffData({
       thickness?: number;
       text?: string | null;
       points?: { x: number; y: number }[];
+      previous?: {
+        color?: string;
+        thickness?: number;
+        text?: string | null;
+        points?: { x: number; y: number }[];
+      };
     }) => {
-      const { id, ...updates } = data;
+      const { id, previous, ...updates } = data;
       const res = await apiRequest("PATCH", `/api/takeoff/markups/${id}`, updates);
-      return res.json();
+      const result = await res.json();
+      return { result, id, updates, previous };
     },
-    onSuccess: () => {
+    onSuccess: ({ id, updates, previous }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "markups"] });
+      if (selectedSheet && previous) {
+        const before: { id: string; color?: string; thickness?: number; text?: string | null; points?: { x: number; y: number }[] } = { id };
+        const after: { id: string; color?: string; thickness?: number; text?: string | null; points?: { x: number; y: number }[] } = { id };
+        let hasChange = false;
+        if (updates.color !== undefined && previous.color !== undefined) {
+          before.color = previous.color; after.color = updates.color; hasChange = true;
+        }
+        if (updates.thickness !== undefined && previous.thickness !== undefined) {
+          before.thickness = previous.thickness; after.thickness = updates.thickness; hasChange = true;
+        }
+        if (updates.text !== undefined && previous.text !== undefined) {
+          before.text = previous.text; after.text = updates.text; hasChange = true;
+        }
+        if (updates.points !== undefined && previous.points !== undefined) {
+          before.points = previous.points; after.points = updates.points; hasChange = true;
+        }
+        if (hasChange) {
+          takeoffHistory.pushMarkupUpdateAction(before, after, selectedSheet);
+        }
+      }
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to update markup", variant: "destructive" });

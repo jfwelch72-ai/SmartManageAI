@@ -4553,14 +4553,25 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         const isHighlight = (editing.tool as string) === "HIGHLIGHT";
         const close = () => { setSelectedMarkupId(null); setMarkupEditDraft(null); };
         const save = async () => {
-          const updates: { id: string; color?: string; thickness?: number; text?: string | null } = { id: editing.id };
-          if (markupEditDraft.color !== editing.color) updates.color = markupEditDraft.color;
-          if (markupEditDraft.thickness !== editing.thickness) updates.thickness = markupEditDraft.thickness;
+          const updates: { id: string; color?: string; thickness?: number; text?: string | null; previous?: { color?: string; thickness?: number; text?: string | null } } = { id: editing.id };
+          const previous: { color?: string; thickness?: number; text?: string | null } = {};
+          if (markupEditDraft.color !== editing.color) {
+            updates.color = markupEditDraft.color;
+            previous.color = editing.color;
+          }
+          if (markupEditDraft.thickness !== editing.thickness) {
+            updates.thickness = markupEditDraft.thickness;
+            previous.thickness = editing.thickness;
+          }
           if (isText) {
             const newText = markupEditDraft.text;
-            if (newText !== (editing.text || "")) updates.text = newText;
+            if (newText !== (editing.text || "")) {
+              updates.text = newText;
+              previous.text = editing.text ?? "";
+            }
           }
           if (Object.keys(updates).length === 1) { close(); return; }
+          updates.previous = previous;
           try {
             await updateMarkupMutation.mutateAsync(updates);
             toast({ title: "Markup updated" });

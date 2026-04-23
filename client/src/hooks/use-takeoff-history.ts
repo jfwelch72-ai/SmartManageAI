@@ -2,13 +2,23 @@ import { useRef, useCallback, useState } from "react";
 import type { TakeoffMeasurement, TakeoffMarkup } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
-type ActionType = "CREATE" | "DELETE" | "UPDATE" | "MARKUP_CREATE" | "MARKUP_DELETE";
+type ActionType = "CREATE" | "DELETE" | "UPDATE" | "MARKUP_CREATE" | "MARKUP_DELETE" | "MARKUP_UPDATE";
+
+export interface MarkupSnapshot {
+  id: string;
+  color?: string;
+  thickness?: number;
+  text?: string | null;
+  points?: { x: number; y: number }[];
+}
 
 interface HistoryEntry {
   type: ActionType;
   measurement?: TakeoffMeasurement;
   previousMeasurement?: TakeoffMeasurement;
   markup?: TakeoffMarkup & { points: { x: number; y: number }[] };
+  markupBefore?: MarkupSnapshot;
+  markupAfter?: MarkupSnapshot;
   sheetId: string;
 }
 
@@ -69,6 +79,21 @@ export function useTakeoffHistory(selectedSheet: string | null) {
     updateFlags();
   }, [updateFlags]);
 
+  const pushMarkupUpdateAction = useCallback((before: MarkupSnapshot, after: MarkupSnapshot, sheetId: string) => {
+    undoStack.current.push({ type: "MARKUP_UPDATE", markupBefore: before, markupAfter: after, sheetId });
+    redoStack.current = [];
+    updateFlags();
+  }, [updateFlags]);
+
+  const applyMarkupSnapshot = async (snapshot: MarkupSnapshot) => {
+    const payload: Record<string, unknown> = {};
+    if (snapshot.color !== undefined) payload.color = snapshot.color;
+    if (snapshot.thickness !== undefined) payload.thickness = snapshot.thickness;
+    if (snapshot.text !== undefined) payload.text = snapshot.text;
+    if (snapshot.points !== undefined) payload.points = snapshot.points;
+    await apiRequest("PATCH", `/api/takeoff/markups/${snapshot.id}`, payload);
+  };
+
   const invalidate = useCallback((sheetId: string, isMarkup = false) => {
     const key = isMarkup ? "markups" : "measurements";
     queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", sheetId, key] });
@@ -108,6 +133,8 @@ export function useTakeoffHistory(selectedSheet: string | null) {
         const res = await apiRequest("POST", "/api/takeoff/markups", payload);
         const restored = await res.json();
         entry.markup = { ...restored, points: typeof restored.points === "string" ? JSON.parse(restored.points) : restored.points };
+      } else if (entry.type === "MARKUP_UPDATE" && entry.markupBefore) {
+        await applyMarkupSnapshot(entry.markupBefore);
       }
       redoStack.current.push(entry);
       invalidate(entry.sheetId, entry.type.startsWith("MARKUP"));
@@ -153,6 +180,8 @@ export function useTakeoffHistory(selectedSheet: string | null) {
         entry.markup = { ...restored, points: typeof restored.points === "string" ? JSON.parse(restored.points) : restored.points };
       } else if (entry.type === "MARKUP_DELETE" && entry.markup) {
         await apiRequest("DELETE", `/api/takeoff/markups/${entry.markup.id}`);
+      } else if (entry.type === "MARKUP_UPDATE" && entry.markupAfter) {
+        await applyMarkupSnapshot(entry.markupAfter);
       }
       undoStack.current.push(entry);
       invalidate(entry.sheetId, entry.type.startsWith("MARKUP"));
@@ -170,5 +199,5 @@ export function useTakeoffHistory(selectedSheet: string | null) {
     updateFlags();
   }, [updateFlags]);
 
-  return { pushAction, pushMarkupAction, undo, redo, canUndo, canRedo, isPending, clear };
+  return { pushAction, pushMarkupAction, pushMarkupUpdateAction, undo, redo, canUndo, canRedo, isPending, clear };
 }
