@@ -610,6 +610,44 @@ export function composeEmailContent(notification: NotificationRecord): {
     };
   }
 
+  // Task #1400 — when the daily stale-refresh sweep replaces a cached
+  // wage determination with one whose rates have changed, PMs and org
+  // admins receive this email per affected project. Deep-links to the
+  // project's prevailing wage panel (the project detail page already
+  // surfaces the Davis-Bacon classification table for the project's
+  // wage decision) so they can review and reissue certified payrolls.
+  if (type === "WAGE_DECISION_RATES_CHANGED") {
+    const projectUrl = notification.relatedEntityId
+      ? `${baseUrl}/projects/${notification.relatedEntityId}`
+      : `${baseUrl}/payroll`;
+    const subject = `Davis-Bacon wage rates changed — SmartManageAI`;
+    const messageHtml = escapeHtml(notification.message).replace(/\n/g, "<br>");
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #b91c1c;">${escapeHtml(notification.title)}</h2>
+        <p style="color: #444; line-height: 1.6;">${messageHtml}</p>
+        <p style="margin-top: 20px;">
+          <a href="${projectUrl}" style="background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;" data-testid="link-wage-rate-change-project">
+            Open Prevailing Wage Panel
+          </a>
+        </p>
+        <hr style="margin-top: 30px; border: none; border-top: 1px solid #eee;">
+        <p style="color: #999; font-size: 12px; line-height: 1.6;">
+          You are receiving this because you are listed as the project manager,
+          or as an administrator for your organization. Review certified payrolls
+          and pay items affected by the rate change before your next submission.
+        </p>
+      </div>
+    `;
+    return {
+      subject,
+      body: notification.message,
+      actionUrl: projectUrl,
+      actionText: "Open Prevailing Wage Panel",
+      html,
+    };
+  }
+
   if (type === "CRM_TRANSCRIPT_BACKFILL_REAPED") {
     return {
       subject: `CRM transcript backfill was reaped — SmartManageAI`,

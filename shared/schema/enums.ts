@@ -127,6 +127,12 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // exhaustion event) — re-armed only when the row is manually retried or
   // a future sync succeeds and clears the failure state.
   "INTEGRATION_SYNC_RETRIES_EXHAUSTED",
+  // Task #1400: heads-up when the daily stale-refresh sweep replaces a
+  // cached Davis-Bacon wage determination with one whose classification
+  // rates differ from the prior payload — fanned out per affected project
+  // to its project manager (and/or org admins) so PMs can proactively
+  // review certified payrolls and pay items before the next run.
+  "WAGE_DECISION_RATES_CHANGED",
 ]);
 
 export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["PENDING", "APPROVED", "DENIED"]);

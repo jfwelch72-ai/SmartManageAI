@@ -1232,6 +1232,12 @@ export async function processStaleWageDecisions(
       continue;
     }
 
+    // Task #1400: capture the previous payload before the import so we can
+    // diff classification rates after a successful refresh and notify
+    // project managers when DOL has actually changed something.
+    const prevMeta = row.metadata as WageDetermination | undefined;
+    const prevRates: DavisBaconWageRate[] = Array.isArray(prevMeta?.rates) ? prevMeta!.rates : [];
+
     result.attempted += 1;
     try {
       const out = await importWageDetermination(connection, decisionNumber, false);
@@ -1243,6 +1249,38 @@ export async function processStaleWageDecisions(
           previousSyncAt: row.lastSyncAt?.toISOString() ?? null,
           staleAfterDays,
         });
+        // Task #1400: load the freshly-imported rates and notify PMs of
+        // affected projects only when the new payload differs. Dynamic
+        // import keeps the davisBaconAdminNotifications module out of the
+        // sync.ts dependency chain (it imports back into this file).
+        try {
+          const refreshed = await getWageDecisionRow(connection.id, decisionNumber);
+          const newMeta = refreshed?.metadata as WageDetermination | undefined;
+          const newRates: DavisBaconWageRate[] = Array.isArray(newMeta?.rates)
+            ? newMeta!.rates
+            : [];
+          const { diffWageRates, notifyProjectManagersOfWageRateChange } =
+            await import("../../../services/davisBaconAdminNotifications");
+          const diff = diffWageRates(prevRates, newRates);
+          if (diff) {
+            logInfo("Davis-Bacon stale refresh changed cached rates", {
+              decisionNumber,
+              organizationId: row.organizationId,
+              changedClassifications: diff.changes.length,
+            });
+            await notifyProjectManagersOfWageRateChange({
+              organizationId: row.organizationId,
+              decisionNumber,
+              diff,
+            });
+          }
+        } catch (notifyErr) {
+          logWarn("Davis-Bacon rate-change notification fan-out failed", {
+            decisionNumber,
+            organizationId: row.organizationId,
+            error: String(notifyErr),
+          });
+        }
       } else {
         result.failed += 1;
         // importWageDetermination has already persisted lastError +

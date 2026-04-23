@@ -25,7 +25,7 @@ import {
   type InsertNotification,
 } from "@shared/schema";
 import { insertNotification } from "./notificationService";
-import { isWageDeterminationCached } from "../integrations/providers/dol_davis_bacon/sync";
+import { isWageDeterminationCached, type DavisBaconWageRate } from "../integrations/providers/dol_davis_bacon/sync";
 import { logError, logInfo, logWarn } from "../utils/logger";
 
 const ADMIN_ROLES = ["ADMIN"] as const;
@@ -316,6 +316,240 @@ export async function processMissingWageDecisionReminders(
   }
 
   return { candidateProjects, remindersSent, recipientsNotified, throttledProjects };
+}
+
+// Task #1400 — diff cached vs freshly-imported wage determination rates.
+//
+// Two payloads are considered "different" when, for any classification:
+//   - the classification appears only on one side (added or removed), or
+//   - any of baseRate/fringeRate/totalRate differ by more than 0.005 (i.e.
+//     a real cent-level change rather than float jitter).
+//
+// Returns null when the payloads are equivalent so the caller can skip
+// the notification fan-out on no-op refreshes.
+export interface WageRateDiffEntry {
+  classification: string;
+  kind: "added" | "removed" | "changed";
+  oldBaseRate?: number;
+  newBaseRate?: number;
+  oldFringeRate?: number;
+  newFringeRate?: number;
+  oldTotalRate?: number;
+  newTotalRate?: number;
+}
+
+export interface WageRateDiff {
+  changes: WageRateDiffEntry[];
+}
+
+const RATE_EPSILON = 0.005;
+
+function normalizeKey(s: string): string {
+  return s.trim().toLowerCase();
+}
+
+export function diffWageRates(
+  oldRates: DavisBaconWageRate[] | null | undefined,
+  newRates: DavisBaconWageRate[] | null | undefined,
+): WageRateDiff | null {
+  const oldMap = new Map<string, DavisBaconWageRate>();
+  for (const r of oldRates ?? []) oldMap.set(normalizeKey(r.classification), r);
+  const newMap = new Map<string, DavisBaconWageRate>();
+  for (const r of newRates ?? []) newMap.set(normalizeKey(r.classification), r);
+
+  const changes: WageRateDiffEntry[] = [];
+  for (const [key, n] of newMap) {
+    const o = oldMap.get(key);
+    if (!o) {
+      changes.push({
+        classification: n.classification,
+        kind: "added",
+        newBaseRate: n.baseRate,
+        newFringeRate: n.fringeRate,
+        newTotalRate: n.totalRate,
+      });
+      continue;
+    }
+    const baseDiff = Math.abs((o.baseRate ?? 0) - (n.baseRate ?? 0)) > RATE_EPSILON;
+    const fringeDiff = Math.abs((o.fringeRate ?? 0) - (n.fringeRate ?? 0)) > RATE_EPSILON;
+    const totalDiff = Math.abs((o.totalRate ?? 0) - (n.totalRate ?? 0)) > RATE_EPSILON;
+    if (baseDiff || fringeDiff || totalDiff) {
+      changes.push({
+        classification: n.classification,
+        kind: "changed",
+        oldBaseRate: o.baseRate,
+        newBaseRate: n.baseRate,
+        oldFringeRate: o.fringeRate,
+        newFringeRate: n.fringeRate,
+        oldTotalRate: o.totalRate,
+        newTotalRate: n.totalRate,
+      });
+    }
+  }
+  for (const [key, o] of oldMap) {
+    if (newMap.has(key)) continue;
+    changes.push({
+      classification: o.classification,
+      kind: "removed",
+      oldBaseRate: o.baseRate,
+      oldFringeRate: o.fringeRate,
+      oldTotalRate: o.totalRate,
+    });
+  }
+
+  if (changes.length === 0) return null;
+  return { changes };
+}
+
+export interface NotifyRateChangeArgs {
+  organizationId: string;
+  decisionNumber: string;
+  diff: WageRateDiff;
+}
+
+export interface NotifyRateChangeResult {
+  affectedProjects: number;
+  notificationsSent: number;
+  recipientsNotified: number;
+}
+
+function fmtRate(n: number | undefined): string {
+  if (n === undefined || n === null) return "—";
+  return `$${n.toFixed(2)}`;
+}
+
+function summarizeDiff(diff: WageRateDiff, max = 5): string {
+  const lines: string[] = [];
+  for (const c of diff.changes.slice(0, max)) {
+    if (c.kind === "added") {
+      lines.push(`• Added: ${c.classification} (total ${fmtRate(c.newTotalRate)})`);
+    } else if (c.kind === "removed") {
+      lines.push(`• Removed: ${c.classification} (was total ${fmtRate(c.oldTotalRate)})`);
+    } else {
+      lines.push(
+        `• ${c.classification}: base ${fmtRate(c.oldBaseRate)} → ${fmtRate(c.newBaseRate)}, ` +
+          `fringe ${fmtRate(c.oldFringeRate)} → ${fmtRate(c.newFringeRate)}`,
+      );
+    }
+  }
+  if (diff.changes.length > max) {
+    lines.push(`…and ${diff.changes.length - max} more classification(s).`);
+  }
+  return lines.join("\n");
+}
+
+/**
+ * Task #1400 — fan a "wage decision rates changed" notification out for
+ * every project in `organizationId` whose `wageDecision` matches
+ * `decisionNumber`. Recipients per project: the project manager (when
+ * set) plus every active org admin (the de-facto payroll administrator
+ * audience already used by `processMissingWageDecisionReminders`).
+ *
+ * Each (user, project) pair receives at most one in-app + email notification
+ * so a PM who is also an org admin does not get a duplicate, and a single
+ * admin overseeing N affected projects receives N targeted notifications
+ * (each linking to its own project's prevailing wage panel).
+ */
+export async function notifyProjectManagersOfWageRateChange(
+  args: NotifyRateChangeArgs,
+): Promise<NotifyRateChangeResult> {
+  const decision = args.decisionNumber.trim();
+  if (!decision) {
+    return { affectedProjects: 0, notificationsSent: 0, recipientsNotified: 0 };
+  }
+
+  const affected = await db
+    .select({
+      id: projects.id,
+      name: projects.name,
+      code: projects.code,
+      projectManagerId: projects.projectManagerId,
+    })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.gcOrganizationId, args.organizationId),
+        sql`trim(${projects.wageDecision}) = ${decision}`,
+      ),
+    );
+
+  if (affected.length === 0) {
+    return { affectedProjects: 0, notificationsSent: 0, recipientsNotified: 0 };
+  }
+
+  const adminIds = await getOrgAdminUserIds(args.organizationId);
+  const summary = summarizeDiff(args.diff);
+
+  let notificationsSent = 0;
+  let recipientsNotified = 0;
+
+  for (const project of affected) {
+    const recipients = new Set<string>(adminIds);
+    if (project.projectManagerId) recipients.add(project.projectManagerId);
+    if (recipients.size === 0) {
+      logInfo("No recipients for wage rate change notification", {
+        organizationId: args.organizationId,
+        projectId: project.id,
+        decisionNumber: decision,
+      });
+      continue;
+    }
+
+    const title = `Davis-Bacon rates changed for ${decision}`;
+    const message =
+      `The latest auto-refresh of wage decision ${decision} returned ` +
+      `different rates for ${args.diff.changes.length} classification(s) ` +
+      `affecting project "${project.name || project.code}". Review certified ` +
+      `payrolls and pay items before your next submission.\n\n${summary}`;
+
+    let delivered = 0;
+    for (const userId of recipients) {
+      try {
+        await insertNotification({
+          userId,
+          organizationId: args.organizationId,
+          type: "WAGE_DECISION_RATES_CHANGED",
+          title,
+          message,
+          relatedEntityId: project.id,
+          relatedEntityType: "PROJECT",
+        } as InsertNotification);
+        delivered += 1;
+      } catch (err) {
+        logError(
+          "Failed to deliver wage rate change notification",
+          {
+            organizationId: args.organizationId,
+            projectId: project.id,
+            userId,
+            decisionNumber: decision,
+          },
+          err instanceof Error ? err : new Error(String(err)),
+        );
+      }
+    }
+    if (delivered > 0) {
+      notificationsSent += 1;
+      recipientsNotified += delivered;
+    }
+  }
+
+  if (notificationsSent > 0) {
+    logInfo("Wage decision rate change fan-out complete", {
+      organizationId: args.organizationId,
+      decisionNumber: decision,
+      affectedProjects: affected.length,
+      notificationsSent,
+      recipientsNotified,
+      changedClassifications: args.diff.changes.length,
+    });
+  }
+
+  return {
+    affectedProjects: affected.length,
+    notificationsSent,
+    recipientsNotified,
+  };
 }
 
 // Test-only helper for predictable cleanup in unit tests.

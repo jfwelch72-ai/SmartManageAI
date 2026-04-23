@@ -38,11 +38,15 @@ const REQUIRED_NOTIFICATION_TYPES = [
   // Task #1260: dedicated SWPPP overdue corrective-action fanout type so
   // users can mute it independently of the generic REMINDER notifications.
   "SWPPP_OVERDUE_CORRECTIVE_ACTION",
-  // Task #1344: daily reminder fan-out for missing wage decisions.
+  // Task #1344: daily reminder fan-out to org admins when a project's
+  // Davis-Bacon wage decision has been missing from the local cache.
   "WAGE_DECISION_MISSING_REMINDER",
   // Task #1391: heads-up to org admins the first time a generic
   // integration sync row exhausts MAX_SYNC_RETRIES.
   "INTEGRATION_SYNC_RETRIES_EXHAUSTED",
+  // Task #1400: stale-refresh sweep produced different rates from the
+  // prior cached payload — notify project managers of affected projects.
+  "WAGE_DECISION_RATES_CHANGED",
 ];
 
 export async function ensureNotificationEnumValues(): Promise<void> {
