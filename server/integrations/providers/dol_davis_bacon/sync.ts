@@ -2,40 +2,34 @@ import type { SyncResult, SyncError } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { db } from "../../../db";
 import { integrationConnections, integrationSyncState } from "@shared/schema";
-import { and, eq, isNotNull, lte, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { logInfo, logError, logWarn } from "../../../utils/logger";
 import { safeFetch } from "../../../utils/safeFetch";
 import { decryptMetadata } from "../../encryption";
 import { insertNotification } from "../../../services/notificationService";
+import {
+  SYNC_RETRY_BACKOFF_MINUTES,
+  MAX_SYNC_RETRIES,
+  processIntegrationSyncRetries,
+  registerSyncRetryHandler,
+  type SyncRetrySweepResult,
+} from "../../syncRetry";
 
 const SAM_BASE = "https://api.sam.gov/prod";
 
 /**
  * Task #1354: scheduled retry backoff for failed Davis-Bacon wage decision
- * syncs. After the Nth failure (1-based) the background retry job waits
- * BACKOFF_MINUTES[N-1] before re-attempting. After MAX_WAGE_DECISION_RETRIES
- * total failed attempts we stop scheduling retries (`nextRetryAt = null`)
- * and leave the failure for manual intervention via the project payroll
- * banner.
- *
- * MAX_WAGE_DECISION_RETRIES = BACKOFF.length + 1 because the first failure
- * is the initial attempt (project create / "Import now" / labor-rate save)
- * and BACKOFF holds the inter-retry waits — so the total attempt budget is
- * 1 initial + BACKOFF.length scheduled retries (= 6 attempts total).
- *
- * Total wait budget: 5+15+45+120+360 = 545 minutes (~9 hours), comfortably
- * within the 24h target from the task description while keeping the early
- * cadence tight enough to recover from short upstream blips quickly.
+ * syncs. Task #1368 generalised the backoff schedule for every
+ * integration; the Davis-Bacon constants now alias the shared helpers in
+ * `server/integrations/syncRetry.ts` so we keep one source of truth and
+ * the existing Davis-Bacon imports stay valid.
  */
-export const WAGE_DECISION_RETRY_BACKOFF_MINUTES: readonly number[] = [5, 15, 45, 120, 360];
-export const MAX_WAGE_DECISION_RETRIES = WAGE_DECISION_RETRY_BACKOFF_MINUTES.length + 1;
+export const WAGE_DECISION_RETRY_BACKOFF_MINUTES = SYNC_RETRY_BACKOFF_MINUTES;
+export const MAX_WAGE_DECISION_RETRIES = MAX_SYNC_RETRIES;
 
 function computeNextRetryAt(failureNumber: number, now: Date = new Date()): Date | null {
-  // Map the Nth failure to the (N-1)th backoff slot. When we have used
-  // every slot — i.e. failureNumber > BACKOFF.length, equivalently
-  // failureNumber >= MAX_WAGE_DECISION_RETRIES — return null so the
-  // failure path persists `nextRetryAt = null` immediately and the retry
-  // sweep stops considering this row.
+  // Thin wrapper over the shared helper so existing call sites keep their
+  // behaviour. See `computeNextSyncRetryAt` in `server/integrations/syncRetry.ts`.
   const idx = failureNumber - 1;
   if (idx < 0 || idx >= WAGE_DECISION_RETRY_BACKOFF_MINUTES.length) return null;
   return new Date(now.getTime() + WAGE_DECISION_RETRY_BACKOFF_MINUTES[idx] * 60_000);
@@ -736,152 +730,69 @@ export interface WageDecisionRetryRunResult {
 }
 
 /**
- * Task #1354: scheduled retry sweep. Finds every wage_determination row in
- * `integration_sync_state` whose last attempt failed and whose nextRetryAt
- * window is now due, then re-runs `importWageDetermination` against the
- * org's active Davis-Bacon connection. Successful retries clear lastError,
- * lastError-free rows are ignored, exhausted rows (nextRetryAt is null) are
- * left alone for manual intervention via the project payroll banner.
+ * Davis-Bacon-specific retry handler. Wired into the generic sync-retry
+ * sweep (`processIntegrationSyncRetries`) at module load via
+ * `registerSyncRetryHandler` below — meaning Task #1368's generic cron
+ * task picks up Davis-Bacon retries alongside QBO and any other provider
+ * that opts in.
  *
- * Designed to be called by the cron-based job runner; safe to invoke
- * manually for tests and for the admin "Run job now" affordance in the job
- * registry.
+ * `importWageDetermination` already persists success/failure state on the
+ * `integration_sync_state` row, so we return `selfRecorded: true` to
+ * prevent the generic sweep from double-writing the bookkeeping columns.
+ */
+registerSyncRetryHandler({
+  provider: "dol_davis_bacon",
+  entityTypePrefix: "wage_determination:",
+  handler: async (connection, row) => {
+    const meta = (connection.metadata as Record<string, any>) || {};
+    if (!meta.apiKey && !meta.accessToken) {
+      // Let the generic sweep advance retry bookkeeping — these
+      // early-return failures still consume a retry slot so the row
+      // doesn't sit due-now forever once a credential is removed.
+      return { success: false, error: "Missing SAM.gov API key" };
+    }
+    const decisionNumber = row.entityType.slice("wage_determination:".length).trim();
+    if (!decisionNumber) {
+      return { success: false, error: "Invalid wage determination entity type" };
+    }
+    const out = await importWageDetermination(connection, decisionNumber, false);
+    if (out.success) {
+      logInfo("Davis-Bacon scheduled retry succeeded", {
+        decisionNumber,
+        organizationId: row.organizationId,
+        previousAttempts: row.retryCount,
+      });
+    }
+    return {
+      success: out.success,
+      error: out.errors.map((e) => e.message).join("; ") || undefined,
+      selfRecorded: true,
+    };
+  },
+});
+
+/**
+ * Task #1354 + #1368: scheduled retry sweep for Davis-Bacon wage decisions.
+ * Now a thin wrapper over the generic sync-retry sweep filtered to
+ * `wage_determination:%` entity types — see `processIntegrationSyncRetries`
+ * in `server/integrations/syncRetry.ts`. Kept for the existing
+ * `wage_decision_retry` job alias and the unit tests in
+ * `davis-bacon-wage-decision-retry.test.ts`.
  */
 export async function processFailedWageDecisionRetries(
   now: Date = new Date(),
 ): Promise<WageDecisionRetryRunResult> {
-  const result: WageDecisionRetryRunResult = {
-    candidates: 0,
-    attempted: 0,
-    succeeded: 0,
-    failed: 0,
-    skippedNoConnection: 0,
-    exhausted: 0,
+  const out: SyncRetrySweepResult = await processIntegrationSyncRetries(now, {
+    entityTypePattern: "wage_determination:%",
+  });
+  return {
+    candidates: out.candidates,
+    attempted: out.attempted,
+    succeeded: out.succeeded,
+    failed: out.failed,
+    // Davis-Bacon callers historically lump "no usable connection" and
+    // "no credentials on the connection" together under skippedNoConnection.
+    skippedNoConnection: out.skippedNoConnection,
+    exhausted: out.exhausted,
   };
-
-  // Pick up rows where:
-  // - the entity is a wage determination
-  // - the last attempt failed (lastError set)
-  // - a retry is scheduled (nextRetryAt set) and now due
-  // - we still have retries left (retryCount < MAX). The failure path
-  //   already nulls nextRetryAt when it exhausts attempts, but we
-  //   double-guard here in case an old row was migrated in mid-failure.
-  const rows = await db
-    .select()
-    .from(integrationSyncState)
-    .where(
-      and(
-        sql`${integrationSyncState.entityType} LIKE 'wage_determination:%'`,
-        isNotNull(integrationSyncState.lastError),
-        isNotNull(integrationSyncState.nextRetryAt),
-        lte(integrationSyncState.nextRetryAt, now),
-      ),
-    );
-
-  result.candidates = rows.length;
-  if (rows.length === 0) return result;
-
-  // Cache connection lookups per-connection-id (NOT per-org) so retry rows
-  // that belong to a since-replaced/deleted connection are evaluated
-  // against the exact connection they were originally synced through.
-  // Looking up by org would route the retry's success/failure upsert to a
-  // *different* connection_id, leaving the original failed row untouched
-  // and re-firing it on every sweep forever — Task #1354 review.
-  const connectionCache = new Map<string, IntegrationConnection | null>();
-  async function getConnById(connectionId: string): Promise<IntegrationConnection | null> {
-    if (connectionCache.has(connectionId)) return connectionCache.get(connectionId)!;
-    const [row] = await db
-      .select()
-      .from(integrationConnections)
-      .where(
-        and(
-          eq(integrationConnections.id, connectionId),
-          eq(integrationConnections.provider, "dol_davis_bacon"),
-          eq(integrationConnections.status, "active"),
-        ),
-      )
-      .limit(1);
-    if (!row) {
-      connectionCache.set(connectionId, null);
-      return null;
-    }
-    const meta = (row.metadata as Record<string, any>) || {};
-    const conn = { ...row, metadata: decryptMetadata(meta) } as IntegrationConnection;
-    connectionCache.set(connectionId, conn);
-    return conn;
-  }
-
-  for (const row of rows) {
-    if (row.retryCount >= MAX_WAGE_DECISION_RETRIES) {
-      result.exhausted += 1;
-      // Defensive: clear nextRetryAt so we stop re-scanning this row.
-      try {
-        await db
-          .update(integrationSyncState)
-          .set({ nextRetryAt: null, updatedAt: new Date() })
-          .where(eq(integrationSyncState.id, row.id));
-      } catch (err) {
-        logWarn("Davis-Bacon retry sweep: failed to clear exhausted nextRetryAt", {
-          rowId: row.id,
-          error: String(err),
-        });
-      }
-      continue;
-    }
-
-    const decisionNumber = row.entityType.slice("wage_determination:".length).trim();
-    if (!decisionNumber) continue;
-
-    const connection = await getConnById(row.connectionId);
-    if (!connection) {
-      result.skippedNoConnection += 1;
-      // Stop chasing this row until something changes — the original
-      // connection is gone or no longer active, so auto-retry can't
-      // recover. Leaving nextRetryAt set would re-scan it every 5 minutes
-      // forever. The manual retry path will re-arm it via a fresh
-      // queueWageDecisionSync call against the new active connection.
-      try {
-        await db
-          .update(integrationSyncState)
-          .set({ nextRetryAt: null, updatedAt: new Date() })
-          .where(eq(integrationSyncState.id, row.id));
-      } catch (err) {
-        logWarn("Davis-Bacon retry sweep: failed to pause stale-connection row", {
-          rowId: row.id,
-          connectionId: row.connectionId,
-          error: String(err),
-        });
-      }
-      continue;
-    }
-    const meta = (connection.metadata as Record<string, any>) || {};
-    if (!meta.apiKey && !meta.accessToken) {
-      result.skippedNoConnection += 1;
-      continue;
-    }
-
-    result.attempted += 1;
-    try {
-      const out = await importWageDetermination(connection, decisionNumber, false);
-      if (out.success) {
-        result.succeeded += 1;
-        logInfo("Davis-Bacon scheduled retry succeeded", {
-          decisionNumber,
-          organizationId: row.organizationId,
-          previousAttempts: row.retryCount,
-        });
-      } else {
-        result.failed += 1;
-      }
-    } catch (err) {
-      result.failed += 1;
-      logError("Davis-Bacon scheduled retry threw", {
-        decisionNumber,
-        organizationId: row.organizationId,
-        error: String(err),
-      });
-    }
-  }
-
-  return result;
 }

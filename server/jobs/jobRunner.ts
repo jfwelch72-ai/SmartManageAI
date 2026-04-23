@@ -23,6 +23,8 @@ import { emailAccounts, emailCampaigns, emailCampaignContacts } from "@shared/sc
 import { syncImapAccount, syncOutlookAccount, syncGmailAccount, drainAccountProviderPushes } from "../emailRoutes";
 import { processArchivedCertifiedPayrollPurge } from "./certifiedPayrollPurge";
 import { processFailedWageDecisionRetries } from "../integrations/providers/dol_davis_bacon/sync";
+import { processIntegrationSyncRetries, recordSyncFailure, recordSyncSuccess } from "../integrations/syncRetry";
+import { qboSyncEntityType } from "../integrations/providers/qbo/sync";
 import { ensureAllEmailPushSubscriptions } from "../emailPushNotifications";
 import { sendEmail } from "../services/emailService";
 import { processDueExecutions } from "../services/sequenceService";
@@ -410,18 +412,20 @@ export function startJobRunner() {
     }
   });
 
-  // Task #1354: every 5 minutes, re-attempt failed Davis-Bacon wage
-  // decision syncs whose backoff window is due. Successful retries
-  // automatically clear the project payroll banner and the in-app
-  // notification; exhausted rows are left for manual intervention.
+  // Task #1354 + #1368: every 5 minutes, re-attempt every failed
+  // integration sync (Davis-Bacon wage decisions, QBO scheduled exports,
+  // and any other provider that opts into the generic retry helper)
+  // whose backoff window is due. Successful retries clear the failure
+  // state so banners/notifications resolve naturally; exhausted rows are
+  // left alone for manual intervention.
   wageDecisionRetryTask = cron.schedule("*/5 * * * *", async () => {
     try {
-      const out = await processFailedWageDecisionRetries();
+      const out = await processIntegrationSyncRetries();
       if (out.attempted > 0) {
-        logInfo("Davis-Bacon wage decision retry sweep", out);
+        logInfo("Integration sync retry sweep", out);
       }
     } catch (err) {
-      logError("Davis-Bacon wage decision retry sweep failed", { error: String(err) });
+      logError("Integration sync retry sweep failed", { error: String(err) });
     }
   });
 
@@ -564,7 +568,7 @@ export function stopJobRunner() {
   logInfo("Background job runner stopped");
 }
 
-export const jobRegistry: Record<string, { fn: () => Promise<void>; description: string; schedule: string }> = {
+export const jobRegistry: Record<string, { fn: () => Promise<void>; description: string; schedule?: string }> = {
   outbox:              { fn: () => processOutbox(),                    description: "Process integration outbox events",      schedule: "*/2 * * * *" },
   retention:           { fn: () => processRetentionPolicies(),         description: "Apply data retention policies",           schedule: "0 2 * * *" },
   sync_schedules:      { fn: () => processSyncSchedules(),             description: "Run QBO / integration sync schedules",   schedule: "*/15 * * * *" },
@@ -598,7 +602,13 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   certified_payroll_digest: { fn: () => processCertifiedPayrollWeeklyDigest(), description: "Email payroll administrators a digest of certified payroll PDFs (per-org cadence/time/timezone)", schedule: "0 * * * *" },
   swppp_overdue_corrective_actions: { fn: () => processSwpppOverdueCorrectiveActions(), description: "Notify assignees and project managers when SWPPP corrective actions pass their due date without being resolved", schedule: "0 7 * * *" },
   certified_payroll_purge: { fn: async () => { await processArchivedCertifiedPayrollPurge(); }, description: "Hard-delete archived certified payroll PDFs (and object-storage files) older than each org's retention window (default 3 years)", schedule: "30 3 * * *" },
-  wage_decision_retry: { fn: async () => { await processFailedWageDecisionRetries(); }, description: "Re-attempt failed Davis-Bacon wage-decision syncs on an exponential backoff up to MAX_WAGE_DECISION_RETRIES", schedule: "*/5 * * * *" },
+  // Legacy alias: kept so admin "Run job now" affordances and tests can
+  // still invoke a Davis-Bacon-only sweep, but no longer scheduled on
+  // its own cron — the generic `integration_sync_retry` job below
+  // handles Davis-Bacon alongside every other provider on the same
+  // backoff schedule, so running both would double-trigger retries.
+  wage_decision_retry: { fn: async () => { await processFailedWageDecisionRetries(); }, description: "[legacy alias] Davis-Bacon-only wage-decision retry sweep — superseded by integration_sync_retry; manual trigger only" },
+  integration_sync_retry: { fn: async () => { await processIntegrationSyncRetries(); }, description: "Re-attempt every failed integration sync (Davis-Bacon, QBO, etc.) whose backoff window is due", schedule: "*/5 * * * *" },
 };
 
 async function processOutbox() {
@@ -713,25 +723,67 @@ async function processSyncSchedules() {
       }
 
       let result;
-      switch (schedule.operation) {
-        case "chart_of_accounts":
-          result = await importChartOfAccounts(connection, false);
-          break;
-        case "customers":
-          result = await exportCustomers(connection, [], false);
-          break;
-        case "subcontractor_payments":
-          result = await exportSubcontractorPayments(connection, false);
-          break;
-        case "purchase_orders":
-          result = await exportPurchaseOrders(connection, undefined, false);
-          break;
-        case "reconcile_payments":
-          result = await reconcilePayments(connection, false);
-          break;
-        default:
-          logError("Unknown scheduled sync operation", { operation: schedule.operation });
-          continue;
+      let runError: unknown = null;
+      try {
+        switch (schedule.operation) {
+          case "chart_of_accounts":
+            result = await importChartOfAccounts(connection, false);
+            break;
+          case "customers":
+            result = await exportCustomers(connection, [], false);
+            break;
+          case "subcontractor_payments":
+            result = await exportSubcontractorPayments(connection, false);
+            break;
+          case "purchase_orders":
+            result = await exportPurchaseOrders(connection, undefined, false);
+            break;
+          case "reconcile_payments":
+            result = await reconcilePayments(connection, false);
+            break;
+          default:
+            logError("Unknown scheduled sync operation", { operation: schedule.operation });
+            continue;
+        }
+      } catch (err) {
+        runError = err;
+        logError("Scheduled QBO sync threw", { operation: schedule.operation, error: String(err) });
+        result = {
+          success: false,
+          entityType: schedule.operation,
+          direction: "export" as const,
+          created: 0,
+          updated: 0,
+          skipped: 0,
+          errors: [{ message: String(err) }],
+        };
+      }
+
+      // Task #1368: persist auto-retry bookkeeping for the scheduled QBO
+      // operation. On success this clears any prior failure state so the
+      // generic sync-retry sweep stops re-firing it; on failure it
+      // increments retryCount and schedules the next backoff window so
+      // the sweep auto-recovers from transient QBO outages without the
+      // owner having to click "Retry sync".
+      // Operations that take user payload (customers, etc.) are still
+      // tracked here so the failure surfaces in the sync history; the
+      // QBO retry handler only re-runs the parameterless ones.
+      try {
+        const retryEntity = qboSyncEntityType(schedule.operation);
+        if (result?.success) {
+          await recordSyncSuccess(connection, retryEntity);
+        } else {
+          const errMsg = runError
+            ? String(runError)
+            : (result?.errors?.map((e) => e.message).join("; ") || "QBO sync failed");
+          await recordSyncFailure(connection, retryEntity, errMsg);
+        }
+      } catch (err) {
+        logError("Failed to persist QBO sync retry state", {
+          operation: schedule.operation,
+          connectionId: connection.id,
+          error: String(err),
+        });
       }
 
       const duration = Date.now() - startTime;

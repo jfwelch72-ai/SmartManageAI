@@ -3,7 +3,8 @@ import type { IntegrationConnection } from "@shared/schema";
 import { db } from "../../../db";
 import { integrationSyncState, qboAccountMappings, payRuns, payRunLineItems, subcontractorPayments, subcontractorContracts, crmOrganisations, procurementItems, projects, tmInvoices, users, haulTickets, suretyBonds } from "@shared/schema";
 import { eq, and, inArray, isNotNull } from "drizzle-orm";
-import { logInfo, logError } from "../../../utils/logger";
+import { logInfo, logError, logWarn } from "../../../utils/logger";
+import { registerSyncRetryHandler } from "../../syncRetry";
 
 function getQboBaseUrl(): string {
   return process.env.QBO_ENVIRONMENT === "production"
@@ -1140,3 +1141,98 @@ export async function exportCertifiedPayroll(
     return { success: false, entityType: "certified_payroll", direction: "export", created: 0, updated: 0, skipped: 0, errors };
   }
 }
+
+/**
+ * Task #1368 — QBO retry handler. The scheduled QBO sync path in
+ * `processSyncSchedules` (server/jobs/jobRunner.ts) records each
+ * scheduled operation's success/failure on a `qbo_sync:<operation>` row
+ * in `integration_sync_state` via the shared `recordSyncSuccess` /
+ * `recordSyncFailure` helpers. The generic retry sweep
+ * (`processIntegrationSyncRetries`) then re-fires the matching sync
+ * function below on the standard 5/15/45/120/360-minute backoff so
+ * transient QBO outages auto-heal without the integration owner having
+ * to click "Retry sync".
+ *
+ * Covers every scheduled QBO operation in `processSyncSchedules`
+ * (server/jobs/jobRunner.ts). One-off operations driven by user payload
+ * (invoice push, ad-hoc customer push, certified-payroll for a specific
+ * pay-run) are tracked separately and surface their failures via the
+ * normal sync history; they are not part of the scheduled-retry sweep.
+ */
+type QboRetryableOperation =
+  | "chart_of_accounts"
+  | "customers"
+  | "subcontractor_payments"
+  | "purchase_orders"
+  | "reconcile_payments";
+
+const QBO_RETRYABLE_OPS = new Set<QboRetryableOperation>([
+  "chart_of_accounts",
+  "customers",
+  "subcontractor_payments",
+  "purchase_orders",
+  "reconcile_payments",
+]);
+
+export const QBO_SYNC_ENTITY_TYPE_PREFIX = "qbo_sync:";
+
+export function qboSyncEntityType(operation: string): string {
+  return `${QBO_SYNC_ENTITY_TYPE_PREFIX}${operation}`;
+}
+
+async function runQboOperation(
+  connection: IntegrationConnection,
+  operation: QboRetryableOperation,
+): Promise<SyncResult> {
+  switch (operation) {
+    case "chart_of_accounts":
+      return importChartOfAccounts(connection, false);
+    case "customers":
+      return exportCustomers(connection, [], false);
+    case "subcontractor_payments":
+      return exportSubcontractorPayments(connection, false);
+    case "purchase_orders":
+      return exportPurchaseOrders(connection, undefined, false);
+    case "reconcile_payments":
+      return reconcilePayments(connection, false);
+  }
+}
+
+registerSyncRetryHandler({
+  provider: "qbo",
+  entityTypePrefix: QBO_SYNC_ENTITY_TYPE_PREFIX,
+  handler: async (connection, row) => {
+    const operation = row.entityType.slice(QBO_SYNC_ENTITY_TYPE_PREFIX.length).trim();
+    if (!QBO_RETRYABLE_OPS.has(operation as QboRetryableOperation)) {
+      logWarn("QBO retry sweep: unsupported operation", {
+        operation,
+        connectionId: connection.id,
+      });
+      return { success: false, error: `Unsupported QBO operation: ${operation}` };
+    }
+    const meta = (connection.metadata as Record<string, any>) || {};
+    if (!meta.realmId || !meta.accessToken) {
+      return { success: false, error: "QBO connection missing credentials" };
+    }
+    try {
+      const out = await runQboOperation(connection, operation as QboRetryableOperation);
+      if (out.success) {
+        logInfo("QBO scheduled retry succeeded", {
+          operation,
+          organizationId: row.organizationId,
+          previousAttempts: row.retryCount,
+        });
+        return { success: true };
+      }
+      const errMsg = out.errors.map((e) => e.message).join("; ") || "QBO sync failed";
+      return { success: false, error: errMsg };
+    } catch (err) {
+      logError("QBO scheduled retry threw", {
+        operation,
+        organizationId: row.organizationId,
+        error: String(err),
+      });
+      return { success: false, error: String(err) };
+    }
+  },
+});
