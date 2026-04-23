@@ -1084,7 +1084,39 @@ export function resolveBackfillHeartbeatStaleMs(
   }
   return ms;
 }
-export const BACKFILL_HEARTBEAT_STALE_MS = resolveBackfillHeartbeatStaleMs();
+// Task #1131 — the heartbeat-staleness window used to be a module-level
+// `const` captured at import time, then read directly from at least six
+// worker sites (resume, cancel, reap, completion-email paths). That made
+// the value impossible to override mid-process and forced tests to either
+// re-import the module or monkey-patch internals to exercise alternate
+// windows. We now resolve once at module load into a mutable cache and
+// expose `getBackfillHeartbeatStaleMs()` as the single read accessor.
+// All worker-site reads go through that accessor so future work can drive
+// the value from a settings row, hot-reload it, or per-org tune it without
+// touching every call site, and tests can override via
+// `__setBackfillHeartbeatStaleMsForTests` without re-importing.
+let currentBackfillHeartbeatStaleMs = resolveBackfillHeartbeatStaleMs();
+
+export function getBackfillHeartbeatStaleMs(): number {
+  return currentBackfillHeartbeatStaleMs;
+}
+
+// Test-only override. Pass a positive number to pin a specific window for
+// the duration of a test, or `null` to reset back to the env-resolved
+// default. Production code must never call this; the underscore prefix and
+// `ForTests` suffix mark it as escape-hatch-only.
+export function __setBackfillHeartbeatStaleMsForTests(ms: number | null): void {
+  currentBackfillHeartbeatStaleMs =
+    ms === null ? resolveBackfillHeartbeatStaleMs() : ms;
+}
+
+/**
+ * @deprecated Use `getBackfillHeartbeatStaleMs()` instead. This export is
+ * retained for backwards compatibility with existing tests and reflects only
+ * the value resolved at module load time — it does NOT track runtime
+ * overrides applied via `__setBackfillHeartbeatStaleMsForTests`.
+ */
+export const BACKFILL_HEARTBEAT_STALE_MS = currentBackfillHeartbeatStaleMs;
 
 export function __rowToBackfillStateForTests(row: CrmTranscriptBackfillJob): BackfillJobState {
   return rowToState(row);
@@ -2314,7 +2346,7 @@ export function __setResumeRunTranscriptBackfillForTests(
 // On boot, look at the most-recent RUNNING job per org and decide whether to
 // resume it or reap it.
 //
-//   - If the heartbeat is still fresh (< BACKFILL_HEARTBEAT_STALE_MS), some
+//   - If the heartbeat is still fresh (< getBackfillHeartbeatStaleMs()), some
 //     other instance may still own the job in a multi-process / rolling
 //     deploy setup. Leave it alone; the lazy on-read reaper in the GET
 //     handler will catch it later if that instance is actually dead.
@@ -2405,7 +2437,7 @@ export async function resumeOrReapBackfillJobsOnBoot() {
       const startedAgeMs = now - new Date(row.startedAt).getTime();
 
       // Another live instance probably owns this job — don't touch it.
-      if (heartbeatAgeMs < BACKFILL_HEARTBEAT_STALE_MS) {
+      if (heartbeatAgeMs < getBackfillHeartbeatStaleMs()) {
         skipped += 1;
         continue;
       }
@@ -2575,7 +2607,7 @@ router.get(
         row: CrmTranscriptBackfillJob,
       ): Promise<CrmTranscriptBackfillJob | null> => {
         const heartbeatAgeMs = Date.now() - new Date(row.heartbeatAt).getTime();
-        if (heartbeatAgeMs > BACKFILL_HEARTBEAT_STALE_MS) {
+        if (heartbeatAgeMs > getBackfillHeartbeatStaleMs()) {
           const reaped = await updateCrmTranscriptBackfillJob(row.id, {
             status: "FAILED",
             completedAt: new Date(),
@@ -2883,7 +2915,7 @@ router.post(
       if (existingRunning) {
         const heartbeatAgeMs =
           Date.now() - new Date(existingRunning.heartbeatAt).getTime();
-        if (heartbeatAgeMs <= BACKFILL_HEARTBEAT_STALE_MS) {
+        if (heartbeatAgeMs <= getBackfillHeartbeatStaleMs()) {
           return res.status(409).json({
             error: "A transcript backfill is already running for this organization",
             jobId: existingRunning.id,
@@ -2997,7 +3029,7 @@ router.get(
       // admin UI's cross-org Cancel hint can render the live value instead
       // of a hardcoded "5 minutes" string.
       const cfg = await getBackfillNotificationConfig(orgId);
-      res.json({ ...cfg, heartbeatStaleMs: BACKFILL_HEARTBEAT_STALE_MS });
+      res.json({ ...cfg, heartbeatStaleMs: getBackfillHeartbeatStaleMs() });
     } catch (e) {
       next(e);
     }
@@ -4292,7 +4324,7 @@ router.get(
       // perpetually-stuck progress bar.
       if (
         row.status === "RUNNING" &&
-        Date.now() - new Date(row.heartbeatAt).getTime() > BACKFILL_HEARTBEAT_STALE_MS
+        Date.now() - new Date(row.heartbeatAt).getTime() > getBackfillHeartbeatStaleMs()
       ) {
         const reaped = await updateCrmTranscriptBackfillJob(row.id, {
           status: "FAILED",
@@ -4405,7 +4437,7 @@ router.post(
       if (existingRunning) {
         const heartbeatAgeMs =
           Date.now() - new Date(existingRunning.heartbeatAt).getTime();
-        if (heartbeatAgeMs <= BACKFILL_HEARTBEAT_STALE_MS) {
+        if (heartbeatAgeMs <= getBackfillHeartbeatStaleMs()) {
           return res.status(409).json({
             error: "A transcript backfill is already running for this organization",
             jobId: existingRunning.id,
@@ -4518,7 +4550,7 @@ router.post(
       const cancelledById = req.user!.id;
 
       const heartbeatAgeMs = Date.now() - new Date(row.heartbeatAt).getTime();
-      if (heartbeatAgeMs > BACKFILL_HEARTBEAT_STALE_MS) {
+      if (heartbeatAgeMs > getBackfillHeartbeatStaleMs()) {
         // Worker is dead (process restart since last heartbeat). Mark the
         // row terminal directly so the banner clears on the next refresh.
         // Task #1057 — surface CANCELLED here too: the admin asked to
