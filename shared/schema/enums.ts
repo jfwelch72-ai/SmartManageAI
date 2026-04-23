@@ -111,6 +111,11 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // to FAILED on server boot so admins can retry instead of leaving
   // recordings without transcripts.
   "CRM_TRANSCRIPT_BACKFILL_REAPED",
+  // Task #1332: heads-up that an automatic Davis-Bacon (DOL/SAM.gov) wage
+  // determination sync queued during project create/update failed in the
+  // background, so the integration owner can retry before a payroll deadline
+  // instead of discovering it via the missing-decision banner.
+  "DAVIS_BACON_AUTO_SYNC_FAILED",
 ]);
 
 export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["PENDING", "APPROVED", "DENIED"]);

@@ -32,6 +32,9 @@ const REQUIRED_NOTIFICATION_TYPES = [
   // tried to insert a row.
   "TM_INVOICE_AUTO_CREATED",
   "DOCUMENT_REVISION_CREATED",
+  // Task #1332: heads-up when a background Davis-Bacon (DOL/SAM.gov) sync
+  // queued by project create/update fails.
+  "DAVIS_BACON_AUTO_SYNC_FAILED",
 ];
 
 export async function ensureNotificationEnumValues(): Promise<void> {

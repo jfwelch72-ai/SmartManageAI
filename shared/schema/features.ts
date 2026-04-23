@@ -7163,6 +7163,13 @@ export const integrationSyncState = pgTable("integration_sync_state", {
   entityType: text("entity_type").notNull(),
   cursor: text("cursor"),
   lastSyncAt: timestamp("last_sync_at"),
+  // Task #1332: persisted "last sync attempt" tracking so failed background
+  // syncs (e.g. Davis-Bacon auto-sync queued during project create/update)
+  // surface to users instead of being buried in server logs. lastAttemptAt
+  // is bumped on every attempt; lastError is set on failure and cleared on
+  // success so a successful sync naturally clears any prior failure state.
+  lastAttemptAt: timestamp("last_attempt_at"),
+  lastError: text("last_error"),
   metadata: json("metadata"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

@@ -315,7 +315,7 @@ import { Router, type Response } from "express";
 import { db } from "./db";
 import { eventBus } from "./events";
 import { exportLimiter } from "./rateLimiter";
-import { lookupCachedWageRate, lookupCachedRateByLocale, isWageDeterminationCached, listCachedDecisionClassifications, queueWageDecisionSync } from "./integrations/providers/dol_davis_bacon/sync";
+import { lookupCachedWageRate, lookupCachedRateByLocale, isWageDeterminationCached, listCachedDecisionClassifications, queueWageDecisionSync, getWageDecisionSyncStatus } from "./integrations/providers/dol_davis_bacon/sync";
 import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts, overtimeRules, costLedgerPostings, certifiedPayrollReports, auditLog } from "@shared/schema";
 import { eq, and, gte, lte, sql, desc, inArray, count, asc, isNull, or } from "drizzle-orm";
 import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
@@ -1636,6 +1636,9 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
     }
 
     let wageDecisionCached: boolean | null = null;
+    let wageDecisionLastSyncAt: string | null = null;
+    let wageDecisionLastAttemptAt: string | null = null;
+    let wageDecisionLastError: string | null = null;
     if (projectWageDecision) {
       try {
         wageDecisionCached = await isWageDeterminationCached(orgId, projectWageDecision);
@@ -1646,6 +1649,23 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
         });
         wageDecisionCached = null;
       }
+      // Task #1332: surface the last-attempt timestamp + any persisted
+      // failure so the project payroll banner can flag a failed background
+      // auto-sync instead of users only seeing the generic "not imported"
+      // warning.
+      try {
+        const status = await getWageDecisionSyncStatus(orgId, projectWageDecision);
+        if (status) {
+          wageDecisionLastSyncAt = status.lastSyncAt ? status.lastSyncAt.toISOString() : null;
+          wageDecisionLastAttemptAt = status.lastAttemptAt ? status.lastAttemptAt.toISOString() : null;
+          wageDecisionLastError = status.lastError ?? null;
+        }
+      } catch (err) {
+        logWarn("Davis-Bacon sync status lookup failed (project PW summary)", {
+          decision: projectWageDecision,
+          error: String(err),
+        });
+      }
     }
 
     classifications.sort((a, b) => a.classificationName.localeCompare(b.classificationName));
@@ -1654,6 +1674,9 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
       projectId,
       wageDecision: projectWageDecision,
       wageDecisionCached,
+      wageDecisionLastSyncAt,
+      wageDecisionLastAttemptAt,
+      wageDecisionLastError,
       classifications,
     });
   } catch (error) {

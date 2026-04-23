@@ -169,4 +169,10 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   // history card. Idempotent ADD COLUMN IF NOT EXISTS handled by the
   // existing ensure helper.
   "0047_feature_flag_preset_application_kind.sql": { helper: "ensureFeatureFlagPresetApplicationsTable" },
+  // Task #1332 — adds last_attempt_at + last_error to integration_sync_state
+  // and the DAVIS_BACON_AUTO_SYNC_FAILED notification_type enum value so
+  // failed Davis-Bacon background syncs surface to the integration owner.
+  "0048_integration_sync_state_failure_tracking.sql": { helper: "ensureIntegrationSyncStateFailureColumns",
+    note: "Companion ALTER TYPE ADD VALUE for DAVIS_BACON_AUTO_SYNC_FAILED is handled by ensureNotificationEnumValues",
+  },
 };

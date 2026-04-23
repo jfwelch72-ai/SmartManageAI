@@ -6,6 +6,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { logInfo, logError, logWarn } from "../../../utils/logger";
 import { safeFetch } from "../../../utils/safeFetch";
 import { decryptMetadata } from "../../encryption";
+import { insertNotification } from "../../../services/notificationService";
 
 const SAM_BASE = "https://api.sam.gov/prod";
 
@@ -117,31 +118,14 @@ export async function importWageDetermination(
     const det = await fetchWageDetermination(connection, decisionNumber);
 
     if (!dryRun) {
-      const entityType = `wage_determination:${decisionNumber}`;
-      const [existing] = await db
-        .select()
-        .from(integrationSyncState)
-        .where(
-          and(
-            eq(integrationSyncState.connectionId, connection.id),
-            eq(integrationSyncState.entityType, entityType)
-          )
-        );
       const payload = { ...det, importedAt: new Date().toISOString() };
-      if (existing) {
-        await db
-          .update(integrationSyncState)
-          .set({ metadata: payload, lastSyncAt: new Date(), updatedAt: new Date() })
-          .where(eq(integrationSyncState.id, existing.id));
-      } else {
-        await db.insert(integrationSyncState).values({
-          organizationId: connection.organizationId,
-          connectionId: connection.id,
-          entityType,
-          metadata: payload,
-          lastSyncAt: new Date(),
-        });
-      }
+      // Task #1332: clear any prior failure state so a successful import
+      // implicitly resolves the "auto-sync failed" notification/banner.
+      await upsertWageDecisionSyncState(connection, decisionNumber, {
+        metadata: payload,
+        lastSyncAt: new Date(),
+        lastError: null,
+      });
     }
 
     logInfo("Davis-Bacon wage determination imported", { decisionNumber, rates: det.rates.length, dryRun });
@@ -157,8 +141,103 @@ export async function importWageDetermination(
   } catch (err) {
     logError("Davis-Bacon import failed", { error: String(err), decisionNumber });
     errors.push({ message: String(err) });
+    if (!dryRun) {
+      // Task #1332: persist the failure so the project payroll banner can
+      // surface it and a follow-up retry / successful sync naturally clears
+      // it via the success branch above.
+      try {
+        await upsertWageDecisionSyncState(connection, decisionNumber, {
+          lastError: String(err).slice(0, 1000),
+        });
+      } catch (recordErr) {
+        logWarn("Davis-Bacon failed-attempt persistence failed", {
+          decisionNumber,
+          error: String(recordErr),
+        });
+      }
+    }
     return { success: false, entityType: "wage_determination", direction: "import", created: 0, updated: 0, skipped: 0, errors };
   }
+}
+
+/**
+ * Upsert the per-decision row in `integration_sync_state` and stamp the
+ * "last attempt" tracking columns added in Task #1332. Always bumps
+ * `lastAttemptAt` so the UI can show "last tried X minutes ago" even if
+ * neither metadata nor lastError changed. Caller passes `lastError: null`
+ * on success to clear any prior failure, or a string on failure.
+ */
+async function upsertWageDecisionSyncState(
+  connection: IntegrationConnection,
+  decisionNumber: string,
+  patch: { metadata?: unknown; lastSyncAt?: Date; lastError?: string | null },
+): Promise<void> {
+  const entityType = `wage_determination:${decisionNumber}`;
+  const [existing] = await db
+    .select()
+    .from(integrationSyncState)
+    .where(
+      and(
+        eq(integrationSyncState.connectionId, connection.id),
+        eq(integrationSyncState.entityType, entityType),
+      ),
+    );
+  const now = new Date();
+  if (existing) {
+    const update: Record<string, unknown> = {
+      lastAttemptAt: now,
+      updatedAt: now,
+    };
+    if (patch.metadata !== undefined) update.metadata = patch.metadata;
+    if (patch.lastSyncAt !== undefined) update.lastSyncAt = patch.lastSyncAt;
+    if (patch.lastError !== undefined) update.lastError = patch.lastError;
+    await db
+      .update(integrationSyncState)
+      .set(update as any)
+      .where(eq(integrationSyncState.id, existing.id));
+  } else {
+    await db.insert(integrationSyncState).values({
+      organizationId: connection.organizationId,
+      connectionId: connection.id,
+      entityType,
+      metadata: (patch.metadata ?? null) as any,
+      lastSyncAt: patch.lastSyncAt ?? null,
+      lastAttemptAt: now,
+      lastError: patch.lastError ?? null,
+    });
+  }
+}
+
+/**
+ * Returns the persisted last-attempt status for an org's wage decision.
+ * Used by the project payroll summary endpoint so the UI can show the
+ * most recent auto-sync timestamp and any error per decision number.
+ */
+export async function getWageDecisionSyncStatus(
+  organizationId: string,
+  decisionNumber: string,
+): Promise<{ lastSyncAt: Date | null; lastAttemptAt: Date | null; lastError: string | null } | null> {
+  const entityType = `wage_determination:${decisionNumber}`;
+  const [row] = await db
+    .select({
+      lastSyncAt: integrationSyncState.lastSyncAt,
+      lastAttemptAt: integrationSyncState.lastAttemptAt,
+      lastError: integrationSyncState.lastError,
+    })
+    .from(integrationSyncState)
+    .where(
+      and(
+        eq(integrationSyncState.organizationId, organizationId),
+        eq(integrationSyncState.entityType, entityType),
+      ),
+    )
+    .limit(1);
+  if (!row) return null;
+  return {
+    lastSyncAt: row.lastSyncAt ?? null,
+    lastAttemptAt: row.lastAttemptAt ?? null,
+    lastError: row.lastError ?? null,
+  };
 }
 
 /**
@@ -363,24 +442,69 @@ export async function queueWageDecisionSync(
   }
 
   // Fire-and-forget: kick off the import without blocking the caller.
-  // Errors are logged; subsequent payroll runs surface the still-missing
-  // decision in the warning banner so the user can retry via the inline
-  // "Import now" action.
+  // importWageDetermination persists success/failure state on the
+  // integration_sync_state row (Task #1332) so the project payroll banner
+  // and the failure-notification path below can surface what happened.
   void importWageDetermination(connection, decision, false)
-    .then((result) => {
+    .then(async (result) => {
       if (!result.success) {
         logWarn("Davis-Bacon background sync returned errors", {
           decision,
           organizationId,
           errors: result.errors,
         });
+        const errMsg = result.errors.map((e) => e.message).join("; ") || "Sync failed";
+        await notifyDavisBaconAutoSyncFailure(connection, decision, errMsg);
       } else {
         logInfo("Davis-Bacon background sync completed", { decision, organizationId });
       }
     })
-    .catch((err) => {
+    .catch(async (err) => {
       logError("Davis-Bacon background sync threw", { decision, organizationId, error: String(err) });
+      await notifyDavisBaconAutoSyncFailure(connection, decision, String(err));
     });
 
   return { status: "queued" };
+}
+
+/**
+ * Task #1332: in-app notification to the integration owner when an
+ * automatic Davis-Bacon sync queued during project create/update fails.
+ * Routed to `integration_connections.created_by_user_id` so the admin who
+ * connected SAM.gov hears about it; if the connection has no owner on
+ * file we fall back to logging only since there is no per-org "integration
+ * admin" group to fan out to.
+ */
+async function notifyDavisBaconAutoSyncFailure(
+  connection: IntegrationConnection,
+  decisionNumber: string,
+  errorMessage: string,
+): Promise<void> {
+  const ownerUserId = connection.createdByUserId;
+  if (!ownerUserId) {
+    logWarn("Davis-Bacon auto-sync failed but connection has no owner to notify", {
+      decisionNumber,
+      connectionId: connection.id,
+    });
+    return;
+  }
+  try {
+    await insertNotification({
+      userId: ownerUserId,
+      organizationId: connection.organizationId,
+      type: "DAVIS_BACON_AUTO_SYNC_FAILED" as any,
+      title: "Davis-Bacon auto-sync failed",
+      message:
+        `Automatic sync for wage decision ${decisionNumber} failed: ` +
+        `${errorMessage.slice(0, 300)}. Open the project's payroll tab to retry.`,
+      relatedEntityId: connection.id,
+      relatedEntityType: "INTEGRATION_CONNECTION",
+    });
+  } catch (err) {
+    logError(
+      "Failed to deliver Davis-Bacon auto-sync failure notification",
+      { decisionNumber, connectionId: connection.id },
+      err instanceof Error ? err : new Error(String(err)),
+    );
+  }
 }

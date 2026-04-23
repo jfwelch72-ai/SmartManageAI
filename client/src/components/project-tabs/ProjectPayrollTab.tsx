@@ -42,7 +42,19 @@ interface PrevailingWageSummary {
   projectId: string;
   wageDecision: string | null;
   wageDecisionCached: boolean | null;
+  // Task #1332: persisted "last sync attempt" tracking so the banner can
+  // distinguish "never tried" from "tried and failed" and show an error.
+  wageDecisionLastSyncAt?: string | null;
+  wageDecisionLastAttemptAt?: string | null;
+  wageDecisionLastError?: string | null;
   classifications: PrevailingWageClassification[];
+}
+
+function formatRelativeTimestamp(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return null;
+  return d.toLocaleString();
 }
 
 const formatCurrency = (val: number | null | undefined) =>
@@ -157,6 +169,13 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
 
   const showMissingWarning =
     !!data.wageDecision && data.wageDecisionCached === false;
+  // Task #1332: show a dedicated failure banner when the most recent
+  // attempt errored. Distinct from the generic "not yet imported" warning
+  // so users see *why* their automatic sync didn't take and can retry.
+  const showFailureBanner =
+    !!data.wageDecision && !!data.wageDecisionLastError;
+  const lastSyncDisplay = formatRelativeTimestamp(data.wageDecisionLastSyncAt);
+  const lastAttemptDisplay = formatRelativeTimestamp(data.wageDecisionLastAttemptAt);
 
   const overrideCount = data.classifications.filter(c => c.source === "PROJECT_OVERRIDE").length;
   const dolCount = data.classifications.filter(c => c.source === "DOL_FEED").length;
@@ -186,10 +205,52 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
                 Cached from DOL
               </Badge>
             )}
+            {lastSyncDisplay && (
+              <span className="text-xs text-muted-foreground" data-testid="text-wage-decision-last-sync">
+                Last synced {lastSyncDisplay}
+              </span>
+            )}
           </div>
         )}
 
-        {showMissingWarning && (
+        {showFailureBanner && (
+          <div
+            className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg"
+            data-testid="banner-wage-decision-sync-failed"
+          >
+            <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 text-sm text-red-700 dark:text-red-300">
+              <p className="font-medium">Davis-Bacon auto-sync failed</p>
+              <p className="mt-1">
+                The last attempt to sync <span className="font-mono">{data.wageDecision}</span>
+                {lastAttemptDisplay ? <> at <span className="font-medium">{lastAttemptDisplay}</span></> : null} returned an error:
+              </p>
+              <p
+                className="mt-1 font-mono text-xs whitespace-pre-wrap break-words"
+                data-testid="text-wage-decision-sync-error"
+              >
+                {data.wageDecisionLastError}
+              </p>
+              <div className="mt-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => syncMutation.mutate()}
+                  disabled={syncMutation.isPending}
+                  data-testid="button-retry-wage-decision-sync"
+                >
+                  {syncMutation.isPending ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Retrying...</>
+                  ) : (
+                    <><RefreshCw className="w-4 h-4 mr-2" /> Retry sync</>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showMissingWarning && !showFailureBanner && (
           <div
             className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg"
             data-testid="banner-missing-wage-decision"
