@@ -4,6 +4,7 @@ export {
   importWageDetermination,
   lookupCachedWageRate,
   listSuppressedFailureNotifications,
+  resetSuppressedFailureNotification,
 } from "./sync";
 export type {
   DavisBaconWageRate,

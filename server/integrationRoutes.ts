@@ -17,7 +17,7 @@ import type { AuthRequest } from "./auth";
 import { importChartOfAccounts, exportCustomers, exportInvoice, importPaymentStatus, exportPayroll, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "./integrations/providers/qbo";
 import { exportHaulTickets, exportSuretyPremiums, exportCertifiedPayroll } from "./integrations/providers/qbo/sync";
 import { parseEbsxJson, importBidPackage, exportEstimateAsEbsx } from "./integrations/providers/aashtoware";
-import { importWageDetermination, listSuppressedFailureNotifications } from "./integrations/providers/dol_davis_bacon";
+import { importWageDetermination, listSuppressedFailureNotifications, resetSuppressedFailureNotification } from "./integrations/providers/dol_davis_bacon";
 import { searchDirectory as searchDbeDirectory, refreshCertifications as refreshDbeCertifications, verifyCertification as verifyDbeCertification } from "./integrations/providers/dbe_directory";
 import { verifyOrganizationBonds } from "./integrations/providers/surety_verification";
 import { importProjects as stackctImportProjects, exportProjects as stackctExportProjects, importPlans as stackctImportPlans, exportPlans as stackctExportPlans, importEstimates as stackctImportEstimates, exportEstimates as stackctExportEstimates, acquireTokenWithCredentials as stackctAcquireToken } from "./integrations/providers/stackct";
@@ -865,6 +865,55 @@ router.get("/davis-bacon/suppressed-failures", requireAuth, async (req, res, nex
     }
     const items = await listSuppressedFailureNotifications(user.organizationId);
     res.json({ items });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Task #1403 — Force-clear the coalescing window for a specific
+ * (connection, decision) so the next failure is delivered immediately
+ * instead of being absorbed for the remainder of the 1h window. Wipes
+ * `metadata.failureNotification` on the matching `integration_sync_state`
+ * row and the in-memory `failureCoalesceMap` entry. Limited to admins
+ * (SUPER_ADMIN/ADMIN) so a casual MANAGER read of the panel can't
+ * accidentally trigger fresh email blasts during an active outage.
+ */
+router.post("/davis-bacon/suppressed-failures/reset", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    const schema = z.object({
+      connectionId: z.string().min(1),
+      decisionNumber: z.string().min(1),
+    });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request body" });
+    }
+    const { connectionId, decisionNumber } = parsed.data;
+
+    const connection = await connectionService.getConnection(connectionId, user.organizationId);
+    if (!connection || connection.provider !== "dol_davis_bacon") {
+      return res.status(404).json({ error: "Connection not found" });
+    }
+
+    const cleared = await resetSuppressedFailureNotification(
+      connection as any,
+      decisionNumber,
+    );
+
+    logIntegrationAudit("davis_bacon.suppression_reset", {
+      orgId: user.organizationId,
+      userId: user.id,
+      connectionId,
+      decisionNumber,
+      cleared,
+    });
+
+    res.json({ success: true, cleared });
   } catch (err) {
     next(err);
   }

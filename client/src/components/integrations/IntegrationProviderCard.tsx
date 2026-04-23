@@ -1,15 +1,17 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   CheckCircle, XCircle, Loader2, Link2, Unlink,
   ChevronDown, ChevronUp, Shield, ShieldCheck, ShieldAlert,
-  Lock, KeyRound, Info, BellOff, BellRing,
+  Lock, KeyRound, Info, BellOff, BellRing, RotateCcw,
 } from "lucide-react";
 import type { Connection, Provider, SecurityAuditEntry, SuppressedFailuresResponse, PROVIDER_DESCRIPTIONS as _PD } from "./types";
 import { PROVIDER_DESCRIPTIONS } from "./types";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 type NotificationPreferencesResponse = {
   typeOverrides?: Array<{
@@ -116,6 +118,40 @@ export function DavisBaconSuppressedFailuresPanel({
     queryKey: ["/api/integrations/davis-bacon/suppressed-failures"],
     refetchInterval: 30_000,
   });
+  const { toast } = useToast();
+  const resetMutation = useMutation({
+    mutationFn: async (decisionNumber: string) => {
+      const res = await apiRequest(
+        "POST",
+        "/api/integrations/davis-bacon/suppressed-failures/reset",
+        { connectionId, decisionNumber },
+      );
+      return res.json() as Promise<{ success: boolean; cleared: boolean }>;
+    },
+    onSuccess: (data, decisionNumber) => {
+      // Distinguish a real reset from a no-op (e.g. the row's persisted
+      // suppression already expired between the panel render and the click)
+      // so admins know whether their click actually changed state.
+      toast({
+        title: data?.cleared
+          ? "Suppression window reset"
+          : "No active suppression to reset",
+        description: data?.cleared
+          ? `Next failure for ${decisionNumber} will be delivered immediately.`
+          : `${decisionNumber} no longer had a persisted suppression window.`,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/integrations/davis-bacon/suppressed-failures"],
+      });
+    },
+    onError: (err: unknown) => {
+      toast({
+        title: "Reset failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    },
+  });
   const items = (data?.items ?? []).filter((i) => i.connectionId === connectionId);
   if (items.length === 0) return null;
 
@@ -151,18 +187,40 @@ export function DavisBaconSuppressedFailuresPanel({
               data-testid={`row-davis-bacon-suppressed-${i.decisionNumber}`}
             >
               <span className="font-mono truncate">{i.decisionNumber}</span>
-              <span className="shrink-0">
-                <span data-testid={`text-davis-bacon-suppressed-count-${i.decisionNumber}`}>
-                  {i.suppressedCount}
+              <span className="shrink-0 flex items-center gap-2">
+                <span>
+                  <span data-testid={`text-davis-bacon-suppressed-count-${i.decisionNumber}`}>
+                    {i.suppressedCount}
+                  </span>
+                  {since ? (
+                    <>
+                      {" since "}
+                      <span data-testid={`text-davis-bacon-suppressed-since-${i.decisionNumber}`}>
+                        {new Date(since).toLocaleString()}
+                      </span>
+                    </>
+                  ) : null}
                 </span>
-                {since ? (
-                  <>
-                    {" since "}
-                    <span data-testid={`text-davis-bacon-suppressed-since-${i.decisionNumber}`}>
-                      {new Date(since).toLocaleString()}
-                    </span>
-                  </>
-                ) : null}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 px-2 text-xs gap-1"
+                  disabled={
+                    resetMutation.isPending &&
+                    resetMutation.variables === i.decisionNumber
+                  }
+                  onClick={() => resetMutation.mutate(i.decisionNumber)}
+                  data-testid={`button-davis-bacon-reset-suppression-${i.decisionNumber}`}
+                  title="Force-deliver the next failure now instead of waiting for the 1h window to expire"
+                >
+                  {resetMutation.isPending &&
+                  resetMutation.variables === i.decisionNumber ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <RotateCcw className="h-3 w-3" />
+                  )}
+                  Reset
+                </Button>
               </span>
             </li>
           );

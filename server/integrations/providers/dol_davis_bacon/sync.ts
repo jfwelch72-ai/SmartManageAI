@@ -957,6 +957,54 @@ export interface SuppressedFailureEntry {
  * suppressed count for a healthy decision naturally returns to zero
  * without any explicit cleanup here.
  */
+/**
+ * Task #1403 — Force-clear the suppression window for a given
+ * (connection, decision). Wipes the persisted
+ * `metadata.failureNotification` key off the integration_sync_state row
+ * and drops the in-memory `failureCoalesceMap` entry, so the next
+ * failure for this decision goes out as a fresh notification (with
+ * the absorbed-count suffix reset to zero).
+ *
+ * Returns true if a persisted suppression entry was actually cleared,
+ * false otherwise (no row, no persisted key, or row metadata is shaped
+ * unexpectedly). The in-memory map entry is always removed regardless.
+ */
+export async function resetSuppressedFailureNotification(
+  connection: IntegrationConnection,
+  decisionNumber: string,
+): Promise<boolean> {
+  const decision = (decisionNumber || "").trim();
+  if (!decision) return false;
+  // Always drop the in-memory cache entry, even if the persisted side
+  // is already empty — otherwise a hot worker could keep enforcing the
+  // window after a manual reset.
+  failureCoalesceMap.delete(coalesceKey(connection.id, decision));
+
+  let cleared = false;
+  try {
+    const existing = await getWageDecisionRow(connection.id, decision);
+    if (!existing) return false;
+    const meta =
+      existing.metadata && typeof existing.metadata === "object"
+        ? { ...(existing.metadata as Record<string, unknown>) }
+        : null;
+    if (!meta || !("failureNotification" in meta)) return false;
+    delete meta.failureNotification;
+    await db
+      .update(integrationSyncState)
+      .set({ metadata: meta as any, updatedAt: new Date() })
+      .where(eq(integrationSyncState.id, existing.id));
+    cleared = true;
+  } catch (err) {
+    logWarn("Davis-Bacon suppression reset failed", {
+      connectionId: connection.id,
+      decisionNumber: decision,
+      error: String(err),
+    });
+  }
+  return cleared;
+}
+
 export async function listSuppressedFailureNotifications(
   organizationId: string,
 ): Promise<SuppressedFailureEntry[]> {
