@@ -126,22 +126,34 @@ function ruleFromRow(row: JobMetricAlertRule): AlertRuleResolved {
 }
 
 /**
- * Task #1417 — Per-job override for the built-in defaults. Used when a
- * job's natural cadence makes the engine-wide defaults (designed for
- * frequently-ticking jobs like notification fan-out) noisy or wrong.
+ * Task #1417 / #1453 — Per-job override for the built-in defaults. Used
+ * when a job's natural cadence makes the engine-wide defaults (designed
+ * for frequently-ticking jobs like notification fan-out) noisy or wrong.
  *
- * The first user is `wage_decision_stale_refresh`, the nightly Davis-
- * Bacon stale wage decision sweep (cron `0 6 * * *`). With the engine
- * defaults a daily job would page Super Admins every morning at ~10am
- * UTC because the 4h stall threshold is crossed long before the next
- * 06:00 UTC tick. The override raises the stall threshold (and email
- * escalation floor) to 36h so an alert only fires when the sweep has
- * actually missed at least one full nightly run, and adds a tighter
- * spike rule on the `failed` counter so a sudden run of failures pages
- * Super Admins even before the job goes silent. No DB seeding is
- * required — `resolveRule` consults this map whenever no operator-
- * authored rule exists for a (job, counter, kind), so a fresh deploy
- * is alerted out of the box.
+ * The engine ships with `DEFAULT_STALL_HOURS = 4` and
+ * `DEFAULT_EMAIL_STALL_HOURS = 12`, which are appropriate for jobs
+ * that tick every few minutes. Any cron-driven job in
+ * `server/jobs/jobRunner.ts` whose natural cadence is longer than 4h
+ * would otherwise page Super Admins on the very next evaluation tick
+ * after a successful run (the 4h window expires long before the next
+ * scheduled run). The map below tunes the stall threshold (and email
+ * escalation floor) to "tolerate exactly one missed run" for each such
+ * job so an alert only fires after the second consecutive missed run.
+ * Dedupe windows are widened to match the cadence so a sustained
+ * outage doesn't re-page on every 15-minute alert tick.
+ *
+ * No DB seeding is required — `resolveRule` consults this map whenever
+ * no operator-authored rule exists for a (job, counter, kind), so a
+ * fresh deploy is alerted out of the box. Operators can still override
+ * any of these via `jobMetricAlertRules` rows from the dashboard.
+ *
+ * Job names mirror the snake_case identifier passed to
+ * `recordJobMetrics` (where the job already publishes samples) or the
+ * runner's task variable (for jobs that will start publishing later).
+ * Adding a defensive entry now is a no-op until the job publishes its
+ * first sample — `getAllJobMetrics()` only surfaces jobs the engine
+ * has actually seen — but it guarantees the right policy is in place
+ * the moment metrics are wired up.
  */
 interface PerJobDefaults {
   stall?: {
@@ -160,26 +172,61 @@ interface PerJobDefaults {
   >;
 }
 
+// Standard "tolerate one missed run" stall override for once-daily jobs
+// (cron `* * * * *` ticks at most once per 24h). 36h gives the next
+// scheduled run a 12h grace window before the second missed run pages.
+const DAILY_STALL: PerJobDefaults["stall"] = {
+  thresholdHours: 36,
+  dedupeMinutes: 24 * 60,
+  emailWhenAboveHours: 36,
+};
+
+// Standard override for jobs that tick every 6h (cron `0 */6 * * *`).
+// 14h tolerates one fully missed run plus a 2h grace for clock skew /
+// long-running ticks before the second missed run pages.
+const SIX_HOURLY_STALL: PerJobDefaults["stall"] = {
+  thresholdHours: 14,
+  dedupeMinutes: 6 * 60,
+  emailWhenAboveHours: 14,
+};
+
+// Standard override for the weekly periodic-report fan-out (cron
+// `0 7 * * 1`). 8 days = 192h tolerates a single missed Monday before
+// alerting; dedupe matches the 7-day cadence so a sustained outage
+// pages once per missed week, not every 15 minutes.
+const WEEKLY_STALL: PerJobDefaults["stall"] = {
+  thresholdHours: 8 * 24,
+  dedupeMinutes: 7 * 24 * 60,
+  emailWhenAboveHours: 8 * 24,
+};
+
+// Standard override for the monthly periodic-report fan-out (cron
+// `0 7 1 * *`). 32 days tolerates a single missed month-start before
+// alerting; dedupe matches the 30-day cadence.
+const MONTHLY_STALL: PerJobDefaults["stall"] = {
+  thresholdHours: 32 * 24,
+  dedupeMinutes: 30 * 24 * 60,
+  emailWhenAboveHours: 32 * 24,
+};
+
 export const PER_JOB_DEFAULTS: Record<string, PerJobDefaults> = {
-  // Nightly DOL Davis-Bacon stale wage decision sweep. Runs once a day
-  // at 06:00 UTC (see `server/jobs/jobRunner.ts`). 36h tolerates a
-  // single missed run without alerting; the second missed run pages.
+  // ---- Daily (cron `<m> <h> * * *`, ~24h cadence) -------------------
+  //
+  // Each of these jobs runs at most once per day, so the engine's 4h
+  // default would page on the very first alert tick after a healthy
+  // run. The 36h DAILY_STALL override fires only after a second
+  // consecutive missed run.
+
+  // Nightly DOL Davis-Bacon stale wage decision sweep — `0 6 * * *`.
+  // First per-job override added in Task #1417; the `failed` spike
+  // rule below is specific to this job because the prior nightly runs
+  // form a clean baseline for "DOL endpoints starting to reject us".
   wage_decision_stale_refresh: {
-    stall: {
-      thresholdHours: 36,
-      // Once a stall is declared we don't want to re-page until the
-      // next nightly run has had a chance to either succeed or miss
-      // again — 24h dedupe matches the job's natural cadence.
-      dedupeMinutes: 24 * 60,
-      emailWhenAboveHours: 36,
-    },
+    stall: DAILY_STALL,
     spikes: {
-      // A spike in `failed` rows is the strongest leading indicator
-      // that DOL endpoints have started rejecting our requests. The
-      // baseline is built from prior nightly runs, so a 3× jump with
-      // an absolute floor of 3 keeps the rule from firing on the
-      // 1-failure-vs-0-baseline case while still catching real
-      // outages quickly.
+      // 3× jump with an absolute floor of 3 keeps the rule from
+      // firing on the 1-failure-vs-0-baseline case while still
+      // catching real outages quickly.
       failed: {
         multiplier: 3,
         minAbsolute: 3,
@@ -188,6 +235,69 @@ export const PER_JOB_DEFAULTS: Record<string, PerJobDefaults> = {
       },
     },
   },
+
+  // Orphan wage-decision row pruning — runs as a side effect of the
+  // nightly stale refresh sweep above, so it inherits the same `0 6
+  // * * *` cadence. Same DAILY_STALL policy applies.
+  wage_decision_orphan_sweep: { stall: DAILY_STALL },
+
+  // Retention-policy sweep that hard-deletes rows past their org's
+  // retention window — `0 2 * * *`.
+  retention_policy_sweep: { stall: DAILY_STALL },
+
+  // OAuth token expiry warning sweep for connected social accounts —
+  // `0 3 * * *`.
+  social_token_expiry_check: { stall: DAILY_STALL },
+
+  // Per-project KPI snapshot capture that powers portfolio
+  // sparklines — `15 2 * * *`.
+  portfolio_kpi_snapshot: { stall: DAILY_STALL },
+
+  // Pending-project geocoder for the Projects map view —
+  // `30 4 * * *`.
+  project_geocode: { stall: DAILY_STALL },
+
+  // Compliance & expirations digest fan-out — `0 7 * * *`.
+  compliance_expiration_check: { stall: DAILY_STALL },
+
+  // SWPPP overdue corrective-action reminder fan-out —
+  // `0 7 * * *`.
+  swppp_overdue_corrective_actions: { stall: DAILY_STALL },
+
+  // Daily CRM birthday email fan-out (separate from the hourly
+  // birthday digest tick which already publishes samples every hour) —
+  // `0 7 * * *`.
+  crm_birthday_daily_digest: { stall: DAILY_STALL },
+
+  // Idle-opportunity sweep for the CRM "needs attention" queue —
+  // `0 8 * * *`.
+  idle_opportunity_check: { stall: DAILY_STALL },
+
+  // Davis-Bacon "missing wage decision" daily reminder fan-out —
+  // `0 8 * * *`.
+  wage_decision_missing_reminder: { stall: DAILY_STALL },
+
+  // Hard-delete sweep for archived certified payroll PDFs past their
+  // org's retention window — `30 3 * * *`.
+  certified_payroll_purge: { stall: DAILY_STALL },
+
+  // ---- Every 6 hours (cron `0 */6 * * *`) ---------------------------
+
+  // Lightweight DB connectivity / latency probe used by the operations
+  // dashboard — `0 */6 * * *`.
+  db_health_check: { stall: SIX_HOURLY_STALL },
+
+  // ---- Weekly (cron `0 7 * * 1`) ------------------------------------
+
+  // Weekly periodic-report generator — `0 7 * * 1`. Runs once per
+  // week on Mondays; an 8-day stall tolerates a single missed Monday.
+  periodic_report_weekly: { stall: WEEKLY_STALL },
+
+  // ---- Monthly (cron `0 7 1 * *`) -----------------------------------
+
+  // Monthly periodic-report generator — `0 7 1 * *`. Runs on the 1st
+  // of each month; a 32-day stall tolerates a single missed run.
+  periodic_report_monthly: { stall: MONTHLY_STALL },
 };
 
 function defaultSpikeRule(job: string, counter: string): AlertRuleResolved {
