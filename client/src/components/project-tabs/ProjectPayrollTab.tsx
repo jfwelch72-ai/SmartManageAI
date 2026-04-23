@@ -55,6 +55,11 @@ interface PrevailingWageSummary {
   wageDecisionNextRetryAt?: string | null;
   wageDecisionRetryExhausted?: boolean | null;
   wageDecisionMaxRetries?: number | null;
+  // Task #1339: surface cache size + a configurable staleness threshold so
+  // PMs know how fresh the cached DOL decision is and can re-sync when in
+  // doubt without leaving the project page.
+  wageDecisionRatesCached?: number | null;
+  wageDecisionStaleAfterDays?: number | null;
   classifications: PrevailingWageClassification[];
 }
 
@@ -201,6 +206,20 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
   const maxRetries = data.wageDecisionMaxRetries ?? 0;
   const nextAttemptNumber = Math.min((data.wageDecisionRetryCount ?? 0) + 1, maxRetries || 1);
 
+  // Task #1339: compute "stale" from the server-provided threshold so PMs
+  // can tell at a glance whether the cached rates are fresh enough to trust.
+  const staleAfterDays =
+    typeof data.wageDecisionStaleAfterDays === "number" && data.wageDecisionStaleAfterDays > 0
+      ? data.wageDecisionStaleAfterDays
+      : 30;
+  const lastSyncMs = data.wageDecisionLastSyncAt ? new Date(data.wageDecisionLastSyncAt).getTime() : NaN;
+  const isStale =
+    data.wageDecisionCached === true &&
+    Number.isFinite(lastSyncMs) &&
+    Date.now() - lastSyncMs > staleAfterDays * 24 * 60 * 60 * 1000;
+  const ratesCached =
+    typeof data.wageDecisionRatesCached === "number" ? data.wageDecisionRatesCached : null;
+
   const overrideCount = data.classifications.filter(c => c.source === "PROJECT_OVERRIDE").length;
   const dolCount = data.classifications.filter(c => c.source === "DOL_FEED").length;
 
@@ -229,10 +248,41 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
                 Cached from DOL
               </Badge>
             )}
+            {data.wageDecisionCached === true && ratesCached != null && (
+              <span className="text-xs text-muted-foreground" data-testid="text-wage-decision-rates-cached">
+                {ratesCached} rate{ratesCached === 1 ? "" : "s"} cached
+              </span>
+            )}
             {lastSyncDisplay && (
               <span className="text-xs text-muted-foreground" data-testid="text-wage-decision-last-sync">
                 Last synced {lastSyncDisplay}
               </span>
+            )}
+            {isStale && (
+              <Badge
+                variant="outline"
+                className="text-xs border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-300"
+                data-testid="badge-decision-stale"
+                title={`Last synced more than ${staleAfterDays} day${staleAfterDays === 1 ? "" : "s"} ago`}
+              >
+                Stale
+              </Badge>
+            )}
+            {data.wageDecisionCached === true && !showFailureBanner && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs"
+                onClick={() => syncMutation.mutate()}
+                disabled={syncMutation.isPending}
+                data-testid="button-resync-wage-decision"
+              >
+                {syncMutation.isPending ? (
+                  <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> Re-syncing...</>
+                ) : (
+                  <><RefreshCw className="w-3.5 h-3.5 mr-1" /> Re-sync</>
+                )}
+              </Button>
             )}
           </div>
         )}

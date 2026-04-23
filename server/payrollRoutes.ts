@@ -1647,6 +1647,7 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
     let wageDecisionNextRetryAt: string | null = null;
     let wageDecisionRetryExhausted: boolean | null = null;
     let wageDecisionMaxRetries: number | null = null;
+    let wageDecisionRatesCached: number | null = null;
     if (projectWageDecision) {
       try {
         wageDecisionCached = await isWageDeterminationCached(orgId, projectWageDecision);
@@ -1671,6 +1672,7 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
           wageDecisionNextRetryAt = status.nextRetryAt ? status.nextRetryAt.toISOString() : null;
           wageDecisionRetryExhausted = status.retryExhausted;
           wageDecisionMaxRetries = status.maxRetries;
+          wageDecisionRatesCached = status.ratesCached;
         }
       } catch (err) {
         logWarn("Davis-Bacon sync status lookup failed (project PW summary)", {
@@ -1681,6 +1683,19 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
     }
 
     classifications.sort((a, b) => a.classificationName.localeCompare(b.classificationName));
+
+    // Task #1339: surface a configurable staleness threshold so the UI can
+    // tag a cached decision as stale without hardcoding the cutoff in the
+    // frontend. Defaults to 30 days when DOL_DAVIS_BACON_STALE_AFTER_DAYS
+    // is unset or invalid.
+    const parsedStaleDays = Number.parseInt(
+      process.env.DOL_DAVIS_BACON_STALE_AFTER_DAYS ?? "",
+      10,
+    );
+    const wageDecisionStaleAfterDays =
+      Number.isFinite(parsedStaleDays) && parsedStaleDays > 0
+        ? parsedStaleDays
+        : 30;
 
     res.json({
       projectId,
@@ -1693,6 +1708,8 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
       wageDecisionNextRetryAt,
       wageDecisionRetryExhausted,
       wageDecisionMaxRetries,
+      wageDecisionRatesCached,
+      wageDecisionStaleAfterDays,
       classifications,
     });
   } catch (error) {

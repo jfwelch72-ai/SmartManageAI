@@ -297,6 +297,7 @@ export async function getWageDecisionSyncStatus(
   nextRetryAt: Date | null;
   retryExhausted: boolean;
   maxRetries: number;
+  ratesCached: number;
 } | null> {
   const entityType = `wage_determination:${decisionNumber}`;
   const [row] = await db
@@ -306,6 +307,7 @@ export async function getWageDecisionSyncStatus(
       lastError: integrationSyncState.lastError,
       retryCount: integrationSyncState.retryCount,
       nextRetryAt: integrationSyncState.nextRetryAt,
+      metadata: integrationSyncState.metadata,
     })
     .from(integrationSyncState)
     .where(
@@ -324,6 +326,8 @@ export async function getWageDecisionSyncStatus(
   // gave up scheduling (nextRetryAt = null).
   const retryExhausted =
     !!row.lastError && nextRetryAt === null && retryCount >= MAX_WAGE_DECISION_RETRIES;
+  const meta = row.metadata as WageDetermination | undefined;
+  const ratesCached = meta && Array.isArray(meta.rates) ? meta.rates.length : 0;
   return {
     lastSyncAt: row.lastSyncAt ?? null,
     lastAttemptAt: row.lastAttemptAt ?? null,
@@ -332,6 +336,7 @@ export async function getWageDecisionSyncStatus(
     nextRetryAt,
     retryExhausted,
     maxRetries: MAX_WAGE_DECISION_RETRIES,
+    ratesCached,
   };
 }
 
