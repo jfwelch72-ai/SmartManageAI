@@ -73,6 +73,19 @@ const COUNTER_LABELS: Record<string, string> = {
   skippedNoBirthdays: "Skipped (no birthdays)",
 };
 
+// Task #1464 — orphan-cleanup chart counters. We chart `candidates`
+// (rows that fell into the retention window) and `deleted` (rows the
+// sweep actually removed) so a slow drift in either is obvious.
+const ORPHAN_COUNTERS = ["candidates", "deleted"] as const;
+const ORPHAN_COUNTER_COLORS: Record<string, string> = {
+  candidates: "hsl(var(--chart-2))",
+  deleted: "hsl(var(--chart-1))",
+};
+const ORPHAN_COUNTER_LABELS: Record<string, string> = {
+  candidates: "Candidates",
+  deleted: "Deleted",
+};
+
 function formatDuration(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
   const h = Math.floor(totalSec / 3600);
@@ -105,6 +118,8 @@ const REGISTRY_KEY = ["/api/admin/jobs"] as const;
 const WAGE_STALE_LAST_RUN_KEY = ["/api/admin/jobs/wage_decision_stale_refresh/last-run"] as const;
 const WAGE_STALE_JOB = "wage_decision_stale_refresh";
 const WAGE_ORPHAN_LAST_RUN_KEY = ["/api/admin/jobs/wage_decision_orphan_sweep/last-run"] as const;
+const WAGE_ORPHAN_JOB = "wage_decision_orphan_sweep";
+const WAGE_ORPHAN_METRICS_KEY = ["/api/admin/metrics/jobs", WAGE_ORPHAN_JOB] as const;
 const WAGE_RETRY_JOB = "wage_decision_retry";
 
 interface OrphanWageDecisionSweepResult {
@@ -210,6 +225,20 @@ export default function JobMetricsHealth() {
     refetchInterval: 30000,
   });
 
+  // Task #1464 — pull the rolling 24h sample series for the orphan
+  // sweep so we can render a bar chart of `candidates` and `deleted`
+  // counters using the same `bucketSamples` + recharts pattern as the
+  // birthday-digest card. The endpoint is the generic per-job metrics
+  // route that already serves any job calling `recordJobMetrics`.
+  const {
+    data: wageOrphanMetrics,
+    isLoading: wageOrphanMetricsLoading,
+    isError: wageOrphanMetricsError,
+  } = useQuery<JobMetricsResponse>({
+    queryKey: WAGE_ORPHAN_METRICS_KEY,
+    refetchInterval: 30000,
+  });
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [runningJob, setRunningJob] = useState<string | null>(null);
@@ -231,6 +260,7 @@ export default function JobMetricsHealth() {
       queryClient.invalidateQueries({ queryKey: BIRTHDAY_KEY });
       queryClient.invalidateQueries({ queryKey: WAGE_STALE_LAST_RUN_KEY });
       queryClient.invalidateQueries({ queryKey: WAGE_ORPHAN_LAST_RUN_KEY });
+      queryClient.invalidateQueries({ queryKey: WAGE_ORPHAN_METRICS_KEY });
     },
     onError: (err: unknown, jobName) => {
       const description =
@@ -342,6 +372,15 @@ export default function JobMetricsHealth() {
     () => (data ? bucketSamples(data.samples, BIRTHDAY_COUNTERS) : []),
     [data]
   );
+
+  const wageOrphanChartData = useMemo(
+    () =>
+      wageOrphanMetrics
+        ? bucketSamples(wageOrphanMetrics.samples, ORPHAN_COUNTERS)
+        : [],
+    [wageOrphanMetrics]
+  );
+  const wageOrphanSampleCount = wageOrphanMetrics?.samples.length ?? 0;
 
   const totals = data?.totals ?? {};
   const latest = data?.latest ?? null;
@@ -728,6 +767,68 @@ export default function JobMetricsHealth() {
                     </div>
                   </div>
                 ))}
+              </div>
+              <div className="pt-2" data-testid="wage-orphan-trend">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                  Last 24h trend
+                </div>
+                {wageOrphanMetricsLoading ? (
+                  <Skeleton
+                    className="h-48 w-full"
+                    data-testid="skeleton-wage-orphan-chart"
+                  />
+                ) : wageOrphanMetricsError ? (
+                  <Alert
+                    variant="destructive"
+                    data-testid="alert-wage-orphan-chart-error"
+                  >
+                    <XCircle className="h-4 w-4" />
+                    <AlertTitle>Failed to load orphan sweep trend</AlertTitle>
+                    <AlertDescription>
+                      Try refreshing or check server logs.
+                    </AlertDescription>
+                  </Alert>
+                ) : wageOrphanSampleCount === 0 ? (
+                  <div
+                    className="h-48 flex items-center justify-center text-sm text-muted-foreground border rounded-md"
+                    data-testid="text-wage-orphan-no-samples"
+                  >
+                    No samples recorded in the last 24h yet.
+                  </div>
+                ) : (
+                  <div
+                    className="h-48 w-full"
+                    data-testid="chart-wage-orphan"
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={wageOrphanChartData}>
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          className="stroke-muted"
+                        />
+                        <XAxis
+                          dataKey="label"
+                          tick={{ fontSize: 11 }}
+                          interval={2}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 11 }}
+                          allowDecimals={false}
+                        />
+                        <Tooltip />
+                        <Legend wrapperStyle={{ fontSize: 12 }} />
+                        {ORPHAN_COUNTERS.map((c) => (
+                          <Bar
+                            key={c}
+                            dataKey={c}
+                            name={ORPHAN_COUNTER_LABELS[c]}
+                            fill={ORPHAN_COUNTER_COLORS[c]}
+                          />
+                        ))}
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </div>
               {wageOrphanLastRun.recent && wageOrphanLastRun.recent.length > 1 && (
                 <div className="pt-2" data-testid="wage-orphan-recent-history">
