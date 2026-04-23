@@ -116,7 +116,7 @@ import { isFeatureEnabled } from "./services/featureFlagService";
 import * as workflowEngine from "./services/workflowEngine";
 import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
 import type { FeatureFlagKey } from "@shared/schema";
-import { exportLimiter } from "./rateLimiter";
+import { exportLimiter, feedbackLimiter } from "./rateLimiter";
 
 // Org-scoped feature-flag gate. SUPER_ADMIN bypasses (platform support); orgs
 // with the flag disabled get a clean 403 server-side regardless of UI gating.
@@ -748,15 +748,49 @@ const matchFeedbackSchema = z.object({
     .max(500),
 });
 
+// Task #1278 — server-side daily ceiling on rows added to
+// dot_pay_item_match_history per organization. Acts as a backstop to the
+// per-user express-rate-limit so a single org can't quietly inflate the
+// history-aware ranking signal across many users/sessions. Tunable via env
+// for ops; default is generous enough for normal bid-tab import workflows.
+const FEEDBACK_DAILY_ORG_CAP_DEFAULT = 5000;
+function feedbackDailyOrgCap(): number {
+  const raw = Number(process.env.DOT_FEEDBACK_DAILY_ORG_CAP);
+  return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : FEEDBACK_DAILY_ORG_CAP_DEFAULT;
+}
+
 router.post(
   "/api/dot/pay-items/match/feedback",
   requireAuth,
+  feedbackLimiter,
   requireAnyFeaturePermission("canViewDotLibrary", "canManageDotLibrary"),
   async (req: AuthRequest, res: Response) => {
     const data = validateBody(matchFeedbackSchema, req.body, res);
     if (!data) return;
     const orgId = req.user?.organizationId ?? null;
     if (!orgId) return res.status(400).json({ error: "An organization context is required to record match feedback" });
+
+    // Task #1278 — per-org daily cap. Counts rows recorded in the last 24h
+    // and rejects with 429 if accepting this batch would push the org over.
+    const cap = feedbackDailyOrgCap();
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [{ used }] = await db
+      .select({ used: sql<number>`count(*)::int` })
+      .from(dotPayItemMatchHistory)
+      .where(and(
+        eq(dotPayItemMatchHistory.organizationId, orgId),
+        gte(dotPayItemMatchHistory.createdAt, since),
+      ));
+    const usedCount = Number(used) || 0;
+    if (usedCount + data.decisions.length > cap) {
+      const remaining = Math.max(0, cap - usedCount);
+      return res.status(429).json({
+        error: "Daily match-feedback cap reached for this organization. Please try again tomorrow.",
+        cap,
+        used: usedCount,
+        remaining,
+      });
+    }
 
     // Resolve agency for any decision that didn't pass one — keeps the
     // per-agency boost working even when callers (e.g. the bulk import dialog)

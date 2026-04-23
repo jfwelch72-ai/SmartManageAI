@@ -524,6 +524,112 @@ describe("DOT pay-item auto-match ranking", () => {
     }
   });
 
+  // Task #1278 — server enforces a per-org daily cap on
+  // POST /api/dot/pay-items/match/feedback so a runaway client can't flood
+  // dot_pay_item_match_history. Over-cap requests must return 429.
+  it("returns 429 once the per-org daily feedback cap is exceeded", async () => {
+    const prevCap = process.env.DOT_FEEDBACK_DAILY_ORG_CAP;
+    process.env.DOT_FEEDBACK_DAILY_ORG_CAP = "10";
+    try {
+      // First batch fits under the cap (6 + 0 used = 6 ≤ 10).
+      const ok = await request(app)
+        .post("/api/dot/pay-items/match/feedback")
+        .set("Cookie", cookie())
+        .send({
+          decisions: Array.from({ length: 6 }, (_, i) => ({
+            description: `Concrete pavement section ${i}`,
+            payItemId: itemIds["A002"],
+            accepted: true,
+          })),
+        });
+      expect(ok.status).toBe(200);
+      expect(ok.body.recorded).toBe(6);
+
+      // Second batch would push usage to 12, over the cap of 10.
+      const over = await request(app)
+        .post("/api/dot/pay-items/match/feedback")
+        .set("Cookie", cookie())
+        .send({
+          decisions: Array.from({ length: 6 }, (_, i) => ({
+            description: `Concrete pavement section ${i + 6}`,
+            payItemId: itemIds["A002"],
+            accepted: true,
+          })),
+        });
+      expect(over.status).toBe(429);
+      expect(over.body.cap).toBe(10);
+      expect(over.body.used).toBe(6);
+      expect(over.body.remaining).toBe(4);
+
+      // Cap counts existing rows, so the row count must NOT include the
+      // rejected batch.
+      const rowsResult = (await db.execute(
+        sql`SELECT COUNT(*)::int AS c FROM dot_pay_item_match_history WHERE organization_id = ${orgId}`,
+      )) as unknown as { rows?: Array<{ c: number }> };
+      expect(rowsResult.rows?.[0]?.c).toBe(6);
+    } finally {
+      if (prevCap === undefined) delete process.env.DOT_FEEDBACK_DAILY_ORG_CAP;
+      else process.env.DOT_FEEDBACK_DAILY_ORG_CAP = prevCap;
+      await db
+        .delete(dotPayItemMatchHistory)
+        .where(inArray(dotPayItemMatchHistory.organizationId, [orgId]))
+        .catch(() => {});
+    }
+  });
+
+  // Task #1278 — the express-rate-limit middleware on the feedback POST
+  // must short-circuit with 429 once a single user blows past the
+  // per-window request cap (independent of the per-org row cap).
+  it("returns 429 from the express rate-limiter once the per-window request cap is exceeded", async () => {
+    const prevMax = process.env.DOT_FEEDBACK_RATE_LIMIT_MAX;
+    process.env.DOT_FEEDBACK_RATE_LIMIT_MAX = "3";
+    // Use a brand-new user so the limiter's per-user bucket is empty —
+    // earlier tests in this file already consumed requests against the
+    // shared in-memory limiter store under the main user's key.
+    const slug = `${PREFIX}rl-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const passwordHash = await bcrypt.hash("TestPass123!", 10);
+    const [rlUser] = await db
+      .insert(users)
+      .values({
+        email: `${slug}@test.local`,
+        passwordHash,
+        firstName: "RL",
+        lastName: "User",
+        role: "ADMIN",
+        organizationId: orgId,
+        isActive: true,
+      })
+      .returning();
+    const rlToken = generateToken(rlUser.id, rlUser.tokenVersion ?? 0);
+    const rlCookie = `auth_token=${rlToken}`;
+    try {
+      const body = {
+        decisions: [{
+          description: "Concrete pavement",
+          payItemId: itemIds["A002"],
+          accepted: true,
+        }],
+      };
+      const r1 = await request(app).post("/api/dot/pay-items/match/feedback").set("Cookie", rlCookie).send(body);
+      const r2 = await request(app).post("/api/dot/pay-items/match/feedback").set("Cookie", rlCookie).send(body);
+      const r3 = await request(app).post("/api/dot/pay-items/match/feedback").set("Cookie", rlCookie).send(body);
+      const r4 = await request(app).post("/api/dot/pay-items/match/feedback").set("Cookie", rlCookie).send(body);
+      expect(r1.status).toBe(200);
+      expect(r2.status).toBe(200);
+      expect(r3.status).toBe(200);
+      expect(r4.status).toBe(429);
+      expect(String(r4.body.error || "")).toMatch(/match-feedback|slow down/i);
+    } finally {
+      if (prevMax === undefined) delete process.env.DOT_FEEDBACK_RATE_LIMIT_MAX;
+      else process.env.DOT_FEEDBACK_RATE_LIMIT_MAX = prevMax;
+      await db
+        .delete(dotPayItemMatchHistory)
+        .where(inArray(dotPayItemMatchHistory.organizationId, [orgId]))
+        .catch(() => {});
+      await db.delete(users).where(inArray(users.id, [rlUser.id])).catch(() => {});
+    }
+  });
+
   it("returns 403 from both new endpoints when the DOT_PAY_ITEMS feature flag is off", async () => {
     await setAllFeatureFlags(orgId, { DOT_PAY_ITEMS: false } as Record<FeatureFlagKey, boolean>);
     try {

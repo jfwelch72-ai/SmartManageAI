@@ -48,3 +48,19 @@ export const exportLimiter = rateLimit({
   legacyHeaders: false,
   keyGenerator: getUserKeyOrIp,
 });
+
+// Task #1278 — protects POST /api/dot/pay-items/match/feedback against a
+// runaway client (or bad actor inside an org) flooding dot_pay_item_match_history
+// and skewing the history-aware ranking. The endpoint already accepts up to
+// 500 decisions per call, so the per-window cap can stay modest.
+export const feedbackLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: () => {
+    const raw = Number(process.env.DOT_FEEDBACK_RATE_LIMIT_MAX);
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : 60;
+  },
+  message: { error: "Too many match-feedback requests, please slow down and try again later" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: getUserKeyOrIp,
+});
