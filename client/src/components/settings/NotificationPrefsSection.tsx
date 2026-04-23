@@ -141,7 +141,7 @@ const NOTIFICATION_TYPE_GROUPS: { label: string; types: string[] }[] = [
     // The email footer's one-click mute link disables both channels at
     // once for convenience during a flood.
     label: "Integrations",
-    types: ["DAVIS_BACON_AUTO_SYNC_FAILED"],
+    types: ["DAVIS_BACON_AUTO_SYNC_FAILED", "INTEGRATION_SYNC_RETRIES_EXHAUSTED"],
   },
   {
     label: "Admin Alerts",
@@ -155,6 +155,17 @@ const TYPE_LABEL_OVERRIDES: Record<string, string> = {
   SWPPP_OVERDUE_CORRECTIVE_ACTION: "SWPPP corrective action overdue",
   // Task #1361 — Friendlier label for the Davis-Bacon failure alert.
   DAVIS_BACON_AUTO_SYNC_FAILED: "Davis-Bacon auto-sync failed",
+  // Task #1379 — Friendlier label for the generic integration sync
+  // retry exhaustion alert (covers QuickBooks, STACK CT, Zapier, …).
+  INTEGRATION_SYNC_RETRIES_EXHAUSTED: "Integration auto-sync gave up",
+};
+
+// Task #1379 — Anchor ids per notification type used by the
+// "Alerts muted" badges on /integrations provider cards. Keeping
+// the map here (next to the rendered rows) so the deep-link target
+// stays in sync with the rendered DOM id.
+const TYPE_EMAIL_ROW_ANCHORS: Record<string, string> = {
+  INTEGRATION_SYNC_RETRIES_EXHAUSTED: "section-integration-sync-retries-exhausted-prefs",
 };
 
 /**
@@ -2447,8 +2458,12 @@ export default function NotificationPrefsSection() {
                           {group.types.map((type) => {
                             const label = TYPE_LABEL_OVERRIDES[type] ?? type.replace(/_/g, " ").toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase());
                             const isEnabled = typeChannelOverrides[type]?.emailEnabled ?? channelPrefs.emailEnabled;
+                            // Task #1379 — Optional anchor id so the
+                            // /integrations "Alerts muted" badges can deep-link
+                            // straight to the matching email toggle.
+                            const rowAnchorId = TYPE_EMAIL_ROW_ANCHORS[type];
                             return (
-                              <div key={type} className="flex items-center justify-between py-1" data-testid={`row-type-pref-${type}`}>
+                              <div key={type} id={rowAnchorId} className="flex items-center justify-between py-1" data-testid={`row-type-pref-${type}`}>
                                 <span className="text-sm">{label}</span>
                                 <Switch checked={isEnabled} onCheckedChange={(checked) => setTypeChannelOverrides(prev => ({ ...prev, [type]: { ...prev[type], emailEnabled: checked } }))} data-testid={`switch-type-pref-${type}`} />
                               </div>

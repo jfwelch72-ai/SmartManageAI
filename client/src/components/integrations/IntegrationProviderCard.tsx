@@ -19,31 +19,82 @@ type NotificationPreferencesResponse = {
   }>;
 };
 
-export function DavisBaconAlertsMutedBadge() {
+/**
+ * Task #1379 — Mapping of provider key → notification type whose email
+ * mute should surface as a badge on that provider's card. The anchor
+ * id is the DOM id of the matching toggle row in
+ * /settings/notifications, so the badge can deep-link straight to it.
+ *
+ * Davis-Bacon (Task #1361) is the original case. The generic
+ * `INTEGRATION_SYNC_RETRIES_EXHAUSTED` notification fans out for every
+ * other auto-sync provider (QuickBooks, STACK CT, Zapier, …), so they
+ * all share the same anchor and notification type.
+ */
+const INTEGRATION_SYNC_EXHAUSTED_ANCHOR =
+  "section-integration-sync-retries-exhausted-prefs";
+
+export const PROVIDER_ALERTS_MUTED_CONFIG: Record<
+  string,
+  { notificationType: string; anchorId: string }
+> = {
+  dol_davis_bacon: {
+    notificationType: "DAVIS_BACON_AUTO_SYNC_FAILED",
+    anchorId: "section-davis-bacon-auto-sync-failed-prefs",
+  },
+  qbo: {
+    notificationType: "INTEGRATION_SYNC_RETRIES_EXHAUSTED",
+    anchorId: INTEGRATION_SYNC_EXHAUSTED_ANCHOR,
+  },
+  stackct: {
+    notificationType: "INTEGRATION_SYNC_RETRIES_EXHAUSTED",
+    anchorId: INTEGRATION_SYNC_EXHAUSTED_ANCHOR,
+  },
+  zapier: {
+    notificationType: "INTEGRATION_SYNC_RETRIES_EXHAUSTED",
+    anchorId: INTEGRATION_SYNC_EXHAUSTED_ANCHOR,
+  },
+};
+
+export function IntegrationAlertsMutedBadge({
+  providerKey,
+}: {
+  providerKey: string;
+}) {
+  const config = PROVIDER_ALERTS_MUTED_CONFIG[providerKey];
   const { data } = useQuery<NotificationPreferencesResponse>({
     queryKey: ["/api/notifications/preferences"],
+    enabled: !!config,
   });
+  if (!config) return null;
   const override = data?.typeOverrides?.find(
-    (o) => o.notificationType === "DAVIS_BACON_AUTO_SYNC_FAILED",
+    (o) => o.notificationType === config.notificationType,
   );
   const muted = !!override && override.emailEnabled === false;
   if (!muted) return null;
   return (
     <a
-      href="/settings/notifications#section-davis-bacon-auto-sync-failed-prefs"
+      href={`/settings/notifications#${config.anchorId}`}
       className="inline-flex"
-      data-testid="link-davis-bacon-alerts-muted"
+      data-testid={`link-${providerKey}-alerts-muted`}
     >
       <Badge
         variant="outline"
         className="gap-1 cursor-pointer hover-elevate"
-        data-testid="badge-davis-bacon-alerts-muted"
+        data-testid={`badge-${providerKey}-alerts-muted`}
       >
         <BellOff className="h-3 w-3" />
         Failure alerts muted
       </Badge>
     </a>
   );
+}
+
+/**
+ * Task #1361 — Thin wrapper kept for any external callers that still
+ * import the Davis-Bacon-specific badge by name.
+ */
+export function DavisBaconAlertsMutedBadge() {
+  return <IntegrationAlertsMutedBadge providerKey="dol_davis_bacon" />;
 }
 
 /**
@@ -364,7 +415,9 @@ export function ProviderCardGrid({
               {isConnected && conn && (
                 <TokenStatusBadge status={conn.tokenStatus} encrypted={conn.tokensEncrypted} />
               )}
-              {provider.key === "dol_davis_bacon" && <DavisBaconAlertsMutedBadge />}
+              {PROVIDER_ALERTS_MUTED_CONFIG[provider.key] && (
+                <IntegrationAlertsMutedBadge providerKey={provider.key} />
+              )}
               {provider.key === "dol_davis_bacon" && conn && (
                 <DavisBaconSuppressedFailuresPanel connectionId={conn.id} />
               )}
