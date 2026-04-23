@@ -2257,7 +2257,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
     if (user!.organizationId) {
       const bid = estimate.bidId ? await db.query.bids.findFirst({ where: eq(bids.id, estimate.bidId) }) : null;
       const project = estimate.projectId ? await db.query.projects.findFirst({ where: eq(projects.id, estimate.projectId) }) : null;
-      const ownerOrgId = bid?.organizationId || project?.organizationId;
+      const ownerOrgId = bid?.gcOrganizationId || project?.gcOrganizationId;
       if (ownerOrgId && ownerOrgId !== user!.organizationId) return null;
     }
     return estimate;
