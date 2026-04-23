@@ -16,7 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { Calendar, FileText, CheckCircle2, Clock, Loader2, Lock, MessageSquare, AlertCircle, ClipboardCheck } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import type { PayrollSettings } from "./types";
-import { DAYS_OF_WEEK } from "./types";
+import { DAYS_OF_WEEK, DIGEST_CADENCES, DIGEST_WEEKDAYS, COMMON_TIMEZONES } from "./types";
 import { useIntegrationStatus } from "@/hooks/use-integration-status";
 
 export function CompanyNotificationsTab() {
@@ -39,6 +39,10 @@ export function CompanyNotificationsTab() {
     signerTitle: "",
     contractorAddress: "",
     defaultFringeOption: "PLAN" as PayrollSettings["defaultFringeOption"],
+    certifiedPayrollDigestCadence: "WEEKLY" as PayrollSettings["certifiedPayrollDigestCadence"],
+    certifiedPayrollDigestWeekday: 1,
+    certifiedPayrollDigestHour: 8,
+    certifiedPayrollDigestTimezone: "UTC",
   });
 
   const updatePayrollMutation = useMutation({
@@ -52,6 +56,10 @@ export function CompanyNotificationsTab() {
         signerTitle: data.signerTitle.trim() || null,
         contractorAddress: data.contractorAddress.trim() || null,
         defaultFringeOption: data.defaultFringeOption,
+        certifiedPayrollDigestCadence: data.certifiedPayrollDigestCadence,
+        certifiedPayrollDigestWeekday: data.certifiedPayrollDigestWeekday,
+        certifiedPayrollDigestHour: data.certifiedPayrollDigestHour,
+        certifiedPayrollDigestTimezone: data.certifiedPayrollDigestTimezone,
       });
     },
     onSuccess: () => {
@@ -73,6 +81,10 @@ export function CompanyNotificationsTab() {
         signerTitle: payrollSettings.signerTitle || "",
         contractorAddress: payrollSettings.contractorAddress || "",
         defaultFringeOption: payrollSettings.defaultFringeOption || "PLAN",
+        certifiedPayrollDigestCadence: payrollSettings.certifiedPayrollDigestCadence || "WEEKLY",
+        certifiedPayrollDigestWeekday: payrollSettings.certifiedPayrollDigestWeekday ?? 1,
+        certifiedPayrollDigestHour: payrollSettings.certifiedPayrollDigestHour ?? 8,
+        certifiedPayrollDigestTimezone: payrollSettings.certifiedPayrollDigestTimezone || "UTC",
       });
     }
   }, [payrollSettings]);
@@ -249,6 +261,122 @@ export function CompanyNotificationsTab() {
               >
                 {updatePayrollMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
                 Save Certified Payroll Settings
+              </Button>
+            </CardContent>
+          </Card>
+
+          <Card data-testid="card-certified-payroll-digest-schedule">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Clock className="h-5 w-5" />
+                Certified Payroll Digest Schedule
+              </CardTitle>
+              <CardDescription>
+                Choose how often payroll administrators receive the certified payroll digest summarizing recently generated PDFs, and what local day/time it should arrive.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="digest-cadence">Cadence</Label>
+                <Select
+                  value={payrollForm.certifiedPayrollDigestCadence}
+                  onValueChange={(value: PayrollSettings["certifiedPayrollDigestCadence"]) =>
+                    setPayrollForm(prev => ({ ...prev, certifiedPayrollDigestCadence: value }))
+                  }
+                >
+                  <SelectTrigger data-testid="select-digest-cadence">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DIGEST_CADENCES.map(c => (
+                      <SelectItem key={c.value} value={c.value} data-testid={`option-digest-cadence-${c.value.toLowerCase()}`}>{c.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Daily covers the last 24 hours; weekly covers the last 7 days; every other week covers the last 14 days.
+                </p>
+              </div>
+
+              {(payrollForm.certifiedPayrollDigestCadence === "WEEKLY" || payrollForm.certifiedPayrollDigestCadence === "BIWEEKLY") && (
+                <div className="space-y-2">
+                  <Label htmlFor="digest-weekday">Day of week</Label>
+                  <Select
+                    value={String(payrollForm.certifiedPayrollDigestWeekday)}
+                    onValueChange={(value) =>
+                      setPayrollForm(prev => ({ ...prev, certifiedPayrollDigestWeekday: parseInt(value, 10) }))
+                    }
+                  >
+                    <SelectTrigger data-testid="select-digest-weekday">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DIGEST_WEEKDAYS.map(d => (
+                        <SelectItem key={d.value} value={String(d.value)}>{d.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {payrollForm.certifiedPayrollDigestCadence !== "OFF" && (
+                <>
+                  <div className="space-y-2">
+                    <Label htmlFor="digest-hour">Send time (local hour)</Label>
+                    <Select
+                      value={String(payrollForm.certifiedPayrollDigestHour)}
+                      onValueChange={(value) =>
+                        setPayrollForm(prev => ({ ...prev, certifiedPayrollDigestHour: parseInt(value, 10) }))
+                      }
+                    >
+                      <SelectTrigger data-testid="select-digest-hour">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: 24 }).map((_, i) => (
+                          <SelectItem key={i} value={String(i)}>
+                            {i.toString().padStart(2, "0")}:00
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="digest-timezone">Timezone</Label>
+                    <Select
+                      value={payrollForm.certifiedPayrollDigestTimezone}
+                      onValueChange={(value) =>
+                        setPayrollForm(prev => ({ ...prev, certifiedPayrollDigestTimezone: value }))
+                      }
+                    >
+                      <SelectTrigger data-testid="select-digest-timezone">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {COMMON_TIMEZONES.map(tz => (
+                          <SelectItem key={tz} value={tz}>{tz}</SelectItem>
+                        ))}
+                        {(() => {
+                          const knownTimezones: readonly string[] = COMMON_TIMEZONES;
+                          return !knownTimezones.includes(payrollForm.certifiedPayrollDigestTimezone) ? (
+                            <SelectItem value={payrollForm.certifiedPayrollDigestTimezone}>{payrollForm.certifiedPayrollDigestTimezone}</SelectItem>
+                          ) : null;
+                        })()}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
+
+              <Button
+                onClick={() => updatePayrollMutation.mutate(payrollForm)}
+                disabled={updatePayrollMutation.isPending}
+                className="mt-2"
+                data-testid="button-save-digest-schedule"
+              >
+                {updatePayrollMutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                Save Digest Schedule
               </Button>
             </CardContent>
           </Card>

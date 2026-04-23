@@ -142,11 +142,26 @@ export const organizationPayrollSettings = pgTable("organization_payroll_setting
   // 1095 days (~3 years), matching Davis-Bacon record retention. Setting
   // to 0 disables the auto-purge for the org.
   archivedReportRetentionDays: integer("archived_report_retention_days").notNull().default(1095),
+  // Task #1181: per-org schedule for the certified payroll digest job
+  // (`processCertifiedPayrollWeeklyDigest`). Defaults preserve the original
+  // hard-coded behavior of Monday 8am UTC weekly. Cadence options:
+  //   OFF      → digest disabled for this org
+  //   DAILY    → fire every day at the chosen local hour (window = last 24h)
+  //   WEEKLY   → fire on the chosen weekday at the chosen local hour (window = 7d)
+  //   BIWEEKLY → like WEEKLY but only fires when ≥13d since lastSentAt (window = 14d)
+  certifiedPayrollDigestCadence: text("certified_payroll_digest_cadence").notNull().default("WEEKLY"),
+  certifiedPayrollDigestWeekday: integer("certified_payroll_digest_weekday").notNull().default(1),
+  certifiedPayrollDigestHour: integer("certified_payroll_digest_hour").notNull().default(8),
+  certifiedPayrollDigestTimezone: text("certified_payroll_digest_timezone").notNull().default("UTC"),
+  certifiedPayrollDigestLastSentAt: timestamp("certified_payroll_digest_last_sent_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   orgIdIdx: index("org_payroll_settings_org_id_idx").on(table.organizationId),
 }));
+
+export const CERTIFIED_PAYROLL_DIGEST_CADENCES = ["OFF", "DAILY", "WEEKLY", "BIWEEKLY"] as const;
+export type CertifiedPayrollDigestCadence = typeof CERTIFIED_PAYROLL_DIGEST_CADENCES[number];
 
 export const insertOrganizationPayrollSettingsSchema = createInsertSchema(organizationPayrollSettings).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOrganizationPayrollSettings = z.infer<typeof insertOrganizationPayrollSettingsSchema>;

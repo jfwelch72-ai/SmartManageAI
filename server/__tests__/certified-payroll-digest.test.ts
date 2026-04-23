@@ -208,6 +208,132 @@ describe("processCertifiedPayrollWeeklyDigest", () => {
     expect(insertedNotifications).toHaveLength(0);
   });
 
+  it("(Task #1181) does not fire when local hour does not match the org's configured hour", async () => {
+    // 2026-04-20T08:00:00Z is Monday 08:00 in UTC. With timezone=America/Los_Angeles
+    // the local hour is 01:00, which is not the org's 08:00 send time → no digest.
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueOrgs(["org-1"]);
+    queueOrgSettings([{
+      enabled: true,
+      cadence: "WEEKLY",
+      weekday: 1,
+      hour: 8,
+      timezone: "America/Los_Angeles",
+      lastSentAt: null,
+    }]);
+    queueUsers([{ id: "admin-1", role: "ADMIN" }]);
+    effectivePermsByUser["admin-1"] = { canManagePayroll: true };
+
+    await processCertifiedPayrollWeeklyDigest({ now });
+    expect(insertedNotifications).toHaveLength(0);
+  });
+
+  it("(Task #1181) WEEKLY digest fires only on the configured weekday", async () => {
+    // 2026-04-22T08:00:00Z is a Wednesday. Org wants Friday → no digest.
+    const now = new Date("2026-04-22T08:00:00Z");
+    queueOrgs(["org-1"]);
+    queueOrgSettings([{
+      enabled: true,
+      cadence: "WEEKLY",
+      weekday: 5, // Friday
+      hour: 8,
+      timezone: "UTC",
+      lastSentAt: null,
+    }]);
+    queueUsers([{ id: "admin-1", role: "ADMIN" }]);
+    effectivePermsByUser["admin-1"] = { canManagePayroll: true };
+
+    await processCertifiedPayrollWeeklyDigest({ now });
+    expect(insertedNotifications).toHaveLength(0);
+  });
+
+  it("(Task #1181) DAILY cadence fires every day and uses a 24h window", async () => {
+    const now = new Date("2026-04-22T08:00:00Z"); // Wednesday — no weekday gate
+    queueOrgs(["org-1"]);
+    queueOrgSettings([{
+      enabled: true,
+      cadence: "DAILY",
+      weekday: 1,
+      hour: 8,
+      timezone: "UTC",
+      lastSentAt: null,
+    }]);
+    queueReports([
+      { projectId: "p1", projectName: "Bridge 7", variant: "WH-347", generatedAt: new Date(now.getTime() - 60 * 60 * 1000), payRunId: "pr-1" },
+    ]);
+    queueUsers([{ id: "admin-1", role: "ADMIN" }]);
+    effectivePermsByUser["admin-1"] = { canManagePayroll: true };
+
+    await processCertifiedPayrollWeeklyDigest({ now });
+    const flat = insertedNotifications.flat() as Array<{ relatedEntityId: string }>;
+    expect(flat).toHaveLength(1);
+    const [start, end] = flat[0].relatedEntityId.split("|");
+    expect(end).toBe("2026-04-22");
+    expect(start).toBe("2026-04-21"); // 24h window
+  });
+
+  it("(Task #1181) BIWEEKLY skips when last send was less than 13 days ago", async () => {
+    const now = new Date("2026-04-20T08:00:00Z"); // Monday 8am UTC
+    queueOrgs(["org-1"]);
+    queueOrgSettings([{
+      enabled: true,
+      cadence: "BIWEEKLY",
+      weekday: 1,
+      hour: 8,
+      timezone: "UTC",
+      // 7 days ago — biweekly should NOT fire yet
+      lastSentAt: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
+    }]);
+    queueUsers([{ id: "admin-1", role: "ADMIN" }]);
+    effectivePermsByUser["admin-1"] = { canManagePayroll: true };
+
+    await processCertifiedPayrollWeeklyDigest({ now });
+    expect(insertedNotifications).toHaveLength(0);
+  });
+
+  it("(Task #1181) BIWEEKLY fires when last send was 14 days ago and uses a 14d window", async () => {
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueOrgs(["org-1"]);
+    queueOrgSettings([{
+      enabled: true,
+      cadence: "BIWEEKLY",
+      weekday: 1,
+      hour: 8,
+      timezone: "UTC",
+      lastSentAt: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000),
+    }]);
+    queueReports([
+      { projectId: "p1", projectName: "Bridge 7", variant: "WH-347", generatedAt: new Date(), payRunId: "pr-1" },
+    ]);
+    queueUsers([{ id: "admin-1", role: "ADMIN" }]);
+    effectivePermsByUser["admin-1"] = { canManagePayroll: true };
+
+    await processCertifiedPayrollWeeklyDigest({ now });
+    const flat = insertedNotifications.flat() as Array<{ relatedEntityId: string }>;
+    expect(flat).toHaveLength(1);
+    const [start, end] = flat[0].relatedEntityId.split("|");
+    expect(end).toBe("2026-04-20");
+    expect(start).toBe("2026-04-06"); // 14d window
+  });
+
+  it("(Task #1181) cadence=OFF disables the digest entirely", async () => {
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueOrgs(["org-1"]);
+    queueOrgSettings([{
+      enabled: true,
+      cadence: "OFF",
+      weekday: 1,
+      hour: 8,
+      timezone: "UTC",
+      lastSentAt: null,
+    }]);
+    queueUsers([{ id: "admin-1", role: "ADMIN" }]);
+    effectivePermsByUser["admin-1"] = { canManagePayroll: true };
+
+    await processCertifiedPayrollWeeklyDigest({ now });
+    expect(insertedNotifications).toHaveLength(0);
+  });
+
   it("groups reports without a project under (All projects)", async () => {
     const now = new Date("2026-04-20T08:00:00Z");
     queueOrgs(["org-1"]);

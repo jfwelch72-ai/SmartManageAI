@@ -90,9 +90,52 @@ export interface PayrollSettings {
   signerTitle: string | null;
   contractorAddress: string | null;
   defaultFringeOption: "PLAN" | "CASH" | "NONE";
+  certifiedPayrollDigestCadence: "OFF" | "DAILY" | "WEEKLY" | "BIWEEKLY";
+  certifiedPayrollDigestWeekday: number;
+  certifiedPayrollDigestHour: number;
+  certifiedPayrollDigestTimezone: string;
+  certifiedPayrollDigestLastSentAt: string | null;
   createdAt: string;
   updatedAt: string | null;
 }
+
+export const DIGEST_CADENCES = [
+  { value: "OFF", label: "Off — don't send the digest" },
+  { value: "DAILY", label: "Daily" },
+  { value: "WEEKLY", label: "Weekly" },
+  { value: "BIWEEKLY", label: "Every other week" },
+] as const;
+
+export const DIGEST_WEEKDAYS = [
+  { value: 0, label: "Sunday" },
+  { value: 1, label: "Monday" },
+  { value: 2, label: "Tuesday" },
+  { value: 3, label: "Wednesday" },
+  { value: 4, label: "Thursday" },
+  { value: 5, label: "Friday" },
+  { value: 6, label: "Saturday" },
+] as const;
+
+export const COMMON_TIMEZONES = [
+  "UTC",
+  "America/New_York",
+  "America/Chicago",
+  "America/Denver",
+  "America/Los_Angeles",
+  "America/Anchorage",
+  "Pacific/Honolulu",
+  "America/Phoenix",
+  "America/Toronto",
+  "America/Vancouver",
+  "America/Mexico_City",
+  "Europe/London",
+  "Europe/Paris",
+  "Europe/Berlin",
+  "Europe/Madrid",
+  "Australia/Sydney",
+  "Asia/Tokyo",
+  "Asia/Singapore",
+] as const;
 
 export const DAYS_OF_WEEK = [
   { value: "SUNDAY", label: "Sunday" },

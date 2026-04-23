@@ -356,10 +356,11 @@ export function startJobRunner() {
     }
   });
 
-  // Task #1116: weekly digest of certified payroll PDFs to each org's payroll
-  // administrators. Runs Monday 8am UTC so the breakdown of last week's
-  // certified payroll generation lands at the top of the work week.
-  certifiedPayrollDigestTask = cron.schedule("0 8 * * 1", async () => {
+  // Task #1116/#1181: digest of certified payroll PDFs to each org's payroll
+  // administrators. Runs hourly; per-org cadence/weekday/hour/timezone are
+  // honored inside `processCertifiedPayrollWeeklyDigest` so admins can pick
+  // their own send time, day, and daily/weekly/biweekly cadence.
+  certifiedPayrollDigestTask = cron.schedule("0 * * * *", async () => {
     try {
       await processCertifiedPayrollWeeklyDigest();
     } catch (err) {
@@ -573,7 +574,7 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   // Task #754: send the quiet-hours digest to Super Admins who have
   // exited their quiet window so they can catch up on overnight alerts.
   job_metric_quiet_digest: { fn: async () => { await sendJobMetricAlertQuietHoursDigests({ recordSends: true }); }, description: "Send digest of job-metric alerts that fired while a Super Admin was in quiet hours", schedule: "*/15 * * * *" },
-  certified_payroll_digest: { fn: () => processCertifiedPayrollWeeklyDigest(), description: "Email payroll administrators a weekly digest of certified payroll PDFs generated in the last 7 days", schedule: "0 8 * * 1" },
+  certified_payroll_digest: { fn: () => processCertifiedPayrollWeeklyDigest(), description: "Email payroll administrators a digest of certified payroll PDFs (per-org cadence/time/timezone)", schedule: "0 * * * *" },
   swppp_overdue_corrective_actions: { fn: () => processSwpppOverdueCorrectiveActions(), description: "Notify assignees and project managers when SWPPP corrective actions pass their due date without being resolved", schedule: "0 7 * * *" },
   certified_payroll_purge: { fn: async () => { await processArchivedCertifiedPayrollPurge(); }, description: "Hard-delete archived certified payroll PDFs (and object-storage files) older than each org's retention window (default 3 years)", schedule: "30 3 * * *" },
 };
@@ -2950,32 +2951,73 @@ async function processCrmContactBirthdayDailyDigest() {
 //     with the date range pre-applied.
 export async function processCertifiedPayrollWeeklyDigest(opts: { now?: Date } = {}) {
   const now = opts.now ?? new Date();
-  const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+  // Task #1181: query a 14-day window so any org with BIWEEKLY cadence still
+  // shows up; per-org gates below decide which subset of that window each
+  // org's digest actually summarizes.
+  const lookbackDays = 14;
+  const lookbackSince = new Date(now.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
 
   const orgsResult = await db.execute(
-    sql`SELECT DISTINCT organization_id AS id FROM certified_payroll_reports WHERE generated_at >= ${since.toISOString()}`,
+    sql`SELECT DISTINCT organization_id AS id FROM certified_payroll_reports WHERE generated_at >= ${lookbackSince.toISOString()}`,
   );
   const orgs = (orgsResult.rows || []) as Array<{ id: string }>;
   if (orgs.length === 0) return;
-
-  const startStr = since.toISOString().slice(0, 10);
-  const endStr = now.toISOString().slice(0, 10);
 
   let totalDigests = 0;
 
   for (const org of orgs) {
     try {
-      // Org-level gate: skip if the org has explicitly turned off the
-      // weekly payroll notification preference.
+      // Task #1181: pull the per-org cadence/weekday/hour/timezone alongside
+      // the legacy `enabled` boolean. Backward compat: if there's no settings
+      // row at all, treat it as the original Monday 8am UTC weekly schedule.
       const [settings] = await db
-        .select({ enabled: organizationPayrollSettings.workWeekEndNotificationEnabled })
+        .select({
+          enabled: organizationPayrollSettings.workWeekEndNotificationEnabled,
+          cadence: organizationPayrollSettings.certifiedPayrollDigestCadence,
+          weekday: organizationPayrollSettings.certifiedPayrollDigestWeekday,
+          hour: organizationPayrollSettings.certifiedPayrollDigestHour,
+          timezone: organizationPayrollSettings.certifiedPayrollDigestTimezone,
+          lastSentAt: organizationPayrollSettings.certifiedPayrollDigestLastSentAt,
+        })
         .from(organizationPayrollSettings)
         .where(eq(organizationPayrollSettings.organizationId, org.id))
         .limit(1);
+
+      // Org-level hard off-switch retained from Task #1116.
       if (settings && settings.enabled === false) continue;
 
-      // Aggregate the last 7 days of certified payroll reports for this
-      // org, grouped by project + variant.
+      const cadence = (settings?.cadence ?? "WEEKLY") as "OFF" | "DAILY" | "WEEKLY" | "BIWEEKLY";
+      if (cadence === "OFF") continue;
+
+      const weekday = settings?.weekday ?? 1;
+      const hour = settings?.hour ?? 8;
+      const tz = settings?.timezone ?? "UTC";
+      const lastSentAt = settings?.lastSentAt ?? null;
+
+      const local = getLocalDateParts(now, tz);
+      // Hour-precision gate (cron fires hourly).
+      if (local.hour !== hour) continue;
+      if ((cadence === "WEEKLY" || cadence === "BIWEEKLY") && local.weekday !== weekday) continue;
+      if (cadence === "BIWEEKLY" && lastSentAt) {
+        const daysSince = (now.getTime() - new Date(lastSentAt).getTime()) / (24 * 60 * 60 * 1000);
+        if (daysSince < 13) continue;
+      }
+      // Idempotency: don't send the same daily/weekly digest twice in the
+      // same firing hour (e.g. if cron fires twice or the job is run
+      // manually). For DAILY skip if a digest has gone out in the last 23h.
+      if (lastSentAt) {
+        const hoursSince = (now.getTime() - new Date(lastSentAt).getTime()) / (60 * 60 * 1000);
+        if (cadence === "DAILY" && hoursSince < 23) continue;
+        if (cadence === "WEEKLY" && hoursSince < 23) continue;
+      }
+
+      const windowDays = cadence === "DAILY" ? 1 : cadence === "BIWEEKLY" ? 14 : 7;
+      const since = new Date(now.getTime() - windowDays * 24 * 60 * 60 * 1000);
+      const startStr = since.toISOString().slice(0, 10);
+      const endStr = now.toISOString().slice(0, 10);
+
+      // Aggregate certified payroll reports for this org over the window,
+      // grouped by project + variant.
       const rows = await db
         .select({
           projectId: certifiedPayrollReports.projectId,
@@ -3051,6 +3093,24 @@ export async function processCertifiedPayrollWeeklyDigest(opts: { now?: Date } =
 
       await insertNotifications(notifs);
       totalDigests += notifs.length;
+
+      // Task #1181: stamp lastSentAt so BIWEEKLY skips its off-week and
+      // DAILY/WEEKLY can't double-fire within the same hour. Upsert if
+      // there's no settings row yet (org was running on defaults).
+      try {
+        if (settings) {
+          await db
+            .update(organizationPayrollSettings)
+            .set({ certifiedPayrollDigestLastSentAt: now, updatedAt: new Date() })
+            .where(eq(organizationPayrollSettings.organizationId, org.id));
+        } else {
+          await db
+            .insert(organizationPayrollSettings)
+            .values({ organizationId: org.id, certifiedPayrollDigestLastSentAt: now });
+        }
+      } catch (err) {
+        logError("Certified payroll digest: failed to stamp lastSentAt", { orgId: org.id, error: String(err) });
+      }
     } catch (err) {
       logError("Certified payroll weekly digest org iteration failed", { orgId: org.id, error: String(err) });
     }

@@ -3244,6 +3244,14 @@ router.put("/api/payroll/settings", requireAuth, requireRole("ADMIN", "SUPER_ADM
       // Task #1178: 0 disables the auto-purge job for this org; cap at
       // 36500 days (~100 years) to keep the column inside int range.
       archivedReportRetentionDays: z.number().int().min(0).max(36500).optional(),
+      // Task #1181: per-org certified payroll digest schedule.
+      certifiedPayrollDigestCadence: z.enum(["OFF", "DAILY", "WEEKLY", "BIWEEKLY"]).optional(),
+      certifiedPayrollDigestWeekday: z.number().int().min(0).max(6).optional(),
+      certifiedPayrollDigestHour: z.number().int().min(0).max(23).optional(),
+      certifiedPayrollDigestTimezone: z.string().refine(
+        (v) => { try { new Intl.DateTimeFormat("en-US", { timeZone: v }); return true; } catch { return false; } },
+        { message: "Invalid IANA timezone" },
+      ).optional(),
     });
 
     const data = updateSchema.parse(req.body);
