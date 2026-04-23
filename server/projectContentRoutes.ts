@@ -8,6 +8,7 @@ import { verifyOrgAccess } from "./orgFilter";
 import { sanitizeText } from "./sanitization";
 import { emitMessageNew } from "./messagingEvents";
 import { logError } from "./utils/logger";
+import { assertStorageKeyBelongsToOrg } from "./services/documentRevisionService";
 
 const router = Router();
 
@@ -246,6 +247,17 @@ router.post("/api/projects/:code/media", requireAuth, requireRole("ADMIN", "MANA
     if (!validationResult.success) {
       res.status(400).json({ error: "Invalid input", details: validationResult.error.errors });
       return;
+    }
+
+    try {
+      await assertStorageKeyBelongsToOrg(
+        validationResult.data.fileUrl,
+        req.user!.organizationId!,
+        req.user!.id,
+        req.user!.role,
+      );
+    } catch (err: any) {
+      return res.status(err?.status || 403).json({ error: err?.message || "Forbidden" });
     }
 
     const { ObjectStorageService } = await import("./objectStorage");

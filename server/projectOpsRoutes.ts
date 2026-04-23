@@ -13,6 +13,8 @@ import { verifyOrgAccess, getOrgIdForFilter } from "./orgFilter";
 import * as healthService from "./services/projectHealthService";
 import {logError, logWarn } from "./utils/logger";
 import { eventBus } from "./events";
+import { assertStorageKeyBelongsToOrg } from "./services/documentRevisionService";
+import { ObjectPermission } from "./objectAcl";
 
 const router = Router();
 
@@ -179,6 +181,17 @@ router.post("/api/receipts", requireAuth, async (req: AuthRequest, res, next) =>
       return;
     }
 
+    try {
+      await assertStorageKeyBelongsToOrg(
+        validationResult.data.fileUrl,
+        req.user!.organizationId!,
+        req.user!.id,
+        req.user!.role,
+      );
+    } catch (err: any) {
+      return res.status(err?.status || 403).json({ error: err?.message || "Forbidden" });
+    }
+
     const { ObjectStorageService } = await import("./objectStorage");
     const objectStorageService = new ObjectStorageService();
     
@@ -291,6 +304,16 @@ router.get("/api/projects/:code/documents/:docId/preview-url", requireAuth, asyn
     const { ObjectStorageService } = await import("./objectStorage");
     const objectStorageService = new ObjectStorageService();
     const objectFile = await objectStorageService.getObjectEntityFile(storageKey);
+    // Task #1327: enforce ACL on the underlying object before streaming so a
+    // legacy/cross-tenant document row cannot leak another org's bytes.
+    const allowed = await objectStorageService.canAccessObjectEntity({
+      userId: req.user!.id,
+      userOrganizationId: req.user!.organizationId || undefined,
+      objectFile,
+      requestedPermission: ObjectPermission.READ,
+      userRole: req.user!.role,
+    });
+    if (!allowed) return res.status(403).json({ error: "Forbidden" });
     await objectStorageService.downloadObject(objectFile, res, 3600);
   } catch (error) {
     logError("Project document preview-url error:", {}, error instanceof Error ? error : new Error(String(error)));
@@ -326,6 +349,16 @@ router.get("/api/projects/:code/documents/:docId/stream", requireAuth, async (re
     const { ObjectStorageService } = await import("./objectStorage");
     const objectStorageService = new ObjectStorageService();
     const objectFile = await objectStorageService.getObjectEntityFile(storageKey);
+    // Task #1327: enforce ACL on the underlying object before streaming so a
+    // legacy/cross-tenant document row cannot leak another org's bytes.
+    const allowed = await objectStorageService.canAccessObjectEntity({
+      userId: req.user!.id,
+      userOrganizationId: req.user!.organizationId || undefined,
+      objectFile,
+      requestedPermission: ObjectPermission.READ,
+      userRole: req.user!.role,
+    });
+    if (!allowed) return res.status(403).json({ error: "Forbidden" });
     await objectStorageService.downloadObject(objectFile, res, 3600);
   } catch (error) {
     logError("Project document stream error:", {}, error instanceof Error ? error : new Error(String(error)));
@@ -393,6 +426,17 @@ router.post("/api/documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
       // Stamp the row with the project's tenant so org-scoped queries can
       // find the document without a project join.
       validationResult.data.organizationId = proj.org;
+    }
+
+    try {
+      await assertStorageKeyBelongsToOrg(
+        validationResult.data.fileUrl,
+        callerOrgId!,
+        req.user!.id,
+        req.user!.role,
+      );
+    } catch (err: any) {
+      return res.status(err?.status || 403).json({ error: err?.message || "Forbidden" });
     }
 
     const { ObjectStorageService } = await import("./objectStorage");
@@ -1042,6 +1086,20 @@ router.get("/api/documents/:documentId/download-url", requireAuth, async (req: A
       
       try {
         const objectFile = await objectStorageService.getObjectEntityFile(document.objectKey);
+        // Task #1327: enforce ACL on the underlying object before issuing a
+        // signed URL so a legacy/cross-tenant document row cannot leak
+        // another org's bytes.
+        const allowed = await objectStorageService.canAccessObjectEntity({
+          userId: req.user!.id,
+          userOrganizationId: req.user!.organizationId || undefined,
+          objectFile,
+          requestedPermission: ObjectPermission.READ,
+          userRole: req.user!.role,
+        });
+        if (!allowed) {
+          res.status(403).json({ error: "Forbidden" });
+          return;
+        }
         const signedUrl = await objectStorageService.getSignedDownloadUrl(objectFile, 3600);
 
         res.json({ url: signedUrl });
@@ -2612,6 +2670,20 @@ router.get("/api/projects/:code/vault/:docId/signed-url", requireAuth, requireRo
     const { ObjectStorageService } = await import("./objectStorage");
     const objectStorageService = new ObjectStorageService();
     const objectFile = await objectStorageService.getObjectEntityFile(storageKey);
+    // Task #1327: enforce ACL on the underlying object before issuing a
+    // signed URL so a legacy/cross-tenant vault document cannot leak
+    // another org's bytes.
+    const allowed = await objectStorageService.canAccessObjectEntity({
+      userId: req.user!.id,
+      userOrganizationId: req.user!.organizationId || undefined,
+      objectFile,
+      requestedPermission: ObjectPermission.READ,
+      userRole: req.user!.role,
+    });
+    if (!allowed) {
+      res.status(403).json({ error: "Forbidden" });
+      return;
+    }
     const signedUrl = await objectStorageService.getSignedDownloadUrl(objectFile, 900);
 
     res.json({ url: signedUrl, fileName: doc.fileName, mimeType: doc.mimeType });

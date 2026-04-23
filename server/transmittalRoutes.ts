@@ -16,6 +16,7 @@ import { z } from "zod";
 import { requireAuth, requireRole, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { notifyDocumentEvent } from "./services/documentNotificationService";
+import { assertStorageKeyBelongsToOrg } from "./services/documentRevisionService";
 
 const router = Router();
 
@@ -592,6 +593,12 @@ router.post("/transmittals/:id/files", requireAuth, requireRole("SUPER_ADMIN", "
     }
 
     const { fileUrl, fileName, fileSize, mimeType, description } = validationResult.data;
+
+    try {
+      await assertStorageKeyBelongsToOrg(fileUrl, req.user!.organizationId!, req.user!.id, req.user!.role);
+    } catch (err: any) {
+      return res.status(err?.status || 403).json({ error: err?.message || "Forbidden" });
+    }
 
     const { ObjectStorageService } = await import("./objectStorage");
     const objectStorageService = new ObjectStorageService();
