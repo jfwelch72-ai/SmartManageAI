@@ -47,6 +47,9 @@ const REQUIRED_NOTIFICATION_TYPES = [
   // Task #1400: stale-refresh sweep produced different rates from the
   // prior cached payload — notify project managers of affected projects.
   "WAGE_DECISION_RATES_CHANGED",
+  // Task #1449: per-PM email triggered when persistRateChangeRecords
+  // writes new panel-flag records.
+  "WAGE_DECISION_RATES_CHANGED_FOR_PM",
 ];
 
 export async function ensureNotificationEnumValues(): Promise<void> {

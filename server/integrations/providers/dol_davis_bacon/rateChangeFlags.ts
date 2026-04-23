@@ -17,6 +17,7 @@ import { wageDecisionRateChanges } from "@shared/schema";
 import type { WageDecisionRateChange } from "@shared/schema";
 import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { WageRateDiffEntry } from "../../../services/davisBaconAdminNotifications";
+import { logError } from "../../../utils/logger";
 
 /**
  * Normalize a classification name for case-insensitive matching against
@@ -131,6 +132,35 @@ export async function persistRateChangeRecords(
           sql`lower(trim(${wageDecisionRateChanges.classification})) NOT IN (${inList})`,
         ),
       );
+  }
+
+  // Task #1449 — Email the project manager of every project in this org
+  // whose `wageDecision` references this decision number. The badge alone
+  // only fires once a PM happens to open the prevailing wage panel, so a
+  // PM who doesn't visit the panel may submit a certified payroll at the
+  // old rate before noticing. Fanning a notification out from this exact
+  // write point closes that gap; the email lists each affected
+  // classification with old → new base/fringe/total numbers and deep-links
+  // to the project's payroll tab. We dynamic-import the notifier to keep
+  // this storage helper free of the wider notification module dependency
+  // chain (which transitively imports back into davis-bacon code) and
+  // wrap in try/catch so a notification failure can't roll back the
+  // already-persisted panel-flag rows.
+  try {
+    const { notifyProjectManagersOnPersistedRateChanges } = await import(
+      "../../../services/davisBaconAdminNotifications"
+    );
+    await notifyProjectManagersOnPersistedRateChanges({
+      organizationId,
+      decisionNumber: decision,
+      changes: changes,
+    });
+  } catch (err) {
+    logError(
+      "Davis-Bacon PM rate-change email fan-out failed",
+      { organizationId, decisionNumber: decision },
+      err instanceof Error ? err : new Error(String(err)),
+    );
   }
 }
 

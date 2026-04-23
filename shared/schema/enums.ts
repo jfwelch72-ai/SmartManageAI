@@ -133,6 +133,14 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // to its project manager (and/or org admins) so PMs can proactively
   // review certified payrolls and pay items before the next run.
   "WAGE_DECISION_RATES_CHANGED",
+  // Task #1449: per-PM email fan-out triggered when the Davis-Bacon
+  // stale-refresh writes new rate-change panel-flag records via
+  // persistRateChangeRecords. Distinct from WAGE_DECISION_RATES_CHANGED
+  // (which is the wider org-admin + PM digest path) so PMs can mute the
+  // panel-flag-driven nudges without losing the digest, and so the email
+  // can deep-link to the project payroll tab with a full per-classification
+  // base/fringe/total breakdown.
+  "WAGE_DECISION_RATES_CHANGED_FOR_PM",
 ]);
 
 export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["PENDING", "APPROVED", "DENIED"]);

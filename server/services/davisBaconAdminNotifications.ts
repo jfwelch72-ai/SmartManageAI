@@ -598,6 +598,152 @@ export async function notifyProjectManagersOfWageRateChange(
   };
 }
 
+// Task #1449 — PM-targeted email triggered when persistRateChangeRecords
+// writes new panel-flag records (Davis-Bacon stale-refresh produced a
+// non-empty per-classification diff). Distinct from
+// `notifyProjectManagersOfWageRateChange` (which is the wider
+// admin + PM digest path on WAGE_DECISION_RATES_CHANGED) so PMs whose
+// project references the decision get a per-project, classification-table
+// nudge that deep-links to the project's payroll tab — closing the gap
+// where the prevailing wage panel badge only fires once a PM happens to
+// load that page.
+//
+// One notification per (PM, project) pair: the body lists every changed
+// classification with old → new base/fringe/total numbers (the panel-flag
+// rows always carry the full triple, including 0/null for added/removed
+// classifications), and `relatedEntityId` is the project id so the email
+// composer can deep-link to `/projects/<id>?tab=payroll`. Recipients are
+// scoped to projects in `gcOrganizationId = organizationId`, so two
+// projects in two different orgs that happen to use the same decision
+// number stay isolated — only the PMs in the org we're persisting flags
+// for get notified.
+export interface NotifyPersistedRateChangesArgs {
+  organizationId: string;
+  decisionNumber: string;
+  changes: ReadonlyArray<WageRateDiffEntry>;
+}
+
+export interface NotifyPersistedRateChangesResult {
+  notificationsSent: number;
+  recipientsNotified: number;
+  affectedProjects: number;
+}
+
+function fmtRateOrDash(n: number | undefined | null): string {
+  if (n === undefined || n === null || !Number.isFinite(n)) return "—";
+  return `$${n.toFixed(2)}`;
+}
+
+function summarizePersistedChanges(
+  changes: ReadonlyArray<WageRateDiffEntry>,
+  max = 10,
+): string {
+  const lines: string[] = [];
+  for (const c of changes.slice(0, max)) {
+    const verb =
+      c.kind === "added" ? "Added" : c.kind === "removed" ? "Removed" : "Updated";
+    lines.push(
+      `• ${verb} — ${c.classification}: ` +
+        `base ${fmtRateOrDash(c.oldBaseRate)} → ${fmtRateOrDash(c.newBaseRate)}, ` +
+        `fringe ${fmtRateOrDash(c.oldFringeRate)} → ${fmtRateOrDash(c.newFringeRate)}, ` +
+        `total ${fmtRateOrDash(c.oldTotalRate)} → ${fmtRateOrDash(c.newTotalRate)}`,
+    );
+  }
+  if (changes.length > max) {
+    lines.push(`…and ${changes.length - max} more classification(s).`);
+  }
+  return lines.join("\n");
+}
+
+export async function notifyProjectManagersOnPersistedRateChanges(
+  args: NotifyPersistedRateChangesArgs,
+): Promise<NotifyPersistedRateChangesResult> {
+  const decision = args.decisionNumber.trim();
+  const empty: NotifyPersistedRateChangesResult = {
+    notificationsSent: 0,
+    recipientsNotified: 0,
+    affectedProjects: 0,
+  };
+  if (!decision || args.changes.length === 0) return empty;
+
+  // Scope to this org only — a different org may use the same decision
+  // number but we must not leak across tenant boundaries (we're acting on
+  // *this* org's panel-flag write).
+  const affected = await db
+    .select({
+      id: projects.id,
+      name: projects.name,
+      code: projects.code,
+      projectManagerId: projects.projectManagerId,
+    })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.gcOrganizationId, args.organizationId),
+        sql`trim(${projects.wageDecision}) = ${decision}`,
+      ),
+    );
+
+  if (affected.length === 0) return empty;
+
+  const summary = summarizePersistedChanges(args.changes);
+  let notificationsSent = 0;
+  const recipients = new Set<string>();
+
+  for (const project of affected) {
+    if (!project.projectManagerId) continue;
+    recipients.add(project.projectManagerId);
+    const projLabel = project.name || project.code || "your project";
+    const title = `Davis-Bacon rates changed for ${decision}`;
+    const message =
+      `The latest Davis-Bacon refresh changed ${args.changes.length} ` +
+      `classification rate(s) on wage decision ${decision} used by ` +
+      `project "${projLabel}". Review the project's payroll tab and ` +
+      `re-issue any in-flight certified payrolls before your next ` +
+      `submission.\n\n${summary}`;
+    try {
+      await insertNotification({
+        userId: project.projectManagerId,
+        organizationId: args.organizationId,
+        type: "WAGE_DECISION_RATES_CHANGED_FOR_PM",
+        title,
+        message,
+        relatedEntityId: project.id,
+        relatedEntityType: "PROJECT",
+      } as InsertNotification);
+      notificationsSent += 1;
+    } catch (err) {
+      logError(
+        "Failed to deliver PM rate-change persistence notification",
+        {
+          organizationId: args.organizationId,
+          decisionNumber: decision,
+          projectId: project.id,
+          userId: project.projectManagerId,
+        },
+        err instanceof Error ? err : new Error(String(err)),
+      );
+    }
+  }
+
+  if (notificationsSent > 0) {
+    logInfo("Davis-Bacon persisted rate-change PM fan-out", {
+      organizationId: args.organizationId,
+      decisionNumber: decision,
+      affectedProjects: affected.length,
+      notificationsSent,
+      recipientsNotified: recipients.size,
+      changedClassifications: args.changes.length,
+    });
+  }
+
+  return {
+    notificationsSent,
+    recipientsNotified: recipients.size,
+    affectedProjects: affected.length,
+  };
+}
+
 // Test-only helper for predictable cleanup in unit tests.
 export async function __getMostRecentReminderForTest(projectId: string) {
   const [row] = await db

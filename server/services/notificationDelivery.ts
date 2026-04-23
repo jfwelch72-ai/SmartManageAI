@@ -756,6 +756,43 @@ export function composeEmailContent(
     };
   }
 
+  // Task #1449 — PM-targeted email triggered when persistRateChangeRecords
+  // writes new panel-flag records. Deep-links straight to the project's
+  // payroll tab so the PM can review certified payrolls and re-issue
+  // submissions affected by the rate change.
+  if (type === "WAGE_DECISION_RATES_CHANGED_FOR_PM") {
+    const payrollUrl = notification.relatedEntityId
+      ? `${baseUrl}/projects/${notification.relatedEntityId}?tab=payroll`
+      : `${baseUrl}/payroll`;
+    const subject = `Davis-Bacon wage rates changed — review project payroll — SmartManageAI`;
+    const messageHtml = escapeHtml(notification.message).replace(/\n/g, "<br>");
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #b91c1c;">${escapeHtml(notification.title)}</h2>
+        <p style="color: #444; line-height: 1.6;">${messageHtml}</p>
+        <p style="margin-top: 20px;">
+          <a href="${payrollUrl}" style="background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;" data-testid="link-pm-rate-change-payroll">
+            Open Project Payroll Tab
+          </a>
+        </p>
+        <hr style="margin-top: 30px; border: none; border-top: 1px solid #eee;">
+        <p style="color: #999; font-size: 12px; line-height: 1.6;">
+          You are receiving this because you are listed as the project manager
+          for a project whose Davis-Bacon wage decision just changed. Review
+          certified payrolls and pay items affected by the rate change before
+          your next submission.
+        </p>
+      </div>
+    `;
+    return {
+      subject,
+      body: notification.message,
+      actionUrl: payrollUrl,
+      actionText: "Open Project Payroll Tab",
+      html,
+    };
+  }
+
   if (type === "CRM_TRANSCRIPT_BACKFILL_REAPED") {
     return {
       subject: `CRM transcript backfill was reaped — SmartManageAI`,
