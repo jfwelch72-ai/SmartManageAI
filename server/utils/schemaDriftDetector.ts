@@ -1,6 +1,15 @@
 import { db } from "../db";
 import { sql, getTableName, getTableColumns, SQL } from "drizzle-orm";
-import { PgTable, PgColumn, isPgEnum } from "drizzle-orm/pg-core";
+import {
+  PgTable,
+  PgColumn,
+  isPgEnum,
+  getTableConfig,
+  type ForeignKey,
+  type Index,
+  type PrimaryKey,
+  type UniqueConstraint,
+} from "drizzle-orm/pg-core";
 import { logInfo, logWarn, logError } from "./logger";
 import * as schema from "@shared/schema";
 
@@ -30,6 +39,21 @@ function extractDrizzleSchema(): Map<string, DrizzleTableMeta> {
         result.set(tableName, { name: tableName, columns: colMap });
       } catch {
         // ignore individual table errors
+      }
+    }
+  }
+  return result;
+}
+
+function extractDrizzleTables(): Map<string, PgTable> {
+  const result = new Map<string, PgTable>();
+  for (const value of Object.values(schema)) {
+    if (value instanceof PgTable) {
+      try {
+        const name = getTableName(value);
+        if (name) result.set(name, value);
+      } catch {
+        // ignore
       }
     }
   }
@@ -192,6 +216,199 @@ function literalDefault(def: unknown, sqlType: string): string | null {
   return null;
 }
 
+function quoteIdent(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+function renderColumnDefault(column: PgColumn, sqlType: string): string | null {
+  if (!column.hasDefault || column.default === undefined) return null;
+  const def = column.default;
+  if (def instanceof SQL) {
+    // Render the SQL fragment by inlining bind params. Drizzle defaults use
+    // simple template literals like `gen_random_uuid()` or `now()`, so this
+    // is sufficient in practice.
+    try {
+      const dialect = (db as unknown as { dialect?: { sqlToQuery?: (s: SQL) => { sql: string; params: unknown[] } } }).dialect;
+      if (dialect && typeof dialect.sqlToQuery === "function") {
+        const compiled = dialect.sqlToQuery(def);
+        if (!compiled.params || compiled.params.length === 0) {
+          return compiled.sql;
+        }
+      }
+    } catch {
+      // fall through
+    }
+    return null;
+  }
+  return literalDefault(def, sqlType);
+}
+
+/**
+ * Synthesize a CREATE TABLE statement (without foreign keys — those are
+ * added in a second pass) from a Drizzle table definition. Mirrors the
+ * subset of DDL that the hand-written `ensure*Tables.ts` files produced.
+ */
+function buildCreateTableSql(table: PgTable): { create: SQL; alters: SQL[]; indexes: SQL[] } | null {
+  const config = getTableConfig(table);
+  const tableName = config.name;
+  const cols = config.columns as PgColumn[];
+  if (cols.length === 0) return null;
+
+  const colDefs: string[] = [];
+  for (const col of cols) {
+    const sqlType = col.getSQLType();
+    const parts = [`${quoteIdent(col.name)} ${sqlType}`];
+    if (col.notNull) parts.push("NOT NULL");
+    const defaultLiteral = renderColumnDefault(col, sqlType);
+    if (defaultLiteral !== null) parts.push(`DEFAULT ${defaultLiteral}`);
+    if (col.primary) parts.push("PRIMARY KEY");
+    if (col.isUnique) {
+      const uname = col.uniqueName ?? `${tableName}_${col.name}_unique`;
+      parts.push(`CONSTRAINT ${quoteIdent(uname)} UNIQUE`);
+    }
+    colDefs.push(parts.join(" "));
+  }
+
+  // Composite primary keys
+  const primaryKeys = config.primaryKeys as PrimaryKey[];
+  for (const pk of primaryKeys) {
+    const colNames = pk.columns.map(c => quoteIdent(c.name)).join(", ");
+    const name = pk.getName();
+    colDefs.push(`CONSTRAINT ${quoteIdent(name)} PRIMARY KEY (${colNames})`);
+  }
+
+  // Composite unique constraints
+  const uniques = config.uniqueConstraints as UniqueConstraint[];
+  for (const u of uniques) {
+    const colNames = u.columns.map(c => quoteIdent(c.name)).join(", ");
+    const uname = u.getName() ?? `${tableName}_${u.columns.map(c => c.name).join("_")}_unique`;
+    const nullsClause = u.nullsNotDistinct ? " NULLS NOT DISTINCT" : "";
+    colDefs.push(`CONSTRAINT ${quoteIdent(uname)} UNIQUE${nullsClause} (${colNames})`);
+  }
+
+  const create = sql.raw(
+    `CREATE TABLE IF NOT EXISTS ${quoteIdent(tableName)} (\n  ${colDefs.join(",\n  ")}\n)`,
+  );
+
+  // Foreign keys — emit as ALTER TABLE in a DO-block that swallows
+  // duplicate_object so re-runs are idempotent.
+  const alters: SQL[] = [];
+  const fks = config.foreignKeys as ForeignKey[];
+  for (const fk of fks) {
+    try {
+      const ref = fk.reference();
+      const localCols = ref.columns.map(c => quoteIdent(c.name)).join(", ");
+      const foreignTableName = getTableName(ref.foreignTable);
+      const foreignCols = ref.foreignColumns.map(c => quoteIdent(c.name)).join(", ");
+      const fkName = fk.getName();
+      let stmt = `ALTER TABLE ${quoteIdent(tableName)} ADD CONSTRAINT ${quoteIdent(fkName)} FOREIGN KEY (${localCols}) REFERENCES ${quoteIdent(foreignTableName)} (${foreignCols})`;
+      if (fk.onDelete) stmt += ` ON DELETE ${fk.onDelete.toUpperCase()}`;
+      if (fk.onUpdate) stmt += ` ON UPDATE ${fk.onUpdate.toUpperCase()}`;
+      alters.push(sql.raw(`DO $$ BEGIN ${stmt}; EXCEPTION WHEN duplicate_object THEN NULL; END $$;`));
+    } catch {
+      // skip unresolvable FK
+    }
+  }
+
+  // Indexes
+  const indexes: SQL[] = [];
+  const idxList = config.indexes as Index[];
+  for (const idx of idxList) {
+    const cfg = idx.config;
+    const colExprs: string[] = [];
+    let supported = true;
+    for (const c of cfg.columns) {
+      if (c instanceof SQL) {
+        // Skip indexes with raw SQL expressions — too risky to render.
+        supported = false;
+        break;
+      }
+      const colName = (c as { name?: string }).name;
+      if (!colName) {
+        supported = false;
+        break;
+      }
+      colExprs.push(quoteIdent(colName));
+    }
+    if (!supported || colExprs.length === 0) continue;
+    const name = cfg.name ?? `${tableName}_${colExprs.map(e => e.replace(/"/g, "")).join("_")}_idx`;
+    const unique = cfg.unique ? "UNIQUE " : "";
+    const using = cfg.method && cfg.method !== "btree" ? ` USING ${cfg.method}` : "";
+    indexes.push(sql.raw(
+      `CREATE ${unique}INDEX IF NOT EXISTS ${quoteIdent(name)} ON ${quoteIdent(tableName)}${using} (${colExprs.join(", ")})`,
+    ));
+  }
+
+  return { create, alters, indexes };
+}
+
+interface SynthesizeStats {
+  created: number;
+  failed: { table: string; reason: string }[];
+}
+
+async function synthesizeMissingTables(missingTables: string[]): Promise<SynthesizeStats> {
+  const stats: SynthesizeStats = { created: 0, failed: [] };
+  if (missingTables.length === 0) return stats;
+  const tables = extractDrizzleTables();
+
+  // Pass 1: CREATE TABLE for every missing table (no FKs yet).
+  const builds: { name: string; built: ReturnType<typeof buildCreateTableSql> }[] = [];
+  for (const name of missingTables) {
+    const t = tables.get(name);
+    if (!t) {
+      stats.failed.push({ table: name, reason: "table not found in Drizzle schema" });
+      continue;
+    }
+    let built: ReturnType<typeof buildCreateTableSql> = null;
+    try {
+      built = buildCreateTableSql(t);
+    } catch (err) {
+      stats.failed.push({ table: name, reason: `synthesize failed: ${err instanceof Error ? err.message : String(err)}` });
+      continue;
+    }
+    if (!built) {
+      stats.failed.push({ table: name, reason: "no columns or unsupported definition" });
+      continue;
+    }
+    builds.push({ name, built });
+  }
+
+  for (const { name, built } of builds) {
+    try {
+      await db.execute(built!.create);
+      stats.created++;
+      logInfo(`[schema-drift] Auto-created missing table ${name} from Drizzle schema`);
+    } catch (err) {
+      stats.failed.push({ table: name, reason: `CREATE TABLE failed: ${err instanceof Error ? err.message : String(err)}` });
+    }
+  }
+
+  // Pass 2: foreign keys (after all tables exist so cross-batch refs resolve).
+  for (const { name, built } of builds) {
+    for (const stmt of built!.alters) {
+      try {
+        await db.execute(stmt);
+      } catch (err) {
+        stats.failed.push({ table: name, reason: `ADD CONSTRAINT failed: ${err instanceof Error ? err.message : String(err)}` });
+      }
+    }
+  }
+
+  // Pass 3: indexes.
+  for (const { name, built } of builds) {
+    for (const stmt of built!.indexes) {
+      try {
+        await db.execute(stmt);
+      } catch (err) {
+        stats.failed.push({ table: name, reason: `CREATE INDEX failed: ${err instanceof Error ? err.message : String(err)}` });
+      }
+    }
+  }
+
+  return stats;
+}
+
 function buildAddColumnSql(tableName: string, column: PgColumn): SQL | null {
   const sqlType = column.getSQLType();
   const parts: SQL[] = [];
@@ -274,6 +491,19 @@ export async function reconcileSchemaDrift(): Promise<void> {
   const enumStats = await ensureMissingEnums();
   if (enumStats.created > 0) {
     logInfo(`[schema-drift] Auto-created ${enumStats.created} missing enum type(s).`);
+  }
+
+  // Task #1138: synthesize CREATE TABLE statements for any tables that exist
+  // in the Drizzle schema but not in the DB, so adding a new table no longer
+  // requires a hand-written `ensure*Tables.ts` migration. This is the table
+  // analogue of the column auto-add below — safe (CREATE TABLE IF NOT EXISTS)
+  // and bounded to dev (`isProduction` returns above).
+  const tableStats = await synthesizeMissingTables(drift.missingTables);
+  if (tableStats.created > 0) {
+    logInfo(`[schema-drift] Auto-created ${tableStats.created} missing table(s) from Drizzle schema.`);
+  }
+  for (const f of tableStats.failed) {
+    logWarn(`[schema-drift] Failed to auto-create table ${f.table}: ${f.reason}`);
   }
 
   const failedColumns: { table: string; column: string; reason: string }[] = [];
