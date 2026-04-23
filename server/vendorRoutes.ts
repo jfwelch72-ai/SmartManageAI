@@ -1780,7 +1780,7 @@ router.post("/pricebook-imports/:jobId/process", requireAuth, async (req: AuthRe
         })
         .where(eq(pricebookImportJobs.id, jobId));
 
-      next(error);
+      next(extractionError);
     }
   } catch (error: any) {
     next(error);

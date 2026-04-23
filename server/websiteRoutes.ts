@@ -47,7 +47,7 @@ function escapeXml(str: string): string {
 }
 
 // GET /api/website/org-logo/:orgId - Serve organization logo directly from GCS (PUBLIC)
-router.get("/org-logo/:orgId", async (req: Request, res: Response) => {
+router.get("/org-logo/:orgId", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { orgId } = req.params;
     const org = await db.query.organizations.findFirst({
@@ -223,7 +223,7 @@ router.post("/publish", requireAuth, async (req: AuthRequest, res: Response, nex
 // ============================================
 
 // GET /api/website/public/:subdomain - Get public website data by subdomain (no auth required)
-router.get("/public/:subdomain", async (req: Request, res: Response) => {
+router.get("/public/:subdomain", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { subdomain } = req.params;
 
@@ -483,7 +483,7 @@ router.post("/staging-token", requireAuth, async (req: AuthRequest, res: Respons
 });
 
 // GET /api/website/staging/:subdomain - Get website data for staging preview (no auth, token-protected)
-router.get("/staging/:subdomain", async (req: Request, res: Response) => {
+router.get("/staging/:subdomain", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { subdomain } = req.params;
     const token = req.query.token as string;
@@ -1275,7 +1275,7 @@ router.post("/upload-image", requireAuth, sensitiveLimiter, upload.single("image
 });
 
 // GET /api/website/image/:orgId/:fileName - Serve uploaded website images from GCS
-router.get("/image/:orgId/:fileName", async (req: Request, res: Response) => {
+router.get("/image/:orgId/:fileName", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { orgId, fileName } = req.params;
     const filePath = `gallery/${orgId}/${fileName}`;
@@ -1866,7 +1866,7 @@ router.get("/social/history", requireAuth, async (req: AuthRequest, res: Respons
 const formSubmissionRateLimit = new Map<string, { count: number; resetAt: number }>();
 
 // POST /api/website/contact - Submit contact form (public)
-router.post("/contact", async (req: Request, res: Response) => {
+router.post("/contact", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { websiteId, name, email, phone, company, subject, message, serviceInterest, projectType, estimatedBudget, recipientEmail, formFields, _hp, _ts } = req.body;
 
@@ -2753,7 +2753,7 @@ router.delete("/preview-links/:linkId", requireAuth, async (req: AuthRequest, re
 });
 
 // GET /api/website/shared-preview/:token - Public preview (no auth)
-router.get("/shared-preview/:token", async (req: Request, res: Response) => {
+router.get("/shared-preview/:token", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { token } = req.params;
 
@@ -3381,7 +3381,7 @@ const careersResumeUpload = multer({
   },
 });
 
-router.get("/public/:subdomain/careers", async (req: Request, res: Response) => {
+router.get("/public/:subdomain/careers", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { subdomain } = req.params;
     if (!subdomain) return res.status(400).json({ error: "Subdomain is required" });
@@ -3434,7 +3434,7 @@ router.get("/public/:subdomain/careers", async (req: Request, res: Response) => 
   }
 });
 
-router.get("/public/:subdomain/careers/:jobId", async (req: Request, res: Response) => {
+router.get("/public/:subdomain/careers/:jobId", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { subdomain, jobId } = req.params;
     if (!subdomain || !jobId) return res.status(400).json({ error: "Subdomain and job ID are required" });
@@ -3483,7 +3483,7 @@ router.get("/public/:subdomain/careers/:jobId", async (req: Request, res: Respon
   }
 });
 
-router.post("/public/:subdomain/careers/:jobId/apply", careersResumeUpload.single("resume"), async (req: Request, res: Response) => {
+router.post("/public/:subdomain/careers/:jobId/apply", careersResumeUpload.single("resume"), async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { subdomain, jobId } = req.params;
     if (!subdomain || !jobId) return res.status(400).json({ error: "Subdomain and job ID are required" });

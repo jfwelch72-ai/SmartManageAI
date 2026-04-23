@@ -1,4 +1,4 @@
-import { Router, Request, Response } from "express";
+import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { clientPortalAccess, projects, organizations, subcontractorPortalTokens, vendorUsers, crmOrganisations, organizationDocuments } from "@shared/schema";
 import { eq, and, gt } from "drizzle-orm";
@@ -98,7 +98,7 @@ function safeJsonParse<T>(json: string | null | undefined, fallback: T): T {
   }
 }
 
-router.post("/portal/auth/resolve", async (req: Request, res: Response) => {
+router.post("/portal/auth/resolve", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { type, email, projectId, token } = req.body;
 
@@ -307,7 +307,7 @@ router.post("/portal/auth/resolve", async (req: Request, res: Response) => {
   }
 });
 
-router.get("/portal/org-logo/:orgId", async (req: Request, res: Response) => {
+router.get("/portal/org-logo/:orgId", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { orgId } = req.params;
 

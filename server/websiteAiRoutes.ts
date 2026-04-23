@@ -441,7 +441,7 @@ Generate optimized SEO content. Return JSON:
 // ============================================
 
 // POST /api/website/analytics/track - Track event (public, used by tracking pixel)
-router.post("/analytics/track", async (req: Request, res: Response) => {
+router.post("/analytics/track", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { websiteId, sessionId, visitorId, eventType, pagePath, pageTitle, referrer, eventData } = req.body;
 

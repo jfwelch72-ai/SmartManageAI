@@ -233,7 +233,7 @@ router.get("/api/modifiers", requireAuth, async (req: AuthRequest, res: Response
 
     res.json(filtered);
   } catch (err: unknown) {
-    next(error);
+    next(err);
   }
 });
 
@@ -295,7 +295,7 @@ router.get("/api/modifiers/for-scope", requireAuth, async (req: AuthRequest, res
       matchedRuleModifierIds: Array.from(matchedModifierIds),
     });
   } catch (err: unknown) {
-    next(error);
+    next(err);
   }
 });
 
@@ -344,7 +344,7 @@ router.post("/api/modifiers", requireAuth, async (req: AuthRequest, res: Respons
 
     res.status(201).json(created);
   } catch (err: unknown) {
-    next(error);
+    next(err);
   }
 });
 
@@ -385,7 +385,7 @@ router.patch("/api/modifiers/:id", requireAuth, async (req: AuthRequest, res: Re
 
     res.json(updated);
   } catch (err: unknown) {
-    next(error);
+    next(err);
   }
 });
 
@@ -419,11 +419,11 @@ router.delete("/api/modifiers/:id", requireAuth, async (req: AuthRequest, res: R
 
     res.json(updated);
   } catch (err: unknown) {
-    next(error);
+    next(err);
   }
 });
 
-router.get("/api/modifiers/rules", requireAuth, async (_req: AuthRequest, res: Response) => {
+router.get("/api/modifiers/rules", requireAuth, async (_req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const results = await db
       .select()
@@ -433,7 +433,7 @@ router.get("/api/modifiers/rules", requireAuth, async (_req: AuthRequest, res: R
 
     res.json(results);
   } catch (err: unknown) {
-    next(error);
+    next(err);
   }
 });
 
@@ -464,7 +464,7 @@ router.post("/api/modifiers/rules", requireAuth, async (req: AuthRequest, res: R
 
     res.status(201).json(created);
   } catch (err: unknown) {
-    next(error);
+    next(err);
   }
 });
 
@@ -565,7 +565,7 @@ router.post("/api/bid-modifier-selections", requireAuth, async (req: AuthRequest
 
     res.status(201).json(created);
   } catch (err: unknown) {
-    next(error);
+    next(err);
   }
 });
 
@@ -590,7 +590,7 @@ router.get("/api/bid-modifier-selections/:lineItemId", requireAuth, async (req: 
 
     res.json(results);
   } catch (err: unknown) {
-    next(error);
+    next(err);
   }
 });
 
@@ -710,7 +710,7 @@ router.post("/api/modifiers/ai-suggest", requireAuth, requireFeature("MODIFIER_A
 
     res.json(validated.data);
   } catch (err: unknown) {
-    next(error);
+    next(err);
   }
 });
 

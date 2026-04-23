@@ -315,7 +315,7 @@ router.post("/upload-media", requireAuth, socialUpload.single("file"), async (re
   }
 });
 
-router.get("/image/:orgId/:fileName", async (req: Request, res: Response) => {
+router.get("/image/:orgId/:fileName", async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { orgId, fileName } = req.params;
     const filePath = `gallery/${orgId}/${fileName}`;

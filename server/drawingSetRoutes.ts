@@ -203,7 +203,7 @@ router.post("/drawing-sets/:setId/items", requireAuth, requireRoleOrFeature(["SU
     if (err?.code === "23505") {
       return res.status(409).json({ error: "Sheet already in this drawing set" });
     }
-    next(error);
+    next(err);
   }
 });
 

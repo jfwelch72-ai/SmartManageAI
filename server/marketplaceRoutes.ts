@@ -32,7 +32,7 @@ function requireAuth(req: AuthenticatedRequest, res: Response, next: NextFunctio
 // VENDOR SCORES ROUTES
 // ==========================================
 
-router.get("/vendor-scores", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/vendor-scores", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { vendorId, projectId } = req.query;
@@ -78,7 +78,7 @@ router.get("/vendor-scores", requireAuth, async (req: AuthenticatedRequest, res:
   }
 });
 
-router.get("/vendor-scores/summary/by-vendor", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/vendor-scores/summary/by-vendor", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
 
@@ -107,7 +107,7 @@ router.get("/vendor-scores/summary/by-vendor", requireAuth, async (req: Authenti
   }
 });
 
-router.get("/vendor-scores/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/vendor-scores/:id", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { id } = req.params;
@@ -148,7 +148,7 @@ router.get("/vendor-scores/:id", requireAuth, async (req: AuthenticatedRequest, 
   }
 });
 
-router.post("/vendor-scores", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post("/vendor-scores", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const userId = req.user!.id;
@@ -188,7 +188,7 @@ router.post("/vendor-scores", requireAuth, async (req: AuthenticatedRequest, res
   }
 });
 
-router.patch("/vendor-scores/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.patch("/vendor-scores/:id", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { id } = req.params;
@@ -228,7 +228,7 @@ router.patch("/vendor-scores/:id", requireAuth, async (req: AuthenticatedRequest
   }
 });
 
-router.delete("/vendor-scores/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete("/vendor-scores/:id", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { id } = req.params;
@@ -252,7 +252,7 @@ router.delete("/vendor-scores/:id", requireAuth, async (req: AuthenticatedReques
 // MATERIAL PRICE INDEX ROUTES
 // ==========================================
 
-router.get("/material-prices", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/material-prices", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { category, vendorId, activeOnly } = req.query;
@@ -299,7 +299,7 @@ router.get("/material-prices", requireAuth, async (req: AuthenticatedRequest, re
   }
 });
 
-router.get("/material-prices/categories/list", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/material-prices/categories/list", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
 
@@ -315,7 +315,7 @@ router.get("/material-prices/categories/list", requireAuth, async (req: Authenti
   }
 });
 
-router.get("/material-prices/history/:materialName", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/material-prices/history/:materialName", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { materialName } = req.params;
@@ -342,7 +342,7 @@ router.get("/material-prices/history/:materialName", requireAuth, async (req: Au
   }
 });
 
-router.get("/material-prices/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/material-prices/:id", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { id } = req.params;
@@ -370,7 +370,7 @@ router.get("/material-prices/:id", requireAuth, async (req: AuthenticatedRequest
   }
 });
 
-router.post("/material-prices", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post("/material-prices", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const userId = req.user!.id;
@@ -397,7 +397,7 @@ router.post("/material-prices", requireAuth, async (req: AuthenticatedRequest, r
   }
 });
 
-router.patch("/material-prices/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.patch("/material-prices/:id", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { id } = req.params;
@@ -424,7 +424,7 @@ router.patch("/material-prices/:id", requireAuth, async (req: AuthenticatedReque
   }
 });
 
-router.delete("/material-prices/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete("/material-prices/:id", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { id } = req.params;
@@ -448,7 +448,7 @@ router.delete("/material-prices/:id", requireAuth, async (req: AuthenticatedRequ
 // CREW MARKETPLACE ROUTES
 // ==========================================
 
-router.get("/crew-listings", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/crew-listings", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { tradeType, status, location, ownOnly } = req.query;
@@ -493,7 +493,7 @@ router.get("/crew-listings", requireAuth, async (req: AuthenticatedRequest, res:
   }
 });
 
-router.get("/crew-listings/search/available", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/crew-listings/search/available", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { tradeType, startDate, endDate, minRating, location } = req.query;
 
@@ -536,7 +536,7 @@ router.get("/crew-listings/search/available", requireAuth, async (req: Authentic
   }
 });
 
-router.get("/crew-listings/stats/by-trade", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/crew-listings/stats/by-trade", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const stats = await db
       .select({
@@ -556,7 +556,7 @@ router.get("/crew-listings/stats/by-trade", requireAuth, async (req: Authenticat
   }
 });
 
-router.get("/crew-listings/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/crew-listings/:id", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { id } = req.params;
@@ -590,7 +590,7 @@ router.get("/crew-listings/:id", requireAuth, async (req: AuthenticatedRequest, 
   }
 });
 
-router.post("/crew-listings", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post("/crew-listings", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
 
@@ -615,7 +615,7 @@ router.post("/crew-listings", requireAuth, async (req: AuthenticatedRequest, res
   }
 });
 
-router.patch("/crew-listings/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.patch("/crew-listings/:id", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { id } = req.params;
@@ -642,7 +642,7 @@ router.patch("/crew-listings/:id", requireAuth, async (req: AuthenticatedRequest
   }
 });
 
-router.delete("/crew-listings/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete("/crew-listings/:id", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { id } = req.params;
@@ -1003,7 +1003,7 @@ function requireOrgRole(req: AuthenticatedRequest, res: Response, next: NextFunc
 }
 
 // GET /api/marketplace/crews - List public crew listings with filters
-router.get("/crews", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/crews", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { tradeType, location, status, availableFrom, availableTo } = req.query;
 
@@ -1051,7 +1051,7 @@ router.get("/crews", requireAuth, async (req: AuthenticatedRequest, res: Respons
 });
 
 // GET /api/marketplace/crews/my - List caller's org's listings
-router.get("/crews/my", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/crews/my", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
 
@@ -1075,7 +1075,7 @@ router.get("/crews/my", requireAuth, async (req: AuthenticatedRequest, res: Resp
 });
 
 // GET /api/marketplace/crews/:id - Single listing
-router.get("/crews/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/crews/:id", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { id } = req.params;
@@ -1110,7 +1110,7 @@ router.get("/crews/:id", requireAuth, async (req: AuthenticatedRequest, res: Res
 });
 
 // POST /api/marketplace/crews - Create listing (org admin/manager only)
-router.post("/crews", requireAuth, requireOrgRole, async (req: AuthenticatedRequest, res: Response) => {
+router.post("/crews", requireAuth, requireOrgRole, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
 
@@ -1136,7 +1136,7 @@ router.post("/crews", requireAuth, requireOrgRole, async (req: AuthenticatedRequ
 });
 
 // PATCH /api/marketplace/crews/:id - Update own listing
-router.patch("/crews/:id", requireAuth, requireOrgRole, async (req: AuthenticatedRequest, res: Response) => {
+router.patch("/crews/:id", requireAuth, requireOrgRole, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { id } = req.params;
@@ -1166,7 +1166,7 @@ router.patch("/crews/:id", requireAuth, requireOrgRole, async (req: Authenticate
 });
 
 // DELETE /api/marketplace/crews/:id - Delete own listing
-router.delete("/crews/:id", requireAuth, requireOrgRole, async (req: AuthenticatedRequest, res: Response) => {
+router.delete("/crews/:id", requireAuth, requireOrgRole, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { id } = req.params;
@@ -1191,7 +1191,7 @@ router.delete("/crews/:id", requireAuth, requireOrgRole, async (req: Authenticat
 // ========================================
 
 // GET /api/marketplace/equipment - Browse all active listings
-router.get("/equipment", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/equipment", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { category, location, minRate, maxRate } = req.query;
 
@@ -1230,7 +1230,7 @@ router.get("/equipment", requireAuth, async (req: AuthenticatedRequest, res: Res
 });
 
 // GET /api/marketplace/equipment/my - Own org's listings
-router.get("/equipment/my", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/equipment/my", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
 
@@ -1254,7 +1254,7 @@ router.get("/equipment/my", requireAuth, async (req: AuthenticatedRequest, res: 
 });
 
 // GET /api/marketplace/equipment/:id - Single listing
-router.get("/equipment/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/equipment/:id", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
 
@@ -1282,7 +1282,7 @@ router.get("/equipment/:id", requireAuth, async (req: AuthenticatedRequest, res:
 });
 
 // POST /api/marketplace/equipment - Create listing
-router.post("/equipment", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post("/equipment", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
 
@@ -1304,7 +1304,7 @@ router.post("/equipment", requireAuth, async (req: AuthenticatedRequest, res: Re
 });
 
 // PATCH /api/marketplace/equipment/:id - Update listing (owner only)
-router.patch("/equipment/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.patch("/equipment/:id", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { id } = req.params;
@@ -1332,7 +1332,7 @@ router.patch("/equipment/:id", requireAuth, async (req: AuthenticatedRequest, re
 });
 
 // DELETE /api/marketplace/equipment/:id - Delete listing (owner only)
-router.delete("/equipment/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete("/equipment/:id", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { id } = req.params;
@@ -1353,7 +1353,7 @@ router.delete("/equipment/:id", requireAuth, async (req: AuthenticatedRequest, r
 });
 
 // POST /api/marketplace/equipment/:id/requests - Submit rental inquiry
-router.post("/equipment/:id/requests", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post("/equipment/:id/requests", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const requesterOrgId = req.user!.organizationId;
     const { id: listingId } = req.params;
@@ -1413,7 +1413,7 @@ router.post("/equipment/:id/requests", requireAuth, async (req: AuthenticatedReq
 });
 
 // GET /api/marketplace/equipment/:id/requests - Owner sees requests for their listing
-router.get("/equipment/:id/requests", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/equipment/:id/requests", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { id: listingId } = req.params;
@@ -1448,7 +1448,7 @@ router.get("/equipment/:id/requests", requireAuth, async (req: AuthenticatedRequ
 });
 
 // GET /api/marketplace/equipment/requests/my - Requester sees their own requests
-router.get("/equipment/requests/my", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/equipment/requests/my", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const requesterOrgId = req.user!.organizationId;
 
@@ -1481,7 +1481,7 @@ router.get("/equipment/requests/my", requireAuth, async (req: AuthenticatedReque
 });
 
 // PATCH /api/marketplace/equipment/:id/requests/:reqId - Owner responds to a request
-router.patch("/equipment/:id/requests/:reqId", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.patch("/equipment/:id/requests/:reqId", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { id: listingId, reqId } = req.params;
@@ -1550,7 +1550,7 @@ router.patch("/equipment/:id/requests/:reqId", requireAuth, async (req: Authenti
 // TEAM MEMBERS (Talent Pool cross-link)
 // ==========================================
 
-router.get("/contractors/:orgId/team-members", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/contractors/:orgId/team-members", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const targetOrgId = req.params.orgId;
 

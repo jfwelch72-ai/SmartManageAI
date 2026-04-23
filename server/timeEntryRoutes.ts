@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router } from "express";
+import { Router, type NextFunction } from "express";
 import { db } from "./db";
 import { timeEntries, timeClockShifts, users, projects } from "@shared/schema";
 import { eq, and, desc, gte, lte, sql, inArray } from "drizzle-orm";
@@ -252,7 +252,7 @@ router.post("/api/time-entries/:id/reject", requireAuth, requireRole("ADMIN", "M
   }
 });
 
-const bulkApproveHandler = async (req: AuthRequest, res: any) => {
+const bulkApproveHandler = async (req: AuthRequest, res: any, next: NextFunction) => {
   try {
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
@@ -370,7 +370,7 @@ router.get("/api/time-entries/project-crew", requireAuth, requireRole("ADMIN", "
       .where(eq(timeEntries.projectId, projectId as string));
     res.json(rows.map(r => r.userId));
   } catch (err: any) {
-    next(error);
+    next(err);
   }
 });
 

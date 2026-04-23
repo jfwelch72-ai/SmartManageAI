@@ -89,7 +89,7 @@ function checkPageBreak(doc: PDFKit.PDFDocument, needed: number = 60) {
   return false;
 }
 
-router.get('/marketing-document', (req, res) => {
+router.get('/marketing-document', (req, res, next) => {
   try {
     const mdPath = path.join(process.cwd(), 'smartmanageAI_features_integrations.md');
     if (!fs.existsSync(mdPath)) {

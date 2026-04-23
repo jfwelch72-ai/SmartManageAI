@@ -150,7 +150,7 @@ router.get("/api/safety-training", async (req: AuthRequest, res, next) => {
 
     res.json(result);
   } catch (err: any) {
-    next(error);
+    next(err);
   }
 });
 
@@ -248,7 +248,7 @@ router.delete("/api/safety-training/:id", requireAuth, async (req: AuthRequest, 
       .where(and(eq(safetyTrainings.id, id), eq(safetyTrainings.organizationId, orgId!)));
     res.json({ success: true });
   } catch (err: any) {
-    next(error);
+    next(err);
   }
 });
 
@@ -294,7 +294,7 @@ router.get("/api/safety-training/assignments", requireAuth, async (req: AuthRequ
 
     res.json(assignments);
   } catch (err: any) {
-    next(error);
+    next(err);
   }
 });
 
@@ -398,7 +398,7 @@ router.delete("/api/safety-training/assignments/:id", requireAuth, async (req: A
       .where(and(eq(safetyTrainingAssignments.id, id), eq(safetyTrainingAssignments.organizationId, orgId!)));
     res.json({ success: true });
   } catch (err: any) {
-    next(error);
+    next(err);
   }
 });
 
@@ -581,7 +581,7 @@ router.get("/api/safety-training/export/pdf", requireAuth, exportLimiter, async 
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(html);
   } catch (err: any) {
-    next(error);
+    next(err);
   }
 });
 

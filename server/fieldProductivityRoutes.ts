@@ -39,7 +39,7 @@ function requireInternalRole(req: AuthenticatedRequest, res: Response, next: Nex
 // VOICE LOGS ROUTES
 // ==========================================
 
-router.get("/voice-logs", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/voice-logs", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId, status, limit = "50", offset = "0" } = req.query;
     const organizationId = req.user!.organizationId;
@@ -68,7 +68,7 @@ router.get("/voice-logs", requireAuth, requireInternalRole, async (req: Authenti
   }
 });
 
-router.get("/voice-logs/:id", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/voice-logs/:id", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const organizationId = req.user!.organizationId;
@@ -88,7 +88,7 @@ router.get("/voice-logs/:id", requireAuth, requireInternalRole, async (req: Auth
   }
 });
 
-router.post("/voice-logs", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
+router.post("/voice-logs", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const userId = req.user!.id;
@@ -119,7 +119,7 @@ const voiceLogUpdateSchema = z.object({
   aiSentiment: z.string().optional(),
 });
 
-router.patch("/voice-logs/:id", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
+router.patch("/voice-logs/:id", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const organizationId = req.user!.organizationId;
@@ -172,7 +172,7 @@ router.patch("/voice-logs/:id", requireAuth, requireInternalRole, async (req: Au
   }
 });
 
-router.delete("/voice-logs/:id", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
+router.delete("/voice-logs/:id", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const organizationId = req.user!.organizationId;
@@ -197,7 +197,7 @@ router.delete("/voice-logs/:id", requireAuth, requireInternalRole, async (req: A
 // ISSUE CAPTURES ROUTES
 // ==========================================
 
-router.get("/issue-captures", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/issue-captures", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId, status, severity, limit = "50", offset = "0" } = req.query;
     const organizationId = req.user!.organizationId;
@@ -230,7 +230,7 @@ router.get("/issue-captures", requireAuth, requireInternalRole, async (req: Auth
   }
 });
 
-router.get("/issue-captures/:id", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/issue-captures/:id", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const organizationId = req.user!.organizationId;
@@ -250,7 +250,7 @@ router.get("/issue-captures/:id", requireAuth, requireInternalRole, async (req: 
   }
 });
 
-router.post("/issue-captures", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
+router.post("/issue-captures", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const createdById = req.user!.id;
@@ -290,7 +290,7 @@ const issueCaptureUpdateSchema = z.object({
   aiRecommendations: z.string().optional(),
 });
 
-router.patch("/issue-captures/:id", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
+router.patch("/issue-captures/:id", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const organizationId = req.user!.organizationId;
@@ -345,7 +345,7 @@ router.patch("/issue-captures/:id", requireAuth, requireInternalRole, async (req
   }
 });
 
-router.delete("/issue-captures/:id", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
+router.delete("/issue-captures/:id", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const organizationId = req.user!.organizationId;
@@ -367,7 +367,7 @@ router.delete("/issue-captures/:id", requireAuth, requireInternalRole, async (re
 });
 
 // Issue stats endpoint
-router.get("/issue-captures/stats/summary", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/issue-captures/stats/summary", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const { projectId } = req.query;
@@ -406,7 +406,7 @@ router.get("/issue-captures/stats/summary", requireAuth, requireInternalRole, as
 // OFFLINE SYNC QUEUE ROUTES
 // ==========================================
 
-router.get("/offline-sync", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/offline-sync", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { status, entityType, limit = "100" } = req.query;
     const userId = req.user!.id;
@@ -438,7 +438,7 @@ router.get("/offline-sync", requireAuth, async (req: AuthenticatedRequest, res: 
   }
 });
 
-router.post("/offline-sync", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post("/offline-sync", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const userId = req.user!.id;
@@ -459,7 +459,7 @@ router.post("/offline-sync", requireAuth, async (req: AuthenticatedRequest, res:
   }
 });
 
-router.post("/offline-sync/batch", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.post("/offline-sync/batch", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const organizationId = req.user!.organizationId;
     const userId = req.user!.id;
@@ -493,7 +493,7 @@ const offlineSyncUpdateSchema = z.object({
   errorMessage: z.string().optional(),
 });
 
-router.patch("/offline-sync/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.patch("/offline-sync/:id", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const userId = req.user!.id;
@@ -560,7 +560,7 @@ router.patch("/offline-sync/:id", requireAuth, async (req: AuthenticatedRequest,
   }
 });
 
-router.delete("/offline-sync/:id", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete("/offline-sync/:id", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const userId = req.user!.id;
@@ -581,7 +581,7 @@ router.delete("/offline-sync/:id", requireAuth, async (req: AuthenticatedRequest
   }
 });
 
-router.delete("/offline-sync/clear/synced", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.delete("/offline-sync/clear/synced", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const organizationId = req.user!.organizationId;
@@ -600,7 +600,7 @@ router.delete("/offline-sync/clear/synced", requireAuth, async (req: Authenticat
   }
 });
 
-router.get("/offline-sync/stats", requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+router.get("/offline-sync/stats", requireAuth, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const userId = req.user!.id;
     const organizationId = req.user!.organizationId;
@@ -643,7 +643,7 @@ const voiceLogParseSchema = z.object({
   projectId: z.string().optional(),
 });
 
-router.post("/voice-logs/parse", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
+router.post("/voice-logs/parse", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { transcription, outputType } = voiceLogParseSchema.parse(req.body);
 
@@ -706,7 +706,7 @@ Respond with valid JSON only.`;
 // PHOTO AUTO-TAGGING
 // ==========================================
 
-router.post("/photo-auto-tag", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response) => {
+router.post("/photo-auto-tag", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { mediaId, imageUrl } = req.body;
 

@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type NextFunction } from "express";
 import { eq, and, desc, sql, count, or, ilike, gte, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "./db";
@@ -209,7 +209,7 @@ router.post(
   },
 );
 
-async function handleJobUpdate(req: AuthRequest, res: Parameters<Parameters<typeof router.patch>[1]>[1]): Promise<void> {
+async function handleJobUpdate(req: AuthRequest, res: Parameters<Parameters<typeof router.patch>[1]>[1], next: NextFunction): Promise<void> {
   try {
     const [existing] = await db
       .select()
@@ -256,8 +256,8 @@ async function handleJobUpdate(req: AuthRequest, res: Parameters<Parameters<type
   }
 }
 
-router.patch("/jobs/:id", requireAuth, requireRole(...HIRING_FULL), (req, res) => handleJobUpdate(req as AuthRequest, res));
-router.put("/jobs/:id", requireAuth, requireRole(...HIRING_FULL), (req, res) => handleJobUpdate(req as AuthRequest, res));
+router.patch("/jobs/:id", requireAuth, requireRole(...HIRING_FULL), (req, res, next) => handleJobUpdate(req as AuthRequest, res, next));
+router.put("/jobs/:id", requireAuth, requireRole(...HIRING_FULL), (req, res, next) => handleJobUpdate(req as AuthRequest, res, next));
 
 router.post(
   "/jobs/:id/publish",
@@ -626,7 +626,7 @@ router.post(
   },
 );
 
-async function handleCandidateUpdate(req: AuthRequest, res: Parameters<Parameters<typeof router.patch>[1]>[1]): Promise<void> {
+async function handleCandidateUpdate(req: AuthRequest, res: Parameters<Parameters<typeof router.patch>[1]>[1], next: NextFunction): Promise<void> {
   try {
     const [existing] = await db
       .select()
@@ -666,8 +666,8 @@ async function handleCandidateUpdate(req: AuthRequest, res: Parameters<Parameter
   }
 }
 
-router.patch("/candidates/:id", requireAuth, requireRole(...HIRING_FULL), (req, res) => handleCandidateUpdate(req as AuthRequest, res));
-router.put("/candidates/:id", requireAuth, requireRole(...HIRING_FULL), (req, res) => handleCandidateUpdate(req as AuthRequest, res));
+router.patch("/candidates/:id", requireAuth, requireRole(...HIRING_FULL), (req, res, next) => handleCandidateUpdate(req as AuthRequest, res, next));
+router.put("/candidates/:id", requireAuth, requireRole(...HIRING_FULL), (req, res, next) => handleCandidateUpdate(req as AuthRequest, res, next));
 
 // PUT /candidates/:id/stage — stage transition (spec requires PUT)
 router.put(
@@ -1081,7 +1081,7 @@ router.post(
   },
 );
 
-async function handleInterviewUpdate(req: AuthRequest, res: Parameters<Parameters<typeof router.patch>[1]>[1]): Promise<void> {
+async function handleInterviewUpdate(req: AuthRequest, res: Parameters<Parameters<typeof router.patch>[1]>[1], next: NextFunction): Promise<void> {
   try {
     const [existing] = await db
       .select()
@@ -1125,8 +1125,8 @@ async function handleInterviewUpdate(req: AuthRequest, res: Parameters<Parameter
   }
 }
 
-router.patch("/interviews/:id", requireAuth, requireRole(...HIRING_MANAGER_LEVEL), (req, res) => handleInterviewUpdate(req as AuthRequest, res));
-router.put("/interviews/:id", requireAuth, requireRole(...HIRING_FULL), (req, res) => handleInterviewUpdate(req as AuthRequest, res));
+router.patch("/interviews/:id", requireAuth, requireRole(...HIRING_MANAGER_LEVEL), (req, res, next) => handleInterviewUpdate(req as AuthRequest, res, next));
+router.put("/interviews/:id", requireAuth, requireRole(...HIRING_FULL), (req, res, next) => handleInterviewUpdate(req as AuthRequest, res, next));
 
 router.delete(
   "/interviews/:id",

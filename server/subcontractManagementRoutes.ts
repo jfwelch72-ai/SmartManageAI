@@ -1208,7 +1208,7 @@ router.get("/subcontracts/:contractId/sov/revisions", requireAuth, requireRoleOr
 // Portal Pay App Submission (Subcontractor-facing)
 // =====================
 
-router.post("/portal/subcontracts/:contractId/pay-applications", requirePortalAuth, async (req: PortalRequest, res: Response) => {
+router.post("/portal/subcontracts/:contractId/pay-applications", requirePortalAuth, async (req: PortalRequest, res: Response, next: NextFunction) => {
   try {
     const { contractId } = req.params;
     const portal = req.portalToken!;

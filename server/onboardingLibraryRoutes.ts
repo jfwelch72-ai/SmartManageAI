@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, type Request, type Response } from "express";
+import { Router, type Request, type Response, type NextFunction } from "express";
 import { requireAuth, type AuthRequest } from "./auth";
 import { db } from "./db";
 import { organizations } from "@shared/schema";
@@ -91,7 +91,7 @@ router.get("/api/onboarding-library/calibration/:scopeId", requireAuth, (req: Re
   res.json(rate);
 });
 
-router.get("/api/onboarding-library/for-org", requireAuth, async (req: Request, res: Response) => {
+router.get("/api/onboarding-library/for-org", requireAuth, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authReq = req as AuthRequest;
     const organizationId = authReq.user?.organizationId;

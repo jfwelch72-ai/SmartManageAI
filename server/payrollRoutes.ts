@@ -311,7 +311,7 @@
  *       200: { description: Current week summary }
  */
 import {logError, logInfo, logWarn } from "./utils/logger";
-import { Router, type Response } from "express";
+import { Router, type Response, type NextFunction } from "express";
 import { db } from "./db";
 import { eventBus } from "./events";
 import { exportLimiter } from "./rateLimiter";
@@ -1160,7 +1160,7 @@ router.post("/api/payroll/pay-runs", requireAuth, requireFeaturePermission("canM
 
 const PAYROLL_APPROVE_ROLES = ["ADMIN", "SUPER_ADMIN"] as const;
 
-const payRunStatusHandler = async (req: any, res: Response) => {
+const payRunStatusHandler = async (req: any, res: Response, next: NextFunction) => {
   try {
     const authReq = req as AuthRequest;
     const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);

@@ -667,7 +667,7 @@ router.get("/team/chat/unread", requireAuth, async (req: AuthRequest, res: Respo
 // Routes from portalDocumentRoutes.ts
 // ========================================
 
-router.get("/portal/info", requirePortalAuth, async (req: PortalRequest, res: Response) => {
+router.get("/portal/info", requirePortalAuth, async (req: PortalRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.portalToken!;
 
@@ -695,7 +695,7 @@ router.get("/portal/info", requirePortalAuth, async (req: PortalRequest, res: Re
   }
 });
 
-router.get("/portal/rfis", requirePortalAuth, requirePortalPermission("view"), async (req: PortalRequest, res: Response) => {
+router.get("/portal/rfis", requirePortalAuth, requirePortalPermission("view"), async (req: PortalRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.portalToken!;
 
@@ -731,7 +731,7 @@ router.get("/portal/rfis", requirePortalAuth, requirePortalPermission("view"), a
   }
 });
 
-router.get("/portal/rfis/:id", requirePortalAuth, requirePortalPermission("view"), async (req: PortalRequest, res: Response) => {
+router.get("/portal/rfis/:id", requirePortalAuth, requirePortalPermission("view"), async (req: PortalRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.portalToken!;
     const { id } = req.params;
@@ -776,7 +776,7 @@ router.get("/portal/rfis/:id", requirePortalAuth, requirePortalPermission("view"
   }
 });
 
-router.post("/portal/rfis/:id/comment", requirePortalAuth, requirePortalPermission("comment"), async (req: PortalRequest, res: Response) => {
+router.post("/portal/rfis/:id/comment", requirePortalAuth, requirePortalPermission("comment"), async (req: PortalRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.portalToken!;
     const { id } = req.params;
@@ -822,7 +822,7 @@ router.post("/portal/rfis/:id/comment", requirePortalAuth, requirePortalPermissi
   }
 });
 
-router.get("/portal/submittals", requirePortalAuth, requirePortalPermission("view"), async (req: PortalRequest, res: Response) => {
+router.get("/portal/submittals", requirePortalAuth, requirePortalPermission("view"), async (req: PortalRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.portalToken!;
 
@@ -858,7 +858,7 @@ router.get("/portal/submittals", requirePortalAuth, requirePortalPermission("vie
   }
 });
 
-router.get("/portal/submittals/:id", requirePortalAuth, requirePortalPermission("view"), async (req: PortalRequest, res: Response) => {
+router.get("/portal/submittals/:id", requirePortalAuth, requirePortalPermission("view"), async (req: PortalRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.portalToken!;
     const { id } = req.params;
@@ -903,7 +903,7 @@ router.get("/portal/submittals/:id", requirePortalAuth, requirePortalPermission(
   }
 });
 
-router.post("/portal/submittals/:id/comment", requirePortalAuth, requirePortalPermission("comment"), async (req: PortalRequest, res: Response) => {
+router.post("/portal/submittals/:id/comment", requirePortalAuth, requirePortalPermission("comment"), async (req: PortalRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.portalToken!;
     const { id } = req.params;
@@ -949,7 +949,7 @@ router.post("/portal/submittals/:id/comment", requirePortalAuth, requirePortalPe
   }
 });
 
-router.post("/portal/submittals/:id/upload", requirePortalAuth, requirePortalPermission("upload"), async (req: PortalRequest, res: Response) => {
+router.post("/portal/submittals/:id/upload", requirePortalAuth, requirePortalPermission("upload"), async (req: PortalRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.portalToken!;
     const { id } = req.params;
@@ -1012,7 +1012,7 @@ router.post("/portal/submittals/:id/upload", requirePortalAuth, requirePortalPer
   }
 });
 
-router.get("/portal/transmittals", requirePortalAuth, requirePortalPermission("view"), async (req: PortalRequest, res: Response) => {
+router.get("/portal/transmittals", requirePortalAuth, requirePortalPermission("view"), async (req: PortalRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.portalToken!;
 
@@ -1054,7 +1054,7 @@ router.get("/portal/transmittals", requirePortalAuth, requirePortalPermission("v
   }
 });
 
-router.get("/portal/transmittals/:id", requirePortalAuth, requirePortalPermission("view"), async (req: PortalRequest, res: Response) => {
+router.get("/portal/transmittals/:id", requirePortalAuth, requirePortalPermission("view"), async (req: PortalRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.portalToken!;
     const { id } = req.params;
@@ -1111,7 +1111,7 @@ router.get("/portal/transmittals/:id", requirePortalAuth, requirePortalPermissio
   }
 });
 
-router.post("/portal/transmittals/:id/acknowledge", requirePortalAuth, requirePortalPermission("acknowledge"), async (req: PortalRequest, res: Response) => {
+router.post("/portal/transmittals/:id/acknowledge", requirePortalAuth, requirePortalPermission("acknowledge"), async (req: PortalRequest, res: Response, next: NextFunction) => {
   try {
     const token = req.portalToken!;
     const { id } = req.params;

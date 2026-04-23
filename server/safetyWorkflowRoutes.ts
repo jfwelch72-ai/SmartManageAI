@@ -63,7 +63,7 @@ router.get("/api/toolbox-talks/topics", requireAuth, async (req: AuthRequest, re
       .orderBy(desc(toolboxTalkTopics.createdAt));
     res.json(topics);
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(err);
   }
 });
 
@@ -112,7 +112,7 @@ router.delete("/api/toolbox-talks/topics/:id", requireAuth, async (req: AuthRequ
       .where(and(eq(toolboxTalkTopics.id, id), eq(toolboxTalkTopics.organizationId, orgId!)));
     res.json({ success: true });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(err);
   }
 });
 
@@ -148,7 +148,7 @@ router.get("/api/toolbox-talks/scheduled", requireAuth, async (req: AuthRequest,
       .orderBy(desc(toolboxTalkScheduled.scheduledDate));
     res.json(talks);
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(err);
   }
 });
 
@@ -215,7 +215,7 @@ router.delete("/api/toolbox-talks/scheduled/:id", requireAuth, async (req: AuthR
       .where(and(eq(toolboxTalkScheduled.id, id), eq(toolboxTalkScheduled.organizationId, orgId!)));
     res.json({ success: true });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(err);
   }
 });
 
@@ -244,7 +244,7 @@ router.get("/api/toolbox-talks/scheduled/:talkId/attendance", requireAuth, async
       .orderBy(toolboxTalkAttendance.signedAt);
     res.json(records);
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(err);
   }
 });
 
@@ -317,7 +317,7 @@ router.get("/api/toolbox-talks/summary", requireAuth, async (req: AuthRequest, r
       overdue: overdueCount?.count ?? 0,
     });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(err);
   }
 });
 
@@ -333,7 +333,7 @@ router.get("/api/safety-checklists/templates", requireAuth, async (req: AuthRequ
       .orderBy(desc(safetyChecklistTemplates.createdAt));
     res.json(templates);
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(err);
   }
 });
 
@@ -382,7 +382,7 @@ router.delete("/api/safety-checklists/templates/:id", requireAuth, async (req: A
       .where(and(eq(safetyChecklistTemplates.id, id), eq(safetyChecklistTemplates.organizationId, orgId!)));
     res.json({ success: true });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(err);
   }
 });
 
@@ -418,7 +418,7 @@ router.get("/api/safety-checklists/instances", requireAuth, async (req: AuthRequ
       .orderBy(desc(safetyChecklistInstances.createdAt));
     res.json(instances);
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(err);
   }
 });
 
@@ -503,7 +503,7 @@ router.get("/api/safety-checklists/summary", requireAuth, async (req: AuthReques
       inProgress: totalInProgress?.count ?? 0,
     });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(err);
   }
 });
 
@@ -531,7 +531,7 @@ router.get("/api/osha-incidents", requireAuth, async (req: AuthRequest, res: Res
       .orderBy(desc(oshaIncidents.dateOfInjury));
     res.json(incidents);
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(err);
   }
 });
 
@@ -608,7 +608,7 @@ router.delete("/api/osha-incidents/:id", requireAuth, async (req: AuthRequest, r
       .where(and(eq(oshaIncidents.id, id), eq(oshaIncidents.organizationId, orgId!)));
     res.json({ success: true });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(err);
   }
 });
 
@@ -652,7 +652,7 @@ router.get("/api/osha-incidents/300-log", requireAuth, async (req: AuthRequest, 
       },
     });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(err);
   }
 });
 
@@ -798,7 +798,7 @@ router.get("/api/osha-incidents/300a-pdf", requireAuth, exportLimiter, async (re
     doc.end();
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown error";
-    next(error);
+    next(err);
   }
 });
 
@@ -833,7 +833,7 @@ router.get("/api/osha-incidents/summary", requireAuth, async (req: AuthRequest, 
       recordableIncidents: recordableCount?.count ?? 0,
     });
   } catch (err: unknown) {
-    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(error);
+    const errMsg = err instanceof Error ? err.message : "Unknown error"; next(err);
   }
 });
 
