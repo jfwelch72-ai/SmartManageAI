@@ -123,6 +123,7 @@
     "jsdom": "^29.0.2",
     "jsonwebtoken": "^9.0.2",
     "jspdf": "^4.2.1",
+    "jszip": "^3.10.1",
     "konva": "^9.3.22",
     "laz-perf": "^0.0.7",
     "leaflet": "^1.9.4",

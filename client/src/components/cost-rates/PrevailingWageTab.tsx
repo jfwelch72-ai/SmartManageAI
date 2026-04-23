@@ -14,6 +14,8 @@ import { Edit, Trash2, Plus, Building2, AlertCircle, Upload, FileSpreadsheet, Ch
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import * as XLSX from "xlsx";
+import JSZip from "jszip";
 import { format, parseISO } from "date-fns";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -140,35 +142,39 @@ export function PrevailingWageTab({
   const [newClassIsActive, setNewClassIsActive] = useState(true);
   const [newClassSortOrder, setNewClassSortOrder] = useState("");
 
+  const TEMPLATE_HEADERS = [
+    "Classification",
+    "Wage Rate",
+    "Health",
+    "Pension",
+    "Vacation",
+    "Training",
+    "Fringe",
+    "OT Multiplier",
+    "Effective Date",
+    "Expiration Date",
+    "Wage Decision",
+    "Notes",
+  ];
+
+  const buildTemplateExampleRow = () => [
+    "Carpenter",
+    "42.50",
+    "8.25",
+    "6.10",
+    "3.00",
+    "0.55",
+    "17.90",
+    "1.5",
+    new Date().toISOString().split("T")[0],
+    "",
+    "CA20230001",
+    "Example row - replace with your data",
+  ];
+
   const downloadImportTemplate = () => {
-    const headers = [
-      "Classification",
-      "Wage Rate",
-      "Health",
-      "Pension",
-      "Vacation",
-      "Training",
-      "Fringe",
-      "OT Multiplier",
-      "Effective Date",
-      "Expiration Date",
-      "Wage Decision",
-      "Notes",
-    ];
-    const example = [
-      "Carpenter",
-      "42.50",
-      "8.25",
-      "6.10",
-      "3.00",
-      "0.55",
-      "17.90",
-      "1.5",
-      new Date().toISOString().split("T")[0],
-      "",
-      "CA20230001",
-      "Example row - replace with your data",
-    ];
+    const headers = TEMPLATE_HEADERS;
+    const example = buildTemplateExampleRow();
     const escape = (v: string) => {
       const s = String(v ?? "");
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -179,6 +185,100 @@ export function PrevailingWageTab({
     const a = document.createElement("a");
     a.href = url;
     a.download = "prevailing-wage-import-template.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadImportTemplateXlsx = async () => {
+    try {
+      await buildAndSaveImportTemplateXlsx();
+    } catch (err) {
+      toast({
+        title: "Excel template failed",
+        description: err instanceof Error ? err.message : "Could not generate the Excel template",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const buildAndSaveImportTemplateXlsx = async () => {
+    const headers = TEMPLATE_HEADERS;
+    const example = buildTemplateExampleRow();
+
+    const aoa: (string | number)[][] = [headers, example];
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+    ws["!cols"] = [
+      { wch: 22 },
+      { wch: 12 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 12 },
+      { wch: 14 },
+      { wch: 14 },
+      { wch: 16 },
+      { wch: 16 },
+      { wch: 40 },
+    ];
+
+    const dateColIndexes = [8, 9];
+    for (let r = 0; r < aoa.length; r++) {
+      for (let c = 0; c < headers.length; c++) {
+        const addr = XLSX.utils.encode_cell({ r, c });
+        const cell = ws[addr];
+        if (!cell) continue;
+        if (r === 0) {
+          cell.t = "s";
+          continue;
+        }
+        if (dateColIndexes.includes(c)) {
+          cell.t = "s";
+          cell.z = "@";
+          cell.v = String(cell.v ?? "");
+        } else {
+          cell.t = "s";
+          cell.v = String(cell.v ?? "");
+        }
+      }
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Prevailing Wage Rates");
+
+    const xlsxArrayBuffer = XLSX.write(wb, { type: "array", bookType: "xlsx" }) as ArrayBuffer;
+
+    const zip = await JSZip.loadAsync(xlsxArrayBuffer);
+    const sheetPath = "xl/worksheets/sheet1.xml";
+    const sheetFile = zip.file(sheetPath);
+    if (sheetFile) {
+      const sheetXml = await sheetFile.async("string");
+      const sheetViewsXml =
+        "<sheetViews>" +
+        '<sheetView workbookViewId="0">' +
+        '<pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/>' +
+        '<selection pane="bottomLeft" activeCell="A2" sqref="A2"/>' +
+        "</sheetView>" +
+        "</sheetViews>";
+      const patchedXml = sheetXml.replace(
+        /<sheetViews>[\s\S]*?<\/sheetViews>/,
+        sheetViewsXml,
+      );
+      zip.file(sheetPath, patchedXml);
+    }
+
+    const finalBlob = await zip.generateAsync({
+      type: "blob",
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      compression: "DEFLATE",
+    });
+    const url = URL.createObjectURL(finalBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "prevailing-wage-import-template.xlsx";
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -665,7 +765,7 @@ export function PrevailingWageTab({
               {" "}<code>Fringe</code>, <code>OT Multiplier</code>, <code>Effective Date</code>, <code>Expiration Date</code>,
               {" "}<code>Wage Decision</code>, <code>Notes</code>. Matching classifications will be updated; new ones created.
             </DialogDescription>
-            <div className="pt-1">
+            <div className="pt-1 flex flex-wrap items-center gap-x-4 gap-y-1">
               <Button
                 type="button"
                 variant="link"
@@ -675,7 +775,18 @@ export function PrevailingWageTab({
                 data-testid="button-download-import-template"
               >
                 <Download className="w-4 h-4 mr-1" />
-                Download template (CSV)
+                Download CSV template
+              </Button>
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-sm"
+                onClick={downloadImportTemplateXlsx}
+                data-testid="button-download-import-template-xlsx"
+              >
+                <Download className="w-4 h-4 mr-1" />
+                Download Excel template
               </Button>
             </div>
           </DialogHeader>
