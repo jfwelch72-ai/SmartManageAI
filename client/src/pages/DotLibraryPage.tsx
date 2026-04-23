@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Building2, BookOpen, Hash, Search, Wand2, Tag, Trash2, Layers, FolderTree, Pencil } from "lucide-react";
+import { Loader2, Building2, BookOpen, Hash, Search, Wand2, Tag, Trash2, Layers, FolderTree, Pencil, TrendingUp, Sparkles } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -166,6 +166,7 @@ export default function DotLibraryPage() {
         <TabsList>
           <TabsTrigger value="agencies" data-testid="tab-agencies">Agencies</TabsTrigger>
           <TabsTrigger value="aliases" data-testid="tab-aliases">Saved aliases</TabsTrigger>
+          <TabsTrigger value="top-matches" data-testid="tab-top-matches">Top auto-matches</TabsTrigger>
           <TabsTrigger value="how" data-testid="tab-how-it-works">How it works</TabsTrigger>
         </TabsList>
 
@@ -200,6 +201,10 @@ export default function DotLibraryPage() {
 
         <TabsContent value="aliases" className="space-y-3">
           <SavedAliasesSection canManage={!!canManageLib} />
+        </TabsContent>
+
+        <TabsContent value="top-matches" className="space-y-3">
+          <TopAutoMatchesSection canManage={!!canManageLib} />
         </TabsContent>
 
         <TabsContent value="how">
@@ -521,6 +526,145 @@ function SavedAliasesSection({ canManage }: { canManage: boolean }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+interface TopMatchRow {
+  payItem: { id: string; itemNumber: string; description: string; unit: string; specSection: string | null; category: string | null };
+  agency: { id: string; code: string; name: string; stateCode: string | null } | null;
+  specBook: { id: string; edition: string; title: string } | null;
+  acceptCount: number;
+  rejectCount: number;
+  lastAcceptedAt: string | null;
+  sampleDescriptions: string[];
+  hasAlias: boolean;
+}
+
+interface TopMatchResponse {
+  items: TopMatchRow[];
+}
+
+function TopAutoMatchesSection({ canManage }: { canManage: boolean }) {
+  const { toast } = useToast();
+  const { data, isLoading } = useQuery<TopMatchResponse>({
+    queryKey: ["/api/dot/pay-items/match-history/top", { limit: 25 }],
+    queryFn: async () => {
+      const r = await fetch("/api/dot/pay-items/match-history/top?limit=25", { credentials: "include" });
+      if (!r.ok) throw new Error("Failed to load top auto-matches");
+      return r.json();
+    },
+  });
+  const items = data?.items ?? [];
+
+  const promoteMut = useMutation<unknown, Error, { row: TopMatchRow; alias: string }>({
+    mutationFn: async ({ row, alias }) => {
+      return apiRequest("POST", "/api/dot/pay-item-overrides", {
+        payItemId: row.payItem.id,
+        internalAlias: alias,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dot/pay-item-overrides"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dot/pay-items/match"] });
+      toast({ title: "Alias saved", description: "Future imports of that description will jump straight to this pay item." });
+    },
+    onError: (err) => toast({ title: "Couldn't save alias", description: err.message, variant: "destructive" }),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12 text-muted-foreground">
+        <Loader2 className="animate-spin h-5 w-5 mr-2" />Loading top auto-matches…
+      </div>
+    );
+  }
+
+  if (items.length === 0) {
+    return (
+      <EmptyState
+        icon={TrendingUp}
+        title="No auto-match history yet"
+        description="Once your team accepts (or rejects) DOT pay-item suggestions during bid-tab import, the most-used items will appear here so you can promote them to formal aliases."
+        testId="empty-state-top-matches"
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-muted-foreground">
+        Most-accepted DOT pay items from your bid-tab imports. Promote a frequently-used description to an alias so future imports skip the suggestion step entirely.
+      </p>
+      <div className="border rounded-md divide-y">
+        {items.map((row) => {
+          const sample = row.sampleDescriptions[0] ?? "";
+          const canPromote = canManage && !row.hasAlias && sample.trim().length > 0;
+          return (
+            <div
+              key={row.payItem.id}
+              className="flex items-start justify-between gap-3 p-3"
+              data-testid={`row-top-match-${row.payItem.id}`}
+            >
+              <div className="flex-1 min-w-0 space-y-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <Badge variant="outline" className="font-mono text-[11px]" data-testid={`badge-top-match-item-${row.payItem.id}`}>
+                    {row.payItem.itemNumber}
+                  </Badge>
+                  <span className="text-sm font-medium truncate">{row.payItem.description}</span>
+                  <Badge variant="secondary" className="text-[10px]">{row.payItem.unit}</Badge>
+                  {row.agency && (
+                    <span className="text-[11px] text-muted-foreground">
+                      {row.agency.code}{row.agency.stateCode ? ` · ${row.agency.stateCode}` : ""}
+                    </span>
+                  )}
+                  {row.hasAlias && (
+                    <Badge variant="secondary" className="gap-1 text-[10px]">
+                      <Tag className="h-3 w-3" /> aliased
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                  <span data-testid={`text-top-match-accepts-${row.payItem.id}`}>
+                    <span className="font-semibold text-foreground">{row.acceptCount}</span> accepted
+                  </span>
+                  {row.rejectCount > 0 && (
+                    <span data-testid={`text-top-match-rejects-${row.payItem.id}`}>
+                      {row.rejectCount} rejected
+                    </span>
+                  )}
+                  {row.lastAcceptedAt && (
+                    <span>last {new Date(row.lastAcceptedAt).toLocaleDateString()}</span>
+                  )}
+                </div>
+                {row.sampleDescriptions.length > 0 && (
+                  <div className="text-[11px] text-muted-foreground">
+                    <span className="text-muted-foreground/80">matched from: </span>
+                    {row.sampleDescriptions.map((d, i) => (
+                      <span key={i} className="italic">
+                        {i > 0 ? "; " : ""}&ldquo;{d}&rdquo;
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {canPromote && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={promoteMut.isPending}
+                  onClick={() => promoteMut.mutate({ row, alias: sample })}
+                  data-testid={`button-promote-alias-${row.payItem.id}`}
+                  title={`Save "${sample}" as an alias for ${row.payItem.itemNumber}`}
+                >
+                  <Sparkles className="h-3.5 w-3.5 mr-1" />
+                  Promote to alias
+                </Button>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

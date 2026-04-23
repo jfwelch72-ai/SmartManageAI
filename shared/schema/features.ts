@@ -9667,6 +9667,33 @@ export const insertDotPayItemOverrideSchema = createInsertSchema(dotPayItemOverr
 export type InsertDotPayItemOverride = z.infer<typeof insertDotPayItemOverrideSchema>;
 export type DotPayItemOverride = typeof dotPayItemOverrides.$inferSelect;
 
+// Task #1164 — record accept/reject decisions on auto-suggested DOT pay items
+// during bid-tab import so the matcher can boost frequently-used items per
+// org (and ideally per agency). Each row captures one decision the user made
+// for one row of one bid tab. We store the *normalized* description (lower,
+// collapsed whitespace, trimmed) so we can group "ASPHALT CONCRETE TYPE B"
+// and "asphalt concrete type b" together. agency_id is captured for
+// per-agency boosting; it can be null when the match used spec-book/agency
+// resolution that didn't surface the agency at decision time.
+export const dotPayItemMatchHistory = pgTable("dot_pay_item_match_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  agencyId: varchar("agency_id").references(() => dotAgencies.id, { onDelete: "set null" }),
+  payItemId: varchar("pay_item_id").notNull().references(() => dotPayItems.id, { onDelete: "cascade" }),
+  descriptionNormalized: text("description_normalized").notNull(),
+  descriptionRaw: text("description_raw").notNull(),
+  accepted: boolean("accepted").notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgDescIdx: index("dot_pay_item_match_history_org_desc_idx").on(table.organizationId, table.descriptionNormalized),
+  orgItemIdx: index("dot_pay_item_match_history_org_item_idx").on(table.organizationId, table.payItemId),
+  orgAgencyIdx: index("dot_pay_item_match_history_org_agency_idx").on(table.organizationId, table.agencyId),
+}));
+export const insertDotPayItemMatchHistorySchema = createInsertSchema(dotPayItemMatchHistory).omit({ id: true, createdAt: true });
+export type InsertDotPayItemMatchHistory = z.infer<typeof insertDotPayItemMatchHistorySchema>;
+export type DotPayItemMatchHistory = typeof dotPayItemMatchHistory.$inferSelect;
+
 // Which DOTs an organization regularly bids in (drives onboarding & default spec book picker)
 export const organizationDotPreferences = pgTable("organization_dot_preferences", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

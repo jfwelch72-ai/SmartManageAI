@@ -60,9 +60,11 @@ interface MatchSuggestion {
   agency: { id: string; code: string; name: string };
   specBook: { id: string; edition: string };
   score: number;
-  matchReason: "alias" | "fuzzy";
+  matchReason: "alias" | "history" | "fuzzy";
   aliasText: string | null;
   matchedTokens: string[];
+  historyAccepts?: number;
+  historyRejects?: number;
 }
 
 interface MatchResponse {
@@ -324,6 +326,26 @@ export function BidTabImportDialog({
         `/api/estimates/${estimateId}/line-items/bulk`,
         { lineItems: payloads },
       );
+      // Task #1164 — record accept/reject decisions for any row that received a
+      // top suggestion, so future imports can boost frequently-used items. We
+      // only record decisions for rows where the matcher actually had something
+      // to suggest (skipped/no-match rows have nothing to learn from).
+      const decisions = rows
+        .filter((r) => !r.skipped && r.topMatch)
+        .map((r) => ({
+          description: r.description,
+          payItemId: r.topMatch!.payItem.id,
+          agencyId: r.topMatch!.agency.id,
+          accepted: r.accepted,
+        }));
+      if (decisions.length > 0) {
+        try {
+          await apiRequest("POST", "/api/dot/pay-items/match/feedback", { decisions });
+          queryClient.invalidateQueries({ queryKey: ["/api/dot/pay-items/match-history/top"] });
+        } catch {
+          // Recording feedback is best-effort; never block the import on it.
+        }
+      }
       if (bidId) {
         await queryClient.invalidateQueries({ queryKey: bidEstimateKey(bidId) });
       } else {
@@ -625,6 +647,21 @@ export function BidTabImportDialog({
                             >
                               {(r.topMatch.score * 100).toFixed(0)}%
                             </span>
+                            {r.topMatch.matchReason === "alias" && (
+                              <Badge variant="secondary" className="text-[10px]" data-testid={`badge-match-reason-${r.rowIndex}`}>
+                                alias
+                              </Badge>
+                            )}
+                            {r.topMatch.matchReason === "history" && (
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-200"
+                                title={`Your team accepted this item ${r.topMatch.historyAccepts ?? 0} time(s) for the same description`}
+                                data-testid={`badge-match-reason-${r.rowIndex}`}
+                              >
+                                learned
+                              </Badge>
+                            )}
                           </div>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>

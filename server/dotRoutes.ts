@@ -5,6 +5,7 @@ import {
   dotSpecBooks,
   dotPayItems,
   dotPayItemOverrides,
+  dotPayItemMatchHistory,
   organizationDotPreferences,
   projectDbeGoals,
   crmOrganisationCertifications,
@@ -469,6 +470,13 @@ const MATCH_STOPWORDS = new Set([
   "the","and","for","with","of","a","an","to","in","on","per","or","by","from","at","as","is","be","this","that","each","one","all","any","not","no",
 ]);
 
+// Task #1164 — canonical form for grouping identical bid-tab descriptions
+// across imports (case + whitespace insensitive). Capped so a giant copy/paste
+// doesn't blow out the index.
+function normalizeDescription(s: string): string {
+  return s.toLowerCase().replace(/\s+/g, " ").trim().slice(0, 1000);
+}
+
 function tokenizeForMatch(s: string): string[] {
   return s
     .toLowerCase()
@@ -497,6 +505,55 @@ router.post(
         .from(organizationDotPreferences)
         .where(eq(organizationDotPreferences.organizationId, orgId));
       if (prefs.length > 0) agencyIds = prefs.map((p) => p.agencyId);
+    }
+
+    // Task #1164 — pull this org's accept/reject history for this exact
+    // (normalized) description so we can boost items the team has chosen
+    // before. Also pull a small org-wide affinity map so frequently-accepted
+    // items get a gentle boost across similar-but-not-identical descriptions.
+    const descNormalized = normalizeDescription(data.description);
+    const sameDescAccepts = new Map<string, number>();
+    const sameDescRejects = new Map<string, number>();
+    const sameDescAgencyAccepts = new Map<string, Map<string, number>>();
+    const orgItemAccepts = new Map<string, number>();
+    if (orgId && descNormalized.length > 0) {
+      const sameDescRows = await db
+        .select({
+          payItemId: dotPayItemMatchHistory.payItemId,
+          agencyId: dotPayItemMatchHistory.agencyId,
+          accepted: dotPayItemMatchHistory.accepted,
+        })
+        .from(dotPayItemMatchHistory)
+        .where(and(
+          eq(dotPayItemMatchHistory.organizationId, orgId),
+          eq(dotPayItemMatchHistory.descriptionNormalized, descNormalized),
+        ));
+      for (const r of sameDescRows) {
+        if (r.accepted) {
+          sameDescAccepts.set(r.payItemId, (sameDescAccepts.get(r.payItemId) ?? 0) + 1);
+          if (r.agencyId) {
+            const inner = sameDescAgencyAccepts.get(r.payItemId) ?? new Map<string, number>();
+            inner.set(r.agencyId, (inner.get(r.agencyId) ?? 0) + 1);
+            sameDescAgencyAccepts.set(r.payItemId, inner);
+          }
+        } else {
+          sameDescRejects.set(r.payItemId, (sameDescRejects.get(r.payItemId) ?? 0) + 1);
+        }
+      }
+    }
+    if (orgId) {
+      const affinityRows = await db
+        .select({
+          payItemId: dotPayItemMatchHistory.payItemId,
+          accepts: sql<number>`count(*)::int`.as("accepts"),
+        })
+        .from(dotPayItemMatchHistory)
+        .where(and(
+          eq(dotPayItemMatchHistory.organizationId, orgId),
+          eq(dotPayItemMatchHistory.accepted, true),
+        ))
+        .groupBy(dotPayItemMatchHistory.payItemId);
+      for (const r of affinityRows) orgItemAccepts.set(r.payItemId, Number(r.accepts));
     }
 
     // Org alias overrides — strongest signal
@@ -547,6 +604,19 @@ router.post(
       }
     }
 
+    // Task #1164 — also fold in items the org has previously *accepted* for
+    // this exact description, so a learned match always shows up even when
+    // the fuzzy token filter would have dropped it.
+    const learnedIds = [...sameDescAccepts.keys()];
+    if (learnedIds.length > 0) {
+      const have = new Set(candidates.map((c) => c.id));
+      const missing = learnedIds.filter((id) => !have.has(id));
+      if (missing.length > 0) {
+        const more = await db.select().from(dotPayItems).where(inArray(dotPayItems.id, missing));
+        candidates.push(...more);
+      }
+    }
+
     const unitLower = (data.unit ?? "").toLowerCase().trim();
     const categoryLower = (data.category ?? "").toLowerCase().trim();
     const descLower = data.description.toLowerCase();
@@ -564,12 +634,44 @@ router.post(
         if (p.itemNumber && descLower.includes(p.itemNumber.toLowerCase())) score += 0.25;
         const aliasText = aliasMatchByItem.get(p.id);
         if (aliasText) score += 1.0;
+
+        // Task #1164 — history boosts. Same-description accept/rejects are
+        // the strongest signal; per-agency same-description accepts add a
+        // smaller bump; org-wide affinity adds a tiny bump that survives
+        // description variations.
+        const sda = sameDescAccepts.get(p.id) ?? 0;
+        const sdr = sameDescRejects.get(p.id) ?? 0;
+        let learned = false;
+        if (sda > 0 || sdr > 0) {
+          const net = sda - sdr;
+          // tanh-shaped boost in [-0.6, +0.8] so a single accept is meaningful
+          // but additional accepts saturate (avoid drowning out genuinely
+          // better fuzzy candidates forever).
+          const sign = Math.sign(net);
+          const mag = Math.tanh(Math.abs(net) / 2);
+          score += sign * (sign > 0 ? 0.8 : 0.6) * mag;
+          if (sign > 0) learned = true;
+        }
+        const agencyAccepts = sameDescAgencyAccepts.get(p.id);
+        if (agencyAccepts && agencyAccepts.get(p.agencyId)) {
+          score += 0.15;
+        }
+        const affinity = orgItemAccepts.get(p.id) ?? 0;
+        if (affinity > 0) score += Math.min(0.1, affinity * 0.02);
+
+        const matchReason: "alias" | "history" | "fuzzy" = aliasText
+          ? "alias"
+          : learned
+            ? "history"
+            : "fuzzy";
         return {
           payItem: p,
           score,
-          matchReason: (aliasText ? "alias" : "fuzzy") as "alias" | "fuzzy",
+          matchReason,
           aliasText: aliasText ?? null,
           matchedTokens: [...qTokens].filter((t) => pTokens.has(t)),
+          historyAccepts: sda,
+          historyRejects: sdr,
         };
       })
       .filter((r) => r.score > 0)
@@ -613,11 +715,189 @@ router.post(
           matchReason: s.matchReason,
           aliasText: s.aliasText,
           matchedTokens: s.matchedTokens,
+          historyAccepts: s.historyAccepts,
+          historyRejects: s.historyRejects,
         };
       })
       .filter((m): m is NonNullable<typeof m> => m !== null);
 
     return res.json({ matches });
+  },
+);
+
+// =========================
+// Task #1164 — match-history feedback + top auto-matched items
+// =========================
+const matchFeedbackSchema = z.object({
+  decisions: z
+    .array(
+      z.object({
+        description: z.string().min(1).max(2000),
+        payItemId: z.string().min(1),
+        agencyId: z.string().min(1).optional().nullable(),
+        accepted: z.boolean(),
+      }),
+    )
+    .min(1)
+    .max(500),
+});
+
+router.post(
+  "/api/dot/pay-items/match/feedback",
+  requireAuth,
+  requireAnyFeaturePermission("canViewDotLibrary", "canManageDotLibrary"),
+  async (req: AuthRequest, res: Response) => {
+    const data = validateBody(matchFeedbackSchema, req.body, res);
+    if (!data) return;
+    const orgId = req.user?.organizationId ?? null;
+    if (!orgId) return res.status(400).json({ error: "An organization context is required to record match feedback" });
+
+    // Resolve agency for any decision that didn't pass one — keeps the
+    // per-agency boost working even when callers (e.g. the bulk import dialog)
+    // only know the pay-item ID.
+    const missingAgency = data.decisions.filter((d) => !d.agencyId).map((d) => d.payItemId);
+    const agencyByItem = new Map<string, string>();
+    if (missingAgency.length > 0) {
+      const rows = await db
+        .select({ id: dotPayItems.id, agencyId: dotPayItems.agencyId })
+        .from(dotPayItems)
+        .where(inArray(dotPayItems.id, [...new Set(missingAgency)]));
+      for (const r of rows) agencyByItem.set(r.id, r.agencyId);
+    }
+
+    const userId = req.user?.id ?? null;
+    const valuesToInsert = data.decisions.map((d) => ({
+      organizationId: orgId,
+      agencyId: d.agencyId ?? agencyByItem.get(d.payItemId) ?? null,
+      payItemId: d.payItemId,
+      descriptionNormalized: normalizeDescription(d.description),
+      descriptionRaw: d.description.slice(0, 2000),
+      accepted: d.accepted,
+      userId,
+    }));
+
+    if (valuesToInsert.length === 0) return res.json({ recorded: 0 });
+
+    const inserted = await db
+      .insert(dotPayItemMatchHistory)
+      .values(valuesToInsert)
+      .returning({ id: dotPayItemMatchHistory.id });
+    await dotAudit(req, "CREATE", "dot_pay_item_match_history_batch", orgId, null, {
+      count: inserted.length,
+      accepted: valuesToInsert.filter((v) => v.accepted).length,
+      rejected: valuesToInsert.filter((v) => !v.accepted).length,
+    });
+    return res.json({ recorded: inserted.length });
+  },
+);
+
+// Lightweight admin/report view: top auto-matched pay items (by accept count)
+// for the caller's org. Powers the "Top auto-matches" tab on the DOT Library
+// page so admins can promote noisy descriptions into formal aliases.
+router.get(
+  "/api/dot/pay-items/match-history/top",
+  requireAuth,
+  requireAnyFeaturePermission("canViewDotLibrary", "canManageDotLibrary"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const limit = Math.max(1, Math.min(100, parseInt(String(req.query.limit ?? "20"), 10) || 20));
+
+    let targetOrgId: string | null = ctx.orgId;
+    if (ctx.isSuperAdmin) {
+      targetOrgId = superAdminTargetOrgId(req);
+      if (!targetOrgId) return res.json({ items: [] });
+    }
+    if (!targetOrgId) return res.json({ items: [] });
+
+    const rows = await db
+      .select({
+        payItemId: dotPayItemMatchHistory.payItemId,
+        accepts: sql<number>`sum(case when ${dotPayItemMatchHistory.accepted} then 1 else 0 end)::int`.as("accepts"),
+        rejects: sql<number>`sum(case when ${dotPayItemMatchHistory.accepted} then 0 else 1 end)::int`.as("rejects"),
+        lastAcceptedAt: sql<Date | null>`max(case when ${dotPayItemMatchHistory.accepted} then ${dotPayItemMatchHistory.createdAt} end)`.as("last_accepted_at"),
+      })
+      .from(dotPayItemMatchHistory)
+      .where(eq(dotPayItemMatchHistory.organizationId, targetOrgId))
+      .groupBy(dotPayItemMatchHistory.payItemId)
+      .orderBy(sql`accepts desc, rejects asc`)
+      .limit(limit);
+
+    if (rows.length === 0) return res.json({ items: [] });
+
+    const itemIds = rows.map((r) => r.payItemId);
+    const [items, sampleRows, overrides] = await Promise.all([
+      db.select().from(dotPayItems).where(inArray(dotPayItems.id, itemIds)),
+      db
+        .select({
+          payItemId: dotPayItemMatchHistory.payItemId,
+          descriptionRaw: dotPayItemMatchHistory.descriptionRaw,
+          createdAt: dotPayItemMatchHistory.createdAt,
+        })
+        .from(dotPayItemMatchHistory)
+        .where(and(
+          eq(dotPayItemMatchHistory.organizationId, targetOrgId),
+          eq(dotPayItemMatchHistory.accepted, true),
+          inArray(dotPayItemMatchHistory.payItemId, itemIds),
+        ))
+        .orderBy(desc(dotPayItemMatchHistory.createdAt)),
+      db
+        .select()
+        .from(dotPayItemOverrides)
+        .where(and(
+          eq(dotPayItemOverrides.organizationId, targetOrgId),
+          inArray(dotPayItemOverrides.payItemId, itemIds),
+        )),
+    ]);
+    const itemById = new Map(items.map((i) => [i.id, i]));
+    const overrideByItem = new Map(overrides.map((o) => [o.payItemId, o]));
+    const aIds = [...new Set(items.map((i) => i.agencyId))];
+    const sbIds = [...new Set(items.map((i) => i.specBookId))];
+    const [ags, sbs] = await Promise.all([
+      aIds.length ? db.select().from(dotAgencies).where(inArray(dotAgencies.id, aIds)) : Promise.resolve([] as (typeof dotAgencies.$inferSelect)[]),
+      sbIds.length ? db.select().from(dotSpecBooks).where(inArray(dotSpecBooks.id, sbIds)) : Promise.resolve([] as (typeof dotSpecBooks.$inferSelect)[]),
+    ]);
+    const agencyById = new Map(ags.map((a) => [a.id, a]));
+    const specBookById = new Map(sbs.map((s) => [s.id, s]));
+
+    // Distinct sample descriptions, capped at 3 most-recent per item so the
+    // UI can show "we matched these strings to this item".
+    const samplesByItem = new Map<string, string[]>();
+    for (const r of sampleRows) {
+      const list = samplesByItem.get(r.payItemId) ?? [];
+      const trimmed = (r.descriptionRaw ?? "").trim();
+      if (trimmed && !list.some((s) => s.toLowerCase() === trimmed.toLowerCase()) && list.length < 3) {
+        list.push(trimmed);
+        samplesByItem.set(r.payItemId, list);
+      }
+    }
+
+    const out = rows
+      .map((r) => {
+        const item = itemById.get(r.payItemId);
+        if (!item) return null;
+        const ov = overrideByItem.get(r.payItemId);
+        return {
+          payItem: {
+            id: item.id,
+            itemNumber: item.itemNumber,
+            description: ov?.customDescription ?? item.description,
+            unit: ov?.customUnit ?? item.unit,
+            specSection: item.specSection,
+            category: ov?.customCategory ?? item.category,
+          },
+          agency: agencyById.get(item.agencyId) ?? null,
+          specBook: specBookById.get(item.specBookId) ?? null,
+          acceptCount: Number(r.accepts ?? 0),
+          rejectCount: Number(r.rejects ?? 0),
+          lastAcceptedAt: r.lastAcceptedAt,
+          sampleDescriptions: samplesByItem.get(r.payItemId) ?? [],
+          hasAlias: !!(ov?.internalAlias && ov.internalAlias.trim().length > 0),
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+
+    return res.json({ items: out });
   },
 );
 

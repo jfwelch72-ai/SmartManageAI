@@ -158,4 +158,5 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   },
   "0042_swppp_corrective_action_status.sql": { helper: "ensureSwpppCorrectiveActionStatus" },
   "0043_certified_payroll_archive_columns.sql": { helper: "ensureCertifiedPayrollArchiveColumns" },
+  "0044_dot_pay_item_match_history.sql": { helper: "ensureDotPayItemMatchHistory" },
 };

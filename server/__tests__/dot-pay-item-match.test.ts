@@ -20,6 +20,7 @@ import {
   dotSpecBooks,
   dotPayItems,
   dotPayItemOverrides,
+  dotPayItemMatchHistory,
   organizationDotPreferences,
   type FeatureFlagKey,
 } from "@shared/schema";
@@ -51,6 +52,7 @@ async function cleanup(): Promise<void> {
   )) as unknown as ExecuteResult<IdRow>;
   const userIds = usrs.rows?.map((r) => r.id) ?? [];
   if (orgIds.length > 0) {
+    await db.delete(dotPayItemMatchHistory).where(inArray(dotPayItemMatchHistory.organizationId, orgIds)).catch(() => {});
     await db.delete(dotPayItemOverrides).where(inArray(dotPayItemOverrides.organizationId, orgIds)).catch(() => {});
     await db.delete(organizationDotPreferences).where(inArray(organizationDotPreferences.organizationId, orgIds)).catch(() => {});
   }
@@ -173,7 +175,7 @@ async function match(body: Record<string, unknown>) {
   return res.body.matches as Array<{
     payItem: { id: string; itemNumber: string; description: string };
     score: number;
-    matchReason: "alias" | "fuzzy";
+    matchReason: "alias" | "fuzzy" | "history";
     aliasText: string | null;
   }>;
 }
@@ -246,6 +248,93 @@ describe("DOT pay-item auto-match ranking", () => {
       await db
         .delete(organizationDotPreferences)
         .where(inArray(organizationDotPreferences.id, [pref.id]))
+        .catch(() => {});
+    }
+  });
+
+  it("boosts items the org has previously accepted for the same description", async () => {
+    // Baseline: with no history, "Concrete pavement" returns A002 first (better
+    // unit/category overlap is absent here, so order is determined by token
+    // overlap and id/tie-breakers).
+    const baseline = await match({
+      description: "Concrete pavement",
+      agencyIds: [agencyAId, agencyBId],
+    });
+    const baselineB002 = baseline.find((m) => m.payItem.id === itemIds["B002"]);
+    expect(baselineB002).toBeDefined();
+
+    // Record three accepts for B002 against this exact description.
+    const fbRes = await request(app)
+      .post("/api/dot/pay-items/match/feedback")
+      .set("Cookie", cookie())
+      .send({
+        decisions: Array.from({ length: 3 }, () => ({
+          description: "Concrete pavement",
+          payItemId: itemIds["B002"],
+          accepted: true,
+        })),
+      });
+    expect(fbRes.status).toBe(200);
+    expect(fbRes.body.recorded).toBe(3);
+
+    try {
+      const after = await match({
+        description: "Concrete pavement",
+        agencyIds: [agencyAId, agencyBId],
+      });
+      const b002After = after.find((m) => m.payItem.id === itemIds["B002"]);
+      expect(b002After).toBeDefined();
+      expect(b002After!.score).toBeGreaterThan(baselineB002!.score);
+      // matchReason flips to "history" once accepts dominate the score.
+      expect(b002After!.matchReason).toBe("history");
+    } finally {
+      await db
+        .delete(dotPayItemMatchHistory)
+        .where(inArray(dotPayItemMatchHistory.organizationId, [orgId]))
+        .catch(() => {});
+    }
+  });
+
+  it("exposes top auto-matches with sample descriptions and alias status", async () => {
+    await request(app)
+      .post("/api/dot/pay-items/match/feedback")
+      .set("Cookie", cookie())
+      .send({
+        decisions: [
+          { description: "Roadway excavation north", payItemId: itemIds["A001"], accepted: true },
+          { description: "Roadway excavation south", payItemId: itemIds["A001"], accepted: true },
+          { description: "Storm drain pipe 12 inch", payItemId: itemIds["A003"], accepted: true },
+        ],
+      })
+      .expect(200);
+
+    try {
+      const res = await request(app)
+        .get("/api/dot/pay-items/match-history/top?limit=10")
+        .set("Cookie", cookie());
+      expect(res.status).toBe(200);
+      const items = res.body.items as Array<{
+        payItem: { id: string };
+        acceptCount: number;
+        rejectCount: number;
+        sampleDescriptions: string[];
+        hasAlias: boolean;
+      }>;
+      const a001 = items.find((i) => i.payItem.id === itemIds["A001"]);
+      const a003 = items.find((i) => i.payItem.id === itemIds["A003"]);
+      expect(a001).toBeDefined();
+      expect(a001!.acceptCount).toBeGreaterThanOrEqual(2);
+      expect(a001!.sampleDescriptions.length).toBeGreaterThan(0);
+      expect(a001!.hasAlias).toBe(false);
+      expect(a003).toBeDefined();
+      expect(a003!.hasAlias).toBe(false);
+      // Items already aliased should still be reported but flagged.
+      const a005 = items.find((i) => i.payItem.id === itemIds["A005"]);
+      if (a005) expect(a005.hasAlias).toBe(true);
+    } finally {
+      await db
+        .delete(dotPayItemMatchHistory)
+        .where(inArray(dotPayItemMatchHistory.organizationId, [orgId]))
         .catch(() => {});
     }
   });
