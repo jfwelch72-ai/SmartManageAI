@@ -13,20 +13,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ChevronLeft, Building2, Users, Mail, Calendar, Globe, MapPin, Briefcase, Pencil, Activity, ChevronRight, Database, FolderKanban, FileText, Hammer, ClipboardList, ListChecks, Wrench, Share2, ScrollText, Image, CalendarDays, DollarSign, ShieldOff, ShieldCheck, Download, Trash2, Gavel, HardHat, Eye, ToggleRight } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
 import { Link } from "wouter";
 import { format } from "date-fns";
 import { useAuth } from "@/hooks/use-auth";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import type { FeatureFlagKey } from "@shared/schema";
-import {
-  FEATURE_FLAG_LABELS,
-  FEATURE_FLAG_DESCRIPTIONS,
-  FEATURE_FLAG_CATEGORIES,
-  FEATURE_FLAG_CATEGORY_MAP,
-  isHeavyCivilTrade,
-} from "@shared/schema/features";
+import { OrgFeaturePresetsTab } from "@/components/settings/OrgFeaturePresetsTab";
 
 interface Organization {
   id: string;
@@ -221,42 +213,6 @@ export default function PlatformOrganizationDetail() {
   const { data: orgFinancials, isLoading: financialsLoading } = useQuery<any>({
     queryKey: ["/api/platform/organizations", orgId, "financials"],
     enabled: !!orgId,
-  });
-
-  const { data: orgFeatureFlags, isLoading: featureFlagsLoading } = useQuery<{
-    flags: Partial<Record<FeatureFlagKey, boolean>>;
-    keys: FeatureFlagKey[];
-  }>({
-    queryKey: ["/api/feature-flags", orgId],
-    queryFn: async () => {
-      const res = await fetch(`/api/feature-flags/${orgId}`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch feature flags");
-      return res.json();
-    },
-    enabled: !!orgId,
-  });
-
-  const toggleFlagMutation = useMutation({
-    mutationFn: async ({ flag, enabled }: { flag: FeatureFlagKey; enabled: boolean }) => {
-      const res = await apiRequest("PATCH", `/api/feature-flags/${orgId}`, { flag, enabled });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId] });
-    },
-    onError: (e: Error) => toast({ title: "Failed to update feature flag", description: e.message, variant: "destructive" }),
-  });
-
-  const applyPresetMutation = useMutation({
-    mutationFn: async (tradeType: string) => {
-      const res = await apiRequest("POST", `/api/feature-flags/${orgId}/apply-preset`, { tradeType });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId] });
-      toast({ title: "Heavy Civil preset applied", description: "DOT, DBE, payroll, haul tickets, and inspections are now enabled." });
-    },
-    onError: (e: Error) => toast({ title: "Failed to apply preset", description: e.message, variant: "destructive" }),
   });
 
   const exportMutation = useMutation({
@@ -1187,83 +1143,10 @@ export default function PlatformOrganizationDetail() {
           </TabsContent>
 
           <TabsContent value="feature-flags">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <ToggleRight className="h-5 w-5" />
-                  Feature Flags
-                </CardTitle>
-                <CardDescription>Toggle feature flags for this organization. Flags are grouped by category with a plain-English description of what each one does.</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {isHeavyCivilTrade(organization.tradeType) && (
-                  <div className="mb-6 p-4 rounded-lg border bg-muted/40 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" data-testid="heavy-civil-preset-banner">
-                    <div>
-                      <div className="font-medium">This looks like a Heavy Civil / DOT contractor</div>
-                      <div className="text-sm text-muted-foreground">
-                        Apply the Heavy Civil preset to enable DOT pay items, DOT progress estimates, DBE tracking, WH-347 payroll, haul tickets, IDR, SWPPP, surety bonds, Buy America, and mass-haul analyzer in one click.
-                      </div>
-                    </div>
-                    <Button
-                      onClick={() => applyPresetMutation.mutate(organization.tradeType)}
-                      disabled={applyPresetMutation.isPending}
-                      data-testid="button-apply-heavy-civil-preset"
-                    >
-                      {applyPresetMutation.isPending ? "Applying..." : "Apply Heavy Civil Preset"}
-                    </Button>
-                  </div>
-                )}
-                {featureFlagsLoading ? <Skeleton className="h-40 w-full" /> : orgFeatureFlags ? (
-                  <div className="space-y-6">
-                    {FEATURE_FLAG_CATEGORIES.map((category) => {
-                      const keysInCategory = orgFeatureFlags.keys.filter(
-                        (k) => FEATURE_FLAG_CATEGORY_MAP[k] === category
-                      );
-                      if (keysInCategory.length === 0) return null;
-                      return (
-                        <div key={category} data-testid={`feature-flag-category-${category.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`}>
-                          <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-2">
-                            {category}
-                          </h3>
-                          <div className="space-y-2">
-                            {keysInCategory.map((key) => {
-                              const enabled = orgFeatureFlags.flags[key] ?? false;
-                              const label = FEATURE_FLAG_LABELS[key] ?? key;
-                              const description = FEATURE_FLAG_DESCRIPTIONS[key];
-                              return (
-                                <div
-                                  key={key}
-                                  className="flex items-start justify-between gap-4 p-4 rounded-lg border"
-                                  data-testid={`feature-flag-row-${key}`}
-                                >
-                                  <div className="min-w-0 flex-1">
-                                    <div className="font-medium" data-testid={`feature-flag-label-${key}`}>{label}</div>
-                                    {description && (
-                                      <div className="text-sm text-muted-foreground mt-0.5" data-testid={`feature-flag-description-${key}`}>
-                                        {description}
-                                      </div>
-                                    )}
-                                    <div className="text-xs text-muted-foreground/70 font-mono mt-1">{key}</div>
-                                  </div>
-                                  <Switch
-                                    checked={enabled}
-                                    onCheckedChange={(checked) => toggleFlagMutation.mutate({ flag: key, enabled: checked })}
-                                    disabled={toggleFlagMutation.isPending}
-                                    data-testid={`feature-flag-toggle-${key}`}
-                                  />
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="text-muted-foreground text-center py-8">Failed to load feature flags</p>
-                )}
-              </CardContent>
-            </Card>
+            <OrgFeaturePresetsTab
+              overrideOrgId={orgId}
+              overrideTradeType={organization.tradeType}
+            />
           </TabsContent>
         </Tabs>
 

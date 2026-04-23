@@ -104,39 +104,29 @@ test.describe("Heavy Civil feature-flag UI", () => {
       await expect(applyBtn).toBeVisible();
       await applyBtn.click();
 
-      // Wait for the mutation to settle and the cached flags to refresh.
-      await expect(applyBtn).not.toBeDisabled({ timeout: 15_000 });
+      // Shared OrgFeaturePresetsTab opens a confirmation dialog before
+      // actually applying the preset; confirm it.
+      const confirmDialog = page.getByTestId("dialog-confirm-apply-preset");
+      await expect(confirmDialog).toBeVisible();
+      await page.getByTestId("button-confirm-apply-preset").click();
 
-      // Each Heavy Civil flag should now be reported as enabled. The legacy
-      // admin UI renders a Switch (`feature-flag-toggle-<KEY>` w/
-      // data-state="checked") while the new shared `OrgFeaturePresetsTab`
-      // renders a read-only Badge (`feature-flag-status-<KEY>` w/ text "On").
-      // Accept either so this spec keeps passing on whichever surface is in
-      // use.
+      // Dialog should close once the mutation settles.
+      await expect(confirmDialog).toBeHidden({ timeout: 15_000 });
+
+      // Each Heavy Civil flag should now be reported as enabled by the shared
+      // OrgFeaturePresetsTab, which renders a read-only Badge with testid
+      // `feature-flag-status-<KEY>` and text "On".
       for (const flag of HEAVY_CIVIL_USER_FLAGS) {
         const status = page.getByTestId(`feature-flag-status-${flag}`);
-        const toggle = page.getByTestId(`feature-flag-toggle-${flag}`);
-        const indicator = status.or(toggle).first();
-        await expect(indicator, `enabled indicator for ${flag} should be visible`).toBeVisible({
+        await expect(status, `enabled badge for ${flag} should be visible`).toBeVisible({
           timeout: 10_000,
         });
         await expect
-          .poll(
-            async () => {
-              if ((await status.count()) > 0) {
-                return ((await status.textContent()) || "").trim();
-              }
-              if ((await toggle.count()) > 0) {
-                return (await toggle.getAttribute("data-state")) ?? "";
-              }
-              return "";
-            },
-            {
-              message: `flag ${flag} should be enabled (badge "On" or toggle data-state="checked")`,
-              timeout: 10_000,
-            },
-          )
-          .toMatch(/^(On|checked)$/);
+          .poll(async () => ((await status.textContent()) || "").trim(), {
+            message: `flag ${flag} should be enabled (badge "On")`,
+            timeout: 10_000,
+          })
+          .toBe("On");
       }
 
       // Server view should agree.

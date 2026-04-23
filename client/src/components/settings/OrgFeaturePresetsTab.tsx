@@ -20,7 +20,15 @@ import {
   type FeatureFlagKey,
 } from "@shared/schema/features";
 import { getFeaturePresetForTrade } from "@shared/tradeFeaturePresets";
+import { tradeTypeEnum } from "@shared/schema";
 import type { TradeConfigResponse } from "./types";
+
+const FALLBACK_TRADE_TYPE_OPTIONS = tradeTypeEnum.enumValues.map((value) => ({
+  value,
+  label: value
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase()),
+}));
 
 interface FlagsResponse {
   flags: Partial<Record<FeatureFlagKey, boolean>>;
@@ -58,7 +66,15 @@ interface FlagDiff {
   after: boolean;
 }
 
-export function OrgFeaturePresetsTab() {
+interface OrgFeaturePresetsTabProps {
+  overrideOrgId?: string;
+  overrideTradeType?: string;
+}
+
+export function OrgFeaturePresetsTab({
+  overrideOrgId,
+  overrideTradeType,
+}: OrgFeaturePresetsTabProps = {}) {
   const { user } = useAuth();
   const { toast } = useToast();
   const [selectedTradeType, setSelectedTradeType] = useState<string>("");
@@ -67,18 +83,29 @@ export function OrgFeaturePresetsTab() {
   const [historyPage, setHistoryPage] = useState(1);
   const HISTORY_PAGE_SIZE = 10;
 
+  const isSuperAdminView = !!overrideOrgId;
+  const canManage =
+    !!user && (user.role === "ADMIN" || (isSuperAdminView && user.role === "SUPER_ADMIN"));
+
   const { data: tradeConfig, isLoading: tradeConfigLoading } = useQuery<TradeConfigResponse>({
     queryKey: ["/api/organization/trade-config"],
-    enabled: !!user && user.role === "ADMIN",
+    enabled: canManage && !isSuperAdminView,
   });
+
+  const orgId = overrideOrgId ?? tradeConfig?.organization.id ?? "";
 
   const { data: flagsData, isLoading: flagsLoading } = useQuery<FlagsResponse>({
-    queryKey: ["/api/feature-flags"],
-    enabled: !!user && user.role === "ADMIN",
+    queryKey: isSuperAdminView ? ["/api/feature-flags", orgId] : ["/api/feature-flags"],
+    queryFn: isSuperAdminView
+      ? async () => {
+          const res = await apiRequest("GET", `/api/feature-flags/${orgId}`);
+          return res.json();
+        }
+      : undefined,
+    enabled: canManage && (!isSuperAdminView || !!orgId),
   });
 
-  const orgTradeType = tradeConfig?.organization.tradeType ?? "";
-  const orgId = tradeConfig?.organization.id ?? "";
+  const orgTradeType = overrideTradeType ?? tradeConfig?.organization.tradeType ?? "";
 
   const { data: lastPresetData } = useQuery<LastPresetResponse>({
     queryKey: ["/api/feature-flags", orgId, "last-preset"],
@@ -86,7 +113,7 @@ export function OrgFeaturePresetsTab() {
       const res = await apiRequest("GET", `/api/feature-flags/${orgId}/last-preset`);
       return res.json();
     },
-    enabled: !!user && user.role === "ADMIN" && !!orgId,
+    enabled: canManage && !!orgId,
   });
 
   const lastApplied = lastPresetData?.lastApplied ?? null;
@@ -101,10 +128,10 @@ export function OrgFeaturePresetsTab() {
       );
       return res.json();
     },
-    enabled: !!user && user.role === "ADMIN" && !!orgId,
+    enabled: canManage && !!orgId,
   });
 
-  const tradeTypeOptions = tradeConfig?.tradeTypes ?? [];
+  const tradeTypeOptions = tradeConfig?.tradeTypes ?? FALLBACK_TRADE_TYPE_OPTIONS;
   const tradeLabelMap = useMemo(() => {
     const map: Record<string, string> = {};
     for (const t of tradeTypeOptions) map[t.value] = t.label;
@@ -158,7 +185,7 @@ export function OrgFeaturePresetsTab() {
   const enableCount = pendingDiff.filter((d) => d.after).length;
   const disableCount = pendingDiff.filter((d) => !d.after).length;
 
-  if (!user || user.role !== "ADMIN") {
+  if (!canManage) {
     return (
       <div className="p-8 text-center">
         <p className="text-muted-foreground">Only organization admins can manage feature presets</p>
@@ -175,7 +202,7 @@ export function OrgFeaturePresetsTab() {
     );
   }
 
-  if (!tradeConfig || !flagsData) {
+  if ((!isSuperAdminView && !tradeConfig) || !flagsData) {
     return (
       <div className="p-8 text-center">
         <p className="text-muted-foreground">Failed to load feature flag configuration</p>
