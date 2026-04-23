@@ -9967,6 +9967,12 @@ export const swpppInspections = pgTable("swppp_inspections", {
   // their initial fanout — they will naturally pick up follow-up #1
   // on the next eligible run.
   overdueReminderCount: integer("overdue_reminder_count").notNull().default(0),
+  // Note: the effective cap for overdueReminderCount is the per-org
+  // `organizations.swpppOverdueReminderMaxCount`, falling back to the
+  // shared default `SWPPP_OVERDUE_REMINDER_DEFAULT_CAP` (in
+  // `shared/schema/core.ts`). The UI fetches the effective value from
+  // `GET /api/swppp/settings` to render an accurate "Reminder N of M
+  // sent" badge alongside the server-side sweep.
   createdById: varchar("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

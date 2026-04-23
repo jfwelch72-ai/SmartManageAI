@@ -9,13 +9,20 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Droplets, Plus, Loader2, Pencil, Trash2, Wand2, CheckCircle2, RotateCcw, AlertTriangle } from "lucide-react";
+import { Droplets, Plus, Loader2, Pencil, Trash2, Wand2, CheckCircle2, RotateCcw, AlertTriangle, BellRing, BellOff } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, todayIso, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
-import type { SwpppInspection } from "@shared/schema";
+import { SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, type SwpppInspection } from "@shared/schema";
+
+interface SwpppSettings {
+  organizationId: string;
+  overdueReminderMaxCount: number;
+  overdueReminderIntervalHours: number;
+  defaults?: { overdueReminderMaxCount: number; overdueReminderIntervalHours: number };
+}
 
 const TYPES = ["ROUTINE", "POST_RAIN", "PRE_STORM", "FINAL", "OTHER"];
 
@@ -32,6 +39,11 @@ export default function SwpppInspectionsPage() {
   const [deleteTarget, setDeleteTarget] = useState<SwpppInspection | null>(null);
   const queryKey = ["/api/swppp-inspections", projectId ? { projectId } : {}];
   const { data = [], isLoading } = useQuery<SwpppInspection[]>({ queryKey, enabled: canAccess });
+  const { data: swpppSettings } = useQuery<SwpppSettings>({
+    queryKey: ["/api/swppp/settings"],
+    enabled: canAccess,
+  });
+  const reminderCap = swpppSettings?.overdueReminderMaxCount ?? SWPPP_OVERDUE_REMINDER_DEFAULT_CAP;
 
   if (!canAccess) {
     return (
@@ -205,6 +217,27 @@ export default function SwpppInspectionsPage() {
                     {overdue && <span className="ml-1">(overdue)</span>}
                   </div>
                 )}
+                {!resolved && overdue && (s.overdueReminderCount ?? 0) > 0 && (
+                  (s.overdueReminderCount ?? 0) >= reminderCap ? (
+                    <Badge
+                      variant="outline"
+                      className="text-xs border-destructive/60 text-destructive bg-destructive/5"
+                      data-testid={`badge-swppp-reminders-capped-${s.id}`}
+                    >
+                      <BellOff className="h-3 w-3 mr-1" />
+                      Reminders paused — cap of {reminderCap} reached
+                    </Badge>
+                  ) : (
+                    <Badge
+                      variant="outline"
+                      className="text-xs"
+                      data-testid={`badge-swppp-reminders-${s.id}`}
+                    >
+                      <BellRing className="h-3 w-3 mr-1" />
+                      Reminder {s.overdueReminderCount} of {reminderCap} sent
+                    </Badge>
+                  )
+                )}
                 {resolved && s.resolvedAt && (
                   <div className="text-xs text-emerald-700 dark:text-emerald-400" data-testid={`text-resolved-${s.id}`}>
                     <span className="text-muted-foreground">Resolved:</span> {formatDate(s.resolvedAt as unknown as string)}
@@ -308,6 +341,8 @@ function SwpppForm({ existing, onClose, defaultProjectId }: { existing: SwpppIns
   const canManage = useFeaturePermission("canManageSwppp");
   const [form, setForm] = useState<FormState>(() => initial(existing, defaultProjectId));
   useEffect(() => { setForm(initial(existing, defaultProjectId)); }, [existing, defaultProjectId]);
+  const { data: swpppSettings } = useQuery<SwpppSettings>({ queryKey: ["/api/swppp/settings"] });
+  const reminderCap = swpppSettings?.overdueReminderMaxCount ?? SWPPP_OVERDUE_REMINDER_DEFAULT_CAP;
 
   const resolveMut = useMutation({
     mutationFn: async () => {
@@ -419,6 +454,33 @@ function SwpppForm({ existing, onClose, defaultProjectId }: { existing: SwpppIns
         </div>
         <div><Label>Corrective Action Due Date</Label><Input type="date" value={form.correctiveActionDueDate} onChange={(e) => setForm({ ...form, correctiveActionDueDate: e.target.value })} data-testid="input-swppp-due" /></div>
         <div><Label>Notes</Label><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-swppp-notes" /></div>
+        {existing && existing.status !== "RESOLVED" && (existing.overdueReminderCount ?? 0) > 0 && (() => {
+          const dueRaw = existing.correctiveActionDueDate as unknown as string | null;
+          if (!dueRaw) return false;
+          const due = new Date(dueRaw);
+          if (Number.isNaN(due.getTime())) return false;
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          return due.getTime() < today.getTime();
+        })() && (
+          (existing.overdueReminderCount ?? 0) >= reminderCap ? (
+            <div
+              className="flex items-center gap-2 rounded-md border border-destructive/60 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+              data-testid="detail-swppp-reminders-capped"
+            >
+              <BellOff className="h-3.5 w-3.5" />
+              Overdue reminders paused — cap of {reminderCap} reached. Move the corrective-action due date forward or reopen the inspection to restart reminders.
+            </div>
+          ) : (
+            <div
+              className="flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground"
+              data-testid="detail-swppp-reminders"
+            >
+              <BellRing className="h-3.5 w-3.5" />
+              Reminder {existing.overdueReminderCount} of {reminderCap} sent for this overdue corrective action.
+            </div>
+          )
+        )}
         <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-between sm:items-center gap-2">
           <div className="flex items-center gap-2">
             {existing && canManage && (form.deficienciesFound.trim() || form.correctiveActions.trim()) && (
