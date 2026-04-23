@@ -1,17 +1,28 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Download, FileSpreadsheet, FileText, Loader2 } from "lucide-react";
+import { Archive, ArchiveRestore, Download, FileSpreadsheet, FileText, Loader2, Trash2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { apiRequest } from "@/lib/queryClient";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 interface CertifiedPayrollReportRow {
   id: string;
@@ -29,6 +40,9 @@ interface CertifiedPayrollReportRow {
   payRunNumber: string | null;
   payPeriodStart: string | null;
   payPeriodEnd: string | null;
+  archivedAt: string | null;
+  archivedById: string | null;
+  archiveReason: string | null;
 }
 
 interface ProjectOption {
@@ -69,6 +83,13 @@ export default function CertifiedPayrollHistoryPage() {
   const [endDate, setEndDate] = useState<string>(initial.endDate);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [archiveDialog, setArchiveDialog] = useState<CertifiedPayrollReportRow | null>(null);
+  const [deleteDialog, setDeleteDialog] = useState<CertifiedPayrollReportRow | null>(null);
+  const [reasonText, setReasonText] = useState("");
+
+  const { permissionRole } = useAuth();
+  const isAdmin = permissionRole === "ADMIN" || permissionRole === "SUPER_ADMIN";
 
   const filterParams = useMemo(() => {
     const p: Record<string, string> = {};
@@ -76,8 +97,9 @@ export default function CertifiedPayrollHistoryPage() {
     if (variant !== ALL) p.variant = variant;
     if (startDate) p.startDate = startDate;
     if (endDate) p.endDate = endDate;
+    if (showArchived) p.includeArchived = "true";
     return p;
-  }, [projectId, variant, startDate, endDate]);
+  }, [projectId, variant, startDate, endDate, showArchived]);
 
   const { data: reports, isLoading } = useQuery<CertifiedPayrollReportRow[]>({
     queryKey: ["/api/payroll/certified-reports", filterParams],
@@ -148,6 +170,61 @@ export default function CertifiedPayrollHistoryPage() {
       setExporting(false);
     }
   };
+
+  const archiveMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      await apiRequest("POST", `/api/payroll/certified-reports/${id}/archive`, { reason });
+    },
+    onSuccess: () => {
+      toast({ title: "Report archived" });
+      setArchiveDialog(null);
+      setReasonText("");
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll/certified-reports"] });
+    },
+    onError: (err: unknown) => {
+      toast({
+        title: "Archive failed",
+        description: err instanceof Error ? err.message : "Could not archive report",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const unarchiveMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("POST", `/api/payroll/certified-reports/${id}/unarchive`);
+    },
+    onSuccess: () => {
+      toast({ title: "Report restored" });
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll/certified-reports"] });
+    },
+    onError: (err: unknown) => {
+      toast({
+        title: "Restore failed",
+        description: err instanceof Error ? err.message : "Could not restore report",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      await apiRequest("DELETE", `/api/payroll/certified-reports/${id}`, { reason });
+    },
+    onSuccess: () => {
+      toast({ title: "Report deleted", description: "PDF removed from object storage." });
+      setDeleteDialog(null);
+      setReasonText("");
+      queryClient.invalidateQueries({ queryKey: ["/api/payroll/certified-reports"] });
+    },
+    onError: (err: unknown) => {
+      toast({
+        title: "Delete failed",
+        description: err instanceof Error ? err.message : "Could not delete report",
+        variant: "destructive",
+      });
+    },
+  });
 
   const handleResetFilters = () => {
     setProjectId(ALL);
@@ -238,6 +315,19 @@ export default function CertifiedPayrollHistoryPage() {
             </div>
 
             <div className="flex items-end gap-2">
+              {isAdmin && (
+                <div className="flex items-center gap-2 pr-2">
+                  <Switch
+                    id="toggle-show-archived"
+                    checked={showArchived}
+                    onCheckedChange={setShowArchived}
+                    data-testid="switch-show-archived"
+                  />
+                  <Label htmlFor="toggle-show-archived" className="text-sm whitespace-nowrap">
+                    Show archived
+                  </Label>
+                </div>
+              )}
               <Button
                 variant="outline"
                 onClick={handleResetFilters}
@@ -314,9 +404,25 @@ export default function CertifiedPayrollHistoryPage() {
                       r.generatedByEmail ||
                       "Unknown";
                     return (
-                      <TableRow key={r.id} data-testid={`row-certified-report-${r.id}`}>
+                      <TableRow
+                        key={r.id}
+                        data-testid={`row-certified-report-${r.id}`}
+                        className={r.archivedAt ? "opacity-60" : undefined}
+                      >
                         <TableCell data-testid={`text-generated-at-${r.id}`}>
-                          {format(new Date(r.generatedAt), "MMM d, yyyy h:mm a")}
+                          <div className="flex items-center gap-2">
+                            {format(new Date(r.generatedAt), "MMM d, yyyy h:mm a")}
+                            {r.archivedAt && (
+                              <Badge
+                                variant="outline"
+                                className="text-xs"
+                                data-testid={`badge-archived-${r.id}`}
+                                title={r.archiveReason || "Archived"}
+                              >
+                                Archived
+                              </Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell data-testid={`text-project-${r.id}`}>
                           {r.projectName || (
@@ -337,20 +443,62 @@ export default function CertifiedPayrollHistoryPage() {
                         <TableCell data-testid={`text-generated-by-${r.id}`}>{generatedBy}</TableCell>
                         <TableCell className="text-right">{formatBytes(r.fileSize)}</TableCell>
                         <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() => handleDownload(r.id)}
-                            disabled={downloadingId === r.id}
-                            data-testid={`button-download-${r.id}`}
-                          >
-                            {downloadingId === r.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Download className="h-4 w-4" />
+                          <div className="flex items-center justify-end gap-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleDownload(r.id)}
+                              disabled={downloadingId === r.id}
+                              data-testid={`button-download-${r.id}`}
+                            >
+                              {downloadingId === r.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                <Download className="h-4 w-4" />
+                              )}
+                              <span className="ml-2">Download</span>
+                            </Button>
+                            {isAdmin && !r.archivedAt && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setReasonText("");
+                                  setArchiveDialog(r);
+                                }}
+                                data-testid={`button-archive-${r.id}`}
+                                title="Archive (soft-hide)"
+                              >
+                                <Archive className="h-4 w-4" />
+                              </Button>
                             )}
-                            <span className="ml-2">Download</span>
-                          </Button>
+                            {isAdmin && r.archivedAt && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => unarchiveMutation.mutate(r.id)}
+                                disabled={unarchiveMutation.isPending}
+                                data-testid={`button-unarchive-${r.id}`}
+                                title="Restore"
+                              >
+                                <ArchiveRestore className="h-4 w-4" />
+                              </Button>
+                            )}
+                            {isAdmin && (
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                onClick={() => {
+                                  setReasonText("");
+                                  setDeleteDialog(r);
+                                }}
+                                data-testid={`button-delete-${r.id}`}
+                                title="Permanently delete (also removes the PDF)"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
                         </TableCell>
                       </TableRow>
                     );
@@ -361,6 +509,116 @@ export default function CertifiedPayrollHistoryPage() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog
+        open={!!archiveDialog}
+        onOpenChange={(open) => {
+          if (!open) {
+            setArchiveDialog(null);
+            setReasonText("");
+          }
+        }}
+      >
+        <DialogContent data-testid="dialog-archive-report">
+          <DialogHeader>
+            <DialogTitle>Archive certified payroll report</DialogTitle>
+            <DialogDescription>
+              The report will be hidden from the default list but the underlying PDF stays in
+              storage so you can still download or restore it later. The reason is recorded in
+              the audit log.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="archive-reason">Reason</Label>
+            <Textarea
+              id="archive-reason"
+              value={reasonText}
+              onChange={(e) => setReasonText(e.target.value)}
+              placeholder="e.g. wrong form variant, regenerated with corrected fringes"
+              rows={3}
+              data-testid="textarea-archive-reason"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setArchiveDialog(null);
+                setReasonText("");
+              }}
+              data-testid="button-archive-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() =>
+                archiveDialog &&
+                archiveMutation.mutate({ id: archiveDialog.id, reason: reasonText.trim() })
+              }
+              disabled={reasonText.trim().length < 3 || archiveMutation.isPending}
+              data-testid="button-archive-confirm"
+            >
+              {archiveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Archive className="h-4 w-4" />}
+              <span className="ml-2">Archive</span>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!deleteDialog}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteDialog(null);
+            setReasonText("");
+          }
+        }}
+      >
+        <DialogContent data-testid="dialog-delete-report">
+          <DialogHeader>
+            <DialogTitle>Permanently delete certified payroll report</DialogTitle>
+            <DialogDescription>
+              This deletes the row and the PDF in object storage. It cannot be undone. The
+              report ID, pay run, and your reason are recorded in the audit log.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <Label htmlFor="delete-reason">Reason</Label>
+            <Textarea
+              id="delete-reason"
+              value={reasonText}
+              onChange={(e) => setReasonText(e.target.value)}
+              placeholder="e.g. test data, draft pay run, mistakenly generated"
+              rows={3}
+              data-testid="textarea-delete-reason"
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteDialog(null);
+                setReasonText("");
+              }}
+              data-testid="button-delete-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() =>
+                deleteDialog &&
+                deleteMutation.mutate({ id: deleteDialog.id, reason: reasonText.trim() })
+              }
+              disabled={reasonText.trim().length < 3 || deleteMutation.isPending}
+              data-testid="button-delete-confirm"
+            >
+              {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              <span className="ml-2">Delete permanently</span>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

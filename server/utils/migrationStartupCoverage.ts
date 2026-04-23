@@ -103,4 +103,5 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
     skip: "one-off ALTER COLUMN DROP NOT NULL; safe to apply via drizzle-kit migrate",
   },
   "0042_swppp_corrective_action_status.sql": { helper: "ensureSwpppCorrectiveActionStatus" },
+  "0043_certified_payroll_archive_columns.sql": { helper: "ensureCertifiedPayrollArchiveColumns" },
 };

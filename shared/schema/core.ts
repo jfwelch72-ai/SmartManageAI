@@ -183,11 +183,15 @@ export const certifiedPayrollReports = pgTable("certified_payroll_reports", {
   fileSize: integer("file_size").notNull().default(0),
   generatedById: varchar("generated_by_id").references(() => users.id),
   generatedAt: timestamp("generated_at").notNull().defaultNow(),
+  archivedAt: timestamp("archived_at"),
+  archivedById: varchar("archived_by_id").references(() => users.id),
+  archiveReason: text("archive_reason"),
 }, (table) => ({
   orgIdx: index("certified_payroll_reports_org_idx").on(table.organizationId),
   payRunIdx: index("certified_payroll_reports_pay_run_idx").on(table.payRunId),
   projectIdx: index("certified_payroll_reports_project_idx").on(table.projectId),
   generatedAtIdx: index("certified_payroll_reports_generated_at_idx").on(table.generatedAt),
+  archivedAtIdx: index("certified_payroll_reports_archived_at_idx").on(table.archivedAt),
 }));
 
 export const insertCertifiedPayrollReportSchema = createInsertSchema(certifiedPayrollReports).omit({ id: true, generatedAt: true });

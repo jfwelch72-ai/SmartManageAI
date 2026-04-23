@@ -2586,16 +2586,28 @@ router.get("/api/payroll/certified-reports", requireAuth, requireFeaturePermissi
       startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
       format: z.enum(["json", "csv"]).optional(),
+      // Task #1117: archived rows are hidden by default; admins can opt in to see them.
+      includeArchived: z.enum(["true", "false"]).optional(),
+      onlyArchived: z.enum(["true", "false"]).optional(),
     });
     const parsed = filterSchema.safeParse(req.query);
     if (!parsed.success) return res.status(400).json({ error: "Invalid filters", details: parsed.error.flatten() });
-    const { projectId, variant, startDate, endDate, format: outputFormat } = parsed.data;
+    const { projectId, variant, startDate, endDate, format: outputFormat, includeArchived, onlyArchived } = parsed.data;
 
     const conditions = [eq(certifiedPayrollReports.organizationId, orgId)];
     if (projectId) conditions.push(eq(certifiedPayrollReports.projectId, projectId));
     if (variant) conditions.push(eq(certifiedPayrollReports.variant, variant));
     if (startDate) conditions.push(gte(certifiedPayrollReports.generatedAt, new Date(`${startDate}T00:00:00.000Z`)));
     if (endDate) conditions.push(lte(certifiedPayrollReports.generatedAt, new Date(`${endDate}T23:59:59.999Z`)));
+    // Only ADMIN / SUPER_ADMIN may surface archived rows; everyone else gets
+    // the default active-only view regardless of query string.
+    const role = authReq.user?.role;
+    const canSeeArchived = role === "ADMIN" || role === "SUPER_ADMIN";
+    if (canSeeArchived && onlyArchived === "true") {
+      conditions.push(sql`${certifiedPayrollReports.archivedAt} IS NOT NULL`);
+    } else if (!canSeeArchived || includeArchived !== "true") {
+      conditions.push(isNull(certifiedPayrollReports.archivedAt));
+    }
 
     const rows = await db.select({
       id: certifiedPayrollReports.id,
@@ -2613,6 +2625,9 @@ router.get("/api/payroll/certified-reports", requireAuth, requireFeaturePermissi
       payRunNumber: payRuns.runNumber,
       payPeriodStart: payRuns.payPeriodStart,
       payPeriodEnd: payRuns.payPeriodEnd,
+      archivedAt: certifiedPayrollReports.archivedAt,
+      archivedById: certifiedPayrollReports.archivedById,
+      archiveReason: certifiedPayrollReports.archiveReason,
     })
       .from(certifiedPayrollReports)
       .leftJoin(payRuns, eq(certifiedPayrollReports.payRunId, payRuns.id))
@@ -2690,6 +2705,166 @@ router.get("/api/payroll/certified-reports/:id/download-url", requireAuth, requi
     next(error);
   }
 });
+
+// Task #1117: archive (soft-hide) a certified payroll report so it falls out of
+// the default org-wide history view. Reason is captured in the audit log so
+// compliance reviewers can see why a row was removed from the active list.
+router.post(
+  "/api/payroll/certified-reports/:id/archive",
+  requireAuth,
+  requireRole("ADMIN", "SUPER_ADMIN"),
+  async (req, res, next) => {
+    try {
+      const authReq = req as AuthRequest;
+      const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+      if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+      const bodySchema = z.object({ reason: z.string().min(3).max(500) });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Reason is required (3-500 chars)" });
+
+      const [report] = await db.select().from(certifiedPayrollReports)
+        .where(and(
+          eq(certifiedPayrollReports.id, req.params.id),
+          eq(certifiedPayrollReports.organizationId, orgId),
+        ));
+      if (!report) return res.status(404).json({ error: "Report not found" });
+      if (report.archivedAt) return res.status(400).json({ error: "Report is already archived" });
+
+      const archivedAt = new Date();
+      await db.update(certifiedPayrollReports)
+        .set({
+          archivedAt,
+          archivedById: authReq.user!.id,
+          archiveReason: parsed.data.reason,
+        })
+        .where(eq(certifiedPayrollReports.id, req.params.id));
+
+      await logAudit({
+        userId: authReq.user!.id,
+        action: "ARCHIVE",
+        entityType: "certified_payroll_reports",
+        entityId: report.id,
+        oldValue: JSON.stringify({
+          payRunId: report.payRunId,
+          projectId: report.projectId,
+          variant: report.variant,
+          objectKey: report.objectKey,
+        }),
+        newValue: JSON.stringify({ archivedAt: archivedAt.toISOString(), reason: parsed.data.reason }),
+      }, req);
+
+      res.json({ success: true, archivedAt: archivedAt.toISOString() });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// Task #1117: restore a previously archived report back into the default list.
+router.post(
+  "/api/payroll/certified-reports/:id/unarchive",
+  requireAuth,
+  requireRole("ADMIN", "SUPER_ADMIN"),
+  async (req, res, next) => {
+    try {
+      const authReq = req as AuthRequest;
+      const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+      if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+      const [report] = await db.select().from(certifiedPayrollReports)
+        .where(and(
+          eq(certifiedPayrollReports.id, req.params.id),
+          eq(certifiedPayrollReports.organizationId, orgId),
+        ));
+      if (!report) return res.status(404).json({ error: "Report not found" });
+      if (!report.archivedAt) return res.status(400).json({ error: "Report is not archived" });
+
+      await db.update(certifiedPayrollReports)
+        .set({ archivedAt: null, archivedById: null, archiveReason: null })
+        .where(eq(certifiedPayrollReports.id, req.params.id));
+
+      await logAudit({
+        userId: authReq.user!.id,
+        action: "UNARCHIVE",
+        entityType: "certified_payroll_reports",
+        entityId: report.id,
+        oldValue: JSON.stringify({
+          archivedAt: report.archivedAt,
+          archivedById: report.archivedById,
+          archiveReason: report.archiveReason,
+        }),
+      }, req);
+
+      res.json({ success: true });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// Task #1117: hard-delete a certified payroll report and its underlying
+// object-storage PDF. Admin-only and audit-logged with the reason supplied
+// by the operator (e.g. "draft pay run", "wrong variant", "test data").
+router.delete(
+  "/api/payroll/certified-reports/:id",
+  requireAuth,
+  requireRole("ADMIN", "SUPER_ADMIN"),
+  async (req, res, next) => {
+    try {
+      const authReq = req as AuthRequest;
+      const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+      if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+      const bodySchema = z.object({ reason: z.string().min(3).max(500) });
+      const parsed = bodySchema.safeParse(req.body);
+      if (!parsed.success) return res.status(400).json({ error: "Reason is required (3-500 chars)" });
+
+      const [report] = await db.select().from(certifiedPayrollReports)
+        .where(and(
+          eq(certifiedPayrollReports.id, req.params.id),
+          eq(certifiedPayrollReports.organizationId, orgId),
+        ));
+      if (!report) return res.status(404).json({ error: "Report not found" });
+
+      // Delete the underlying PDF first; if object storage rejects the delete
+      // we abort so we never leave the DB row pointing at an orphaned file.
+      // (Task done-criterion: "Deletes also remove the underlying object-storage file".)
+      try {
+        const { ObjectStorageService } = await import("./objectStorage");
+        await new ObjectStorageService().deleteObjectByKey(report.objectKey);
+      } catch (err) {
+        logWarn("Failed to delete certified payroll PDF from object storage — aborting DB delete");
+        return res.status(502).json({
+          error: "Could not delete the underlying PDF from object storage. The report row was kept so it stays consistent — please retry.",
+        });
+      }
+
+      await db.delete(certifiedPayrollReports).where(eq(certifiedPayrollReports.id, req.params.id));
+
+      await logAudit({
+        userId: authReq.user!.id,
+        action: "DELETE",
+        entityType: "certified_payroll_reports",
+        entityId: report.id,
+        oldValue: JSON.stringify({
+          payRunId: report.payRunId,
+          projectId: report.projectId,
+          variant: report.variant,
+          objectKey: report.objectKey,
+          fileSize: report.fileSize,
+          generatedAt: report.generatedAt,
+          generatedById: report.generatedById,
+        }),
+        newValue: JSON.stringify({ reason: parsed.data.reason, storageDeleted: true }),
+      }, req);
+
+      res.json({ success: true, storageDeleted: true });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 router.delete("/api/payroll/pay-runs/:id", requireAuth, requireFeaturePermission("canManagePayroll"), async (req, res, next) => {
   try {

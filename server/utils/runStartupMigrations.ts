@@ -33,6 +33,7 @@ import { ensurePurchaseOrderColumns } from "./ensurePurchaseOrderColumns";
 import { ensureCrmOrgTypeEnumValues } from "./ensureCrmOrgTypeEnumValues";
 import { ensureDotTables } from "./ensureDotTables";
 import { ensurePayrollFormVariantColumn } from "./ensurePayrollFormVariantColumn";
+import { ensureCertifiedPayrollArchiveColumns } from "./ensureCertifiedPayrollArchiveColumns";
 import { ensureMaterialCertColumns } from "./ensureMaterialCertColumns";
 import { ensureHeavyCivilDocumentColumns } from "./ensureHeavyCivilDocumentColumns";
 import { ensureHeavyCivilEnumValues } from "./ensureHeavyCivilEnumValues";
@@ -132,6 +133,7 @@ const migrations: MigrationStep[] = [
   { name: "purchase_order_columns", category: "ADD_COLUMN", fn: ensurePurchaseOrderColumns },
   { name: "crm_org_type_enum_values", category: "ADD_ENUM", fn: ensureCrmOrgTypeEnumValues },
   { name: "payroll_form_variant_column", category: "ADD_COLUMN", fn: ensurePayrollFormVariantColumn },
+  { name: "certified_payroll_archive_columns", category: "ADD_COLUMN", fn: ensureCertifiedPayrollArchiveColumns },
   { name: "material_cert_submit_columns", category: "ADD_COLUMN", fn: ensureMaterialCertColumns },
   { name: "heavy_civil_enum_values", category: "ADD_ENUM", fn: ensureHeavyCivilEnumValues },
   { name: "project_health_snapshot_columns", category: "ADD_COLUMN", fn: ensureProjectHealthSnapshotColumns },
