@@ -442,11 +442,12 @@ export default function CertifiedPayrollReportView({ payRunId, payRunNumber }: {
       }
       return s;
     };
-    const headers = ["Project", "Name", "Classification", "ST Hours", "OT Hours", "Total Hours", "Rate", "Gross", "FICA", "W/H Tax", "Other Ded.", "Total Ded.", "Net Wages", "Below Prevailing Wage"];
+    const headers = ["Project", "Name", "Classification", "ST Hours", "OT Hours", "Total Hours", "Rate", "Gross", "FICA", "W/H Tax", "Other Ded.", "Total Ded.", "Net Wages", "Below Prevailing Wage", "Prevailing Rate Source"];
     const rows = allEmployees.map(e => [
       e.projectName, e.name, e.workClassification, e.regularHours, e.overtimeHours, e.totalHours,
       e.rateOfPay, e.grossEarned, e.fica, e.withholdingTax, e.otherDeductions,
-      e.totalDeductions, e.netWages, e.belowPrevailingWage ? "YES" : "NO"
+      e.totalDeductions, e.netWages, e.belowPrevailingWage ? "YES" : "NO",
+      sourceLabel(e.prevailingRateSource) ?? ""
     ]);
     const csv = [headers.map(csvEscape).join(","), ...rows.map(r => r.map(csvEscape).join(","))].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
