@@ -159,11 +159,15 @@ export default function SwpppInspectionsPage() {
     (acc, s) => {
       const st = statusOf(s);
       if (st === "OPEN") acc.open += 1;
-      else if (st === "OVERDUE") acc.overdue += 1;
+      else if (st === "OVERDUE") {
+        acc.overdue += 1;
+        const days = daysOverdue(s);
+        if (days > acc.maxDaysOverdue) acc.maxDaysOverdue = days;
+      }
       else if (st === "RESOLVED") acc.resolved += 1;
       return acc;
     },
-    { open: 0, overdue: 0, resolved: 0 },
+    { open: 0, overdue: 0, resolved: 0, maxDaysOverdue: 0 },
   );
 
   const filtered = data.filter((s) => {
@@ -207,6 +211,11 @@ export default function SwpppInspectionsPage() {
           <Badge variant={counts.overdue > 0 ? "destructive" : "outline"} data-testid="count-swppp-overdue">
             {counts.overdue > 0 && <AlertTriangle className="h-3 w-3 mr-1" />}{counts.overdue} overdue
           </Badge>
+          {counts.maxDaysOverdue > 0 && (
+            <Badge variant="outline" className="border-destructive/60 text-destructive bg-destructive/5" data-testid="count-swppp-max-days-overdue">
+              Oldest overdue: {counts.maxDaysOverdue} {counts.maxDaysOverdue === 1 ? "day" : "days"}
+            </Badge>
+          )}
           <Badge variant="outline" data-testid="count-swppp-resolved">
             <CheckCircle2 className="h-3 w-3 mr-1" />{counts.resolved} resolved
           </Badge>
