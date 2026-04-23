@@ -2015,6 +2015,46 @@ router.get(
   },
 );
 
+// Task #1355: Lightweight aggregate so the Safety Hub tile can show
+// open/overdue SWPPP corrective-action counts without fetching every
+// inspection. Mirrors the client-side reducer in
+// `client/src/pages/swppp-inspections.tsx`: a row counts as having a
+// corrective action only when `deficienciesFound` or
+// `correctiveActions` is non-empty after trimming, and "overdue"
+// means unresolved with `correctiveActionDueDate < CURRENT_DATE`.
+router.get(
+  "/api/swppp-inspections/summary",
+  requireAuth,
+  requireAnyFeaturePermission("canViewSwppp", "canManageSwppp"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const targetOrg = ctx.isSuperAdmin ? superAdminTargetOrgId(req) : ctx.orgId;
+    if (!targetOrg) {
+      return res.json({ openCount: 0, overdueCount: 0, maxDaysOverdue: 0 });
+    }
+    const hasCorrective = sql`(
+      NULLIF(TRIM(${swpppInspections.deficienciesFound}), '') IS NOT NULL
+      OR NULLIF(TRIM(${swpppInspections.correctiveActions}), '') IS NOT NULL
+    )`;
+    const isUnresolved = sql`${swpppInspections.status} <> 'RESOLVED'`;
+    const isOverdue = sql`${swpppInspections.correctiveActionDueDate} < CURRENT_DATE`;
+    const [agg] = await db
+      .select({
+        openCount: sql<number>`COUNT(*) FILTER (WHERE ${isUnresolved} AND ${hasCorrective} AND (${swpppInspections.correctiveActionDueDate} IS NULL OR NOT ${isOverdue}))::int`,
+        overdueCount: sql<number>`COUNT(*) FILTER (WHERE ${isUnresolved} AND ${hasCorrective} AND ${isOverdue})::int`,
+        maxDaysOverdue: sql<number>`COALESCE(MAX(CASE WHEN ${isUnresolved} AND ${hasCorrective} AND ${isOverdue} THEN (CURRENT_DATE - ${swpppInspections.correctiveActionDueDate}) ELSE NULL END), 0)::int`,
+      })
+      .from(swpppInspections)
+      .where(eq(swpppInspections.organizationId, targetOrg));
+    res.json({
+      openCount: agg?.openCount ?? 0,
+      overdueCount: agg?.overdueCount ?? 0,
+      maxDaysOverdue: agg?.maxDaysOverdue ?? 0,
+    });
+  },
+);
+
 router.post(
   "/api/swppp-inspections",
   requireAuth,

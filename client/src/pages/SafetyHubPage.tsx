@@ -309,19 +309,60 @@ function ObservationsTab() {
   );
 }
 
-function LinkCard({ to, title, desc, icon: Icon }: { to: string; title: string; desc: string; icon: React.ElementType }) {
+function LinkCard({ to, title, desc, icon: Icon, badges }: { to: string; title: string; desc: string; icon: React.ElementType; badges?: React.ReactNode }) {
   return (
     <Link href={to}>
       <Card className="hover-elevate active-elevate-2 cursor-pointer transition" data-testid={`card-link-${to.replace(/\//g, "-")}`}>
         <CardContent className="p-4 flex items-start gap-3">
           <Icon className="w-8 h-8 text-primary mt-1" />
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <h3 className="font-semibold flex items-center gap-1">{title} <ExternalLink className="w-3 h-3 opacity-50" /></h3>
             <p className="text-sm text-muted-foreground mt-1">{desc}</p>
+            {badges && <div className="flex flex-wrap items-center gap-1 mt-2">{badges}</div>}
           </div>
         </CardContent>
       </Card>
     </Link>
+  );
+}
+
+interface SwpppSummary {
+  openCount: number;
+  overdueCount: number;
+  maxDaysOverdue: number;
+}
+
+function SwpppLinkCard() {
+  const { data } = useQuery<SwpppSummary>({ queryKey: ["/api/swppp-inspections/summary"] });
+  const open = data?.openCount ?? 0;
+  const overdue = data?.overdueCount ?? 0;
+  const maxDays = data?.maxDaysOverdue ?? 0;
+  const total = open + overdue;
+  const badges = data ? (
+    <>
+      <Badge variant={total > 0 ? "secondary" : "outline"} data-testid="badge-swppp-open-total">
+        {total} active
+      </Badge>
+      {overdue > 0 && (
+        <Badge variant="destructive" data-testid="badge-swppp-overdue">
+          <AlertTriangle className="h-3 w-3 mr-1" />{overdue} overdue
+        </Badge>
+      )}
+      {maxDays > 0 && (
+        <Badge variant="outline" className="border-destructive/60 text-destructive bg-destructive/5" data-testid="badge-swppp-max-days-overdue">
+          {maxDays} {maxDays === 1 ? "day" : "days"}
+        </Badge>
+      )}
+    </>
+  ) : null;
+  return (
+    <LinkCard
+      to="/swppp-inspections"
+      title="SWPPP Inspections"
+      desc="Stormwater inspections and corrective actions."
+      icon={ClipboardList}
+      badges={badges}
+    />
   );
 }
 
@@ -330,7 +371,7 @@ function ModulesTab() {
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       <LinkCard to="/safety-training" title="Training & Certifications" desc="Manage required courses, assignments, and worker certification status." icon={GraduationCap} />
       <LinkCard to="/compliance" title="Compliance & COIs" desc="Track COIs, bonds, DBE certs, licenses, and expirations." icon={FileBadge} />
-      <LinkCard to="/swppp-inspections" title="SWPPP Inspections" desc="Stormwater inspections and corrective actions." icon={ClipboardList} />
+      <SwpppLinkCard />
       <LinkCard to="/daily-inspector-reports" title="Daily Inspector Reports" desc="Daily field inspection reports and signoffs." icon={ClipboardList} />
       <LinkCard to="/material-certifications" title="Material Certifications" desc="Mill certs and material conformance records." icon={FileText} />
     </div>
