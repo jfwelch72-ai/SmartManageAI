@@ -114,7 +114,10 @@ type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TAB
 interface MigrationStep {
   name: string;
   category: MigrationCategory;
-  fn: () => Promise<void>;
+  // Returned values are ignored — return type is widened so migration
+  // helpers can also be reused by Super-Admin re-run endpoints that surface
+  // structured stats (e.g. Task #1413's exhausted_sync_retry_alerts re-run).
+  fn: () => Promise<unknown>;
 }
 
 const migrations: MigrationStep[] = [

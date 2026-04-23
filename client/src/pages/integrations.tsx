@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Link2, FileText, Loader2, Settings, Zap, HardHat, Plus, Key } from "lucide-react";
+import { Link2, FileText, Loader2, Settings, Zap, HardHat, Plus, Key, BellRing, RefreshCw } from "lucide-react";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -15,6 +15,9 @@ import { WebhookConfigPanel } from "@/components/integrations/WebhookConfigPanel
 import { StackCTSyncPanel } from "@/components/integrations/StackCTSyncPanel";
 import { SyncRetryPanel } from "@/components/integrations/SyncRetryPanel";
 import { Badge } from "@/components/ui/badge";
+import { CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { useAuth } from "@/hooks/use-auth";
+import { useState } from "react";
 
 function StackCTConnectButton() {
   const { toast } = useToast();
@@ -51,8 +54,177 @@ function StackCTConnectButton() {
   );
 }
 
+// Task #1413 — Super-Admin one-click trigger to re-fan the "integration sync
+// gave up" summary alert backfill (Task #1405). Mirrors the certified-payroll
+// admin re-run affordance so ops don't need psql access for outage recovery
+// or staging re-tests. Hidden for everyone except SUPER_ADMIN.
+function ExhaustedSyncRetryAlertsBackfillCard() {
+  const { toast } = useToast();
+  const [lastResult, setLastResult] = useState<{
+    status: string;
+    durationMs: number;
+    ledgerCleared: boolean;
+    stats: {
+      claimedRows: number;
+      groupsNotified: number;
+      groupsWithoutAdmins: number;
+      recipients: number;
+    } | null;
+    error: string | null;
+  } | null>(null);
+
+  const runMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(
+        "POST",
+        "/api/admin/jobs/exhausted-sync-retry-alerts-backfill/run",
+        { clearLedger: true },
+      );
+      return (await res.json()) as {
+        job: string;
+        status: string;
+        durationMs: number;
+        ledgerCleared: boolean;
+        stats: {
+          claimedRows: number;
+          groupsNotified: number;
+          groupsWithoutAdmins: number;
+          recipients: number;
+        } | null;
+        error: string | null;
+      };
+    },
+    onSuccess: (data) => {
+      setLastResult({
+        status: data.status,
+        durationMs: data.durationMs,
+        ledgerCleared: data.ledgerCleared,
+        stats: data.stats,
+        error: data.error,
+      });
+      if (data.status === "completed" && data.stats) {
+        toast({
+          title: "Alert backfill complete",
+          description:
+            `Notified ${data.stats.groupsNotified} integration(s) ` +
+            `(${data.stats.recipients} recipient(s), ` +
+            `${data.stats.claimedRows} sync row(s)) in ${data.durationMs}ms.`,
+        });
+      } else if (data.status === "failed" || data.status === "bookkeeping_error") {
+        toast({
+          title: "Alert backfill failed",
+          description: data.error ?? "Check server logs for details.",
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Alert backfill skipped",
+          description: "Ledger already complete and not cleared this run.",
+        });
+      }
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Failed to run alert backfill",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  return (
+    <Card data-testid="card-exhausted-sync-retry-alerts-backfill">
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <BellRing className="h-4 w-4" /> Re-run integration alert backfill
+            </CardTitle>
+            <CardDescription>
+              Clears the one-shot ledger and re-fans the "integration sync gave
+              up" summary alert for any sync row that is already exhausted but
+              hasn't been notified yet. Use after a notification provider
+              outage or to re-test the flow on staging. Super Admin only.
+            </CardDescription>
+          </div>
+          <Button
+            onClick={() => runMutation.mutate()}
+            disabled={runMutation.isPending}
+            data-testid="button-run-exhausted-sync-retry-alerts-backfill"
+          >
+            <RefreshCw
+              className={`h-4 w-4 mr-1 ${runMutation.isPending ? "animate-spin" : ""}`}
+            />
+            {runMutation.isPending ? "Running…" : "Run alert backfill now"}
+          </Button>
+        </div>
+      </CardHeader>
+      {lastResult && (
+        <CardContent
+          className="text-sm text-muted-foreground"
+          data-testid="text-exhausted-sync-retry-alerts-backfill-last-result"
+        >
+          Last run: status{" "}
+          <span
+            className="font-medium"
+            data-testid="text-exhausted-sync-retry-alerts-backfill-status"
+          >
+            {lastResult.status}
+          </span>
+          {lastResult.stats && (
+            <>
+              {", claimed rows "}
+              <span
+                className="font-medium"
+                data-testid="text-exhausted-sync-retry-alerts-backfill-claimed"
+              >
+                {lastResult.stats.claimedRows}
+              </span>
+              {", groups notified "}
+              <span
+                className="font-medium"
+                data-testid="text-exhausted-sync-retry-alerts-backfill-groups"
+              >
+                {lastResult.stats.groupsNotified}
+              </span>
+              {", recipients "}
+              <span
+                className="font-medium"
+                data-testid="text-exhausted-sync-retry-alerts-backfill-recipients"
+              >
+                {lastResult.stats.recipients}
+              </span>
+            </>
+          )}
+          {", ledger cleared "}
+          <span data-testid="text-exhausted-sync-retry-alerts-backfill-ledger-cleared">
+            {lastResult.ledgerCleared ? "yes" : "no"}
+          </span>
+          {", "}
+          <span data-testid="text-exhausted-sync-retry-alerts-backfill-duration">
+            {lastResult.durationMs}ms
+          </span>
+          {lastResult.error && (
+            <>
+              {" — "}
+              <span
+                className="text-destructive"
+                data-testid="text-exhausted-sync-retry-alerts-backfill-error"
+              >
+                {lastResult.error}
+              </span>
+            </>
+          )}
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
 export default function IntegrationsPage({ embedded }: { embedded?: boolean } = {}) {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === "SUPER_ADMIN";
 
   const { data: providers, isLoading: providersLoading } = useQuery<Provider[]>({
     queryKey: ["/api/integrations/providers"],
@@ -184,6 +356,8 @@ export default function IntegrationsPage({ embedded }: { embedded?: boolean } = 
       <SecurityBanner />
 
       <SyncRetryPanel />
+
+      {isSuperAdmin && <ExhaustedSyncRetryAlertsBackfillCard />}
 
       <ProviderCardGrid
         providers={providers || []}

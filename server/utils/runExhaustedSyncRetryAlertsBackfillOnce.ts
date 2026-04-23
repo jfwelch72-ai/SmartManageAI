@@ -15,6 +15,12 @@ import { backfillExhaustedSyncRetryAlerts } from "../services/integrationSyncRet
 
 export const JOB_NAME = "backfill_exhausted_sync_retry_alerts_v1";
 
+export type RunExhaustedSyncRetryAlertsBackfillOnceResult =
+  | { status: "skipped_already_complete" }
+  | { status: "completed"; elapsedMs: number; stats: Awaited<ReturnType<typeof backfillExhaustedSyncRetryAlerts>> }
+  | { status: "failed"; error: string }
+  | { status: "bookkeeping_error"; error: string };
+
 async function ensureOneShotJobsTable(): Promise<void> {
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS "one_shot_jobs" (
@@ -42,13 +48,13 @@ async function markJobComplete(name: string, details: Record<string, unknown>): 
   `);
 }
 
-export async function runExhaustedSyncRetryAlertsBackfillOnce(): Promise<void> {
+export async function runExhaustedSyncRetryAlertsBackfillOnce(): Promise<RunExhaustedSyncRetryAlertsBackfillOnceResult> {
   try {
     await ensureOneShotJobsTable();
 
     if (await isJobComplete(JOB_NAME)) {
       logInfo("[migration] exhausted_sync_retry_alerts_backfill — already completed, skipped");
-      return;
+      return { status: "skipped_already_complete" };
     }
 
     const start = Date.now();
@@ -63,7 +69,7 @@ export async function runExhaustedSyncRetryAlertsBackfillOnce(): Promise<void> {
         {},
         err instanceof Error ? err : new Error(String(err)),
       );
-      return;
+      return { status: "failed", error: err instanceof Error ? err.message : String(err) };
     }
 
     const elapsed = Date.now() - start;
@@ -76,11 +82,13 @@ export async function runExhaustedSyncRetryAlertsBackfillOnce(): Promise<void> {
         `(claimedRows=${stats.claimedRows}, groupsNotified=${stats.groupsNotified}, ` +
         `groupsWithoutAdmins=${stats.groupsWithoutAdmins}, recipients=${stats.recipients})`,
     );
+    return { status: "completed", elapsedMs: elapsed, stats };
   } catch (err) {
     logWarn(
       `[migration] exhausted_sync_retry_alerts_backfill — bookkeeping failed (non-fatal): ${
         err instanceof Error ? err.message : String(err)
       }`,
     );
+    return { status: "bookkeeping_error", error: err instanceof Error ? err.message : String(err) };
   }
 }
