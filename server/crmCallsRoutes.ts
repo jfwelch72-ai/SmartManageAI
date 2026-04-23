@@ -68,6 +68,7 @@ import {
 } from "./storage";
 import {
   notifyBackfillCompletion,
+  notifyOrgAdminsOfFallbackCoverageGap,
   resendBackfillAlertDelivery,
   sendTestBackfillAlert,
   getBackfillNotificationConfig,
@@ -3258,6 +3259,11 @@ router.patch(
         // Bust the target user's cached `requireAuth` payload so a tab
         // they have open elsewhere sees the new mode on the next request.
         invalidateAuthCache(targetUserId);
+        // Task #1152 — fire-and-forget heads-up if this change just
+        // dropped a per-channel realtime recipient count to zero. The
+        // helper is internally debounced via the persisted dedupe
+        // ledger so toggling the dropdown back and forth doesn't spam.
+        void notifyOrgAdminsOfFallbackCoverageGap(orgId);
       }
       res.json({
         userId: targetUserId,

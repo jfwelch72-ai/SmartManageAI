@@ -14,7 +14,7 @@
  * to unit test without touching the network.
  */
 
-import { isValidSlackWebhookUrl } from "./slackService";
+import { isValidSlackWebhookUrl, sendSlackMessage } from "./slackService";
 import { sendEmail } from "./emailService";
 import { logInfo, logWarn } from "../utils/logger";
 import { createHash } from "crypto";
@@ -33,8 +33,10 @@ import {
   recordCrmTranscriptBackfillAlertDelivery,
   recordCrmTranscriptBackfillThresholdAlert,
   releaseBackfillAlertResendCooldown,
+  summarizeOrgAdminAlertFailureFallbackMutes,
   tryReserveBackfillAlertResendCooldown,
   wasAlertFallbackSentSince,
+  type AlertFailureFallbackMuteSummary,
   type AlertFallbackSentKey,
   type CrmTranscriptBackfillAlertDelivery,
   type CrmTranscriptBackfillAlertFailureDigestEntry,
@@ -578,6 +580,279 @@ export async function notifyOrgAdminsOfAlertDeliveryFailure(
     );
     return 0;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Task #1152 — proactive heads-up when a per-channel realtime recipient
+// count drops to zero. The admin transcript-backfill page (Task #1102)
+// already surfaces these counters, but admins only notice on their next
+// visit. We fire a one-off email (or, when no admin remains reachable,
+// post to the legacy Slack webhook) the first time a channel is fully
+// silenced by mutes, so coverage gaps are caught immediately.
+//
+// The helper is fire-and-forget from the per-user / admin-driven
+// preference-write endpoints in `authProfileRoutes.ts` and
+// `crmCallsRoutes.ts`. It must never throw and must never block the
+// PATCH response.
+//
+// Debounce strategy: we reuse the persisted `alert_fallback_sent` ledger
+// with a synthetic channel id (`coverage-gap-slack` / `coverage-gap-email`)
+// so toggling preferences back-and-forth doesn't spam the org. The window
+// is intentionally longer than the per-failure dedupe (24h) because once
+// admins know the gap exists they're expected to either fix it or
+// acknowledge it on the dashboard. A small in-memory cache short-circuits
+// the common case where multiple PATCHes from the same admin land within
+// the same minute.
+// ---------------------------------------------------------------------------
+
+const COVERAGE_GAP_DEDUPE_MS = 24 * 60 * 60 * 1000; // 24 hours
+const coverageGapInMemoryDedupe = new Map<string, number>();
+
+/** Test seam: clears the in-memory coverage-gap dedupe cache. */
+export function _resetCoverageGapDedupeForTests(): void {
+  coverageGapInMemoryDedupe.clear();
+}
+
+function buildCoverageGapInMemoryKey(
+  orgId: string,
+  channel: "slack" | "email",
+): string {
+  return `${orgId}|coverage-gap-${channel}`;
+}
+
+function buildCoverageGapPersistedKey(
+  orgId: string,
+  channel: "slack" | "email",
+): AlertFallbackSentKey {
+  return {
+    orgId,
+    channel: `coverage-gap-${channel}`,
+    recipientSummary: `coverage-gap-${channel}`,
+    errorHash: createHash("sha256")
+      .update(`coverage-gap|${channel}`)
+      .digest("hex"),
+  };
+}
+
+export type CoverageGapNotificationContent = {
+  subject: string;
+  text: string;
+  html: string;
+  slackTitle: string;
+  slackMessage: string;
+};
+
+export function buildCoverageGapNotificationContent(input: {
+  channel: "slack" | "email";
+  mutedAdminCount: number;
+}): CoverageGapNotificationContent {
+  const baseUrl = (process.env.APP_BASE_URL || "").replace(/\/$/, "");
+  const adminUrl = baseUrl
+    ? `${baseUrl}/admin/transcript-backfill`
+    : "/admin/transcript-backfill";
+  const channelLabel = input.channel === "slack" ? "Slack" : "email";
+  const summary =
+    `Nobody is left to receive transcript-backfill ${channelLabel} ` +
+    `delivery-failure alerts: ${input.mutedAdminCount} admin` +
+    `${input.mutedAdminCount === 1 ? " has" : "s have"} muted the ` +
+    `${channelLabel} fallback for this org.`;
+  const subject = `[CRM] No admins left receiving ${channelLabel} alert-failure pages`;
+  const escape = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  const text = [
+    summary,
+    "",
+    `If a transcript-backfill alert fails to deliver via ${channelLabel}, ` +
+      `nobody on this org will be paged automatically until coverage is restored.`,
+    "",
+    `Open the admin transcript-backfill page to review who has muted what ` +
+      `and re-balance coverage:`,
+    adminUrl,
+  ].join("\n");
+  const html = `
+    <div style="font-family:-apple-system,system-ui,sans-serif;font-size:14px;color:#111;">
+      <p style="margin:0 0 12px;"><strong>${escape(summary)}</strong></p>
+      <p style="margin:0 0 12px;">If a transcript-backfill alert fails to deliver via ${escape(channelLabel)}, nobody on this org will be paged automatically until coverage is restored.</p>
+      <p style="margin:16px 0 0;">
+        <a href="${escape(adminUrl)}" style="color:#2563eb;">Open the admin transcript-backfill page</a>
+        to review who has muted what and re-balance coverage.
+      </p>
+    </div>
+  `.trim();
+  const slackTitle = `No admins left receiving ${channelLabel} alert-failure pages`;
+  const slackMessage = [
+    `*${summary}*`,
+    `*Review:* <${adminUrl}|Open admin transcript backfill>`,
+  ].join("\n");
+  return { subject, text, html, slackTitle, slackMessage };
+}
+
+/**
+ * Inspects the org's per-channel realtime recipient counts and, for each
+ * channel that has just been fully silenced by active mutes, fires a one-off
+ * heads-up so admins notice the gap immediately. Best-effort: returns the
+ * channels for which a notification was actually dispatched. Never throws.
+ */
+export async function notifyOrgAdminsOfFallbackCoverageGap(
+  orgId: string,
+): Promise<Array<"slack" | "email">> {
+  const dispatched: Array<"slack" | "email"> = [];
+  let summary: AlertFailureFallbackMuteSummary;
+  try {
+    summary = await summarizeOrgAdminAlertFailureFallbackMutes(orgId);
+  } catch (err) {
+    logWarn(
+      "transcriptBackfillNotifications: coverage-gap summary lookup failed",
+      { orgId, error: err instanceof Error ? err.message : String(err) },
+    );
+    return dispatched;
+  }
+
+  for (const channel of ["slack", "email"] as const) {
+    const ch = summary[channel];
+    // Only fire when the gap is *caused by* an active mute. Orgs with no
+    // admins at all (effectiveRecipientCount === 0 AND mutedAdminCount === 0)
+    // shouldn't trigger this — there's no transition from "covered" to
+    // "uncovered" to warn about.
+    if (ch.effectiveRecipientCount !== 0) continue;
+    if (ch.mutedAdminCount === 0) continue;
+
+    const memKey = buildCoverageGapInMemoryKey(orgId, channel);
+    const now = Date.now();
+    // Drop expired in-memory entries opportunistically.
+    for (const [k, ts] of coverageGapInMemoryDedupe) {
+      if (now - ts >= COVERAGE_GAP_DEDUPE_MS)
+        coverageGapInMemoryDedupe.delete(k);
+    }
+    const lastInMem = coverageGapInMemoryDedupe.get(memKey);
+    if (lastInMem !== undefined && now - lastInMem < COVERAGE_GAP_DEDUPE_MS) {
+      continue;
+    }
+
+    const persistedKey = buildCoverageGapPersistedKey(orgId, channel);
+    const since = new Date(now - COVERAGE_GAP_DEDUPE_MS);
+    let dedupedByDb = false;
+    try {
+      dedupedByDb = await wasAlertFallbackSentSince(persistedKey, since);
+    } catch (err) {
+      logWarn(
+        "transcriptBackfillNotifications: coverage-gap dedupe lookup failed; proceeding",
+        { orgId, channel, error: err instanceof Error ? err.message : String(err) },
+      );
+    }
+    if (dedupedByDb) {
+      coverageGapInMemoryDedupe.set(memKey, now);
+      continue;
+    }
+
+    // Find any admins still reachable via the realtime stream on *some*
+    // channel — these are the "remaining admins" the task talks about.
+    // We pass `undefined` for the channel filter so an admin who only
+    // muted (say) Slack is still emailed about the Slack-coverage gap.
+    let remaining: OrgAdminFailureFallbackRecipient[] = [];
+    try {
+      remaining = await listOrgAdminsForAlertFailureFallback(
+        orgId,
+        undefined,
+        "realtime",
+      );
+    } catch (err) {
+      logWarn(
+        "transcriptBackfillNotifications: coverage-gap admin lookup failed",
+        { orgId, channel, error: err instanceof Error ? err.message : String(err) },
+      );
+    }
+
+    const content = buildCoverageGapNotificationContent({
+      channel,
+      mutedAdminCount: ch.mutedAdminCount,
+    });
+
+    let delivered = false;
+    if (remaining.length > 0) {
+      try {
+        const ok = await sendEmail({
+          to: remaining.map((a) => a.email),
+          subject: content.subject,
+          text: content.text,
+          html: content.html,
+        });
+        if (ok) {
+          delivered = true;
+          logInfo(
+            "transcriptBackfillNotifications: coverage-gap email dispatched",
+            { orgId, channel, adminCount: remaining.length },
+          );
+        } else {
+          logWarn(
+            "transcriptBackfillNotifications: coverage-gap email transport returned non-success",
+            { orgId, channel },
+          );
+        }
+      } catch (err) {
+        logWarn(
+          "transcriptBackfillNotifications: coverage-gap email threw",
+          { orgId, channel, error: err instanceof Error ? err.message : String(err) },
+        );
+      }
+    } else {
+      // No admins are reachable via any realtime channel. Fall back to
+      // the legacy Slack webhook (per-org settings or env var) so somebody
+      // is still notified that nobody is on duty.
+      let slackWebhook: string | null = null;
+      try {
+        const destinations = await resolveBackfillNotificationDestinations(orgId);
+        slackWebhook = (destinations.slackWebhookUrl ?? "").trim() || null;
+      } catch (err) {
+        logWarn(
+          "transcriptBackfillNotifications: coverage-gap legacy destination lookup failed",
+          { orgId, channel, error: err instanceof Error ? err.message : String(err) },
+        );
+      }
+      if (slackWebhook && isValidSlackWebhookUrl(slackWebhook)) {
+        try {
+          await sendSlackMessage(
+            slackWebhook,
+            content.slackTitle,
+            content.slackMessage,
+          );
+          delivered = true;
+          logInfo(
+            "transcriptBackfillNotifications: coverage-gap slack heads-up posted",
+            { orgId, channel },
+          );
+        } catch (err) {
+          logWarn(
+            "transcriptBackfillNotifications: coverage-gap slack post threw",
+            {
+              orgId,
+              channel,
+              error: err instanceof Error ? err.message : String(err),
+            },
+          );
+        }
+      } else {
+        logInfo(
+          "transcriptBackfillNotifications: coverage-gap heads-up skipped (no recipients and no legacy slack webhook)",
+          { orgId, channel },
+        );
+      }
+    }
+
+    if (delivered) {
+      coverageGapInMemoryDedupe.set(memKey, now);
+      try {
+        await recordAlertFallbackSent(persistedKey);
+      } catch (err) {
+        logWarn(
+          "transcriptBackfillNotifications: failed to persist coverage-gap dedupe key",
+          { orgId, channel, error: err instanceof Error ? err.message : String(err) },
+        );
+      }
+      dispatched.push(channel);
+    }
+  }
+  return dispatched;
 }
 
 /**

@@ -468,6 +468,7 @@ import {
 } from "./services/emailService";
 import { buildQuietHoursDigestPreview, type QuietHoursDigestFormat } from "./utils/jobMetricAlerts";
 import { insertNotification } from "./services/notificationService";
+import { notifyOrgAdminsOfFallbackCoverageGap } from "./services/transcriptBackfillNotifications";
 import { setAllFeatureFlags } from "./services/featureFlagService";
 import { FEATURE_FLAG_KEYS } from "@shared/schema";
 import { requireDevSeed } from "./utils/devSeedFlag";
@@ -1126,6 +1127,20 @@ const upload = multer({
       invalidateAuthCache(userId);
 
       await logUpdate(userId, "users", userId, req.user, updateData, req as any);
+
+      // Task #1152 — fire-and-forget heads-up if this preference change
+      // just dropped a per-channel realtime alert-failure recipient count
+      // to zero for the user's org. Only triggers for fields that actually
+      // affect the per-channel realtime fan-out; the helper itself is
+      // internally debounced so toggling preferences won't spam the org.
+      const touchedFallbackPrefs =
+        crmAlertFailureFallbackEnabled !== undefined ||
+        crmAlertFailureFallbackMutedChannels !== undefined ||
+        alertFailureEmailMode !== undefined ||
+        crmBackfillSummaryChannel !== undefined;
+      if (touchedFallbackPrefs && updated.role === "ADMIN" && updated.organizationId) {
+        void notifyOrgAdminsOfFallbackCoverageGap(updated.organizationId);
+      }
 
       const { passwordHash, tokenVersion, ...sanitized } = updated;
       res.json(sanitized);
