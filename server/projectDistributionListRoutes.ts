@@ -30,7 +30,7 @@ async function assertProjectAccess(projectId: string, organizationId: string) {
   const [project] = await db
     .select()
     .from(projects)
-    .where(and(eq(projects.id, projectId), eq(projects.organizationId, organizationId)))
+    .where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, organizationId)))
     .limit(1);
   return project || null;
 }

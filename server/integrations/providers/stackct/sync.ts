@@ -134,7 +134,7 @@ export async function exportProjects(
     const localProjects = await db
       .select()
       .from(projects)
-      .where(eq(projects.organizationId, orgId));
+      .where(eq(projects.gcOrganizationId, orgId));
     logInfo("STACK CT: Exporting projects", { count: localProjects.length });
 
     for (const lp of localProjects) {

@@ -1003,7 +1003,7 @@ router.get("/ai-features/schedule/:projectId/email-recipients", requireAuth, asy
       .from(projects)
       .where(and(
         eq(projects.id, req.params.projectId),
-        eq(projects.organizationId, organizationId),
+        eq(projects.gcOrganizationId, organizationId),
       ))
       .limit(1);
 
@@ -1084,7 +1084,7 @@ router.get("/ai-features/schedule/:projectId/email-history", requireAuth, async 
       .from(projects)
       .where(and(
         eq(projects.id, req.params.projectId),
-        eq(projects.organizationId, organizationId),
+        eq(projects.gcOrganizationId, organizationId),
       ))
       .limit(1);
 
@@ -1235,7 +1235,7 @@ router.post(
         .from(projects)
         .where(and(
           eq(projects.id, req.params.projectId),
-          eq(projects.organizationId, organizationId),
+          eq(projects.gcOrganizationId, organizationId),
         ))
         .limit(1);
 

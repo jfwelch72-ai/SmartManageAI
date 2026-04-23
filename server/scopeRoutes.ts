@@ -1967,7 +1967,7 @@ router.get("/api/bid-modifier-selections/:lineItemId", requireAuth, async (req: 
     }
     if (!hasAccess && lineItem.projectId) {
       const [proj] = await db.select({ id: projects.id }).from(projects)
-        .where(and(eq(projects.id, lineItem.projectId), eq(projects.organizationId, organizationId))).limit(1);
+        .where(and(eq(projects.id, lineItem.projectId), eq(projects.gcOrganizationId, organizationId))).limit(1);
       hasAccess = !!proj;
     }
 
@@ -2097,7 +2097,7 @@ router.post("/api/bid-modifier-selections", requireAuth, async (req: AuthRequest
     }
     if (!hasAccess && lineItem.estimateProjectId) {
       const [proj] = await db.select({ id: projects.id }).from(projects)
-        .where(and(eq(projects.id, lineItem.estimateProjectId), eq(projects.organizationId, organizationId))).limit(1);
+        .where(and(eq(projects.id, lineItem.estimateProjectId), eq(projects.gcOrganizationId, organizationId))).limit(1);
       hasAccess = !!proj;
     }
 

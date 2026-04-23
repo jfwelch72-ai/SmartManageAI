@@ -1436,7 +1436,7 @@ router.post("/connections/:id/stackct-sync", requireAuth, async (req, res, next)
 
     if (localProjectId) {
       const [project] = await db.select({ id: projects.id }).from(projects)
-        .where(and(eq(projects.id, localProjectId), eq(projects.organizationId, user.organizationId)));
+        .where(and(eq(projects.id, localProjectId), eq(projects.gcOrganizationId, user.organizationId)));
       if (!project) {
         return res.status(403).json({ error: "Project does not belong to your organization" });
       }

@@ -858,7 +858,7 @@ router.get("/api/documents/:documentId", requireAuth, async (req: AuthRequest, r
       return;
     }
     const [project] = await db
-      .select({ organizationId: projects.organizationId })
+      .select({ organizationId: projects.gcOrganizationId })
       .from(projects)
       .where(eq(projects.id, document.projectId))
       .limit(1);
