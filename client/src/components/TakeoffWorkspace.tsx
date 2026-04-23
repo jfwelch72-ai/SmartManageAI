@@ -283,6 +283,15 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [markupTextInput, setMarkupTextInput] = useState<{ x: number; y: number; value: string } | null>(null);
   const [selectedMarkupId, setSelectedMarkupId] = useState<string | null>(null);
   const [markupEditDraft, setMarkupEditDraft] = useState<{ color: string; thickness: number; text: string } | null>(null);
+  const [markupBodyDragId, setMarkupBodyDragId] = useState<string | null>(null);
+  const [markupResizePreview, setMarkupResizePreview] = useState<{ id: string; points: { x: number; y: number }[] } | null>(null);
+  const markupResizeRef = useRef<{
+    id: string;
+    origPts: { x: number; y: number }[];
+    origBB: { x: number; y: number; w: number; h: number };
+    corner: string;
+    tool: string;
+  } | null>(null);
   const [detectedScale, setDetectedScale] = useState<DetectedScale | null>(null);
   const [thumbnailStripOpen, setThumbnailStripOpen] = useState(false);
   const [propertiesPanelOpen, setPropertiesPanelOpen] = useState(false);
@@ -3692,13 +3701,16 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
                 {markups.map((markup) => {
                   if (markup.categoryId && hiddenCategoryIds.has(markup.categoryId)) return null;
-                  const pts = markup.points as { x: number; y: number }[];
-                  if (!pts || pts.length === 0) return null;
+                  const rawPts = markup.points as { x: number; y: number }[];
+                  if (!rawPts || rawPts.length === 0) return null;
                   const color = (markup.color as string) || "#ff0000";
                   const thickness = (markup.thickness as number) || 2;
                   const tool = markup.tool as string;
                   const isSelectable = activeTool === "select";
                   const isSelected = selectedMarkupId === markup.id;
+                  const pts = (markupResizePreview && markupResizePreview.id === markup.id)
+                    ? markupResizePreview.points
+                    : rawPts;
                   const onMarkupClick = (e: any) => {
                     if (!isSelectable) return;
                     e.cancelBubble = true;
@@ -3711,10 +3723,36 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   };
                   const selectedStrokeBoost = isSelected ? Math.max(1, 2 / stageScale) : 0;
                   const selectionStroke = isSelected ? "#3b82f6" : undefined;
+                  const isDraggable = isSelected;
+                  const onBodyDragStart = (e: any) => {
+                    e.cancelBubble = true;
+                    setMarkupBodyDragId(markup.id);
+                    e.target.setAttr("_origX", e.target.x());
+                    e.target.setAttr("_origY", e.target.y());
+                  };
+                  const onBodyDragEnd = (e: any) => {
+                    const origX = e.target.getAttr("_origX") ?? 0;
+                    const origY = e.target.getAttr("_origY") ?? 0;
+                    const dx = e.target.x() - origX;
+                    const dy = e.target.y() - origY;
+                    e.target.position({ x: origX, y: origY });
+                    setMarkupBodyDragId(null);
+                    if (dx !== 0 || dy !== 0) {
+                      const newPts = rawPts.map(p => ({ x: p.x + dx, y: p.y + dy }));
+                      updateMarkupMutation.mutate({ id: markup.id, points: newPts });
+                    }
+                  };
+                  const bodyHandlers = isDraggable ? {
+                    draggable: true,
+                    onDragStart: onBodyDragStart,
+                    onDragEnd: onBodyDragEnd,
+                    onMouseEnter: (e: any) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = "move"; },
+                    onMouseLeave: (e: any) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = "default"; },
+                  } : {};
+                  let shape: any = null;
                   if (tool === "ARROW" && pts.length >= 2) {
-                    return (
+                    shape = (
                       <Arrow
-                        key={markup.id}
                         points={[pts[0].x, pts[0].y, pts[pts.length - 1].x, pts[pts.length - 1].y]}
                         stroke={selectionStroke || color}
                         strokeWidth={thickness + selectedStrokeBoost}
@@ -3724,13 +3762,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         listening={isSelectable}
                         onClick={onMarkupClick}
                         onTap={onMarkupClick}
+                        {...bodyHandlers}
                       />
                     );
-                  }
-                  if (tool === "TEXT" && pts.length >= 1) {
-                    return (
+                  } else if (tool === "TEXT" && pts.length >= 1) {
+                    shape = (
                       <Text
-                        key={markup.id}
                         x={pts[0].x}
                         y={pts[0].y}
                         text={(markup.text as string) || ""}
@@ -3741,17 +3778,16 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         listening={isSelectable}
                         onClick={onMarkupClick}
                         onTap={onMarkupClick}
+                        {...bodyHandlers}
                       />
                     );
-                  }
-                  if (tool === "RECTANGLE" && pts.length >= 2) {
+                  } else if (tool === "RECTANGLE" && pts.length >= 2) {
                     const x = Math.min(pts[0].x, pts[1].x);
                     const y = Math.min(pts[0].y, pts[1].y);
                     const w = Math.abs(pts[1].x - pts[0].x);
                     const h = Math.abs(pts[1].y - pts[0].y);
-                    return (
+                    shape = (
                       <Rect
-                        key={markup.id}
                         x={x} y={y} width={w} height={h}
                         stroke={selectionStroke || color}
                         strokeWidth={thickness + selectedStrokeBoost}
@@ -3759,17 +3795,16 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         listening={isSelectable}
                         onClick={onMarkupClick}
                         onTap={onMarkupClick}
+                        {...bodyHandlers}
                       />
                     );
-                  }
-                  if (tool === "HIGHLIGHT" && pts.length >= 2) {
+                  } else if (tool === "HIGHLIGHT" && pts.length >= 2) {
                     const x = Math.min(pts[0].x, pts[1].x);
                     const y = Math.min(pts[0].y, pts[1].y);
                     const w = Math.abs(pts[1].x - pts[0].x);
                     const h = Math.abs(pts[1].y - pts[0].y);
-                    return (
+                    shape = (
                       <Rect
-                        key={markup.id}
                         x={x} y={y} width={w} height={h}
                         fill={color}
                         opacity={0.3}
@@ -3778,17 +3813,16 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         listening={isSelectable}
                         onClick={onMarkupClick}
                         onTap={onMarkupClick}
+                        {...bodyHandlers}
                       />
                     );
-                  }
-                  if (tool === "CLOUD" && pts.length >= 2) {
+                  } else if (tool === "CLOUD" && pts.length >= 2) {
                     const a = pts[0];
                     const b = pts[pts.length - 1];
                     const bump = Math.max(12, Math.min(32, Math.min(Math.abs(b.x - a.x), Math.abs(b.y - a.y)) / 4)) / stageScale;
                     const d = buildCloudPath(a.x, a.y, b.x, b.y, bump);
-                    return (
+                    shape = (
                       <Path
-                        key={markup.id}
                         data={d}
                         stroke={selectionStroke || color}
                         strokeWidth={thickness + selectedStrokeBoost}
@@ -3798,13 +3832,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         listening={isSelectable}
                         onClick={onMarkupClick}
                         onTap={onMarkupClick}
+                        {...bodyHandlers}
                       />
                     );
-                  }
-                  if (tool === "FREEHAND" && pts.length >= 2) {
-                    return (
+                  } else if (tool === "FREEHAND" && pts.length >= 2) {
+                    shape = (
                       <Line
-                        key={markup.id}
                         points={pts.flatMap(p => [p.x, p.y])}
                         stroke={selectionStroke || color}
                         strokeWidth={thickness + selectedStrokeBoost}
@@ -3814,10 +3847,164 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         listening={isSelectable}
                         onClick={onMarkupClick}
                         onTap={onMarkupClick}
+                        {...bodyHandlers}
                       />
                     );
                   }
-                  return null;
+                  if (!shape) return null;
+
+                  const handles: any[] = [];
+                  if (isSelected && markupBodyDragId !== markup.id && tool !== "TEXT") {
+                    const handleHalf = 6 / stageScale;
+                    const handleStroke = 1.5 / stageScale;
+                    const commitResize = (newPts: { x: number; y: number }[]) => {
+                      updateMarkupMutation.mutate({ id: markup.id, points: newPts });
+                    };
+                    if (tool === "ARROW") {
+                      [0, rawPts.length - 1].forEach((idx, i) => {
+                        handles.push(
+                          <Rect
+                            key={`handle-${markup.id}-${i}`}
+                            x={rawPts[idx].x - handleHalf}
+                            y={rawPts[idx].y - handleHalf}
+                            width={handleHalf * 2}
+                            height={handleHalf * 2}
+                            fill="#ffffff"
+                            stroke="#3b82f6"
+                            strokeWidth={handleStroke}
+                            draggable
+                            onMouseDown={(e: any) => { e.cancelBubble = true; }}
+                            onTouchStart={(e: any) => { e.cancelBubble = true; }}
+                            onDragStart={(e: any) => {
+                              e.cancelBubble = true;
+                              markupResizeRef.current = {
+                                id: markup.id,
+                                origPts: rawPts.map(p => ({ ...p })),
+                                origBB: { x: 0, y: 0, w: 0, h: 0 },
+                                corner: `pt${idx}`,
+                                tool,
+                              };
+                            }}
+                            onDragMove={(e: any) => {
+                              const np = rawPts.map(p => ({ ...p }));
+                              np[idx] = { x: e.target.x() + handleHalf, y: e.target.y() + handleHalf };
+                              setMarkupResizePreview({ id: markup.id, points: np });
+                            }}
+                            onDragEnd={async (e: any) => {
+                              const np = rawPts.map(p => ({ ...p }));
+                              np[idx] = { x: e.target.x() + handleHalf, y: e.target.y() + handleHalf };
+                              markupResizeRef.current = null;
+                              setMarkupResizePreview({ id: markup.id, points: np });
+                              try {
+                                await updateMarkupMutation.mutateAsync({ id: markup.id, points: np });
+                              } catch {}
+                              setMarkupResizePreview(curr => (curr && curr.id === markup.id) ? null : curr);
+                            }}
+                            onMouseEnter={(e: any) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = "move"; }}
+                            onMouseLeave={(e: any) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = "default"; }}
+                            data-testid={`handle-markup-${markup.id}-pt${idx}`}
+                          />
+                        );
+                      });
+                    } else {
+                      const xs = rawPts.map(p => p.x);
+                      const ys = rawPts.map(p => p.y);
+                      const bbX = Math.min(...xs);
+                      const bbY = Math.min(...ys);
+                      const bbW = Math.max(...xs) - bbX;
+                      const bbH = Math.max(...ys) - bbY;
+                      const corners = [
+                        { name: "tl", x: bbX, y: bbY, cursor: "nwse-resize" },
+                        { name: "tr", x: bbX + bbW, y: bbY, cursor: "nesw-resize" },
+                        { name: "bl", x: bbX, y: bbY + bbH, cursor: "nesw-resize" },
+                        { name: "br", x: bbX + bbW, y: bbY + bbH, cursor: "nwse-resize" },
+                      ];
+                      const computeNewPts = (cornerName: string, newCornerX: number, newCornerY: number) => {
+                        const ref = markupResizeRef.current;
+                        if (!ref) return rawPts;
+                        const oldBB = ref.origBB;
+                        let nx = oldBB.x, ny = oldBB.y, nRight = oldBB.x + oldBB.w, nBottom = oldBB.y + oldBB.h;
+                        if (cornerName === "tl") { nx = newCornerX; ny = newCornerY; }
+                        else if (cornerName === "tr") { ny = newCornerY; nRight = newCornerX; }
+                        else if (cornerName === "bl") { nx = newCornerX; nBottom = newCornerY; }
+                        else if (cornerName === "br") { nRight = newCornerX; nBottom = newCornerY; }
+                        const minSize = 4;
+                        if (nRight - nx < minSize) {
+                          if (cornerName === "tl" || cornerName === "bl") nx = nRight - minSize;
+                          else nRight = nx + minSize;
+                        }
+                        if (nBottom - ny < minSize) {
+                          if (cornerName === "tl" || cornerName === "tr") ny = nBottom - minSize;
+                          else nBottom = ny + minSize;
+                        }
+                        const newBB = { x: nx, y: ny, w: nRight - nx, h: nBottom - ny };
+                        if (ref.tool === "RECTANGLE" || ref.tool === "HIGHLIGHT" || ref.tool === "CLOUD") {
+                          return [
+                            { x: newBB.x, y: newBB.y },
+                            { x: newBB.x + newBB.w, y: newBB.y + newBB.h },
+                          ];
+                        }
+                        const sx = oldBB.w === 0 ? 1 : newBB.w / oldBB.w;
+                        const sy = oldBB.h === 0 ? 1 : newBB.h / oldBB.h;
+                        return ref.origPts.map(p => ({
+                          x: newBB.x + (p.x - oldBB.x) * sx,
+                          y: newBB.y + (p.y - oldBB.y) * sy,
+                        }));
+                      };
+                      corners.forEach(c => {
+                        handles.push(
+                          <Rect
+                            key={`handle-${markup.id}-${c.name}`}
+                            x={c.x - handleHalf}
+                            y={c.y - handleHalf}
+                            width={handleHalf * 2}
+                            height={handleHalf * 2}
+                            fill="#ffffff"
+                            stroke="#3b82f6"
+                            strokeWidth={handleStroke}
+                            draggable
+                            onMouseDown={(e: any) => { e.cancelBubble = true; }}
+                            onTouchStart={(e: any) => { e.cancelBubble = true; }}
+                            onDragStart={(e: any) => {
+                              e.cancelBubble = true;
+                              markupResizeRef.current = {
+                                id: markup.id,
+                                origPts: rawPts.map(p => ({ ...p })),
+                                origBB: { x: bbX, y: bbY, w: bbW, h: bbH },
+                                corner: c.name,
+                                tool,
+                              };
+                            }}
+                            onDragMove={(e: any) => {
+                              if (!markupResizeRef.current) return;
+                              const newPts = computeNewPts(c.name, e.target.x() + handleHalf, e.target.y() + handleHalf);
+                              setMarkupResizePreview({ id: markup.id, points: newPts });
+                            }}
+                            onDragEnd={async (e: any) => {
+                              if (!markupResizeRef.current) { setMarkupResizePreview(null); return; }
+                              const newPts = computeNewPts(c.name, e.target.x() + handleHalf, e.target.y() + handleHalf);
+                              markupResizeRef.current = null;
+                              setMarkupResizePreview({ id: markup.id, points: newPts });
+                              try {
+                                await updateMarkupMutation.mutateAsync({ id: markup.id, points: newPts });
+                              } catch {}
+                              setMarkupResizePreview(curr => (curr && curr.id === markup.id) ? null : curr);
+                            }}
+                            onMouseEnter={(e: any) => { const con = e.target.getStage()?.container(); if (con) con.style.cursor = c.cursor; }}
+                            onMouseLeave={(e: any) => { const con = e.target.getStage()?.container(); if (con) con.style.cursor = "default"; }}
+                            data-testid={`handle-markup-${markup.id}-${c.name}`}
+                          />
+                        );
+                      });
+                    }
+                  }
+
+                  return (
+                    <Fragment key={markup.id}>
+                      {shape}
+                      {handles}
+                    </Fragment>
+                  );
                 })}
 
                 {sheetLinks.map((link: any) => {
