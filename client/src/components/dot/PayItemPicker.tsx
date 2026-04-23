@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -57,6 +57,8 @@ interface Props {
   onOpenChange: (open: boolean) => void;
   onSelect: (selected: SelectedPayItem) => void;
   defaultAgencyId?: string;
+  /** When opening the picker, scroll to and visually highlight a specific facet panel. */
+  defaultFocusFacet?: "categories" | "specSections";
   /** Seed text used to auto-suggest DOT pay items (typically the line description). */
   seedDescription?: string;
   seedUnit?: string | null;
@@ -68,6 +70,7 @@ export function PayItemPicker({
   onOpenChange,
   onSelect,
   defaultAgencyId,
+  defaultFocusFacet,
   seedDescription,
   seedUnit,
   seedCategory,
@@ -78,6 +81,28 @@ export function PayItemPicker({
   const [search, setSearch] = useState("");
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedSections, setSelectedSections] = useState<string[]>([]);
+  const categoryFacetRef = useRef<HTMLDivElement | null>(null);
+  const sectionFacetRef = useRef<HTMLDivElement | null>(null);
+  const [highlightedFacet, setHighlightedFacet] = useState<"categories" | "specSections" | null>(null);
+
+  // When the picker is (re)opened, sync local state to the consumer's
+  // intent. If a defaultAgencyId is supplied (e.g. clicking an AgencyCard
+  // badge) we scope to that agency; if it's explicitly cleared (e.g. the
+  // generic "Browse Pay Items" button) we reset the prior selection so the
+  // picker opens unscoped instead of remembering a stale agency.
+  useEffect(() => {
+    if (!open) return;
+    if (defaultAgencyId) {
+      if (defaultAgencyId !== agencyId) {
+        setAgencyId(defaultAgencyId);
+        setSpecBookId(undefined);
+      }
+    } else if (agencyId) {
+      setAgencyId(undefined);
+      setSpecBookId(undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, defaultAgencyId]);
 
   const { data: agencies = [] } = useQuery<DotAgency[]>({ queryKey: ["/api/dot/agencies"], enabled: open });
   const { data: specBooks = [] } = useQuery<DotSpecBook[]>({
@@ -150,6 +175,20 @@ export function PayItemPicker({
   });
   const categoryFacets = facets?.categories ?? [];
   const sectionFacets = facets?.specSections ?? [];
+
+  // When opened with a requested facet focus, scroll the matching panel into
+  // view and briefly ring-highlight it so the user sees where to filter.
+  useEffect(() => {
+    if (!open || !defaultFocusFacet) return;
+    if (defaultFocusFacet === "categories" && categoryFacets.length === 0) return;
+    if (defaultFocusFacet === "specSections" && sectionFacets.length === 0) return;
+    const node = defaultFocusFacet === "categories" ? categoryFacetRef.current : sectionFacetRef.current;
+    if (!node) return;
+    setHighlightedFacet(defaultFocusFacet);
+    node.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const t = setTimeout(() => setHighlightedFacet(null), 2000);
+    return () => clearTimeout(t);
+  }, [open, defaultFocusFacet, categoryFacets.length, sectionFacets.length]);
 
   const sortedCategories = selectedCategories.slice().sort().join(",");
   const sortedSections = selectedSections.slice().sort().join(",");
@@ -365,7 +404,11 @@ export function PayItemPicker({
         {effectiveSpecBookId && (categoryFacets.length > 0 || sectionFacets.length > 0) && (
           <div className="border rounded-md p-2 space-y-2" data-testid="section-pay-item-facets">
             {categoryFacets.length > 0 && (
-              <div>
+              <div
+                ref={categoryFacetRef}
+                className={`rounded-md transition-shadow ${highlightedFacet === "categories" ? "ring-2 ring-primary ring-offset-2 ring-offset-background p-1" : ""}`}
+                data-testid="facet-panel-categories"
+              >
                 <div className="flex items-center justify-between mb-1">
                   <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Category</div>
                   {hasActiveFacets && (
@@ -400,7 +443,11 @@ export function PayItemPicker({
               </div>
             )}
             {sectionFacets.length > 0 && (
-              <div>
+              <div
+                ref={sectionFacetRef}
+                className={`rounded-md transition-shadow ${highlightedFacet === "specSections" ? "ring-2 ring-primary ring-offset-2 ring-offset-background p-1" : ""}`}
+                data-testid="facet-panel-sections"
+              >
                 <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">Spec section</div>
                 <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
                   {sectionFacets.map((s) => {

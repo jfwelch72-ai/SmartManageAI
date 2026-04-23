@@ -51,7 +51,14 @@ export default function DotLibraryPage() {
   const canViewLib = useFeaturePermission("canViewDotLibrary");
   const canAccess = canViewLib || canManageLib;
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerAgencyId, setPickerAgencyId] = useState<string | undefined>();
+  const [pickerFocusFacet, setPickerFocusFacet] = useState<"categories" | "specSections" | undefined>();
   const [agencyFilter, setAgencyFilter] = useState("");
+  const openPickerForAgency = (agencyId: string, focus: "categories" | "specSections") => {
+    setPickerAgencyId(agencyId);
+    setPickerFocusFacet(focus);
+    setPickerOpen(true);
+  };
   const [bidTabOpen, setBidTabOpen] = useState(false);
   const [bidTabDocId, setBidTabDocId] = useState("");
   const [bidTabAgency, setBidTabAgency] = useState("");
@@ -103,7 +110,7 @@ export default function DotLibraryPage() {
           <Button variant="outline" onClick={() => setBidTabOpen(true)} data-testid="button-open-bid-tab-extract">
             <Wand2 className="h-4 w-4 mr-2" />AI Bid-Tab Extract
           </Button>
-          <Button onClick={() => setPickerOpen(true)} data-testid="button-open-pay-item-picker">
+          <Button onClick={() => { setPickerAgencyId(undefined); setPickerFocusFacet(undefined); setPickerOpen(true); }} data-testid="button-open-pay-item-picker">
             <Search className="h-4 w-4 mr-2" />Browse Pay Items
           </Button>
         </div>
@@ -193,7 +200,7 @@ export default function DotLibraryPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {filtered.map((a) => (
-                <AgencyCard key={a.id} agency={a} />
+                <AgencyCard key={a.id} agency={a} onOpenFacet={openPickerForAgency} />
               ))}
             </div>
           )}
@@ -224,6 +231,8 @@ export default function DotLibraryPage() {
       <PayItemPicker
         open={pickerOpen}
         onOpenChange={setPickerOpen}
+        defaultAgencyId={pickerAgencyId}
+        defaultFocusFacet={pickerFocusFacet}
         onSelect={(s) => {
           alert(`Selected ${s.payItem.itemNumber} — ${s.payItem.description} (${s.payItem.unit}) from ${s.agency.name}`);
           setPickerOpen(false);
@@ -244,7 +253,7 @@ function StatCard({ label, value }: { label: string; value: number }) {
   );
 }
 
-function AgencyCard({ agency }: { agency: DotAgency }) {
+function AgencyCard({ agency, onOpenFacet }: { agency: DotAgency; onOpenFacet: (agencyId: string, focus: "categories" | "specSections") => void }) {
   const { data: specBooks = [] } = useQuery<DotSpecBook[]>({
     queryKey: ["/api/dot/agencies", agency.id, "spec-books"],
     queryFn: async () => {
@@ -295,14 +304,28 @@ function AgencyCard({ agency }: { agency: DotAgency }) {
           {current?.itemCount ?? 0} pay items {items.length === 0 && current?.itemCount === 0 ? "(library empty)" : ""}
         </div>
         <div className="flex items-center gap-2 flex-wrap pt-1">
-          <Badge variant="secondary" className="gap-1" data-testid={`badge-categories-${agency.code}`}>
+          <button
+            type="button"
+            onClick={() => onOpenFacet(agency.id, "categories")}
+            disabled={categoryCount === 0}
+            className="inline-flex items-center gap-1 rounded-md bg-secondary text-secondary-foreground text-xs px-2 py-0.5 font-semibold hover-elevate active-elevate-2 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            data-testid={`badge-categories-${agency.code}`}
+            aria-label={`Browse ${agency.name} pay items by category`}
+          >
             <FolderTree className="h-3 w-3" />
             {categoryCount} {categoryCount === 1 ? "category" : "categories"}
-          </Badge>
-          <Badge variant="secondary" className="gap-1" data-testid={`badge-sections-${agency.code}`}>
+          </button>
+          <button
+            type="button"
+            onClick={() => onOpenFacet(agency.id, "specSections")}
+            disabled={sectionCount === 0}
+            className="inline-flex items-center gap-1 rounded-md bg-secondary text-secondary-foreground text-xs px-2 py-0.5 font-semibold hover-elevate active-elevate-2 disabled:opacity-50 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            data-testid={`badge-sections-${agency.code}`}
+            aria-label={`Browse ${agency.name} pay items by spec section`}
+          >
             <Layers className="h-3 w-3" />
             {sectionCount} {sectionCount === 1 ? "section" : "sections"}
-          </Badge>
+          </button>
         </div>
       </CardContent>
     </Card>
