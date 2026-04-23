@@ -40,6 +40,7 @@ import {
 import { apiRequest, queryClient, bidEstimateKey } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useFeatureFlags } from "@/hooks/use-feature-flags";
+import { PayItemMatchReasonChips } from "@/components/dot/PayItemMatchReasonChips";
 
 interface BidTabImportDialogProps {
   estimateId: string;
@@ -590,6 +591,19 @@ export function BidTabImportDialog({
                             >
                               {r.topMatch.payItem.description}
                             </div>
+                            <div className="mt-1">
+                              <PayItemMatchReasonChips
+                                matchReason={r.topMatch.matchReason}
+                                aliasText={r.topMatch.aliasText}
+                                matchedTokens={r.topMatch.matchedTokens}
+                                payItem={r.topMatch.payItem}
+                                seedDescription={r.description}
+                                seedUnit={r.unit || null}
+                                seedCategory={null}
+                                testIdPrefix={`bid-tab-${r.rowIndex}`}
+                                size="2xs"
+                              />
+                            </div>
                           </div>
                         )}
                       </TableCell>
@@ -611,11 +625,6 @@ export function BidTabImportDialog({
                             >
                               {(r.topMatch.score * 100).toFixed(0)}%
                             </span>
-                            {r.topMatch.matchReason === "alias" && (
-                              <Badge variant="secondary" className="text-[10px]">
-                                alias
-                              </Badge>
-                            )}
                           </div>
                         ) : (
                           <span className="text-xs text-muted-foreground">—</span>

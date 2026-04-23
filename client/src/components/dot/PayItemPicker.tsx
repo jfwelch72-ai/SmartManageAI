@@ -7,10 +7,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { ToastAction } from "@/components/ui/toast";
-import { Search, Loader2, Sparkles, Tag, X } from "lucide-react";
+import { Search, Loader2, Sparkles, X } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { PayItemMatchReasonChips } from "@/components/dot/PayItemMatchReasonChips";
 
 interface FacetEntry { value: string; count: number; }
 interface PayItemFacets { categories: FacetEntry[]; specSections: FacetEntry[]; }
@@ -296,11 +297,6 @@ export function PayItemPicker({
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-sm font-medium">{s.payItem.itemNumber}</span>
                         <Badge variant="outline" className="text-xs">{s.agency.code}{s.agency.stateCode ? ` · ${s.agency.stateCode}` : ""}</Badge>
-                        {s.matchReason === "alias" && (
-                          <Badge variant="secondary" className="text-xs gap-1">
-                            <Tag className="h-3 w-3" /> Your alias
-                          </Badge>
-                        )}
                         <span className="ml-auto text-xs text-muted-foreground" data-testid={`text-suggestion-score-${s.payItem.id}`}>
                           {Math.round(s.score * 100)}% match
                         </span>
@@ -309,6 +305,19 @@ export function PayItemPicker({
                       <div className="text-xs text-muted-foreground mt-0.5">
                         {s.payItem.category ?? "Uncategorized"}
                         {s.payItem.specSection ? ` · §${s.payItem.specSection}` : ""}
+                      </div>
+                      <div className="mt-1.5">
+                        <PayItemMatchReasonChips
+                          matchReason={s.matchReason}
+                          aliasText={s.aliasText}
+                          matchedTokens={s.matchedTokens}
+                          payItem={s.payItem}
+                          seedDescription={seedKey}
+                          seedUnit={seedUnit ?? null}
+                          seedCategory={seedCategory ?? null}
+                          testIdPrefix={`suggestion-${s.payItem.id}`}
+                          size="xs"
+                        />
                       </div>
                     </div>
                     <div className="flex flex-col items-end gap-1">
