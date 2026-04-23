@@ -8,7 +8,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Loader2, Building2, BookOpen, Hash, Search, Wand2, Tag, Trash2 } from "lucide-react";
+import { Loader2, Building2, BookOpen, Hash, Search, Wand2, Tag, Trash2, Layers, FolderTree } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -257,6 +257,17 @@ function AgencyCard({ agency }: { agency: DotAgency }) {
       return r.json();
     },
   });
+  const { data: facets } = useQuery<{ categories: { value: string; count: number }[]; specSections: { value: string; count: number }[] }>({
+    queryKey: ["/api/dot/pay-items/facets", { agencyId: agency.id, specBookId: current?.id }],
+    enabled: !!current,
+    queryFn: async () => {
+      const r = await fetch(`/api/dot/pay-items/facets?agencyId=${agency.id}&specBookId=${current!.id}`, { credentials: "include" });
+      if (!r.ok) return { categories: [], specSections: [] };
+      return r.json();
+    },
+  });
+  const categoryCount = facets?.categories.length ?? 0;
+  const sectionCount = facets?.specSections.length ?? 0;
   return (
     <Card data-testid={`card-agency-${agency.code}`}>
       <CardHeader className="pb-2">
@@ -276,6 +287,16 @@ function AgencyCard({ agency }: { agency: DotAgency }) {
         <div className="flex items-center gap-2 text-muted-foreground">
           <Hash className="h-3.5 w-3.5" />
           {current?.itemCount ?? 0} pay items {items.length === 0 && current?.itemCount === 0 ? "(library empty)" : ""}
+        </div>
+        <div className="flex items-center gap-2 flex-wrap pt-1">
+          <Badge variant="secondary" className="gap-1" data-testid={`badge-categories-${agency.code}`}>
+            <FolderTree className="h-3 w-3" />
+            {categoryCount} {categoryCount === 1 ? "category" : "categories"}
+          </Badge>
+          <Badge variant="secondary" className="gap-1" data-testid={`badge-sections-${agency.code}`}>
+            <Layers className="h-3 w-3" />
+            {sectionCount} {sectionCount === 1 ? "section" : "sections"}
+          </Badge>
         </div>
       </CardContent>
     </Card>
