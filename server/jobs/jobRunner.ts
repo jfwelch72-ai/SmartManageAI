@@ -3122,7 +3122,7 @@ export async function processCertifiedPayrollWeeklyDigest(opts: { now?: Date } =
 }
 
 // ============================================================
-// Task #1173: SWPPP overdue corrective action notifications
+// Task #1173 + Task #1259: SWPPP overdue corrective action notifications
 // ============================================================
 //
 // We surface overdue corrective actions in the UI already, but nothing
@@ -3132,19 +3132,44 @@ export async function processCertifiedPayrollWeeklyDigest(opts: { now?: Date } =
 //
 //   - Looks for OPEN inspections (`status = 'OPEN'`) with a non-null
 //     `correctiveActionDueDate` that is strictly before today's date.
-//   - Skips inspections that already had a fanout
-//     (`lastOverdueNotifiedAt IS NOT NULL`) so we don't re-notify the
-//     same assignee every night. The dedupe marker is cleared by the
-//     SWPPP routes when the due date is moved forward or the inspection
-//     is re-opened, which re-arms the next overdue cycle naturally.
+//   - First overdue cycle: when `lastOverdueNotifiedAt IS NULL`, the
+//     sweep fans out the initial notification and stamps the marker
+//     to `now`. The follow-up counter (`overdueReminderCount`) is NOT
+//     incremented by the initial fanout — it tracks daily reminders
+//     only. The SWPPP routes reset the marker (and the count) when
+//     the due date is moved forward or the inspection is re-opened so
+//     a fresh cycle can fire.
+//   - Daily nudges (Task #1259): once the initial fanout has happened,
+//     subsequent runs send another reminder when at least
+//     `SWPPP_OVERDUE_REMINDER_INTERVAL_MS` has passed since the last
+//     fanout, bumping `overdueReminderCount` by 1 each time, until it
+//     reaches `SWPPP_OVERDUE_REMINDER_CAP`. With the default cap of 5
+//     this means: 1 initial + up to 5 follow-ups = at most 6 fanouts
+//     per overdue cycle. Resolving the inspection stops reminders
+//     naturally (the OPEN filter excludes RESOLVED rows).
 //   - Notifies the corrective action assignee plus the project manager.
 //     Each recipient gets at most one in-app + email notification per
-//     overdue cycle.
+//     fanout (initial or daily reminder).
 //
 // The notification is a `REMINDER` with `relatedEntityType =
 // "SWPPP_OVERDUE_CORRECTIVE_ACTION"` and `relatedEntityId = inspection.id`
 // so the email composer can deep-link to the inspection list filtered
 // to the right project.
+
+// Cap the total number of overdue fanouts (initial + daily reminders)
+// per overdue cycle so we don't spam an inbox indefinitely. Configurable
+// via env var primarily for tests/operational tuning.
+const SWPPP_OVERDUE_REMINDER_CAP = Math.max(
+  1,
+  Number.parseInt(process.env.SWPPP_OVERDUE_REMINDER_CAP ?? "5", 10) || 5,
+);
+// Minimum gap between consecutive reminder fanouts. Set just under 24h
+// so a daily cron at the same wall-clock time still triggers the next
+// reminder (cron jitter would otherwise push the next eligible run
+// past 24h and skip a day). 22h is the same convention used by other
+// daily-cadence digests in this codebase.
+const SWPPP_OVERDUE_REMINDER_INTERVAL_MS = 22 * 60 * 60 * 1000;
+
 export async function processSwpppOverdueCorrectiveActions(opts: { now?: Date } = {}) {
   const now = opts.now ?? new Date();
   // We compare a YYYY-MM-DD string against `correctiveActionDueDate`
@@ -3152,7 +3177,13 @@ export async function processSwpppOverdueCorrectiveActions(opts: { now?: Date } 
   // wall-clock instants — an item due "today" is not overdue until
   // tomorrow.
   const todayStr = now.toISOString().slice(0, 10);
+  const reminderCutoff = new Date(now.getTime() - SWPPP_OVERDUE_REMINDER_INTERVAL_MS);
 
+  // Pick up:
+  //   - Brand new overdue items (lastOverdueNotifiedAt IS NULL), or
+  //   - Items that already had at least one fanout but are still under
+  //     the cap and whose last fanout was long enough ago to send a
+  //     follow-up reminder.
   const overdue = await db
     .select({
       id: swpppInspections.id,
@@ -3162,13 +3193,21 @@ export async function processSwpppOverdueCorrectiveActions(opts: { now?: Date } 
       correctiveActionDueDate: swpppInspections.correctiveActionDueDate,
       correctiveActionAssigneeId: swpppInspections.correctiveActionAssigneeId,
       correctiveActions: swpppInspections.correctiveActions,
+      lastOverdueNotifiedAt: swpppInspections.lastOverdueNotifiedAt,
+      overdueReminderCount: swpppInspections.overdueReminderCount,
     })
     .from(swpppInspections)
     .where(and(
       eq(swpppInspections.status, "OPEN"),
       isNotNull(swpppInspections.correctiveActionDueDate),
       lt(swpppInspections.correctiveActionDueDate, todayStr),
-      isNull(swpppInspections.lastOverdueNotifiedAt),
+      or(
+        isNull(swpppInspections.lastOverdueNotifiedAt),
+        and(
+          lt(swpppInspections.overdueReminderCount, SWPPP_OVERDUE_REMINDER_CAP),
+          lte(swpppInspections.lastOverdueNotifiedAt, reminderCutoff),
+        ),
+      ),
     ));
 
   if (overdue.length === 0) return;
@@ -3190,7 +3229,12 @@ export async function processSwpppOverdueCorrectiveActions(opts: { now?: Date } 
   const projectByKey = new Map(projectRows.map((p) => [`${p.organizationId}::${p.id}`, p]));
 
   const notifs: InsertNotification[] = [];
-  const notifiedInspectionIds: string[] = [];
+  // Track initial vs follow-up fanouts separately so the UPDATE can
+  // bump `overdueReminderCount` only for follow-ups. Inspections with
+  // no recipients are still recorded so we don't keep re-scanning the
+  // same row every night.
+  const initialNotifiedIds: string[] = [];
+  const followupNotifiedIds: string[] = [];
 
   for (const item of overdue) {
     const proj = projectByKey.get(`${item.organizationId}::${item.projectId}`);
@@ -3207,12 +3251,18 @@ export async function processSwpppOverdueCorrectiveActions(opts: { now?: Date } 
     if (item.correctiveActionAssigneeId) recipientIds.add(item.correctiveActionAssigneeId);
     if (proj?.projectManagerId) recipientIds.add(proj.projectManagerId);
 
+    // Whether this fanout is the initial overdue notification or a
+    // daily follow-up. Determined by whether the row has ever been
+    // notified for the current overdue cycle.
+    const isFollowUp = item.lastOverdueNotifiedAt != null;
+
     if (recipientIds.size === 0) {
       // Nothing to notify for this inspection (no assignee, no PM).
       // Still mark it as notified so we don't keep scanning it every
       // night — the UI overdue badge remains the source of truth and
       // someone with edit access will need to reassign it.
-      notifiedInspectionIds.push(item.id);
+      if (isFollowUp) followupNotifiedIds.push(item.id);
+      else initialNotifiedIds.push(item.id);
       continue;
     }
 
@@ -3220,7 +3270,13 @@ export async function processSwpppOverdueCorrectiveActions(opts: { now?: Date } 
     const overdueLabel = daysOverdue > 0
       ? `${daysOverdue} day${daysOverdue === 1 ? "" : "s"} overdue`
       : "overdue";
-    const title = `SWPPP corrective action ${overdueLabel}: ${projectName}`;
+    // Tag follow-ups with "Reminder K of N" so the recipient can tell
+    // at a glance that escalation is ongoing. K = previous follow-up
+    // count + 1, capped by SWPPP_OVERDUE_REMINDER_CAP. Initial fanout
+    // wording is unchanged from Task #1173.
+    const followupNumber = (item.overdueReminderCount ?? 0) + 1;
+    const reminderTag = isFollowUp ? ` (Reminder ${followupNumber} of ${SWPPP_OVERDUE_REMINDER_CAP})` : "";
+    const title = `SWPPP corrective action ${overdueLabel}: ${projectName}${reminderTag}`;
     const message = `${projectName} — corrective action was due ${dueStr || "(no date)"} (${overdueLabel}).\n${correctiveActionLabel}`;
 
     for (const userId of recipientIds) {
@@ -3234,26 +3290,38 @@ export async function processSwpppOverdueCorrectiveActions(opts: { now?: Date } 
         relatedEntityId: item.id,
       });
     }
-    notifiedInspectionIds.push(item.id);
+    if (isFollowUp) followupNotifiedIds.push(item.id);
+    else initialNotifiedIds.push(item.id);
   }
 
   if (notifs.length > 0) {
     await insertNotifications(notifs);
   }
 
-  if (notifiedInspectionIds.length > 0) {
-    // Single UPDATE batched via inArray so we mark every scanned item
-    // (including the no-recipient ones) as notified in one round-trip.
+  // Two batched updates: initial fanouts only stamp the marker
+  // (counter stays at 0), follow-ups bump the counter by 1.
+  if (initialNotifiedIds.length > 0) {
     await db
       .update(swpppInspections)
       .set({ lastOverdueNotifiedAt: now })
-      .where(inArray(swpppInspections.id, notifiedInspectionIds));
+      .where(inArray(swpppInspections.id, initialNotifiedIds));
+  }
+  if (followupNotifiedIds.length > 0) {
+    await db
+      .update(swpppInspections)
+      .set({
+        lastOverdueNotifiedAt: now,
+        overdueReminderCount: sql`${swpppInspections.overdueReminderCount} + 1`,
+      })
+      .where(inArray(swpppInspections.id, followupNotifiedIds));
   }
 
   if (notifs.length > 0) {
     logInfo("SWPPP overdue corrective action notifications sent", {
       notifications: notifs.length,
-      inspections: notifiedInspectionIds.length,
+      inspections: initialNotifiedIds.length + followupNotifiedIds.length,
+      initialFanouts: initialNotifiedIds.length,
+      followupReminders: followupNotifiedIds.length,
     });
   }
 }

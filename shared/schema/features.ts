@@ -9950,6 +9950,18 @@ export const swpppInspections = pgTable("swppp_inspections", {
   // corrective action due date is moved forward or the inspection is
   // re-opened so a fresh overdue cycle can fire if it lapses again.
   lastOverdueNotifiedAt: timestamp("last_overdue_notified_at"),
+  // Task #1259: number of FOLLOW-UP overdue reminders already sent for
+  // the current overdue cycle. The initial fanout (Task #1173) does
+  // NOT increment this — only the daily nudges that come after it do.
+  // The sweep stops sending follow-ups once this value reaches
+  // SWPPP_OVERDUE_REMINDER_CAP (see jobRunner.ts) or the inspection is
+  // RESOLVED. Reset to 0 alongside `lastOverdueNotifiedAt` when the
+  // due date moves forward or the inspection is re-opened so a fresh
+  // overdue cycle starts from zero. The default of 0 is also the
+  // correct backfill value for pre-Task-#1259 rows that already had
+  // their initial fanout — they will naturally pick up follow-up #1
+  // on the next eligible run.
+  overdueReminderCount: integer("overdue_reminder_count").notNull().default(0),
   createdById: varchar("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

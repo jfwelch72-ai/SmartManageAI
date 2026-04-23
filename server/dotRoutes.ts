@@ -1994,10 +1994,12 @@ router.patch(
     const {
       id: _id, organizationId: _o, createdAt: _c, createdById: _cb,
       status: _st, resolvedAt: _ra, resolvedById: _rb, resolutionNotes: _rn,
-      // Task #1173: lastOverdueNotifiedAt is server-managed by the
-      // overdue notification sweep; clients must not be able to
-      // suppress or back-date it via the patch endpoint.
+      // Task #1173 + #1259: lastOverdueNotifiedAt and overdueReminderCount
+      // are server-managed by the overdue notification sweep; clients
+      // must not be able to suppress, back-date, or reset them via the
+      // patch endpoint.
       lastOverdueNotifiedAt: _lon,
+      overdueReminderCount: _orc,
       ...patch
     } = req.body || {};
     const conditions: SQL[] = [eq(swpppInspections.id, req.params.id)];
@@ -2012,6 +2014,10 @@ router.patch(
     if (Object.prototype.hasOwnProperty.call(patch, "correctiveActionDueDate") &&
         String(patch.correctiveActionDueDate ?? "") !== String(prev.correctiveActionDueDate ?? "")) {
       updatePayload.lastOverdueNotifiedAt = null;
+      // Task #1259: also reset the daily reminder counter so the new
+      // due date starts a fresh overdue cycle from zero rather than
+      // resuming under the previous cap.
+      updatePayload.overdueReminderCount = 0;
     }
     const [row] = await db.update(swpppInspections).set(updatePayload)
       .where(and(...conditions))
@@ -2075,7 +2081,11 @@ router.post(
         // Task #1173: re-arm the overdue notification cycle so that if the
         // re-opened inspection is past its due date again it will be
         // re-fanned-out by the nightly sweep.
+        // Task #1259: also reset the daily reminder counter so a
+        // re-opened inspection gets a fresh batch of reminders rather
+        // than picking up a previously-exhausted cap.
         lastOverdueNotifiedAt: null,
+        overdueReminderCount: 0,
         updatedAt: new Date(),
       })
       .where(and(...conditions))
