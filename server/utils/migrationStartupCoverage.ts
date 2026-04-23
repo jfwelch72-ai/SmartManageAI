@@ -164,4 +164,9 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   // Task #1286 — per-org SWPPP overdue reminder cap + interval columns
   // on the organizations table. See ensureSwpppOverdueReminderSettings.
   "0046_swppp_overdue_reminder_settings.sql": { helper: "ensureSwpppOverdueReminderSettings" },
+  // Task #1314 — extend feature_flag_preset_applications with kind +
+  // flag_keys columns so drift-reset audit rows surface in the Preset
+  // history card. Idempotent ADD COLUMN IF NOT EXISTS handled by the
+  // existing ensure helper.
+  "0047_feature_flag_preset_application_kind.sql": { helper: "ensureFeatureFlagPresetApplicationsTable" },
 };

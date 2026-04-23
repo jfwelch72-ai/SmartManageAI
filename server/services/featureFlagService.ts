@@ -7,7 +7,7 @@ import {
   findClosestPreset,
   diffFlagsAgainstPreset,
 } from "@shared/tradeFeaturePresets";
-import { eq, or, isNull, sql, desc, notExists } from "drizzle-orm";
+import { eq, and, or, isNull, sql, desc, notExists } from "drizzle-orm";
 import {logInfo, logWarn } from "../utils/logger";
 
 export type FeatureFlagsMap = Partial<Record<FeatureFlagKey, boolean>>;
@@ -296,7 +296,16 @@ export async function getLastPresetApplication(orgId: string): Promise<LastPrese
     })
     .from(featureFlagPresetApplications)
     .leftJoin(users, eq(users.id, featureFlagPresetApplications.appliedById))
-    .where(eq(featureFlagPresetApplications.organizationId, orgId))
+    .where(
+      and(
+        eq(featureFlagPresetApplications.organizationId, orgId),
+        // Task #1314: only full preset applications anchor the
+        // "Last applied / Customized from" line. Drift-reset rows are
+        // surfaced separately in the Preset history card and must not
+        // shift which preset the diff compares against.
+        eq(featureFlagPresetApplications.kind, "apply"),
+      ),
+    )
     .orderBy(desc(featureFlagPresetApplications.appliedAt))
     .limit(1);
 
@@ -325,11 +334,23 @@ export async function getLastPresetApplication(orgId: string): Promise<LastPrese
   };
 }
 
+export type PresetApplicationKind = "apply" | "reset_drift";
+
 export interface PresetApplicationHistoryItem {
   id: string;
   tradeType: string;
   appliedAt: Date;
   appliedBy: { id: string; firstName: string; lastName: string; email: string } | null;
+  /**
+   * Task #1314: distinguishes a full preset application ("apply") from a
+   * drift-reset action ("reset_drift") in the Preset history card.
+   */
+  kind: PresetApplicationKind;
+  /**
+   * Task #1314: for "reset_drift" rows, the flag keys that were nudged back
+   * to the preset value. NULL/[] for "apply" rows (the whole preset was set).
+   */
+  flagKeys: string[] | null;
 }
 
 export interface PresetApplicationHistoryPage {
@@ -426,6 +447,8 @@ export async function listPresetApplications(
       tradeType: featureFlagPresetApplications.tradeType,
       appliedAt: featureFlagPresetApplications.appliedAt,
       appliedById: featureFlagPresetApplications.appliedById,
+      kind: featureFlagPresetApplications.kind,
+      flagKeys: featureFlagPresetApplications.flagKeys,
       userFirstName: users.firstName,
       userLastName: users.lastName,
       userEmail: users.email,
@@ -456,9 +479,46 @@ export async function listPresetApplications(
             email: row.userEmail ?? "",
           }
         : null,
+      kind: (row.kind === "reset_drift" ? "reset_drift" : "apply") as PresetApplicationKind,
+      flagKeys: row.flagKeys ?? null,
     })),
     total: Number(count) || 0,
     page: safePage,
     pageSize: safePageSize,
   };
+}
+
+/**
+ * Task #1314 — record a drift-reset audit row in the same table that backs
+ * the Preset history card. Called by the reset-drift route after the org's
+ * stored flags have been nudged back to the preset values. Audit failures
+ * are logged but never bubble up: the user-facing reset must not fail just
+ * because the audit insert failed.
+ *
+ * `tradeType` is the trade of the preset that the org was reset toward
+ * (i.e. the preset recorded on the most recent "apply" audit row), so the
+ * Preset history card can render the same trade badge it does for full
+ * applications.
+ */
+export async function recordPresetDriftReset(
+  orgId: string,
+  tradeType: string,
+  flagKeys: string[],
+  resetByUserId?: string | null,
+): Promise<void> {
+  if (flagKeys.length === 0) return;
+  try {
+    await db.insert(featureFlagPresetApplications).values({
+      organizationId: orgId,
+      tradeType,
+      appliedById: resetByUserId ?? null,
+      kind: "reset_drift",
+      flagKeys,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logWarn(
+      `[FeatureFlags] Failed to record drift-reset audit row | organizationId=${orgId} tradeType=${tradeType} flagKeys=${flagKeys.join(",")} resetByUserId=${resetByUserId ?? "null"} error=${message}`,
+    );
+  }
 }

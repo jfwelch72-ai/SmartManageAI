@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Switch } from "@/components/ui/switch";
-import { ToggleRight, HardHat, ArrowRight, History, ChevronLeft, ChevronRight, ChevronDown, ShieldAlert, Undo2, RotateCcw } from "lucide-react";
+import { ToggleRight, HardHat, ArrowRight, History, ChevronLeft, ChevronRight, ChevronDown, ShieldAlert, Undo2, RotateCcw, CheckCircle2 } from "lucide-react";
 import {
   FEATURE_FLAG_LABELS,
   FEATURE_FLAG_DESCRIPTIONS,
@@ -51,6 +51,12 @@ interface PresetHistoryItem {
   tradeType: string;
   appliedAt: string;
   appliedBy: { id: string; firstName: string; lastName: string; email: string } | null;
+  // Task #1314: "apply" = full preset application; "reset_drift" = admin
+  // nudged one or more drifted flags back to the preset value.
+  kind: "apply" | "reset_drift";
+  // For "reset_drift" rows, the flag keys that were reset. Null/empty for
+  // full applications.
+  flagKeys: string[] | null;
 }
 
 interface PresetHistoryResponse {
@@ -223,6 +229,8 @@ export function OrgFeaturePresetsTab({
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/feature-flags"] });
       queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId, "last-preset"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId, "preset-history"] });
+      setHistoryPage(1);
       const count = data.reset?.length ?? 0;
       toast({
         title: count === 1 ? "Flag reset to preset" : "Flags reset to preset",
@@ -632,7 +640,7 @@ export function OrgFeaturePresetsTab({
             Preset history
           </CardTitle>
           <CardDescription>
-            Every preset application for this organization, newest first.
+            Every preset application and drift-reset action for this organization, newest first.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -657,15 +665,40 @@ export function OrgFeaturePresetsTab({
                     ? `${item.appliedBy.firstName} ${item.appliedBy.lastName}`.trim() ||
                       item.appliedBy.email
                     : "Unknown user";
+                  const isReset = item.kind === "reset_drift";
+                  const tradeLabel = tradeLabelMap[item.tradeType] || item.tradeType;
+                  const flagLabels = (item.flagKeys ?? []).map(
+                    (k) => FEATURE_FLAG_LABELS[k as FeatureFlagKey] ?? k,
+                  );
                   return (
                     <div
                       key={item.id}
-                      className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 px-3 py-2 text-sm"
+                      className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-1 px-3 py-2 text-sm"
                       data-testid={`row-preset-history-${item.id}`}
+                      data-kind={item.kind}
                     >
-                      <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex items-start gap-2 min-w-0 flex-wrap">
+                        {isReset ? (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 gap-1 border-amber-500/40 text-amber-700 dark:text-amber-400"
+                            data-testid={`badge-history-kind-reset-${item.id}`}
+                          >
+                            <Undo2 className="h-3 w-3" />
+                            Reset to preset
+                          </Badge>
+                        ) : (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 gap-1"
+                            data-testid={`badge-history-kind-apply-${item.id}`}
+                          >
+                            <CheckCircle2 className="h-3 w-3" />
+                            Preset applied
+                          </Badge>
+                        )}
                         <Badge variant="secondary" data-testid={`badge-history-trade-${item.id}`}>
-                          {tradeLabelMap[item.tradeType] || item.tradeType}
+                          {tradeLabel}
                         </Badge>
                         <span
                           className="font-medium truncate"
@@ -673,6 +706,16 @@ export function OrgFeaturePresetsTab({
                         >
                           {who}
                         </span>
+                        {isReset && flagLabels.length > 0 && (
+                          <span
+                            className="basis-full text-xs text-muted-foreground"
+                            data-testid={`text-history-flag-keys-${item.id}`}
+                          >
+                            {flagLabels.length === 1
+                              ? `Reset flag: ${flagLabels[0]}`
+                              : `Reset ${flagLabels.length} flags: ${flagLabels.join(", ")}`}
+                          </span>
+                        )}
                       </div>
                       <span
                         className="text-muted-foreground shrink-0"

@@ -10288,12 +10288,20 @@ export type PdfAlertDelivery = typeof pdfAlertDeliveries.$inferSelect;
 // Task #1119: audit log of trade-preset applications on the Feature Flags tab.
 // Each row records who applied which trade preset to an organization and when,
 // so admins can see "Last applied: <Trade Preset> on <date> by <user>".
+//
+// Task #1314: extended with `kind` ("apply" for full preset applications,
+// "reset_drift" for per-flag or bulk drift-reset actions) and `flag_keys`
+// (the affected flag keys for reset rows). The Preset history card surfaces
+// reset entries inline alongside full applications, distinguished by an icon
+// and the affected flag keys.
 export const featureFlagPresetApplications = pgTable("feature_flag_preset_applications", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   tradeType: text("trade_type").notNull(),
   appliedById: varchar("applied_by_id").references(() => users.id, { onDelete: "set null" }),
   appliedAt: timestamp("applied_at").notNull().defaultNow(),
+  kind: text("kind").notNull().default("apply"),
+  flagKeys: text("flag_keys").array(),
 }, (t) => ({
   orgAppliedAtIdx: index("ffpa_org_applied_at_idx").on(t.organizationId, t.appliedAt),
 }));

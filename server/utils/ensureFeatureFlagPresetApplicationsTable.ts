@@ -22,5 +22,17 @@ export async function ensureFeatureFlagPresetApplicationsTable(): Promise<void> 
     CREATE INDEX IF NOT EXISTS "ffpa_org_applied_at_idx"
       ON "feature_flag_preset_applications" ("organization_id", "applied_at")
   `);
+  // Task #1314 — extend the audit table to record drift-reset actions
+  // alongside full preset applications. `kind` distinguishes "apply" from
+  // "reset_drift"; `flag_keys` lists which flags a reset row touched.
+  // Idempotent ALTERs so existing rows backfill to kind='apply'.
+  await db.execute(sql`
+    ALTER TABLE "feature_flag_preset_applications"
+      ADD COLUMN IF NOT EXISTS "kind" text NOT NULL DEFAULT 'apply'
+  `);
+  await db.execute(sql`
+    ALTER TABLE "feature_flag_preset_applications"
+      ADD COLUMN IF NOT EXISTS "flag_keys" text[]
+  `);
   logInfo("[migration] feature_flag_preset_applications table ready");
 }

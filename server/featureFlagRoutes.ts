@@ -161,7 +161,7 @@ router.post("/:orgId/reset-drift", requireAuth, async (req, res, next) => {
     let targetKeys: FeatureFlagKey[];
 
     if (body.all === true) {
-      targetKeys = last.diff.map((d) => d.key);
+      targetKeys = Array.from(new Set(last.diff.map((d) => d.key))).sort() as FeatureFlagKey[];
     } else if (Array.isArray(body.keys)) {
       const requested = body.keys;
       const cleaned: FeatureFlagKey[] = [];
@@ -179,7 +179,9 @@ router.post("/:orgId/reset-drift", requireAuth, async (req, res, next) => {
         }
         cleaned.push(k as FeatureFlagKey);
       }
-      targetKeys = cleaned;
+      // Dedupe + sort so duplicate-key payloads don't bloat the audit row's
+      // flag_keys array with repeats (per code review on Task #1314).
+      targetKeys = Array.from(new Set(cleaned)).sort() as FeatureFlagKey[];
     } else {
       return res
         .status(400)
@@ -194,6 +196,19 @@ router.post("/:orgId/reset-drift", requireAuth, async (req, res, next) => {
     for (const k of targetKeys) patch[k] = drifted[k].preset;
 
     const updated = await flagService.setAllFeatureFlags(req.params.orgId, patch);
+
+    // Task #1314 — record a drift-reset audit row so admins can see
+    // "who reset which flags to the preset" inline with full preset
+    // applications in the Preset history card. The trade of the preset the
+    // org was reset toward is the trade recorded on the most recent
+    // "apply" audit row (carried on `last`).
+    await flagService.recordPresetDriftReset(
+      req.params.orgId,
+      last.tradeType,
+      targetKeys,
+      user.id,
+    );
+
     res.json({ flags: updated, reset: targetKeys });
   } catch (err) {
     next(err);
