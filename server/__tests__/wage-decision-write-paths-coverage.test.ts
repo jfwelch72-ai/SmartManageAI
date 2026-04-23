@@ -35,6 +35,15 @@ const SERVER_DIR = join(process.cwd(), "server");
 // into the new path.
 const PREVAILING_WAGE_RATE_WRITERS = new Set<string>([
   "laborRateRoutes.ts",
+  // Task #1412 — scheduled/manual DOL wage decision syncs upsert
+  // `prevailing_wage_rates` directly when a saved
+  // `dol_classification_mappings` row matches a refreshed feed name, so
+  // PMs don't have to re-open the override dialog after every refresh.
+  // Auto-sync coverage lives in
+  // server/__tests__/davis-bacon-mapping-reuse-on-sync.test.ts. The file
+  // hosts `queueWageDecisionSync` itself so the belt-and-suspenders
+  // assertion below is satisfied.
+  "integrations/providers/dol_davis_bacon/sync.ts",
 ]);
 
 const PROJECT_WAGE_DECISION_WRITERS = new Set<string>([

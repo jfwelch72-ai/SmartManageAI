@@ -1,8 +1,8 @@
 import type { SyncResult, SyncError } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { db } from "../../../db";
-import { integrationConnections, integrationSyncState, projects } from "@shared/schema";
-import { and, eq, isNotNull, isNull, lt, sql } from "drizzle-orm";
+import { integrationConnections, integrationSyncState, projects, prevailingWageRates, dolClassificationMappings } from "@shared/schema";
+import { and, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { logInfo, logError, logWarn } from "../../../utils/logger";
 import { recordJobMetrics } from "../../../utils/jobMetrics";
 import { jobMetricSamples } from "@shared/schema";
@@ -134,6 +134,124 @@ export async function fetchWageDetermination(
 }
 
 /**
+ * Task #1412 — Reuse saved DOL mappings during scheduled/manual wage syncs.
+ *
+ * After a wage determination's cached payload is refreshed, look up every
+ * project in the org that references this decision number, pull all
+ * `dol_classification_mappings` rows for those projects, and upsert the
+ * refreshed DOL rates into `prevailing_wage_rates` for each
+ * (project, classification) pair. This means a PM only has to map a DOL
+ * feed name once via the override dialog — subsequent rate refreshes flow
+ * straight through without manual intervention.
+ *
+ * Implementation notes:
+ * - Matches feed-name → mapping case-insensitively, the same convention
+ *   `lookupCachedWageRate` uses, so a mapping persisted as
+ *   "carpenter (group 1)" still matches a feed payload that capitalizes it.
+ * - Inserts use today's date for `effectiveDate`; the conflict-update path
+ *   deliberately leaves `effectiveDate` alone so a hand-curated effective
+ *   date set by the PM isn't clobbered by an automated refresh.
+ * - All numeric fields are pulled straight from the DOL payload — no
+ *   smoothing or rounding beyond `.toFixed(2)` so the persisted values
+ *   round-trip exactly with what the override dialog would have written.
+ */
+export async function applySavedMappingsForDecision(
+  organizationId: string,
+  decisionNumber: string,
+  rates: DavisBaconWageRate[],
+): Promise<{ projectsUpdated: number; ratesUpserted: number }> {
+  if (!organizationId || !decisionNumber || rates.length === 0) {
+    return { projectsUpdated: 0, ratesUpserted: 0 };
+  }
+
+  const ratesByName = new Map<string, DavisBaconWageRate>();
+  for (const r of rates) {
+    if (!r || typeof r.classification !== "string") continue;
+    ratesByName.set(r.classification.trim().toLowerCase(), r);
+  }
+  if (ratesByName.size === 0) return { projectsUpdated: 0, ratesUpserted: 0 };
+
+  const projectRows = await db
+    .select({ id: projects.id })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.gcOrganizationId, organizationId),
+        eq(projects.wageDecision, decisionNumber),
+      ),
+    );
+  if (projectRows.length === 0) return { projectsUpdated: 0, ratesUpserted: 0 };
+  const projectIds = projectRows.map((p) => p.id);
+
+  const mappings = await db
+    .select()
+    .from(dolClassificationMappings)
+    .where(
+      and(
+        eq(dolClassificationMappings.organizationId, organizationId),
+        inArray(dolClassificationMappings.projectId, projectIds),
+      ),
+    );
+  if (mappings.length === 0) return { projectsUpdated: 0, ratesUpserted: 0 };
+
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const touchedProjects = new Set<string>();
+  let ratesUpserted = 0;
+
+  for (const m of mappings) {
+    const rate = ratesByName.get(m.dolFeedName.trim().toLowerCase());
+    if (!rate) continue;
+    const base = Number.isFinite(rate.baseRate) ? rate.baseRate : 0;
+    const fringe = Number.isFinite(rate.fringeRate) ? rate.fringeRate : 0;
+    const wageStr = base.toFixed(2);
+    const fringeStr = fringe.toFixed(2);
+    const totalStr = (base + fringe).toFixed(2);
+    const healthStr = (rate.health ?? 0).toFixed(2);
+    const pensionStr = (rate.pension ?? 0).toFixed(2);
+    const vacationStr = (rate.vacation ?? 0).toFixed(2);
+    const trainingStr = (rate.training ?? 0).toFixed(2);
+
+    await db
+      .insert(prevailingWageRates)
+      .values({
+        organizationId,
+        projectId: m.projectId,
+        classificationId: m.classificationId,
+        wageRate: wageStr,
+        fringeRate: fringeStr,
+        fringeHealthRate: healthStr,
+        fringePensionRate: pensionStr,
+        fringeVacationRate: vacationStr,
+        fringeTrainingRate: trainingStr,
+        totalRate: totalStr,
+        overtimeMultiplier: "1.5",
+        effectiveDate: today,
+        wageDecision: decisionNumber,
+      })
+      .onConflictDoUpdate({
+        target: [prevailingWageRates.projectId, prevailingWageRates.classificationId],
+        set: {
+          wageRate: wageStr,
+          fringeRate: fringeStr,
+          fringeHealthRate: healthStr,
+          fringePensionRate: pensionStr,
+          fringeVacationRate: vacationStr,
+          fringeTrainingRate: trainingStr,
+          totalRate: totalStr,
+          wageDecision: decisionNumber,
+          updatedAt: now,
+        },
+      });
+
+    ratesUpserted += 1;
+    touchedProjects.add(m.projectId);
+  }
+
+  return { projectsUpdated: touchedProjects.size, ratesUpserted };
+}
+
+/**
  * Cache a wage determination in integration_sync_state so subsequent payroll
  * runs can resolve prevailing rates without hitting SAM.gov again.
  */
@@ -146,6 +264,7 @@ export async function importWageDetermination(
   try {
     const det = await fetchWageDetermination(connection, decisionNumber);
 
+    let mappingApplied: { projectsUpdated: number; ratesUpserted: number } | null = null;
     if (!dryRun) {
       const payload = { ...det, importedAt: new Date().toISOString() };
       // Task #1332: clear any prior failure state so a successful import
@@ -166,9 +285,37 @@ export async function importWageDetermination(
       // failure shortly after this success would still be considered
       // "inside the suppression window" by the in-memory check.
       failureCoalesceMap.delete(coalesceKey(connection.id, decisionNumber));
+
+      // Task #1412: scheduled/manual wage syncs now honor saved
+      // dol_classification_mappings so refreshed DOL rates flow into
+      // prevailing_wage_rates automatically — no need for a PM to re-open
+      // the override dialog after every wage determination refresh. We
+      // run this after the cache write succeeds and isolate its failure
+      // so a mapping write hiccup doesn't roll back the cached payload.
+      try {
+        mappingApplied = await applySavedMappingsForDecision(
+          connection.organizationId,
+          decisionNumber,
+          det.rates,
+        );
+        if (mappingApplied.ratesUpserted > 0) {
+          logInfo("Davis-Bacon mappings applied to prevailing_wage_rates", {
+            decisionNumber,
+            organizationId: connection.organizationId,
+            projectsUpdated: mappingApplied.projectsUpdated,
+            ratesUpserted: mappingApplied.ratesUpserted,
+          });
+        }
+      } catch (mapErr) {
+        logWarn("Davis-Bacon mapping reuse failed", {
+          decisionNumber,
+          organizationId: connection.organizationId,
+          error: String(mapErr),
+        });
+      }
     }
 
-    logInfo("Davis-Bacon wage determination imported", { decisionNumber, rates: det.rates.length, dryRun });
+    logInfo("Davis-Bacon wage determination imported", { decisionNumber, rates: det.rates.length, dryRun, mappingApplied });
     return {
       success: true,
       entityType: "wage_determination",
