@@ -10,6 +10,7 @@ import { ToastAction } from "@/components/ui/toast";
 import { Search, Loader2, Sparkles, Tag, X } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
 
 interface FacetEntry { value: string; count: number; }
 interface PayItemFacets { categories: FacetEntry[]; specSections: FacetEntry[]; }
@@ -70,6 +71,7 @@ export function PayItemPicker({
   seedUnit,
   seedCategory,
 }: Props) {
+  const { user } = useAuth();
   const [agencyId, setAgencyId] = useState<string | undefined>(defaultAgencyId);
   const [specBookId, setSpecBookId] = useState<string | undefined>();
   const [search, setSearch] = useState("");
@@ -89,12 +91,50 @@ export function PayItemPicker({
 
   const effectiveSpecBookId = specBookId || specBooks.find((s) => s.isCurrent)?.id || specBooks[0]?.id;
 
-  // Reset facet selections when the spec book changes so stale category/section
-  // values from a different agency don't silently filter the new catalog.
+  // Persist facet selections per spec book in localStorage so estimators don't
+  // have to re-pick their usual categories every time the picker reopens.
+  const facetStorageKey = effectiveSpecBookId && user?.id
+    ? `dot-pay-item-picker:facets:${user.id}:${effectiveSpecBookId}`
+    : null;
   useEffect(() => {
-    setSelectedCategories([]);
-    setSelectedSections([]);
-  }, [effectiveSpecBookId]);
+    if (!facetStorageKey) {
+      setSelectedCategories([]);
+      setSelectedSections([]);
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(facetStorageKey);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { categories?: unknown; specSections?: unknown };
+        const onlyStrings = (v: unknown): string[] =>
+          Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+        setSelectedCategories(onlyStrings(parsed.categories));
+        setSelectedSections(onlyStrings(parsed.specSections));
+      } else {
+        setSelectedCategories([]);
+        setSelectedSections([]);
+      }
+    } catch {
+      setSelectedCategories([]);
+      setSelectedSections([]);
+    }
+  }, [facetStorageKey]);
+
+  useEffect(() => {
+    if (!facetStorageKey) return;
+    try {
+      if (selectedCategories.length === 0 && selectedSections.length === 0) {
+        localStorage.removeItem(facetStorageKey);
+      } else {
+        localStorage.setItem(
+          facetStorageKey,
+          JSON.stringify({ categories: selectedCategories, specSections: selectedSections }),
+        );
+      }
+    } catch {
+      // ignore quota/serialization errors — persistence is best-effort
+    }
+  }, [facetStorageKey, selectedCategories, selectedSections]);
 
   const { data: facets } = useQuery<PayItemFacets>({
     queryKey: ["/api/dot/pay-items/facets", { specBookId: effectiveSpecBookId }],
