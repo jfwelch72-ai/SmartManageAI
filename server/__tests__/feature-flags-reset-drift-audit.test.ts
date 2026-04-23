@@ -33,6 +33,7 @@ import {
   setFeatureFlag,
   listPresetApplications,
   getLastPresetApplication,
+  getPresetHistoryFilterOptions,
 } from "../services/featureFlagService";
 import { ensureFeatureFlagPresetApplicationsTable } from "../utils/ensureFeatureFlagPresetApplicationsTable";
 
@@ -287,5 +288,326 @@ describe("drift-reset audit trail (Task #1314)", () => {
     const matching = resetRows.find((r) => r.id === latestReset.id);
     expect(matching).toBeDefined();
     expect(matching!.flagKeys).toEqual(expect.arrayContaining([driftA, driftB]));
+  });
+});
+
+/**
+ * Task #1422 — coverage for the trade/user filter dropdowns on the Preset
+ * history card.
+ *
+ * The route `GET /api/feature-flags/:orgId/preset-history` accepts
+ * `tradeType` and `appliedById` query params on top of the existing `kind`
+ * filter, and a sibling `GET /:orgId/preset-history-filters` endpoint feeds
+ * the dropdown options. These tests exercise:
+ *   1. `listPresetApplications` with every combination of kind/tradeType/
+ *      appliedById, including a "filter that matches nothing" case so the
+ *      empty-state copy in the UI is guaranteed to fire.
+ *   2. `getPresetHistoryFilterOptions` returns only the trades/actors that
+ *      actually appear on audit rows, sorted, and excludes the synthetic
+ *      `appliedById = NULL` rows that the system backfill writes.
+ *   3. Route-level: ADMIN access to `/preset-history-filters` is still
+ *      scoped to the admin's own org.
+ */
+describe("preset history filters (Task #1422)", () => {
+  it("service-level: listPresetApplications honors kind + tradeType + appliedById in every combination, and returns an empty page when filters match nothing", async () => {
+    const tradeA = "ROADWAY_CONSTRUCTION" as const;
+    const tradeB = "ASPHALT_PAVING" as const;
+
+    const slug = `${TEST_PREFIX}list-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const [org] = await db
+      .insert(organizations)
+      .values({ name: `${TEST_PREFIX}list`, slug, tradeType: tradeA })
+      .returning();
+
+    const [userA] = await db
+      .insert(users)
+      .values({
+        email: `${TEST_PREFIX}list-a-${Date.now()}@example.test`,
+        passwordHash: "x",
+        firstName: "Alice",
+        lastName: "Apply",
+        role: "ADMIN",
+        organizationId: org.id,
+      } as typeof users.$inferInsert)
+      .returning();
+
+    const [userB] = await db
+      .insert(users)
+      .values({
+        email: `${TEST_PREFIX}list-b-${Date.now()}@example.test`,
+        passwordHash: "x",
+        firstName: "Bob",
+        lastName: "Reset",
+        role: "ADMIN",
+        organizationId: org.id,
+      } as typeof users.$inferInsert)
+      .returning();
+
+    try {
+      // Hand-build a small but representative audit set so we can predict
+      // every filter intersection without depending on the order or
+      // side-effects of applyTradePreset / recordPresetDriftReset.
+      //
+      //   tradeA + apply        + userA
+      //   tradeA + reset_drift  + userB  (flagKeys present)
+      //   tradeB + apply        + userB
+      //   tradeB + reset_drift  + userA  (flagKeys present)
+      const flagKey = FEATURE_FLAG_KEYS[0];
+      await db.insert(featureFlagPresetApplications).values([
+        { organizationId: org.id, tradeType: tradeA, appliedById: userA.id, kind: "apply" },
+        {
+          organizationId: org.id,
+          tradeType: tradeA,
+          appliedById: userB.id,
+          kind: "reset_drift",
+          flagKeys: [flagKey],
+        },
+        { organizationId: org.id, tradeType: tradeB, appliedById: userB.id, kind: "apply" },
+        {
+          organizationId: org.id,
+          tradeType: tradeB,
+          appliedById: userA.id,
+          kind: "reset_drift",
+          flagKeys: [flagKey],
+        },
+      ]);
+
+      // No filters → all 4 rows.
+      const all = await listPresetApplications(org.id, 1, 50);
+      expect(all.total).toBe(4);
+      expect(all.items).toHaveLength(4);
+
+      // kind only.
+      const onlyApply = await listPresetApplications(org.id, 1, 50, "apply");
+      expect(onlyApply.total).toBe(2);
+      expect(onlyApply.items.every((i) => i.kind === "apply")).toBe(true);
+
+      const onlyReset = await listPresetApplications(org.id, 1, 50, "reset_drift");
+      expect(onlyReset.total).toBe(2);
+      expect(onlyReset.items.every((i) => i.kind === "reset_drift")).toBe(true);
+
+      // tradeType only.
+      const onlyTradeA = await listPresetApplications(org.id, 1, 50, undefined, tradeA);
+      expect(onlyTradeA.total).toBe(2);
+      expect(onlyTradeA.items.every((i) => i.tradeType === tradeA)).toBe(true);
+
+      // appliedById only.
+      const onlyUserA = await listPresetApplications(
+        org.id,
+        1,
+        50,
+        undefined,
+        undefined,
+        userA.id,
+      );
+      expect(onlyUserA.total).toBe(2);
+      expect(onlyUserA.items.every((i) => i.appliedBy?.id === userA.id)).toBe(true);
+
+      // kind + tradeType.
+      const applyTradeA = await listPresetApplications(org.id, 1, 50, "apply", tradeA);
+      expect(applyTradeA.total).toBe(1);
+      expect(applyTradeA.items[0].tradeType).toBe(tradeA);
+      expect(applyTradeA.items[0].kind).toBe("apply");
+      expect(applyTradeA.items[0].appliedBy?.id).toBe(userA.id);
+
+      // kind + appliedById.
+      const resetByUserB = await listPresetApplications(
+        org.id,
+        1,
+        50,
+        "reset_drift",
+        undefined,
+        userB.id,
+      );
+      expect(resetByUserB.total).toBe(1);
+      expect(resetByUserB.items[0].kind).toBe("reset_drift");
+      expect(resetByUserB.items[0].tradeType).toBe(tradeA);
+      expect(resetByUserB.items[0].appliedBy?.id).toBe(userB.id);
+
+      // tradeType + appliedById.
+      const tradeBUserB = await listPresetApplications(
+        org.id,
+        1,
+        50,
+        undefined,
+        tradeB,
+        userB.id,
+      );
+      expect(tradeBUserB.total).toBe(1);
+      expect(tradeBUserB.items[0].kind).toBe("apply");
+      expect(tradeBUserB.items[0].tradeType).toBe(tradeB);
+
+      // All three filters together → the unique intersection row.
+      const triple = await listPresetApplications(
+        org.id,
+        1,
+        50,
+        "reset_drift",
+        tradeB,
+        userA.id,
+      );
+      expect(triple.total).toBe(1);
+      expect(triple.items[0].kind).toBe("reset_drift");
+      expect(triple.items[0].tradeType).toBe(tradeB);
+      expect(triple.items[0].appliedBy?.id).toBe(userA.id);
+      expect(triple.items[0].flagKeys).toEqual([flagKey]);
+
+      // Filters that match nothing → empty page so the empty-state copy in
+      // the Preset history card fires. We pair tradeA with userB-on-tradeB-
+      // only-via-apply: no row exists for kind=apply + tradeA + userB.
+      const empty = await listPresetApplications(org.id, 1, 50, "apply", tradeA, userB.id);
+      expect(empty.total).toBe(0);
+      expect(empty.items).toHaveLength(0);
+    } finally {
+      await db
+        .delete(featureFlagPresetApplications)
+        .where(eq(featureFlagPresetApplications.organizationId, org.id));
+      await db.delete(users).where(eq(users.id, userA.id));
+      await db.delete(users).where(eq(users.id, userB.id));
+      await db.delete(organizations).where(eq(organizations.id, org.id));
+    }
+  });
+
+  it("service-level: getPresetHistoryFilterOptions returns only trades/actors actually present on audit rows, sorted, and excludes appliedById=NULL system-backfill rows from the actor list", async () => {
+    const tradeA = "ROADWAY_CONSTRUCTION" as const;
+    const tradeB = "ASPHALT_PAVING" as const;
+
+    const slug = `${TEST_PREFIX}opts-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const [org] = await db
+      .insert(organizations)
+      .values({ name: `${TEST_PREFIX}opts`, slug, tradeType: tradeA })
+      .returning();
+
+    // Two real actors plus a third user who exists in the org but has NO
+    // audit row — the filter options must exclude them entirely.
+    const [zoe] = await db
+      .insert(users)
+      .values({
+        email: `${TEST_PREFIX}opts-z-${Date.now()}@example.test`,
+        passwordHash: "x",
+        firstName: "Zoe",
+        lastName: "Zephyr",
+        role: "ADMIN",
+        organizationId: org.id,
+      } as typeof users.$inferInsert)
+      .returning();
+
+    const [ada] = await db
+      .insert(users)
+      .values({
+        email: `${TEST_PREFIX}opts-a-${Date.now()}@example.test`,
+        passwordHash: "x",
+        firstName: "Ada",
+        lastName: "Adams",
+        role: "ADMIN",
+        organizationId: org.id,
+      } as typeof users.$inferInsert)
+      .returning();
+
+    const [ghost] = await db
+      .insert(users)
+      .values({
+        email: `${TEST_PREFIX}opts-g-${Date.now()}@example.test`,
+        passwordHash: "x",
+        firstName: "Ghost",
+        lastName: "User",
+        role: "ADMIN",
+        organizationId: org.id,
+      } as typeof users.$inferInsert)
+      .returning();
+
+    try {
+      await db.insert(featureFlagPresetApplications).values([
+        // Two rows attributed to Zoe — distinct should still surface her once.
+        { organizationId: org.id, tradeType: tradeA, appliedById: zoe.id, kind: "apply" },
+        {
+          organizationId: org.id,
+          tradeType: tradeA,
+          appliedById: zoe.id,
+          kind: "reset_drift",
+          flagKeys: [FEATURE_FLAG_KEYS[0]],
+        },
+        // One row attributed to Ada on the second trade.
+        { organizationId: org.id, tradeType: tradeB, appliedById: ada.id, kind: "apply" },
+        // System-backfill row (appliedById = NULL). Per the docstring on
+        // applyOrgFlagBackfill, the actor list must NOT include this and
+        // we still expect its tradeType to surface in the trades list.
+        { organizationId: org.id, tradeType: tradeB, appliedById: null, kind: "apply" },
+      ]);
+
+      const opts = await getPresetHistoryFilterOptions(org.id);
+
+      // Both trades present, sorted ascending — and tradeA is only listed
+      // once even though it appears on multiple audit rows.
+      expect(opts.tradeTypes).toEqual([tradeB, tradeA].sort());
+
+      // Only the two real actors are returned (ghost has no audit row, the
+      // NULL-actor system row is filtered out by the inner join).
+      const actorIds = opts.appliedBy.map((a) => a.id);
+      expect(actorIds).toHaveLength(2);
+      expect(actorIds).toContain(zoe.id);
+      expect(actorIds).toContain(ada.id);
+      expect(actorIds).not.toContain(ghost.id);
+
+      // Sorted alphabetically by display name → Ada Adams before Zoe Zephyr.
+      expect(opts.appliedBy[0].id).toBe(ada.id);
+      expect(opts.appliedBy[1].id).toBe(zoe.id);
+      expect(opts.appliedBy[0].firstName).toBe("Ada");
+      expect(opts.appliedBy[0].lastName).toBe("Adams");
+      expect(opts.appliedBy[0].email).toBe(ada.email);
+    } finally {
+      await db
+        .delete(featureFlagPresetApplications)
+        .where(eq(featureFlagPresetApplications.organizationId, org.id));
+      await db.delete(users).where(eq(users.id, zoe.id));
+      await db.delete(users).where(eq(users.id, ada.id));
+      await db.delete(users).where(eq(users.id, ghost.id));
+      await db.delete(organizations).where(eq(organizations.id, org.id));
+    }
+  });
+
+  it("route-level: ADMIN cannot read /preset-history-filters for an organization other than their own (cross-org access still 403)", async () => {
+    const admin = await loginAdmin();
+
+    // Spin up a foreign org the admin has no membership in.
+    const slug = `${TEST_PREFIX}xorg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const [foreignOrg] = await db
+      .insert(organizations)
+      .values({ name: `${TEST_PREFIX}xorg`, slug, tradeType: "ROADWAY_CONSTRUCTION" })
+      .returning();
+
+    try {
+      // Sanity: admin can read filters for their OWN org (200 with the
+      // documented shape) — proves the 403 below is about authorization,
+      // not a broken handler.
+      const own = await request(app)
+        .get(`/api/feature-flags/${admin.orgId}/preset-history-filters`)
+        .set("Cookie", admin.cookie);
+      expect(own.status, `own-org filters failed: ${own.text}`).toBe(200);
+      const ownBody = own.body as {
+        tradeTypes: unknown;
+        appliedBy: unknown;
+      };
+      expect(Array.isArray(ownBody.tradeTypes)).toBe(true);
+      expect(Array.isArray(ownBody.appliedBy)).toBe(true);
+
+      // Cross-org → 403, regardless of whether the foreign org has any
+      // audit rows yet.
+      const cross = await request(app)
+        .get(`/api/feature-flags/${foreignOrg.id}/preset-history-filters`)
+        .set("Cookie", admin.cookie);
+      expect(cross.status).toBe(403);
+      expect(cross.body).toEqual({ error: "Admin access required" });
+
+      // SUPER_ADMIN, by contrast, MUST be able to read any org's filters.
+      const sa = await request(app).post("/api/dev/test-login").send({ role: "SUPER_ADMIN" });
+      const saCookie = extractCookie(sa)!;
+      const saRes = await request(app)
+        .get(`/api/feature-flags/${foreignOrg.id}/preset-history-filters`)
+        .set("Cookie", saCookie);
+      expect(saRes.status, `super-admin foreign-org filters failed: ${saRes.text}`).toBe(200);
+    } finally {
+      await db.delete(organizations).where(eq(organizations.id, foreignOrg.id));
+    }
   });
 });
