@@ -9937,6 +9937,13 @@ export const swpppInspections = pgTable("swppp_inspections", {
   resolutionNotes: text("resolution_notes"),
   photoUrls: text("photo_urls").array(),
   notes: text("notes"),
+  // Task #1173: timestamp of the last "corrective action overdue"
+  // notification fanout for this inspection. Set by the nightly overdue
+  // sweep so the same inspection isn't re-notified every night while it
+  // remains OPEN past its due date. Cleared (back to NULL) when the
+  // corrective action due date is moved forward or the inspection is
+  // re-opened so a fresh overdue cycle can fire if it lapses again.
+  lastOverdueNotifiedAt: timestamp("last_overdue_notified_at"),
   createdById: varchar("created_by_id").references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

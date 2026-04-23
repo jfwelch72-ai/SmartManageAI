@@ -8,7 +8,7 @@ import { recordJobMetrics, loadJobMetricsFromDb, pruneJobMetricsDb } from "../ut
 import { evaluateJobMetricAlerts, sendJobMetricAlertQuietHoursDigests } from "../utils/jobMetricAlerts";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
-import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, type InsertNotification } from "@shared/schema";
+import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, type InsertNotification } from "@shared/schema";
 import { getEffectivePermissions } from "../auth";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
@@ -57,6 +57,7 @@ let jobMetricAlertsTask: ReturnType<typeof cron.schedule> | null = null;
 let jobMetricQuietDigestTask: ReturnType<typeof cron.schedule> | null = null;
 let portfolioKpiSnapshotTask: ReturnType<typeof cron.schedule> | null = null;
 let certifiedPayrollDigestTask: ReturnType<typeof cron.schedule> | null = null;
+let swpppOverdueTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -364,6 +365,18 @@ export function startJobRunner() {
     }
   });
 
+  // Task #1173: nightly sweep that finds OPEN SWPPP inspections whose
+  // corrective action due date has passed and notifies the assigned
+  // assignee + the project manager once per overdue cycle. Runs at 7am
+  // alongside the existing compliance/expiration checks.
+  swpppOverdueTask = cron.schedule("0 7 * * *", async () => {
+    try {
+      await processSwpppOverdueCorrectiveActions();
+    } catch (err) {
+      logError("SWPPP overdue corrective action sweep failed", { error: String(err) });
+    }
+  });
+
   // Task #693: daily morning email reminder routed to each contact's owner
   // (createdById) so account managers see today's birthdays without having to
   // open the CRM. Per-user opt-in/opt-out is handled by the existing
@@ -500,6 +513,10 @@ export function stopJobRunner() {
     certifiedPayrollDigestTask.stop();
     certifiedPayrollDigestTask = null;
   }
+  if (swpppOverdueTask) {
+    swpppOverdueTask.stop();
+    swpppOverdueTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -535,6 +552,7 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   // exited their quiet window so they can catch up on overnight alerts.
   job_metric_quiet_digest: { fn: async () => { await sendJobMetricAlertQuietHoursDigests({ recordSends: true }); }, description: "Send digest of job-metric alerts that fired while a Super Admin was in quiet hours", schedule: "*/15 * * * *" },
   certified_payroll_digest: { fn: () => processCertifiedPayrollWeeklyDigest(), description: "Email payroll administrators a weekly digest of certified payroll PDFs generated in the last 7 days", schedule: "0 8 * * 1" },
+  swppp_overdue_corrective_actions: { fn: () => processSwpppOverdueCorrectiveActions(), description: "Notify assignees and project managers when SWPPP corrective actions pass their due date without being resolved", schedule: "0 7 * * *" },
 };
 
 async function processOutbox() {
@@ -3017,5 +3035,142 @@ export async function processCertifiedPayrollWeeklyDigest(opts: { now?: Date } =
 
   if (totalDigests > 0) {
     logInfo("Certified payroll weekly digest sent", { notifications: totalDigests });
+  }
+}
+
+// ============================================================
+// Task #1173: SWPPP overdue corrective action notifications
+// ============================================================
+//
+// We surface overdue corrective actions in the UI already, but nothing
+// actively pings the assignee or PM, which means an overdue item only
+// gets noticed if someone happens to open the SWPPP page. This sweep
+// closes the loop:
+//
+//   - Looks for OPEN inspections (`status = 'OPEN'`) with a non-null
+//     `correctiveActionDueDate` that is strictly before today's date.
+//   - Skips inspections that already had a fanout
+//     (`lastOverdueNotifiedAt IS NOT NULL`) so we don't re-notify the
+//     same assignee every night. The dedupe marker is cleared by the
+//     SWPPP routes when the due date is moved forward or the inspection
+//     is re-opened, which re-arms the next overdue cycle naturally.
+//   - Notifies the corrective action assignee plus the project manager.
+//     Each recipient gets at most one in-app + email notification per
+//     overdue cycle.
+//
+// The notification is a `REMINDER` with `relatedEntityType =
+// "SWPPP_OVERDUE_CORRECTIVE_ACTION"` and `relatedEntityId = inspection.id`
+// so the email composer can deep-link to the inspection list filtered
+// to the right project.
+export async function processSwpppOverdueCorrectiveActions(opts: { now?: Date } = {}) {
+  const now = opts.now ?? new Date();
+  // We compare a YYYY-MM-DD string against `correctiveActionDueDate`
+  // (a DATE column) so the cutoff respects calendar days rather than
+  // wall-clock instants — an item due "today" is not overdue until
+  // tomorrow.
+  const todayStr = now.toISOString().slice(0, 10);
+
+  const overdue = await db
+    .select({
+      id: swpppInspections.id,
+      organizationId: swpppInspections.organizationId,
+      projectId: swpppInspections.projectId,
+      inspectionDate: swpppInspections.inspectionDate,
+      correctiveActionDueDate: swpppInspections.correctiveActionDueDate,
+      correctiveActionAssigneeId: swpppInspections.correctiveActionAssigneeId,
+      correctiveActions: swpppInspections.correctiveActions,
+    })
+    .from(swpppInspections)
+    .where(and(
+      eq(swpppInspections.status, "OPEN"),
+      isNotNull(swpppInspections.correctiveActionDueDate),
+      lt(swpppInspections.correctiveActionDueDate, todayStr),
+      isNull(swpppInspections.lastOverdueNotifiedAt),
+    ));
+
+  if (overdue.length === 0) return;
+
+  // Look up project name + PM, but only for projects that belong to the
+  // same organization as the inspection — guard against the (extremely
+  // unlikely) cross-org project reference so we never route an overdue
+  // notification to a PM in the wrong tenant.
+  const projectKeyByInspection = new Map<string, string>();
+  for (const r of overdue) projectKeyByInspection.set(r.id, `${r.organizationId}::${r.projectId}`);
+  const projectIds = Array.from(new Set(overdue.map((r) => r.projectId)));
+  const orgIds = Array.from(new Set(overdue.map((r) => r.organizationId)));
+  const projectRows = projectIds.length
+    ? await db
+        .select({ id: projects.id, organizationId: projects.organizationId, name: projects.name, projectManagerId: projects.projectManagerId })
+        .from(projects)
+        .where(and(inArray(projects.id, projectIds), inArray(projects.organizationId, orgIds)))
+    : [];
+  const projectByKey = new Map(projectRows.map((p) => [`${p.organizationId}::${p.id}`, p]));
+
+  const notifs: InsertNotification[] = [];
+  const notifiedInspectionIds: string[] = [];
+
+  for (const item of overdue) {
+    const proj = projectByKey.get(`${item.organizationId}::${item.projectId}`);
+    const projectName = proj?.name ?? "(Unknown project)";
+    const dueStr = item.correctiveActionDueDate ? String(item.correctiveActionDueDate) : "";
+    const dueDate = dueStr ? new Date(`${dueStr}T00:00:00Z`) : null;
+    const daysOverdue = dueDate
+      ? Math.max(0, Math.floor((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - dueDate.getTime()) / (1000 * 60 * 60 * 24)))
+      : 0;
+
+    // De-dupe within a single fanout so the assignee and PM (if they're
+    // the same person) only get one notification per inspection.
+    const recipientIds = new Set<string>();
+    if (item.correctiveActionAssigneeId) recipientIds.add(item.correctiveActionAssigneeId);
+    if (proj?.projectManagerId) recipientIds.add(proj.projectManagerId);
+
+    if (recipientIds.size === 0) {
+      // Nothing to notify for this inspection (no assignee, no PM).
+      // Still mark it as notified so we don't keep scanning it every
+      // night — the UI overdue badge remains the source of truth and
+      // someone with edit access will need to reassign it.
+      notifiedInspectionIds.push(item.id);
+      continue;
+    }
+
+    const correctiveActionLabel = (item.correctiveActions ?? "").trim().slice(0, 200) || "Corrective action";
+    const overdueLabel = daysOverdue > 0
+      ? `${daysOverdue} day${daysOverdue === 1 ? "" : "s"} overdue`
+      : "overdue";
+    const title = `SWPPP corrective action ${overdueLabel}: ${projectName}`;
+    const message = `${projectName} — corrective action was due ${dueStr || "(no date)"} (${overdueLabel}).\n${correctiveActionLabel}`;
+
+    for (const userId of recipientIds) {
+      notifs.push({
+        userId,
+        organizationId: item.organizationId,
+        type: "REMINDER" as const,
+        title,
+        message,
+        relatedEntityType: "SWPPP_OVERDUE_CORRECTIVE_ACTION",
+        relatedEntityId: item.id,
+      });
+    }
+    notifiedInspectionIds.push(item.id);
+  }
+
+  if (notifs.length > 0) {
+    await insertNotifications(notifs);
+  }
+
+  if (notifiedInspectionIds.length > 0) {
+    // Single UPDATE batched via inArray so we mark every scanned item
+    // (including the no-recipient ones) as notified in one round-trip.
+    await db
+      .update(swpppInspections)
+      .set({ lastOverdueNotifiedAt: now })
+      .where(inArray(swpppInspections.id, notifiedInspectionIds));
+  }
+
+  if (notifs.length > 0) {
+    logInfo("SWPPP overdue corrective action notifications sent", {
+      notifications: notifs.length,
+      inspections: notifiedInspectionIds.length,
+    });
   }
 }

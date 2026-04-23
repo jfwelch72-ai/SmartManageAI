@@ -217,6 +217,19 @@ export function composeEmailContent(notification: NotificationRecord): {
     };
   }
 
+  // Task #1173: SWPPP corrective action overdue reminder. Deep-links to
+  // the SWPPP inspection list so the assignee/PM can mark it resolved or
+  // adjust the due date in one click.
+  if (notification.relatedEntityType === "SWPPP_OVERDUE_CORRECTIVE_ACTION") {
+    const actionUrl = `${baseUrl}/swppp-inspections${notification.relatedEntityId ? `?inspectionId=${encodeURIComponent(notification.relatedEntityId)}` : ""}`;
+    return {
+      subject: `SWPPP Corrective Action Overdue — SmartManageAI`,
+      body: notification.message,
+      actionUrl,
+      actionText: "Open SWPPP Inspection",
+    };
+  }
+
   // Type-aware composition
   if (type === "CHANGE_ORDER_APPROVED" || type === "CHANGE_ORDER_REJECTED") {
     const status = type === "CHANGE_ORDER_APPROVED" ? "Approved" : "Rejected";

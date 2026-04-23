@@ -1830,13 +1830,26 @@ router.patch(
     const {
       id: _id, organizationId: _o, createdAt: _c, createdById: _cb,
       status: _st, resolvedAt: _ra, resolvedById: _rb, resolutionNotes: _rn,
+      // Task #1173: lastOverdueNotifiedAt is server-managed by the
+      // overdue notification sweep; clients must not be able to
+      // suppress or back-date it via the patch endpoint.
+      lastOverdueNotifiedAt: _lon,
       ...patch
     } = req.body || {};
     const conditions: SQL[] = [eq(swpppInspections.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(swpppInspections.organizationId, ctx.orgId!));
     const [prev] = await db.select().from(swpppInspections).where(and(...conditions)).limit(1);
     if (!prev) return res.status(404).json({ error: "Not found" });
-    const [row] = await db.update(swpppInspections).set({ ...patch, updatedAt: new Date() })
+    // Task #1173: if the corrective action due date is being changed, the
+    // previous "overdue" fanout no longer applies — clear the dedupe
+    // marker so a fresh overdue cycle can fire if the new date also
+    // lapses without resolution.
+    const updatePayload: Record<string, unknown> = { ...patch, updatedAt: new Date() };
+    if (Object.prototype.hasOwnProperty.call(patch, "correctiveActionDueDate") &&
+        String(patch.correctiveActionDueDate ?? "") !== String(prev.correctiveActionDueDate ?? "")) {
+      updatePayload.lastOverdueNotifiedAt = null;
+    }
+    const [row] = await db.update(swpppInspections).set(updatePayload)
       .where(and(...conditions))
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });
@@ -1895,6 +1908,10 @@ router.post(
         resolvedById: null,
         resolutionNotes: null,
         correctiveActionCompletedAt: null,
+        // Task #1173: re-arm the overdue notification cycle so that if the
+        // re-opened inspection is past its due date again it will be
+        // re-fanned-out by the nightly sweep.
+        lastOverdueNotifiedAt: null,
         updatedAt: new Date(),
       })
       .where(and(...conditions))
