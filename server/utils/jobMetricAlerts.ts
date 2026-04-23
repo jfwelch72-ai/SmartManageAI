@@ -125,7 +125,90 @@ function ruleFromRow(row: JobMetricAlertRule): AlertRuleResolved {
   };
 }
 
+/**
+ * Task #1417 — Per-job override for the built-in defaults. Used when a
+ * job's natural cadence makes the engine-wide defaults (designed for
+ * frequently-ticking jobs like notification fan-out) noisy or wrong.
+ *
+ * The first user is `wage_decision_stale_refresh`, the nightly Davis-
+ * Bacon stale wage decision sweep (cron `0 6 * * *`). With the engine
+ * defaults a daily job would page Super Admins every morning at ~10am
+ * UTC because the 4h stall threshold is crossed long before the next
+ * 06:00 UTC tick. The override raises the stall threshold (and email
+ * escalation floor) to 36h so an alert only fires when the sweep has
+ * actually missed at least one full nightly run, and adds a tighter
+ * spike rule on the `failed` counter so a sudden run of failures pages
+ * Super Admins even before the job goes silent. No DB seeding is
+ * required — `resolveRule` consults this map whenever no operator-
+ * authored rule exists for a (job, counter, kind), so a fresh deploy
+ * is alerted out of the box.
+ */
+interface PerJobDefaults {
+  stall?: {
+    thresholdHours: number;
+    dedupeMinutes?: number;
+    emailWhenAboveHours?: number | null;
+  };
+  spikes?: Record<
+    string,
+    {
+      multiplier: number;
+      minAbsolute: number;
+      dedupeMinutes?: number;
+      emailWhenAbove?: number | null;
+    }
+  >;
+}
+
+export const PER_JOB_DEFAULTS: Record<string, PerJobDefaults> = {
+  // Nightly DOL Davis-Bacon stale wage decision sweep. Runs once a day
+  // at 06:00 UTC (see `server/jobs/jobRunner.ts`). 36h tolerates a
+  // single missed run without alerting; the second missed run pages.
+  wage_decision_stale_refresh: {
+    stall: {
+      thresholdHours: 36,
+      // Once a stall is declared we don't want to re-page until the
+      // next nightly run has had a chance to either succeed or miss
+      // again — 24h dedupe matches the job's natural cadence.
+      dedupeMinutes: 24 * 60,
+      emailWhenAboveHours: 36,
+    },
+    spikes: {
+      // A spike in `failed` rows is the strongest leading indicator
+      // that DOL endpoints have started rejecting our requests. The
+      // baseline is built from prior nightly runs, so a 3× jump with
+      // an absolute floor of 3 keeps the rule from firing on the
+      // 1-failure-vs-0-baseline case while still catching real
+      // outages quickly.
+      failed: {
+        multiplier: 3,
+        minAbsolute: 3,
+        dedupeMinutes: 24 * 60,
+        emailWhenAbove: 3,
+      },
+    },
+  },
+};
+
 function defaultSpikeRule(job: string, counter: string): AlertRuleResolved {
+  const override = PER_JOB_DEFAULTS[job]?.spikes?.[counter];
+  if (override) {
+    return {
+      id: null,
+      job,
+      counter,
+      kind: "spike",
+      threshold: override.multiplier,
+      minAbsolute: override.minAbsolute,
+      dedupeMinutes: override.dedupeMinutes ?? DEFAULT_DEDUPE_MINUTES,
+      enabled: true,
+      isDefault: true,
+      emailWhenAbove:
+        override.emailWhenAbove === undefined
+          ? DEFAULT_EMAIL_SPIKE_MULTIPLIER
+          : override.emailWhenAbove,
+    };
+  }
   return {
     id: null,
     job,
@@ -141,6 +224,24 @@ function defaultSpikeRule(job: string, counter: string): AlertRuleResolved {
 }
 
 function defaultStallRule(job: string): AlertRuleResolved {
+  const override = PER_JOB_DEFAULTS[job]?.stall;
+  if (override) {
+    return {
+      id: null,
+      job,
+      counter: null,
+      kind: "stall",
+      threshold: override.thresholdHours,
+      minAbsolute: 0,
+      dedupeMinutes: override.dedupeMinutes ?? DEFAULT_DEDUPE_MINUTES,
+      enabled: true,
+      isDefault: true,
+      emailWhenAbove:
+        override.emailWhenAboveHours === undefined
+          ? DEFAULT_EMAIL_STALL_HOURS
+          : override.emailWhenAboveHours,
+    };
+  }
   return {
     id: null,
     job,
