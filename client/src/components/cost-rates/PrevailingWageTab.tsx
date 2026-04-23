@@ -136,6 +136,7 @@ export function PrevailingWageTab({
   const [importDefaultDate, setImportDefaultDate] = useState(new Date().toISOString().split("T")[0]);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importPreview, setImportPreview] = useState<ImportPreviewResponse | null>(null);
+  const [importResult, setImportResult] = useState<ImportResultResponse | null>(null);
   const [importCreateMissing, setImportCreateMissing] = useState(false);
   const [newClassCodePrefix, setNewClassCodePrefix] = useState("");
   const [newClassDescription, setNewClassDescription] = useState("");
@@ -291,6 +292,7 @@ export function PrevailingWageTab({
     setImportDefaultDate(new Date().toISOString().split("T")[0]);
     setImportFile(null);
     setImportPreview(null);
+    setImportResult(null);
     setImportCreateMissing(false);
     setNewClassCodePrefix("");
     setNewClassDescription("");
@@ -328,7 +330,7 @@ export function PrevailingWageTab({
   const importMutation = useMutation({
     mutationFn: async () => {
       if (!importPreview) throw new Error("Run preview first");
-      const rows = importPreview.rows.filter((r) => r.action !== "ERROR");
+      const rows = importPreview.rows;
       const sortOrderNum = newClassSortOrder.trim() === "" ? undefined : parseInt(newClassSortOrder, 10);
       const newClassificationDefaults = importCreateMissing
         ? {
@@ -355,8 +357,13 @@ export function PrevailingWageTab({
       toast({
         title: "Import complete",
         description: `Created ${data.created}, updated ${data.updated}${classNote}, skipped ${data.skipped}${errCount ? ` (${errCount} errors)` : ""}`,
+        variant: errCount > 0 ? "destructive" : undefined,
       });
-      resetImportDialog();
+      if (errCount > 0) {
+        setImportResult(data);
+      } else {
+        resetImportDialog();
+      }
     },
     onError: (e: Error) => {
       toast({ title: "Import failed", description: e.message, variant: "destructive" });
@@ -1011,25 +1018,73 @@ export function PrevailingWageTab({
                 </Table>
               </ScrollArea>
             )}
+
+            {importResult && importResult.errors.length > 0 && (
+              <div
+                className="border border-destructive/40 rounded-md bg-destructive/5 p-3 space-y-2"
+                data-testid="panel-import-result-errors"
+              >
+                <div className="flex items-center gap-2 text-sm font-medium text-destructive">
+                  <XCircle className="w-4 h-4" />
+                  {importResult.errors.length} row{importResult.errors.length === 1 ? "" : "s"} were skipped
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Created {importResult.created}, updated {importResult.updated}, skipped {importResult.skipped}.
+                  Fix the rows below in your spreadsheet and re-upload.
+                </p>
+                <ScrollArea className="max-h-[240px]">
+                  <Table>
+                    <TableHeader className="sticky top-0 bg-background">
+                      <TableRow>
+                        <TableHead className="w-[80px]">Row</TableHead>
+                        <TableHead>Reason</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {importResult.errors.map((err, i) => (
+                        <TableRow
+                          key={`${err.rowNumber ?? "x"}-${i}`}
+                          data-testid={`row-import-result-error-${err.rowNumber ?? i}`}
+                        >
+                          <TableCell className="font-mono text-xs align-top">
+                            {err.rowNumber ?? "—"}
+                          </TableCell>
+                          <TableCell
+                            className="text-xs text-destructive"
+                            data-testid={`text-import-result-error-${err.rowNumber ?? i}`}
+                          >
+                            {err.message}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              </div>
+            )}
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={resetImportDialog}>Cancel</Button>
-            <Button
-              onClick={() => importMutation.mutate()}
-              disabled={
-                !importPreview ||
-                importMutation.isPending ||
-                (importPreview.summary.toCreate + importPreview.summary.toUpdate) === 0
-              }
-              data-testid="button-confirm-import"
-            >
-              {importMutation.isPending
-                ? "Importing..."
-                : importPreview
-                  ? `Import ${importPreview.summary.toCreate + importPreview.summary.toUpdate} rows`
-                  : "Import"}
+            <Button variant="outline" onClick={resetImportDialog} data-testid="button-close-import">
+              {importResult ? "Close" : "Cancel"}
             </Button>
+            {!importResult && (
+              <Button
+                onClick={() => importMutation.mutate()}
+                disabled={
+                  !importPreview ||
+                  importMutation.isPending ||
+                  (importPreview.summary.toCreate + importPreview.summary.toUpdate) === 0
+                }
+                data-testid="button-confirm-import"
+              >
+                {importMutation.isPending
+                  ? "Importing..."
+                  : importPreview
+                    ? `Import ${importPreview.summary.toCreate + importPreview.summary.toUpdate} rows`
+                    : "Import"}
+              </Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

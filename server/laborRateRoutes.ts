@@ -619,6 +619,7 @@ const importRowSchema = z.object({
   wageDecision: z.string().nullable().optional(),
   notes: z.string().nullable().optional(),
   action: z.enum(["CREATE", "UPDATE", "ERROR"]).optional(),
+  errors: z.array(z.string()).optional(),
 });
 
 const newClassificationDefaultsSchema = z.object({
@@ -948,6 +949,10 @@ router.post("/prevailing-wage-rates/import", requireAuth, requireRole("ADMIN", "
 
       if (row.action === "ERROR") {
         skipped++;
+        const reason = row.errors && row.errors.length > 0
+          ? row.errors.join("; ")
+          : "Row was flagged as ERROR during preview and cannot be imported";
+        errors.push({ rowNumber, message: reason });
         continue;
       }
 
@@ -957,6 +962,8 @@ router.post("/prevailing-wage-rates/import", requireAuth, requireRole("ADMIN", "
         skipped++;
         if (!row.classificationId) {
           errors.push({ rowNumber, message: "Missing classification (enable 'Create missing classifications' to auto-create)" });
+        } else {
+          errors.push({ rowNumber, message: "Classification belongs to another organization" });
         }
         continue;
       }
