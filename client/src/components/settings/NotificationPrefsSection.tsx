@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, Fragment } from "react";
+import { useSearch } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -22,7 +23,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Bell, Loader2, Lock, AlertCircle, Cake, AlarmClock, Moon, Eye, Mail, Download } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Bell, Loader2, Lock, AlertCircle, Cake, AlarmClock, Moon, Eye, Mail, Download, CheckCircle2, X } from "lucide-react";
 import { useIntegrationStatus } from "@/hooks/use-integration-status";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -336,10 +338,51 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return output;
 }
 
+// Task #1440 — Friendly labels for the `?muted=<value>` query param appended
+// by the one-click mute endpoints in `server/notificationPreferencesRoutes.ts`.
+// When a user clicks "Mute" from an alert email, the server disables their
+// preference and redirects to `/settings/notifications?muted=<value>`; we
+// surface a confirmation banner naming the alert family that was muted so
+// the click feels like it actually did something.
+const MUTED_ALERT_FAMILY_LABELS: Record<string, string> = {
+  swppp_overdue: "SWPPP corrective action overdue alerts",
+  davis_bacon_auto_sync_failed: "Davis-Bacon auto-sync failure alerts",
+  wage_decision_rates_changed: "Davis-Bacon wage rate change alerts",
+};
+
 export default function NotificationPrefsSection() {
   const { toast } = useToast();
   const { user: authUser } = useAuth();
   const isSuperAdmin = authUser?.role === "SUPER_ADMIN";
+
+  // Task #1440 — Read the `?muted=<family>` (success) or `?mute=invalid`
+  // (expired/garbage token) query params appended by the one-click mute
+  // endpoints. We surface a dismissible confirmation/error banner so users
+  // who click "Mute" from an email get visible feedback that something
+  // happened (or that the link was no longer valid).
+  const search = useSearch();
+  const muteBanner = useMemo(() => {
+    const params = new URLSearchParams(search);
+    const muted = params.get("muted");
+    const mute = params.get("mute");
+    if (muted) {
+      const label = MUTED_ALERT_FAMILY_LABELS[muted];
+      if (label) {
+        return { kind: "success" as const, key: `muted:${muted}`, label };
+      }
+      // Unknown success value — still acknowledge it generically rather
+      // than silently swallow a redirect we don't recognize.
+      return { kind: "success" as const, key: `muted:${muted}`, label: null };
+    }
+    if (mute === "invalid") {
+      return { kind: "invalid" as const, key: "mute:invalid", label: null };
+    }
+    return null;
+  }, [search]);
+  const [dismissedMuteBannerKey, setDismissedMuteBannerKey] = useState<string | null>(null);
+  const showMuteBanner =
+    muteBanner !== null && dismissedMuteBannerKey !== muteBanner.key;
+
   // Task #1021: Only org admins receive CRM transcript backfill completion
   // summaries (the dispatch path in `notifyBackfillCompletionToOrgAdmins`
   // filters to users.role === "ADMIN"). Hide the controls for everyone else
@@ -1426,6 +1469,57 @@ export default function NotificationPrefsSection() {
         <h2 className="text-2xl font-bold" data-testid="text-section-title-notifications">Notification Preferences</h2>
         <p className="text-muted-foreground mt-1">Configure how and when you receive notifications</p>
       </div>
+
+      {showMuteBanner && muteBanner ? (
+        muteBanner.kind === "success" ? (
+          <Alert
+            data-testid={`banner-mute-success-${muteBanner.key.replace(/[:_]/g, "-")}`}
+            className="relative border-emerald-500/50 text-emerald-900 dark:text-emerald-100 [&>svg]:text-emerald-600 dark:[&>svg]:text-emerald-400"
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            <AlertTitle>
+              {muteBanner.label
+                ? `${muteBanner.label} have been muted`
+                : "Alerts have been muted"}
+            </AlertTitle>
+            <AlertDescription>
+              You won't receive these alerts anymore. You can re-enable them
+              below at any time.
+            </AlertDescription>
+            <button
+              type="button"
+              onClick={() => setDismissedMuteBannerKey(muteBanner.key)}
+              className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Dismiss"
+              data-testid="button-dismiss-mute-banner"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </Alert>
+        ) : (
+          <Alert
+            variant="destructive"
+            data-testid="banner-mute-invalid"
+            className="relative"
+          >
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>That mute link is no longer valid</AlertTitle>
+            <AlertDescription>
+              The link may have expired or already been used. Use the toggles
+              below to mute alerts directly from your preferences.
+            </AlertDescription>
+            <button
+              type="button"
+              onClick={() => setDismissedMuteBannerKey(muteBanner.key)}
+              className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Dismiss"
+              data-testid="button-dismiss-mute-banner"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </Alert>
+        )
+      ) : null}
 
       <Card>
         <CardContent className="pt-6">
