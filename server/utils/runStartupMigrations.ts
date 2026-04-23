@@ -83,6 +83,7 @@ import { ensureProjectKpiSnapshotsTable } from "./ensureProjectKpiSnapshotsTable
 import { ensureSwpppCorrectiveActionStatus } from "./ensureSwpppCorrectiveActionStatus";
 import { ensureCrmTranscriptBackfillJobsTable } from "./ensureCrmTranscriptBackfillJobsTable";
 import { ensureCrmTranscriptBackfillNotificationSettingsTable } from "./ensureCrmTranscriptBackfillNotificationSettingsTable";
+import { ensureFeatureFlagPresetApplicationsTable } from "./ensureFeatureFlagPresetApplicationsTable";
 import { ensureCrmTranscriptBackfillNotificationsTable } from "./ensureCrmTranscriptBackfillNotificationsTable";
 import { ensureCrmTranscriptBackfillAlertDeliveriesTable } from "./ensureCrmTranscriptBackfillAlertDeliveriesTable";
 import { ensureUsersAlertFailureEmailModeColumn } from "./ensureUsersAlertFailureEmailModeColumn";
@@ -216,6 +217,9 @@ const migrations: MigrationStep[] = [
   // automatically. Subsequent startups read a single row and no-op.
   // Must run AFTER `heavy_civil_tables` so `certified_payroll_reports` exists.
   { name: "certified_payroll_backfill_once", category: "ALTER_TABLE", fn: runCertifiedPayrollBackfillOnce },
+  // Task #1119 — audit log for trade-preset applications shown on the
+  // Feature Flags tab (Last applied: <preset> on <date> by <user>).
+  { name: "feature_flag_preset_applications_table", category: "CREATE_TABLE", fn: ensureFeatureFlagPresetApplicationsTable },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

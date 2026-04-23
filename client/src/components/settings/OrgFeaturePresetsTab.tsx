@@ -26,6 +26,14 @@ interface FlagsResponse {
   keys: FeatureFlagKey[];
 }
 
+interface LastPresetResponse {
+  lastApplied: {
+    tradeType: string;
+    appliedAt: string;
+    appliedBy: { id: string; firstName: string; lastName: string; email: string } | null;
+  } | null;
+}
+
 interface FlagDiff {
   key: FeatureFlagKey;
   label: string;
@@ -53,6 +61,18 @@ export function OrgFeaturePresetsTab() {
   const orgTradeType = tradeConfig?.organization.tradeType ?? "";
   const orgId = tradeConfig?.organization.id ?? "";
 
+  const { data: lastPresetData } = useQuery<LastPresetResponse>({
+    queryKey: ["/api/feature-flags", orgId, "last-preset"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", `/api/feature-flags/${orgId}/last-preset`);
+      return res.json();
+    },
+    enabled: !!user && user.role === "ADMIN" && !!orgId,
+  });
+
+  const lastApplied = lastPresetData?.lastApplied ?? null;
+  const lastAppliedTradeType = lastApplied?.tradeType ?? null;
+
   const tradeTypeOptions = tradeConfig?.tradeTypes ?? [];
   const tradeLabelMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -67,6 +87,7 @@ export function OrgFeaturePresetsTab() {
     },
     onSuccess: (_data, tradeType) => {
       queryClient.invalidateQueries({ queryKey: ["/api/feature-flags"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId, "last-preset"] });
       const label = tradeLabelMap[tradeType] || tradeType;
       toast({
         title: "Preset applied",
@@ -199,8 +220,21 @@ export function OrgFeaturePresetsTab() {
                       value={opt.value}
                       data-testid={`select-item-trade-preset-${opt.value}`}
                     >
-                      {opt.label}
-                      {opt.value === orgTradeType ? " (current trade)" : ""}
+                      <span className="flex items-center gap-2">
+                        <span>
+                          {opt.label}
+                          {opt.value === orgTradeType ? " (current trade)" : ""}
+                        </span>
+                        {opt.value === lastAppliedTradeType && (
+                          <Badge
+                            variant="secondary"
+                            className="text-xs"
+                            data-testid={`badge-currently-applied-${opt.value}`}
+                          >
+                            Currently applied
+                          </Badge>
+                        )}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -214,6 +248,38 @@ export function OrgFeaturePresetsTab() {
               Apply Preset
             </Button>
           </div>
+          {lastApplied ? (
+            <div
+              className="text-sm text-muted-foreground"
+              data-testid="text-last-applied-preset"
+            >
+              Last applied:{" "}
+              <span className="font-medium text-foreground">
+                {tradeLabelMap[lastApplied.tradeType] || lastApplied.tradeType}
+              </span>{" "}
+              on{" "}
+              <span className="font-medium text-foreground">
+                {new Date(lastApplied.appliedAt).toLocaleString()}
+              </span>
+              {lastApplied.appliedBy ? (
+                <>
+                  {" "}by{" "}
+                  <span className="font-medium text-foreground">
+                    {`${lastApplied.appliedBy.firstName} ${lastApplied.appliedBy.lastName}`.trim() ||
+                      lastApplied.appliedBy.email}
+                  </span>
+                </>
+              ) : null}
+              .
+            </div>
+          ) : (
+            <div
+              className="text-sm text-muted-foreground"
+              data-testid="text-last-applied-preset-empty"
+            >
+              No trade preset has been applied to this organization yet.
+            </div>
+          )}
         </CardContent>
       </Card>
 

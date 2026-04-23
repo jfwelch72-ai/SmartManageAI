@@ -1,8 +1,8 @@
 import { db } from "../db";
 import { safeJsonParse } from "../responseHelper";
-import { organizations, FEATURE_FLAG_KEYS, DISABLED_BY_DEFAULT_FLAGS, type FeatureFlagKey } from "@shared/schema";
+import { organizations, users, featureFlagPresetApplications, FEATURE_FLAG_KEYS, DISABLED_BY_DEFAULT_FLAGS, type FeatureFlagKey } from "@shared/schema";
 import { getFeaturePresetForTrade } from "@shared/tradeFeaturePresets";
-import { eq, or, isNull, sql } from "drizzle-orm";
+import { eq, or, isNull, sql, desc } from "drizzle-orm";
 import {logInfo, logWarn } from "../utils/logger";
 
 export type FeatureFlagsMap = Partial<Record<FeatureFlagKey, boolean>>;
@@ -91,7 +91,11 @@ export async function backfillMissingFeatureFlags(): Promise<void> {
   }
 }
 
-export async function applyTradePreset(orgId: string, tradeType: string): Promise<FeatureFlagsMap> {
+export async function applyTradePreset(
+  orgId: string,
+  tradeType: string,
+  appliedByUserId?: string | null,
+): Promise<FeatureFlagsMap> {
   const preset = getFeaturePresetForTrade(tradeType);
   const flagsJson = JSON.stringify(preset);
 
@@ -99,6 +103,61 @@ export async function applyTradePreset(orgId: string, tradeType: string): Promis
     .set({ featureFlags: flagsJson, updatedAt: new Date() })
     .where(eq(organizations.id, orgId));
 
+  try {
+    await db.insert(featureFlagPresetApplications).values({
+      organizationId: orgId,
+      tradeType,
+      appliedById: appliedByUserId ?? null,
+    });
+  } catch (err) {
+    // Audit insert failures must not fail the user-facing apply, but they do
+    // need to be visible in logs so broken auditing is detectable. Surface
+    // org/trade/user context and the error message.
+    const message = err instanceof Error ? err.message : String(err);
+    logWarn(
+      `[FeatureFlags] Failed to record preset application audit row | organizationId=${orgId} tradeType=${tradeType} appliedByUserId=${appliedByUserId ?? "null"} error=${message}`,
+    );
+  }
+
   logInfo(`[FeatureFlags] Applied trade preset for "${tradeType}"`, { organizationId: orgId });
   return preset;
+}
+
+export interface LastPresetApplication {
+  tradeType: string;
+  appliedAt: Date;
+  appliedBy: { id: string; firstName: string; lastName: string; email: string } | null;
+}
+
+export async function getLastPresetApplication(orgId: string): Promise<LastPresetApplication | null> {
+  const [row] = await db
+    .select({
+      tradeType: featureFlagPresetApplications.tradeType,
+      appliedAt: featureFlagPresetApplications.appliedAt,
+      appliedById: featureFlagPresetApplications.appliedById,
+      userFirstName: users.firstName,
+      userLastName: users.lastName,
+      userEmail: users.email,
+      userId: users.id,
+    })
+    .from(featureFlagPresetApplications)
+    .leftJoin(users, eq(users.id, featureFlagPresetApplications.appliedById))
+    .where(eq(featureFlagPresetApplications.organizationId, orgId))
+    .orderBy(desc(featureFlagPresetApplications.appliedAt))
+    .limit(1);
+
+  if (!row) return null;
+
+  return {
+    tradeType: row.tradeType,
+    appliedAt: row.appliedAt,
+    appliedBy: row.userId
+      ? {
+          id: row.userId,
+          firstName: row.userFirstName ?? "",
+          lastName: row.userLastName ?? "",
+          email: row.userEmail ?? "",
+        }
+      : null,
+  };
 }

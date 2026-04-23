@@ -10227,3 +10227,19 @@ export const pdfAlertDeliveries = pgTable("pdf_alert_deliveries", {
 export const insertPdfAlertDeliverySchema = createInsertSchema(pdfAlertDeliveries).omit({ id: true, createdAt: true });
 export type InsertPdfAlertDelivery = z.infer<typeof insertPdfAlertDeliverySchema>;
 export type PdfAlertDelivery = typeof pdfAlertDeliveries.$inferSelect;
+
+// Task #1119: audit log of trade-preset applications on the Feature Flags tab.
+// Each row records who applied which trade preset to an organization and when,
+// so admins can see "Last applied: <Trade Preset> on <date> by <user>".
+export const featureFlagPresetApplications = pgTable("feature_flag_preset_applications", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  tradeType: text("trade_type").notNull(),
+  appliedById: varchar("applied_by_id").references(() => users.id, { onDelete: "set null" }),
+  appliedAt: timestamp("applied_at").notNull().defaultNow(),
+}, (t) => ({
+  orgAppliedAtIdx: index("ffpa_org_applied_at_idx").on(t.organizationId, t.appliedAt),
+}));
+export const insertFeatureFlagPresetApplicationSchema = createInsertSchema(featureFlagPresetApplications).omit({ id: true, appliedAt: true });
+export type InsertFeatureFlagPresetApplication = z.infer<typeof insertFeatureFlagPresetApplicationSchema>;
+export type FeatureFlagPresetApplication = typeof featureFlagPresetApplications.$inferSelect;

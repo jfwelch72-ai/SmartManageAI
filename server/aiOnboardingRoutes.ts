@@ -519,7 +519,7 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
     }
 
     try {
-      await applyTradePreset(newOrg.id, tradeType);
+      await applyTradePreset(newOrg.id, tradeType, req.user?.id ?? null);
       logInfo(`[Onboarding] Feature flags set via trade preset for "${tradeType}"`, { organizationId: newOrg.id });
     } catch (presetErr: any) {
       logWarn(`[Onboarding] Trade feature preset failed, applying fallback defaults: ${presetErr.message}`);

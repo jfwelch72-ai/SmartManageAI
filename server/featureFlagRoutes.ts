@@ -45,8 +45,21 @@ router.post("/:orgId/apply-preset", requireAuth, async (req, res, next) => {
     if (!(tradeTypeEnum.enumValues as readonly string[]).includes(tradeType)) {
       return res.status(400).json({ error: `Invalid tradeType: ${tradeType}` });
     }
-    const updated = await flagService.applyTradePreset(req.params.orgId, tradeType);
+    const updated = await flagService.applyTradePreset(req.params.orgId, tradeType, user.id);
     res.json({ flags: updated });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:orgId/last-preset", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (user.role !== "SUPER_ADMIN" && (user.role !== "ADMIN" || user.organizationId !== req.params.orgId)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    const last = await flagService.getLastPresetApplication(req.params.orgId);
+    res.json({ lastApplied: last });
   } catch (err) {
     next(err);
   }
