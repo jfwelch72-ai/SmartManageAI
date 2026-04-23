@@ -783,93 +783,58 @@ router.post("/api/documents/from-cloud", requireAuth, requireRole("SUPER_ADMIN",
       }
     }
 
+    const { safeDownload, SafeDownloadError, DEFAULT_ALLOWED_CONTENT_TYPES, MAX_DOWNLOAD_SIZE } = await import("./services/safeDownload");
+
     let fileBuffer: Buffer;
     let contentType: string;
 
-    const MAX_FILE_SIZE = 100 * 1024 * 1024;
+    // Cloud providers may legitimately serve binary blobs whose MIME we
+    // can't always control (e.g. Drive returning application/octet-stream
+    // for some uploads). We extend the URL allowlist with a small set of
+    // additional document/binary types commonly seen from these APIs.
+    const CLOUD_ALLOWED_CONTENT_TYPES = [
+      ...DEFAULT_ALLOWED_CONTENT_TYPES,
+      "application/octet-stream",
+    ];
+
+    let downloadUrl: string;
+    let downloadMethod: "GET" | "POST" = "GET";
+    let downloadHeaders: Record<string, string> = {
+      Authorization: `Bearer ${accessToken}`,
+    };
 
     if (provider === "gdrive") {
-      const dlRes = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`,
-        { headers: { Authorization: `Bearer ${accessToken}` } }
-      );
-      if (!dlRes.ok) {
-        res.status(502).json({ error: "Failed to download file from Google Drive" });
-        return;
-      }
-      const contentLengthHdr = dlRes.headers.get("content-length");
-      if (contentLengthHdr && parseInt(contentLengthHdr) > MAX_FILE_SIZE) {
-        res.status(400).json({ error: "File is too large (over 100MB)" });
-        return;
-      }
-      const ab = await dlRes.arrayBuffer();
-      fileBuffer = Buffer.from(ab);
-      contentType = dlRes.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream";
+      downloadUrl = `https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`;
     } else if (provider === "dropbox") {
       const dropboxPath = filePath || "";
-      const dlRes = await fetch(
-        "https://content.dropboxapi.com/2/files/download",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Dropbox-API-Arg": JSON.stringify({ path: dropboxPath || `id:${fileId}` }),
-          },
-        }
-      );
-      if (!dlRes.ok) {
-        res.status(502).json({ error: "Failed to download file from Dropbox" });
-        return;
-      }
-      const contentLengthHdr = dlRes.headers.get("content-length");
-      if (contentLengthHdr && parseInt(contentLengthHdr) > MAX_FILE_SIZE) {
-        res.status(400).json({ error: "File is too large (over 100MB)" });
-        return;
-      }
-      const ab = await dlRes.arrayBuffer();
-      fileBuffer = Buffer.from(ab);
-      contentType = dlRes.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream";
+      downloadUrl = "https://content.dropboxapi.com/2/files/download";
+      downloadMethod = "POST";
+      downloadHeaders["Dropbox-API-Arg"] = JSON.stringify({ path: dropboxPath || `id:${fileId}` });
     } else if (provider === "onedrive") {
-      const dlRes = await fetch(
-        `https://graph.microsoft.com/v1.0/me/drive/items/${encodeURIComponent(fileId)}/content`,
-        { headers: { Authorization: `Bearer ${accessToken}` }, redirect: "follow" }
-      );
-      if (!dlRes.ok) {
-        res.status(502).json({ error: "Failed to download file from OneDrive" });
-        return;
-      }
-      const contentLengthHdr = dlRes.headers.get("content-length");
-      if (contentLengthHdr && parseInt(contentLengthHdr) > MAX_FILE_SIZE) {
-        res.status(400).json({ error: "File is too large (over 100MB)" });
-        return;
-      }
-      const ab = await dlRes.arrayBuffer();
-      fileBuffer = Buffer.from(ab);
-      contentType = dlRes.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream";
+      downloadUrl = `https://graph.microsoft.com/v1.0/me/drive/items/${encodeURIComponent(fileId)}/content`;
     } else if (provider === "box") {
-      const dlRes = await fetch(
-        `https://api.box.com/2.0/files/${encodeURIComponent(fileId)}/content`,
-        { headers: { Authorization: `Bearer ${accessToken}` }, redirect: "follow" }
-      );
-      if (!dlRes.ok) {
-        res.status(502).json({ error: "Failed to download file from Box" });
-        return;
-      }
-      const contentLengthHdr = dlRes.headers.get("content-length");
-      if (contentLengthHdr && parseInt(contentLengthHdr) > MAX_FILE_SIZE) {
-        res.status(400).json({ error: "File is too large (over 100MB)" });
-        return;
-      }
-      const ab = await dlRes.arrayBuffer();
-      fileBuffer = Buffer.from(ab);
-      contentType = dlRes.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream";
+      downloadUrl = `https://api.box.com/2.0/files/${encodeURIComponent(fileId)}/content`;
     } else {
       res.status(400).json({ error: "Unsupported provider" });
       return;
     }
 
-    if (fileBuffer.length > MAX_FILE_SIZE) {
-      res.status(400).json({ error: "File is too large (over 100MB)" });
+    try {
+      const result = await safeDownload({
+        url: downloadUrl,
+        method: downloadMethod,
+        headers: downloadHeaders,
+        maxBytes: MAX_DOWNLOAD_SIZE,
+        allowedContentTypes: CLOUD_ALLOWED_CONTENT_TYPES,
+      });
+      fileBuffer = result.buffer;
+      contentType = result.contentType;
+    } catch (err: any) {
+      if (err instanceof SafeDownloadError) {
+        res.status(err.status).json({ error: err.message });
+        return;
+      }
+      res.status(502).json({ error: `Failed to download file from ${provider}` });
       return;
     }
 
