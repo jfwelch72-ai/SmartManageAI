@@ -22,7 +22,7 @@ import {
   DialogTitle, 
   DialogTrigger 
 } from "@/components/ui/dialog";
-import { Plus, FileText, CheckCircle, Calculator, Layers, Tag, Store, Database, Search, Camera, X, Upload, Loader2, Hash } from "lucide-react";
+import { Plus, FileText, CheckCircle, Calculator, Layers, Tag, Store, Database, Search, Camera, X, Upload, Loader2, Hash, GripVertical } from "lucide-react";
 import { PayItemPicker, type SelectedPayItem } from "@/components/dot/PayItemPicker";
 import { useFeatureFlags } from "@/hooks/use-feature-flags";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -353,6 +353,10 @@ function LineItemPhotoGallery({
     Array<{ id: string; name: string; size: number; status: "pending" | "uploading" | "done" | "error"; progress: number; error?: string }>
   >([]);
   const dragCounter = useRef(0);
+  const [reorderDragIndex, setReorderDragIndex] = useState<number | null>(null);
+  const [reorderOverIndex, setReorderOverIndex] = useState<number | null>(null);
+  const reorderSeqRef = useRef(0);
+  const reorderLatestSeqRef = useRef(0);
 
   const allUrls = (() => {
     const set = new Set<string>();
@@ -519,6 +523,44 @@ function LineItemPhotoGallery({
     }, 2500);
   };
 
+  const persistOrder = async (orderedUrls: string[], seq: number, prevUrls: string[], prevLegacy: string | null) => {
+    try {
+      const res = await apiRequest(
+        "PUT",
+        `/api/estimates/${estimateId}/line-items/${lineItemId}/photos/order`,
+        { photoUrls: orderedUrls },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (seq !== reorderLatestSeqRef.current) return;
+      const nextUrls: string[] = Array.isArray(data.photoUrls) ? data.photoUrls : orderedUrls;
+      const nextLegacy: string | null =
+        typeof data.photoUrl === "string" || data.photoUrl === null
+          ? data.photoUrl
+          : nextUrls[0] ?? null;
+      onChange(nextUrls, nextLegacy);
+    } catch (err: any) {
+      if (seq !== reorderLatestSeqRef.current) return;
+      toast({ title: err?.message || "Failed to reorder photos", variant: "destructive" });
+      onChange(prevUrls, prevLegacy);
+    }
+  };
+
+  const handleReorder = (fromIdx: number, toIdx: number) => {
+    if (fromIdx === toIdx || fromIdx < 0 || toIdx < 0) return;
+    if (fromIdx >= allUrls.length || toIdx >= allUrls.length) return;
+    const prevUrls = allUrls.slice();
+    const prevLegacy = legacyPhotoUrl;
+    const next = allUrls.slice();
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    const nextLegacy = next.length > 0 ? next[0] : null;
+    reorderSeqRef.current += 1;
+    const seq = reorderSeqRef.current;
+    reorderLatestSeqRef.current = seq;
+    onChange(next, nextLegacy);
+    void persistOrder(next, seq, prevUrls, prevLegacy);
+  };
+
   const handleRemove = async (url: string) => {
     try {
       const res = await fetch(
@@ -548,39 +590,94 @@ function LineItemPhotoGallery({
           className="flex flex-wrap gap-3"
           data-testid={`gallery-${testPrefix}line-item-photos`}
         >
-          {allUrls.map((url, idx) => (
-            <div
-              key={url}
-              className="relative group"
-              data-testid={`thumb-${testPrefix}line-item-photo-${idx}`}
-            >
-              <button
-                type="button"
-                onClick={() => setLightboxUrl(url)}
-                className="block focus:outline-none focus:ring-2 focus:ring-ring rounded-lg"
-                data-testid={`button-${testPrefix}view-photo-${idx}`}
-                aria-label="View photo full size"
+          {allUrls.map((url, idx) => {
+            const isDraggingThis = reorderDragIndex === idx;
+            const isDropTarget = reorderOverIndex === idx && reorderDragIndex !== null && reorderDragIndex !== idx;
+            return (
+              <div
+                key={url}
+                draggable
+                onDragStart={(e) => {
+                  setReorderDragIndex(idx);
+                  e.dataTransfer.effectAllowed = "move";
+                  try {
+                    e.dataTransfer.setData("text/x-line-item-photo-index", String(idx));
+                  } catch {}
+                }}
+                onDragOver={(e) => {
+                  if (reorderDragIndex === null) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  e.dataTransfer.dropEffect = "move";
+                  if (reorderOverIndex !== idx) setReorderOverIndex(idx);
+                }}
+                onDragLeave={(e) => {
+                  e.stopPropagation();
+                  if (reorderOverIndex === idx) setReorderOverIndex(null);
+                }}
+                onDrop={(e) => {
+                  if (reorderDragIndex === null) return;
+                  e.preventDefault();
+                  e.stopPropagation();
+                  const from = reorderDragIndex;
+                  setReorderDragIndex(null);
+                  setReorderOverIndex(null);
+                  handleReorder(from, idx);
+                }}
+                onDragEnd={() => {
+                  setReorderDragIndex(null);
+                  setReorderOverIndex(null);
+                }}
+                className={`relative group cursor-move rounded-lg ${
+                  isDraggingThis ? "opacity-50" : ""
+                } ${isDropTarget ? "ring-2 ring-primary ring-offset-1" : ""}`}
+                data-testid={`thumb-${testPrefix}line-item-photo-${idx}`}
+                aria-grabbed={isDraggingThis}
               >
-                <img
-                  src={url}
-                  alt={`Line item photo ${idx + 1}`}
-                  className="h-24 w-24 rounded-lg border border-border object-cover transition-transform hover:scale-105"
-                  data-testid={`img-${testPrefix}line-item-photo-${idx}`}
-                />
-              </button>
-              <Button
-                type="button"
-                variant="destructive"
-                size="icon"
-                className="absolute -top-2 -right-2 h-6 w-6 rounded-full opacity-90 group-hover:opacity-100"
-                onClick={() => handleRemove(url)}
-                data-testid={`button-${testPrefix}remove-photo-${idx}`}
-                aria-label="Remove photo"
-              >
-                <X className="h-3 w-3" />
-              </Button>
-            </div>
-          ))}
+                <button
+                  type="button"
+                  onClick={() => setLightboxUrl(url)}
+                  className="block focus:outline-none focus:ring-2 focus:ring-ring rounded-lg"
+                  data-testid={`button-${testPrefix}view-photo-${idx}`}
+                  aria-label="View photo full size"
+                >
+                  <img
+                    src={url}
+                    alt={`Line item photo ${idx + 1}`}
+                    className="h-24 w-24 rounded-lg border border-border object-cover transition-transform hover:scale-105"
+                    data-testid={`img-${testPrefix}line-item-photo-${idx}`}
+                    draggable={false}
+                  />
+                </button>
+                <div
+                  className="pointer-events-none absolute top-1 left-1 rounded bg-black/60 p-0.5 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                  aria-hidden="true"
+                  data-testid={`handle-${testPrefix}reorder-photo-${idx}`}
+                >
+                  <GripVertical className="h-3 w-3" />
+                </div>
+                {idx === 0 && (
+                  <span
+                    className="absolute bottom-1 left-1 rounded bg-primary px-1.5 py-0.5 text-[10px] font-medium text-primary-foreground"
+                    data-testid={`badge-${testPrefix}cover-photo`}
+                  >
+                    Cover
+                  </span>
+                )}
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="icon"
+                  className="absolute -top-2 -right-2 h-6 w-6 rounded-full opacity-90 group-hover:opacity-100"
+                  onClick={() => handleRemove(url)}
+                  data-testid={`button-${testPrefix}remove-photo-${idx}`}
+                  aria-label="Remove photo"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            );
+          })}
         </div>
       )}
 

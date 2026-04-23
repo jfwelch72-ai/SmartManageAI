@@ -2200,6 +2200,51 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
     }
   });
 
+  router.put("/api/estimates/:estimateId/line-items/:lineItemId/photos/order", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
+    try {
+      const { estimateId, lineItemId } = req.params;
+      const estimate = await verifyEstimateOrgAccess(estimateId, req.user);
+      if (!estimate) return res.status(404).json({ error: "Estimate not found" });
+
+      const body = req.body as { photoUrls?: unknown };
+      if (!Array.isArray(body.photoUrls) || !body.photoUrls.every((u) => typeof u === "string")) {
+        return res.status(400).json({ error: "photoUrls must be an array of strings" });
+      }
+      const requested = body.photoUrls as string[];
+
+      const lineItem = await db.query.estimateLineItems.findFirst({
+        where: and(eq(estimateLineItems.id, lineItemId), eq(estimateLineItems.estimateId, estimateId)),
+      });
+      if (!lineItem) return res.status(404).json({ error: "Line item not found" });
+
+      const existingUrls = Array.isArray(lineItem.photoUrls) ? lineItem.photoUrls : [];
+      const legacyUrl = lineItem.photoUrl;
+      const allowed = new Set<string>(existingUrls);
+      if (legacyUrl) allowed.add(legacyUrl);
+
+      const seen = new Set<string>();
+      const ordered: string[] = [];
+      for (const u of requested) {
+        if (!allowed.has(u) || seen.has(u)) continue;
+        seen.add(u);
+        ordered.push(u);
+      }
+      if (ordered.length !== allowed.size) {
+        return res.status(400).json({ error: "photoUrls must contain exactly the existing photos" });
+      }
+
+      const nextLegacy = ordered.length > 0 ? ordered[0] : null;
+
+      await db.update(estimateLineItems)
+        .set({ photoUrls: ordered, photoUrl: nextLegacy, updatedAt: new Date() })
+        .where(and(eq(estimateLineItems.id, lineItemId), eq(estimateLineItems.estimateId, estimateId)));
+
+      res.json({ success: true, photoUrls: ordered, photoUrl: nextLegacy });
+    } catch (error) {
+      next(error);
+    }
+  });
+
   router.get("/api/estimates/line-item-photos/:orgId/:lineItemId/*", requireAuth, async (req: AuthRequest, res, next) => {
     try {
       const { orgId, lineItemId } = req.params;
