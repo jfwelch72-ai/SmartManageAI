@@ -22,7 +22,7 @@ import { eventBus } from "../events";
 import { emailAccounts, emailCampaigns, emailCampaignContacts } from "@shared/schema";
 import { syncImapAccount, syncOutlookAccount, syncGmailAccount, drainAccountProviderPushes } from "../emailRoutes";
 import { processArchivedCertifiedPayrollPurge } from "./certifiedPayrollPurge";
-import { processFailedWageDecisionRetries } from "../integrations/providers/dol_davis_bacon/sync";
+import { processFailedWageDecisionRetries, processStaleWageDecisions } from "../integrations/providers/dol_davis_bacon/sync";
 import { processMissingWageDecisionReminders } from "../services/davisBaconAdminNotifications";
 import { processIntegrationSyncRetries, recordSyncFailure, recordSyncSuccess } from "../integrations/syncRetry";
 import { qboSyncEntityType } from "../integrations/providers/qbo/sync";
@@ -66,6 +66,7 @@ let swpppOverdueTask: ReturnType<typeof cron.schedule> | null = null;
 let certifiedPayrollPurgeTask: ReturnType<typeof cron.schedule> | null = null;
 let wageDecisionRetryTask: ReturnType<typeof cron.schedule> | null = null;
 let wageDecisionMissingReminderTask: ReturnType<typeof cron.schedule> | null = null;
+let wageDecisionStaleRefreshTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -431,6 +432,24 @@ export function startJobRunner() {
     }
   });
 
+  // Task #1380: once a day, re-sync every cached Davis-Bacon wage
+  // determination whose lastSyncAt has crossed the configured staleness
+  // threshold (DOL_DAVIS_BACON_STALE_AFTER_DAYS, default 30 days). Picks
+  // 06:00 UTC so the refresh lands well before the morning payroll run
+  // window in US timezones. The sweep itself skips rows currently in
+  // the failure-backoff lane, so it cannot hammer DOL when prior
+  // attempts failed.
+  wageDecisionStaleRefreshTask = cron.schedule("0 6 * * *", async () => {
+    try {
+      const out = await processStaleWageDecisions();
+      if (out.candidates > 0) {
+        logInfo("Davis-Bacon stale wage decision refresh sweep", out);
+      }
+    } catch (err) {
+      logError("Davis-Bacon stale wage decision refresh failed", { error: String(err) });
+    }
+  });
+
   // Task #1344: daily 08:00 UTC fan-out reminder to org admins about
   // projects whose Davis-Bacon wage decision has been missing for >24h.
   // The handler itself enforces a 1-per-project-per-week throttle so a
@@ -586,6 +605,10 @@ export function stopJobRunner() {
     wageDecisionRetryTask.stop();
     wageDecisionRetryTask = null;
   }
+  if (wageDecisionStaleRefreshTask) {
+    wageDecisionStaleRefreshTask.stop();
+    wageDecisionStaleRefreshTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -635,6 +658,9 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   // the handler to one reminder per project per week, so a daily cadence
   // gives us the right responsiveness without spamming admins.
   wage_decision_missing_reminder: { fn: async () => { await processMissingWageDecisionReminders(); }, description: "Email/in-app reminder to org admins about projects whose Davis-Bacon wage decision is still uncached after 24h (throttled to 1/project/week)", schedule: "0 8 * * *" },
+  // Task #1380: re-sync cached Davis-Bacon wage decisions whose lastSyncAt
+  // has crossed the configured staleness threshold (default 30 days).
+  wage_decision_stale_refresh: { fn: async () => { await processStaleWageDecisions(); }, description: "Re-sync cached Davis-Bacon wage decisions whose lastSyncAt is older than DOL_DAVIS_BACON_STALE_AFTER_DAYS (default 30 days); skips rows currently in the failure-backoff lane", schedule: "0 6 * * *" },
 };
 
 async function processOutbox() {

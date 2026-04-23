@@ -2,7 +2,7 @@ import type { SyncResult, SyncError } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { db } from "../../../db";
 import { integrationConnections, integrationSyncState } from "@shared/schema";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, isNull, lt, sql } from "drizzle-orm";
 import { logInfo, logError, logWarn } from "../../../utils/logger";
 import { safeFetch } from "../../../utils/safeFetch";
 import { decryptMetadata } from "../../encryption";
@@ -11,6 +11,7 @@ import {
   SYNC_RETRY_BACKOFF_MINUTES,
   MAX_SYNC_RETRIES,
   processIntegrationSyncRetries,
+  recordSyncFailure,
   registerSyncRetryHandler,
   type SyncRetrySweepResult,
 } from "../../syncRetry";
@@ -1073,4 +1074,176 @@ export async function processFailedWageDecisionRetries(
     skippedNoConnection: out.skippedNoConnection,
     exhausted: out.exhausted,
   };
+}
+
+export const DEFAULT_WAGE_DECISION_STALE_AFTER_DAYS = 30;
+
+/**
+ * Task #1339 surfaced a configurable "stale" threshold for cached wage
+ * determinations; the project payroll panel renders a "Stale" badge once
+ * `lastSyncAt` crosses that threshold (default 30 days). Re-reads the
+ * env var on every call so operators can tune it without a deploy.
+ */
+export function getWageDecisionStaleAfterDays(): number {
+  const parsed = Number.parseInt(
+    process.env.DOL_DAVIS_BACON_STALE_AFTER_DAYS ?? "",
+    10,
+  );
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_WAGE_DECISION_STALE_AFTER_DAYS;
+}
+
+export interface StaleWageDecisionSweepResult {
+  candidates: number;
+  attempted: number;
+  succeeded: number;
+  failed: number;
+  skippedNoConnection: number;
+  skippedNoCredentials: number;
+  staleAfterDays: number;
+}
+
+/**
+ * Task #1380 — Background sweep that re-syncs every cached wage
+ * determination whose `lastSyncAt` has crossed the configured staleness
+ * threshold (default 30 days, controlled by DOL_DAVIS_BACON_STALE_AFTER_DAYS).
+ *
+ * The sweep deliberately avoids stepping on the failure-backoff retry
+ * sweep (`processIntegrationSyncRetries`):
+ *   - It only considers rows with `lastError IS NULL` and
+ *     `nextRetryAt IS NULL`. A row currently in the retry chain is owned
+ *     by that sweep, so we don't double-fire against DOL.
+ *   - On failure, `importWageDetermination` records a `lastError` plus a
+ *     `nextRetryAt` via the standard backoff path, which means a flaky
+ *     DOL endpoint won't be hammered on the next staleness sweep — the
+ *     row is now in the retry sweep's lane until it recovers or exhausts.
+ *
+ * Successful re-syncs stamp a fresh `lastSyncAt`, which the project
+ * payroll summary endpoint (`getWageDecisionSyncStatus` →
+ * `wageDecisionStaleAfterDays` comparison in the frontend) reads on the
+ * next page load to clear the "Stale" badge automatically.
+ */
+export async function processStaleWageDecisions(
+  now: Date = new Date(),
+  opts: { staleAfterDays?: number } = {},
+): Promise<StaleWageDecisionSweepResult> {
+  const staleAfterDays = opts.staleAfterDays ?? getWageDecisionStaleAfterDays();
+  const cutoff = new Date(now.getTime() - staleAfterDays * 24 * 60 * 60 * 1000);
+
+  const result: StaleWageDecisionSweepResult = {
+    candidates: 0,
+    attempted: 0,
+    succeeded: 0,
+    failed: 0,
+    skippedNoConnection: 0,
+    skippedNoCredentials: 0,
+    staleAfterDays,
+  };
+
+  // Pull every wage_determination row whose successful import is older
+  // than the threshold AND that isn't currently sitting in the failure
+  // backoff lane. Drizzle predicates compose into a single SQL query so
+  // the per-org filtering stays in the DB.
+  const rows = await db
+    .select()
+    .from(integrationSyncState)
+    .where(
+      and(
+        sql`${integrationSyncState.entityType} LIKE 'wage_determination:%'`,
+        isNull(integrationSyncState.lastError),
+        isNull(integrationSyncState.nextRetryAt),
+        lt(integrationSyncState.lastSyncAt, cutoff),
+      ),
+    );
+
+  result.candidates = rows.length;
+  if (rows.length === 0) return result;
+
+  const connectionCache = new Map<string, IntegrationConnection | null>();
+  async function getConnection(connectionId: string): Promise<IntegrationConnection | null> {
+    if (connectionCache.has(connectionId)) return connectionCache.get(connectionId)!;
+    const [conn] = await db
+      .select()
+      .from(integrationConnections)
+      .where(
+        and(
+          eq(integrationConnections.id, connectionId),
+          eq(integrationConnections.status, "active" as any),
+        ),
+      )
+      .limit(1);
+    if (!conn) {
+      connectionCache.set(connectionId, null);
+      return null;
+    }
+    const meta = (conn.metadata as Record<string, unknown>) || {};
+    const decrypted: IntegrationConnection = {
+      ...conn,
+      metadata: decryptMetadata(meta),
+    } as IntegrationConnection;
+    connectionCache.set(connectionId, decrypted);
+    return decrypted;
+  }
+
+  for (const row of rows) {
+    const decisionNumber = row.entityType.slice("wage_determination:".length).trim();
+    if (!decisionNumber) continue;
+
+    const connection = await getConnection(row.connectionId);
+    if (!connection) {
+      result.skippedNoConnection += 1;
+      continue;
+    }
+    const meta = (connection.metadata as Record<string, any>) || {};
+    if (!meta.apiKey && !meta.accessToken) {
+      result.skippedNoCredentials += 1;
+      continue;
+    }
+
+    result.attempted += 1;
+    try {
+      const out = await importWageDetermination(connection, decisionNumber, false);
+      if (out.success) {
+        result.succeeded += 1;
+        logInfo("Davis-Bacon stale wage decision auto-refreshed", {
+          decisionNumber,
+          organizationId: row.organizationId,
+          previousSyncAt: row.lastSyncAt?.toISOString() ?? null,
+          staleAfterDays,
+        });
+      } else {
+        result.failed += 1;
+        // importWageDetermination has already persisted lastError +
+        // nextRetryAt via the backoff path, so the standard retry sweep
+        // will take it from here and the next staleness sweep will skip
+        // it (lastError is no longer null).
+      }
+    } catch (err) {
+      // Defensive — importWageDetermination normalizes most errors into
+      // a SyncResult with success=false and already persists lastError
+      // + nextRetryAt via the standard backoff path. This catch is for
+      // the rare case where the DB persistence itself throws (e.g.
+      // connection pool exhausted). Record the failure on our counter
+      // and persist a backoff entry so the next staleness sweep skips
+      // this row instead of immediately re-attempting it.
+      result.failed += 1;
+      logError("Davis-Bacon stale wage decision auto-refresh threw", {
+        decisionNumber,
+        organizationId: row.organizationId,
+        error: String(err),
+      });
+      try {
+        await recordSyncFailure(connection, row.entityType, err);
+      } catch (recErr) {
+        logWarn("Davis-Bacon stale-refresh failure persistence failed", {
+          decisionNumber,
+          organizationId: row.organizationId,
+          error: String(recErr),
+        });
+      }
+    }
+  }
+
+  return result;
 }
