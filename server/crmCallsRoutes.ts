@@ -3968,7 +3968,13 @@ router.get(
     try {
       const orgId = resolveOrg(req, res);
       if (!orgId) return;
-      const settings = await getCrmTranscriptBackfillNotificationSettings(orgId);
+      const [settings, usage] = await Promise.all([
+        getCrmTranscriptBackfillNotificationSettings(orgId),
+        // Task #1154 — pull the rolling 24h test-alert count alongside the
+        // saved settings so the settings card can render "N / threshold in
+        // last 24h" without a second round-trip on first paint.
+        getCrmTranscriptBackfillTestAlertUsageSummary({ organizationId: orgId }),
+      ]);
       res.json({
         slackWebhookUrl: settings?.slackWebhookUrl ?? "",
         emailRecipients: settings?.emailRecipients ?? [],
@@ -3982,6 +3988,15 @@ router.get(
         testAlertThresholdPerDay:
           settings?.testAlertThresholdPerDay ?? null,
         testAlertThresholdDefault: DEFAULT_TEST_ALERT_THRESHOLD_PER_DAY,
+        // Task #1154 — surface the most recent threshold-breach
+        // notification timestamp + the rolling 24h count so admins can
+        // audit usage at a glance and tune the threshold without firing
+        // the test alert just to look at the audit log.
+        lastThresholdAlertAt: settings?.lastThresholdAlertAt
+          ? settings.lastThresholdAlertAt.toISOString()
+          : null,
+        testAlertCount24h: usage.last24h,
+        testAlertWindowEndsAt: usage.windowEndsAt,
       });
     } catch (e) {
       next(e);
@@ -4052,6 +4067,11 @@ router.put(
         // value; explicit `null` clears it back to the default.
         testAlertThresholdPerDay: parsed.data.testAlertThresholdPerDay,
       });
+      // Task #1154 — keep the PUT response shape in lock-step with GET so
+      // the settings card can hydrate from either without conditional reads.
+      const usage = await getCrmTranscriptBackfillTestAlertUsageSummary({
+        organizationId: orgId,
+      });
       res.json({
         slackWebhookUrl: saved.slackWebhookUrl ?? "",
         emailRecipients: saved.emailRecipients ?? [],
@@ -4060,6 +4080,11 @@ router.put(
         lastTestResult: saved.lastTestResult ?? null,
         testAlertThresholdPerDay: saved.testAlertThresholdPerDay ?? null,
         testAlertThresholdDefault: DEFAULT_TEST_ALERT_THRESHOLD_PER_DAY,
+        lastThresholdAlertAt: saved.lastThresholdAlertAt
+          ? saved.lastThresholdAlertAt.toISOString()
+          : null,
+        testAlertCount24h: usage.last24h,
+        testAlertWindowEndsAt: usage.windowEndsAt,
       });
     } catch (e) {
       next(e);

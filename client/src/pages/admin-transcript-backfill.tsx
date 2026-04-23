@@ -3578,6 +3578,14 @@ interface BackfillNotificationSettings {
   // service-level default in `testAlertThresholdDefault` is in effect.
   testAlertThresholdPerDay: number | null;
   testAlertThresholdDefault: number;
+  // Task #1154 — admins can see how close they are to the breach threshold
+  // without firing the test alert. `lastThresholdAlertAt` is the most
+  // recent breach notification (null if one has never fired);
+  // `testAlertCount24h` is the rolling 24h count ending at
+  // `testAlertWindowEndsAt`.
+  lastThresholdAlertAt: string | null;
+  testAlertCount24h: number;
+  testAlertWindowEndsAt: string;
 }
 const NOTIFICATION_SETTINGS_PATH =
   "/api/crm/calls/transcripts/backfill/notification-settings";
@@ -3673,8 +3681,22 @@ export function BackfillNotificationSettingsCard() {
           updatedAt: prev?.updatedAt ?? null,
           lastTestAt: testedAt,
           lastTestResult: { slack, email, operatorDisplay },
+          testAlertThresholdPerDay: prev?.testAlertThresholdPerDay ?? null,
+          testAlertThresholdDefault: prev?.testAlertThresholdDefault ?? 20,
+          // Task #1154 — preserve the breach metadata so the inline
+          // "N / threshold in last 24h" line stays correct after a
+          // successful test send (which doesn't itself update the count
+          // until the usage query refetches).
+          lastThresholdAlertAt: prev?.lastThresholdAlertAt ?? null,
+          testAlertCount24h: prev?.testAlertCount24h ?? 0,
+          testAlertWindowEndsAt:
+            prev?.testAlertWindowEndsAt ?? new Date().toISOString(),
         }),
       );
+      // The new test-alert click bumps the rolling 24h counter, so refetch
+      // the settings query to pick up the fresh count + (potential) new
+      // last-breach timestamp.
+      queryClient.invalidateQueries({ queryKey: NOTIFICATION_SETTINGS_KEY });
       if (!slack.configured && !email.configured) {
         toast({
           title: "No alert destinations configured",
@@ -3744,6 +3766,12 @@ export function BackfillNotificationSettingsCard() {
 
   const thresholdDefault =
     settingsQuery.data?.testAlertThresholdDefault ?? 20;
+  // Task #1154 — the value that the breach notifier actually compares
+  // against: per-org override when set, service-level default otherwise.
+  // Surfacing this (not the raw input value) keeps the inline "N / X in
+  // last 24h" line honest while the admin is mid-edit.
+  const effectiveThreshold =
+    settingsQuery.data?.testAlertThresholdPerDay ?? thresholdDefault;
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -3894,6 +3922,12 @@ export function BackfillNotificationSettingsCard() {
             to use the default of {thresholdDefault}; set to 0 to disable
             the breach alert entirely.
           </p>
+          {settingsQuery.data && (
+            <BackfillThresholdUsageSummary
+              settings={settingsQuery.data}
+              effectiveThreshold={effectiveThreshold}
+            />
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-3">
           <Button
@@ -3953,6 +3987,78 @@ export function BackfillNotificationSettingsCard() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+// Task #1154 — inline summary for the Test-alert breach threshold input.
+// Renders the rolling 24h count vs. the effective threshold so admins can
+// see how close they are to a breach without firing the test alert, and
+// the timestamp of the most recent breach notification (when present).
+// Lives next to the threshold control so the audit context is right where
+// the admin would tune the value.
+function BackfillThresholdUsageSummary({
+  settings,
+  effectiveThreshold,
+}: {
+  settings: BackfillNotificationSettings;
+  effectiveThreshold: number;
+}) {
+  const count = settings.testAlertCount24h;
+  // Threshold of 0 disables the breach alert entirely; render a softer
+  // status line so admins don't read the "0 / 0" rollup as an alarm.
+  const disabled = effectiveThreshold === 0;
+  const ratio = disabled ? 0 : count / effectiveThreshold;
+  const tone = disabled
+    ? "text-muted-foreground"
+    : ratio >= 1
+    ? "text-destructive"
+    : ratio >= 0.8
+    ? "text-amber-600 dark:text-amber-400"
+    : "text-muted-foreground";
+  return (
+    <div
+      className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
+      data-testid="text-test-alert-threshold-usage"
+    >
+      <span className={`tabular-nums ${tone}`}>
+        {disabled ? (
+          <>
+            <span data-testid="text-threshold-usage-count">
+              {count.toLocaleString()}
+            </span>{" "}
+            test alerts in the last 24h (breach alert disabled)
+          </>
+        ) : (
+          <>
+            <span data-testid="text-threshold-usage-count">
+              {count.toLocaleString()}
+            </span>{" "}
+            /{" "}
+            <span data-testid="text-threshold-usage-limit">
+              {effectiveThreshold.toLocaleString()}
+            </span>{" "}
+            in last 24h
+          </>
+        )}
+      </span>
+      {settings.lastThresholdAlertAt ? (
+        <span
+          className="text-muted-foreground"
+          data-testid="text-last-threshold-alert-at"
+          title={new Date(settings.lastThresholdAlertAt).toISOString()}
+        >
+          Last breach notification{" "}
+          {format(new Date(settings.lastThresholdAlertAt), "PPpp")}
+        </span>
+      ) : (
+        <span
+          className="text-muted-foreground"
+          data-testid="text-last-threshold-alert-at-empty"
+        >
+          No breach notifications yet
+        </span>
+      )}
+    </div>
   );
 }
 
