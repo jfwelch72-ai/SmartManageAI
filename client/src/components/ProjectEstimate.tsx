@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Slider } from "@/components/ui/slider";
-import { Plus, FileText, DollarSign, TrendingUp, AlertTriangle, CheckCircle, Clock, Calculator, Sparkles } from "lucide-react";
+import { Plus, FileText, DollarSign, TrendingUp, AlertTriangle, CheckCircle, Clock, Calculator, Sparkles, FileDown, FileSpreadsheet } from "lucide-react";
 import { AISowAssistantDialog } from "@/components/AISowAssistantDialog";
 import { LaborRateSelector } from "@/components/LaborRateSelector";
 import MaterialCalculator, { getDefaultMaterialCalculatorData, type MaterialCalculatorData } from "@/components/MaterialCalculator";
@@ -393,6 +393,30 @@ export default function ProjectEstimate() {
         </div>
         <div className="flex items-center gap-3">
           {getStatusBadge(estimate.status)}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              window.open(`/api/estimates/${estimate.id}/export/pdf`, "_blank");
+            }}
+            disabled={estimate.lineItems.length === 0}
+            data-testid="button-export-estimate-pdf"
+          >
+            <FileDown className="h-4 w-4 mr-2" />
+            Export PDF
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => {
+              window.open(`/api/estimates/${estimate.id}/export/excel`, "_blank");
+            }}
+            disabled={estimate.lineItems.length === 0}
+            data-testid="button-export-estimate-excel"
+          >
+            <FileSpreadsheet className="h-4 w-4 mr-2" />
+            Export Excel
+          </Button>
           {estimate.status === "DRAFT" && (
             <Button
               size="sm"
