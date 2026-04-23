@@ -468,6 +468,17 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
                     <TableRow key={c.classificationId} data-testid={`row-pw-classification-${c.classificationId}`}>
                       <TableCell className="font-medium">
                         <div>{c.classificationName}</div>
+                        {c.source === "DOL_FEED" && (
+                          c.classificationId.startsWith("dol-feed:") ? (
+                            <div className="text-[10px] text-muted-foreground mt-0.5" data-testid={`text-pw-mapping-${c.classificationId}`}>
+                              New classification will be created
+                            </div>
+                          ) : (
+                            <div className="text-[10px] text-muted-foreground mt-0.5" data-testid={`text-pw-mapping-${c.classificationId}`}>
+                              Mapped to <span className="font-medium text-foreground">{c.classificationName}</span>
+                            </div>
+                          )
+                        )}
                         {c.wageDecision && c.source === "DOL_FEED" && (
                           <div className="text-[10px] text-muted-foreground font-mono mt-0.5" data-testid={`text-pw-decision-${c.classificationId}`}>
                             {c.wageDecision}
@@ -524,6 +535,20 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
               ) : null}
               . Changes here only affect this project.
             </DialogDescription>
+            {overrideRow ? (
+              overrideRow.classificationId.startsWith("dol-feed:") ? (
+                <div className="text-xs text-muted-foreground" data-testid="text-override-mapping-hint">
+                  No matching org classification found &mdash; a new classification named{" "}
+                  <span className="font-medium text-foreground">{overrideRow.classificationName}</span>{" "}
+                  will be created when you save.
+                </div>
+              ) : (
+                <div className="text-xs text-muted-foreground" data-testid="text-override-mapping-hint">
+                  Mapped to existing classification{" "}
+                  <span className="font-medium text-foreground">{overrideRow.classificationName}</span>.
+                </div>
+              )
+            ) : null}
           </DialogHeader>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
