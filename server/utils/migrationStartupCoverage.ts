@@ -242,4 +242,9 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   // for the INTEGRATION_SYNC_RETRIES_EXHAUSTED admin fan-out so a
   // chronically broken integration stops spamming admins during triage.
   "0052_integration_sync_alert_mutes.sql": { helper: "ensureIntegrationSyncAlertMutes" },
+  // Task #1409 — per-classification record of the most recent
+  // Davis-Bacon stale-refresh diff so the project prevailing wage panel
+  // can flag classifications whose rate just changed (and clear the flag
+  // once a PM acknowledges or a follow-up refresh has no diff).
+  "0053_wage_decision_rate_changes.sql": { helper: "ensureWageDecisionRateChanges" },
 };

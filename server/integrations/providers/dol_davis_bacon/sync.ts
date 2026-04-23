@@ -1,7 +1,7 @@
 import type { SyncResult, SyncError } from "../../types";
 import type { IntegrationConnection } from "@shared/schema";
 import { db } from "../../../db";
-import { integrationConnections, integrationSyncState, projects, prevailingWageRates, dolClassificationMappings } from "@shared/schema";
+import { integrationConnections, integrationSyncState, projects, prevailingWageRates, dolClassificationMappings, wageDecisionRateChanges } from "@shared/schema";
 import { and, eq, inArray, isNotNull, isNull, lt, sql } from "drizzle-orm";
 import { logInfo, logError, logWarn } from "../../../utils/logger";
 import { recordJobMetrics } from "../../../utils/jobMetrics";
@@ -1659,6 +1659,7 @@ export async function processStaleWageDecisions(
             : [];
           const { diffWageRates, notifyProjectManagersOfWageRateChange } =
             await import("../../../services/davisBaconAdminNotifications");
+          const { persistRateChangeRecords } = await import("./rateChangeFlags");
           const diff = diffWageRates(prevRates, newRates);
           if (diff) {
             logInfo("Davis-Bacon stale refresh changed cached rates", {
@@ -1671,6 +1672,47 @@ export async function processStaleWageDecisions(
               decisionNumber,
               diff,
             });
+            // Task #1409: persist the per-classification diff so the
+            // project prevailing wage panel can flag rows whose rate
+            // just shifted. We replace any prior unacknowledged record
+            // for the same (org, decision, classification) so a PM
+            // always sees the *latest* refresh's delta and the
+            // detection timestamp re-arms (acknowledged_at clears).
+            try {
+              await persistRateChangeRecords(
+                row.organizationId,
+                decisionNumber,
+                diff.changes,
+              );
+            } catch (persistErr) {
+              logWarn("Davis-Bacon rate-change panel-flag persistence failed", {
+                decisionNumber,
+                organizationId: row.organizationId,
+                error: String(persistErr),
+              });
+            }
+          } else {
+            // Task #1409: a successful refresh that produced no diff
+            // means the previously-flagged classifications are now
+            // back in sync (or never were affected). Clear any
+            // outstanding panel flags for this (org, decision) so the
+            // badge auto-clears without requiring a PM acknowledgement.
+            try {
+              await db
+                .delete(wageDecisionRateChanges)
+                .where(
+                  and(
+                    eq(wageDecisionRateChanges.organizationId, row.organizationId),
+                    eq(wageDecisionRateChanges.decisionNumber, decisionNumber),
+                  ),
+                );
+            } catch (clearErr) {
+              logWarn("Davis-Bacon rate-change panel-flag auto-clear failed", {
+                decisionNumber,
+                organizationId: row.organizationId,
+                error: String(clearErr),
+              });
+            }
           }
         } catch (notifyErr) {
           logWarn("Davis-Bacon rate-change notification fan-out failed", {

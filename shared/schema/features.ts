@@ -7223,6 +7223,42 @@ export const insertIntegrationSyncAlertMuteSchema = createInsertSchema(integrati
 export type InsertIntegrationSyncAlertMute = z.infer<typeof insertIntegrationSyncAlertMuteSchema>;
 export type IntegrationSyncAlertMute = typeof integrationSyncAlertMutes.$inferSelect;
 
+// Task #1409 — per-classification record of the most recent stale-refresh
+// diff for a Davis-Bacon wage decision. processStaleWageDecisions writes
+// one row per (organizationId, decisionNumber, classification) whose
+// rate changed in the latest auto-refresh, replacing any earlier row
+// for the same triple. The project prevailing wage panel reads these
+// rows to badge classifications whose rate just shifted, so PMs can
+// reconcile certified payrolls without cross-referencing the email
+// notification fan-out from Task #1400. The flag clears either when a
+// PM acknowledges it (acknowledgedAt is set) or when a subsequent
+// refresh produces no diff for that classification (the row is deleted).
+export const wageDecisionRateChanges = pgTable("wage_decision_rate_changes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  decisionNumber: text("decision_number").notNull(),
+  classification: text("classification").notNull(),
+  changeKind: text("change_kind").notNull(),
+  oldBaseRate: decimal("old_base_rate", { precision: 10, scale: 2 }),
+  newBaseRate: decimal("new_base_rate", { precision: 10, scale: 2 }),
+  oldFringeRate: decimal("old_fringe_rate", { precision: 10, scale: 2 }),
+  newFringeRate: decimal("new_fringe_rate", { precision: 10, scale: 2 }),
+  oldTotalRate: decimal("old_total_rate", { precision: 10, scale: 2 }),
+  newTotalRate: decimal("new_total_rate", { precision: 10, scale: 2 }),
+  detectedAt: timestamp("detected_at").notNull().defaultNow(),
+  acknowledgedAt: timestamp("acknowledged_at"),
+  acknowledgedByUserId: varchar("acknowledged_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgDecisionIdx: index("wage_decision_rate_changes_org_decision_idx").on(table.organizationId, table.decisionNumber),
+  uniq: unique("wage_decision_rate_changes_org_decision_class_uniq").on(table.organizationId, table.decisionNumber, table.classification),
+}));
+
+export const insertWageDecisionRateChangeSchema = createInsertSchema(wageDecisionRateChanges).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertWageDecisionRateChange = z.infer<typeof insertWageDecisionRateChangeSchema>;
+export type WageDecisionRateChange = typeof wageDecisionRateChanges.$inferSelect;
+
 export const qboAccountMappings = pgTable("qbo_account_mappings", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),

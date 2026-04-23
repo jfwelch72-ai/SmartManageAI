@@ -10,6 +10,7 @@ import { ensureNotificationEnumValues } from "./ensureNotificationEnumValues";
 import { ensureIntegrationSyncStateFailureColumns } from "./ensureIntegrationSyncStateFailureColumns";
 import { ensureIntegrationSyncStateExhaustedNotifiedColumn } from "./ensureIntegrationSyncStateExhaustedNotifiedColumn";
 import { ensureIntegrationSyncAlertMutes } from "./ensureIntegrationSyncAlertMutes";
+import { ensureWageDecisionRateChanges } from "./ensureWageDecisionRateChanges";
 import { ensureEstimateCategoryEnumValues } from "./ensureEstimateCategoryEnumValues";
 import { ensureTakeoffEnhancements } from "./ensureTakeoffEnhancements";
 import { ensureFieldWorkerPermColumns } from "./ensureFieldWorkerPermColumns";
@@ -136,6 +137,10 @@ const migrations: MigrationStep[] = [
   // Task #1404 — per-connection / per-entity mute state for the
   // INTEGRATION_SYNC_RETRIES_EXHAUSTED admin fan-out.
   { name: "integration_sync_alert_mutes", category: "CREATE_TABLE", fn: ensureIntegrationSyncAlertMutes },
+  // Task #1409 — per-classification record of the most recent
+  // Davis-Bacon stale-refresh diff so the project prevailing wage panel
+  // can flag classifications whose rate just changed.
+  { name: "wage_decision_rate_changes", category: "CREATE_TABLE", fn: ensureWageDecisionRateChanges },
   { name: "estimate_category_enum_values", category: "ADD_ENUM", fn: ensureEstimateCategoryEnumValues },
   // Task #1144 — close baseline-migration gaps for ALTER TYPE ADD VALUE
   // operations that `reconcileSchemaDrift` cannot replay (it creates missing

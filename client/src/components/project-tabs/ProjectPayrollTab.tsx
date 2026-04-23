@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, FileText, RefreshCw, Plus, Loader2, Sparkles, Pencil, Trash2 } from "lucide-react";
+import { AlertTriangle, FileText, RefreshCw, Plus, Loader2, Sparkles, Pencil, Trash2, Bell, BellOff } from "lucide-react";
 
 // Task #1398: lightweight fuzzy match used to surface near-duplicate
 // classifications when promoting a DOL feed row. Realistic typos like
@@ -92,6 +92,20 @@ interface ProjectPayrollSummary {
 
 type PrevailingRateSource = "PROJECT_OVERRIDE" | "DOL_FEED";
 
+// Task #1409: per-classification "rate changed recently" payload from
+// the latest stale-refresh diff. `null` when the classification's rate
+// hasn't shifted since the most recent acknowledgement (or never has).
+interface PrevailingWageRecentChange {
+  changeKind: "added" | "changed" | "removed";
+  oldBaseRate: number | null;
+  newBaseRate: number | null;
+  oldFringeRate: number | null;
+  newFringeRate: number | null;
+  oldTotalRate: number | null;
+  newTotalRate: number | null;
+  detectedAt: string | null;
+}
+
 interface PrevailingWageClassification {
   classificationId: string;
   classificationName: string;
@@ -107,6 +121,9 @@ interface PrevailingWageClassification {
   // round-trip the feed identity to the POST endpoint and persist the
   // user's chosen mapping for future syncs.
   dolFeedName?: string | null;
+  // Task #1409: populated when the most recent Davis-Bacon stale-refresh
+  // changed this classification's rate. Drives the per-row badge.
+  recentRateChange?: PrevailingWageRecentChange | null;
 }
 
 interface PrevailingWageSummary {
@@ -131,6 +148,13 @@ interface PrevailingWageSummary {
   // doubt without leaving the project page.
   wageDecisionRatesCached?: number | null;
   wageDecisionStaleAfterDays?: number | null;
+  // Task #1409: how many classifications have unacknowledged
+  // "rate changed recently" flags + when the most-recent diff landed.
+  // Drives the panel-level "rates changed recently" banner so PMs can
+  // see at a glance which projects need reconciliation against
+  // existing certified payrolls.
+  wageDecisionRecentChangeCount?: number | null;
+  wageDecisionRecentChangeAt?: string | null;
   classifications: PrevailingWageClassification[];
 }
 
@@ -472,6 +496,32 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
     },
   });
 
+  // Task #1409: clear the per-classification "rate changed recently"
+  // badges in one shot. Optionally accepts a single classification name
+  // so a future per-row dismiss button could acknowledge just one row.
+  const acknowledgeRateChangesMutation = useMutation({
+    mutationFn: async (classifications?: string[]) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/projects/${projectId}/prevailing-wage-summary/acknowledge-rate-changes`,
+        classifications && classifications.length > 0 ? { classifications } : {},
+      );
+      return (await res.json()) as { acknowledged: number };
+    },
+    onSuccess: (res) => {
+      if (res.acknowledged > 0) {
+        toast({
+          title: "Rate change badges cleared",
+          description: `Acknowledged ${res.acknowledged} classification${res.acknowledged === 1 ? "" : "s"}.`,
+        });
+      }
+      queryClient.invalidateQueries({ queryKey: summaryKey });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to acknowledge rate changes", description: err.message, variant: "destructive" });
+    },
+  });
+
   const overrideMutation = useMutation({
     mutationFn: async (opts: { classificationIdOverride?: string; confirmCreate?: boolean } = {}) => {
       if (!overrideRow) throw new Error("No row selected");
@@ -644,6 +694,23 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
   const overrideCount = data.classifications.filter(c => c.source === "PROJECT_OVERRIDE").length;
   const dolCount = data.classifications.filter(c => c.source === "DOL_FEED").length;
 
+  // Task #1409: derive the panel-level "rates changed recently" banner
+  // state. We trust the per-row `recentRateChange` payload as the source
+  // of truth (it survives stale cache invalidation across renders) and
+  // fall back to the aggregate count for the unusual case where the
+  // server omits per-row data.
+  const rowsWithRecentChange = data.classifications.filter(c => c.recentRateChange);
+  const recentChangeCount =
+    rowsWithRecentChange.length || (data.wageDecisionRecentChangeCount ?? 0);
+  const recentChangeAtDisplay = formatRelativeTimestamp(
+    data.wageDecisionRecentChangeAt
+      ?? rowsWithRecentChange.reduce<string | null>((acc, c) => {
+        const t = c.recentRateChange?.detectedAt ?? null;
+        if (!t) return acc;
+        return acc && acc > t ? acc : t;
+      }, null),
+  );
+
   const totalForOverride =
     (parseFloat(ovWageRate || "0") + parseFloat(ovFringeRate || "0")).toFixed(2);
 
@@ -793,6 +860,51 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
           </div>
         )}
 
+        {/* Task #1409: panel-level "rates changed recently" banner. Shows
+            when the most recent Davis-Bacon stale-refresh changed cached
+            rates for one or more classifications on this project's wage
+            decision. Pairs with per-row badges below. The PM clears it
+            via the Acknowledge button — or it auto-clears when a
+            subsequent refresh produces no further diff. */}
+        {recentChangeCount > 0 && (
+          <div
+            className="flex items-start gap-2 p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg"
+            data-testid="banner-wage-decision-rates-changed"
+          >
+            <Bell className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 text-sm text-blue-800 dark:text-blue-200">
+              <p className="font-medium">
+                Davis-Bacon rates changed recently
+              </p>
+              <p className="mt-1">
+                The latest auto-refresh updated{" "}
+                <span className="font-medium" data-testid="text-recent-rate-change-count">
+                  {recentChangeCount} classification{recentChangeCount === 1 ? "" : "s"}
+                </span>
+                {recentChangeAtDisplay ? (
+                  <> on <span className="font-medium" data-testid="text-recent-rate-change-at">{recentChangeAtDisplay}</span></>
+                ) : null}
+                . Review certified payrolls and pay items before your next submission.
+              </p>
+              <div className="mt-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => acknowledgeRateChangesMutation.mutate(undefined)}
+                  disabled={acknowledgeRateChangesMutation.isPending}
+                  data-testid="button-acknowledge-rate-changes"
+                >
+                  {acknowledgeRateChangesMutation.isPending ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Acknowledging...</>
+                  ) : (
+                    <><BellOff className="w-4 h-4 mr-2" /> Acknowledge changes</>
+                  )}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {showMissingWarning && !showFailureBanner && (
           <div
             className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg"
@@ -857,7 +969,31 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
                   {data.classifications.map((c) => (
                     <TableRow key={c.classificationId} data-testid={`row-pw-classification-${c.classificationId}`}>
                       <TableCell className="font-medium">
-                        <div>{c.classificationName}</div>
+                        <div className="flex items-center gap-2">
+                          <span>{c.classificationName}</span>
+                          {/* Task #1409: per-row badge highlighting a
+                              classification whose rate shifted in the
+                              latest Davis-Bacon stale-refresh diff. The
+                              detection date is also exposed via title
+                              so PMs can hover to see exactly when the
+                              change landed. */}
+                          {c.recentRateChange && (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-300"
+                              data-testid={`badge-rate-changed-${c.classificationId}`}
+                              title={
+                                c.recentRateChange.detectedAt
+                                  ? `Rate ${c.recentRateChange.changeKind} on ${new Date(c.recentRateChange.detectedAt).toLocaleString()}`
+                                  : `Rate ${c.recentRateChange.changeKind} on most recent refresh`
+                              }
+                            >
+                              {c.recentRateChange.detectedAt
+                                ? `Rate changed on ${new Date(c.recentRateChange.detectedAt).toLocaleDateString()}`
+                                : "Rate changed recently"}
+                            </Badge>
+                          )}
+                        </div>
                         {c.source === "DOL_FEED" && (
                           c.classificationId.startsWith("dol-feed:") ? (
                             <div className="text-[10px] text-muted-foreground mt-0.5" data-testid={`text-pw-mapping-${c.classificationId}`}>

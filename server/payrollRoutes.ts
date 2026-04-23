@@ -316,6 +316,7 @@ import { db } from "./db";
 import { eventBus } from "./events";
 import { exportLimiter } from "./rateLimiter";
 import { lookupCachedWageRate, lookupCachedRateByLocale, isWageDeterminationCached, listCachedDecisionClassifications, queueWageDecisionSync, getWageDecisionSyncStatus } from "./integrations/providers/dol_davis_bacon/sync";
+import { loadUnacknowledgedRateChanges, acknowledgeRateChanges, normalizeClassificationKey } from "./integrations/providers/dol_davis_bacon/rateChangeFlags";
 import { notifyOrgAdminsOfWageDecisionSyncFailure } from "./services/davisBaconAdminNotifications";
 import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts, overtimeRules, costLedgerPostings, certifiedPayrollReports, auditLog, dolClassificationMappings } from "@shared/schema";
 import { eq, and, gte, lte, sql, desc, inArray, count, asc, isNull, or } from "drizzle-orm";
@@ -1685,6 +1686,10 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
     let wageDecisionRetryExhausted: boolean | null = null;
     let wageDecisionMaxRetries: number | null = null;
     let wageDecisionRatesCached: number | null = null;
+    // Task #1409: per-classification "rate changed recently" flags
+    // populated by the Davis-Bacon stale-refresh sweep. Empty when no
+    // wage decision is set or when no unacknowledged changes remain.
+    let rateChangeMap: Awaited<ReturnType<typeof loadUnacknowledgedRateChanges>> = new Map();
     if (projectWageDecision) {
       try {
         wageDecisionCached = await isWageDeterminationCached(orgId, projectWageDecision);
@@ -1717,9 +1722,59 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
           error: String(err),
         });
       }
+      // Task #1409: load any unacknowledged rate-change flags persisted
+      // by the most recent stale-refresh sweep so the panel can badge
+      // affected classifications and show an aggregate "rates changed
+      // recently" indicator.
+      try {
+        rateChangeMap = await loadUnacknowledgedRateChanges(orgId, projectWageDecision);
+      } catch (err) {
+        logWarn("Davis-Bacon rate-change flag lookup failed (project PW summary)", {
+          decision: projectWageDecision,
+          error: String(err),
+        });
+      }
     }
 
-    classifications.sort((a, b) => a.classificationName.localeCompare(b.classificationName));
+    // Task #1409: enrich each classification with its rate-change record
+    // (if any). The diff is keyed by the original DOL feed name, so we
+    // try the row's `dolFeedName` first and fall back to the displayed
+    // classification name (handles project-override rows that mirror a
+    // DOL classification by name). The `recentRateChange` shape is
+    // intentionally compact and self-contained so the frontend can
+    // render the badge without a second fetch.
+    const classificationsWithChanges = classifications.map((c) => {
+      const lookupKey = normalizeClassificationKey(c.dolFeedName ?? c.classificationName);
+      const change = rateChangeMap.get(lookupKey);
+      if (!change) return { ...c, recentRateChange: null };
+      return {
+        ...c,
+        recentRateChange: {
+          changeKind: change.changeKind as "added" | "changed" | "removed",
+          oldBaseRate: change.oldBaseRate != null ? parseFloat(change.oldBaseRate) : null,
+          newBaseRate: change.newBaseRate != null ? parseFloat(change.newBaseRate) : null,
+          oldFringeRate: change.oldFringeRate != null ? parseFloat(change.oldFringeRate) : null,
+          newFringeRate: change.newFringeRate != null ? parseFloat(change.newFringeRate) : null,
+          oldTotalRate: change.oldTotalRate != null ? parseFloat(change.oldTotalRate) : null,
+          newTotalRate: change.newTotalRate != null ? parseFloat(change.newTotalRate) : null,
+          detectedAt: change.detectedAt ? change.detectedAt.toISOString() : null,
+        },
+      };
+    });
+
+    classificationsWithChanges.sort((a, b) => a.classificationName.localeCompare(b.classificationName));
+    const wageDecisionRecentChangeCount = rateChangeMap.size;
+    // Surface the most recent detection timestamp so the panel-level
+    // banner can say "Rates changed on YYYY-MM-DD" without iterating
+    // every row client-side.
+    let wageDecisionRecentChangeAt: string | null = null;
+    for (const r of rateChangeMap.values()) {
+      const t = r.detectedAt ? r.detectedAt.toISOString() : null;
+      if (!t) continue;
+      if (!wageDecisionRecentChangeAt || t > wageDecisionRecentChangeAt) {
+        wageDecisionRecentChangeAt = t;
+      }
+    }
 
     // Task #1339: surface a configurable staleness threshold so the UI can
     // tag a cached decision as stale without hardcoding the cutoff in the
@@ -1747,8 +1802,51 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
       wageDecisionMaxRetries,
       wageDecisionRatesCached,
       wageDecisionStaleAfterDays,
+      // Task #1409: aggregate "rates changed recently" indicator + the
+      // most-recent detection timestamp so the panel can show a single
+      // banner above the per-row badges.
+      wageDecisionRecentChangeCount,
+      wageDecisionRecentChangeAt,
+      classifications: classificationsWithChanges,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Task #1409 — acknowledge the per-classification "rates changed" flags
+// surfaced on the project prevailing wage panel. Clears every
+// unacknowledged record for the project's wage decision so the badges
+// disappear until the next stale-refresh diff. Optional body filter:
+// `{ classifications?: string[] }` to acknowledge a single row only.
+router.post("/api/projects/:id/prevailing-wage-summary/acknowledge-rate-changes", requireAuth, async (req, res, next) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    const projectId = req.params.id;
+    const [project] = await db.select().from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, orgId)));
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+    const decision = (project.wageDecision || "").trim();
+    if (!decision) {
+      return res.json({ acknowledged: 0 });
+    }
+    const body = (req.body ?? {}) as { classifications?: unknown };
+    const classifications = Array.isArray(body.classifications)
+      ? (body.classifications.filter((s) => typeof s === "string" && s.trim().length > 0) as string[])
+      : undefined;
+    const acknowledged = await acknowledgeRateChanges({
+      organizationId: orgId,
+      decisionNumber: decision,
+      userId: authReq.user!.id,
       classifications,
     });
+    res.json({ acknowledged });
   } catch (error) {
     next(error);
   }
