@@ -335,6 +335,7 @@ const router = Router();
 
 router.use("/api/payroll", requireAuth, requireFeaturePermission('canManagePayroll'));
 router.use("/api/projects/:id/payroll-summary", requireAuth, requireFeaturePermission('canManagePayroll'));
+router.use("/api/projects/:id/prevailing-wage-summary", requireAuth, requireFeaturePermission('canManagePayroll'));
 
 const DEFAULT_REGULAR_RATE = 45;
 const DEFAULT_OVERTIME_RATE = 67.5;
@@ -1452,6 +1453,155 @@ router.get("/api/projects/:id/payroll-summary", requireAuth, async (req, res, ne
       overtimePercent: Math.round(overtimePercent * 10) / 10,
       totalEntries: workerStats.length,
       workers: workerResults,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req, res, next) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+
+    const projectId = req.params.id;
+
+    const [project] = await db.select().from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.organizationId, orgId)));
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    const projectWageDecision = (project.wageDecision || "").trim() || null;
+
+    const overrideRows = await db.select({
+      id: prevailingWageRates.id,
+      classificationId: prevailingWageRates.classificationId,
+      classificationName: jobClassifications.name,
+      wageRate: prevailingWageRates.wageRate,
+      fringeRate: prevailingWageRates.fringeRate,
+      totalRate: prevailingWageRates.totalRate,
+      overtimeMultiplier: prevailingWageRates.overtimeMultiplier,
+      effectiveDate: prevailingWageRates.effectiveDate,
+      expirationDate: prevailingWageRates.expirationDate,
+      wageDecision: prevailingWageRates.wageDecision,
+    })
+      .from(prevailingWageRates)
+      .innerJoin(jobClassifications, eq(prevailingWageRates.classificationId, jobClassifications.id))
+      .where(and(
+        eq(prevailingWageRates.organizationId, orgId),
+        eq(prevailingWageRates.projectId, projectId),
+      ));
+
+    const classifications: Array<{
+      classificationId: string;
+      classificationName: string;
+      wageRate: number;
+      fringeRate: number | null;
+      totalRate: number | null;
+      overtimeMultiplier: string | null;
+      effectiveDate: string | null;
+      expirationDate: string | null;
+      wageDecision: string | null;
+      source: "PROJECT_OVERRIDE" | "DOL_FEED";
+    }> = [];
+
+    const seenClassIds = new Set<string>();
+    for (const r of overrideRows) {
+      seenClassIds.add(r.classificationId);
+      classifications.push({
+        classificationId: r.classificationId,
+        classificationName: r.classificationName,
+        wageRate: parseFloat(r.wageRate),
+        fringeRate: r.fringeRate != null ? parseFloat(r.fringeRate) : null,
+        totalRate: r.totalRate != null ? parseFloat(r.totalRate) : null,
+        overtimeMultiplier: r.overtimeMultiplier,
+        effectiveDate: r.effectiveDate,
+        expirationDate: r.expirationDate,
+        wageDecision: r.wageDecision,
+        source: "PROJECT_OVERRIDE",
+      });
+    }
+
+    // For classifications referenced by employees who logged time on this
+    // project but missing an override, attempt to surface the DOL feed rate
+    // so users can see which classifications still rely on the cached
+    // wage determination instead of an explicit project override.
+    if (projectWageDecision) {
+      const projectUserIds = await db.selectDistinct({ userId: timeEntries.userId })
+        .from(timeEntries)
+        .where(eq(timeEntries.projectId, projectId));
+      const userIds = projectUserIds.map(r => r.userId).filter(Boolean) as string[];
+
+      if (userIds.length > 0) {
+        const empClasses = await db.select({
+          classificationId: employeeClassifications.classificationId,
+          classificationName: jobClassifications.name,
+        })
+          .from(employeeClassifications)
+          .innerJoin(jobClassifications, eq(employeeClassifications.classificationId, jobClassifications.id))
+          .where(inArray(employeeClassifications.userId, userIds));
+
+        const uniqueByClassId = new Map<string, string>();
+        for (const ec of empClasses) {
+          if (!uniqueByClassId.has(ec.classificationId)) {
+            uniqueByClassId.set(ec.classificationId, ec.classificationName);
+          }
+        }
+
+        for (const [classificationId, classificationName] of Array.from(uniqueByClassId.entries())) {
+          if (seenClassIds.has(classificationId)) continue;
+          try {
+            const cached = await lookupCachedWageRate(orgId, projectWageDecision, classificationName);
+            if (cached && cached.baseRate > 0) {
+              seenClassIds.add(classificationId);
+              classifications.push({
+                classificationId,
+                classificationName,
+                wageRate: cached.baseRate,
+                fringeRate: cached.fringeRate ?? null,
+                totalRate: cached.totalRate ?? null,
+                overtimeMultiplier: null,
+                effectiveDate: null,
+                expirationDate: null,
+                wageDecision: projectWageDecision,
+                source: "DOL_FEED",
+              });
+            }
+          } catch (err) {
+            logWarn("Davis-Bacon decision lookup failed (project PW summary)", {
+              decision: projectWageDecision,
+              classificationName,
+              error: String(err),
+            });
+          }
+        }
+      }
+    }
+
+    let wageDecisionCached: boolean | null = null;
+    if (projectWageDecision) {
+      try {
+        wageDecisionCached = await isWageDeterminationCached(orgId, projectWageDecision);
+      } catch (err) {
+        logWarn("Davis-Bacon cache check failed (project PW summary)", {
+          decision: projectWageDecision,
+          error: String(err),
+        });
+        wageDecisionCached = null;
+      }
+    }
+
+    classifications.sort((a, b) => a.classificationName.localeCompare(b.classificationName));
+
+    res.json({
+      projectId,
+      wageDecision: projectWageDecision,
+      wageDecisionCached,
+      classifications,
     });
   } catch (error) {
     next(error);
