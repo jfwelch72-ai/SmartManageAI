@@ -965,7 +965,24 @@ export async function sweepStaleFailureNotifications(
  * in will trigger a fresh `queueWageDecisionSync` and recreate the row
  * from scratch.
  */
-const ORPHAN_WAGE_DECISION_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
+export const DEFAULT_ORPHAN_WAGE_DECISION_RETENTION_DAYS = 90;
+
+/**
+ * Task #1430 — operator-tunable orphan-row retention window. Mirrors the
+ * `getWageDecisionStaleAfterDays` pattern: re-reads
+ * `DOL_DAVIS_BACON_ORPHAN_RETENTION_DAYS` on every call so ops can dial
+ * the window up or down without a redeploy. Falls back to the historical
+ * 90-day default when the env var is missing or not a positive integer.
+ */
+export function getOrphanWageDecisionRetentionDays(): number {
+  const parsed = Number.parseInt(
+    process.env.DOL_DAVIS_BACON_ORPHAN_RETENTION_DAYS ?? "",
+    10,
+  );
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_ORPHAN_WAGE_DECISION_RETENTION_DAYS;
+}
 
 /**
  * Sweep orphaned `wage_determination:*` rows out of
@@ -973,7 +990,8 @@ const ORPHAN_WAGE_DECISION_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
  *   - No project (in any org, scoped per-row by organizationId) currently
  *     carries the decision number in `projects.wageDecision`, AND
  *   - The most recent of `lastSyncAt` / `lastAttemptAt` is older than
- *     `ORPHAN_WAGE_DECISION_RETENTION_MS` (default 90 days).
+ *     `getOrphanWageDecisionRetentionDays()` (default 90 days, tunable
+ *     via `DOL_DAVIS_BACON_ORPHAN_RETENTION_DAYS`).
  *
  * Rows that have never been synced or attempted (both timestamps null)
  * are left alone — they were just created and a concurrent flow may
@@ -984,7 +1002,9 @@ const ORPHAN_WAGE_DECISION_RETENTION_MS = 90 * 24 * 60 * 60 * 1000;
 export async function sweepOrphanedWageDecisionRows(
   now: Date = new Date(),
 ): Promise<number> {
-  const cutoff = new Date(now.getTime() - ORPHAN_WAGE_DECISION_RETENTION_MS);
+  const retentionDays = getOrphanWageDecisionRetentionDays();
+  const retentionMs = retentionDays * 24 * 60 * 60 * 1000;
+  const cutoff = new Date(now.getTime() - retentionMs);
   const sweepStartedAt = Date.now();
   let candidates = 0;
   let deleted = 0;
@@ -1078,7 +1098,7 @@ export async function sweepOrphanedWageDecisionRows(
     result: {
       candidates,
       deleted,
-      retentionDays: Math.round(ORPHAN_WAGE_DECISION_RETENTION_MS / (24 * 60 * 60 * 1000)),
+      retentionDays,
     },
   });
   return deleted;

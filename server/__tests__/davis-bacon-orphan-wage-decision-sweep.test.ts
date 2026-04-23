@@ -43,8 +43,18 @@ let syncRows: SyncRow[] = [];
 let projectRows: ProjectRow[] = [];
 const deletes: string[] = [];
 
-const NINETY_DAYS = 90 * 24 * 60 * 60 * 1000;
 const NOW = new Date("2026-04-23T00:00:00.000Z");
+
+// Mirrors getOrphanWageDecisionRetentionDays() so the dbMock cutoff stays
+// in sync with whatever DOL_DAVIS_BACON_ORPHAN_RETENTION_DAYS the test set.
+function currentRetentionMs(): number {
+  const parsed = Number.parseInt(
+    process.env.DOL_DAVIS_BACON_ORPHAN_RETENTION_DAYS ?? "",
+    10,
+  );
+  const days = Number.isFinite(parsed) && parsed > 0 ? parsed : 90;
+  return days * 24 * 60 * 60 * 1000;
+}
 
 const dbMock = {
   select: (cols?: Record<string, unknown>) => ({
@@ -68,7 +78,7 @@ const dbMock = {
         // integration_sync_state candidate query — apply the cutoff +
         // entity-type filters in JS so the sweep sees exactly the rows
         // it would in production.
-        const cutoff = NOW.getTime() - NINETY_DAYS;
+        const cutoff = NOW.getTime() - currentRetentionMs();
         return Promise.resolve(
           syncRows.filter((r) => {
             if (!r.entityType.startsWith("wage_determination:")) return false;
@@ -108,6 +118,7 @@ beforeEach(() => {
   syncRows = [];
   projectRows = [];
   deletes.length = 0;
+  delete process.env.DOL_DAVIS_BACON_ORPHAN_RETENTION_DAYS;
 });
 
 function makeSyncRow(overrides: Partial<SyncRow>): SyncRow {
@@ -302,6 +313,48 @@ describe("sweepOrphanedWageDecisionRows (Task #1392)", () => {
     expect(metrics.samples[0].counters.candidates).toBe(0);
     expect(metrics.samples[0].counters.deleted).toBe(0);
     expect(metrics.samples[0].counters.retentionDays).toBe(90);
+  });
+
+  it("honours DOL_DAVIS_BACON_ORPHAN_RETENTION_DAYS override (Task #1430)", async () => {
+    // Row last touched 60 days ago: untouched within the default 90-day
+    // window (would be kept), but past a 30-day operator override (must
+    // be swept). Same row also exercises the "no longer referenced" path.
+    syncRows.push(
+      makeSyncRow({
+        id: "orphan-60d",
+        organizationId: "org-1",
+        entityType: "wage_determination:CA20251234",
+        lastSyncAt: new Date(NOW.getTime() - 60 * 24 * 60 * 60 * 1000),
+        lastAttemptAt: new Date(NOW.getTime() - 60 * 24 * 60 * 60 * 1000),
+      }),
+    );
+
+    const sync = await import(
+      "../integrations/providers/dol_davis_bacon/sync"
+    );
+
+    // Default window keeps the row (60d < 90d).
+    expect(sync.getOrphanWageDecisionRetentionDays()).toBe(
+      sync.DEFAULT_ORPHAN_WAGE_DECISION_RETENTION_DAYS,
+    );
+    let deleted = await sync.sweepOrphanedWageDecisionRows(NOW);
+    expect(deleted).toBe(0);
+    expect(syncRows).toHaveLength(1);
+
+    // Tighten the window via the env var; same row now falls outside.
+    process.env.DOL_DAVIS_BACON_ORPHAN_RETENTION_DAYS = "30";
+    expect(sync.getOrphanWageDecisionRetentionDays()).toBe(30);
+    deleted = await sync.sweepOrphanedWageDecisionRows(NOW);
+    expect(deleted).toBe(1);
+    expect(deletes).toEqual(["orphan-60d"]);
+
+    // Bogus values fall back to the 90-day default.
+    process.env.DOL_DAVIS_BACON_ORPHAN_RETENTION_DAYS = "not-a-number";
+    expect(sync.getOrphanWageDecisionRetentionDays()).toBe(90);
+    process.env.DOL_DAVIS_BACON_ORPHAN_RETENTION_DAYS = "0";
+    expect(sync.getOrphanWageDecisionRetentionDays()).toBe(90);
+    process.env.DOL_DAVIS_BACON_ORPHAN_RETENTION_DAYS = "-5";
+    expect(sync.getOrphanWageDecisionRetentionDays()).toBe(90);
   });
 
   it("falls back to lastAttemptAt when lastSyncAt is null", async () => {
