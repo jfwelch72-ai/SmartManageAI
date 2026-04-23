@@ -4260,6 +4260,49 @@ export function BackfillAlertDeliveriesCard() {
             </div>
           </div>
         )}
+        {/* Task #1150 — proactively warn admins when nobody is opted into
+            the daily alert-failure digest stream. Without this banner an
+            org would only discover the empty digest after a per-row
+            failure surfaced the suppression badge. We reuse the existing
+            `fallbackMuteSummary.digest.eligibleRecipientCount === 0`
+            signal returned by the deliveries endpoint, so no new server
+            work is required. Suppressed when the broader Task #1146
+            "realtime fan-out reaches nobody" banner is already on screen,
+            because that banner already calls out the empty digest in its
+            own copy and we don't want two amber banners stacked. */}
+        {!realtimeFanoutSilenced &&
+          fallbackMuteSummary?.digest &&
+          fallbackMuteSummary.digest.eligibleRecipientCount === 0 && (
+            <div
+              className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200"
+              data-testid="banner-digest-fallback-empty"
+              role="status"
+            >
+              <BellOff className="h-4 w-4 mt-0.5 shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div
+                  className="font-medium"
+                  data-testid="text-digest-fallback-empty-title"
+                >
+                  Daily alert-failure digest is going to nobody
+                </div>
+                <p className="mt-0.5 text-xs leading-snug">
+                  No admin in this org is currently opted into the daily
+                  alert-failure digest, so tomorrow's rollup of any
+                  Slack/email delivery failures won't reach anyone. Update
+                  the alert-failure email mode for at least one admin in{" "}
+                  <Link
+                    href="/settings/notifications#section-alert-failure-fallback-prefs"
+                    className="underline text-primary"
+                    data-testid="link-digest-fallback-empty-settings"
+                  >
+                    notification preferences
+                  </Link>
+                  .
+                </p>
+              </div>
+            </div>
+          )}
         {deliveriesQuery.isLoading ? (
           <Loader2
             className="h-6 w-6 animate-spin text-muted-foreground"
