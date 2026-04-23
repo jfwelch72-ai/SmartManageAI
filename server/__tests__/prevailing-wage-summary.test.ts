@@ -95,12 +95,16 @@ const lookupCachedWageRateMock = vi.fn();
 const lookupCachedRateByLocaleMock = vi.fn();
 const isWageDeterminationCachedMock = vi.fn();
 const listCachedDecisionClassificationsMock = vi.fn();
+const queueWageDecisionSyncMock = vi.fn();
+const getWageDecisionSyncStatusMock = vi.fn();
 vi.mock("../integrations/providers/dol_davis_bacon/sync", () => ({
   lookupCachedWageRate: (...args: unknown[]) => lookupCachedWageRateMock(...args),
   lookupCachedRateByLocale: (...args: unknown[]) => lookupCachedRateByLocaleMock(...args),
   isWageDeterminationCached: (...args: unknown[]) => isWageDeterminationCachedMock(...args),
   listCachedDecisionClassifications: (...args: unknown[]) =>
     listCachedDecisionClassificationsMock(...args),
+  queueWageDecisionSync: (...args: unknown[]) => queueWageDecisionSyncMock(...args),
+  getWageDecisionSyncStatus: (...args: unknown[]) => getWageDecisionSyncStatusMock(...args),
   fetchWageDetermination: vi.fn(),
   importWageDetermination: vi.fn(),
 }));
@@ -393,12 +397,19 @@ beforeEach(() => {
   lookupCachedRateByLocaleMock.mockReset();
   isWageDeterminationCachedMock.mockReset();
   listCachedDecisionClassificationsMock.mockReset();
+  queueWageDecisionSyncMock.mockReset();
+  getWageDecisionSyncStatusMock.mockReset();
 
   // Defaults — individual tests override.
   lookupCachedWageRateMock.mockResolvedValue(null);
   lookupCachedRateByLocaleMock.mockResolvedValue(null);
   isWageDeterminationCachedMock.mockResolvedValue(true);
   listCachedDecisionClassificationsMock.mockResolvedValue(null);
+  queueWageDecisionSyncMock.mockResolvedValue({
+    status: "completed",
+    result: { success: true, created: 3, errors: [] },
+  });
+  getWageDecisionSyncStatusMock.mockResolvedValue(null);
 
   // Authenticate as the seeded org admin by default.
   testUser = { id: fx.adminId, role: "ADMIN", organizationId: fx.orgId };
@@ -718,6 +729,153 @@ describe("GET /api/projects/:id/prevailing-wage-summary — access control", () 
     const res = await request(app).get(
       `/api/projects/${fx.projects.A}/prevailing-wage-summary`,
     );
+    expect(res.status).toBe(401);
+  });
+});
+
+// Task #1388 regression — the project lookup in the sync handler used to
+// filter on `projects.organizationId` (a column that does not exist),
+// which silently 404'd every request. Pin the canonical
+// `gcOrganizationId` scoping with both a positive and a negative test.
+describe("POST /api/projects/:id/prevailing-wage-summary/sync — org scoping", () => {
+  it("rejects sync for a project that belongs to a different organization with 404 and never queues a sync", async () => {
+    testUser = {
+      id: fx.otherAdminId,
+      role: "ADMIN",
+      organizationId: fx.otherOrgId,
+    };
+    const res = await request(app).post(
+      `/api/projects/${fx.projects.B}/prevailing-wage-summary/sync`,
+    );
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/Project not found/);
+    expect(queueWageDecisionSyncMock).not.toHaveBeenCalled();
+  });
+
+  it("queues a wage decision sync for a project owned by the caller's org via gcOrganizationId", async () => {
+    const res = await request(app).post(
+      `/api/projects/${fx.projects.B}/prevailing-wage-summary/sync`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.decisionNumber).toBe("WD-B");
+    expect(queueWageDecisionSyncMock).toHaveBeenCalledTimes(1);
+    expect(queueWageDecisionSyncMock).toHaveBeenCalledWith(
+      fx.orgId,
+      "WD-B",
+      expect.objectContaining({ awaitResult: true, manualRetry: true }),
+    );
+  });
+
+  it("returns 400 when the resolved project has no wage decision set", async () => {
+    const res = await request(app).post(
+      `/api/projects/${fx.projects.E}/prevailing-wage-summary/sync`,
+    );
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/no wage decision/i);
+    expect(queueWageDecisionSyncMock).not.toHaveBeenCalled();
+  });
+});
+
+// Task #1388 regression — pin the org-scoping behavior of the
+// payroll-page status endpoint that powers the proactive
+// "missing wage decisions" banner. The endpoint must filter projects
+// via `gcOrganizationId` (the canonical project↔org link) and never
+// leak a project from a sibling org into another org admin's badge
+// list. A prior typo on a sibling endpoint (this file's commit) showed
+// how easy it is to silently break this scoping when there's no
+// regression test.
+describe("GET /api/payroll/missing-wage-decisions — org scoping", () => {
+  let foreignProjectId: string;
+  const FOREIGN_DECISION = "WD-FOREIGN-1388";
+
+  beforeAll(async () => {
+    // Seed a project owned by the *other* org with a wage decision so
+    // we can assert that calling the endpoint as the main org admin
+    // never returns the foreign project.
+    const r = await db.execute(sql`
+      INSERT INTO "projects" (name, code, client_name, gc_organization_id, status, wage_decision)
+      VALUES (
+        ${TEST_PREFIX + "pForeign"},
+        ${TEST_PREFIX + "foreign-1388"},
+        ${TEST_PREFIX + "client"},
+        ${fx.otherOrgId},
+        'ACTIVE',
+        ${FOREIGN_DECISION}
+      )
+      RETURNING id
+    `);
+    foreignProjectId = (r.rows[0] as { id: string }).id;
+  });
+
+  it("returns only projects scoped to the caller's org via gcOrganizationId", async () => {
+    // Mark project D's decision (uncached) and the foreign project's
+    // decision (uncached) — both should be candidates, but only D
+    // belongs to the caller's org.
+    isWageDeterminationCachedMock.mockImplementation(
+      async (_orgId: string, decision: string) => {
+        if (decision === "WD-D") return false;
+        if (decision === FOREIGN_DECISION) return false;
+        return true;
+      },
+    );
+
+    const res = await request(app).get("/api/payroll/missing-wage-decisions");
+    expect(res.status).toBe(200);
+
+    const items = res.body.items as Array<{
+      projectId: string;
+      projectName: string;
+      wageDecision: string;
+    }>;
+    const decisions = items.map((i) => i.wageDecision);
+    expect(decisions).toContain("WD-D");
+    // Foreign-org project must never leak into this org admin's list,
+    // regardless of whether its wage decision is cached.
+    expect(decisions).not.toContain(FOREIGN_DECISION);
+    for (const item of items) {
+      expect(item.projectId).not.toBe(foreignProjectId);
+    }
+
+    // Cache helper must only be asked about decisions that belong to
+    // the caller's org. Foreign decision must never be probed.
+    const probedDecisions = isWageDeterminationCachedMock.mock.calls.map(
+      (c) => c[1],
+    );
+    expect(probedDecisions).not.toContain(FOREIGN_DECISION);
+    for (const call of isWageDeterminationCachedMock.mock.calls) {
+      expect(call[0]).toBe(fx.orgId);
+    }
+  });
+
+  it("returns the sibling org's project (and nothing else) when called as the other-org admin", async () => {
+    testUser = {
+      id: fx.otherAdminId,
+      role: "ADMIN",
+      organizationId: fx.otherOrgId,
+    };
+    isWageDeterminationCachedMock.mockResolvedValue(false);
+
+    const res = await request(app).get("/api/payroll/missing-wage-decisions");
+    expect(res.status).toBe(200);
+
+    const items = res.body.items as Array<{
+      projectId: string;
+      projectName: string;
+      wageDecision: string;
+    }>;
+    expect(items).toEqual([
+      {
+        projectId: foreignProjectId,
+        projectName: TEST_PREFIX + "pForeign",
+        wageDecision: FOREIGN_DECISION,
+      },
+    ]);
+  });
+
+  it("rejects unauthenticated callers with 401", async () => {
+    testUser = null;
+    const res = await request(app).get("/api/payroll/missing-wage-decisions");
     expect(res.status).toBe(401);
   });
 });

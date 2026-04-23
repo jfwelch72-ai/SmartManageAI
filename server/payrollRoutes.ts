@@ -1732,8 +1732,14 @@ router.post("/api/projects/:id/prevailing-wage-summary/sync", requireAuth, async
     }
 
     const projectId = req.params.id;
+    // Task #1388: scope by `gcOrganizationId` (the canonical project↔org
+    // link used elsewhere in the codebase — the projects table has no
+    // `organization_id` column). The previous filter referenced a
+    // non-existent column, which caused every sync call to 404 with
+    // "Project not found" and prevented PMs from triggering an inline
+    // wage-decision import from the payroll page.
     const [project] = await db.select().from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.organizationId, orgId)));
+      .where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, orgId)));
     if (!project) {
       return res.status(404).json({ error: "Project not found" });
     }
