@@ -4170,6 +4170,25 @@ export function BackfillAlertDeliveriesCard() {
   const deliveries = deliveriesQuery.data?.deliveries ?? [];
   const fallbackMuteSummary = deliveriesQuery.data?.fallbackMuteSummary;
 
+  // Task #1146 — when both Slack and email realtime fan-outs would reach
+  // zero admins AND at least one of those zeros is the result of an active
+  // mute (rather than the org simply having no admins), the realtime alert
+  // stream is fully silenced and a misconfigured webhook would never be
+  // surfaced live. Promote that signal from a per-row badge to a top-of-card
+  // banner so admins reviewing the page can't miss it. We also call out
+  // when the daily-digest fallback is empty for the same reason, since in
+  // that case tomorrow's rollup won't catch the failure either.
+  const realtimeFanoutSilenced =
+    !!fallbackMuteSummary &&
+    fallbackMuteSummary.slack.effectiveRecipientCount === 0 &&
+    fallbackMuteSummary.email.effectiveRecipientCount === 0 &&
+    (fallbackMuteSummary.slack.mutedAdminCount > 0 ||
+      fallbackMuteSummary.email.mutedAdminCount > 0);
+  const digestFallbackSilenced =
+    !!fallbackMuteSummary?.digest &&
+    fallbackMuteSummary.digest.eligibleRecipientCount === 0 &&
+    fallbackMuteSummary.digest.streamMutedAdminCount > 0;
+
   return (
     <Card data-testid="card-alert-deliveries">
       <CardHeader className="pb-3">
@@ -4200,7 +4219,47 @@ export function BackfillAlertDeliveriesCard() {
           </Button>
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-3">
+        {realtimeFanoutSilenced && (
+          <div
+            className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-200 flex items-start gap-2"
+            data-testid="alert-realtime-fanout-silenced"
+          >
+            <BellOff className="h-4 w-4 mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <p className="font-medium">
+                Realtime alert fan-out reaches nobody.
+              </p>
+              <p
+                className="text-xs mt-0.5"
+                data-testid="text-realtime-fanout-silenced-detail"
+              >
+                Every active admin has muted both the Slack and email
+                alert-failure fallback channels (Slack muted by{" "}
+                {fallbackMuteSummary!.slack.mutedAdminCount} admin
+                {fallbackMuteSummary!.slack.mutedAdminCount === 1 ? "" : "s"};
+                email muted by {fallbackMuteSummary!.email.mutedAdminCount}{" "}
+                admin
+                {fallbackMuteSummary!.email.mutedAdminCount === 1 ? "" : "s"}).
+                Until at least one admin re-enables a channel, transcript
+                backfill failures will not page anyone in real time
+                {digestFallbackSilenced
+                  ? " — and because the daily-digest fallback is also empty, tomorrow's rollup won't catch them either."
+                  : "."}
+              </p>
+              <p className="text-xs mt-1">
+                <Link
+                  href="/settings/notifications#section-alert-failure-fallback-prefs"
+                  className="underline"
+                  data-testid="link-realtime-fanout-silenced-settings"
+                >
+                  Open notification preferences
+                </Link>{" "}
+                to re-enable a recipient.
+              </p>
+            </div>
+          </div>
+        )}
         {deliveriesQuery.isLoading ? (
           <Loader2
             className="h-6 w-6 animate-spin text-muted-foreground"
