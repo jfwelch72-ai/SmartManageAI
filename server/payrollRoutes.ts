@@ -1815,6 +1815,27 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
 
     classificationsWithChanges.sort((a, b) => a.classificationName.localeCompare(b.classificationName));
     const wageDecisionRecentChangeCount = rateChangeMap.size;
+
+    // Task #1444: surface DOL feed rows that still have no saved mapping
+    // for this project so PMs can clean them up wholesale from the
+    // prevailing-wage card instead of scrolling the rates table to spot
+    // every synthetic `dol-feed:` row. The synthetic-id check matches the
+    // brand-new-project path above where unmapped feed names are emitted
+    // with `classificationId = "dol-feed:<norm>"`. Each entry carries the
+    // synthetic id so the client can scroll directly to the row in the
+    // rates table.
+    const unmappedDolFeedNames = classificationsWithChanges
+      .filter((c) =>
+        c.source === "DOL_FEED" &&
+        typeof c.dolFeedName === "string" &&
+        c.dolFeedName.length > 0 &&
+        c.classificationId.startsWith("dol-feed:"),
+      )
+      .map((c) => ({
+        dolFeedName: c.dolFeedName as string,
+        classificationId: c.classificationId,
+      }));
+    const unmappedDolFeedCount = unmappedDolFeedNames.length;
     // Surface the most recent detection timestamp so the panel-level
     // banner can say "Rates changed on YYYY-MM-DD" without iterating
     // every row client-side.
@@ -1858,6 +1879,11 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
       // banner above the per-row badges.
       wageDecisionRecentChangeCount,
       wageDecisionRecentChangeAt,
+      // Task #1444: needs-mapping summary so the prevailing-wage card can
+      // show how many DOL feed rows still lack a saved classification
+      // mapping and let PMs jump straight to the unmapped row.
+      unmappedDolFeedCount,
+      unmappedDolFeedNames,
       classifications: classificationsWithChanges,
     });
   } catch (error) {

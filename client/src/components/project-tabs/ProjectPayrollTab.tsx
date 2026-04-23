@@ -161,6 +161,12 @@ interface PrevailingWageSummary {
   // existing certified payrolls.
   wageDecisionRecentChangeCount?: number | null;
   wageDecisionRecentChangeAt?: string | null;
+  // Task #1444: DOL feed rows for the current wage decision that still
+  // have no saved classification mapping on this project. Drives the
+  // "Needs mapping" summary inside the prevailing wage card so PMs can
+  // jump directly to the unmapped row instead of scrolling the table.
+  unmappedDolFeedCount?: number | null;
+  unmappedDolFeedNames?: Array<{ dolFeedName: string; classificationId: string }>;
   classifications: PrevailingWageClassification[];
 }
 
@@ -209,10 +215,23 @@ function SavedDolMappingsSection({
   projectId,
   orgClassifications,
   onMappingsChanged,
+  unmappedDolFeedNames,
+  unmappedDolFeedCount,
+  onJumpToUnmapped,
 }: {
   projectId: string;
   orgClassifications: ReadonlyArray<OrgJobClassification>;
   onMappingsChanged: () => void;
+  // Task #1444: feed names from the cached wage decision that still have
+  // no saved mapping on this project. Rendered as a "Needs mapping"
+  // summary above the saved-mappings table so PMs can jump to the
+  // unmapped synthetic row in the rates table to promote/map it.
+  unmappedDolFeedNames?: Array<{ dolFeedName: string; classificationId: string }>;
+  // Server-authoritative count. Falls back to `unmappedDolFeedNames.length`
+  // when the server omits it (older payloads), but normally we render the
+  // server value so the UI never disagrees with what the API computed.
+  unmappedDolFeedCount?: number | null;
+  onJumpToUnmapped?: (classificationId: string) => void;
 }) {
   const { toast } = useToast();
   const mappingsKey = ["/api/labor-rates/dol-classification-mappings", { projectId }];
@@ -267,8 +286,66 @@ function SavedDolMappingsSection({
     );
   }
 
+  const unmapped = unmappedDolFeedNames ?? [];
+  // Prefer the server-provided count; only fall back to the list length
+  // when the API omits it so the badge always agrees with the API.
+  const unmappedCount = unmappedDolFeedCount ?? unmapped.length;
+
   return (
-    <div className="border-t pt-4 mt-2 space-y-2" data-testid="section-dol-mappings">
+    <div className="border-t pt-4 mt-2 space-y-4" data-testid="section-dol-mappings">
+      {/* Task #1444: needs-mapping summary so PMs can clean up unmapped
+          DOL feed rows without scrolling the rates table to spot every
+          synthetic `dol-feed:` row. The list is hidden when every feed
+          name already has a saved (or auto name-matched) mapping. */}
+      <div data-testid="section-dol-mappings-unmapped">
+        <h3 className="text-sm font-medium">
+          Needs mapping{" "}
+          <span
+            className="ml-1 inline-flex items-center justify-center rounded-full bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 text-xs font-semibold px-2 py-0.5"
+            data-testid="text-unmapped-dol-feed-count"
+          >
+            {unmappedCount}
+          </span>
+        </h3>
+        <p className="text-xs text-muted-foreground">
+          DOL feed names from the cached wage decision that still have no saved classification
+          mapping on this project. Jump to a row to promote or map it.
+        </p>
+        {unmappedCount === 0 ? (
+          <p
+            className="text-sm text-muted-foreground mt-2"
+            data-testid="text-no-unmapped-dol-feeds"
+          >
+            All DOL feed names are mapped.
+          </p>
+        ) : (
+          <ul className="mt-2 space-y-1" data-testid="list-unmapped-dol-feeds">
+            {unmapped.map((u) => (
+              <li
+                key={u.classificationId}
+                className="flex items-center justify-between gap-2 rounded border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950 px-2 py-1"
+                data-testid={`row-unmapped-dol-feed-${u.classificationId}`}
+              >
+                <span
+                  className="font-mono text-xs truncate"
+                  title={u.dolFeedName}
+                  data-testid={`text-unmapped-dol-feed-name-${u.classificationId}`}
+                >
+                  {u.dolFeedName}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onJumpToUnmapped?.(u.classificationId)}
+                  data-testid={`button-jump-unmapped-dol-feed-${u.classificationId}`}
+                >
+                  Jump to row
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
       <div>
         <h3 className="text-sm font-medium">Saved DOL classification mappings</h3>
         <p className="text-xs text-muted-foreground">
@@ -1081,6 +1158,32 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
           onMappingsChanged={() => {
             queryClient.invalidateQueries({ queryKey: summaryKey });
             queryClient.invalidateQueries({ queryKey: ["/api/labor-rates/prevailing-wage-rates"] });
+          }}
+          unmappedDolFeedNames={data.unmappedDolFeedNames ?? []}
+          unmappedDolFeedCount={data.unmappedDolFeedCount ?? null}
+          onJumpToUnmapped={(classificationId) => {
+            // Task #1444: scroll the unmapped synthetic dol-feed row into
+            // view and apply a brief highlight ring so PMs can spot the
+            // row they jumped to. Falls back silently if the row isn't
+            // currently rendered (e.g. the rates table collapsed).
+            const sel = `[data-testid="row-pw-classification-${CSS.escape(classificationId)}"]`;
+            const el = document.querySelector<HTMLElement>(sel);
+            if (!el) return;
+            el.scrollIntoView({ behavior: "smooth", block: "center" });
+            el.classList.add(
+              "ring-2",
+              "ring-amber-400",
+              "ring-offset-2",
+              "transition-shadow",
+            );
+            window.setTimeout(() => {
+              el.classList.remove(
+                "ring-2",
+                "ring-amber-400",
+                "ring-offset-2",
+                "transition-shadow",
+              );
+            }, 2000);
           }}
         />
       </CardContent>
