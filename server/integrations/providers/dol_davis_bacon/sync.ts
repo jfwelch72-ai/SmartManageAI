@@ -1195,6 +1195,69 @@ export async function resetSuppressedFailureNotification(
   return cleared;
 }
 
+/**
+ * Task #1443 — Bulk variant of `resetSuppressedFailureNotification`. Wipes
+ * `metadata.failureNotification` from every wage-decision row on a
+ * connection that currently carries one, in a single DB transaction so a
+ * partial failure can't leave half the rows in a stale-suppression
+ * state. Also drops the matching in-memory `failureCoalesceMap` entries
+ * so a hot worker stops enforcing the window for the cleared decisions.
+ *
+ * Returns the list of decision numbers that were actually cleared (rows
+ * whose metadata had the key) so the route can emit a single combined
+ * audit entry naming each one.
+ */
+export async function resetAllSuppressedFailureNotifications(
+  connection: IntegrationConnection,
+): Promise<{ cleared: number; decisionNumbers: string[] }> {
+  const decisionNumbers: string[] = [];
+  try {
+    await db.transaction(async (tx) => {
+      const rows = await tx
+        .select()
+        .from(integrationSyncState)
+        .where(
+          and(
+            eq(integrationSyncState.connectionId, connection.id),
+            sql`${integrationSyncState.entityType} LIKE 'wage_determination:%'`,
+          ),
+        );
+      const now = new Date();
+      for (const row of rows) {
+        const meta =
+          row.metadata && typeof row.metadata === "object"
+            ? { ...(row.metadata as Record<string, unknown>) }
+            : null;
+        if (!meta || !("failureNotification" in meta)) continue;
+        delete meta.failureNotification;
+        await tx
+          .update(integrationSyncState)
+          .set({ metadata: meta, updatedAt: now })
+          .where(eq(integrationSyncState.id, row.id));
+        const decision = row.entityType.slice("wage_determination:".length);
+        decisionNumbers.push(decision);
+      }
+    });
+  } catch (err) {
+    logWarn("Davis-Bacon bulk suppression reset failed", {
+      connectionId: connection.id,
+      error: String(err),
+    });
+    throw err;
+  }
+  // Drop the in-memory cache for every decision we touched (and, defensively,
+  // any other in-memory entry on this connection so a hot worker can't keep
+  // suppressing a row that was never persisted yet).
+  for (const decision of decisionNumbers) {
+    failureCoalesceMap.delete(coalesceKey(connection.id, decision));
+  }
+  const prefix = `${connection.id}::`;
+  for (const key of Array.from(failureCoalesceMap.keys())) {
+    if (key.startsWith(prefix)) failureCoalesceMap.delete(key);
+  }
+  return { cleared: decisionNumbers.length, decisionNumbers };
+}
+
 export async function listSuppressedFailureNotifications(
   organizationId: string,
 ): Promise<SuppressedFailureEntry[]> {

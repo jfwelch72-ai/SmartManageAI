@@ -17,7 +17,7 @@ import type { AuthRequest } from "./auth";
 import { importChartOfAccounts, exportCustomers, exportInvoice, importPaymentStatus, exportPayroll, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "./integrations/providers/qbo";
 import { exportHaulTickets, exportSuretyPremiums, exportCertifiedPayroll } from "./integrations/providers/qbo/sync";
 import { parseEbsxJson, importBidPackage, exportEstimateAsEbsx } from "./integrations/providers/aashtoware";
-import { importWageDetermination, listSuppressedFailureNotifications, resetSuppressedFailureNotification } from "./integrations/providers/dol_davis_bacon";
+import { importWageDetermination, listSuppressedFailureNotifications, resetSuppressedFailureNotification, resetAllSuppressedFailureNotifications } from "./integrations/providers/dol_davis_bacon";
 import { searchDirectory as searchDbeDirectory, refreshCertifications as refreshDbeCertifications, verifyCertification as verifyDbeCertification } from "./integrations/providers/dbe_directory";
 import { verifyOrganizationBonds } from "./integrations/providers/surety_verification";
 import { importProjects as stackctImportProjects, exportProjects as stackctExportProjects, importPlans as stackctImportPlans, exportPlans as stackctExportPlans, importEstimates as stackctImportEstimates, exportEstimates as stackctExportEstimates, acquireTokenWithCredentials as stackctAcquireToken } from "./integrations/providers/stackct";
@@ -914,6 +914,49 @@ router.post("/davis-bacon/suppressed-failures/reset", requireAuth, async (req, r
     });
 
     res.json({ success: true, cleared });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * Task #1443 — Bulk reset of every suppression row for a Davis-Bacon
+ * connection. Clears `metadata.failureNotification` on every wage-decision
+ * row in a single transaction and emits one combined audit entry naming
+ * each cleared decision so the security log doesn't get spammed with
+ * dozens of per-row entries during an outage cleanup.
+ */
+router.post("/davis-bacon/suppressed-failures/reset-all", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    const schema = z.object({ connectionId: z.string().min(1) });
+    const parsed = schema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request body" });
+    }
+    const { connectionId } = parsed.data;
+
+    const connection = await connectionService.getConnection(connectionId, user.organizationId);
+    if (!connection || connection.provider !== "dol_davis_bacon") {
+      return res.status(404).json({ error: "Connection not found" });
+    }
+
+    const { cleared, decisionNumbers } = await resetAllSuppressedFailureNotifications(
+      connection,
+    );
+
+    logIntegrationAudit("davis_bacon.suppression_reset_all", {
+      orgId: user.organizationId,
+      userId: user.id,
+      connectionId,
+      cleared,
+      decisionNumbers,
+    });
+
+    res.json({ success: true, cleared, decisionNumbers });
   } catch (err) {
     next(err);
   }

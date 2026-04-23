@@ -5,6 +5,7 @@ export {
   lookupCachedWageRate,
   listSuppressedFailureNotifications,
   resetSuppressedFailureNotification,
+  resetAllSuppressedFailureNotifications,
 } from "./sync";
 export type {
   DavisBaconWageRate,

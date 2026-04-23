@@ -233,6 +233,124 @@ describe("DavisBaconSuppressedFailuresPanel", () => {
     });
   });
 
+  it("bulk-resets every shown row via the header Reset all button (Task #1443)", async () => {
+    vi.useRealTimers();
+    apiRequestMock.mockResolvedValue({
+      json: async () => ({
+        success: true,
+        cleared: 2,
+        decisionNumbers: ["CA20260111", "CA20260222"],
+      }),
+    });
+    const tStart = Date.now() - 30 * 60_000;
+    renderPanel("conn-1", {
+      items: [
+        {
+          connectionId: "conn-1",
+          decisionNumber: "CA20260111",
+          suppressedCount: 4,
+          suppressedSince: tStart,
+          lastNotifiedAt: tStart - 60_000,
+        },
+        {
+          connectionId: "conn-1",
+          decisionNumber: "CA20260222",
+          suppressedCount: 6,
+          suppressedSince: tStart,
+          lastNotifiedAt: tStart - 60_000,
+        },
+      ],
+    });
+
+    const { fireEvent } = await import("@testing-library/react");
+    // Open the confirmation dialog from the header button.
+    fireEvent.click(
+      screen.getByTestId("button-davis-bacon-reset-all-suppressions-conn-1"),
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("dialog-davis-bacon-reset-all-confirm-conn-1"),
+      ).toBeTruthy();
+    });
+    // Cancel doesn't fire the API.
+    fireEvent.click(
+      screen.getByTestId("button-davis-bacon-reset-all-cancel-conn-1"),
+    );
+    expect(apiRequestMock).not.toHaveBeenCalled();
+
+    // Re-open and confirm.
+    fireEvent.click(
+      screen.getByTestId("button-davis-bacon-reset-all-suppressions-conn-1"),
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("button-davis-bacon-reset-all-confirm-conn-1"),
+      ).toBeTruthy();
+    });
+    const { queryClient: mockedQueryClient } = await import("@/lib/queryClient");
+    const invalidateSpy = vi.spyOn(mockedQueryClient, "invalidateQueries");
+    fireEvent.click(
+      screen.getByTestId("button-davis-bacon-reset-all-confirm-conn-1"),
+    );
+
+    await waitFor(() => {
+      expect(apiRequestMock).toHaveBeenCalledWith(
+        "POST",
+        "/api/integrations/davis-bacon/suppressed-failures/reset-all",
+        { connectionId: "conn-1" },
+      );
+    });
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({ title: "Reset 2 suppression rows" }),
+      );
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        queryKey: ["/api/integrations/davis-bacon/suppressed-failures"],
+      }),
+    );
+    invalidateSpy.mockRestore();
+  });
+
+  it("surfaces a destructive toast when the bulk reset call fails (Task #1443)", async () => {
+    vi.useRealTimers();
+    apiRequestMock.mockRejectedValue(new Error("boom"));
+    const tStart = Date.now() - 30 * 60_000;
+    renderPanel("conn-1", {
+      items: [
+        {
+          connectionId: "conn-1",
+          decisionNumber: "CA20260999",
+          suppressedCount: 3,
+          suppressedSince: tStart,
+          lastNotifiedAt: tStart - 60_000,
+        },
+      ],
+    });
+    const { fireEvent } = await import("@testing-library/react");
+    fireEvent.click(
+      screen.getByTestId("button-davis-bacon-reset-all-suppressions-conn-1"),
+    );
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("button-davis-bacon-reset-all-confirm-conn-1"),
+      ).toBeTruthy();
+    });
+    fireEvent.click(
+      screen.getByTestId("button-davis-bacon-reset-all-confirm-conn-1"),
+    );
+
+    await waitFor(() => {
+      expect(toastMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: "Reset all failed",
+          variant: "destructive",
+        }),
+      );
+    });
+  });
+
   it("clears itself when a successful sync resolves the streak", async () => {
     vi.useRealTimers();
     const tStart = Date.now() - 30 * 60_000;

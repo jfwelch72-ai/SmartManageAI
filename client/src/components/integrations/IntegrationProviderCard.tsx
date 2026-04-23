@@ -12,6 +12,16 @@ import type { Connection, Provider, SecurityAuditEntry, SuppressedFailuresRespon
 import { PROVIDER_DESCRIPTIONS } from "./types";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type NotificationPreferencesResponse = {
   typeOverrides?: Array<{
@@ -119,6 +129,7 @@ export function DavisBaconSuppressedFailuresPanel({
     refetchInterval: 30_000,
   });
   const { toast } = useToast();
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const resetMutation = useMutation({
     mutationFn: async (decisionNumber: string) => {
       const res = await apiRequest(
@@ -152,6 +163,44 @@ export function DavisBaconSuppressedFailuresPanel({
       });
     },
   });
+  const resetAllMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(
+        "POST",
+        "/api/integrations/davis-bacon/suppressed-failures/reset-all",
+        { connectionId },
+      );
+      return res.json() as Promise<{
+        success: boolean;
+        cleared: number;
+        decisionNumbers: string[];
+      }>;
+    },
+    onSuccess: (data) => {
+      const cleared = data?.cleared ?? 0;
+      toast({
+        title:
+          cleared > 0
+            ? `Reset ${cleared} suppression ${cleared === 1 ? "row" : "rows"}`
+            : "No active suppressions to reset",
+        description:
+          cleared > 0
+            ? "The next failure on each decision will be delivered immediately."
+            : "Every shown row had already cleared its suppression window.",
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/integrations/davis-bacon/suppressed-failures"],
+      });
+      setConfirmOpen(false);
+    },
+    onError: (err: unknown) => {
+      toast({
+        title: "Reset all failed",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    },
+  });
   const items = (data?.items ?? []).filter((i) => i.connectionId === connectionId);
   if (items.length === 0) return null;
 
@@ -168,15 +217,72 @@ export function DavisBaconSuppressedFailuresPanel({
       className="rounded-md border border-amber-200 dark:border-amber-900 bg-amber-50/60 dark:bg-amber-950/30 px-3 py-2 text-xs space-y-1.5"
       data-testid={`panel-davis-bacon-suppressed-failures-${connectionId}`}
     >
-      <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300 font-medium">
-        <BellRing className="h-3.5 w-3.5 shrink-0" />
-        <span data-testid={`text-davis-bacon-suppressed-summary-${connectionId}`}>
-          {totalSuppressed === 1
-            ? "1 failure alert suppressed"
-            : `${totalSuppressed} failure alerts suppressed`}
-          {earliestSince ? ` since ${new Date(earliestSince).toLocaleString()}` : ""}
-        </span>
+      <div className="flex items-center justify-between gap-2 text-amber-800 dark:text-amber-300 font-medium">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <BellRing className="h-3.5 w-3.5 shrink-0" />
+          <span
+            className="truncate"
+            data-testid={`text-davis-bacon-suppressed-summary-${connectionId}`}
+          >
+            {totalSuppressed === 1
+              ? "1 failure alert suppressed"
+              : `${totalSuppressed} failure alerts suppressed`}
+            {earliestSince ? ` since ${new Date(earliestSince).toLocaleString()}` : ""}
+          </span>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 px-2 text-xs gap-1 shrink-0"
+          disabled={resetAllMutation.isPending}
+          onClick={() => setConfirmOpen(true)}
+          data-testid={`button-davis-bacon-reset-all-suppressions-${connectionId}`}
+          title="Force-deliver the next failure on every shown decision"
+        >
+          {resetAllMutation.isPending ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <RotateCcw className="h-3 w-3" />
+          )}
+          Reset all
+        </Button>
       </div>
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent
+          data-testid={`dialog-davis-bacon-reset-all-confirm-${connectionId}`}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset every suppression row?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This clears the 1-hour coalescing window on all{" "}
+              {items.length === 1 ? "1 decision" : `${items.length} decisions`} listed
+              above. The next failure on each decision will be delivered immediately
+              instead of being absorbed for the rest of the window — expect a burst
+              of email/in-app alerts if SAM.gov is still failing.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              data-testid={`button-davis-bacon-reset-all-cancel-${connectionId}`}
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={resetAllMutation.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                resetAllMutation.mutate();
+              }}
+              data-testid={`button-davis-bacon-reset-all-confirm-${connectionId}`}
+            >
+              {resetAllMutation.isPending ? (
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+              ) : null}
+              Reset all
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <ul className="space-y-0.5 text-amber-700 dark:text-amber-400">
         {items.map((i) => {
           const since = i.suppressedSince ?? i.lastNotifiedAt;
