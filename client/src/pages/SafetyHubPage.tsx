@@ -366,14 +366,94 @@ function SwpppLinkCard() {
   );
 }
 
+interface IdrSummary {
+  unsignedCount: number;
+  overdueCount: number;
+  maxDaysOverdue: number;
+}
+
+function DailyInspectorReportsLinkCard() {
+  const { data } = useQuery<IdrSummary>({ queryKey: ["/api/daily-inspector-reports/summary"] });
+  const unsigned = data?.unsignedCount ?? 0;
+  const overdue = data?.overdueCount ?? 0;
+  const maxDays = data?.maxDaysOverdue ?? 0;
+  const total = unsigned + overdue;
+  const badges = data ? (
+    <>
+      <Badge variant={total > 0 ? "secondary" : "outline"} data-testid="badge-idr-unsigned-total">
+        {total} unsigned
+      </Badge>
+      {overdue > 0 && (
+        <Badge variant="destructive" data-testid="badge-idr-overdue">
+          <AlertTriangle className="h-3 w-3 mr-1" />{overdue} overdue
+        </Badge>
+      )}
+      {maxDays > 0 && (
+        <Badge variant="outline" className="border-destructive/60 text-destructive bg-destructive/5" data-testid="badge-idr-max-days-overdue">
+          {maxDays} {maxDays === 1 ? "day" : "days"}
+        </Badge>
+      )}
+    </>
+  ) : null;
+  return (
+    <LinkCard
+      to="/daily-inspector-reports"
+      title="Daily Inspector Reports"
+      desc="Daily field inspection reports and signoffs."
+      icon={ClipboardList}
+      badges={badges}
+    />
+  );
+}
+
+interface MaterialCertSummary {
+  expiringSoonCount: number;
+  expiredCount: number;
+  maxDaysExpired: number;
+}
+
+function MaterialCertificationsLinkCard() {
+  const { data } = useQuery<MaterialCertSummary>({ queryKey: ["/api/material-certifications/summary"] });
+  const expiringSoon = data?.expiringSoonCount ?? 0;
+  const expired = data?.expiredCount ?? 0;
+  const maxDays = data?.maxDaysExpired ?? 0;
+  const total = expiringSoon + expired;
+  const badges = data ? (
+    <>
+      <Badge variant={total > 0 ? "secondary" : "outline"} data-testid="badge-material-certs-attention-total">
+        {total} attention
+      </Badge>
+      {expired > 0 && (
+        <Badge variant="destructive" data-testid="badge-material-certs-expired">
+          <AlertTriangle className="h-3 w-3 mr-1" />{expired} expired
+        </Badge>
+      )}
+      {maxDays > 0 && (
+        <Badge variant="outline" className="border-destructive/60 text-destructive bg-destructive/5" data-testid="badge-material-certs-max-days-expired">
+          {maxDays} {maxDays === 1 ? "day" : "days"}
+        </Badge>
+      )}
+    </>
+  ) : null;
+  return (
+    <LinkCard
+      to="/material-certifications"
+      title="Material Certifications"
+      desc="Mill certs and material conformance records."
+      icon={FileText}
+      badges={badges}
+    />
+  );
+}
+
 function ModulesTab() {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
       <LinkCard to="/safety-training" title="Training & Certifications" desc="Manage required courses, assignments, and worker certification status." icon={GraduationCap} />
       <LinkCard to="/compliance" title="Compliance & COIs" desc="Track COIs, bonds, DBE certs, licenses, and expirations." icon={FileBadge} />
       <SwpppLinkCard />
-      <LinkCard to="/daily-inspector-reports" title="Daily Inspector Reports" desc="Daily field inspection reports and signoffs." icon={ClipboardList} />
-      <LinkCard to="/material-certifications" title="Material Certifications" desc="Mill certs and material conformance records." icon={FileText} />
+      <DailyInspectorReportsLinkCard />
+      <MaterialCertificationsLinkCard />
     </div>
   );
 }

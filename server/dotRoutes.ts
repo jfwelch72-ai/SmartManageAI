@@ -2055,6 +2055,45 @@ router.get(
   },
 );
 
+// Task #1358: Lightweight aggregate so the Safety Hub Daily Inspector
+// Reports tile can show unsigned/overdue counts without fetching every
+// IDR row. "Unsigned" means the report is still in DRAFT or REVISED
+// status (i.e. not yet SUBMITTED/APPROVED). "Overdue" narrows that to
+// rows whose `reportDate` is in the past — a daily report that wasn't
+// signed by end of its day. `maxDaysOverdue` is the largest such gap
+// in days.
+router.get(
+  "/api/daily-inspector-reports/summary",
+  requireAuth,
+  requireAnyFeaturePermission(
+    "canViewInspectorReports", "canSubmitInspectorReports",
+    "canManageInspectorReports", "canApproveInspectorReports",
+  ),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const targetOrg = ctx.isSuperAdmin ? superAdminTargetOrgId(req) : ctx.orgId;
+    if (!targetOrg) {
+      return res.json({ unsignedCount: 0, overdueCount: 0, maxDaysOverdue: 0 });
+    }
+    const isUnsigned = sql`${dailyInspectorReports.status} IN ('DRAFT','REVISED')`;
+    const isOverdue = sql`${dailyInspectorReports.reportDate} < CURRENT_DATE`;
+    const [agg] = await db
+      .select({
+        unsignedCount: sql<number>`COUNT(*) FILTER (WHERE ${isUnsigned} AND NOT ${isOverdue})::int`,
+        overdueCount: sql<number>`COUNT(*) FILTER (WHERE ${isUnsigned} AND ${isOverdue})::int`,
+        maxDaysOverdue: sql<number>`COALESCE(MAX(CASE WHEN ${isUnsigned} AND ${isOverdue} THEN (CURRENT_DATE - ${dailyInspectorReports.reportDate}) ELSE NULL END), 0)::int`,
+      })
+      .from(dailyInspectorReports)
+      .where(eq(dailyInspectorReports.organizationId, targetOrg));
+    res.json({
+      unsignedCount: agg?.unsignedCount ?? 0,
+      overdueCount: agg?.overdueCount ?? 0,
+      maxDaysOverdue: agg?.maxDaysOverdue ?? 0,
+    });
+  },
+);
+
 router.post(
   "/api/swppp-inspections",
   requireAuth,
@@ -2431,6 +2470,46 @@ router.get(
       .orderBy(desc(materialCertifications.createdAt))
       .limit(500);
     res.json(rows);
+  },
+);
+
+// Task #1358: Lightweight aggregate so the Safety Hub Material
+// Certifications tile can show expiring/expired counts without
+// fetching every cert. "Expired" = `expiration_date < CURRENT_DATE`.
+// "Expiring soon" = expiration date within the next 30 days. Rows
+// without an expiration date are excluded. `maxDaysExpired` is the
+// largest days-past-expiration in the result set.
+router.get(
+  "/api/material-certifications/summary",
+  requireAuth,
+  requireAnyFeaturePermission(
+    "canViewMaterialCertifications",
+    "canManageMaterialCertifications",
+    "canVerifyMaterialCertifications",
+  ),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const targetOrg = ctx.isSuperAdmin ? superAdminTargetOrgId(req) : ctx.orgId;
+    if (!targetOrg) {
+      return res.json({ expiringSoonCount: 0, expiredCount: 0, maxDaysExpired: 0 });
+    }
+    const hasExp = sql`${materialCertifications.expirationDate} IS NOT NULL`;
+    const isExpired = sql`${materialCertifications.expirationDate} < CURRENT_DATE`;
+    const isExpiringSoon = sql`${materialCertifications.expirationDate} >= CURRENT_DATE AND ${materialCertifications.expirationDate} <= CURRENT_DATE + INTERVAL '30 days'`;
+    const [agg] = await db
+      .select({
+        expiringSoonCount: sql<number>`COUNT(*) FILTER (WHERE ${hasExp} AND ${isExpiringSoon})::int`,
+        expiredCount: sql<number>`COUNT(*) FILTER (WHERE ${hasExp} AND ${isExpired})::int`,
+        maxDaysExpired: sql<number>`COALESCE(MAX(CASE WHEN ${hasExp} AND ${isExpired} THEN (CURRENT_DATE - ${materialCertifications.expirationDate}) ELSE NULL END), 0)::int`,
+      })
+      .from(materialCertifications)
+      .where(eq(materialCertifications.organizationId, targetOrg));
+    res.json({
+      expiringSoonCount: agg?.expiringSoonCount ?? 0,
+      expiredCount: agg?.expiredCount ?? 0,
+      maxDaysExpired: agg?.maxDaysExpired ?? 0,
+    });
   },
 );
 
