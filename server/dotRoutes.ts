@@ -1547,7 +1547,11 @@ router.patch(
   async (req: AuthRequest, res: Response) => {
     const ctx = requireOrgOwnership(req, res);
     if (!ctx) return;
-    const { id: _id, organizationId: _o, createdAt: _c, createdById: _cb, ...patch } = req.body || {};
+    const {
+      id: _id, organizationId: _o, createdAt: _c, createdById: _cb,
+      status: _st, resolvedAt: _ra, resolvedById: _rb, resolutionNotes: _rn,
+      ...patch
+    } = req.body || {};
     const conditions: SQL[] = [eq(swpppInspections.id, req.params.id)];
     if (!ctx.isSuperAdmin) conditions.push(eq(swpppInspections.organizationId, ctx.orgId!));
     const [prev] = await db.select().from(swpppInspections).where(and(...conditions)).limit(1);
@@ -1557,6 +1561,66 @@ router.patch(
       .returning();
     if (!row) return res.status(404).json({ error: "Not found" });
     await dotAudit(req, "UPDATE", "swppp_inspection", row.id, prev, row);
+    res.json(row);
+  },
+);
+
+router.post(
+  "/api/swppp-inspections/:id/resolve",
+  requireAuth,
+  requireFeaturePermission("canManageSwppp"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: SQL[] = [eq(swpppInspections.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(swpppInspections.organizationId, ctx.orgId!));
+    const [prev] = await db.select().from(swpppInspections).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
+    if (prev.status === "RESOLVED") return res.json(prev);
+    const now = new Date();
+    const resolutionNotes = typeof req.body?.resolutionNotes === "string" ? req.body.resolutionNotes : null;
+    const [row] = await db.update(swpppInspections)
+      .set({
+        status: "RESOLVED",
+        resolvedAt: now,
+        resolvedById: req.user!.id,
+        resolutionNotes,
+        correctiveActionCompletedAt: now,
+        updatedAt: now,
+      })
+      .where(and(...conditions))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Not found" });
+    await dotAudit(req, "RESOLVE", "swppp_inspection", row.id, prev, row);
+    res.json(row);
+  },
+);
+
+router.post(
+  "/api/swppp-inspections/:id/reopen",
+  requireAuth,
+  requireFeaturePermission("canManageSwppp"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const conditions: SQL[] = [eq(swpppInspections.id, req.params.id)];
+    if (!ctx.isSuperAdmin) conditions.push(eq(swpppInspections.organizationId, ctx.orgId!));
+    const [prev] = await db.select().from(swpppInspections).where(and(...conditions)).limit(1);
+    if (!prev) return res.status(404).json({ error: "Not found" });
+    if (prev.status !== "RESOLVED") return res.json(prev);
+    const [row] = await db.update(swpppInspections)
+      .set({
+        status: "OPEN",
+        resolvedAt: null,
+        resolvedById: null,
+        resolutionNotes: null,
+        correctiveActionCompletedAt: null,
+        updatedAt: new Date(),
+      })
+      .where(and(...conditions))
+      .returning();
+    if (!row) return res.status(404).json({ error: "Not found" });
+    await dotAudit(req, "REOPEN", "swppp_inspection", row.id, prev, row);
     res.json(row);
   },
 );

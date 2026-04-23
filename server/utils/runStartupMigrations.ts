@@ -79,6 +79,7 @@ import { ensureGanttPdfAlertTables } from "./ensureGanttPdfAlertTables";
 import { ensurePortfolioPdfAlertTables } from "./ensurePortfolioPdfAlertTables";
 import { ensurePdfAlertSharedTables } from "./ensurePdfAlertSharedTables";
 import { ensureProjectKpiSnapshotsTable } from "./ensureProjectKpiSnapshotsTable";
+import { ensureSwpppCorrectiveActionStatus } from "./ensureSwpppCorrectiveActionStatus";
 import { ensureCrmTranscriptBackfillJobsTable } from "./ensureCrmTranscriptBackfillJobsTable";
 import { ensureCrmTranscriptBackfillNotificationSettingsTable } from "./ensureCrmTranscriptBackfillNotificationSettingsTable";
 import { ensureCrmTranscriptBackfillNotificationsTable } from "./ensureCrmTranscriptBackfillNotificationsTable";
@@ -176,6 +177,7 @@ const migrations: MigrationStep[] = [
   // Task #990: must run AFTER both legacy tables exist so backfill copies forward.
   { name: "pdf_alert_shared_tables", category: "CREATE_TABLE", fn: ensurePdfAlertSharedTables },
   { name: "project_kpi_snapshots_table", category: "CREATE_TABLE", fn: ensureProjectKpiSnapshotsTable },
+  { name: "swppp_corrective_action_status", category: "ADD_COLUMN", fn: ensureSwpppCorrectiveActionStatus },
   { name: "crm_transcript_backfill_jobs_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillJobsTable },
   { name: "crm_transcript_backfill_notification_settings_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillNotificationSettingsTable },
   // Task #1022 — must run AFTER the jobs table since it FK-references it.

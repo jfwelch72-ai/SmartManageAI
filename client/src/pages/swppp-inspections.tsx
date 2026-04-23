@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Droplets, Plus, Loader2, Pencil, Trash2, Wand2 } from "lucide-react";
+import { Droplets, Plus, Loader2, Pencil, Trash2, Wand2, CheckCircle2, RotateCcw, AlertTriangle } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { ProjectSelect, formatDate, todayIso, getErrorMessage, toDateInput } from "@/components/dot/FieldFormHelpers";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -50,6 +50,42 @@ export default function SwpppInspectionsPage() {
     onError: (error: Error) => toast({ title: "Failed to delete", description: getErrorMessage(error), variant: "destructive" }),
   });
 
+  const resolveMut = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await apiRequest("POST", `/api/swppp-inspections/${id}/resolve`, {});
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Marked resolved" });
+      queryClient.invalidateQueries({ queryKey: ["/api/swppp-inspections"] });
+    },
+    onError: (error: Error) => toast({ title: "Failed to resolve", description: getErrorMessage(error), variant: "destructive" }),
+  });
+
+  const reopenMut = useMutation({
+    mutationFn: async (id: string) => {
+      const r = await apiRequest("POST", `/api/swppp-inspections/${id}/reopen`, {});
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Reopened" });
+      queryClient.invalidateQueries({ queryKey: ["/api/swppp-inspections"] });
+    },
+    onError: (error: Error) => toast({ title: "Failed to reopen", description: getErrorMessage(error), variant: "destructive" }),
+  });
+
+  const isOverdue = (s: SwpppInspection): boolean => {
+    if (s.status === "RESOLVED" || !s.correctiveActionDueDate) return false;
+    const due = new Date(s.correctiveActionDueDate as unknown as string);
+    if (Number.isNaN(due.getTime())) return false;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return due.getTime() < today.getTime();
+  };
+
+  const hasCorrective = (s: SwpppInspection): boolean =>
+    Boolean((s.deficienciesFound && s.deficienciesFound.trim()) || (s.correctiveActions && s.correctiveActions.trim()));
+
   return (
     <div className="container mx-auto p-4 sm:p-6 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -71,16 +107,37 @@ export default function SwpppInspectionsPage() {
         <EmptyState icon={Droplets} title="No SWPPP inspections" description="Log a routine or post-rain inspection to maintain your storm-water compliance record." testId="empty-swppp" />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {data.map((s) => (
-            <Card key={s.id} data-testid={`card-swppp-${s.id}`}>
+          {data.map((s) => {
+            const overdue = isOverdue(s);
+            const resolved = s.status === "RESOLVED";
+            const showCorrectiveControls = canManage && hasCorrective(s);
+            return (
+            <Card
+              key={s.id}
+              data-testid={`card-swppp-${s.id}`}
+              className={overdue ? "border-destructive ring-1 ring-destructive/30" : undefined}
+            >
               <CardHeader className="pb-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <CardTitle className="text-base">{formatDate(s.inspectionDate)}</CardTitle>
                     {s.inspectorName && <div className="text-xs text-muted-foreground">{s.inspectorName}</div>}
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 flex-wrap justify-end">
                     <Badge variant="outline">{s.inspectionType.replace(/_/g, " ")}</Badge>
+                    {hasCorrective(s) && (
+                      resolved ? (
+                        <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300" data-testid={`status-swppp-${s.id}`}>
+                          <CheckCircle2 className="h-3 w-3 mr-1" />Resolved
+                        </Badge>
+                      ) : overdue ? (
+                        <Badge variant="destructive" data-testid={`status-swppp-${s.id}`}>
+                          <AlertTriangle className="h-3 w-3 mr-1" />Overdue
+                        </Badge>
+                      ) : (
+                        <Badge variant="secondary" data-testid={`status-swppp-${s.id}`}>Open</Badge>
+                      )
+                    )}
                     {canManage && (<><Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setEditing(s)} data-testid={`button-edit-swppp-${s.id}`} aria-label="Edit"><Pencil className="h-3.5 w-3.5" /></Button>
                     <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => setDeleteTarget(s)} data-testid={`button-delete-swppp-${s.id}`} aria-label="Delete"><Trash2 className="h-3.5 w-3.5" /></Button></>)}
                   </div>
@@ -90,10 +147,45 @@ export default function SwpppInspectionsPage() {
                 {s.rainfall24hrInches && <div><span className="text-muted-foreground">24hr rain:</span> {s.rainfall24hrInches} in</div>}
                 {s.deficienciesFound && <div className="text-xs"><span className="text-muted-foreground">Deficiencies:</span> {s.deficienciesFound}</div>}
                 {s.correctiveActions && <div className="text-xs"><span className="text-muted-foreground">Corrective:</span> {s.correctiveActions}</div>}
-                {s.correctiveActionDueDate && <div className="text-xs"><span className="text-muted-foreground">Due:</span> {formatDate(s.correctiveActionDueDate)}</div>}
+                {s.correctiveActionDueDate && (
+                  <div className={`text-xs ${overdue ? "text-destructive font-medium" : ""}`}>
+                    <span className="text-muted-foreground">Due:</span> {formatDate(s.correctiveActionDueDate)}
+                    {overdue && <span className="ml-1">(overdue)</span>}
+                  </div>
+                )}
+                {resolved && s.resolvedAt && (
+                  <div className="text-xs text-emerald-700 dark:text-emerald-400" data-testid={`text-resolved-${s.id}`}>
+                    <span className="text-muted-foreground">Resolved:</span> {formatDate(s.resolvedAt as unknown as string)}
+                  </div>
+                )}
+                {showCorrectiveControls && (
+                  <div className="pt-2">
+                    {resolved ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => reopenMut.mutate(s.id)}
+                        disabled={reopenMut.isPending}
+                        data-testid={`button-reopen-swppp-${s.id}`}
+                      >
+                        <RotateCcw className="h-3.5 w-3.5 mr-2" />Reopen
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => resolveMut.mutate(s.id)}
+                        disabled={resolveMut.isPending}
+                        data-testid={`button-resolve-swppp-${s.id}`}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5 mr-2" />Mark Resolved
+                      </Button>
+                    )}
+                  </div>
+                )}
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -161,8 +253,37 @@ function initial(existing: SwpppInspection | null, defaultProjectId?: string): F
 
 function SwpppForm({ existing, onClose, defaultProjectId }: { existing: SwpppInspection | null; onClose: () => void; defaultProjectId?: string }) {
   const { toast } = useToast();
+  const canManage = useFeaturePermission("canManageSwppp");
   const [form, setForm] = useState<FormState>(() => initial(existing, defaultProjectId));
   useEffect(() => { setForm(initial(existing, defaultProjectId)); }, [existing, defaultProjectId]);
+
+  const resolveMut = useMutation({
+    mutationFn: async () => {
+      if (!existing) throw new Error("Save the inspection before resolving.");
+      const r = await apiRequest("POST", `/api/swppp-inspections/${existing.id}/resolve`, {});
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Marked resolved" });
+      queryClient.invalidateQueries({ queryKey: ["/api/swppp-inspections"] });
+      onClose();
+    },
+    onError: (error: Error) => toast({ title: "Failed to resolve", description: getErrorMessage(error), variant: "destructive" }),
+  });
+
+  const reopenMut = useMutation({
+    mutationFn: async () => {
+      if (!existing) throw new Error("Save the inspection first.");
+      const r = await apiRequest("POST", `/api/swppp-inspections/${existing.id}/reopen`, {});
+      return r.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Reopened" });
+      queryClient.invalidateQueries({ queryKey: ["/api/swppp-inspections"] });
+      onClose();
+    },
+    onError: (error: Error) => toast({ title: "Failed to reopen", description: getErrorMessage(error), variant: "destructive" }),
+  });
 
   const aiDraftMut = useMutation({
     mutationFn: async () => {
@@ -246,11 +367,26 @@ function SwpppForm({ existing, onClose, defaultProjectId }: { existing: SwpppIns
         </div>
         <div><Label>Corrective Action Due Date</Label><Input type="date" value={form.correctiveActionDueDate} onChange={(e) => setForm({ ...form, correctiveActionDueDate: e.target.value })} data-testid="input-swppp-due" /></div>
         <div><Label>Notes</Label><Textarea value={form.notes} onChange={(e) => setForm({ ...form, notes: e.target.value })} data-testid="input-swppp-notes" /></div>
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={onClose} data-testid="button-swppp-cancel">Cancel</Button>
-          <Button type="submit" disabled={mut.isPending || !form.projectId} data-testid="button-swppp-save">
-            {mut.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</> : existing ? "Update Inspection" : "Save Inspection"}
-          </Button>
+        <DialogFooter className="flex flex-col-reverse sm:flex-row sm:justify-between sm:items-center gap-2">
+          <div className="flex items-center gap-2">
+            {existing && canManage && (form.deficienciesFound.trim() || form.correctiveActions.trim()) && (
+              existing.status === "RESOLVED" ? (
+                <Button type="button" variant="outline" onClick={() => reopenMut.mutate()} disabled={reopenMut.isPending} data-testid="button-swppp-reopen">
+                  {reopenMut.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <RotateCcw className="h-4 w-4 mr-2" />}Reopen
+                </Button>
+              ) : (
+                <Button type="button" variant="default" onClick={() => resolveMut.mutate()} disabled={resolveMut.isPending} data-testid="button-swppp-resolve">
+                  {resolveMut.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}Mark Resolved
+                </Button>
+              )
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" onClick={onClose} data-testid="button-swppp-cancel">Cancel</Button>
+            <Button type="submit" disabled={mut.isPending || !form.projectId} data-testid="button-swppp-save">
+              {mut.isPending ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Saving…</> : existing ? "Update Inspection" : "Save Inspection"}
+            </Button>
+          </div>
         </DialogFooter>
       </form>
     </DialogContent>
