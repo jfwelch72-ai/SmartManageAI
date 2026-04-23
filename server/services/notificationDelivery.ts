@@ -12,6 +12,7 @@ import { logError } from "../utils/logger";
 import { hasFeature } from "./featureAccess";
 import { isFeatureEnabled } from "./featureFlagService";
 import { buildSwpppMuteUrl } from "../utils/swpppMuteToken";
+import { buildDavisBaconMuteUrl } from "../utils/davisBaconMuteToken";
 
 type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
 
@@ -537,6 +538,15 @@ export function composeEmailContent(notification: NotificationRecord): {
     const subject = `Davis-Bacon auto-sync failed — SmartManageAI`;
     const actionText = "Open Integrations";
     const messageHtml = escapeHtml(notification.message).replace(/\n/g, "<br>");
+
+    // Task #1361 — One-click mute footer link, modeled after the SWPPP
+    // overdue mute (Task #1287). The signed token is bound to the
+    // recipient's userId so the endpoint can only mute *their* Davis-Bacon
+    // failure preferences (no cross-tenant abuse). A plain settings deep
+    // link is included as a transparent fallback.
+    const muteUrl = baseUrl ? buildDavisBaconMuteUrl(baseUrl, notification.userId) : "";
+    const settingsUrl = `${baseUrl}/settings/notifications#section-davis-bacon-auto-sync-failed-prefs`;
+
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #b91c1c;">${escapeHtml(notification.title)}</h2>
@@ -547,7 +557,10 @@ export function composeEmailContent(notification: NotificationRecord): {
           </a>
         </p>
         <hr style="margin-top: 30px; border: none; border-top: 1px solid #eee;">
-        <p style="color: #999; font-size: 12px;">You are receiving this because you own the Davis-Bacon integration connection for your organization. Adjust delivery in your SmartManageAI notification preferences.</p>
+        <p style="color: #999; font-size: 12px; line-height: 1.6;">
+          You are receiving this because you own the Davis-Bacon integration connection for your organization.
+          ${muteUrl ? `<br><a href="${muteUrl}" style="color: #0070f3; text-decoration: underline;" data-testid="link-mute-davis-bacon-auto-sync-failed">Mute Davis-Bacon auto-sync failure alerts (email + in-app)</a> &middot; ` : ""}<a href="${settingsUrl}" style="color: #999; text-decoration: underline;">Manage notification settings</a>
+        </p>
       </div>
     `;
     return {

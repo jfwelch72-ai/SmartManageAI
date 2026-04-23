@@ -56,6 +56,7 @@ import { isValidSlackWebhookUrl } from "./services/slackService";
 import { hasFeature } from "./services/featureAccess";
 import { buildDigestCsv } from "./utils/jobMetricAlerts";
 import { verifySwpppMuteToken } from "./utils/swpppMuteToken";
+import { verifyDavisBaconMuteToken } from "./utils/davisBaconMuteToken";
 import { logInfo } from "./utils/logger";
 
 const router = Router();
@@ -519,6 +520,58 @@ router.get("/api/notifications/mute/swppp-overdue", async (req, res, next) => {
     return res.redirect(`/settings/notifications?muted=swppp_overdue${settingsAnchor}`);
   } catch (error) {
     logError("Failed to mute SWPPP overdue alerts via email link", { error: String(error) });
+    next(error);
+  }
+});
+
+/**
+ * Task #1361 — One-click "mute Davis-Bacon auto-sync failure alerts"
+ * link rendered in the footer of DAVIS_BACON_AUTO_SYNC_FAILED emails.
+ * Mirrors the SWPPP overdue mute endpoint above: signed JWT bound to
+ * the recipient's userId, upserts both email + in-app to disabled,
+ * then redirects back to the settings page anchored to the toggle.
+ */
+router.get("/api/notifications/mute/davis-bacon-auto-sync-failed", async (req, res, next) => {
+  try {
+    const token = typeof req.query.token === "string" ? req.query.token : "";
+    const payload = token ? verifyDavisBaconMuteToken(token) : null;
+    const settingsAnchor = "#section-davis-bacon-auto-sync-failed-prefs";
+
+    if (!payload) {
+      return res.redirect(`/settings/notifications?mute=invalid${settingsAnchor}`);
+    }
+
+    const now = new Date();
+    await db
+      .insert(notificationTypePrefs)
+      .values({
+        userId: payload.userId,
+        notificationType: "DAVIS_BACON_AUTO_SYNC_FAILED",
+        emailEnabled: false,
+        smsEnabled: false,
+        pushEnabled: false,
+        teamsEnabled: false,
+        slackEnabled: false,
+        inAppEnabled: false,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [notificationTypePrefs.userId, notificationTypePrefs.notificationType],
+        set: {
+          emailEnabled: false,
+          inAppEnabled: false,
+          updatedAt: now,
+        },
+      });
+
+    logInfo("Davis-Bacon auto-sync failure alerts muted via email link", {
+      userId: payload.userId,
+      source: "email_one_click",
+    });
+
+    return res.redirect(`/settings/notifications?muted=davis_bacon_auto_sync_failed${settingsAnchor}`);
+  } catch (error) {
+    logError("Failed to mute Davis-Bacon auto-sync failure alerts via email link", { error: String(error) });
     next(error);
   }
 });

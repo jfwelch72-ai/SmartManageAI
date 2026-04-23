@@ -478,14 +478,68 @@ export async function queueWageDecisionSync(
 }
 
 /**
+ * Task #1361 — Coalesce repeated Davis-Bacon auto-sync failure
+ * notifications per (connection, decision number) so an extended SAM.gov
+ * outage or a bad credential can't flood the connection owner with one
+ * email per attempt. The first failure goes through immediately; any
+ * subsequent failure within the window is suppressed and only counted.
+ * When the window expires, the next failure is delivered with a hint at
+ * how many attempts were absorbed during the quiet window.
+ *
+ * In-memory by design — coalescing is best-effort and does not need to
+ * survive restarts; if a worker recycles the user simply receives the
+ * next failure email immediately, which is the right fallback.
+ */
+const COALESCE_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+
+interface CoalesceState {
+  lastNotifiedAt: number;
+  suppressedSince: number;
+  suppressedCount: number;
+}
+
+const failureCoalesceMap = new Map<string, CoalesceState>();
+
+function coalesceKey(connectionId: string, decisionNumber: string): string {
+  return `${connectionId}::${decisionNumber}`;
+}
+
+/**
+ * Drop coalesce entries that are older than 2x the coalesce window so
+ * a long-running worker can't accumulate unbounded keys for connections
+ * or decisions that no longer fail. Cheap O(n) sweep — n is bounded
+ * by the number of distinct (connection, decision) pairs that have
+ * failed recently per worker.
+ */
+function pruneStaleCoalesceEntries(now: number): void {
+  const cutoff = now - 2 * COALESCE_WINDOW_MS;
+  for (const [key, state] of failureCoalesceMap) {
+    if (state.lastNotifiedAt < cutoff) failureCoalesceMap.delete(key);
+  }
+}
+
+/**
+ * Test/utility hook — wipes the in-memory coalescing map. Exported so
+ * unit tests can ensure a deterministic starting state without having
+ * to reach into module internals.
+ */
+export function __resetDavisBaconFailureCoalesceForTests(): void {
+  failureCoalesceMap.clear();
+}
+
+/**
  * Task #1332: in-app notification to the integration owner when an
  * automatic Davis-Bacon sync queued during project create/update fails.
  * Routed to `integration_connections.created_by_user_id` so the admin who
  * connected SAM.gov hears about it; if the connection has no owner on
  * file we fall back to logging only since there is no per-org "integration
  * admin" group to fan out to.
+ *
+ * Task #1361 — Repeated failures within `COALESCE_WINDOW_MS` for the same
+ * (connection, decision) are coalesced into a single notification so
+ * owners can't be flooded by an upstream outage.
  */
-async function notifyDavisBaconAutoSyncFailure(
+export async function notifyDavisBaconAutoSyncFailure(
   connection: IntegrationConnection,
   decisionNumber: string,
   errorMessage: string,
@@ -498,6 +552,33 @@ async function notifyDavisBaconAutoSyncFailure(
     });
     return;
   }
+
+  const key = coalesceKey(connection.id, decisionNumber);
+  const now = Date.now();
+  pruneStaleCoalesceEntries(now);
+  const state = failureCoalesceMap.get(key);
+  if (state && now - state.lastNotifiedAt < COALESCE_WINDOW_MS) {
+    state.suppressedCount += 1;
+    if (state.suppressedSince === 0) state.suppressedSince = now;
+    logInfo("Davis-Bacon auto-sync failure suppressed by coalescing window", {
+      decisionNumber,
+      connectionId: connection.id,
+      suppressedCount: state.suppressedCount,
+      windowRemainingMs: COALESCE_WINDOW_MS - (now - state.lastNotifiedAt),
+    });
+    return;
+  }
+
+  // Either first failure for this (connection, decision) or the previous
+  // coalescing window has expired. If we absorbed failures during the
+  // last quiet window, surface that count so the owner knows the email
+  // they're getting represents a streak.
+  const suppressedCount = state?.suppressedCount ?? 0;
+  const coalescedSuffix =
+    suppressedCount > 0
+      ? ` (${suppressedCount + 1} failures in the last hour — additional alerts were suppressed)`
+      : "";
+
   try {
     await insertNotification({
       userId: ownerUserId,
@@ -506,9 +587,15 @@ async function notifyDavisBaconAutoSyncFailure(
       title: "Davis-Bacon auto-sync failed",
       message:
         `Automatic sync for wage decision ${decisionNumber} failed: ` +
-        `${errorMessage.slice(0, 300)}. Open the project's payroll tab to retry.`,
+        `${errorMessage.slice(0, 300)}. Open the project's payroll tab to retry.` +
+        coalescedSuffix,
       relatedEntityId: connection.id,
       relatedEntityType: "INTEGRATION_CONNECTION",
+    });
+    failureCoalesceMap.set(key, {
+      lastNotifiedAt: now,
+      suppressedSince: 0,
+      suppressedCount: 0,
     });
   } catch (err) {
     logError(

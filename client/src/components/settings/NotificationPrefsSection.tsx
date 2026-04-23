@@ -82,6 +82,11 @@ const TYPES_WITH_IN_APP_TOGGLE = new Set<string>([
   "DEADLINE_WARNING",
   "DAILY_PROGRESS_LOGGED",
   "REMINDER",
+  // Task #1361 — Davis-Bacon auto-sync failure alerts can flood the
+  // integration owner during a SAM.gov outage; expose a per-type
+  // mute toggle so owners can silence them the same way SWPPP
+  // overdue alerts can be muted.
+  "DAVIS_BACON_AUTO_SYNC_FAILED",
 ]);
 
 const CRM_CONTACT_REASSIGNED = "CRM_CONTACT_REASSIGNED";
@@ -130,6 +135,15 @@ const NOTIFICATION_TYPE_GROUPS: { label: string; types: string[] }[] = [
     types: ["SWPPP_OVERDUE_CORRECTIVE_ACTION"],
   },
   {
+    // Task #1361 — Per-type email toggle for the Davis-Bacon auto-sync
+    // failure email. The "in-app alerts by type" row above mutes the
+    // in-app feed independently, so owners can fine-tune each channel.
+    // The email footer's one-click mute link disables both channels at
+    // once for convenience during a flood.
+    label: "Integrations",
+    types: ["DAVIS_BACON_AUTO_SYNC_FAILED"],
+  },
+  {
     label: "Admin Alerts",
     types: ["CRM_TRANSCRIPT_BACKFILL_REAPED"],
   },
@@ -139,6 +153,8 @@ const TYPE_LABEL_OVERRIDES: Record<string, string> = {
   CRM_TRANSCRIPT_BACKFILL_REAPED: "CRM transcript backfill reaped",
   // Task #1260 — Friendlier label than the auto title-cased enum value.
   SWPPP_OVERDUE_CORRECTIVE_ACTION: "SWPPP corrective action overdue",
+  // Task #1361 — Friendlier label for the Davis-Bacon failure alert.
+  DAVIS_BACON_AUTO_SYNC_FAILED: "Davis-Bacon auto-sync failed",
 };
 
 /**
@@ -2395,6 +2411,10 @@ export default function NotificationPrefsSection() {
                     // the deep-link scrolls straight to the toggle.
                     const rowId = type === "SWPPP_OVERDUE_CORRECTIVE_ACTION"
                       ? "section-swppp-overdue-prefs"
+                      // Task #1361 — anchor for the Davis-Bacon failure
+                      // email's one-click mute link.
+                      : type === "DAVIS_BACON_AUTO_SYNC_FAILED"
+                      ? "section-davis-bacon-auto-sync-failed-prefs"
                       : undefined;
                     return (
                       <div key={type} id={rowId} className="flex items-center justify-between py-1" data-testid={`row-in-app-pref-${type}`}>
