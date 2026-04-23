@@ -207,15 +207,39 @@ describe("GET /api/swppp-inspections/summary — task #1357", () => {
     // Whitespace-only fields — must not count. Mirrors the client
     // `.trim()` reducer for the common form-submission case where the
     // user typed (and then deleted) into the textareas, leaving only
-    // spaces. (Note: server-side TRIM() strips spaces; the client's
-    // JS .trim() also strips tabs/newlines, so we deliberately use
-    // spaces here to assert the contract both sides agree on.)
+    // spaces.
     await insertInspection({
       orgId: tenantA.orgId,
       projectId: tenantA.projectId,
       deficienciesFound: "   ",
       correctiveActions: "     ",
       correctiveActionDueDate: isoDate(-10),
+    });
+    // Task #1359: tab-only and newline-only corrective fields must
+    // also be excluded so the Safety Hub badge agrees with the
+    // in-page reducer (which uses JS `.trim()`, stripping all
+    // Unicode whitespace including tabs/newlines).
+    await insertInspection({
+      orgId: tenantA.orgId,
+      projectId: tenantA.projectId,
+      deficienciesFound: "\t\t",
+      correctiveActions: "\t",
+      correctiveActionDueDate: isoDate(-15),
+    });
+    await insertInspection({
+      orgId: tenantA.orgId,
+      projectId: tenantA.projectId,
+      deficienciesFound: "\n\n",
+      correctiveActions: "\r\n",
+      correctiveActionDueDate: isoDate(-20),
+    });
+    // Mixed tabs + newlines + spaces — still effectively empty.
+    await insertInspection({
+      orgId: tenantA.orgId,
+      projectId: tenantA.projectId,
+      deficienciesFound: " \t \n ",
+      correctiveActions: "\t \r\n\t",
+      correctiveActionDueDate: isoDate(-25),
     });
 
     const res = await request(app)

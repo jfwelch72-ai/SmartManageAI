@@ -2034,8 +2034,8 @@ router.get(
       return res.json({ openCount: 0, overdueCount: 0, maxDaysOverdue: 0 });
     }
     const hasCorrective = sql`(
-      NULLIF(TRIM(${swpppInspections.deficienciesFound}), '') IS NOT NULL
-      OR NULLIF(TRIM(${swpppInspections.correctiveActions}), '') IS NOT NULL
+      NULLIF(REGEXP_REPLACE(${swpppInspections.deficienciesFound}, '\\s', '', 'g'), '') IS NOT NULL
+      OR NULLIF(REGEXP_REPLACE(${swpppInspections.correctiveActions}, '\\s', '', 'g'), '') IS NOT NULL
     )`;
     const isUnresolved = sql`${swpppInspections.status} <> 'RESOLVED'`;
     const isOverdue = sql`${swpppInspections.correctiveActionDueDate} < CURRENT_DATE`;
