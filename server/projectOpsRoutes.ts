@@ -493,6 +493,9 @@ router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "
       return;
     }
 
+    // Preserve pre-migration response precedence: reject non-HTTPS URLs
+    // before doing the project lookup/auth check, even though safeDownload
+    // also enforces this.
     if (parsedUrl.protocol !== "https:") {
       res.status(400).json({ error: "Only HTTPS URLs are allowed" });
       return;
@@ -505,147 +508,64 @@ router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "
     }
     if (!verifyOrgAccess(req, res, project.gcOrganizationId)) return;
 
-    const dns = await import("dns");
-    const { promisify } = await import("util");
-    const dnsResolve = promisify(dns.resolve4);
+    // Task #1455: from-URL imports now share the same SSRF-hardened
+    // download helper as the cloud importer. The translation table below
+    // preserves the original user-visible error strings/status codes so
+    // the frontend behavior is unchanged.
+    const { safeDownload, SafeDownloadError } = await import("./services/safeDownload");
 
-    const ALLOWED_CONTENT_TYPES = [
-      "application/pdf",
-      "image/jpeg",
-      "image/png",
-      "image/gif",
-      "image/webp",
-      "image/svg+xml",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      "application/msword",
-      "application/vnd.ms-excel",
-      "text/plain",
-      "text/csv",
-    ];
-
-    const MAX_FILE_SIZE = 100 * 1024 * 1024;
-    const FETCH_TIMEOUT_MS = 30000;
-    const MAX_REDIRECTS = 3;
-
-    function isPrivateHostname(hn: string): boolean {
-      return /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.|localhost|::1|\[::1\]|169\.254\.)/.test(hn)
-        || hn === "localhost"
-        || hn.endsWith(".local")
-        || hn.endsWith(".internal");
-    }
-
-    function isPrivateIp(ip: string): boolean {
-      return /^(127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.|0\.|169\.254\.)/.test(ip);
-    }
-
-    async function validateUrl(targetUrl: URL): Promise<string | null> {
-      if (targetUrl.protocol !== "https:") {
-        return "Only HTTPS URLs are allowed for security.";
+    function translateSafeDownloadError(err: InstanceType<typeof SafeDownloadError>): { status: number; message: string } {
+      const m = err.message;
+      switch (m) {
+        case "Invalid URL":
+          return { status: 400, message: "Invalid URL format" };
+        case "Only HTTPS URLs are allowed for security.":
+          return { status: 400, message: "Only HTTPS URLs are allowed" };
+        case "This URL points to an internal network address and can't be accessed.":
+          return { status: 400, message: "This URL points to an internal network address and can't be accessed. Please use a publicly accessible link." };
+        case "Could not resolve the hostname.":
+          return { status: 400, message: "Could not resolve the hostname. Please check the URL and try again." };
+        case "Too many redirects.":
+          return { status: 400, message: "This link redirects too many times. Please paste the final download link instead." };
+        case "Redirect without a destination.":
+          return { status: 400, message: "The link sent a redirect without a destination. Please try a different link." };
+        case "Redirect to invalid URL.":
+          return { status: 400, message: "The link redirected to an invalid URL. Please try a different link." };
+        case "Redirected to an unsafe destination and was blocked for security.":
+          return { status: 400, message: "This link redirected to an unsafe destination and was blocked for security." };
+        case "This file type isn't supported.":
+          return { status: 400, message: "This file type isn't supported. You can upload PDFs, images, Office documents, or CSV files." };
+        case "File is too large (over the allowed limit).":
+          return { status: 400, message: "This file is too large (over 100MB). Please use a smaller file." };
+        case "The download took too long.":
+          return { status: 408, message: "The download took too long (over 30 seconds). Please try a smaller file or a faster link." };
+        case "Failed to download the file.":
+          return { status: 400, message: "Failed to download the file. Please check the URL and try again." };
       }
-      if (isPrivateHostname(targetUrl.hostname)) {
-        return "This URL points to an internal network address and can't be accessed. Please use a publicly accessible link.";
+      const httpFail = m.match(/^Download failed \(HTTP (\d+)\)\.$/);
+      if (httpFail) {
+        return { status: 400, message: `The link returned an error (HTTP ${httpFail[1]}). Please check that the URL is correct and publicly accessible.` };
       }
-      try {
-        const ips = await dnsResolve(targetUrl.hostname);
-        if (ips.some((ip: string) => isPrivateIp(ip))) {
-          return "This URL points to an internal network address and can't be accessed. Please use a publicly accessible link.";
-        }
-      } catch {
-        logWarn("Non-critical operation failed");
-        return "Could not resolve the hostname. Please check the URL and try again.";
-      }
-      return null;
+      return { status: err.status || 400, message: m };
     }
 
-    const initialValidation = await validateUrl(parsedUrl);
-    if (initialValidation) {
-      res.status(400).json({ error: initialValidation });
-      return;
-    }
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-
-    let currentUrl = url;
-    let response: Response;
-    let redirectCount = 0;
-
+    let fileBuffer: Buffer;
+    let contentType: string;
     try {
-      while (true) {
-        response = await fetch(currentUrl, {
-          signal: controller.signal,
-          headers: { "User-Agent": "SmartManageAI-DocumentFetcher/1.0" },
-          redirect: "manual",
-        });
-
-        if (response.status >= 300 && response.status < 400) {
-          redirectCount++;
-          if (redirectCount > MAX_REDIRECTS) {
-            clearTimeout(timeout);
-            res.status(400).json({ error: "This link redirects too many times. Please paste the final download link instead." });
-            return;
-          }
-          const location = response.headers.get("location");
-          if (!location) {
-            clearTimeout(timeout);
-            res.status(400).json({ error: "The link sent a redirect without a destination. Please try a different link." });
-            return;
-          }
-          let redirectUrl: URL;
-          try {
-            redirectUrl = new URL(location, currentUrl);
-          } catch {
-            logWarn("Non-critical operation failed");
-            clearTimeout(timeout);
-            res.status(400).json({ error: "The link redirected to an invalid URL. Please try a different link." });
-            return;
-          }
-          const redirectValidation = await validateUrl(redirectUrl);
-          if (redirectValidation) {
-            clearTimeout(timeout);
-            res.status(400).json({ error: "This link redirected to an unsafe destination and was blocked for security." });
-            return;
-          }
-          currentUrl = redirectUrl.toString();
-          continue;
-        }
-        break;
-      }
-    } catch (fetchErr: any) {
-      clearTimeout(timeout);
-      if (fetchErr.name === "AbortError") {
-        res.status(408).json({ error: "The download took too long (over 30 seconds). Please try a smaller file or a faster link." });
+      const result = await safeDownload({
+        url,
+        headers: { "User-Agent": "SmartManageAI-DocumentFetcher/1.0" },
+        maxRedirects: 3,
+      });
+      fileBuffer = result.buffer;
+      contentType = result.contentType;
+    } catch (err: any) {
+      if (err instanceof SafeDownloadError) {
+        const { status, message } = translateSafeDownloadError(err);
+        res.status(status).json({ error: message });
         return;
       }
       res.status(400).json({ error: "Failed to download the file. Please check the URL and try again." });
-      return;
-    }
-    clearTimeout(timeout);
-
-    if (!response.ok) {
-      res.status(400).json({ error: `The link returned an error (HTTP ${response.status}). Please check that the URL is correct and publicly accessible.` });
-      return;
-    }
-
-    const contentType = response.headers.get("content-type")?.split(";")[0]?.trim() || "application/octet-stream";
-    if (!ALLOWED_CONTENT_TYPES.includes(contentType)) {
-      res.status(400).json({ error: "This file type isn't supported. You can upload PDFs, images, Office documents, or CSV files." });
-      return;
-    }
-
-    const contentLength = parseInt(response.headers.get("content-length") || "0", 10);
-    if (contentLength > MAX_FILE_SIZE) {
-      res.status(400).json({ error: "This file is too large (over 100MB). Please use a smaller file." });
-      return;
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    const fileBuffer = Buffer.from(arrayBuffer);
-
-    if (fileBuffer.length > MAX_FILE_SIZE) {
-      res.status(400).json({ error: "This file is too large (over 100MB). Please use a smaller file." });
       return;
     }
 
