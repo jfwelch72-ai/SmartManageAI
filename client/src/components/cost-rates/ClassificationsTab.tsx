@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Edit, Trash2, Plus, Users, Briefcase, AlertCircle } from "lucide-react";
+import { Edit, Trash2, Plus, Users, Briefcase, AlertCircle, GitMerge } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -60,11 +60,17 @@ export function JobClassificationsContent({
   classifications,
   classificationsLoading,
   canEdit,
+  canMerge,
   confirmDelete,
 }: {
   classifications: JobClassification[];
   classificationsLoading: boolean;
   canEdit: boolean;
+  // Merging is destructive (it deletes a classification and rewrites
+  // FK references on every child row), so the server restricts it to
+  // ADMIN — gate the UI to match instead of relying on the backend
+  // 403 to bounce a manager who clicks the button.
+  canMerge: boolean;
   confirmDelete: (type: string, id: string, name: string) => void;
 }) {
   const { toast } = useToast();
@@ -77,6 +83,54 @@ export function JobClassificationsContent({
   const [classificationDefaultRegRate, setClassificationDefaultRegRate] = useState("");
   const [classificationDefaultOTRate, setClassificationDefaultOTRate] = useState("");
   const [classificationIsActive, setClassificationIsActive] = useState(true);
+
+  const [showMergeDialog, setShowMergeDialog] = useState(false);
+  const [mergeSourceId, setMergeSourceId] = useState("");
+  const [mergeSurvivorId, setMergeSurvivorId] = useState("");
+
+  const mergeMutation = useMutation({
+    mutationFn: async ({ survivorId, sourceId }: { survivorId: string; sourceId: string }) => {
+      return await apiRequest("POST", `/api/labor-rates/classifications/${survivorId}/merge`, { sourceId });
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/labor-rates/classifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/labor-rates/employee-classifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/labor-rates/prevailing-wage-rates"] });
+      const counts = [
+        data?.prevailingWageRatesRepointed ? `${data.prevailingWageRatesRepointed} prevailing wage rate(s)` : null,
+        data?.employeeClassificationsRepointed ? `${data.employeeClassificationsRepointed} employee assignment(s)` : null,
+        data?.estimateLineItemsRepointed ? `${data.estimateLineItemsRepointed} estimate line(s)` : null,
+        data?.dolMappingsRepointed ? `${data.dolMappingsRepointed} DOL mapping(s)` : null,
+        data?.projectEmployeeRatesRepointed ? `${data.projectEmployeeRatesRepointed} project employee rate(s)` : null,
+      ].filter(Boolean).join(", ");
+      toast({
+        title: "Classifications merged",
+        description: counts ? `Re-pointed ${counts} to the survivor.` : "No child rows needed re-pointing.",
+      });
+      setShowMergeDialog(false);
+      setMergeSourceId("");
+      setMergeSurvivorId("");
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Merge failed",
+        description: err?.message || "Failed to merge classifications",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleConfirmMerge = () => {
+    if (!mergeSourceId || !mergeSurvivorId) {
+      toast({ title: "Error", description: "Pick both a source and a survivor classification", variant: "destructive" });
+      return;
+    }
+    if (mergeSourceId === mergeSurvivorId) {
+      toast({ title: "Error", description: "Source and survivor must be different", variant: "destructive" });
+      return;
+    }
+    mergeMutation.mutate({ survivorId: mergeSurvivorId, sourceId: mergeSourceId });
+  };
 
   const classificationMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -150,10 +204,28 @@ export function JobClassificationsContent({
             </CardDescription>
           </div>
           {canEdit && (
-            <Button onClick={() => openClassificationDialog()} data-testid="button-add-classification" className="w-full sm:w-auto">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Classification
-            </Button>
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+              {canMerge && (
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setMergeSourceId("");
+                    setMergeSurvivorId("");
+                    setShowMergeDialog(true);
+                  }}
+                  disabled={classifications.length < 2}
+                  data-testid="button-merge-classifications"
+                  className="w-full sm:w-auto"
+                >
+                  <GitMerge className="w-4 h-4 mr-2" />
+                  Merge Duplicates
+                </Button>
+              )}
+              <Button onClick={() => openClassificationDialog()} data-testid="button-add-classification" className="w-full sm:w-auto">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Classification
+              </Button>
+            </div>
           )}
         </CardHeader>
         <CardContent>
@@ -299,6 +371,62 @@ export function JobClassificationsContent({
             <Button variant="outline" onClick={resetClassificationDialog}>Cancel</Button>
             <Button onClick={handleSaveClassification} disabled={classificationMutation.isPending} data-testid="button-save-classification">
               {editingClassification ? "Update" : "Create"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showMergeDialog} onOpenChange={(open) => !open && setShowMergeDialog(false)}>
+        <DialogContent data-testid="dialog-merge-classifications">
+          <DialogHeader>
+            <DialogTitle>Merge Job Classifications</DialogTitle>
+            <DialogDescription>
+              Pick the duplicate classification you want to remove and the survivor it should be merged into. All prevailing wage rates, employee assignments, estimate lines, and DOL mappings on the duplicate will be re-pointed to the survivor. The duplicate is then deleted. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label htmlFor="merge-source">Merge from (will be deleted)</Label>
+              <Select value={mergeSourceId} onValueChange={setMergeSourceId}>
+                <SelectTrigger id="merge-source" data-testid="select-merge-source">
+                  <SelectValue placeholder="Pick the duplicate to remove" />
+                </SelectTrigger>
+                <SelectContent>
+                  {classifications.map((c) => (
+                    <SelectItem key={c.id} value={c.id} data-testid={`option-merge-source-${c.id}`}>
+                      {c.name}{c.code ? ` (${c.code})` : ""}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label htmlFor="merge-survivor">Merge into (survivor)</Label>
+              <Select value={mergeSurvivorId} onValueChange={setMergeSurvivorId}>
+                <SelectTrigger id="merge-survivor" data-testid="select-merge-survivor">
+                  <SelectValue placeholder="Pick the classification to keep" />
+                </SelectTrigger>
+                <SelectContent>
+                  {classifications
+                    .filter((c) => c.id !== mergeSourceId)
+                    .map((c) => (
+                      <SelectItem key={c.id} value={c.id} data-testid={`option-merge-survivor-${c.id}`}>
+                        {c.name}{c.code ? ` (${c.code})` : ""}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowMergeDialog(false)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmMerge}
+              disabled={mergeMutation.isPending || !mergeSourceId || !mergeSurvivorId || mergeSourceId === mergeSurvivorId}
+              data-testid="button-confirm-merge"
+            >
+              {mergeMutation.isPending ? "Merging..." : "Merge"}
             </Button>
           </DialogFooter>
         </DialogContent>

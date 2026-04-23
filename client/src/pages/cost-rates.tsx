@@ -353,6 +353,7 @@ export default function CostRatesPage() {
   };
 
   const canEdit = user?.role === "ADMIN" || user?.role === "MANAGER";
+  const canMerge = user?.role === "ADMIN";
 
   const tabOptions = [
     { value: "employee-rates", label: "Employee Rates", icon: Users },
@@ -440,6 +441,7 @@ export default function CostRatesPage() {
               classifications={classifications}
               classificationsLoading={classificationsLoading}
               canEdit={canEdit}
+              canMerge={canMerge}
               confirmDelete={confirmDelete}
             />
           </TabsContent>

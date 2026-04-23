@@ -8,6 +8,7 @@ import {
   employeeClassifications, 
   prevailingWageRates,
   projectEmployeeRates,
+  estimateLineItems,
   users,
   projects,
   annualSalaryCategories,
@@ -21,7 +22,7 @@ import {
   insertBurdenRateSchema,
   insertEmployeeCostAssignmentSchema
 } from "@shared/schema";
-import { eq, and, desc, asc } from "drizzle-orm";
+import { eq, and, desc, asc, sql } from "drizzle-orm";
 import { logAudit } from "./auditLogger";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { queueWageDecisionSync } from "./integrations/providers/dol_davis_bacon/sync";
@@ -196,6 +197,153 @@ router.delete("/classifications/:id", requireAuth, requireRole("ADMIN"), async (
     }, req);
 
     res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Task #1397: merge two job classifications. The classification identified by
+// `:id` (the survivor) absorbs the one named in the request body
+// (`sourceId`). All FK references on the source row are atomically re-pointed
+// to the survivor and the source row is hard-deleted. The merge runs inside a
+// single transaction so a partial re-point can never leave orphan child rows
+// pointing at a missing classification, and unique-constraint conflicts on
+// child rows (one user / project already had both classifications attached)
+// are resolved by dropping the duplicate child row in favour of whatever
+// already lives under the survivor.
+const mergeClassificationSchema = z.object({
+  sourceId: z.string().min(1, "sourceId is required"),
+});
+
+router.post("/classifications/:id/merge", requireAuth, requireRole("ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const organizationId = req.user!.organizationId;
+    if (!organizationId) {
+      return res.status(400).json({ error: "Organization required" });
+    }
+
+    const { id: survivorId } = req.params;
+    const parseResult = mergeClassificationSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({ error: parseResult.error.flatten() });
+    }
+    const { sourceId } = parseResult.data;
+
+    if (sourceId === survivorId) {
+      return res.status(400).json({ error: "Cannot merge a classification into itself" });
+    }
+
+    const rows = await db
+      .select()
+      .from(jobClassifications)
+      .where(and(
+        eq(jobClassifications.organizationId, organizationId),
+        sql`${jobClassifications.id} IN (${survivorId}, ${sourceId})`,
+      ));
+
+    const survivor = rows.find((r) => r.id === survivorId);
+    const source = rows.find((r) => r.id === sourceId);
+    if (!survivor || !source) {
+      return res.status(404).json({ error: "Classification not found" });
+    }
+
+    const result = await db.transaction(async (tx) => {
+      // prevailing_wage_rates: unique on (project_id, classification_id).
+      // Drop any source row whose project already has a survivor row, then
+      // re-point the rest.
+      await tx.execute(sql`
+        DELETE FROM prevailing_wage_rates
+        WHERE classification_id = ${sourceId}
+          AND organization_id = ${organizationId}
+          AND project_id IN (
+            SELECT project_id FROM prevailing_wage_rates
+            WHERE classification_id = ${survivorId}
+              AND organization_id = ${organizationId}
+          )
+      `);
+      const pwUpdated = await tx.execute(sql`
+        UPDATE prevailing_wage_rates SET classification_id = ${survivorId}, updated_at = NOW()
+        WHERE classification_id = ${sourceId} AND organization_id = ${organizationId}
+      `);
+
+      // employee_classifications: unique on (user_id, classification_id).
+      await tx.execute(sql`
+        DELETE FROM employee_classifications
+        WHERE classification_id = ${sourceId}
+          AND organization_id = ${organizationId}
+          AND user_id IN (
+            SELECT user_id FROM employee_classifications
+            WHERE classification_id = ${survivorId}
+              AND organization_id = ${organizationId}
+          )
+      `);
+      const ecUpdated = await tx.execute(sql`
+        UPDATE employee_classifications SET classification_id = ${survivorId}, updated_at = NOW()
+        WHERE classification_id = ${sourceId} AND organization_id = ${organizationId}
+      `);
+
+      // dol_classification_mappings: unique on
+      // (organization_id, project_id, dol_feed_name) — classification_id is
+      // not part of the unique tuple, so straight UPDATE is safe.
+      const dolUpdated = await tx.execute(sql`
+        UPDATE dol_classification_mappings SET classification_id = ${survivorId}, updated_at = NOW()
+        WHERE classification_id = ${sourceId} AND organization_id = ${organizationId}
+      `);
+
+      // estimate_line_items.job_classification_id (nullable, no unique).
+      // estimate_line_items has no organization_id column, so scope via the
+      // estimates -> projects -> gc_organization_id chain to keep the merge
+      // strictly tenant-isolated. (UUIDs make this defensive — the source
+      // row has already been org-checked above — but the explicit scope
+      // protects against any future cross-org id collision.)
+      const eliUpdated = await tx.execute(sql`
+        UPDATE estimate_line_items SET job_classification_id = ${survivorId}, updated_at = NOW()
+        WHERE job_classification_id = ${sourceId}
+          AND estimate_id IN (
+            SELECT e.id FROM estimates e
+            JOIN projects p ON p.id = e.project_id
+            WHERE p.gc_organization_id = ${organizationId}
+          )
+      `);
+
+      // project_employee_rates.classification_id has no DB-level FK but the
+      // schema documents it as a logical link, so re-point it too. Scope by
+      // the project's gc_organization_id for tenant isolation.
+      const perUpdated = await tx.execute(sql`
+        UPDATE project_employee_rates SET classification_id = ${survivorId}, updated_at = NOW()
+        WHERE classification_id = ${sourceId}
+          AND project_id IN (
+            SELECT id FROM projects WHERE gc_organization_id = ${organizationId}
+          )
+      `);
+
+      await tx
+        .delete(jobClassifications)
+        .where(and(
+          eq(jobClassifications.id, sourceId),
+          eq(jobClassifications.organizationId, organizationId),
+        ));
+
+      const rowCount = (r: any): number => Number(r?.rowCount ?? r?.rows?.length ?? 0) || 0;
+      return {
+        prevailingWageRatesRepointed: rowCount(pwUpdated),
+        employeeClassificationsRepointed: rowCount(ecUpdated),
+        dolMappingsRepointed: rowCount(dolUpdated),
+        estimateLineItemsRepointed: rowCount(eliUpdated),
+        projectEmployeeRatesRepointed: rowCount(perUpdated),
+      };
+    });
+
+    await logAudit({
+      userId: req.user!.id,
+      entityType: "job_classification",
+      entityId: survivorId,
+      action: "MERGE",
+      oldValue: JSON.stringify({ source, survivor }),
+      newValue: JSON.stringify({ survivorId, sourceId, ...result }),
+    }, req);
+
+    res.json({ success: true, survivorId, sourceId, ...result });
   } catch (error) {
     next(error);
   }
