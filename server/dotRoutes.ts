@@ -2276,6 +2276,96 @@ router.put(
   },
 );
 
+// Task #1317: Read-only summary of recent SWPPP overdue-reminder activity
+// so admins on the Company Notifications tab can see how many escalations
+// the nightly job has actually sent before tweaking the cap/cadence above.
+// We aggregate from `swpppInspections.lastOverdueNotifiedAt` and
+// `swpppInspections.overdueReminderCount` directly — no separate audit
+// log of send events exists, so "fanouts in the last 7 days" means
+// "inspections whose most recent overdue fanout was within the last 7
+// days" (one cycle per inspection).
+router.get(
+  "/api/swppp/overdue-reminders/activity",
+  requireAuth,
+  requireAnyFeaturePermission("canViewSwppp", "canManageSwppp"),
+  async (req: AuthRequest, res: Response) => {
+    const ctx = requireOrgOwnership(req, res);
+    if (!ctx) return;
+    const targetOrg = ctx.isSuperAdmin ? superAdminTargetOrgId(req) : ctx.orgId;
+    if (!targetOrg) {
+      return res.status(400).json({ error: "Organization context required" });
+    }
+
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const orgFilter = eq(swpppInspections.organizationId, targetOrg);
+
+    // Recent activity: inspections whose most recent fanout (initial
+    // or follow-up) landed in the last 7 days. Each fanout event
+    // overwrites `lastOverdueNotifiedAt`, so this counts inspections
+    // touched by the sweep in the window — not raw send events. We
+    // intentionally do NOT sum `overdueReminderCount` here because
+    // that column is a cumulative lifetime counter for the current
+    // cycle; summing it across "recently notified" rows would
+    // materially overcount weekly volume.
+    const [recentAgg] = await db
+      .select({
+        recentFanoutInspections: sql<number>`COUNT(*)::int`,
+      })
+      .from(swpppInspections)
+      .where(and(orgFilter, gte(swpppInspections.lastOverdueNotifiedAt, sevenDaysAgo)));
+
+    // Snapshot of cycles still mid-escalation right now: OPEN
+    // inspections that have already received at least one follow-up
+    // reminder in their current cycle. Distinct from the 7-day window
+    // above because a long-running cycle started 30 days ago is still
+    // worth surfacing.
+    const [escalatingAgg] = await db
+      .select({
+        activeEscalatingInspections: sql<number>`COUNT(*)::int`,
+      })
+      .from(swpppInspections)
+      .where(and(
+        orgFilter,
+        eq(swpppInspections.status, "OPEN"),
+        sql`${swpppInspections.overdueReminderCount} > 0`,
+      ));
+
+    // Currently mid-escalation: OPEN inspections that have already
+    // received at least one follow-up reminder. Surface the top 5 by
+    // reminder count so admins can spot items pinned at the cap.
+    const topEscalating = await db
+      .select({
+        id: swpppInspections.id,
+        projectId: swpppInspections.projectId,
+        projectName: projects.name,
+        projectCode: projects.code,
+        inspectionDate: swpppInspections.inspectionDate,
+        correctiveActionDueDate: swpppInspections.correctiveActionDueDate,
+        overdueReminderCount: swpppInspections.overdueReminderCount,
+        lastOverdueNotifiedAt: swpppInspections.lastOverdueNotifiedAt,
+        status: swpppInspections.status,
+      })
+      .from(swpppInspections)
+      .leftJoin(projects, eq(projects.id, swpppInspections.projectId))
+      .where(and(
+        orgFilter,
+        eq(swpppInspections.status, "OPEN"),
+        sql`${swpppInspections.overdueReminderCount} > 0`,
+      ))
+      .orderBy(desc(swpppInspections.overdueReminderCount), desc(swpppInspections.lastOverdueNotifiedAt))
+      .limit(5);
+
+    res.json({
+      windowDays: 7,
+      generatedAt: new Date().toISOString(),
+      recentFanoutInspections: recentAgg?.recentFanoutInspections ?? 0,
+      activeEscalatingInspections: escalatingAgg?.activeEscalatingInspections ?? 0,
+      topEscalating,
+    });
+  },
+);
+
 // =========================
 // Material Certifications (Buy America)
 // =========================

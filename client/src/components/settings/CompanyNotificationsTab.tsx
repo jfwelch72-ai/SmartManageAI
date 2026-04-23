@@ -100,6 +100,30 @@ export function CompanyNotificationsTab() {
       });
     }
   }, [swpppSettings]);
+  // Task #1317: surface recent overdue-reminder activity so admins can
+  // calibrate the cap/cadence above instead of guessing.
+  type SwpppOverdueActivity = {
+    windowDays: number;
+    generatedAt: string;
+    recentFanoutInspections: number;
+    activeEscalatingInspections: number;
+    topEscalating: Array<{
+      id: string;
+      projectId: string;
+      projectName: string | null;
+      projectCode: string | null;
+      inspectionDate: string;
+      correctiveActionDueDate: string | null;
+      overdueReminderCount: number;
+      lastOverdueNotifiedAt: string | null;
+      status: string;
+    }>;
+  };
+  const { data: swpppActivity, isLoading: loadingSwpppActivity } = useQuery<SwpppOverdueActivity>({
+    queryKey: ["/api/swppp/overdue-reminders/activity"],
+    enabled: !!user && ["ADMIN", "MANAGER"].includes(user.role),
+  });
+
   const updateSwpppMutation = useMutation({
     mutationFn: async (data: typeof swpppForm) => {
       return await apiRequest("PUT", "/api/swppp/settings", data);
@@ -612,6 +636,98 @@ export function CompanyNotificationsTab() {
                         nightly job) so cron jitter doesn't skip a day.
                       </p>
                     </div>
+                  </div>
+                  <div
+                    className="rounded-md border border-border bg-muted/40 p-4 space-y-3"
+                    data-testid="section-swppp-overdue-activity"
+                  >
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold">Recent activity</h4>
+                      <span className="text-xs text-muted-foreground">
+                        Last {swpppActivity?.windowDays ?? 7} days
+                      </span>
+                    </div>
+                    {loadingSwpppActivity ? (
+                      <Skeleton className="h-16" />
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="rounded border border-border bg-background p-3">
+                            <p className="text-xs text-muted-foreground">
+                              Inspections notified (last 7 days)
+                            </p>
+                            <p
+                              className="text-2xl font-semibold"
+                              data-testid="stat-swppp-recent-fanouts"
+                            >
+                              {swpppActivity?.recentFanoutInspections ?? 0}
+                            </p>
+                          </div>
+                          <div className="rounded border border-border bg-background p-3">
+                            <p className="text-xs text-muted-foreground">
+                              Active escalation cycles
+                            </p>
+                            <p
+                              className="text-2xl font-semibold"
+                              data-testid="stat-swppp-active-escalating"
+                            >
+                              {swpppActivity?.activeEscalatingInspections ?? 0}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <h5 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                            Currently escalating
+                          </h5>
+                          {swpppActivity && swpppActivity.topEscalating.length > 0 ? (
+                            <ul
+                              className="divide-y divide-border rounded border border-border bg-background"
+                              data-testid="list-swppp-escalating"
+                            >
+                              {swpppActivity.topEscalating.map((item) => {
+                                const cap = swpppSettings?.overdueReminderMaxCount
+                                  ?? swpppSettings?.defaults.overdueReminderMaxCount
+                                  ?? 5;
+                                const atCap = item.overdueReminderCount >= cap;
+                                const lastSent = item.lastOverdueNotifiedAt
+                                  ? new Date(item.lastOverdueNotifiedAt).toLocaleString()
+                                  : "—";
+                                return (
+                                  <li
+                                    key={item.id}
+                                    className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                                    data-testid={`row-swppp-escalating-${item.id}`}
+                                  >
+                                    <div className="min-w-0">
+                                      <p className="truncate font-medium">
+                                        {item.projectName || item.projectCode || "Unknown project"}
+                                      </p>
+                                      <p className="text-xs text-muted-foreground">
+                                        Last reminder: {lastSent}
+                                      </p>
+                                    </div>
+                                    <Badge
+                                      variant={atCap ? "destructive" : "secondary"}
+                                      className="shrink-0"
+                                      data-testid={`badge-swppp-reminders-${item.id}`}
+                                    >
+                                      {item.overdueReminderCount} / {cap}
+                                    </Badge>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          ) : (
+                            <p
+                              className="text-sm text-muted-foreground"
+                              data-testid="text-swppp-escalating-empty"
+                            >
+                              No inspections are currently mid-escalation.
+                            </p>
+                          )}
+                        </div>
+                      </>
+                    )}
                   </div>
                   <div className="flex justify-end">
                     <Button
