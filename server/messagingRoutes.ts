@@ -1976,7 +1976,7 @@ const messagingSetup = (async () => {
     if (coIds.length > 0) {
       const rows = await db.select({ id: changeOrders.id }).from(changeOrders)
         .innerJoin(projectsTable, eq(changeOrders.projectId, projectsTable.id))
-        .where(and(inArray(changeOrders.id, coIds), eq(projectsTable.organizationId, orgId)));
+        .where(and(inArray(changeOrders.id, coIds), eq(projectsTable.gcOrganizationId, orgId)));
       for (const r of rows) validEntityIds.add(r.id);
     }
     if (taskIds.length > 0) {
@@ -2274,7 +2274,7 @@ const messagingSetup = (async () => {
       } else if (entityType === "CHANGE_ORDER") {
         const [co] = await db.select({ projectId: changeOrders.projectId }).from(changeOrders)
           .innerJoin(projectsTable, eq(changeOrders.projectId, projectsTable.id))
-          .where(and(eq(changeOrders.id, entityId), eq(projectsTable.organizationId, orgId))).limit(1);
+          .where(and(eq(changeOrders.id, entityId), eq(projectsTable.gcOrganizationId, orgId))).limit(1);
         if (co?.projectId) {
           const [proj] = await db.select({ projectCode: projectsTable.projectCode }).from(projectsTable)
             .where(eq(projectsTable.id, co.projectId)).limit(1);
@@ -2319,7 +2319,7 @@ const messagingSetup = (async () => {
       }
 
       if (!entityType || entityType === "CHANGE_ORDER") {
-        const coConditions: SQL<unknown>[] = [eq(projectsTable.organizationId, orgId)];
+        const coConditions: SQL<unknown>[] = [eq(projectsTable.gcOrganizationId, orgId)];
         if (q) coConditions.push(or(ilike(changeOrders.description, `%${q}%`), ilike(changeOrders.changeOrderNumber, `%${q}%`)) as SQL<unknown>);
         const coResults = await db
           .select({ id: changeOrders.id, changeOrderNumber: changeOrders.changeOrderNumber, description: changeOrders.description })
@@ -2568,7 +2568,7 @@ const messagingSetup = (async () => {
         }
       } else if (entityType === "CHANGE_ORDER") {
         const [co] = await db
-          .select({ changeOrderNumber: changeOrders.changeOrderNumber, description: changeOrders.description, orgId: projectsTable.organizationId })
+          .select({ changeOrderNumber: changeOrders.changeOrderNumber, description: changeOrders.description, orgId: projectsTable.gcOrganizationId })
           .from(changeOrders)
           .innerJoin(projectsTable, eq(changeOrders.projectId, projectsTable.id))
           .where(eq(changeOrders.id, entityId)).limit(1);

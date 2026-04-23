@@ -3183,9 +3183,9 @@ export async function processSwpppOverdueCorrectiveActions(opts: { now?: Date } 
   const orgIds = Array.from(new Set(overdue.map((r) => r.organizationId)));
   const projectRows = projectIds.length
     ? await db
-        .select({ id: projects.id, organizationId: projects.organizationId, name: projects.name, projectManagerId: projects.projectManagerId })
+        .select({ id: projects.id, organizationId: projects.gcOrganizationId, name: projects.name, projectManagerId: projects.projectManagerId })
         .from(projects)
-        .where(and(inArray(projects.id, projectIds), inArray(projects.organizationId, orgIds)))
+        .where(and(inArray(projects.id, projectIds), inArray(projects.gcOrganizationId, orgIds)))
     : [];
   const projectByKey = new Map(projectRows.map((p) => [`${p.organizationId}::${p.id}`, p]));
 

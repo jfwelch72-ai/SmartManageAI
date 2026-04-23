@@ -51,11 +51,6 @@
   },
   {
     "table": "projects",
-    "prop": "organizationId",
-    "file": "server/messagingRoutes.ts"
-  },
-  {
-    "table": "projects",
     "prop": "projectCode",
     "file": "server/messagingRoutes.ts"
   },
