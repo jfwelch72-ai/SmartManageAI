@@ -6,7 +6,7 @@ import {
   type BackfillStats,
 } from "../scripts/backfill-certified-payroll-reports";
 
-const JOB_NAME = "backfill_certified_payroll_reports_v1";
+export const JOB_NAME = "backfill_certified_payroll_reports_v1";
 
 /**
  * Generic one-shot job ledger. Stores a single row per named job once it has
@@ -31,11 +31,26 @@ async function isJobComplete(name: string): Promise<boolean> {
   return res.rows.length > 0;
 }
 
+/**
+ * Delete a one-shot job ledger row so the post-deploy runner will re-execute
+ * it on the next startup. Used by the Super Admin "re-run backfill" endpoint
+ * (Task #1176) so admins don't have to drop into psql.
+ */
+export async function clearOneShotJob(name: string): Promise<boolean> {
+  await ensureOneShotJobsTable();
+  const res = await db.execute(
+    sql`DELETE FROM "one_shot_jobs" WHERE "name" = ${name}`,
+  );
+  return (res.rowCount ?? 0) > 0;
+}
+
 async function markJobComplete(name: string, details: Record<string, unknown>): Promise<void> {
   await db.execute(sql`
-    INSERT INTO "one_shot_jobs" ("name", "details")
-    VALUES (${name}, ${JSON.stringify(details)}::jsonb)
-    ON CONFLICT ("name") DO NOTHING
+    INSERT INTO "one_shot_jobs" ("name", "details", "completed_at")
+    VALUES (${name}, ${JSON.stringify(details)}::jsonb, now())
+    ON CONFLICT ("name") DO UPDATE SET
+      "details" = EXCLUDED."details",
+      "completed_at" = EXCLUDED."completed_at"
   `);
 }
 

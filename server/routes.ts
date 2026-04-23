@@ -1036,6 +1036,87 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Task #1176: Super-Admin one-click trigger for the certified payroll
+  // backfill (Task #1118). Lets ops re-run the post-deploy backfill without
+  // shelling in to delete the `one_shot_jobs` ledger row or running the tsx
+  // script. Optional `orgId` scopes the run; `clearLedger=true` deletes the
+  // existing ledger flag so the next deploy will also re-run automatically.
+  app.post(
+    "/api/admin/jobs/certified-payroll-backfill/run",
+    requireAuth,
+    requireRole("SUPER_ADMIN"),
+    async (req: AuthRequest, res: Response, next: NextFunction) => {
+      try {
+        const body = (req.body ?? {}) as {
+          orgId?: unknown;
+          dryRun?: unknown;
+          clearLedger?: unknown;
+        };
+        const orgFilter =
+          typeof body.orgId === "string" && body.orgId.trim().length > 0
+            ? body.orgId.trim()
+            : null;
+        const dryRun = body.dryRun === true;
+        const clearLedger = body.clearLedger === true;
+
+        const { runCertifiedPayrollBackfill } = await import(
+          "./scripts/backfill-certified-payroll-reports"
+        );
+        const { clearOneShotJob, JOB_NAME } = await import(
+          "./utils/runCertifiedPayrollBackfillOnce"
+        );
+
+        let ledgerCleared = false;
+        if (clearLedger) {
+          ledgerCleared = await clearOneShotJob(JOB_NAME);
+        }
+
+        const start = Date.now();
+        const stats = await runCertifiedPayrollBackfill({ orgFilter, dryRun });
+        const durationMs = Date.now() - start;
+
+        const { logAudit } = await import("./auditLogger");
+        await logAudit(
+          {
+            userId: req.user!.id,
+            action: "EXECUTE",
+            entityType: "background_job",
+            entityId: JOB_NAME,
+            newValue:
+              `Manual certified payroll backfill ` +
+              `(orgFilter=${orgFilter ?? "*"}, dryRun=${dryRun}, ` +
+              `clearLedger=${clearLedger}, ledgerCleared=${ledgerCleared}, ` +
+              `inserted=${stats.inserted}, alreadyPresent=${stats.alreadyPresent}, ` +
+              `missingPayRun=${stats.missingPayRun}, orgsScanned=${stats.orgsScanned}, ` +
+              `durationMs=${durationMs})`,
+          },
+          req,
+        );
+
+        logInfo(
+          `[admin] certified_payroll_backfill manual run by ${req.user!.id} ` +
+            `(orgFilter=${orgFilter ?? "*"}, dryRun=${dryRun}, ` +
+            `clearLedger=${clearLedger}) — ` +
+            `inserted=${stats.inserted}, alreadyPresent=${stats.alreadyPresent}, ` +
+            `missingPayRun=${stats.missingPayRun}, orgsScanned=${stats.orgsScanned}, ` +
+            `${durationMs}ms`,
+        );
+
+        res.json({
+          job: JOB_NAME,
+          status: "completed",
+          durationMs,
+          ledgerCleared,
+          orgFilter,
+          dryRun,
+          stats,
+        });
+      } catch (err: any) {
+        next(err);
+      }
+    },
+  );
+
   app.post("/api/admin/jobs/:jobName/run", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const { jobName } = req.params;

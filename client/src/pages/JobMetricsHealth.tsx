@@ -4,10 +4,13 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ArrowLeft, RefreshCw, Cake, XCircle, Activity, BarChart3, Play, ListChecks } from "lucide-react";
+import { ArrowLeft, RefreshCw, Cake, XCircle, Activity, BarChart3, Play, ListChecks, FileStack } from "lucide-react";
 import { useMemo, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   ComposedChart,
   Bar,
@@ -183,6 +186,76 @@ export default function JobMetricsHealth() {
       setRunningJob(null);
     },
   });
+  const [cpOrgId, setCpOrgId] = useState("");
+  const [cpDryRun, setCpDryRun] = useState(false);
+  const [cpClearLedger, setCpClearLedger] = useState(false);
+  const [cpLastResult, setCpLastResult] = useState<{
+    inserted: number;
+    alreadyPresent: number;
+    missingPayRun: number;
+    orgsScanned: number;
+    durationMs: number;
+    dryRun: boolean;
+    ledgerCleared: boolean;
+    orgFilter: string | null;
+    skippedReason?: string;
+  } | null>(null);
+
+  const certifiedPayrollBackfillMutation = useMutation({
+    mutationFn: async (input: { orgId: string; dryRun: boolean; clearLedger: boolean }) => {
+      const res = await apiRequest("POST", "/api/admin/jobs/certified-payroll-backfill/run", {
+        orgId: input.orgId.trim() || undefined,
+        dryRun: input.dryRun,
+        clearLedger: input.clearLedger,
+      });
+      return (await res.json()) as {
+        job: string;
+        durationMs: number;
+        ledgerCleared: boolean;
+        orgFilter: string | null;
+        dryRun: boolean;
+        stats: {
+          inserted: number;
+          alreadyPresent: number;
+          missingPayRun: number;
+          orgsScanned: number;
+          skippedReason?: string;
+        };
+      };
+    },
+    onSuccess: (data) => {
+      setCpLastResult({
+        inserted: data.stats.inserted,
+        alreadyPresent: data.stats.alreadyPresent,
+        missingPayRun: data.stats.missingPayRun,
+        orgsScanned: data.stats.orgsScanned,
+        durationMs: data.durationMs,
+        dryRun: data.dryRun,
+        ledgerCleared: data.ledgerCleared,
+        orgFilter: data.orgFilter,
+        skippedReason: data.stats.skippedReason,
+      });
+      toast({
+        title: data.dryRun ? "Backfill dry-run complete" : "Certified payroll backfill complete",
+        description:
+          data.stats.skippedReason === "no_private_dir"
+            ? "Object storage not configured (PRIVATE_OBJECT_DIR unset). No files scanned."
+            : `Inserted ${data.stats.inserted}, already present ${data.stats.alreadyPresent}, ` +
+              `missing pay run ${data.stats.missingPayRun}, orgs scanned ${data.stats.orgsScanned} ` +
+              `in ${data.durationMs}ms.`,
+      });
+    },
+    onError: (err: unknown) => {
+      const description =
+        err instanceof Error ? err.message : "An unexpected error occurred. Check server logs.";
+      toast({
+        title: "Failed to run certified payroll backfill",
+        description,
+        variant: "destructive",
+      });
+    },
+  });
+
   const portfolioKpiMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", "/api/admin/jobs/portfolio_kpi_snapshot/run");
@@ -281,6 +354,117 @@ export default function JobMetricsHealth() {
             </Button>
           </div>
         </CardHeader>
+      </Card>
+
+      <Card data-testid="card-certified-payroll-backfill">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <FileStack className="h-4 w-4" /> Certified payroll backfill
+          </CardTitle>
+          <CardDescription>
+            Re-run the post-deploy certified payroll PDF backfill. Use this if a tenant
+            uploaded legacy PDFs after the original run, or if the post-deploy run
+            failed for some org. Optionally scope to a single organization, do a
+            dry-run, or clear the one-shot ledger flag so the next deploy will also
+            re-run automatically. Super Admin only.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="cp-backfill-org">Organization ID (optional)</Label>
+              <Input
+                id="cp-backfill-org"
+                placeholder="Leave blank to scan all orgs"
+                value={cpOrgId}
+                onChange={(e) => setCpOrgId(e.target.value)}
+                disabled={certifiedPayrollBackfillMutation.isPending}
+                data-testid="input-cp-backfill-org"
+              />
+            </div>
+            <div className="flex items-end gap-4">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="cp-backfill-dry-run"
+                  checked={cpDryRun}
+                  onCheckedChange={(v) => setCpDryRun(v === true)}
+                  disabled={certifiedPayrollBackfillMutation.isPending}
+                  data-testid="checkbox-cp-backfill-dry-run"
+                />
+                <Label htmlFor="cp-backfill-dry-run" className="cursor-pointer">
+                  Dry run (no inserts)
+                </Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="cp-backfill-clear-ledger"
+                  checked={cpClearLedger}
+                  onCheckedChange={(v) => setCpClearLedger(v === true)}
+                  disabled={certifiedPayrollBackfillMutation.isPending}
+                  data-testid="checkbox-cp-backfill-clear-ledger"
+                />
+                <Label htmlFor="cp-backfill-clear-ledger" className="cursor-pointer">
+                  Clear one-shot ledger
+                </Label>
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <Button
+              onClick={() =>
+                certifiedPayrollBackfillMutation.mutate({
+                  orgId: cpOrgId,
+                  dryRun: cpDryRun,
+                  clearLedger: cpClearLedger,
+                })
+              }
+              disabled={certifiedPayrollBackfillMutation.isPending}
+              data-testid="button-run-cp-backfill"
+            >
+              <RefreshCw
+                className={`h-4 w-4 mr-1 ${
+                  certifiedPayrollBackfillMutation.isPending ? "animate-spin" : ""
+                }`}
+              />
+              {certifiedPayrollBackfillMutation.isPending
+                ? "Running…"
+                : "Run backfill now"}
+            </Button>
+            {cpLastResult && (
+              <div className="text-sm text-muted-foreground" data-testid="text-cp-backfill-last-result">
+                Last run:{" "}
+                {cpLastResult.skippedReason === "no_private_dir" ? (
+                  <span data-testid="text-cp-backfill-skipped">
+                    skipped (object storage not configured)
+                  </span>
+                ) : (
+                  <>
+                    inserted{" "}
+                    <span className="font-medium" data-testid="text-cp-backfill-inserted">
+                      {cpLastResult.inserted}
+                    </span>
+                    , already present{" "}
+                    <span className="font-medium" data-testid="text-cp-backfill-already-present">
+                      {cpLastResult.alreadyPresent}
+                    </span>
+                    , missing pay run{" "}
+                    <span className="font-medium" data-testid="text-cp-backfill-missing-payrun">
+                      {cpLastResult.missingPayRun}
+                    </span>
+                    , orgs scanned{" "}
+                    <span className="font-medium" data-testid="text-cp-backfill-orgs-scanned">
+                      {cpLastResult.orgsScanned}
+                    </span>{" "}
+                    in {cpLastResult.durationMs}ms
+                    {cpLastResult.dryRun ? " (dry run)" : ""}
+                    {cpLastResult.orgFilter ? ` · org=${cpLastResult.orgFilter}` : ""}
+                    {cpLastResult.ledgerCleared ? " · ledger cleared" : ""}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        </CardContent>
       </Card>
 
       <Card data-testid="card-all-jobs">
