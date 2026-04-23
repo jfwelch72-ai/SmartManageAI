@@ -41,6 +41,7 @@ interface TenantCtx {
 let app: Express;
 let tenantA: TenantCtx;
 let tenantB: TenantCtx;
+let superAdmin: { userId: string; token: string };
 
 async function seedTenant(label: string): Promise<TenantCtx> {
   const slug = `${PREFIX}${label}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -86,6 +87,24 @@ async function seedTenant(label: string): Promise<TenantCtx> {
   return { orgId: org.id, userId: user.id, token, projectId: project.id };
 }
 
+async function seedSuperAdmin(): Promise<{ userId: string; token: string }> {
+  const slug = `${PREFIX}sa-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const passwordHash = await bcrypt.hash("TestPass123!", 10);
+  const [user] = await db
+    .insert(users)
+    .values({
+      email: `${slug}@test.local`,
+      passwordHash,
+      firstName: "Swppp",
+      lastName: "SuperAdmin",
+      role: "SUPER_ADMIN",
+      organizationId: null,
+      isActive: true,
+    })
+    .returning();
+  return { userId: user.id, token: generateToken(user.id, user.tokenVersion ?? 0) };
+}
+
 interface IdRow { id: string }
 interface ExecuteResult<T> { rows?: T[] }
 
@@ -120,7 +139,11 @@ beforeAll(async () => {
   app.use(authMiddleware);
   app.use(dotRoutes);
 
-  [tenantA, tenantB] = await Promise.all([seedTenant("a"), seedTenant("b")]);
+  [tenantA, tenantB, superAdmin] = await Promise.all([
+    seedTenant("a"),
+    seedTenant("b"),
+    seedSuperAdmin(),
+  ]);
 
   const flags: FeatureFlagKey[] = ["SWPPP_INSPECTIONS"];
   await setAllFeatureFlags(
@@ -396,5 +419,74 @@ describe("GET /api/swppp-inspections/summary — task #1357", () => {
 
     expect(resB.status).toBe(200);
     expect(resB.body).toEqual({ openCount: 2, overdueCount: 1, maxDaysOverdue: 20 });
+  });
+
+  // Task #1365: super-admin "view-as" coverage. Mirrors the
+  // pattern in `safety-hub-summary-endpoints.test.ts` for IDRs and
+  // material certs. Without these, a regression where the
+  // super-admin path silently aggregates across orgs would slip
+  // through the existing per-tenant scoping tests.
+  it("super-admin without ?organizationId returns zeros (no implicit cross-org aggregation)", async () => {
+    await clearTenantInspections(tenantA.orgId);
+    await clearTenantInspections(tenantB.orgId);
+
+    // Seed inspections in BOTH tenants. If the handler were to
+    // aggregate across all orgs when no target is specified, the
+    // overdue counters here would be non-zero.
+    await insertInspection({
+      orgId: tenantA.orgId,
+      projectId: tenantA.projectId,
+      deficienciesFound: "A overdue",
+      correctiveActionDueDate: isoDate(-7),
+    });
+    await insertInspection({
+      orgId: tenantB.orgId,
+      projectId: tenantB.projectId,
+      deficienciesFound: "B overdue",
+      correctiveActionDueDate: isoDate(-50),
+    });
+
+    const res = await request(app)
+      .get("/api/swppp-inspections/summary")
+      .set("Cookie", authCookie(superAdmin.token));
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ openCount: 0, overdueCount: 0, maxDaysOverdue: 0 });
+  });
+
+  it("super-admin with ?organizationId targets exactly that org (no cross-org leakage into maxDaysOverdue)", async () => {
+    await clearTenantInspections(tenantA.orgId);
+    await clearTenantInspections(tenantB.orgId);
+
+    // Tenant A: 1 open + 1 overdue (4 days).
+    await insertInspection({
+      orgId: tenantA.orgId,
+      projectId: tenantA.projectId,
+      deficienciesFound: "A open",
+      correctiveActionDueDate: isoDate(8),
+    });
+    await insertInspection({
+      orgId: tenantA.orgId,
+      projectId: tenantA.projectId,
+      deficienciesFound: "A overdue",
+      correctiveActionDueDate: isoDate(-4),
+    });
+
+    // Tenant B: 1 overdue by 90 days. If the targeted query leaks
+    // across orgs, maxDaysOverdue would be 90 instead of 4.
+    await insertInspection({
+      orgId: tenantB.orgId,
+      projectId: tenantB.projectId,
+      deficienciesFound: "B much-larger overdue",
+      correctiveActionDueDate: isoDate(-90),
+    });
+
+    const res = await request(app)
+      .get("/api/swppp-inspections/summary")
+      .query({ organizationId: tenantA.orgId })
+      .set("Cookie", authCookie(superAdmin.token));
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ openCount: 1, overdueCount: 1, maxDaysOverdue: 4 });
   });
 });
