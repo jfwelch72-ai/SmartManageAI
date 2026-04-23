@@ -135,6 +135,10 @@ export function PrevailingWageTab({
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importPreview, setImportPreview] = useState<ImportPreviewResponse | null>(null);
   const [importCreateMissing, setImportCreateMissing] = useState(false);
+  const [newClassCodePrefix, setNewClassCodePrefix] = useState("");
+  const [newClassDescription, setNewClassDescription] = useState("");
+  const [newClassIsActive, setNewClassIsActive] = useState(true);
+  const [newClassSortOrder, setNewClassSortOrder] = useState("");
 
   const downloadImportTemplate = () => {
     const headers = [
@@ -188,6 +192,10 @@ export function PrevailingWageTab({
     setImportFile(null);
     setImportPreview(null);
     setImportCreateMissing(false);
+    setNewClassCodePrefix("");
+    setNewClassDescription("");
+    setNewClassIsActive(true);
+    setNewClassSortOrder("");
   };
 
   const previewMutation = useMutation({
@@ -221,10 +229,20 @@ export function PrevailingWageTab({
     mutationFn: async () => {
       if (!importPreview) throw new Error("Run preview first");
       const rows = importPreview.rows.filter((r) => r.action !== "ERROR");
+      const sortOrderNum = newClassSortOrder.trim() === "" ? undefined : parseInt(newClassSortOrder, 10);
+      const newClassificationDefaults = importCreateMissing
+        ? {
+            codePrefix: newClassCodePrefix.trim() || undefined,
+            description: newClassDescription.trim() || undefined,
+            isActive: newClassIsActive,
+            sortOrder: Number.isFinite(sortOrderNum) ? sortOrderNum : undefined,
+          }
+        : undefined;
       return await apiRequest("POST", "/api/labor-rates/prevailing-wage-rates/import", {
         projectId: importPreview.projectId,
         rows,
         createMissing: importCreateMissing,
+        newClassificationDefaults,
       });
     },
     onSuccess: async (res) => {
@@ -700,21 +718,81 @@ export function PrevailingWageTab({
               </div>
             </div>
 
-            <div className="flex items-start gap-2 rounded-md border p-3 bg-muted/30">
-              <Checkbox
-                id="import-create-missing"
-                checked={importCreateMissing}
-                onCheckedChange={(v) => { setImportCreateMissing(v === true); setImportPreview(null); }}
-                data-testid="checkbox-import-create-missing"
-              />
-              <div className="space-y-1 leading-none">
-                <Label htmlFor="import-create-missing" className="cursor-pointer">
-                  Create missing classifications
-                </Label>
-                <p className="text-xs text-muted-foreground">
-                  Automatically create new job classifications for any rows whose classification doesn't exist yet. Defaults are derived from the row's wage rate.
-                </p>
+            <div className="rounded-md border p-3 bg-muted/30 space-y-3">
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="import-create-missing"
+                  checked={importCreateMissing}
+                  onCheckedChange={(v) => { setImportCreateMissing(v === true); setImportPreview(null); }}
+                  data-testid="checkbox-import-create-missing"
+                />
+                <div className="space-y-1 leading-none">
+                  <Label htmlFor="import-create-missing" className="cursor-pointer">
+                    Create missing classifications
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Automatically create new job classifications for any rows whose classification doesn't exist yet. Wage defaults are derived from the row's wage rate.
+                  </p>
+                </div>
               </div>
+
+              {importCreateMissing && (
+                <div className="pl-6 space-y-3 border-l-2 border-muted-foreground/20" data-testid="section-new-class-defaults">
+                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                    Defaults for new classifications
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <Label htmlFor="new-class-code-prefix" className="text-xs">Code prefix</Label>
+                      <Input
+                        id="new-class-code-prefix"
+                        placeholder="e.g. PW"
+                        value={newClassCodePrefix}
+                        onChange={(e) => setNewClassCodePrefix(e.target.value)}
+                        maxLength={20}
+                        data-testid="input-new-class-code-prefix"
+                      />
+                      <p className="text-[11px] text-muted-foreground mt-1">
+                        Codes become <code>PREFIX-NAME</code>. Leave blank for no code.
+                      </p>
+                    </div>
+                    <div>
+                      <Label htmlFor="new-class-sort-order" className="text-xs">Sort order</Label>
+                      <Input
+                        id="new-class-sort-order"
+                        type="number"
+                        placeholder="0"
+                        value={newClassSortOrder}
+                        onChange={(e) => setNewClassSortOrder(e.target.value)}
+                        data-testid="input-new-class-sort-order"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label htmlFor="new-class-description" className="text-xs">Description</Label>
+                    <Textarea
+                      id="new-class-description"
+                      placeholder="Auto-created during prevailing wage import"
+                      value={newClassDescription}
+                      onChange={(e) => setNewClassDescription(e.target.value)}
+                      rows={2}
+                      maxLength={500}
+                      data-testid="input-new-class-description"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="new-class-is-active"
+                      checked={newClassIsActive}
+                      onCheckedChange={(v) => setNewClassIsActive(v === true)}
+                      data-testid="checkbox-new-class-is-active"
+                    />
+                    <Label htmlFor="new-class-is-active" className="cursor-pointer text-sm">
+                      Mark new classifications as active
+                    </Label>
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="flex flex-wrap gap-2">

@@ -621,11 +621,27 @@ const importRowSchema = z.object({
   action: z.enum(["CREATE", "UPDATE", "ERROR"]).optional(),
 });
 
+const newClassificationDefaultsSchema = z.object({
+  codePrefix: z.string().trim().max(20).optional(),
+  description: z.string().trim().max(500).optional(),
+  isActive: z.boolean().optional(),
+  sortOrder: z.number().int().optional(),
+}).optional();
+
 const importPayloadSchema = z.object({
   projectId: z.string().min(1),
   rows: z.array(z.unknown()),
   createMissing: z.boolean().optional(),
+  newClassificationDefaults: newClassificationDefaultsSchema,
 });
+
+function slugForCode(name: string): string {
+  return name
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 12);
+}
 
 const HEADER_ALIASES: Record<string, RegExp> = {
   classification: /^(classification|class|trade|craft|job\s*class|job\s*classification|title)$/i,
@@ -877,7 +893,12 @@ router.post("/prevailing-wage-rates/import", requireAuth, requireRole("ADMIN", "
     if (!payloadParsed.success) {
       return res.status(400).json({ error: "Invalid payload", details: payloadParsed.error.flatten() });
     }
-    const { projectId, rows, createMissing } = payloadParsed.data;
+    const { projectId, rows, createMissing, newClassificationDefaults } = payloadParsed.data;
+    const classDefaults = newClassificationDefaults || {};
+    const codePrefix = classDefaults.codePrefix?.toUpperCase() || "";
+    const defaultDescription = classDefaults.description || "Auto-created during prevailing wage import";
+    const defaultIsActive = classDefaults.isActive ?? true;
+    const defaultSortOrder = classDefaults.sortOrder ?? 0;
 
     const [project] = await db.select().from(projects).where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, organizationId)));
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -1001,13 +1022,18 @@ router.post("/prevailing-wage-rates/import", requireAuth, requireRole("ADMIN", "
           const defaultOvertimeRate = Number.isFinite(wage) && Number.isFinite(ot) && wage > 0 && ot > 0
             ? (wage * ot).toFixed(2)
             : null;
+          const code = codePrefix
+            ? `${codePrefix}-${slugForCode(name)}`.slice(0, 40)
+            : null;
           const data = insertJobClassificationSchema.parse({
             organizationId,
             name,
-            description: "Auto-created during prevailing wage import",
+            code,
+            description: defaultDescription,
             defaultRegularRate,
             defaultOvertimeRate,
-            isActive: true,
+            isActive: defaultIsActive,
+            sortOrder: defaultSortOrder,
           });
           const [c] = await db.insert(jobClassifications).values(data).returning();
           if (c) {
