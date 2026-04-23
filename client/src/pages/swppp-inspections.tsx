@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
+import { useSearch } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -70,12 +71,33 @@ export default function SwpppInspectionsPage() {
   const canManage = useFeaturePermission("canManageSwppp");
   const canView = useFeaturePermission("canViewSwppp");
   const canAccess = canView || canManage;
-  const [projectId, setProjectId] = useState("");
+  const searchString = useSearch();
+  const initialProjectId = new URLSearchParams(searchString).get("projectId") ?? "";
+  const [projectId, setProjectId] = useState(initialProjectId);
   const [statusFilter, setStatusFilter] = useState<"ALL" | "OPEN" | "OVERDUE" | "RESOLVED">("ALL");
   const [editing, setEditing] = useState<Editing>(null);
   const [deleteTarget, setDeleteTarget] = useState<SwpppInspection | null>(null);
   const queryKey = ["/api/swppp-inspections", projectId ? { projectId } : {}];
   const { data = [], isLoading } = useQuery<SwpppInspection[]>({ queryKey, enabled: canAccess });
+
+  // Sync filter with URL changes (e.g. deep links from notifications)
+  useEffect(() => {
+    const next = new URLSearchParams(searchString).get("projectId") ?? "";
+    setProjectId((prev) => (prev === next ? prev : next));
+  }, [searchString]);
+
+  // Auto-open the inspection referenced by the deep link as soon as it's loaded
+  const openedInspectionRef = useRef<string | null>(null);
+  useEffect(() => {
+    const targetId = new URLSearchParams(searchString).get("inspectionId");
+    if (!targetId || !canAccess) return;
+    if (openedInspectionRef.current === targetId) return;
+    const match = data.find((d) => d.id === targetId);
+    if (match) {
+      openedInspectionRef.current = targetId;
+      setEditing(match);
+    }
+  }, [searchString, data, canAccess]);
   const { data: swpppSettings } = useQuery<SwpppSettings>({
     queryKey: ["/api/swppp/settings"],
     enabled: canAccess,

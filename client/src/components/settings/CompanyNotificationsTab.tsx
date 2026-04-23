@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
@@ -692,27 +693,37 @@ export function CompanyNotificationsTab() {
                                 const lastSent = item.lastOverdueNotifiedAt
                                   ? new Date(item.lastOverdueNotifiedAt).toLocaleString()
                                   : "—";
+                                const params = new URLSearchParams();
+                                if (item.projectId) params.set("projectId", item.projectId);
+                                if (item.id) params.set("inspectionId", item.id);
+                                const href = `/swppp-inspections${params.toString() ? `?${params.toString()}` : ""}`;
                                 return (
                                   <li
                                     key={item.id}
-                                    className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+                                    className="text-sm"
                                     data-testid={`row-swppp-escalating-${item.id}`}
                                   >
-                                    <div className="min-w-0">
-                                      <p className="truncate font-medium">
-                                        {item.projectName || item.projectCode || "Unknown project"}
-                                      </p>
-                                      <p className="text-xs text-muted-foreground">
-                                        Last reminder: {lastSent}
-                                      </p>
-                                    </div>
-                                    <Badge
-                                      variant={atCap ? "destructive" : "secondary"}
-                                      className="shrink-0"
-                                      data-testid={`badge-swppp-reminders-${item.id}`}
+                                    <Link
+                                      href={href}
+                                      className="flex items-center justify-between gap-3 px-3 py-2 hover-elevate active-elevate-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+                                      data-testid={`link-swppp-escalating-${item.id}`}
                                     >
-                                      {item.overdueReminderCount} / {cap}
-                                    </Badge>
+                                      <div className="min-w-0">
+                                        <p className="truncate font-medium">
+                                          {item.projectName || item.projectCode || "Unknown project"}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">
+                                          Last reminder: {lastSent}
+                                        </p>
+                                      </div>
+                                      <Badge
+                                        variant={atCap ? "destructive" : "secondary"}
+                                        className="shrink-0"
+                                        data-testid={`badge-swppp-reminders-${item.id}`}
+                                      >
+                                        {item.overdueReminderCount} / {cap}
+                                      </Badge>
+                                    </Link>
                                   </li>
                                 );
                               })}
