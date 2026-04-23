@@ -3418,6 +3418,85 @@ router.get(
   },
 );
 
+// Task #1148 — shared parser for the boolean / date filters accepted by the
+// test-alert history endpoints (JSON + CSV). Returns either the parsed
+// filter values or an `error` string suitable for a 400 response. We
+// validate strictly (rather than the previous best-effort parse) so a typo
+// in the admin UI fails loudly instead of silently returning the
+// unfiltered list, which previously looked like "the filter just didn't
+// narrow anything."
+type TestAlertHistoryFilters = {
+  slackOk: boolean | undefined;
+  emailOk: boolean | undefined;
+  anyFailed: boolean | undefined;
+  sentAfter: Date | undefined;
+  sentBefore: Date | undefined;
+};
+
+function parseTestAlertHistoryFilters(
+  rawQuery: unknown,
+): TestAlertHistoryFilters | { error: string } {
+  const query = (rawQuery ?? {}) as Record<string, unknown>;
+  const parseBool = (
+    name: string,
+    v: unknown,
+  ): boolean | undefined | { error: string } => {
+    if (v === undefined || v === null || v === "") return undefined;
+    if (typeof v !== "string") {
+      return { error: `Invalid ${name}: expected a boolean string` };
+    }
+    const s = v.trim().toLowerCase();
+    if (s === "") return undefined;
+    if (s === "true" || s === "1") return true;
+    if (s === "false" || s === "0") return false;
+    return {
+      error: `Invalid ${name}: expected "true" or "false"`,
+    };
+  };
+
+  const parseDate = (
+    name: string,
+    v: unknown,
+  ): Date | undefined | { error: string } => {
+    if (v === undefined || v === null || v === "") return undefined;
+    if (typeof v !== "string") {
+      return { error: `Invalid ${name}: expected an ISO 8601 date string` };
+    }
+    const trimmed = v.trim();
+    if (trimmed.length === 0) return undefined;
+    const d = new Date(trimmed);
+    if (Number.isNaN(d.getTime())) {
+      return { error: `Invalid ${name}: expected an ISO 8601 date string` };
+    }
+    return d;
+  };
+
+  const slackOk = parseBool("slackOk", query.slackOk);
+  if (typeof slackOk === "object" && slackOk && "error" in slackOk) return slackOk;
+  const emailOk = parseBool("emailOk", query.emailOk);
+  if (typeof emailOk === "object" && emailOk && "error" in emailOk) return emailOk;
+  const anyFailed = parseBool("anyFailed", query.anyFailed);
+  if (typeof anyFailed === "object" && anyFailed && "error" in anyFailed) {
+    return anyFailed;
+  }
+  const sentAfter = parseDate("sentAfter", query.sentAfter);
+  if (sentAfter && typeof sentAfter === "object" && "error" in sentAfter) {
+    return sentAfter;
+  }
+  const sentBefore = parseDate("sentBefore", query.sentBefore);
+  if (sentBefore && typeof sentBefore === "object" && "error" in sentBefore) {
+    return sentBefore;
+  }
+
+  return {
+    slackOk: slackOk as boolean | undefined,
+    emailOk: emailOk as boolean | undefined,
+    anyFailed: anyFailed as boolean | undefined,
+    sentAfter: sentAfter as Date | undefined,
+    sentBefore: sentBefore as Date | undefined,
+  };
+}
+
 // Task #1052 — paginated history of test-alert audit rows so admins debugging
 // flaky Slack/email setups can scroll back through prior attempts (when a
 // channel started failing, who has been hammering the button) without a SQL
@@ -3459,24 +3538,16 @@ router.get(
         typeof req.query.sender === "string" ? req.query.sender.trim() : "";
       const sender = senderRaw.length > 0 ? senderRaw.slice(0, 200) : undefined;
 
-      const parseBool = (v: unknown): boolean | undefined => {
-        if (typeof v !== "string") return undefined;
-        const s = v.trim().toLowerCase();
-        if (s === "true" || s === "1") return true;
-        if (s === "false" || s === "0") return false;
-        return undefined;
-      };
-      const slackOk = parseBool(req.query.slackOk);
-      const emailOk = parseBool(req.query.emailOk);
-      const anyFailed = parseBool(req.query.anyFailed);
-
-      const parseDate = (v: unknown): Date | undefined => {
-        if (typeof v !== "string" || v.length === 0) return undefined;
-        const d = new Date(v);
-        return Number.isNaN(d.getTime()) ? undefined : d;
-      };
-      const sentAfter = parseDate(req.query.sentAfter);
-      const sentBefore = parseDate(req.query.sentBefore);
+      // Task #1148 — strictly validate boolean and date filters so a typo
+      // in the admin UI surfaces as a 400 instead of being silently
+      // dropped (which previously made it look like the filter just
+      // didn't narrow anything).
+      const filters = parseTestAlertHistoryFilters(req.query);
+      if ("error" in filters) {
+        res.status(400).json({ error: filters.error });
+        return;
+      }
+      const { slackOk, emailOk, anyFailed, sentAfter, sentBefore } = filters;
 
       const { rows, total } = await listCrmTranscriptBackfillTestAlerts({
         organizationId: scopedOrgId,
@@ -3530,24 +3601,14 @@ router.get(
         typeof req.query.sender === "string" ? req.query.sender.trim() : "";
       const sender = senderRaw.length > 0 ? senderRaw.slice(0, 200) : undefined;
 
-      const parseBool = (v: unknown): boolean | undefined => {
-        if (typeof v !== "string") return undefined;
-        const s = v.trim().toLowerCase();
-        if (s === "true" || s === "1") return true;
-        if (s === "false" || s === "0") return false;
-        return undefined;
-      };
-      const slackOk = parseBool(req.query.slackOk);
-      const emailOk = parseBool(req.query.emailOk);
-      const anyFailed = parseBool(req.query.anyFailed);
-
-      const parseDate = (v: unknown): Date | undefined => {
-        if (typeof v !== "string" || v.length === 0) return undefined;
-        const d = new Date(v);
-        return Number.isNaN(d.getTime()) ? undefined : d;
-      };
-      const sentAfter = parseDate(req.query.sentAfter);
-      const sentBefore = parseDate(req.query.sentBefore);
+      // Task #1148 — same strict validation as the JSON sibling endpoint
+      // so a malformed filter doesn't quietly export the unfiltered list.
+      const filters = parseTestAlertHistoryFilters(req.query);
+      if ("error" in filters) {
+        res.status(400).json({ error: filters.error });
+        return;
+      }
+      const { slackOk, emailOk, anyFailed, sentAfter, sentBefore } = filters;
 
       const escapeCsv = (v: unknown): string => {
         if (v === null || v === undefined) return "";

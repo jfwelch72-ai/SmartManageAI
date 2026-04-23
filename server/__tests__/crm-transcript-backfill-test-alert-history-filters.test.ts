@@ -476,6 +476,78 @@ describe("GET /api/crm/calls/transcripts/backfill/test-alert/history — filters
     expect(scopedIds).toEqual([rowOtherOrgId]);
   });
 
+  // Task #1148 — malformed filter values used to be silently dropped via
+  // a Number.isNaN check, which made an admin-UI typo look like the
+  // filter just didn't narrow anything. The endpoint now hard-fails with
+  // a 400 so the bug surfaces immediately.
+  it("rejects malformed sentAfter with 400 instead of silently ignoring it", async () => {
+    const res = await request(app)
+      .get(HISTORY_PATH)
+      .query({ sentAfter: "not-a-date" })
+      .set("Cookie", adminCookie);
+    expect(res.status).toBe(400);
+    expect(typeof res.body.error).toBe("string");
+    expect(res.body.error).toMatch(/sentAfter/);
+  });
+
+  it("rejects malformed sentBefore with 400", async () => {
+    const res = await request(app)
+      .get(HISTORY_PATH)
+      .query({ sentBefore: "yesterdayish" })
+      .set("Cookie", adminCookie);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/sentBefore/);
+  });
+
+  it("rejects malformed slackOk / emailOk / anyFailed booleans with 400", async () => {
+    for (const param of ["slackOk", "emailOk", "anyFailed"] as const) {
+      const res = await request(app)
+        .get(HISTORY_PATH)
+        .query({ [param]: "maybe" })
+        .set("Cookie", adminCookie);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(new RegExp(param));
+    }
+  });
+
+  it("still treats empty filter values as 'unset' (no 400)", async () => {
+    // An empty string is what a cleared input field sends; it should not
+    // be treated as a malformed value, matching the previous behavior.
+    const res = await request(app)
+      .get(HISTORY_PATH)
+      .query({
+        sentAfter: "",
+        sentBefore: "",
+        slackOk: "",
+        emailOk: "",
+        anyFailed: "",
+      })
+      .set("Cookie", adminCookie);
+    expect(res.status).toBe(200);
+    expect(res.body.total).toBe(5);
+  });
+
+  it("still accepts canonical boolean / ISO values", async () => {
+    const res = await request(app)
+      .get(HISTORY_PATH)
+      .query({
+        slackOk: "true",
+        anyFailed: "false",
+        sentAfter: new Date(Date.now() - 365 * DAY).toISOString(),
+      })
+      .set("Cookie", adminCookie);
+    expect(res.status).toBe(200);
+  });
+
+  it("rejects malformed filters on the CSV exporter too", async () => {
+    const res = await request(app)
+      .get(`${HISTORY_PATH}.csv`)
+      .query({ sentAfter: "garbage" })
+      .set("Cookie", adminCookie);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/sentAfter/);
+  });
+
   it("composes filters with the SUPER_ADMIN cross-org view", async () => {
     // anyFailed=true across every org should still only return Jane's
     // 3 failure rows in the primary org (the other org has no failures).
