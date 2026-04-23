@@ -585,7 +585,7 @@ function TopAutoMatchesSection({ canManage }: { canManage: boolean }) {
   });
   const items = data?.items ?? [];
 
-  const promoteMut = useMutation<unknown, Error, { row: TopMatchRow; alias: string }>({
+  const promoteMut = useMutation<unknown, Error, { row: TopMatchRow; alias: string; sampleIndex: number }>({
     mutationFn: async ({ row, alias }) => {
       return apiRequest("POST", "/api/dot/pay-item-overrides", {
         payItemId: row.payItem.id,
@@ -628,8 +628,9 @@ function TopAutoMatchesSection({ canManage }: { canManage: boolean }) {
       </p>
       <div className="border rounded-md divide-y">
         {items.map((row) => {
-          const sample = row.sampleDescriptions[0] ?? "";
-          const canPromote = canManage && !row.hasAlias && sample.trim().length > 0;
+          const promotable = canManage && !row.hasAlias;
+          const pendingVars = promoteMut.isPending ? promoteMut.variables : undefined;
+          const isRowPending = !!pendingVars && pendingVars.row.payItem.id === row.payItem.id;
           return (
             <div
               key={row.payItem.id}
@@ -649,7 +650,7 @@ function TopAutoMatchesSection({ canManage }: { canManage: boolean }) {
                     </span>
                   )}
                   {row.hasAlias && (
-                    <Badge variant="secondary" className="gap-1 text-[10px]">
+                    <Badge variant="secondary" className="gap-1 text-[10px]" data-testid={`badge-has-alias-${row.payItem.id}`}>
                       <Tag className="h-3 w-3" /> aliased
                     </Badge>
                   )}
@@ -668,29 +669,45 @@ function TopAutoMatchesSection({ canManage }: { canManage: boolean }) {
                   )}
                 </div>
                 {row.sampleDescriptions.length > 0 && (
-                  <div className="text-[11px] text-muted-foreground">
-                    <span className="text-muted-foreground/80">matched from: </span>
-                    {row.sampleDescriptions.map((d, i) => (
-                      <span key={i} className="italic">
-                        {i > 0 ? "; " : ""}&ldquo;{d}&rdquo;
-                      </span>
-                    ))}
+                  <div className="text-[11px] text-muted-foreground space-y-1">
+                    <span className="text-muted-foreground/80">matched from:</span>
+                    <ul className="space-y-1">
+                      {row.sampleDescriptions.map((d, i) => {
+                        const trimmed = d.trim();
+                        const canPromoteSample = promotable && trimmed.length > 0;
+                        const isThisPending = isRowPending && pendingVars?.sampleIndex === i;
+                        return (
+                          <li
+                            key={i}
+                            className="flex items-start gap-2"
+                            data-testid={`row-top-match-sample-${row.payItem.id}-${i}`}
+                          >
+                            <span className="italic flex-1 min-w-0 break-words">&ldquo;{d}&rdquo;</span>
+                            {canPromoteSample && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-6 px-2 text-[11px] shrink-0"
+                                disabled={isRowPending}
+                                onClick={() => promoteMut.mutate({ row, alias: d, sampleIndex: i })}
+                                data-testid={`button-promote-alias-${row.payItem.id}-${i}`}
+                                title={`Save "${d}" as an alias for ${row.payItem.itemNumber}`}
+                              >
+                                {isThisPending ? (
+                                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                ) : (
+                                  <Sparkles className="h-3 w-3 mr-1" />
+                                )}
+                                Promote
+                              </Button>
+                            )}
+                          </li>
+                        );
+                      })}
+                    </ul>
                   </div>
                 )}
               </div>
-              {canPromote && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={promoteMut.isPending}
-                  onClick={() => promoteMut.mutate({ row, alias: sample })}
-                  data-testid={`button-promote-alias-${row.payItem.id}`}
-                  title={`Save "${sample}" as an alias for ${row.payItem.itemNumber}`}
-                >
-                  <Sparkles className="h-3.5 w-3.5 mr-1" />
-                  Promote to alias
-                </Button>
-              )}
             </div>
           );
         })}
