@@ -39,6 +39,7 @@ import {
 import DeductionsTab from "@/components/payroll/DeductionsTab";
 import PayStubView from "@/components/payroll/PayStubView";
 import { CertifiedPayrollButton } from "@/components/payroll/CertifiedPayrollReport";
+import { MissingWageDecisionsBanner } from "@/components/payroll/MissingWageDecisionsBanner";
 
 interface PayrollOverview {
   currentPeriod: { start: string; end: string; workWeekStart: string };
@@ -252,6 +253,8 @@ export default function PayrollManagementPage() {
           Create Pay Run
         </Button>
       </div>
+
+      <MissingWageDecisionsBanner />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <div className="block md:hidden mb-4">

@@ -2247,6 +2247,68 @@ router.post("/api/payroll/wage-decisions/sync", requireAuth, requireFeaturePermi
   }
 });
 
+// Task #1330: org-wide aggregate of projects whose wage decision has not yet
+// been imported into the Davis-Bacon cache. Powers the proactive banner on
+// the payroll page so admins can run the DOL/SAM.gov import before
+// generating certified payroll. Mirrors the per-pay-run "missingWageDecisions"
+// payload returned by the certified-report endpoint, but scoped across every
+// project in the org with a wageDecision set.
+router.get("/api/payroll/missing-wage-decisions", requireAuth, async (req, res, next) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+    const projectRows = await db
+      .select({ id: projects.id, name: projects.name, wageDecision: projects.wageDecision })
+      .from(projects)
+      .where(eq(projects.organizationId, orgId));
+
+    // Dedupe cache lookups by decision number — many projects in an org
+    // typically reference the same handful of wage decisions, and
+    // isWageDeterminationCached hits the DB per call.
+    const decisionCacheStatus = new Map<string, boolean>();
+    const uniqueDecisions = Array.from(
+      new Set(
+        projectRows
+          .map((p) => (p.wageDecision || "").trim())
+          .filter((d) => d.length > 0),
+      ),
+    );
+    await Promise.all(
+      uniqueDecisions.map(async (decision) => {
+        try {
+          decisionCacheStatus.set(decision, await isWageDeterminationCached(orgId, decision));
+        } catch (err) {
+          logWarn("Davis-Bacon cache check failed", { decision, error: String(err) });
+          decisionCacheStatus.set(decision, true); // treat as cached on error to avoid noisy false warnings
+        }
+      }),
+    );
+
+    const seen = new Set<string>();
+    const missing: Array<{ projectId: string; projectName: string; wageDecision: string }> = [];
+    for (const p of projectRows) {
+      const decision = (p.wageDecision || "").trim();
+      if (!decision) continue;
+      const key = `${p.id}:${decision}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (decisionCacheStatus.get(decision) === false) {
+        missing.push({
+          projectId: p.id,
+          projectName: p.name || "",
+          wageDecision: decision,
+        });
+      }
+    }
+
+    res.json({ items: missing });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req, res, next) => {
   try {
     const authReq = req as AuthRequest;
