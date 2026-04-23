@@ -315,6 +315,7 @@ export default function BidsPage() {
       city: "",
       state: "",
       description: "",
+      wageDecision: "",
       estimatorId: user?.id || undefined,
       gcOrganizationId: undefined,
       ownerRepOrganizationId: undefined,
@@ -662,6 +663,7 @@ export default function BidsPage() {
         city: data.city || undefined,
         state: data.state || undefined,
         description: data.description || undefined,
+        wageDecision: data.wageDecision || undefined,
         estimatorId: data.estimatorId || undefined,
         gcOrganizationId: selectedGcOrg?.id || undefined,
         ownerRepOrganizationId: selectedOwnerRepOrg?.id || undefined,
@@ -1791,6 +1793,25 @@ export default function BidsPage() {
                             {...field}
                             value={field.value || ""}
                             data-testid="input-description"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="wageDecision"
+                    render={({ field }) => (
+                      <FormItem className="col-span-2">
+                        <FormLabel>Wage Decision (optional)</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., CA20260010"
+                            {...field}
+                            value={field.value || ""}
+                            data-testid="input-wage-decision"
                           />
                         </FormControl>
                         <FormMessage />

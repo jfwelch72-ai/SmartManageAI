@@ -201,6 +201,7 @@ export default function BidDetailPage() {
       city: "",
       state: "",
       description: "",
+      wageDecision: "",
     },
   });
   const materialForm = useForm<MaterialQuoteFormValues>({
@@ -317,6 +318,7 @@ export default function BidDetailPage() {
       city: bid.city || "",
       state: bid.state || "",
       description: bid.description || "",
+      wageDecision: bid.wageDecision || "",
     });
     setShowEditBidDialog(true);
   };
@@ -951,6 +953,15 @@ export default function BidDetailPage() {
                 >
                   <Brain className="w-3 h-3" />
                   Win Prob: {bid.aiWinProbability}%
+                </Badge>
+              )}
+              {bid.wageDecision && (
+                <Badge
+                  variant="outline"
+                  className="text-xs gap-1 border-border text-muted-foreground"
+                  data-testid="badge-bid-wage-decision"
+                >
+                  Wage Decision: {bid.wageDecision}
                 </Badge>
               )}
               {dueDate && bid.status !== "AWARDED" && bid.status !== "LOST" && bid.status !== "CANCELLED" && (

@@ -50,6 +50,7 @@ export const bidEditFormSchema = z.object({
   city: z.string().optional(),
   state: z.string().optional(),
   description: z.string().optional(),
+  wageDecision: z.string().optional(),
 }).partial();
 export type BidEditFormValues = z.infer<typeof bidEditFormSchema>;
 
@@ -167,6 +168,7 @@ export function useBidMutations(opts: UseBidMutationsOptions) {
       const payload: any = {};
       const fields = ["name", "clientName", "clientContactName", "clientContactEmail", "clientContactPhone", "gcName", "gcContactName", "gcContactEmail", "gcContactPhone", "locationAddress", "city", "state", "description"] as const;
       fields.forEach(f => { if ((data as any)[f]) payload[f] = (data as any)[f]; });
+      if (data.wageDecision !== undefined) payload.wageDecision = data.wageDecision || null;
       if (data.bidAmount) payload.bidAmount = data.bidAmount;
       if (data.dueDate) payload.dueDate = new Date(data.dueDate);
       return apiRequest("PATCH", `/api/bids/${opts.bidCode}`, payload);

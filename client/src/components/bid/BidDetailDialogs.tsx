@@ -192,6 +192,19 @@ export function BidEditDialog({ open, onOpenChange, form, onSubmit, isPending }:
                 </FormItem>
               )}
             />
+            <FormField
+              control={form.control}
+              name="wageDecision"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Wage Decision (optional)</FormLabel>
+                  <FormControl>
+                    <Input {...field} value={field.value || ""} placeholder="e.g., CA20260010" data-testid="input-wage-decision" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)} data-testid="button-cancel-edit-bid">
                 Cancel
