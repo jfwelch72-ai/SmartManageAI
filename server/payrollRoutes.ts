@@ -1470,7 +1470,7 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
     const projectId = req.params.id;
 
     const [project] = await db.select().from(projects)
-      .where(and(eq(projects.id, projectId), eq(projects.organizationId, orgId)));
+      .where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, orgId)));
     if (!project) {
       return res.status(404).json({ error: "Project not found" });
     }
