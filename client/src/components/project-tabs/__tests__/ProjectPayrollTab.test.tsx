@@ -1,0 +1,309 @@
+// @vitest-environment jsdom
+/**
+ * Task #1399 — locks down the DOL override confirmation flow added in #1382
+ * (and refined in #1396/#1398) for `ProjectPayrollTab.tsx`. Verifies:
+ *   - Real-id DOL feed rows skip the in-dialog mapping picker entirely and
+ *     post the existing classificationId without `confirmCreateClassification`
+ *   - Synthetic feed rows whose name exactly matches an existing org
+ *     classification pre-select the matched id (no "Create new" default)
+ *   - Synthetic feed rows without a near-match show the picker defaulted to
+ *     "Create new"
+ *   - "Use selected" submits the picked classificationId
+ *   - "Create new" submits `confirmCreateClassification: true` plus the
+ *     synthetic classification name
+ */
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { render, screen, cleanup, fireEvent, within, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+const { mockApiRequest } = vi.hoisted(() => ({ mockApiRequest: vi.fn() }));
+
+vi.mock("@/lib/queryClient", async () => {
+  const { QueryClient } = await import("@tanstack/react-query");
+  return {
+    apiRequest: mockApiRequest,
+    queryClient: new QueryClient(),
+    getQueryFn: () => async () => null,
+  };
+});
+
+vi.mock("@/hooks/use-toast", () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
+
+// Radix Select uses pointer events and portals that don't behave well in
+// jsdom. Swap it out for a minimal context-driven shim so the test can drive
+// `onValueChange` by clicking a plain <button> rendered for each SelectItem.
+vi.mock("@/components/ui/select", async () => {
+  const React = await import("react");
+  const SelectCtx = React.createContext<{
+    value: string;
+    onValueChange: (v: string) => void;
+  }>({ value: "", onValueChange: () => {} });
+  return {
+    Select: ({ value, onValueChange, children }: any) => (
+      <SelectCtx.Provider value={{ value, onValueChange }}>{children}</SelectCtx.Provider>
+    ),
+    SelectTrigger: ({ children, ...rest }: any) => <div {...rest}>{children}</div>,
+    SelectValue: () => null,
+    SelectContent: ({ children }: any) => <div>{children}</div>,
+    SelectItem: ({ value, children, ...rest }: any) => {
+      const ctx = React.useContext(SelectCtx);
+      return (
+        <button
+          type="button"
+          onClick={() => ctx.onValueChange(value)}
+          data-selected={ctx.value === value ? "true" : "false"}
+          {...rest}
+        >
+          {children}
+        </button>
+      );
+    },
+  };
+});
+
+import ProjectPayrollTab from "../ProjectPayrollTab";
+
+type Classification = {
+  classificationId: string;
+  classificationName: string;
+  wageRate: number;
+  fringeRate: number | null;
+  totalRate: number | null;
+  overtimeMultiplier: string | null;
+  effectiveDate: string | null;
+  expirationDate: string | null;
+  wageDecision: string | null;
+  source: "PROJECT_OVERRIDE" | "DOL_FEED";
+  dolFeedName?: string | null;
+};
+
+const PROJECT_ID = "proj-1";
+
+function makeRow(overrides: Partial<Classification> = {}): Classification {
+  return {
+    classificationId: "cls-real-1",
+    classificationName: "Carpenter",
+    wageRate: 42.5,
+    fringeRate: 12.25,
+    totalRate: 54.75,
+    overtimeMultiplier: "1.5",
+    effectiveDate: "2026-01-01",
+    expirationDate: null,
+    wageDecision: "CA20260001",
+    source: "DOL_FEED",
+    ...overrides,
+  };
+}
+
+function renderTab(opts: {
+  classifications: Classification[];
+  orgClassifications: { id: string; name: string }[];
+}) {
+  const qc = new QueryClient({
+    defaultOptions: {
+      queries: {
+        retry: false,
+        staleTime: Infinity,
+        refetchOnMount: false,
+        refetchOnWindowFocus: false,
+        // Catch-all so any unexpected queryKey doesn't try to hit the network.
+        queryFn: async () => null,
+      },
+      mutations: { retry: false },
+    },
+  });
+  qc.setQueryData(["/api/projects", PROJECT_ID, "payroll-summary"], {
+    laborCostToDate: 0,
+    budget: 0,
+    laborVsBudget: 0,
+    totalRegularHours: 0,
+    totalOvertimeHours: 0,
+    overtimePercent: 0,
+    totalEntries: 0,
+    workers: [],
+  });
+  qc.setQueryData(["/api/projects", PROJECT_ID, "prevailing-wage-summary"], {
+    projectId: PROJECT_ID,
+    wageDecision: "CA20260001",
+    wageDecisionCached: true,
+    classifications: opts.classifications,
+  });
+  qc.setQueryData(["/api/labor-rates/classifications"], opts.orgClassifications);
+  return render(
+    <QueryClientProvider client={qc}>
+      <ProjectPayrollTab projectId={PROJECT_ID} />
+    </QueryClientProvider>,
+  );
+}
+
+async function lastPostBody() {
+  await waitFor(() => {
+    expect(mockApiRequest).toHaveBeenCalled();
+  });
+  const calls = mockApiRequest.mock.calls;
+  const [method, url, body] = calls[calls.length - 1];
+  expect(method).toBe("POST");
+  expect(url).toBe("/api/labor-rates/prevailing-wage-rates");
+  return body as Record<string, unknown>;
+}
+
+describe("ProjectPayrollTab — DOL override confirmation flow", () => {
+  beforeEach(() => {
+    mockApiRequest.mockReset();
+    mockApiRequest.mockResolvedValue(new Response(null, { status: 200 }));
+  });
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("real-id DOL feed row skips the mapping picker and posts the existing classificationId", async () => {
+    renderTab({
+      classifications: [
+        makeRow({ classificationId: "cls-real-1", classificationName: "Carpenter" }),
+      ],
+      orgClassifications: [{ id: "cls-real-1", name: "Carpenter" }],
+    });
+
+    fireEvent.click(screen.getByTestId("button-promote-override-cls-real-1"));
+    expect(screen.getByTestId("dialog-promote-override")).toBeTruthy();
+    // The "Map to classification" picker is only rendered for synthetic
+    // dol-feed:* rows. Real-id rows must not see it at all.
+    expect(screen.queryByTestId("field-override-mapping")).toBeNull();
+
+    fireEvent.click(screen.getByTestId("button-save-override"));
+
+    const body = await lastPostBody();
+    expect(body.classificationId).toBe("cls-real-1");
+    expect(body.confirmCreateClassification).toBeUndefined();
+    expect(body.classificationName).toBeUndefined();
+    expect(body.projectId).toBe(PROJECT_ID);
+  });
+
+  it("synthetic feed name with an exact match pre-selects the existing classification (no Create new default)", async () => {
+    renderTab({
+      classifications: [
+        makeRow({
+          classificationId: "dol-feed:Carpenter",
+          classificationName: "Carpenter",
+          dolFeedName: "Carpenter",
+        }),
+      ],
+      orgClassifications: [
+        { id: "cls-existing-carpenter", name: "Carpenter" },
+        { id: "cls-other", name: "Laborer" },
+      ],
+    });
+
+    fireEvent.click(screen.getByTestId("button-promote-override-dol-feed:Carpenter"));
+    expect(screen.getByTestId("field-override-mapping")).toBeTruthy();
+    // Suggestion badge confirms the auto-match pre-selected the existing row
+    // rather than dropping the user on "Create new".
+    expect(
+      screen.getByTestId("badge-override-mapping-similar-cls-existing-carpenter"),
+    ).toBeTruthy();
+    const matchedOption = screen.getByTestId(
+      "option-override-mapping-cls-existing-carpenter",
+    );
+    expect(matchedOption.getAttribute("data-selected")).toBe("true");
+    expect(
+      screen
+        .getByTestId("option-override-mapping-create-new")
+        .getAttribute("data-selected"),
+    ).toBe("false");
+
+    fireEvent.click(screen.getByTestId("button-save-override"));
+
+    const body = await lastPostBody();
+    expect(body.classificationId).toBe("cls-existing-carpenter");
+    expect(body.confirmCreateClassification).toBeUndefined();
+    // Synthetic id was swapped for a real id, so classificationName must
+    // not be forwarded (the server only accepts it for create-new flows).
+    expect(body.classificationName).toBeUndefined();
+  });
+
+  it("synthetic feed name without any near-match defaults the picker to Create new", async () => {
+    renderTab({
+      classifications: [
+        makeRow({
+          classificationId: "dol-feed:Specialist Welder",
+          classificationName: "Specialist Welder",
+          dolFeedName: "Specialist Welder",
+        }),
+      ],
+      orgClassifications: [{ id: "cls-other", name: "Laborer" }],
+    });
+
+    fireEvent.click(
+      screen.getByTestId("button-promote-override-dol-feed:Specialist Welder"),
+    );
+    const picker = screen.getByTestId("field-override-mapping");
+    expect(picker).toBeTruthy();
+    // No suggestion badge when there's no fuzzy match above threshold.
+    expect(
+      within(picker).queryByTestId(/^badge-override-mapping-similar-/),
+    ).toBeNull();
+    expect(
+      screen
+        .getByTestId("option-override-mapping-create-new")
+        .getAttribute("data-selected"),
+    ).toBe("true");
+  });
+
+  it('"Create new" submission posts confirmCreateClassification: true with the synthetic classification name', async () => {
+    renderTab({
+      classifications: [
+        makeRow({
+          classificationId: "dol-feed:Specialist Welder",
+          classificationName: "Specialist Welder",
+          dolFeedName: "Specialist Welder",
+        }),
+      ],
+      orgClassifications: [{ id: "cls-other", name: "Laborer" }],
+    });
+
+    fireEvent.click(
+      screen.getByTestId("button-promote-override-dol-feed:Specialist Welder"),
+    );
+    fireEvent.click(screen.getByTestId("button-save-override"));
+
+    const body = await lastPostBody();
+    expect(body.classificationId).toBe("dol-feed:Specialist Welder");
+    expect(body.confirmCreateClassification).toBe(true);
+    expect(body.classificationName).toBe("Specialist Welder");
+    expect(body.dolFeedName).toBe("Specialist Welder");
+  });
+
+  it('"Use selected" submission posts the picked classificationId without confirmCreateClassification', async () => {
+    renderTab({
+      classifications: [
+        makeRow({
+          classificationId: "dol-feed:Specialist Welder",
+          classificationName: "Specialist Welder",
+          dolFeedName: "Specialist Welder",
+        }),
+      ],
+      orgClassifications: [
+        { id: "cls-laborer", name: "Laborer" },
+        { id: "cls-ironworker", name: "Ironworker" },
+      ],
+    });
+
+    fireEvent.click(
+      screen.getByTestId("button-promote-override-dol-feed:Specialist Welder"),
+    );
+    // Picker defaults to Create new — the user explicitly picks an existing
+    // classification from the dropdown ("Use selected" path).
+    fireEvent.click(screen.getByTestId("option-override-mapping-cls-ironworker"));
+    fireEvent.click(screen.getByTestId("button-save-override"));
+
+    const body = await lastPostBody();
+    expect(body.classificationId).toBe("cls-ironworker");
+    expect(body.confirmCreateClassification).toBeUndefined();
+    // Real-id swap means classificationName is no longer forwarded even
+    // though we started from a synthetic dol-feed:* row.
+    expect(body.classificationName).toBeUndefined();
+    expect(body.dolFeedName).toBe("Specialist Welder");
+  });
+});
