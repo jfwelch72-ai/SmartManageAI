@@ -436,10 +436,19 @@ export async function listPresetApplications(
   orgId: string,
   page: number = 1,
   pageSize: number = 20,
+  kind?: PresetApplicationKind,
 ): Promise<PresetApplicationHistoryPage> {
   const safePage = Math.max(1, Math.floor(page));
   const safePageSize = Math.min(100, Math.max(1, Math.floor(pageSize)));
   const offset = (safePage - 1) * safePageSize;
+
+  const whereClause =
+    kind === "apply" || kind === "reset_drift"
+      ? and(
+          eq(featureFlagPresetApplications.organizationId, orgId),
+          eq(featureFlagPresetApplications.kind, kind),
+        )
+      : eq(featureFlagPresetApplications.organizationId, orgId);
 
   const rows = await db
     .select({
@@ -456,7 +465,7 @@ export async function listPresetApplications(
     })
     .from(featureFlagPresetApplications)
     .leftJoin(users, eq(users.id, featureFlagPresetApplications.appliedById))
-    .where(eq(featureFlagPresetApplications.organizationId, orgId))
+    .where(whereClause)
     .orderBy(desc(featureFlagPresetApplications.appliedAt))
     .limit(safePageSize)
     .offset(offset);
@@ -464,7 +473,7 @@ export async function listPresetApplications(
   const [{ count }] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(featureFlagPresetApplications)
-    .where(eq(featureFlagPresetApplications.organizationId, orgId));
+    .where(whereClause);
 
   return {
     items: rows.map((row) => ({

@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Switch } from "@/components/ui/switch";
@@ -104,6 +105,7 @@ export function OrgFeaturePresetsTab({
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingTradeType, setPendingTradeType] = useState<string | null>(null);
   const [historyPage, setHistoryPage] = useState(1);
+  const [historyKindFilter, setHistoryKindFilter] = useState<"all" | "apply" | "reset_drift">("all");
   const [manualPage, setManualPage] = useState(1);
   const HISTORY_PAGE_SIZE = 10;
   const [resetAllConfirmOpen, setResetAllConfirmOpen] = useState(false);
@@ -147,11 +149,25 @@ export function OrgFeaturePresetsTab({
   const lastAppliedTradeType = lastApplied?.tradeType ?? null;
 
   const { data: historyData, isLoading: historyLoading } = useQuery<PresetHistoryResponse>({
-    queryKey: ["/api/feature-flags", orgId, "preset-history", historyPage, HISTORY_PAGE_SIZE],
+    queryKey: [
+      "/api/feature-flags",
+      orgId,
+      "preset-history",
+      historyPage,
+      HISTORY_PAGE_SIZE,
+      historyKindFilter,
+    ],
     queryFn: async () => {
+      const params = new URLSearchParams({
+        page: String(historyPage),
+        pageSize: String(HISTORY_PAGE_SIZE),
+      });
+      if (historyKindFilter !== "all") {
+        params.set("kind", historyKindFilter);
+      }
       const res = await apiRequest(
         "GET",
-        `/api/feature-flags/${orgId}/preset-history?page=${historyPage}&pageSize=${HISTORY_PAGE_SIZE}`,
+        `/api/feature-flags/${orgId}/preset-history?${params.toString()}`,
       );
       return res.json();
     },
@@ -644,6 +660,37 @@ export function OrgFeaturePresetsTab({
           </CardDescription>
         </CardHeader>
         <CardContent>
+          <div className="mb-3 flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">Show:</span>
+            <ToggleGroup
+              type="single"
+              size="sm"
+              variant="outline"
+              value={historyKindFilter}
+              onValueChange={(value) => {
+                if (!value) return;
+                const next = value as "all" | "apply" | "reset_drift";
+                if (next === historyKindFilter) return;
+                setHistoryKindFilter(next);
+                setHistoryPage(1);
+              }}
+              data-testid="toggle-preset-history-kind"
+              className="justify-start"
+            >
+              <ToggleGroupItem value="all" data-testid="toggle-preset-history-kind-all">
+                All
+              </ToggleGroupItem>
+              <ToggleGroupItem value="apply" data-testid="toggle-preset-history-kind-apply">
+                Preset applies
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="reset_drift"
+                data-testid="toggle-preset-history-kind-reset"
+              >
+                Drift resets
+              </ToggleGroupItem>
+            </ToggleGroup>
+          </div>
           {historyLoading ? (
             <div className="space-y-2">
               <Skeleton className="h-10 w-full" />
@@ -655,7 +702,11 @@ export function OrgFeaturePresetsTab({
               className="text-sm text-muted-foreground py-4 text-center"
               data-testid="text-preset-history-empty"
             >
-              No preset applications recorded yet.
+              {historyKindFilter === "apply"
+                ? "No preset applications recorded yet."
+                : historyKindFilter === "reset_drift"
+                  ? "No drift resets recorded yet."
+                  : "No preset history recorded yet."}
             </div>
           ) : (
             <>

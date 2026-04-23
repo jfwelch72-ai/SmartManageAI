@@ -73,7 +73,10 @@ router.get("/:orgId/preset-history", requireAuth, async (req, res, next) => {
     }
     const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10) || 1);
     const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize ?? "20"), 10) || 20));
-    const history = await flagService.listPresetApplications(req.params.orgId, page, pageSize);
+    const kindParam = typeof req.query.kind === "string" ? req.query.kind : undefined;
+    const kind =
+      kindParam === "apply" || kindParam === "reset_drift" ? kindParam : undefined;
+    const history = await flagService.listPresetApplications(req.params.orgId, page, pageSize, kind);
     res.json(history);
   } catch (err) {
     next(err);
