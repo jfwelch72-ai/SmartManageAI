@@ -153,6 +153,70 @@ export function composeEmailContent(notification: NotificationRecord): {
     };
   }
 
+  // Task #1116: rich HTML email for the weekly certified payroll digest.
+  // The job stores the date range in `relatedEntityId` as
+  // `"YYYY-MM-DD|YYYY-MM-DD"` and seeds the message body with a header
+  // line followed by `Project — Variant: count` lines.
+  if (notification.relatedEntityType === "CERTIFIED_PAYROLL_DIGEST") {
+    const range = (notification.relatedEntityId ?? "").split("|");
+    const startDate = /^\d{4}-\d{2}-\d{2}$/.test(range[0] ?? "") ? range[0] : "";
+    const endDate = /^\d{4}-\d{2}-\d{2}$/.test(range[1] ?? "") ? range[1] : "";
+    const qs = new URLSearchParams();
+    if (startDate) qs.set("startDate", startDate);
+    if (endDate) qs.set("endDate", endDate);
+    const actionUrl = `${baseUrl}/payroll/certified-history${qs.toString() ? `?${qs.toString()}` : ""}`;
+    const subject = `${notification.title} — SmartManageAI`;
+
+    const lines = notification.message.split("\n");
+    const header = lines[0] ?? notification.message;
+    const breakdown = lines.slice(1).filter((l) => l.trim().length > 0);
+
+    const rowsHtml = breakdown.map((line) => {
+      const sepIdx = line.lastIndexOf(": ");
+      const left = sepIdx >= 0 ? line.slice(0, sepIdx) : line;
+      const count = sepIdx >= 0 ? line.slice(sepIdx + 2) : "";
+      const dashIdx = left.lastIndexOf(" — ");
+      const project = dashIdx >= 0 ? left.slice(0, dashIdx) : left;
+      const variant = dashIdx >= 0 ? left.slice(dashIdx + 3) : "";
+      return `<tr>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;color:#333;">${escapeHtml(project)}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;color:#555;">${escapeHtml(variant)}</td>
+        <td style="padding:8px 12px;border-bottom:1px solid #f0f0f0;color:#111;text-align:right;font-variant-numeric:tabular-nums;">${escapeHtml(count)}</td>
+      </tr>`;
+    }).join("");
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto;">
+        <h2 style="color: #333; margin-bottom: 8px;">${escapeHtml(notification.title)}</h2>
+        <p style="color: #666; line-height: 1.6; margin-top: 0;">${escapeHtml(header)}</p>
+        <table style="width:100%;border-collapse:collapse;margin:16px 0;border:1px solid #eee;border-radius:6px;overflow:hidden;">
+          <thead>
+            <tr style="background:#fafafa;">
+              <th style="padding:8px 12px;text-align:left;color:#555;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Project</th>
+              <th style="padding:8px 12px;text-align:left;color:#555;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Form Variant</th>
+              <th style="padding:8px 12px;text-align:right;color:#555;font-size:12px;text-transform:uppercase;letter-spacing:0.04em;">Reports</th>
+            </tr>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
+        </table>
+        <p style="margin-top: 20px;">
+          <a href="${actionUrl}" style="background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
+            Open Certified Payroll History
+          </a>
+        </p>
+        <hr style="margin-top: 30px; border: none; border-top: 1px solid #eee;">
+        <p style="color: #999; font-size: 12px;">You are receiving this weekly digest because you can manage payroll for this organization. Adjust delivery in your SmartManageAI notification preferences.</p>
+      </div>
+    `;
+    return {
+      subject,
+      body: notification.message,
+      actionUrl,
+      actionText: "Open Certified Payroll History",
+      html,
+    };
+  }
+
   // Type-aware composition
   if (type === "CHANGE_ORDER_APPROVED" || type === "CHANGE_ORDER_REJECTED") {
     const status = type === "CHANGE_ORDER_APPROVED" ? "Approved" : "Rejected";

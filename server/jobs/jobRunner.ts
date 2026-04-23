@@ -8,7 +8,8 @@ import { recordJobMetrics, loadJobMetricsFromDb, pruneJobMetricsDb } from "../ut
 import { evaluateJobMetricAlerts, sendJobMetricAlertQuietHoursDigests } from "../utils/jobMetricAlerts";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
-import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, type InsertNotification } from "@shared/schema";
+import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, type InsertNotification } from "@shared/schema";
+import { getEffectivePermissions } from "../auth";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
 import { importChartOfAccounts, exportCustomers, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "../integrations/providers/qbo";
@@ -55,6 +56,7 @@ let jobMetricsPruneTask: ReturnType<typeof cron.schedule> | null = null;
 let jobMetricAlertsTask: ReturnType<typeof cron.schedule> | null = null;
 let jobMetricQuietDigestTask: ReturnType<typeof cron.schedule> | null = null;
 let portfolioKpiSnapshotTask: ReturnType<typeof cron.schedule> | null = null;
+let certifiedPayrollDigestTask: ReturnType<typeof cron.schedule> | null = null;
 
 export function startJobRunner() {
   logInfo("Starting background job runner");
@@ -351,6 +353,17 @@ export function startJobRunner() {
     }
   });
 
+  // Task #1116: weekly digest of certified payroll PDFs to each org's payroll
+  // administrators. Runs Monday 8am UTC so the breakdown of last week's
+  // certified payroll generation lands at the top of the work week.
+  certifiedPayrollDigestTask = cron.schedule("0 8 * * 1", async () => {
+    try {
+      await processCertifiedPayrollWeeklyDigest();
+    } catch (err) {
+      logError("Certified payroll weekly digest failed", { error: String(err) });
+    }
+  });
+
   // Task #693: daily morning email reminder routed to each contact's owner
   // (createdById) so account managers see today's birthdays without having to
   // open the CRM. Per-user opt-in/opt-out is handled by the existing
@@ -483,6 +496,10 @@ export function stopJobRunner() {
     portfolioKpiSnapshotTask.stop();
     portfolioKpiSnapshotTask = null;
   }
+  if (certifiedPayrollDigestTask) {
+    certifiedPayrollDigestTask.stop();
+    certifiedPayrollDigestTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -517,6 +534,7 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   // Task #754: send the quiet-hours digest to Super Admins who have
   // exited their quiet window so they can catch up on overnight alerts.
   job_metric_quiet_digest: { fn: async () => { await sendJobMetricAlertQuietHoursDigests({ recordSends: true }); }, description: "Send digest of job-metric alerts that fired while a Super Admin was in quiet hours", schedule: "*/15 * * * *" },
+  certified_payroll_digest: { fn: () => processCertifiedPayrollWeeklyDigest(), description: "Email payroll administrators a weekly digest of certified payroll PDFs generated in the last 7 days", schedule: "0 8 * * 1" },
 };
 
 async function processOutbox() {
@@ -2864,5 +2882,140 @@ async function processCrmContactBirthdayDailyDigest() {
 
   if (totalDigests > 0) {
     logInfo("CRM contact birthday daily digest sent", { notifications: totalDigests });
+  }
+}
+
+// Task #1116: weekly digest of certified payroll PDFs generated in the last 7
+// days for each org's payroll administrators. Surfaces totals by project and
+// form variant so payroll admins catch missing certified payrolls before DOT
+// audits without having to visit /payroll/certified-history.
+//
+// Gates:
+//   - Sender: org-level `organization_payroll_settings.work_week_end_notification_enabled`
+//     must be true (or no settings row, in which case the org default of true
+//     applies).
+//   - Recipient: each user's effective `canManagePayroll` permission via the
+//     same `getEffectivePermissions` resolver used by the API. Inactive users
+//     and users in other orgs are filtered out automatically.
+//   - Channel/email: each recipient's `notificationChannelPrefs` and
+//     `notificationTypePrefs` decide whether the in-app row produced by
+//     `insertNotifications` results in an email send (handled by
+//     `deliverNotification`). Notification type is "REMINDER".
+//
+// Date range:
+//   - Window is `[now - 7d, now]`.
+//   - Encoded into `relatedEntityId` as `"YYYY-MM-DD|YYYY-MM-DD"` so the
+//     email composer can produce a deep link to /payroll/certified-history
+//     with the date range pre-applied.
+export async function processCertifiedPayrollWeeklyDigest(opts: { now?: Date } = {}) {
+  const now = opts.now ?? new Date();
+  const since = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+  const orgsResult = await db.execute(
+    sql`SELECT DISTINCT organization_id AS id FROM certified_payroll_reports WHERE generated_at >= ${since.toISOString()}`,
+  );
+  const orgs = (orgsResult.rows || []) as Array<{ id: string }>;
+  if (orgs.length === 0) return;
+
+  const startStr = since.toISOString().slice(0, 10);
+  const endStr = now.toISOString().slice(0, 10);
+
+  let totalDigests = 0;
+
+  for (const org of orgs) {
+    try {
+      // Org-level gate: skip if the org has explicitly turned off the
+      // weekly payroll notification preference.
+      const [settings] = await db
+        .select({ enabled: organizationPayrollSettings.workWeekEndNotificationEnabled })
+        .from(organizationPayrollSettings)
+        .where(eq(organizationPayrollSettings.organizationId, org.id))
+        .limit(1);
+      if (settings && settings.enabled === false) continue;
+
+      // Aggregate the last 7 days of certified payroll reports for this
+      // org, grouped by project + variant.
+      const rows = await db
+        .select({
+          projectId: certifiedPayrollReports.projectId,
+          projectName: projects.name,
+          variant: certifiedPayrollReports.variant,
+          generatedAt: certifiedPayrollReports.generatedAt,
+          payRunId: certifiedPayrollReports.payRunId,
+        })
+        .from(certifiedPayrollReports)
+        .leftJoin(projects, eq(projects.id, certifiedPayrollReports.projectId))
+        .where(and(
+          eq(certifiedPayrollReports.organizationId, org.id),
+          gte(certifiedPayrollReports.generatedAt, since),
+        ));
+
+      if (rows.length === 0) continue;
+
+      type Bucket = { projectName: string; variant: string; count: number };
+      const buckets = new Map<string, Bucket>();
+      const projectIds = new Set<string>();
+      for (const r of rows) {
+        const projectName = r.projectName ?? "(All projects)";
+        const key = `${projectName}\u0000${r.variant}`;
+        const existing = buckets.get(key);
+        if (existing) {
+          existing.count += 1;
+        } else {
+          buckets.set(key, { projectName, variant: r.variant, count: 1 });
+        }
+        if (r.projectId) projectIds.add(r.projectId);
+      }
+
+      const sorted = Array.from(buckets.values()).sort((a, b) => {
+        if (a.projectName !== b.projectName) return a.projectName.localeCompare(b.projectName);
+        return a.variant.localeCompare(b.variant);
+      });
+
+      // Resolve recipients: active users in the org whose effective
+      // permissions include canManagePayroll.
+      const orgUsers = await db
+        .select({ id: users.id, role: users.role })
+        .from(users)
+        .where(and(eq(users.organizationId, org.id), eq(users.isActive, true)));
+
+      const recipientIds: string[] = [];
+      for (const u of orgUsers) {
+        try {
+          const perms = await getEffectivePermissions(u.id, org.id, u.role);
+          if (perms.canManagePayroll) recipientIds.push(u.id);
+        } catch (err) {
+          logError("Certified payroll digest: failed resolving permissions", { userId: u.id, orgId: org.id, error: String(err) });
+        }
+      }
+
+      if (recipientIds.length === 0) continue;
+
+      const totalReports = rows.length;
+      const projectCount = projectIds.size + (rows.some((r) => !r.projectId) ? 1 : 0);
+      const headerLine = `Certified payroll PDFs generated ${startStr} – ${endStr}: ${totalReports} report${totalReports === 1 ? "" : "s"} across ${projectCount} project${projectCount === 1 ? "" : "s"}.`;
+      const breakdownLines = sorted.map((b) => `${b.projectName} — ${b.variant}: ${b.count}`);
+      const message = [headerLine, "", ...breakdownLines].join("\n");
+      const title = `Weekly certified payroll digest: ${totalReports} report${totalReports === 1 ? "" : "s"}`;
+
+      const notifs: InsertNotification[] = recipientIds.map((userId) => ({
+        userId,
+        organizationId: org.id,
+        type: "REMINDER" as const,
+        title,
+        message,
+        relatedEntityType: "CERTIFIED_PAYROLL_DIGEST",
+        relatedEntityId: `${startStr}|${endStr}`,
+      }));
+
+      await insertNotifications(notifs);
+      totalDigests += notifs.length;
+    } catch (err) {
+      logError("Certified payroll weekly digest org iteration failed", { orgId: org.id, error: String(err) });
+    }
+  }
+
+  if (totalDigests > 0) {
+    logInfo("Certified payroll weekly digest sent", { notifications: totalDigests });
   }
 }

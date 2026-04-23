@@ -45,12 +45,28 @@ function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
+// Task #1116: weekly digest emails deep-link here with `?startDate=...&endDate=...`
+// (and optionally `projectId` / `variant`) so payroll admins land on the
+// pre-filtered view that matches the digest they just opened.
+function readInitialFilters(): { projectId: string; variant: string; startDate: string; endDate: string } {
+  if (typeof window === "undefined") return { projectId: ALL, variant: ALL, startDate: "", endDate: "" };
+  const params = new URLSearchParams(window.location.search);
+  const isIsoDate = (v: string | null) => !!v && /^\d{4}-\d{2}-\d{2}$/.test(v);
+  return {
+    projectId: params.get("projectId") || ALL,
+    variant: params.get("variant") || ALL,
+    startDate: isIsoDate(params.get("startDate")) ? params.get("startDate")! : "",
+    endDate: isIsoDate(params.get("endDate")) ? params.get("endDate")! : "",
+  };
+}
+
 export default function CertifiedPayrollHistoryPage() {
   const { toast } = useToast();
-  const [projectId, setProjectId] = useState<string>(ALL);
-  const [variant, setVariant] = useState<string>(ALL);
-  const [startDate, setStartDate] = useState<string>("");
-  const [endDate, setEndDate] = useState<string>("");
+  const initial = useMemo(readInitialFilters, []);
+  const [projectId, setProjectId] = useState<string>(initial.projectId);
+  const [variant, setVariant] = useState<string>(initial.variant);
+  const [startDate, setStartDate] = useState<string>(initial.startDate);
+  const [endDate, setEndDate] = useState<string>(initial.endDate);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
 
