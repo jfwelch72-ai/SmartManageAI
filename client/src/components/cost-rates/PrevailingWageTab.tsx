@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Edit, Trash2, Plus, Building2, AlertCircle, Upload, FileSpreadsheet, CheckCircle2, XCircle } from "lucide-react";
+import { Edit, Trash2, Plus, Building2, AlertCircle, Upload, FileSpreadsheet, CheckCircle2, XCircle, Download } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format, parseISO } from "date-fns";
@@ -130,6 +130,51 @@ export function PrevailingWageTab({
   const [importDefaultDate, setImportDefaultDate] = useState(new Date().toISOString().split("T")[0]);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importPreview, setImportPreview] = useState<ImportPreviewResponse | null>(null);
+
+  const downloadImportTemplate = () => {
+    const headers = [
+      "Classification",
+      "Wage Rate",
+      "Health",
+      "Pension",
+      "Vacation",
+      "Training",
+      "Fringe",
+      "OT Multiplier",
+      "Effective Date",
+      "Expiration Date",
+      "Wage Decision",
+      "Notes",
+    ];
+    const example = [
+      "Carpenter",
+      "42.50",
+      "8.25",
+      "6.10",
+      "3.00",
+      "0.55",
+      "17.90",
+      "1.5",
+      new Date().toISOString().split("T")[0],
+      "",
+      "CA20230001",
+      "Example row - replace with your data",
+    ];
+    const escape = (v: string) => {
+      const s = String(v ?? "");
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const csv = [headers.map(escape).join(","), example.map(escape).join(",")].join("\r\n") + "\r\n";
+    const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "prevailing-wage-import-template.csv";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
 
   const resetImportDialog = () => {
     setShowImportDialog(false);
@@ -591,6 +636,19 @@ export function PrevailingWageTab({
               {" "}<code>Fringe</code>, <code>OT Multiplier</code>, <code>Effective Date</code>, <code>Expiration Date</code>,
               {" "}<code>Wage Decision</code>, <code>Notes</code>. Matching classifications will be updated; new ones created.
             </DialogDescription>
+            <div className="pt-1">
+              <Button
+                type="button"
+                variant="link"
+                size="sm"
+                className="h-auto p-0 text-sm"
+                onClick={downloadImportTemplate}
+                data-testid="button-download-import-template"
+              >
+                <Download className="w-4 h-4 mr-1" />
+                Download template (CSV)
+              </Button>
+            </div>
           </DialogHeader>
 
           <div className="space-y-4 overflow-hidden flex flex-col flex-1">
