@@ -28,7 +28,7 @@
  *   tsx scripts/fetch-dot-pay-items.ts FHWA NCDOT  # fetch a subset
  *   tsx scripts/fetch-dot-pay-items.ts --dry-run   # parse only, do not write
  */
-import { writeFileSync, mkdirSync } from "fs";
+import { writeFileSync, mkdirSync, existsSync, readFileSync } from "fs";
 import { join } from "path";
 
 interface PayItem {
@@ -350,10 +350,301 @@ async function fetchNcdot(): Promise<AgencyCatalog> {
 
 // ---------- Registry ----------
 
+// ---------- Staged-drop manifest for the remaining 10 DOT agencies ----------
+//
+// The agencies below publish their authoritative pay-item lists behind
+// portals, JS apps, login walls, or CDNs (Akamai) that reject scripted
+// clients from this sandbox. Until those drops can be fetched directly, the
+// workflow is:
+//
+//   1. A human on a host with outbound access downloads the published file
+//      from `sourceUrl` (or the agency's portal noted in `notes`).
+//   2. They normalize it to CSV (or XML) and drop it at `incoming/<CODE>.csv`
+//      (or `.xml`). See `incoming/README.md` for column conventions.
+//   3. They run `tsx scripts/fetch-dot-pay-items.ts <CODE>` which loads the
+//      drop, validates it against `expectedMinItems`, and writes
+//      `server/data/dot/pay-items/<CODE>.json`. Equivalent to the importer
+//      but with the manifest's edition/title/source pre-filled.
+//
+// `expectedMinItems` mirrors the floors enforced in
+// `server/seedDotAgencies.ts` so the fetcher refuses to overwrite a real
+// catalog with a truncated drop.
+interface StagedDrop {
+  edition: string;
+  title: string;
+  sourceUrl: string;
+  expectedMinItems: number;
+  // Optional column-name overrides for CSV drops. Keys are the canonical
+  // fields; values are the header names in the source file.
+  csvColumnMap?: Partial<{
+    item: string;
+    description: string;
+    unit: string;
+    section: string;
+    category: string;
+  }>;
+  notes?: string;
+}
+
+const STAGED_AGENCIES: Record<string, StagedDrop> = {
+  FHWA: {
+    edition: "2014",
+    title:
+      "FP-14 Standard Specifications for Construction of Roads and Bridges on Federal Highway Projects",
+    sourceUrl: "https://highways.dot.gov/federal-lands/estimates/pay-items-fp-14",
+    expectedMinItems: 3500,
+    notes:
+      "Akamai blocks scripted clients (HTTP 403). Open the page in a browser, copy the FP-14 master list table, and save as CSV with columns Item,Description,Unit,Section,Category.",
+  },
+  TXDOT: {
+    edition: "2014",
+    title:
+      "Standard Specifications for Construction and Maintenance of Highways, Streets, and Bridges",
+    sourceUrl:
+      "https://www.txdot.gov/business/resources/standard-specifications-construction.html",
+    expectedMinItems: 3000,
+    notes:
+      "TxDOT does not publish a flat pay-item file; the canonical list is the AASHTOWare/Site Manager export. Pull a current `LCS_BIDLIST.csv` from a recent letting (https://www.txdot.gov/business/letting-bids.html) and rename to incoming/TXDOT.csv. Common headers: Item,Description,Unit.",
+  },
+  CALTRANS: {
+    edition: "2022",
+    title: "Standard Specifications",
+    sourceUrl:
+      "https://dot.ca.gov/programs/design/ccs-standard-plans-and-standard-specifications",
+    expectedMinItems: 2400,
+    notes:
+      "Caltrans publishes the Standard Pay Item List and Coded Pay Items List as PDFs that 200-but-return-HTML to scripted clients. Download std-pay-item-<year>-a11y.pdf via a browser, run it through a PDF-to-CSV converter, and drop as incoming/CALTRANS.csv.",
+  },
+  FDOT: {
+    edition: "2024",
+    title: "Standard Specifications for Road and Bridge Construction",
+    sourceUrl:
+      "https://www.fdot.gov/programmanagement/Implemented/SpecBooks/",
+    expectedMinItems: 3000,
+    notes:
+      "FDOT's pay items live in the Basis of Estimates Online tool (https://fdotwp1.fdot.gov/BasisOfEstimatesOnline/). Use its `Export to Excel` action, save as incoming/FDOT.csv. Default headers Pay Item Number,Description,Unit,Spec,Category.",
+    csvColumnMap: {
+      item: "Pay Item Number",
+      description: "Description",
+      unit: "Unit",
+      section: "Spec",
+      category: "Category",
+    },
+  },
+  NYSDOT: {
+    edition: "2024",
+    title: "Standard Specifications",
+    sourceUrl:
+      "https://www.dot.ny.gov/main/business-center/engineering/specifications/pay-item-catalog",
+    expectedMinItems: 2500,
+    notes:
+      "Pay Item Catalog (PIC) is a JS web app with no flat-file export. Use the `Pay Item List` interface, click `Export`, save as incoming/NYSDOT.csv. Headers: Pay Item #,Pay Item Description,Unit.",
+    csvColumnMap: {
+      item: "Pay Item #",
+      description: "Pay Item Description",
+      unit: "Unit",
+    },
+  },
+  PENNDOT: {
+    edition: "2020",
+    title: "Publication 408 — Specifications",
+    sourceUrl: "https://www.dot.state.pa.us/",
+    expectedMinItems: 2700,
+    notes:
+      "PennDOT ECMS hosts the master item-number list behind login. From an authenticated ECMS session export `Item Number List.csv` and drop as incoming/PENNDOT.csv.",
+  },
+  ODOT: {
+    edition: "2023",
+    title: "Construction and Material Specifications (C&MS)",
+    sourceUrl:
+      "https://www.transportation.ohio.gov/working/engineering/specifications",
+    expectedMinItems: 2700,
+    notes:
+      "Ohio DOT publishes the C&MS pay-item list inside its AASHTOWare Estimator reference data (https://www.transportation.ohio.gov/working/engineering/cadd-mapping/aashtoware/reference-data). Export `OHIO_PayItemList.csv` and drop as incoming/ODOT.csv.",
+  },
+  IDOT: {
+    edition: "2022",
+    title: "Standard Specifications for Road and Bridge Construction",
+    sourceUrl:
+      "https://idot.illinois.gov/doing-business/procurements/construction-services/transportation-bulletin/Specifications.html",
+    expectedMinItems: 2400,
+    notes:
+      "IDOT's master pay-item list ships with the AASHTOWare BAMS/DSS reference data download. Pull the latest `IL_PayItemMaster.csv` and drop as incoming/IDOT.csv.",
+  },
+  GDOT: {
+    edition: "2021",
+    title: "Standard Specifications",
+    sourceUrl:
+      "http://www.dot.ga.gov/PartnerSmart/Business/Source2Pay/Pages/PayItems.aspx",
+    expectedMinItems: 2400,
+    notes:
+      "GDOT publishes Source2Pay item exports in XLSX. Save the latest `GDOT_PayItems.xlsx`, convert to CSV, drop as incoming/GDOT.csv. Default headers: Pay Item Code,Description,Unit,Spec Section.",
+    csvColumnMap: {
+      item: "Pay Item Code",
+      description: "Description",
+      unit: "Unit",
+      section: "Spec Section",
+    },
+  },
+  VDOT: {
+    edition: "2020",
+    title: "Road and Bridge Specifications",
+    sourceUrl:
+      "https://www.virginiadot.org/business/const/spec-default.asp",
+    expectedMinItems: 2400,
+    notes:
+      "VDOT's pay-item master ships inside the AASHTOWare BAMS reference set on the Construction Division SharePoint. Download the latest `VDOT_PayItem.xml` and drop as incoming/VDOT.xml; the importer's XML mode handles the <PayItem> blocks directly.",
+  },
+};
+
+// --- Minimal CSV/XML parsers (mirror scripts/import-dot-pay-items.ts) ---
+function parseCsv(text: string): Record<string, string>[] {
+  const rows: string[][] = [];
+  let cur: string[] = [];
+  let cell = "";
+  let i = 0;
+  let inQuote = false;
+  while (i < text.length) {
+    const ch = text[i];
+    if (inQuote) {
+      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i += 2; continue; }
+      if (ch === '"') { inQuote = false; i++; continue; }
+      cell += ch; i++; continue;
+    }
+    if (ch === '"') { inQuote = true; i++; continue; }
+    if (ch === ",") { cur.push(cell); cell = ""; i++; continue; }
+    if (ch === "\n" || ch === "\r") {
+      if (cell !== "" || cur.length > 0) { cur.push(cell); rows.push(cur); cur = []; cell = ""; }
+      if (ch === "\r" && text[i + 1] === "\n") i++;
+      i++; continue;
+    }
+    cell += ch; i++;
+  }
+  if (cell !== "" || cur.length > 0) { cur.push(cell); rows.push(cur); }
+  if (rows.length === 0) return [];
+  const header = rows[0].map((h) => h.trim());
+  return rows.slice(1).filter((r) => r.some((c) => c.trim() !== "")).map((r) => {
+    const obj: Record<string, string> = {};
+    for (let j = 0; j < header.length; j++) obj[header[j]] = (r[j] ?? "").trim();
+    return obj;
+  });
+}
+
+function parseXmlItems(text: string): PayItem[] {
+  const out: PayItem[] = [];
+  const itemRe = /<(item|payItem|PayItem)\b[^>]*>([\s\S]*?)<\/\1>/g;
+  const tag = (block: string, name: string) => {
+    const r = new RegExp(`<${name}[^>]*>([\\s\\S]*?)<\\/${name}>`, "i");
+    return r.exec(block)?.[1]?.replace(/<!\[CDATA\[(.*?)\]\]>/gs, "$1").trim() ?? "";
+  };
+  let m: RegExpExecArray | null;
+  while ((m = itemRe.exec(text)) !== null) {
+    const block = m[2];
+    const itemNumber =
+      tag(block, "itemNumber") || tag(block, "Item") || tag(block, "PayItemNumber") || tag(block, "Code");
+    const description =
+      tag(block, "description") || tag(block, "Description");
+    const unit = tag(block, "unit") || tag(block, "Unit");
+    if (!itemNumber || !description || !unit) continue;
+    out.push({
+      itemNumber,
+      description,
+      unit: unit.toUpperCase(),
+      specSection:
+        tag(block, "section") || tag(block, "specSection") || tag(block, "SpecSection") || itemNumber.split("-")[0] || "",
+      category:
+        tag(block, "category") || tag(block, "Category") || "Standard",
+    });
+  }
+  return out;
+}
+
+const INCOMING_DIR = join(process.cwd(), "incoming");
+
+function pickHeader(row: Record<string, string>, names: (string | undefined)[]): string {
+  for (const n of names) {
+    if (n && row[n] !== undefined && row[n] !== "") return row[n];
+  }
+  // Case-insensitive fallback
+  const lc = Object.fromEntries(Object.entries(row).map(([k, v]) => [k.toLowerCase(), v]));
+  for (const n of names) {
+    if (!n) continue;
+    const v = lc[n.toLowerCase()];
+    if (v !== undefined && v !== "") return v;
+  }
+  return "";
+}
+
+function loadIncomingCatalog(code: string, drop: StagedDrop): AgencyCatalog {
+  const csvPath = join(INCOMING_DIR, `${code}.csv`);
+  const xmlPath = join(INCOMING_DIR, `${code}.xml`);
+  let items: PayItem[] = [];
+  let usedPath = "";
+  if (existsSync(csvPath)) {
+    usedPath = csvPath;
+    const rows = parseCsv(readFileSync(csvPath, "utf8"));
+    const map = drop.csvColumnMap ?? {};
+    items = rows.map((r) => {
+      const itemNumber = pickHeader(r, [map.item, "item", "Item", "ItemNumber", "Pay Item", "Pay Item #", "Pay Item Number", "Code"]).trim();
+      const description = pickHeader(r, [map.description, "description", "Description", "Pay Item Description", "Item Description"]).trim();
+      const unit = pickHeader(r, [map.unit, "unit", "Unit", "UOM", "Units"]).trim().toUpperCase();
+      const section = pickHeader(r, [map.section, "section", "Section", "Spec", "Spec Section", "specSection"]).trim();
+      const category = pickHeader(r, [map.category, "category", "Category", "Type"]).trim();
+      return {
+        itemNumber,
+        description,
+        unit,
+        specSection: section || (itemNumber.match(/^(\d{2,3})/)?.[1] ?? ""),
+        category: category || "Standard",
+      };
+    }).filter((it) => it.itemNumber && it.description && it.unit);
+  } else if (existsSync(xmlPath)) {
+    usedPath = xmlPath;
+    items = parseXmlItems(readFileSync(xmlPath, "utf8"));
+  } else {
+    throw new Error(
+      `No staged drop found for ${code}.\n` +
+        `  Expected: ${csvPath} or ${xmlPath}\n` +
+        `  Source:   ${drop.sourceUrl}\n` +
+        `  Notes:    ${drop.notes ?? "(none)"}\n` +
+        `  See incoming/README.md for the staging runbook.`,
+    );
+  }
+  if (items.length < drop.expectedMinItems) {
+    throw new Error(
+      `${code} drop at ${usedPath} parsed only ${items.length} items; ` +
+        `expected at least ${drop.expectedMinItems}. Investigate the source file or column map.`,
+    );
+  }
+  return {
+    specBook: { edition: drop.edition, title: drop.title },
+    source: drop.sourceUrl,
+    items,
+  };
+}
+
 const AGENCY_FETCHERS: Record<string, () => Promise<AgencyCatalog>> = {
   FHWA: fetchFhwa,
   NCDOT: fetchNcdot,
 };
+
+// Register a generic incoming-drop fetcher for every staged agency. FHWA
+// keeps its scraping fetcher above (still preferred when reachable); the
+// staged-drop wrapper takes over only if a manual `incoming/FHWA.csv` is
+// present.
+for (const [code, drop] of Object.entries(STAGED_AGENCIES)) {
+  if (code === "FHWA") {
+    const direct = AGENCY_FETCHERS.FHWA;
+    AGENCY_FETCHERS.FHWA = async () => {
+      if (existsSync(join(INCOMING_DIR, "FHWA.csv")) || existsSync(join(INCOMING_DIR, "FHWA.xml"))) {
+        return loadIncomingCatalog("FHWA", drop);
+      }
+      return direct();
+    };
+    continue;
+  }
+  AGENCY_FETCHERS[code] = async () => loadIncomingCatalog(code, drop);
+}
 
 // Page/report boilerplate that should never appear inside an item description.
 // Used as a final guard before we accept the parsed catalog.
