@@ -133,6 +133,14 @@ jobs:
       # - name: Run ESLint
       #   run: npm run lint
 
+      # Task #1375 — guard against the production-crashing regression where an
+      # Express handler calls `next(error)` without declaring `next` in its
+      # signature. `scripts/audit-next-without-param.mjs` scans server/ for that
+      # pattern and exits non-zero (printing the offending file/line) when any
+      # handler is missing the `next` parameter, blocking the merge.
+      - name: Audit Express handlers for missing `next` parameter
+        run: node scripts/audit-next-without-param.mjs
+
   security:
     name: Security Gate (SOC 2 CC8.1 / CC7.1)
     runs-on: ubuntu-latest
