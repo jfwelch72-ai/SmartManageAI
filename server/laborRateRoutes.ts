@@ -595,6 +595,8 @@ interface ImportPreviewRow {
   action: ImportAction;
   existingId: string | null;
   errors: string[];
+  createClassification: boolean;
+  newClassificationName: string | null;
 }
 
 type CellValue = string | number | boolean | Date | null | undefined;
@@ -602,7 +604,9 @@ type SheetGrid = CellValue[][];
 
 const importRowSchema = z.object({
   rowNumber: z.number().int().nonnegative().optional(),
-  classificationId: z.string().min(1),
+  classificationId: z.string().nullable().optional(),
+  createClassification: z.boolean().optional(),
+  newClassificationName: z.string().optional(),
   wageRate: z.union([z.string(), z.number()]).transform(v => String(v)),
   fringeHealthRate: z.union([z.string(), z.number()]).optional().transform(v => v === undefined ? "0" : String(v)),
   fringePensionRate: z.union([z.string(), z.number()]).optional().transform(v => v === undefined ? "0" : String(v)),
@@ -620,6 +624,7 @@ const importRowSchema = z.object({
 const importPayloadSchema = z.object({
   projectId: z.string().min(1),
   rows: z.array(z.unknown()),
+  createMissing: z.boolean().optional(),
 });
 
 const HEADER_ALIASES: Record<string, RegExp> = {
@@ -682,6 +687,7 @@ router.post("/prevailing-wage-rates/import-preview", requireAuth, requireRole("A
     const projectId = String(req.body.projectId || "");
     if (!projectId) return res.status(400).json({ error: "projectId is required" });
     const defaultEffectiveDate = req.body.defaultEffectiveDate ? String(req.body.defaultEffectiveDate) : null;
+    const createMissing = String(req.body.createMissing || "") === "true" || req.body.createMissing === true;
 
     // Verify project belongs to org
     const [project] = await db.select().from(projects).where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, organizationId)));
@@ -754,7 +760,7 @@ router.post("/prevailing-wage-rates/import-preview", requireAuth, requireRole("A
       const lookupKey = rawClass.toLowerCase();
       const matched = classByName.get(lookupKey) || classByCode.get(lookupKey) || null;
       if (!rawClass) errors.push("Missing classification");
-      else if (!matched) errors.push(`Unknown classification "${rawClass}"`);
+      else if (!matched && !createMissing) errors.push(`Unknown classification "${rawClass}"`);
 
       const wageNum = parseNumber(cellAt(row, idx.wage));
       if (isNaN(wageNum) || wageNum <= 0) errors.push("Invalid or missing wage rate");
@@ -806,13 +812,14 @@ router.post("/prevailing-wage-rates/import-preview", requireAuth, requireRole("A
       const total = wage + fringe;
 
       const existing = matched ? existingByClass.get(matched.id) || null : null;
+      const willCreateClassification = !matched && !!rawClass && createMissing;
       const action: ImportPreviewRow["action"] = errors.length > 0 ? "ERROR" : (existing ? "UPDATE" : "CREATE");
 
       previewRows.push({
         rowNumber: i + 1,
         rawClassification: rawClass,
         classificationId: matched?.id ?? null,
-        classificationName: matched?.name ?? null,
+        classificationName: matched?.name ?? (willCreateClassification ? rawClass : null),
         wageRate: wage.toFixed(2),
         fringeHealthRate: (isNaN(healthNum) ? 0 : healthNum).toFixed(2),
         fringePensionRate: (isNaN(pensionNum) ? 0 : pensionNum).toFixed(2),
@@ -828,7 +835,17 @@ router.post("/prevailing-wage-rates/import-preview", requireAuth, requireRole("A
         action,
         existingId: existing?.id ?? null,
         errors,
+        createClassification: willCreateClassification,
+        newClassificationName: willCreateClassification ? rawClass : null,
       });
+    }
+
+    // Count distinct new classifications (case-insensitive) that would be created
+    const newClassNames = new Set<string>();
+    for (const r of previewRows) {
+      if (r.action !== "ERROR" && r.createClassification && r.newClassificationName) {
+        newClassNames.add(r.newClassificationName.trim().toLowerCase());
+      }
     }
 
     const summary = {
@@ -836,6 +853,7 @@ router.post("/prevailing-wage-rates/import-preview", requireAuth, requireRole("A
       toCreate: previewRows.filter(r => r.action === "CREATE").length,
       toUpdate: previewRows.filter(r => r.action === "UPDATE").length,
       withErrors: previewRows.filter(r => r.action === "ERROR").length,
+      classificationsToCreate: newClassNames.size,
     };
 
     res.json({
@@ -859,7 +877,7 @@ router.post("/prevailing-wage-rates/import", requireAuth, requireRole("ADMIN", "
     if (!payloadParsed.success) {
       return res.status(400).json({ error: "Invalid payload", details: payloadParsed.error.flatten() });
     }
-    const { projectId, rows } = payloadParsed.data;
+    const { projectId, rows, createMissing } = payloadParsed.data;
 
     const [project] = await db.select().from(projects).where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, organizationId)));
     if (!project) return res.status(404).json({ error: "Project not found" });
@@ -869,6 +887,11 @@ router.post("/prevailing-wage-rates/import", requireAuth, requireRole("ADMIN", "
       .from(jobClassifications)
       .where(eq(jobClassifications.organizationId, organizationId));
     const validClassIds = new Set(orgClassifications.map(c => c.id));
+    const classByNameLower = new Map<string, typeof orgClassifications[number]>();
+    for (const c of orgClassifications) {
+      classByNameLower.set(c.name.trim().toLowerCase(), c);
+    }
+    let classificationsCreated = 0;
 
     const existingRates = await db
       .select()
@@ -902,8 +925,18 @@ router.post("/prevailing-wage-rates/import", requireAuth, requireRole("ADMIN", "
       const row = parsed.data;
       const rowNumber = row.rowNumber ?? rowNumberFallback;
 
-      if (row.action === "ERROR" || !validClassIds.has(row.classificationId)) {
+      if (row.action === "ERROR") {
         skipped++;
+        continue;
+      }
+
+      const hasValidExisting = !!row.classificationId && validClassIds.has(row.classificationId);
+      const wantsNew = !!createMissing && !!row.createClassification && !!row.newClassificationName && row.newClassificationName.trim().length > 0;
+      if (!hasValidExisting && !wantsNew) {
+        skipped++;
+        if (!row.classificationId) {
+          errors.push({ rowNumber, message: "Missing classification (enable 'Create missing classifications' to auto-create)" });
+        }
         continue;
       }
 
@@ -934,12 +967,75 @@ router.post("/prevailing-wage-rates/import", requireAuth, requireRole("ADMIN", "
         continue;
       }
 
-      const previous = validatedByClass.get(row.classificationId);
+      const dedupKey = row.classificationId
+        ? `id:${row.classificationId}`
+        : `name:${(row.newClassificationName ?? "").trim().toLowerCase()}`;
+      const previous = validatedByClass.get(dedupKey);
       if (previous) {
         skipped++;
         errors.push({ rowNumber: previous.rowNumber, message: `Superseded by later row for the same classification (row ${rowNumber})` });
       }
-      validatedByClass.set(row.classificationId, { row, rowNumber });
+      validatedByClass.set(dedupKey, { row, rowNumber });
+    }
+
+    // Phase 1.5: Auto-create missing classifications.
+    if (createMissing) {
+      const newClassRows = Array.from(validatedByClass.values()).filter(
+        ({ row }) => !row.classificationId && row.createClassification && row.newClassificationName
+      );
+      // Group by lowercase name; pick first row's wage info for defaults.
+      const grouped = new Map<string, { name: string; row: typeof newClassRows[number]["row"]; rowNumber: number }>();
+      for (const item of newClassRows) {
+        const name = item.row.newClassificationName!.trim();
+        const key = name.toLowerCase();
+        if (!grouped.has(key)) grouped.set(key, { name, row: item.row, rowNumber: item.rowNumber });
+      }
+      for (const { name, row, rowNumber } of grouped.values()) {
+        const key = name.toLowerCase();
+        const existingClass = classByNameLower.get(key);
+        if (existingClass) continue;
+        try {
+          const wage = parseFloat(row.wageRate);
+          const ot = parseFloat(row.overtimeMultiplier ?? "1.5");
+          const defaultRegularRate = Number.isFinite(wage) && wage > 0 ? wage.toFixed(2) : null;
+          const defaultOvertimeRate = Number.isFinite(wage) && Number.isFinite(ot) && wage > 0 && ot > 0
+            ? (wage * ot).toFixed(2)
+            : null;
+          const data = insertJobClassificationSchema.parse({
+            organizationId,
+            name,
+            description: "Auto-created during prevailing wage import",
+            defaultRegularRate,
+            defaultOvertimeRate,
+            isActive: true,
+          });
+          const [c] = await db.insert(jobClassifications).values(data).returning();
+          if (c) {
+            classificationsCreated++;
+            classByNameLower.set(key, c);
+            validClassIds.add(c.id);
+            await logAudit({
+              userId: req.user!.id,
+              entityType: "job_classification",
+              entityId: c.id,
+              action: "CREATE",
+              newValue: JSON.stringify(c),
+            }, req);
+          }
+        } catch (err: unknown) {
+          // If unique constraint hit (race), refetch the existing one.
+          const refetch = await db
+            .select()
+            .from(jobClassifications)
+            .where(and(eq(jobClassifications.organizationId, organizationId), eq(jobClassifications.name, name)));
+          if (refetch[0]) {
+            classByNameLower.set(key, refetch[0]);
+            validClassIds.add(refetch[0].id);
+          } else {
+            errors.push({ rowNumber, message: `Failed to create classification "${name}": ${err instanceof Error ? err.message : "unknown error"}` });
+          }
+        }
+      }
     }
 
     for (const { row, rowNumber } of validatedByClass.values()) {
@@ -959,7 +1055,19 @@ router.post("/prevailing-wage-rates/import", requireAuth, requireRole("ADMIN", "
         const overtimeMultiplier = row.overtimeMultiplier ?? "1.5";
         const effectiveDate = row.effectiveDate;
 
-        const existing = existingByClass.get(row.classificationId);
+        // Resolve classificationId: either provided, or just-created by name.
+        let classificationId = row.classificationId ?? null;
+        if (!classificationId && row.newClassificationName) {
+          const c = classByNameLower.get(row.newClassificationName.trim().toLowerCase());
+          classificationId = c?.id ?? null;
+        }
+        if (!classificationId || !validClassIds.has(classificationId)) {
+          skipped++;
+          errors.push({ rowNumber, message: "Classification could not be resolved" });
+          continue;
+        }
+
+        const existing = existingByClass.get(classificationId);
         if (existing) {
           const [u] = await db
             .update(prevailingWageRates)
@@ -998,7 +1106,7 @@ router.post("/prevailing-wage-rates/import", requireAuth, requireRole("ADMIN", "
           const data = insertPrevailingWageRateSchema.parse({
             organizationId,
             projectId,
-            classificationId: row.classificationId,
+            classificationId,
             wageRate,
             fringeRate,
             fringeHealthRate,
@@ -1031,7 +1139,7 @@ router.post("/prevailing-wage-rates/import", requireAuth, requireRole("ADMIN", "
       }
     }
 
-    res.json({ created, updated, skipped, errors });
+    res.json({ created, updated, skipped, errors, classificationsCreated });
   } catch (error) {
     next(error);
   }

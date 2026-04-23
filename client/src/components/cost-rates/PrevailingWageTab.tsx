@@ -10,8 +10,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { Edit, Trash2, Plus, Building2, AlertCircle, Upload, FileSpreadsheet, CheckCircle2, XCircle, Download } from "lucide-react";
+import { Edit, Trash2, Plus, Building2, AlertCircle, Upload, FileSpreadsheet, CheckCircle2, XCircle, Download, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { format, parseISO } from "date-fns";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
@@ -108,13 +109,15 @@ export function PrevailingWageTab({
     action: "CREATE" | "UPDATE" | "ERROR";
     existingId: string | null;
     errors: string[];
+    createClassification: boolean;
+    newClassificationName: string | null;
   };
 
   type ImportPreviewResponse = {
     projectId: string;
     projectName: string;
     headersDetected: string[];
-    summary: { totalRows: number; toCreate: number; toUpdate: number; withErrors: number };
+    summary: { totalRows: number; toCreate: number; toUpdate: number; withErrors: number; classificationsToCreate: number };
     rows: ImportPreviewRowDTO[];
   };
 
@@ -123,6 +126,7 @@ export function PrevailingWageTab({
     updated: number;
     skipped: number;
     errors: { rowNumber?: number; message: string }[];
+    classificationsCreated?: number;
   };
 
   const [showImportDialog, setShowImportDialog] = useState(false);
@@ -130,6 +134,7 @@ export function PrevailingWageTab({
   const [importDefaultDate, setImportDefaultDate] = useState(new Date().toISOString().split("T")[0]);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importPreview, setImportPreview] = useState<ImportPreviewResponse | null>(null);
+  const [importCreateMissing, setImportCreateMissing] = useState(false);
 
   const downloadImportTemplate = () => {
     const headers = [
@@ -182,6 +187,7 @@ export function PrevailingWageTab({
     setImportDefaultDate(new Date().toISOString().split("T")[0]);
     setImportFile(null);
     setImportPreview(null);
+    setImportCreateMissing(false);
   };
 
   const previewMutation = useMutation({
@@ -191,6 +197,7 @@ export function PrevailingWageTab({
       fd.append("file", importFile);
       fd.append("projectId", importProjectId);
       if (importDefaultDate) fd.append("defaultEffectiveDate", importDefaultDate);
+      if (importCreateMissing) fd.append("createMissing", "true");
       const res = await fetch("/api/labor-rates/prevailing-wage-rates/import-preview", {
         method: "POST",
         body: fd,
@@ -217,15 +224,19 @@ export function PrevailingWageTab({
       return await apiRequest("POST", "/api/labor-rates/prevailing-wage-rates/import", {
         projectId: importPreview.projectId,
         rows,
+        createMissing: importCreateMissing,
       });
     },
     onSuccess: async (res) => {
       const data = (await res.json()) as ImportResultResponse;
       queryClient.invalidateQueries({ queryKey: ["/api/labor-rates/prevailing-wage-rates"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/labor-rates/classifications"] });
       const errCount = (data.errors || []).length;
+      const classCount = data.classificationsCreated ?? 0;
+      const classNote = classCount > 0 ? `, ${classCount} new classification${classCount === 1 ? "" : "s"}` : "";
       toast({
         title: "Import complete",
-        description: `Created ${data.created}, updated ${data.updated}, skipped ${data.skipped}${errCount ? ` (${errCount} errors)` : ""}`,
+        description: `Created ${data.created}, updated ${data.updated}${classNote}, skipped ${data.skipped}${errCount ? ` (${errCount} errors)` : ""}`,
       });
       resetImportDialog();
     },
@@ -689,6 +700,23 @@ export function PrevailingWageTab({
               </div>
             </div>
 
+            <div className="flex items-start gap-2 rounded-md border p-3 bg-muted/30">
+              <Checkbox
+                id="import-create-missing"
+                checked={importCreateMissing}
+                onCheckedChange={(v) => { setImportCreateMissing(v === true); setImportPreview(null); }}
+                data-testid="checkbox-import-create-missing"
+              />
+              <div className="space-y-1 leading-none">
+                <Label htmlFor="import-create-missing" className="cursor-pointer">
+                  Create missing classifications
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Automatically create new job classifications for any rows whose classification doesn't exist yet. Defaults are derived from the row's wage rate.
+                </p>
+              </div>
+            </div>
+
             <div className="flex flex-wrap gap-2">
               <Button
                 onClick={() => previewMutation.mutate()}
@@ -706,6 +734,12 @@ export function PrevailingWageTab({
                   <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300" data-testid="badge-import-update">
                     {importPreview.summary.toUpdate} update
                   </Badge>
+                  {importPreview.summary.classificationsToCreate > 0 && (
+                    <Badge className="bg-purple-100 text-purple-800 hover:bg-purple-100 dark:bg-purple-900/30 dark:text-purple-300 gap-1" data-testid="badge-import-new-classifications">
+                      <Sparkles className="w-3 h-3" />
+                      {importPreview.summary.classificationsToCreate} new classification{importPreview.summary.classificationsToCreate === 1 ? "" : "s"}
+                    </Badge>
+                  )}
                   {importPreview.summary.withErrors > 0 && (
                     <Badge variant="destructive" data-testid="badge-import-errors">
                       {importPreview.summary.withErrors} errors
@@ -755,7 +789,19 @@ export function PrevailingWageTab({
                           )}
                         </TableCell>
                         <TableCell>
-                          <div className="text-sm">{r.classificationName || r.rawClassification || <span className="text-muted-foreground italic">-</span>}</div>
+                          <div className="text-sm flex items-center gap-1.5">
+                            <span>{r.classificationName || r.rawClassification || <span className="text-muted-foreground italic">-</span>}</span>
+                            {r.createClassification && r.action !== "ERROR" && (
+                              <Badge
+                                variant="outline"
+                                className="text-[10px] py-0 px-1.5 h-4 border-purple-400 text-purple-700 dark:border-purple-500 dark:text-purple-300 gap-0.5"
+                                data-testid={`badge-new-class-${r.rowNumber}`}
+                              >
+                                <Sparkles className="w-2.5 h-2.5" />
+                                new
+                              </Badge>
+                            )}
+                          </div>
                           {r.errors.length > 0 && (
                             <div className="text-xs text-destructive mt-0.5" data-testid={`text-import-errors-${r.rowNumber}`}>
                               {r.errors.join("; ")}
