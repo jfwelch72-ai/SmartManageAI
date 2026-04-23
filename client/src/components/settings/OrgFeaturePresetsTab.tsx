@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { ToggleRight, HardHat, ArrowRight } from "lucide-react";
+import { ToggleRight, HardHat, ArrowRight, History, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   FEATURE_FLAG_LABELS,
   FEATURE_FLAG_DESCRIPTIONS,
@@ -34,6 +34,20 @@ interface LastPresetResponse {
   } | null;
 }
 
+interface PresetHistoryItem {
+  id: string;
+  tradeType: string;
+  appliedAt: string;
+  appliedBy: { id: string; firstName: string; lastName: string; email: string } | null;
+}
+
+interface PresetHistoryResponse {
+  items: PresetHistoryItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
 interface FlagDiff {
   key: FeatureFlagKey;
   label: string;
@@ -47,6 +61,8 @@ export function OrgFeaturePresetsTab() {
   const [selectedTradeType, setSelectedTradeType] = useState<string>("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [pendingTradeType, setPendingTradeType] = useState<string | null>(null);
+  const [historyPage, setHistoryPage] = useState(1);
+  const HISTORY_PAGE_SIZE = 10;
 
   const { data: tradeConfig, isLoading: tradeConfigLoading } = useQuery<TradeConfigResponse>({
     queryKey: ["/api/organization/trade-config"],
@@ -73,6 +89,18 @@ export function OrgFeaturePresetsTab() {
   const lastApplied = lastPresetData?.lastApplied ?? null;
   const lastAppliedTradeType = lastApplied?.tradeType ?? null;
 
+  const { data: historyData, isLoading: historyLoading } = useQuery<PresetHistoryResponse>({
+    queryKey: ["/api/feature-flags", orgId, "preset-history", historyPage, HISTORY_PAGE_SIZE],
+    queryFn: async () => {
+      const res = await apiRequest(
+        "GET",
+        `/api/feature-flags/${orgId}/preset-history?page=${historyPage}&pageSize=${HISTORY_PAGE_SIZE}`,
+      );
+      return res.json();
+    },
+    enabled: !!user && user.role === "ADMIN" && !!orgId,
+  });
+
   const tradeTypeOptions = tradeConfig?.tradeTypes ?? [];
   const tradeLabelMap = useMemo(() => {
     const map: Record<string, string> = {};
@@ -88,6 +116,8 @@ export function OrgFeaturePresetsTab() {
     onSuccess: (_data, tradeType) => {
       queryClient.invalidateQueries({ queryKey: ["/api/feature-flags"] });
       queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId, "last-preset"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/feature-flags", orgId, "preset-history"] });
+      setHistoryPage(1);
       const label = tradeLabelMap[tradeType] || tradeType;
       toast({
         title: "Preset applied",
@@ -344,6 +374,106 @@ export function OrgFeaturePresetsTab() {
               );
             })}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-preset-history">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <History className="h-5 w-5" />
+            Preset history
+          </CardTitle>
+          <CardDescription>
+            Every preset application for this organization, newest first.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {historyLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : !historyData || historyData.items.length === 0 ? (
+            <div
+              className="text-sm text-muted-foreground py-4 text-center"
+              data-testid="text-preset-history-empty"
+            >
+              No preset applications recorded yet.
+            </div>
+          ) : (
+            <>
+              <div className="border rounded-md divide-y" data-testid="list-preset-history">
+                {historyData.items.map((item) => {
+                  const who = item.appliedBy
+                    ? `${item.appliedBy.firstName} ${item.appliedBy.lastName}`.trim() ||
+                      item.appliedBy.email
+                    : "Unknown user";
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 px-3 py-2 text-sm"
+                      data-testid={`row-preset-history-${item.id}`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <Badge variant="secondary" data-testid={`badge-history-trade-${item.id}`}>
+                          {tradeLabelMap[item.tradeType] || item.tradeType}
+                        </Badge>
+                        <span
+                          className="font-medium truncate"
+                          data-testid={`text-history-user-${item.id}`}
+                        >
+                          {who}
+                        </span>
+                      </div>
+                      <span
+                        className="text-muted-foreground shrink-0"
+                        data-testid={`text-history-time-${item.id}`}
+                      >
+                        {new Date(item.appliedAt).toLocaleString()}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+              {historyData.total > historyData.pageSize && (
+                <div className="flex items-center justify-between mt-3">
+                  <div
+                    className="text-xs text-muted-foreground"
+                    data-testid="text-preset-history-pagination-summary"
+                  >
+                    Page {historyData.page} of{" "}
+                    {Math.max(1, Math.ceil(historyData.total / historyData.pageSize))} •{" "}
+                    {historyData.total} total
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setHistoryPage((p) => Math.max(1, p - 1))}
+                      disabled={historyData.page <= 1}
+                      data-testid="button-preset-history-prev"
+                    >
+                      <ChevronLeft className="h-4 w-4" />
+                      Prev
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setHistoryPage((p) => p + 1)}
+                      disabled={
+                        historyData.page * historyData.pageSize >= historyData.total
+                      }
+                      data-testid="button-preset-history-next"
+                    >
+                      Next
+                      <ChevronRight className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
 

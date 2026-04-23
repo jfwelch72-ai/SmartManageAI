@@ -65,6 +65,21 @@ router.get("/:orgId/last-preset", requireAuth, async (req, res, next) => {
   }
 });
 
+router.get("/:orgId/preset-history", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (user.role !== "SUPER_ADMIN" && (user.role !== "ADMIN" || user.organizationId !== req.params.orgId)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    const page = Math.max(1, parseInt(String(req.query.page ?? "1"), 10) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(String(req.query.pageSize ?? "20"), 10) || 20));
+    const history = await flagService.listPresetApplications(req.params.orgId, page, pageSize);
+    res.json(history);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.patch("/:orgId", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;

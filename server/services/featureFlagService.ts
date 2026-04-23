@@ -161,3 +161,69 @@ export async function getLastPresetApplication(orgId: string): Promise<LastPrese
       : null,
   };
 }
+
+export interface PresetApplicationHistoryItem {
+  id: string;
+  tradeType: string;
+  appliedAt: Date;
+  appliedBy: { id: string; firstName: string; lastName: string; email: string } | null;
+}
+
+export interface PresetApplicationHistoryPage {
+  items: PresetApplicationHistoryItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export async function listPresetApplications(
+  orgId: string,
+  page: number = 1,
+  pageSize: number = 20,
+): Promise<PresetApplicationHistoryPage> {
+  const safePage = Math.max(1, Math.floor(page));
+  const safePageSize = Math.min(100, Math.max(1, Math.floor(pageSize)));
+  const offset = (safePage - 1) * safePageSize;
+
+  const rows = await db
+    .select({
+      id: featureFlagPresetApplications.id,
+      tradeType: featureFlagPresetApplications.tradeType,
+      appliedAt: featureFlagPresetApplications.appliedAt,
+      appliedById: featureFlagPresetApplications.appliedById,
+      userFirstName: users.firstName,
+      userLastName: users.lastName,
+      userEmail: users.email,
+      userId: users.id,
+    })
+    .from(featureFlagPresetApplications)
+    .leftJoin(users, eq(users.id, featureFlagPresetApplications.appliedById))
+    .where(eq(featureFlagPresetApplications.organizationId, orgId))
+    .orderBy(desc(featureFlagPresetApplications.appliedAt))
+    .limit(safePageSize)
+    .offset(offset);
+
+  const [{ count }] = await db
+    .select({ count: sql<number>`count(*)::int` })
+    .from(featureFlagPresetApplications)
+    .where(eq(featureFlagPresetApplications.organizationId, orgId));
+
+  return {
+    items: rows.map((row) => ({
+      id: row.id,
+      tradeType: row.tradeType,
+      appliedAt: row.appliedAt,
+      appliedBy: row.userId
+        ? {
+            id: row.userId,
+            firstName: row.userFirstName ?? "",
+            lastName: row.userLastName ?? "",
+            email: row.userEmail ?? "",
+          }
+        : null,
+    })),
+    total: Number(count) || 0,
+    page: safePage,
+    pageSize: safePageSize,
+  };
+}
