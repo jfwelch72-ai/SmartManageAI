@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Archive, ArchiveRestore, Download, FileSpreadsheet, FileText, Loader2, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, Download, FileSpreadsheet, FileText, History, Loader2, Trash2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -50,6 +50,16 @@ interface ProjectOption {
   name: string;
 }
 
+interface AuditHistoryEntry {
+  id: string;
+  action: string;
+  createdAt: string;
+  actorId: string;
+  actorName: string;
+  actorEmail: string | null;
+  reason: string | null;
+}
+
 const ALL = "__all__";
 
 function formatBytes(bytes: number): string {
@@ -86,7 +96,18 @@ export default function CertifiedPayrollHistoryPage() {
   const [showArchived, setShowArchived] = useState(false);
   const [archiveDialog, setArchiveDialog] = useState<CertifiedPayrollReportRow | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<CertifiedPayrollReportRow | null>(null);
+  const [historyDialog, setHistoryDialog] = useState<CertifiedPayrollReportRow | null>(null);
   const [reasonText, setReasonText] = useState("");
+
+  // Task #1179: load the per-report archive/restore/delete timeline only when the
+  // operator opens the inline history panel.
+  const { data: historyData, isLoading: historyLoading } = useQuery<{
+    reportExists: boolean;
+    entries: AuditHistoryEntry[];
+  }>({
+    queryKey: ["/api/payroll/certified-reports", historyDialog?.id, "audit-history"],
+    enabled: !!historyDialog,
+  });
 
   const { permissionRole } = useAuth();
   const isAdmin = permissionRole === "ADMIN" || permissionRole === "SUPER_ADMIN";
@@ -458,6 +479,17 @@ export default function CertifiedPayrollHistoryPage() {
                               )}
                               <span className="ml-2">Download</span>
                             </Button>
+                            {isAdmin && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => setHistoryDialog(r)}
+                                data-testid={`button-history-${r.id}`}
+                                title="View archive/delete history"
+                              >
+                                <History className="h-4 w-4" />
+                              </Button>
+                            )}
                             {isAdmin && !r.archivedAt && (
                               <Button
                                 size="sm"
@@ -615,6 +647,92 @@ export default function CertifiedPayrollHistoryPage() {
             >
               {deleteMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
               <span className="ml-2">Delete permanently</span>
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={!!historyDialog}
+        onOpenChange={(open) => {
+          if (!open) setHistoryDialog(null);
+        }}
+      >
+        <DialogContent className="max-w-2xl" data-testid="dialog-report-history">
+          <DialogHeader>
+            <DialogTitle>Archive &amp; delete history</DialogTitle>
+            <DialogDescription>
+              Every archive, restore, and delete action recorded against this certified payroll
+              report — newest first.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2 max-h-[60vh] overflow-y-auto">
+            {historyLoading ? (
+              <div className="space-y-2">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-16 w-full" />
+                ))}
+              </div>
+            ) : !historyData || historyData.entries.length === 0 ? (
+              <div
+                className="text-center py-8 text-muted-foreground text-sm"
+                data-testid="text-empty-report-history"
+              >
+                No archive, restore, or delete actions have been recorded for this report yet.
+              </div>
+            ) : (
+              <ul className="space-y-3">
+                {historyData.entries.map((entry) => {
+                  const variant: "default" | "secondary" | "destructive" | "outline" =
+                    entry.action === "DELETE"
+                      ? "destructive"
+                      : entry.action === "ARCHIVE"
+                        ? "secondary"
+                        : "outline";
+                  return (
+                    <li
+                      key={entry.id}
+                      className="border rounded-md p-3 space-y-1"
+                      data-testid={`row-history-entry-${entry.id}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <Badge variant={variant} data-testid={`badge-history-action-${entry.id}`}>
+                          {entry.action}
+                        </Badge>
+                        <span
+                          className="text-xs text-muted-foreground"
+                          data-testid={`text-history-time-${entry.id}`}
+                        >
+                          {format(new Date(entry.createdAt), "MMM d, yyyy h:mm a")}
+                        </span>
+                      </div>
+                      <div className="text-sm" data-testid={`text-history-actor-${entry.id}`}>
+                        <span className="font-medium">{entry.actorName}</span>
+                        {entry.actorEmail && entry.actorEmail !== entry.actorName && (
+                          <span className="text-muted-foreground"> ({entry.actorEmail})</span>
+                        )}
+                      </div>
+                      {entry.reason && (
+                        <div
+                          className="text-sm text-muted-foreground"
+                          data-testid={`text-history-reason-${entry.id}`}
+                        >
+                          “{entry.reason}”
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setHistoryDialog(null)}
+              data-testid="button-history-close"
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

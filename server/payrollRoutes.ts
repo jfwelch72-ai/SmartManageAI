@@ -316,7 +316,7 @@ import { db } from "./db";
 import { eventBus } from "./events";
 import { exportLimiter } from "./rateLimiter";
 import { lookupCachedWageRate, lookupCachedRateByLocale } from "./integrations/providers/dol_davis_bacon/sync";
-import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts, overtimeRules, costLedgerPostings, certifiedPayrollReports } from "@shared/schema";
+import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts, overtimeRules, costLedgerPostings, certifiedPayrollReports, auditLog } from "@shared/schema";
 import { eq, and, gte, lte, sql, desc, inArray, count, asc, isNull, or } from "drizzle-orm";
 import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
 import { logAudit } from "./auditLogger";
@@ -2860,6 +2860,96 @@ router.delete(
       }, req);
 
       res.json({ success: true, storageDeleted: true });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// Task #1179: return the full archive/restore/delete audit timeline for a single
+// certified payroll report so compliance reviewers can see who did what (and
+// why) inline on the history page instead of digging through the global audit
+// log viewer. Cross-tenant safe: we first verify the report belongs to the
+// caller's org, *or* (for already-deleted rows) we restrict to audit rows whose
+// actor is in the caller's org.
+router.get(
+  "/api/payroll/certified-reports/:id/audit-history",
+  requireAuth,
+  requireRole("ADMIN", "SUPER_ADMIN"),
+  async (req, res, next) => {
+    try {
+      const authReq = req as AuthRequest;
+      const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+      if (mustDenyAccess || !orgId) return res.status(403).json({ error: "Access denied" });
+
+      const reportId = req.params.id;
+
+      // If the report still exists, enforce same-org ownership. If it has been
+      // hard-deleted we still want the timeline to be viewable — but only to
+      // admins of the org whose users actually performed the actions.
+      const [report] = await db.select({ id: certifiedPayrollReports.id })
+        .from(certifiedPayrollReports)
+        .where(and(
+          eq(certifiedPayrollReports.id, reportId),
+          eq(certifiedPayrollReports.organizationId, orgId),
+        ));
+
+      const rows = await db
+        .select({
+          id: auditLog.id,
+          action: auditLog.action,
+          createdAt: auditLog.createdAt,
+          oldValue: auditLog.oldValue,
+          newValue: auditLog.newValue,
+          actorId: users.id,
+          actorFirstName: users.firstName,
+          actorLastName: users.lastName,
+          actorEmail: users.email,
+          actorOrganizationId: users.organizationId,
+        })
+        .from(auditLog)
+        .innerJoin(users, eq(auditLog.userId, users.id))
+        .where(and(
+          eq(auditLog.entityType, "certified_payroll_reports"),
+          eq(auditLog.entityId, reportId),
+          // If the row still exists we already know it's in our org, but we
+          // still scope by actor org so a stray cross-org audit row can never
+          // leak in. If the row was hard-deleted we rely solely on actor org.
+          eq(users.organizationId, orgId),
+        ))
+        .orderBy(desc(auditLog.createdAt));
+
+      // Pull out the supplied reason for the operator's convenience. The
+      // archive/unarchive/delete handlers store it in newValue (or oldValue
+      // for unarchive) as JSON `{ reason: ... }` / `{ archiveReason: ... }`.
+      const extractReason = (raw: string | null): string | null => {
+        if (!raw) return null;
+        try {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === "object") {
+            if (typeof parsed.reason === "string") return parsed.reason;
+            if (typeof parsed.archiveReason === "string") return parsed.archiveReason;
+          }
+        } catch {
+          // not JSON — fall through
+        }
+        return null;
+      };
+
+      res.json({
+        reportExists: !!report,
+        entries: rows.map((r) => ({
+          id: r.id,
+          action: r.action,
+          createdAt: r.createdAt,
+          actorId: r.actorId,
+          actorName: [r.actorFirstName, r.actorLastName].filter(Boolean).join(" ") || r.actorEmail || "Unknown",
+          actorEmail: r.actorEmail,
+          // For ARCHIVE/DELETE the reason is in newValue; for UNARCHIVE the
+          // archive reason being undone lives in oldValue.
+          reason: extractReason(r.newValue) ?? extractReason(r.oldValue),
+        })),
+      });
     } catch (error) {
       next(error);
     }
