@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, Fragment } from "react";
-import { useSearch } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -360,28 +359,61 @@ export default function NotificationPrefsSection() {
   // endpoints. We surface a dismissible confirmation/error banner so users
   // who click "Mute" from an email get visible feedback that something
   // happened (or that the link was no longer valid).
-  const search = useSearch();
-  const muteBanner = useMemo(() => {
-    const params = new URLSearchParams(search);
+  //
+  // Task #1468 — Capture the banner from the URL exactly once on mount,
+  // then strip the `muted` / `mute` params via `history.replaceState`.
+  // Storing the result in component state (instead of re-deriving from
+  // `useSearch()` on every render) keeps the banner visible after we
+  // rewrite the URL, and prevents a reload — or a shared URL — from
+  // re-showing a stale "muted" confirmation. The `#section-...-prefs`
+  // anchor is preserved so the deep-link scroll target from the email
+  // still works on first load.
+  type MuteBanner =
+    | { kind: "success"; key: string; label: string | null }
+    | { kind: "invalid"; key: string; label: null };
+  const [muteBanner] = useState<MuteBanner | null>(() => {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
     const muted = params.get("muted");
     const mute = params.get("mute");
     if (muted) {
-      const label = MUTED_ALERT_FAMILY_LABELS[muted];
-      if (label) {
-        return { kind: "success" as const, key: `muted:${muted}`, label };
-      }
-      // Unknown success value — still acknowledge it generically rather
-      // than silently swallow a redirect we don't recognize.
-      return { kind: "success" as const, key: `muted:${muted}`, label: null };
+      const label = MUTED_ALERT_FAMILY_LABELS[muted] ?? null;
+      return { kind: "success", key: `muted:${muted}`, label };
     }
     if (mute === "invalid") {
-      return { kind: "invalid" as const, key: "mute:invalid", label: null };
+      return { kind: "invalid", key: "mute:invalid", label: null };
     }
     return null;
-  }, [search]);
+  });
   const [dismissedMuteBannerKey, setDismissedMuteBannerKey] = useState<string | null>(null);
   const showMuteBanner =
     muteBanner !== null && dismissedMuteBannerKey !== muteBanner.key;
+
+  useEffect(() => {
+    if (!muteBanner) return;
+    if (typeof window === "undefined") return;
+    try {
+      const url = new URL(window.location.href);
+      let changed = false;
+      if (url.searchParams.has("muted")) {
+        url.searchParams.delete("muted");
+        changed = true;
+      }
+      if (url.searchParams.has("mute")) {
+        url.searchParams.delete("mute");
+        changed = true;
+      }
+      if (!changed) return;
+      const newSearch = url.searchParams.toString();
+      const newUrl =
+        url.pathname +
+        (newSearch ? `?${newSearch}` : "") +
+        (url.hash || "");
+      window.history.replaceState(window.history.state, "", newUrl);
+    } catch {
+      // Ignore — the banner is still rendered from in-memory state.
+    }
+  }, [muteBanner]);
 
   // Task #1021: Only org admins receive CRM transcript backfill completion
   // summaries (the dispatch path in `notifyBackfillCompletionToOrgAdmins`
