@@ -1,9 +1,16 @@
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useQuery } from "@tanstack/react-query";
-import { AlertTriangle, FileText } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { AlertTriangle, FileText, RefreshCw, Plus, Loader2 } from "lucide-react";
 
 interface ProjectPayrollSummary {
   laborCostToDate: number;
@@ -57,9 +64,79 @@ function SourceBadge({ source }: { source: PrevailingRateSource }) {
 }
 
 function PrevailingWagePanel({ projectId }: { projectId: string }) {
+  const { toast } = useToast();
+  const summaryKey = ["/api/projects", projectId, "prevailing-wage-summary"];
   const { data, isLoading } = useQuery<PrevailingWageSummary>({
-    queryKey: ["/api/projects", projectId, "prevailing-wage-summary"],
+    queryKey: summaryKey,
   });
+
+  const [overrideOpen, setOverrideOpen] = useState(false);
+  const [overrideRow, setOverrideRow] = useState<PrevailingWageClassification | null>(null);
+  const [ovWageRate, setOvWageRate] = useState("");
+  const [ovFringeRate, setOvFringeRate] = useState("");
+  const [ovOtMultiplier, setOvOtMultiplier] = useState("1.5");
+  const [ovEffectiveDate, setOvEffectiveDate] = useState("");
+  const [ovExpirationDate, setOvExpirationDate] = useState("");
+  const [ovNotes, setOvNotes] = useState("");
+
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/projects/${projectId}/prevailing-wage-summary/sync`, {});
+      return (await res.json()) as { success: boolean; ratesImported?: number; decisionNumber?: string };
+    },
+    onSuccess: (res) => {
+      toast({
+        title: "Wage decision synced",
+        description: `Imported ${res.ratesImported ?? 0} rate${res.ratesImported === 1 ? "" : "s"} for ${res.decisionNumber}.`,
+      });
+      queryClient.invalidateQueries({ queryKey: summaryKey });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const overrideMutation = useMutation({
+    mutationFn: async () => {
+      if (!overrideRow) throw new Error("No row selected");
+      return await apiRequest("POST", "/api/labor-rates/prevailing-wage-rates", {
+        projectId,
+        classificationId: overrideRow.classificationId,
+        wageRate: ovWageRate,
+        fringeRate: ovFringeRate || "0",
+        fringeHealthRate: "0",
+        fringePensionRate: "0",
+        fringeVacationRate: "0",
+        fringeTrainingRate: "0",
+        overtimeMultiplier: ovOtMultiplier || "1.5",
+        effectiveDate: ovEffectiveDate,
+        expirationDate: ovExpirationDate || null,
+        wageDecision: overrideRow.wageDecision || null,
+        notes: ovNotes.trim() || null,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: "Project override saved", description: "DOL feed rate promoted to a project-specific override." });
+      queryClient.invalidateQueries({ queryKey: summaryKey });
+      queryClient.invalidateQueries({ queryKey: ["/api/labor-rates/prevailing-wage-rates"] });
+      setOverrideOpen(false);
+      setOverrideRow(null);
+    },
+    onError: (err: Error) => {
+      toast({ title: "Failed to save override", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const openOverrideDialog = (c: PrevailingWageClassification) => {
+    setOverrideRow(c);
+    setOvWageRate(c.wageRate.toFixed(2));
+    setOvFringeRate(c.fringeRate != null ? c.fringeRate.toFixed(2) : "0");
+    setOvOtMultiplier(c.overtimeMultiplier || "1.5");
+    setOvEffectiveDate(c.effectiveDate || new Date().toISOString().split("T")[0]);
+    setOvExpirationDate(c.expirationDate || "");
+    setOvNotes("");
+    setOverrideOpen(true);
+  };
 
   if (isLoading) {
     return (
@@ -83,6 +160,9 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
 
   const overrideCount = data.classifications.filter(c => c.source === "PROJECT_OVERRIDE").length;
   const dolCount = data.classifications.filter(c => c.source === "DOL_FEED").length;
+
+  const totalForOverride =
+    (parseFloat(ovWageRate || "0") + parseFloat(ovFringeRate || "0")).toFixed(2);
 
   return (
     <Card>
@@ -115,7 +195,7 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
             data-testid="banner-missing-wage-decision"
           >
             <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-            <div className="text-sm text-red-700 dark:text-red-300">
+            <div className="flex-1 text-sm text-red-700 dark:text-red-300">
               <p className="font-medium">
                 Wage decision not yet imported from DOL
               </p>
@@ -123,6 +203,21 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
                 <span className="font-mono">{data.wageDecision}</span> is referenced by this project but has not been
                 synced. Run a Davis-Bacon sync so prevailing wage rates are applied automatically.
               </p>
+              <div className="mt-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => syncMutation.mutate()}
+                  disabled={syncMutation.isPending}
+                  data-testid="button-sync-wage-decision"
+                >
+                  {syncMutation.isPending ? (
+                    <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Syncing...</>
+                  ) : (
+                    <><RefreshCw className="w-4 h-4 mr-2" /> Sync from DOL</>
+                  )}
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -151,6 +246,7 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
                     <TableHead className="text-right">Fringe</TableHead>
                     <TableHead className="text-right">Total</TableHead>
                     <TableHead>Effective</TableHead>
+                    <TableHead className="text-right w-[140px]">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -179,6 +275,20 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
                       <TableCell className="text-xs text-muted-foreground">
                         {c.effectiveDate || "\u2014"}
                       </TableCell>
+                      <TableCell className="text-right">
+                        {c.source === "DOL_FEED" ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => openOverrideDialog(c)}
+                            data-testid={`button-promote-override-${c.classificationId}`}
+                          >
+                            <Plus className="w-3.5 h-3.5 mr-1" /> Override
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -187,6 +297,113 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
           </>
         )}
       </CardContent>
+
+      <Dialog open={overrideOpen} onOpenChange={(o) => { setOverrideOpen(o); if (!o) setOverrideRow(null); }}>
+        <DialogContent data-testid="dialog-promote-override">
+          <DialogHeader>
+            <DialogTitle>Promote DOL rate to project override</DialogTitle>
+            <DialogDescription>
+              Pre-filled from the cached DOL feed for{" "}
+              <span className="font-medium">{overrideRow?.classificationName}</span>
+              {overrideRow?.wageDecision ? (
+                <> (<span className="font-mono">{overrideRow.wageDecision}</span>)</>
+              ) : null}
+              . Changes here only affect this project.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label htmlFor="ov-wage">Wage rate *</Label>
+              <Input
+                id="ov-wage"
+                type="number"
+                step="0.01"
+                value={ovWageRate}
+                onChange={(e) => setOvWageRate(e.target.value)}
+                data-testid="input-override-wage-rate"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="ov-fringe">Fringe rate</Label>
+              <Input
+                id="ov-fringe"
+                type="number"
+                step="0.01"
+                value={ovFringeRate}
+                onChange={(e) => setOvFringeRate(e.target.value)}
+                data-testid="input-override-fringe-rate"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="ov-ot">OT multiplier</Label>
+              <Input
+                id="ov-ot"
+                type="number"
+                step="0.1"
+                value={ovOtMultiplier}
+                onChange={(e) => setOvOtMultiplier(e.target.value)}
+                data-testid="input-override-ot-multiplier"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>Total rate</Label>
+              <div className="h-9 flex items-center px-2 rounded-md border bg-muted text-sm font-mono" data-testid="text-override-total-rate">
+                ${totalForOverride}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="ov-effective">Effective date *</Label>
+              <Input
+                id="ov-effective"
+                type="date"
+                value={ovEffectiveDate}
+                onChange={(e) => setOvEffectiveDate(e.target.value)}
+                data-testid="input-override-effective-date"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="ov-expiration">Expiration date</Label>
+              <Input
+                id="ov-expiration"
+                type="date"
+                value={ovExpirationDate}
+                onChange={(e) => setOvExpirationDate(e.target.value)}
+                data-testid="input-override-expiration-date"
+              />
+            </div>
+            <div className="space-y-1 col-span-2">
+              <Label htmlFor="ov-notes">Notes</Label>
+              <Input
+                id="ov-notes"
+                value={ovNotes}
+                onChange={(e) => setOvNotes(e.target.value)}
+                placeholder="Optional"
+                data-testid="input-override-notes"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOverrideOpen(false)} data-testid="button-cancel-override">Cancel</Button>
+            <Button
+              onClick={() => {
+                if (!ovWageRate || !ovEffectiveDate) {
+                  toast({ title: "Missing fields", description: "Wage rate and effective date are required.", variant: "destructive" });
+                  return;
+                }
+                overrideMutation.mutate();
+              }}
+              disabled={overrideMutation.isPending}
+              data-testid="button-save-override"
+            >
+              {overrideMutation.isPending ? (
+                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...</>
+              ) : (
+                "Save override"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

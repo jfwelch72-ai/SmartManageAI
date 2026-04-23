@@ -1608,6 +1608,71 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
   }
 });
 
+// Trigger an inline Davis-Bacon sync for the project's wage decision so PMs
+// can resolve the missing-decision warning without leaving the project page.
+router.post("/api/projects/:id/prevailing-wage-summary/sync", requireAuth, async (req, res, next) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(authReq.user!.role)) {
+      return res.status(403).json({ error: "Insufficient permissions to sync wage decisions" });
+    }
+
+    const projectId = req.params.id;
+    const [project] = await db.select().from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.organizationId, orgId)));
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+
+    const decisionNumber = (project.wageDecision || "").trim();
+    if (!decisionNumber) {
+      return res.status(400).json({ error: "Project has no wage decision set" });
+    }
+
+    const outcome = await queueWageDecisionSync(orgId, decisionNumber, { awaitResult: true });
+
+    if (outcome.status === "no_connection") {
+      return res.status(409).json({
+        status: outcome.status,
+        error: "No active Davis-Bacon (DOL/SAM.gov) integration is connected. Connect it from the Integrations area first.",
+      });
+    }
+    if (outcome.status === "no_credentials") {
+      return res.status(409).json({
+        status: outcome.status,
+        error: "Davis-Bacon connection is missing a SAM.gov API key.",
+      });
+    }
+    if (outcome.status === "failed") {
+      return res.status(502).json({ status: outcome.status, error: outcome.error });
+    }
+    if (outcome.status === "completed" && !outcome.result.success) {
+      return res.status(502).json({
+        status: "failed",
+        error: outcome.result.errors.map((e) => e.message).join("; ") || "Sync failed",
+      });
+    }
+
+    await logAudit({
+      userId: authReq.user!.id,
+      entityType: "wage_determination",
+      entityId: decisionNumber,
+      action: "UPDATE",
+      newValue: JSON.stringify({ projectId, decisionNumber, status: outcome.status }),
+    }, req);
+
+    const ratesImported =
+      outcome.status === "completed" ? outcome.result.created : 0;
+    res.json({ success: true, status: outcome.status, decisionNumber, ratesImported });
+  } catch (error) {
+    next(error);
+  }
+});
+
 async function calculateDeductionsForEmployee(
   userId: string,
   orgId: string,
