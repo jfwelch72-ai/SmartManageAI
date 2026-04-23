@@ -400,9 +400,30 @@ function LineItemPhotoGallery({
   const handleFiles = async (files: File[]) => {
     if (files.length === 0) return;
     const MAX_SIZE = 10 * 1024 * 1024;
+    const MAX_PHOTOS_PER_LINE_ITEM = 30;
     const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp"];
 
-    const items = files.map((f) => ({
+    const remaining = Math.max(0, MAX_PHOTOS_PER_LINE_ITEM - allUrls.length);
+    if (remaining <= 0) {
+      toast({
+        title: `Photo limit reached`,
+        description: `A line item can have at most ${MAX_PHOTOS_PER_LINE_ITEM} photos.`,
+        variant: "destructive",
+      });
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    let acceptedFiles = files;
+    if (files.length > remaining) {
+      acceptedFiles = files.slice(0, remaining);
+      toast({
+        title: `Only ${remaining} more photo${remaining === 1 ? "" : "s"} allowed`,
+        description: `This line item is limited to ${MAX_PHOTOS_PER_LINE_ITEM} photos. ${files.length - remaining} file${files.length - remaining === 1 ? " was" : "s were"} skipped.`,
+        variant: "destructive",
+      });
+    }
+
+    const items = acceptedFiles.map((f) => ({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       file: f,
       name: f.name,

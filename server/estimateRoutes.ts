@@ -2115,6 +2115,18 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       });
       if (!lineItem) return res.status(404).json({ error: "Line item not found" });
 
+      const MAX_PHOTOS_PER_LINE_ITEM = 30;
+      const existingPhotoUrls = Array.isArray(lineItem.photoUrls) ? lineItem.photoUrls : [];
+      const existingPhotoSet = new Set<string>(existingPhotoUrls);
+      if (lineItem.photoUrl) existingPhotoSet.add(lineItem.photoUrl);
+      if (existingPhotoSet.size >= MAX_PHOTOS_PER_LINE_ITEM) {
+        return res.status(409).json({
+          error: `Photo limit reached. A line item can have at most ${MAX_PHOTOS_PER_LINE_ITEM} photos.`,
+          maxPhotos: MAX_PHOTOS_PER_LINE_ITEM,
+          currentCount: existingPhotoSet.size,
+        });
+      }
+
       const { objectStorageClient } = await import("./objectStorage");
       const privateDir = process.env.PRIVATE_OBJECT_DIR || "";
       const orgId = req.user!.organizationId || "default";
