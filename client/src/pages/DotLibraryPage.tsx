@@ -6,9 +6,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Loader2, Building2, BookOpen, Hash, Search, Wand2, Tag, Trash2, Layers, FolderTree } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Loader2, Building2, BookOpen, Hash, Search, Wand2, Tag, Trash2, Layers, FolderTree, Pencil } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -306,6 +307,9 @@ function AgencyCard({ agency }: { agency: DotAgency }) {
 function SavedAliasesSection({ canManage }: { canManage: boolean }) {
   const { toast } = useToast();
   const [filter, setFilter] = useState("");
+  const [editing, setEditing] = useState<PayItemOverrideEnriched | null>(null);
+  const [editAlias, setEditAlias] = useState("");
+  const [editNotes, setEditNotes] = useState("");
   const { data: rows = [], isLoading } = useQuery<PayItemOverrideEnriched[]>({
     queryKey: ["/api/dot/pay-item-overrides", { include: "payItem" }],
     queryFn: async () => {
@@ -330,6 +334,42 @@ function SavedAliasesSection({ canManage }: { canManage: boolean }) {
     },
     onError: (err) => toast({ title: "Couldn't remove", description: err.message, variant: "destructive" }),
   });
+
+  const editMut = useMutation<unknown, Error, { id: string; internalAlias: string; notes: string | null }>({
+    mutationFn: async ({ id, internalAlias, notes }) => {
+      return apiRequest("PATCH", `/api/dot/pay-item-overrides/${id}`, {
+        internalAlias,
+        notes,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/dot/pay-item-overrides"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dot/pay-items/match"] });
+      toast({ title: "Alias updated" });
+      setEditing(null);
+    },
+    onError: (err) => toast({ title: "Couldn't save", description: err.message, variant: "destructive" }),
+  });
+
+  const openEdit = (r: PayItemOverrideEnriched) => {
+    setEditing(r);
+    setEditAlias(r.internalAlias ?? "");
+    setEditNotes(r.notes ?? "");
+  };
+
+  const submitEdit = () => {
+    if (!editing) return;
+    const trimmed = editAlias.trim();
+    if (!trimmed) {
+      toast({ title: "Alias can't be empty", variant: "destructive" });
+      return;
+    }
+    editMut.mutate({
+      id: editing.id,
+      internalAlias: trimmed,
+      notes: editNotes.trim() ? editNotes.trim() : null,
+    });
+  };
 
   const aliasRows = rows.filter((r) => r.internalAlias && r.internalAlias.trim().length > 0);
   const visible = aliasRows.filter((r) => {
@@ -411,15 +451,25 @@ function SavedAliasesSection({ canManage }: { canManage: boolean }) {
               </div>
             </div>
             {canManage && (
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={deleteMut.isPending}
-                onClick={() => deleteMut.mutate(r.id)}
-                data-testid={`button-delete-alias-${r.id}`}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              <div className="flex items-center gap-1">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => openEdit(r)}
+                  data-testid={`button-edit-alias-${r.id}`}
+                >
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={deleteMut.isPending}
+                  onClick={() => deleteMut.mutate(r.id)}
+                  data-testid={`button-delete-alias-${r.id}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
             )}
           </div>
         ))}
@@ -427,6 +477,50 @@ function SavedAliasesSection({ canManage }: { canManage: boolean }) {
           <div className="p-4 text-sm text-muted-foreground text-center">No aliases match your filter.</div>
         )}
       </div>
+      <Dialog open={!!editing} onOpenChange={(o) => { if (!o) setEditing(null); }}>
+        <DialogContent data-testid="dialog-edit-alias">
+          <DialogHeader>
+            <DialogTitle>Edit alias</DialogTitle>
+            <DialogDescription>
+              {editing?.payItem ? (
+                <>Resolves to <span className="font-mono">{editing.payItem.itemNumber}</span> — {editing.payItem.description}</>
+              ) : (
+                "Resolves to a deleted pay item"
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="edit-alias-text">Alias text</Label>
+              <Input
+                id="edit-alias-text"
+                value={editAlias}
+                onChange={(e) => setEditAlias(e.target.value)}
+                data-testid="input-edit-alias-text"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="edit-alias-notes">Notes (optional)</Label>
+              <Textarea
+                id="edit-alias-notes"
+                value={editNotes}
+                onChange={(e) => setEditNotes(e.target.value)}
+                rows={3}
+                data-testid="input-edit-alias-notes"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditing(null)} data-testid="button-cancel-edit-alias">
+              Cancel
+            </Button>
+            <Button onClick={submitEdit} disabled={editMut.isPending} data-testid="button-save-edit-alias">
+              {editMut.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
