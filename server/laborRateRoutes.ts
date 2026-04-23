@@ -579,6 +579,21 @@ router.post("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER
         .where(eq(jobClassifications.organizationId, organizationId));
       let resolvedId = existing.find((c) => c.name.trim().toLowerCase() === normalized)?.id ?? null;
       if (!resolvedId) {
+        // Task #1382: don't silently auto-create a brand-new
+        // job_classification from a DOL feed override. The client must
+        // explicitly confirm via `confirmCreateClassification: true` (after
+        // showing a "create new vs. pick existing" dialog) so a typo in the
+        // federal feed can't quietly drift the org's classification list.
+        const confirmCreate = (rest as Record<string, unknown>).confirmCreateClassification === true;
+        if (!confirmCreate) {
+          return res.status(409).json({
+            error: "classification_not_found",
+            message:
+              "No job classification matches this DOL feed entry. Confirm creating a new classification or pick an existing one.",
+            proposedName: rawName,
+            existingClassifications: existing.map((c) => ({ id: c.id, name: c.name })),
+          });
+        }
         const wageNum = parseFloat(String(wageRate ?? ""));
         const otNum = parseFloat(String((rest as Record<string, unknown>).overtimeMultiplier ?? "1.5"));
         const defaultRegularRate = Number.isFinite(wageNum) && wageNum > 0 ? wageNum.toFixed(2) : null;
@@ -623,6 +638,9 @@ router.post("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER
     }
     if ("classificationName" in (rest as Record<string, unknown>)) {
       delete (rest as Record<string, unknown>).classificationName;
+    }
+    if ("confirmCreateClassification" in (rest as Record<string, unknown>)) {
+      delete (rest as Record<string, unknown>).confirmCreateClassification;
     }
     const breakdown = [fringeHealthRate, fringePensionRate, fringeVacationRate, fringeTrainingRate]
       .map(v => parseFloat(v || "0"));

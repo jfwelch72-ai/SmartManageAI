@@ -115,8 +115,8 @@ beforeEach(async () => {
 
 const cookieFor = (t: string) => `auth_token=${t}`;
 
-describe("POST /api/labor-rates/prevailing-wage-rates — DOL feed override (Task #1350)", () => {
-  it("auto-creates the missing job_classifications row and persists the override", async () => {
+describe("POST /api/labor-rates/prevailing-wage-rates — DOL feed override (Task #1350 / #1382)", () => {
+  it("auto-creates the missing job_classifications row when the user confirms", async () => {
     const newName = "Brand New Ironworker";
     const res = await request(app)
       .post("/api/labor-rates/prevailing-wage-rates")
@@ -125,6 +125,9 @@ describe("POST /api/labor-rates/prevailing-wage-rates — DOL feed override (Tas
         projectId,
         classificationId: `dol-feed:${newName.toLowerCase()}`,
         classificationName: newName,
+        // Task #1382: explicit confirmation that the user has agreed to
+        // create a brand-new classification (set by the confirm dialog).
+        confirmCreateClassification: true,
         wageRate: "52.00",
         fringeRate: "11.00",
         fringeHealthRate: "0",
@@ -193,6 +196,43 @@ describe("POST /api/labor-rates/prevailing-wage-rates — DOL feed override (Tas
     expect(res.body.classificationId).toBe(existingClassId);
 
     // No duplicate classification was created.
+    const all = await db
+      .select()
+      .from(jobClassifications)
+      .where(eq(jobClassifications.organizationId, orgId));
+    expect(all).toHaveLength(1);
+    expect(all[0].id).toBe(existingClassId);
+  });
+
+  // Task #1382: without explicit confirmation the server must NOT silently
+  // create a new classification — it should return 409 with the proposed
+  // name + the org's existing classifications so the UI can prompt.
+  it("returns 409 with existing classifications when create-confirmation is missing", async () => {
+    const res = await request(app)
+      .post("/api/labor-rates/prevailing-wage-rates")
+      .set("Cookie", cookieFor(token))
+      .send({
+        projectId,
+        classificationId: "dol-feed:typo carpenter",
+        classificationName: "Typo Carpenter",
+        wageRate: "50.00",
+        fringeRate: "5.00",
+        fringeHealthRate: "0",
+        fringePensionRate: "0",
+        fringeVacationRate: "0",
+        fringeTrainingRate: "0",
+        overtimeMultiplier: "1.5",
+        effectiveDate: "2026-01-01",
+      });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toBe("classification_not_found");
+    expect(res.body.proposedName).toBe("Typo Carpenter");
+    expect(Array.isArray(res.body.existingClassifications)).toBe(true);
+    const ids = res.body.existingClassifications.map((c: { id: string }) => c.id);
+    expect(ids).toContain(existingClassId);
+
+    // Crucially, no row was created from this rejected request.
     const all = await db
       .select()
       .from(jobClassifications)
