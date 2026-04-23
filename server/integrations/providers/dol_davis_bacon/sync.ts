@@ -735,6 +735,76 @@ async function persistCoalesceState(
 }
 
 /**
+ * Task #1385 — A persisted `failureNotification` key on
+ * `integration_sync_state.metadata` lives forever once written. The
+ * in-memory map self-prunes via `pruneStaleCoalesceEntries`, but the
+ * row-side mirror has no such cleanup and accumulates dead JSON for
+ * decisions that no longer fail (or are no longer referenced by any
+ * project). Once the last notification is older than this threshold
+ * AND the row carries no current `lastError`, the suppression window
+ * is functionally meaningless and the key is safe to strip.
+ */
+const STALE_FAILURE_NOTIFICATION_AGE_MS = 7 * 24 * 60 * 60 * 1000;
+
+/**
+ * Sweep stale `metadata.failureNotification` keys off wage-decision rows
+ * whose last-notified timestamp is older than
+ * `STALE_FAILURE_NOTIFICATION_AGE_MS` and which currently carry no
+ * `lastError` (i.e. the decision is healthy or long-orphaned). Returns
+ * the number of rows that had the key cleared. Folded into
+ * `processFailedWageDecisionRetries` below so the existing wage-decision
+ * retry job naturally drives the cleanup without a separate cron entry.
+ */
+export async function sweepStaleFailureNotifications(
+  now: Date = new Date(),
+): Promise<number> {
+  const cutoff = now.getTime() - STALE_FAILURE_NOTIFICATION_AGE_MS;
+  let cleared = 0;
+  try {
+    const rows = await db
+      .select()
+      .from(integrationSyncState)
+      .where(
+        and(
+          sql`${integrationSyncState.entityType} LIKE 'wage_determination:%'`,
+          sql`${integrationSyncState.lastError} IS NULL`,
+        ),
+      );
+    for (const row of rows) {
+      const meta: Record<string, unknown> | null =
+        row.metadata && typeof row.metadata === "object"
+          ? { ...(row.metadata as Record<string, unknown>) }
+          : null;
+      if (!meta || !("failureNotification" in meta)) continue;
+      const fn = meta.failureNotification as Record<string, unknown> | null | undefined;
+      const ts =
+        fn && typeof fn === "object" && typeof fn.lastNotifiedAt === "number"
+          ? (fn.lastNotifiedAt as number)
+          : null;
+      // Drop malformed entries (missing timestamp) too — they can't be
+      // honoured as a suppression window anyway.
+      if (ts !== null && ts > cutoff) continue;
+      delete meta.failureNotification;
+      await db
+        .update(integrationSyncState)
+        .set({ metadata: meta, updatedAt: now })
+        .where(eq(integrationSyncState.id, row.id));
+      const decisionNumber = row.entityType.slice("wage_determination:".length);
+      failureCoalesceMap.delete(coalesceKey(row.connectionId, decisionNumber));
+      cleared += 1;
+    }
+    if (cleared > 0) {
+      logInfo("Davis-Bacon stale failureNotification keys pruned", { cleared });
+    }
+  } catch (err) {
+    logWarn("Davis-Bacon stale failureNotification sweep failed", {
+      error: String(err),
+    });
+  }
+  return cleared;
+}
+
+/**
  * Drop coalesce entries that are older than 2x the coalesce window so
  * a long-running worker can't accumulate unbounded keys for connections
  * or decisions that no longer fail. Cheap O(n) sweep — n is bounded
@@ -916,6 +986,11 @@ registerSyncRetryHandler({
 export async function processFailedWageDecisionRetries(
   now: Date = new Date(),
 ): Promise<WageDecisionRetryRunResult> {
+  // Task #1385: piggy-back on the wage-decision retry job to garbage-collect
+  // long-orphaned `failureNotification` keys persisted on the row's metadata.
+  // Done before the retry sweep so a stale key on a row that's about to be
+  // resync'd doesn't leak past this run.
+  await sweepStaleFailureNotifications(now);
   const out: SyncRetrySweepResult = await processIntegrationSyncRetries(now, {
     entityTypePattern: "wage_determination:%",
   });
