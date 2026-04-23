@@ -124,9 +124,15 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
   const overrideMutation = useMutation({
     mutationFn: async () => {
       if (!overrideRow) throw new Error("No row selected");
+      // Task #1350: synthetic `dol-feed:<name>` ids have no matching
+      // job_classifications row yet. Send the display name so the server
+      // can find-or-create the underlying classification before persisting
+      // the override (otherwise the FK insert blows up).
+      const isSynthetic = overrideRow.classificationId.startsWith("dol-feed:");
       return await apiRequest("POST", "/api/labor-rates/prevailing-wage-rates", {
         projectId,
         classificationId: overrideRow.classificationId,
+        ...(isSynthetic ? { classificationName: overrideRow.classificationName } : {}),
         wageRate: ovWageRate,
         fringeRate: ovFringeRate || "0",
         fringeHealthRate: "0",

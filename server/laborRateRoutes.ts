@@ -552,6 +552,78 @@ router.post("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER
     }
 
     const { wageRate, fringeRate, fringeHealthRate, fringePensionRate, fringeVacationRate, fringeTrainingRate, ...rest } = req.body;
+
+    // Task #1350: the project prevailing-wage panel surfaces classifications
+    // straight from the cached DOL wage determination even when the
+    // organization has no matching `job_classifications` row yet. Those rows
+    // ship a synthetic `dol-feed:<lowercased name>` id so the panel can
+    // render. When the user clicks "Override" on one of those rows we have
+    // to find-or-create the underlying classification before we can persist
+    // a `prevailing_wage_rates` row (the FK requires a real id), otherwise
+    // the insert fails with a foreign-key violation. Real-id rows fall
+    // straight through unchanged.
+    const incomingClassificationId: unknown = (rest as Record<string, unknown>).classificationId;
+    if (typeof incomingClassificationId === "string" && incomingClassificationId.startsWith("dol-feed:")) {
+      const rawName = typeof (rest as Record<string, unknown>).classificationName === "string"
+        ? ((rest as Record<string, unknown>).classificationName as string).trim()
+        : incomingClassificationId.slice("dol-feed:".length).trim();
+      if (!rawName) {
+        return res.status(400).json({
+          error: "classificationName is required when promoting a DOL feed classification without an existing job classification",
+        });
+      }
+      const normalized = rawName.toLowerCase();
+      const existing = await db
+        .select({ id: jobClassifications.id, name: jobClassifications.name })
+        .from(jobClassifications)
+        .where(eq(jobClassifications.organizationId, organizationId));
+      let resolvedId = existing.find((c) => c.name.trim().toLowerCase() === normalized)?.id ?? null;
+      if (!resolvedId) {
+        const wageNum = parseFloat(String(wageRate ?? ""));
+        const otNum = parseFloat(String((rest as Record<string, unknown>).overtimeMultiplier ?? "1.5"));
+        const defaultRegularRate = Number.isFinite(wageNum) && wageNum > 0 ? wageNum.toFixed(2) : null;
+        const defaultOvertimeRate = Number.isFinite(wageNum) && Number.isFinite(otNum) && wageNum > 0 && otNum > 0
+          ? (wageNum * otNum).toFixed(2)
+          : null;
+        try {
+          const insertData = insertJobClassificationSchema.parse({
+            organizationId,
+            name: rawName,
+            defaultRegularRate,
+            defaultOvertimeRate,
+          });
+          const [created] = await db.insert(jobClassifications).values(insertData).returning();
+          if (created) {
+            resolvedId = created.id;
+            await logAudit({
+              userId: req.user!.id,
+              entityType: "job_classification",
+              entityId: created.id,
+              action: "CREATE",
+              newValue: JSON.stringify(created),
+            }, req);
+          }
+        } catch (createErr) {
+          // Race: another request may have just created the same name.
+          const refetch = await db
+            .select({ id: jobClassifications.id })
+            .from(jobClassifications)
+            .where(and(eq(jobClassifications.organizationId, organizationId), eq(jobClassifications.name, rawName)));
+          if (refetch[0]) {
+            resolvedId = refetch[0].id;
+          } else {
+            throw createErr;
+          }
+        }
+      }
+      if (!resolvedId) {
+        return res.status(500).json({ error: "Failed to resolve classification for DOL feed override" });
+      }
+      (rest as Record<string, unknown>).classificationId = resolvedId;
+    }
+    if ("classificationName" in (rest as Record<string, unknown>)) {
+      delete (rest as Record<string, unknown>).classificationName;
+    }
     const breakdown = [fringeHealthRate, fringePensionRate, fringeVacationRate, fringeTrainingRate]
       .map(v => parseFloat(v || "0"));
     const breakdownSum = breakdown.reduce((a, b) => a + b, 0);
