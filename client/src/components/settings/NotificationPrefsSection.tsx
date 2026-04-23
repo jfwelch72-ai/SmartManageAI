@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, Fragment } from "react";
+import { useState, useEffect, useMemo, useRef, Fragment } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -349,6 +349,32 @@ const MUTED_ALERT_FAMILY_LABELS: Record<string, string> = {
   wage_decision_rates_changed: "Davis-Bacon wage rate change alerts",
 };
 
+// Task #1469 — Map the `?muted=<family>` value (set by the one-click mute
+// endpoints in `server/notificationPreferencesRoutes.ts`) to the DOM id of
+// the matching preference row. The server's redirect already includes a
+// `#section-…-prefs` hash, but the row is rendered inside a Suspense-y
+// loading skeleton, so the browser's native anchor jump fires before the
+// element exists. We re-scroll once preferences finish loading and apply
+// a brief highlight so users immediately see which toggle was flipped.
+const MUTED_ALERT_FAMILY_ROW_IDS: Record<string, string> = {
+  swppp_overdue: "section-swppp-overdue-prefs",
+  davis_bacon_auto_sync_failed: "section-davis-bacon-auto-sync-failed-prefs",
+  wage_decision_rates_changed: "section-wage-decision-rates-changed-prefs",
+};
+
+// Tailwind utility classes applied to the matching row for ~2s after the
+// scroll. Kept as a constant so the cleanup path removes the exact same
+// tokens we added (avoids accidentally stripping unrelated classes).
+const MUTE_ROW_HIGHLIGHT_CLASSES = [
+  "ring-2",
+  "ring-primary",
+  "ring-offset-2",
+  "ring-offset-background",
+  "rounded-md",
+  "transition-shadow",
+  "duration-500",
+];
+
 export default function NotificationPrefsSection() {
   const { toast } = useToast();
   const { user: authUser } = useAuth();
@@ -429,6 +455,57 @@ export default function NotificationPrefsSection() {
   const { data: notifPrefs, isLoading: loadingNotifPrefs } = useQuery<{ channel: ChannelPrefsData; typeOverrides: TypeOverride[] }>({
     queryKey: ["/api/notifications/preferences"],
   });
+
+  // Task #1469 — Once preferences finish loading, scroll the muted toggle
+  // row into view and flash a brief ring highlight. The server-issued
+  // redirect URL (`/settings/notifications?muted=<family>#section-…-prefs`)
+  // gets a native anchor jump from the browser, but the rows aren't in
+  // the DOM yet while the prefs query is still resolving — so the jump
+  // is a no-op and the user can't tell which toggle just changed.
+  //
+  // Using a ref-tracked "already scrolled" key (rather than state) so the
+  // effect only fires once per arrival even if the prefs query refetches
+  // (e.g., on window focus) while `?muted=` is still in the URL.
+  const scrolledMuteFamilyRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (loadingNotifPrefs || !notifPrefs) return;
+    // Task #1468 stripped the `?muted=` param from the URL on mount, so
+    // we read the family from the captured `muteBanner` state (whose key
+    // is `muted:<family>`) rather than re-parsing `window.location`.
+    if (!muteBanner || muteBanner.kind !== "success") return;
+    const family = muteBanner.key.startsWith("muted:")
+      ? muteBanner.key.slice("muted:".length)
+      : null;
+    if (!family) return;
+    const rowId = MUTED_ALERT_FAMILY_ROW_IDS[family];
+    if (!rowId) return;
+    if (scrolledMuteFamilyRef.current === family) return;
+    scrolledMuteFamilyRef.current = family;
+    let highlightTimeout: number | null = null;
+    let highlightedEl: HTMLElement | null = null;
+    // Wait one frame so the rows are committed to the DOM after the
+    // skeleton swap finishes.
+    const raf = requestAnimationFrame(() => {
+      const el = document.getElementById(rowId);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add(...MUTE_ROW_HIGHLIGHT_CLASSES);
+      highlightedEl = el;
+      highlightTimeout = window.setTimeout(() => {
+        el.classList.remove(...MUTE_ROW_HIGHLIGHT_CLASSES);
+        highlightTimeout = null;
+      }, 2000);
+    });
+    return () => {
+      cancelAnimationFrame(raf);
+      if (highlightTimeout !== null) {
+        window.clearTimeout(highlightTimeout);
+      }
+      if (highlightedEl) {
+        highlightedEl.classList.remove(...MUTE_ROW_HIGHLIGHT_CLASSES);
+      }
+    };
+  }, [loadingNotifPrefs, notifPrefs, muteBanner]);
 
   // Task #696: per-user opt-out for the weekly CRM contact birthday digest.
   // Stored in user_settings (separate from notification channel/type prefs).
