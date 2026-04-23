@@ -529,6 +529,12 @@ export const projects = pgTable("projects", {
   autoChangeOrderThreshold: decimal("auto_change_order_threshold", { precision: 12, scale: 2 }).default("0"),
   safetyOfficerId: varchar("safety_officer_id").references(() => users.id, { onDelete: "set null" }),
   payrollFormVariant: payrollFormVariantEnum("payroll_form_variant").notNull().default("WH_347"),
+  // Task #494: project-level Davis-Bacon wage decision number (e.g. "CA20240001").
+  // When set, the WH-347 generator looks up cached DOL rates for any
+  // classification missing an explicit per-project `prevailingWageRates` entry,
+  // and the UI surfaces a warning if the referenced determination has not yet
+  // been imported via the DOL/SAM.gov Davis-Bacon sync.
+  wageDecision: text("wage_decision"),
   // Task #900: first-class portfolio rollup dimensions. Optional free-form
   // labels for Program (e.g. "Highway 87 Corridor") and Division (e.g.
   // "Northern Region") plus an explicit trade type. When null,

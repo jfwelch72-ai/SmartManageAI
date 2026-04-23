@@ -20,6 +20,8 @@ const VARIANT_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "GENERIC", label: "Generic Certified Payroll" },
 ];
 
+type PrevailingRateSource = "PROJECT_OVERRIDE" | "DOL_FEED" | "NONE";
+
 interface CertifiedEmployee {
   name: string;
   workClassification: string;
@@ -37,6 +39,12 @@ interface CertifiedEmployee {
   projectName: string;
   prevailingRate: number | null;
   belowPrevailingWage: boolean;
+  prevailingRateSource?: PrevailingRateSource;
+}
+
+interface MissingWageDecision {
+  projectName: string;
+  wageDecision: string;
 }
 
 interface ProjectReport {
@@ -74,7 +82,14 @@ interface CertifiedReport {
   };
   projectReports?: ProjectReport[];
   defaultPayrollFormVariant?: string | null;
+  missingWageDecisions?: MissingWageDecision[];
 }
+
+const sourceLabel = (s?: PrevailingRateSource): string | null => {
+  if (s === "PROJECT_OVERRIDE") return "Project override";
+  if (s === "DOL_FEED") return "DOL feed";
+  return null;
+};
 
 const formatCurrency = (val: number) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(val || 0);
@@ -165,7 +180,14 @@ function WH347Table({ employees, totals, header }: { employees: CertifiedEmploye
                   <div>
                     {formatCurrency(emp.rateOfPay)}
                     {emp.prevailingRate && emp.belowPrevailingWage && (
-                      <p className="text-xs text-red-600">PW: {formatCurrency(emp.prevailingRate)}</p>
+                      <p className="text-xs text-red-600" data-testid={`text-pw-rate-${i}`}>
+                        PW: {formatCurrency(emp.prevailingRate)}
+                      </p>
+                    )}
+                    {sourceLabel(emp.prevailingRateSource) && (
+                      <p className="text-[10px] text-muted-foreground" data-testid={`text-rate-source-${i}`}>
+                        {sourceLabel(emp.prevailingRateSource)}
+                      </p>
                     )}
                   </div>
                 </TableCell>
@@ -449,6 +471,30 @@ export default function CertifiedPayrollReportView({ payRunId, payRunNumber }: {
           </div>
         </div>
       </DialogHeader>
+
+      {report.missingWageDecisions && report.missingWageDecisions.length > 0 && (
+        <div
+          className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg"
+          data-testid="banner-missing-wage-decisions"
+        >
+          <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+          <div className="text-sm text-red-700 dark:text-red-300">
+            <p className="font-medium">
+              Wage decision{report.missingWageDecisions.length === 1 ? "" : "s"} not yet imported from DOL
+            </p>
+            <ul className="mt-1 list-disc pl-5 space-y-0.5">
+              {report.missingWageDecisions.map((m, i) => (
+                <li key={`${m.projectName}-${m.wageDecision}-${i}`} data-testid={`text-missing-decision-${i}`}>
+                  {m.projectName ? `${m.projectName}: ` : ""}{m.wageDecision}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-xs">
+              Run a Davis-Bacon sync for these decisions so prevailing wage rates are applied automatically.
+            </p>
+          </div>
+        </div>
+      )}
 
       {hasMultipleProjects ? (
         projectReports.map((pr, idx) => (

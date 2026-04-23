@@ -207,6 +207,30 @@ export async function lookupCachedRateByLocale(
   return null;
 }
 
+/**
+ * Returns true if a wage determination with the given decision number has
+ * been imported and cached for the org. The WH-347 flow uses this to surface
+ * a UI warning when a project references a wage decision that has not yet
+ * been pulled from the DOL/SAM.gov feed.
+ */
+export async function isWageDeterminationCached(
+  organizationId: string,
+  decisionNumber: string,
+): Promise<boolean> {
+  const entityType = `wage_determination:${decisionNumber}`;
+  const [row] = await db
+    .select({ id: integrationSyncState.id })
+    .from(integrationSyncState)
+    .where(
+      and(
+        eq(integrationSyncState.organizationId, organizationId),
+        eq(integrationSyncState.entityType, entityType),
+      ),
+    )
+    .limit(1);
+  return !!row;
+}
+
 export async function lookupCachedWageRate(
   organizationId: string,
   decisionNumber: string,

@@ -315,7 +315,7 @@ import { Router, type Response } from "express";
 import { db } from "./db";
 import { eventBus } from "./events";
 import { exportLimiter } from "./rateLimiter";
-import { lookupCachedWageRate, lookupCachedRateByLocale } from "./integrations/providers/dol_davis_bacon/sync";
+import { lookupCachedWageRate, lookupCachedRateByLocale, isWageDeterminationCached } from "./integrations/providers/dol_davis_bacon/sync";
 import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts, overtimeRules, costLedgerPostings, certifiedPayrollReports, auditLog } from "@shared/schema";
 import { eq, and, gte, lte, sql, desc, inArray, count, asc, isNull, or } from "drizzle-orm";
 import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
@@ -2008,6 +2008,7 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
       projectPayrollFormVariant: projects.payrollFormVariant,
       projectState: projects.state,
       projectCity: projects.city,
+      projectWageDecision: projects.wageDecision,
     })
       .from(payRunLineItems)
       .innerJoin(users, eq(payRunLineItems.userId, users.id))
@@ -2022,6 +2023,11 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
     const classNameMap = new Map<string, string>();
     const classIdMap = new Map<string, string>();
     const pwMap = new Map<string, number>();
+    // Task #494: track where each (project, classification) prevailing rate
+    // came from so the PDF/UI can show "Project override" vs "DOL feed"
+    // captions and so we can report wage decisions that resolved to no
+    // cached row.
+    const pwSourceMap = new Map<string, "PROJECT_OVERRIDE" | "DOL_FEED">();
     const dedMap = new Map<string, Array<{ amount: string; category: string }>>();
 
     if (lineItemUserIds.length > 0) {
@@ -2043,6 +2049,18 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
     }
 
     const classIds = [...new Set(Array.from(classIdMap.values()))];
+    // Task #494: union of project-level wage decisions referenced by this
+    // pay run plus any decisions borrowed from prevailingWageRates rows.
+    // Used to (a) drive Davis-Bacon fallback lookups and (b) compute the
+    // "missing wage decisions" warning shown to the contractor.
+    const projectDecisionMap = new Map<string, string>();
+    const projectNameMap = new Map<string, string>();
+    for (const item of lineItems) {
+      projectNameMap.set(item.projectId, item.projectName);
+      if (item.projectWageDecision && !projectDecisionMap.has(item.projectId)) {
+        projectDecisionMap.set(item.projectId, item.projectWageDecision);
+      }
+    }
     if (classIds.length > 0 && lineItemProjectIds.length > 0) {
       const allPw = await db.select().from(prevailingWageRates)
         .where(and(
@@ -2051,15 +2069,17 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
           inArray(prevailingWageRates.classificationId, classIds),
         ));
       for (const pw of allPw) {
-        pwMap.set(`${pw.projectId}:${pw.classificationId}`, parseFloat(pw.wageRate));
+        const k = `${pw.projectId}:${pw.classificationId}`;
+        pwMap.set(k, parseFloat(pw.wageRate));
+        pwSourceMap.set(k, "PROJECT_OVERRIDE");
       }
 
       // Davis-Bacon fallback: for any (project, classification) pair that has
       // no entry in prevailingWageRates, attempt to resolve via the cached
-      // wage determination synced from DOL/SAM.gov. The decision number is
-      // borrowed from any existing PW row for the same project so we keep
-      // the "one wage decision per project" assumption used in WH-347.
-      const projectDecisionMap = new Map<string, string>();
+      // wage determination synced from DOL/SAM.gov. Prefer the project-level
+      // wage decision (`projects.wageDecision`); otherwise borrow one from
+      // an existing PW row for the same project (keeps the "one wage
+      // decision per project" assumption used in WH-347).
       for (const pw of allPw) {
         if (pw.wageDecision && !projectDecisionMap.has(pw.projectId)) {
           projectDecisionMap.set(pw.projectId, pw.wageDecision);
@@ -2080,6 +2100,7 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
             const cached = await lookupCachedWageRate(orgId, decision, className);
             if (cached && cached.baseRate > 0) {
               pwMap.set(key, cached.baseRate);
+              pwSourceMap.set(key, "DOL_FEED");
               continue;
             }
           } catch (err) {
@@ -2094,9 +2115,35 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
           const localeRate = await lookupCachedRateByLocale(orgId, item.projectState, null, className);
           if (localeRate && localeRate.baseRate > 0) {
             pwMap.set(key, localeRate.baseRate);
+            pwSourceMap.set(key, "DOL_FEED");
           }
         } catch (err) {
           logWarn("Davis-Bacon locale fallback failed", { state: item.projectState, className, error: String(err) });
+        }
+      }
+    }
+
+    // Task #494: any wage decision referenced by a project on this pay run
+    // that has not been imported into the cache. Surfaced as a warning so
+    // the contractor can run the DOL Davis-Bacon import before submitting.
+    const missingWageDecisions: Array<{ projectId: string; projectName: string; wageDecision: string }> = [];
+    {
+      const seen = new Set<string>();
+      for (const [projectId, decision] of Array.from(projectDecisionMap.entries())) {
+        const key = `${projectId}:${decision}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        try {
+          const cached = await isWageDeterminationCached(orgId, decision);
+          if (!cached) {
+            missingWageDecisions.push({
+              projectId,
+              projectName: projectNameMap.get(projectId) || "",
+              wageDecision: decision,
+            });
+          }
+        } catch (err) {
+          logWarn("Davis-Bacon cache check failed", { decision, error: String(err) });
         }
       }
     }
@@ -2124,11 +2171,14 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
 
       let prevailingRate = null;
       let belowPrevailingWage = false;
+      let prevailingRateSource: "PROJECT_OVERRIDE" | "DOL_FEED" | "NONE" = "NONE";
       const userClassId = classIdMap.get(userId);
       if (userClassId) {
-        const pw = pwMap.get(`${item.projectId}:${userClassId}`);
+        const k = `${item.projectId}:${userClassId}`;
+        const pw = pwMap.get(k);
         if (pw !== undefined) {
           prevailingRate = pw;
+          prevailingRateSource = pwSourceMap.get(k) ?? "PROJECT_OVERRIDE";
           if (parseFloat(item.lineItem.regularRate) < pw) {
             belowPrevailingWage = true;
           }
@@ -2170,6 +2220,7 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
         projectName: item.projectName,
         prevailingRate,
         belowPrevailingWage,
+        prevailingRateSource,
       });
     }
 
@@ -2230,6 +2281,7 @@ router.get("/api/payroll/pay-runs/:id/certified-report", requireAuth, async (req
       },
       projectReports,
       defaultPayrollFormVariant,
+      missingWageDecisions,
     });
   } catch (error) {
     next(error);
@@ -2267,6 +2319,8 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
       projectLocation: projects.locationAddress,
       projectCode: projects.code,
       projectVariant: projects.payrollFormVariant,
+      projectState: projects.state,
+      projectWageDecision: projects.wageDecision,
     })
       .from(payRunLineItems)
       .innerJoin(users, eq(payRunLineItems.userId, users.id))
@@ -2289,6 +2343,10 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
     const classNameMap = new Map<string, string>();
     const classIdMap = new Map<string, string>();
     const pwMap = new Map<string, number>();
+    // Task #494: rate-source tracker mirroring the JSON certified-report
+    // endpoint so the WH-347 PDF can render "Project override" / "DOL feed"
+    // captions under the rate-of-pay column.
+    const pwSourceMap = new Map<string, "PROJECT_OVERRIDE" | "DOL_FEED">();
     const dedMap = new Map<string, Array<{ amount: string; category: string }>>();
 
     if (lineItemUserIds.length > 0) {
@@ -2325,7 +2383,9 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
         ));
       for (const row of allPw) {
         const pw = row.rate;
-        pwMap.set(`${pw.projectId}:${pw.classificationId}`, parseFloat(pw.wageRate));
+        const k = `${pw.projectId}:${pw.classificationId}`;
+        pwMap.set(k, parseFloat(pw.wageRate));
+        pwSourceMap.set(k, "PROJECT_OVERRIDE");
         const health = parseFloat(pw.fringeHealthRate || "0");
         const pension = parseFloat(pw.fringePensionRate || "0");
         const vacation = parseFloat(pw.fringeVacationRate || "0");
@@ -2343,6 +2403,90 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
             training,
             total,
           });
+        }
+      }
+    }
+
+    // Task #494: Davis-Bacon fallback for the PDF endpoint. Mirrors the
+    // logic in the JSON certified-report endpoint so the printed WH-347
+    // automatically picks up cached DOL rates for any (project,
+    // classification) pair without an explicit prevailingWageRates row.
+    const projectDecisionMap = new Map<string, string>();
+    const projectNameMap = new Map<string, string>();
+    for (const item of lineItems) {
+      projectNameMap.set(item.projectId, item.projectName);
+      if (item.projectWageDecision && !projectDecisionMap.has(item.projectId)) {
+        projectDecisionMap.set(item.projectId, item.projectWageDecision);
+      }
+    }
+    if (classIds.length > 0 && lineItemProjectIds.length > 0) {
+      const pwForDecisions = await db.select({
+        projectId: prevailingWageRates.projectId,
+        wageDecision: prevailingWageRates.wageDecision,
+      })
+        .from(prevailingWageRates)
+        .where(and(
+          eq(prevailingWageRates.organizationId, orgId),
+          inArray(prevailingWageRates.projectId, lineItemProjectIds),
+        ));
+      for (const r of pwForDecisions) {
+        if (r.wageDecision && !projectDecisionMap.has(r.projectId)) {
+          projectDecisionMap.set(r.projectId, r.wageDecision);
+        }
+      }
+      for (const item of lineItems) {
+        const userClassId = classIdMap.get(item.lineItem.userId);
+        if (!userClassId) continue;
+        const key = `${item.projectId}:${userClassId}`;
+        if (pwMap.has(key)) continue;
+        const className = classNameMap.get(item.lineItem.userId);
+        if (!className) continue;
+
+        const decision = projectDecisionMap.get(item.projectId);
+        if (decision) {
+          try {
+            const cached = await lookupCachedWageRate(orgId, decision, className);
+            if (cached && cached.baseRate > 0) {
+              pwMap.set(key, cached.baseRate);
+              pwSourceMap.set(key, "DOL_FEED");
+              continue;
+            }
+          } catch (err) {
+            logWarn("Davis-Bacon decision lookup failed (pdf)", { decision, className, error: String(err) });
+          }
+        }
+        try {
+          const localeRate = await lookupCachedRateByLocale(orgId, item.projectState, null, className);
+          if (localeRate && localeRate.baseRate > 0) {
+            pwMap.set(key, localeRate.baseRate);
+            pwSourceMap.set(key, "DOL_FEED");
+          }
+        } catch (err) {
+          logWarn("Davis-Bacon locale fallback failed (pdf)", { state: item.projectState, className, error: String(err) });
+        }
+      }
+    }
+
+    // Wage decisions referenced by this report but not yet imported into
+    // the cache. Listed on the PDF so the contractor can spot incomplete
+    // data before submission.
+    const missingWageDecisions: Array<{ projectName: string; wageDecision: string }> = [];
+    {
+      const seen = new Set<string>();
+      for (const [projectId, decision] of Array.from(projectDecisionMap.entries())) {
+        const k = `${projectId}:${decision}`;
+        if (seen.has(k)) continue;
+        seen.add(k);
+        try {
+          const cached = await isWageDeterminationCached(orgId, decision);
+          if (!cached) {
+            missingWageDecisions.push({
+              projectName: projectNameMap.get(projectId) || "",
+              wageDecision: decision,
+            });
+          }
+        } catch (err) {
+          logWarn("Davis-Bacon cache check failed (pdf)", { decision, error: String(err) });
         }
       }
     }
@@ -2368,11 +2512,14 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
       const classification = classNameMap.get(userId) || "Laborer";
       let prevailingRate: number | null = null;
       let belowPrevailingWage = false;
+      let prevailingRateSource: "PROJECT_OVERRIDE" | "DOL_FEED" | "NONE" = "NONE";
       const userClassId = classIdMap.get(userId);
       if (userClassId) {
-        const pw = pwMap.get(`${item.projectId}:${userClassId}`);
+        const k = `${item.projectId}:${userClassId}`;
+        const pw = pwMap.get(k);
         if (pw !== undefined) {
           prevailingRate = pw;
+          prevailingRateSource = pwSourceMap.get(k) ?? "PROJECT_OVERRIDE";
           if (parseFloat(item.lineItem.regularRate) < pw) belowPrevailingWage = true;
         }
       }
@@ -2405,6 +2552,7 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
         projectName: item.projectName,
         prevailingRate,
         belowPrevailingWage,
+        prevailingRateSource,
       };
     });
 
@@ -2471,6 +2619,7 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
       signerTitle: payrollSettings?.signerTitle || undefined,
       contractorAddress: payrollSettings?.contractorAddress || undefined,
       fringeRates: fringeRatesArray,
+      missingWageDecisions,
     }, variant);
 
     // Persist to object storage at a unique key per generation and record an audit row.

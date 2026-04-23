@@ -3,6 +3,16 @@ import type { PayrollFormVariant } from "@shared/schema/enums";
 
 export type { PayrollFormVariant };
 
+/**
+ * Source of the prevailing-wage rate shown on a WH-347 row.
+ *  - `PROJECT_OVERRIDE`: an explicit `prevailing_wage_rates` row for the
+ *    (project, classification) — entered or imported by the contractor.
+ *  - `DOL_FEED`: pulled from a cached Davis-Bacon wage determination synced
+ *    from DOL/SAM.gov via the `dol_davis_bacon` provider.
+ *  - `NONE`: no prevailing-wage rate could be resolved (manual entry only).
+ */
+export type WH347RateSource = "PROJECT_OVERRIDE" | "DOL_FEED" | "NONE";
+
 export interface WH347Employee {
   name: string;
   workClassification: string;
@@ -20,6 +30,20 @@ export interface WH347Employee {
   projectName: string;
   prevailingRate: number | null;
   belowPrevailingWage: boolean;
+  // Task #494: where the prevailing-wage figure came from. Rendered as a
+  // small caption under the rate column on the WH-347 PDF so auditors can
+  // tell at a glance whether a rate is a project override or a federal feed.
+  prevailingRateSource?: WH347RateSource;
+}
+
+/**
+ * A wage decision number that the project references but which has not been
+ * imported via the DOL Davis-Bacon sync. Surfaced in the PDF compliance block
+ * so the contractor knows the rate column is incomplete and an import is due.
+ */
+export interface WH347MissingWageDecision {
+  projectName: string;
+  wageDecision: string;
 }
 
 export interface WH347FringeRate {
@@ -51,6 +75,10 @@ export interface WH347ReportData {
   signerName?: string;
   signerTitle?: string;
   fringeRates?: WH347FringeRate[];
+  // Task #494: any wage decisions referenced by projects in this report that
+  // have not yet been pulled from DOL/SAM.gov. Rendered as a callout near the
+  // statement of compliance so the auditor can spot incomplete data.
+  missingWageDecisions?: WH347MissingWageDecision[];
 }
 
 interface VariantConfig {
@@ -334,16 +362,29 @@ function drawEmployeeRow(
       width: col.width,
       color: isWarn ? rgb(0.6, 0.05, 0.05) : rgb(0, 0, 0),
     });
-    if (col.field === "rateOfPay" && emp.belowPrevailingWage && emp.prevailingRate) {
-      drawText(
-        page,
-        `PW ${fmt$(emp.prevailingRate)}`,
-        x,
-        y - 22,
-        font,
-        6.5,
-        { align: "right", width: col.width, color: rgb(0.6, 0.05, 0.05) }
-      );
+    if (col.field === "rateOfPay") {
+      // Show PW shortfall in red when the worker is paid below the prevailing
+      // rate, otherwise show the rate source caption (e.g. "DOL feed" /
+      // "Project override") so auditors can verify the provenance of every
+      // figure in the rate column.
+      if (emp.belowPrevailingWage && emp.prevailingRate) {
+        drawText(
+          page,
+          `PW ${fmt$(emp.prevailingRate)}`,
+          x,
+          y - 22,
+          font,
+          6.5,
+          { align: "right", width: col.width, color: rgb(0.6, 0.05, 0.05) }
+        );
+      } else if (emp.prevailingRateSource && emp.prevailingRateSource !== "NONE") {
+        const label = emp.prevailingRateSource === "DOL_FEED" ? "DOL feed" : "Project override";
+        drawText(page, label, x, y - 22, font, 6.5, {
+          align: "right",
+          width: col.width,
+          color: rgb(0.35, 0.35, 0.35),
+        });
+      }
     }
     x += col.width;
   }
@@ -412,7 +453,9 @@ function drawComplianceBlock(
   const cfg = VARIANT_CONFIG[variant];
   const fringeRows = data.fringeRates ?? [];
   const fringeTableH = fringeRows.length > 0 ? 14 + fringeRows.length * 11 + 6 : 0;
-  const blockH = 130 + fringeTableH;
+  const missingWds = data.missingWageDecisions ?? [];
+  const missingWdH = missingWds.length > 0 ? 12 + missingWds.length * 10 + 4 : 0;
+  const blockH = 130 + fringeTableH + missingWdH;
   const blockY = y - blockH;
   drawRect(page, MARGIN_X, blockY, PAGE_WIDTH - 2 * MARGIN_X, blockH);
   drawText(page, "STATEMENT OF COMPLIANCE", MARGIN_X + 6, y - 12, bold, 10);
@@ -485,6 +528,35 @@ function drawComplianceBlock(
         rx += c.w;
       }
       fy -= 11;
+    }
+  }
+
+  // Missing wage decisions callout — listed in red so the contractor knows
+  // which DOL determinations still need to be imported before the rates on
+  // this report can be considered authoritative.
+  if (missingWds.length > 0) {
+    let my = blockY + 18 + 14 + missingWds.length * 10 + 4;
+    drawText(
+      page,
+      "Wage decisions referenced by this report but not yet imported from DOL/SAM.gov:",
+      MARGIN_X + 6,
+      my,
+      bold,
+      8,
+      { color: rgb(0.6, 0.05, 0.05) },
+    );
+    my -= 10;
+    for (const wd of missingWds) {
+      drawText(
+        page,
+        `• ${wd.wageDecision} — ${wd.projectName}`,
+        MARGIN_X + 12,
+        my,
+        font,
+        7.5,
+        { color: rgb(0.6, 0.05, 0.05) },
+      );
+      my -= 10;
     }
   }
 
