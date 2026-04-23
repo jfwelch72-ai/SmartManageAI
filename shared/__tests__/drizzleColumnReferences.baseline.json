@@ -1,0 +1,87 @@
+[
+  {
+    "table": "purchaseOrderItems",
+    "prop": "purchaseOrderId",
+    "file": "server/aiaBillingRoutes.ts"
+  },
+  {
+    "table": "purchaseOrderItems",
+    "prop": "totalPrice",
+    "file": "server/aiaBillingRoutes.ts"
+  },
+  {
+    "table": "crmOrganisations",
+    "prop": "owningOrganizationId",
+    "file": "server/dataPipelineService.ts"
+  },
+  {
+    "table": "emailMessages",
+    "prop": "aiClassification",
+    "file": "server/dataPipelineService.ts"
+  },
+  {
+    "table": "bids",
+    "prop": "organizationId",
+    "file": "server/dotRoutes.ts"
+  },
+  {
+    "table": "users",
+    "prop": "fullName",
+    "file": "server/equipmentRoutes.ts"
+  },
+  {
+    "table": "estimates",
+    "prop": "organizationId",
+    "file": "server/estimateRoutes.ts"
+  },
+  {
+    "table": "notifications",
+    "prop": "entityId",
+    "file": "server/hustlerRoutes.ts"
+  },
+  {
+    "table": "notifications",
+    "prop": "entityType",
+    "file": "server/hustlerRoutes.ts"
+  },
+  {
+    "table": "estimateLineItems",
+    "prop": "unitPrice",
+    "file": "server/integrations/providers/aashtoware/sync.ts"
+  },
+  {
+    "table": "projects",
+    "prop": "organizationId",
+    "file": "server/messagingRoutes.ts"
+  },
+  {
+    "table": "projects",
+    "prop": "projectCode",
+    "file": "server/messagingRoutes.ts"
+  },
+  {
+    "table": "bids",
+    "prop": "bidDate",
+    "file": "server/platformRoutes.ts"
+  },
+  {
+    "table": "bids",
+    "prop": "projectName",
+    "file": "server/platformRoutes.ts"
+  },
+  {
+    "table": "projects",
+    "prop": "projectNumber",
+    "file": "server/platformRoutes.ts"
+  },
+  {
+    "table": "crmContacts",
+    "prop": "crmOrganisationId",
+    "file": "server/services/crmEmailLoggerService.ts"
+  },
+  {
+    "table": "crmSequenceEmailEvents",
+    "prop": "createdAt",
+    "file": "server/services/sequenceService.ts"
+  }
+]
