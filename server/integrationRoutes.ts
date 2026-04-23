@@ -8,7 +8,7 @@ import { getConnectionHealth } from "./integrations/healthService";
 import * as outboxService from "./integrations/outboxService";
 import { logInfo, logError } from "./utils/logger";
 import { getCanonicalBaseUrl } from "./utils/routeHelpers";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, isNotNull } from "drizzle-orm";
 import { integrationConnections, type IntegrationConnection, integrationSyncState, qboAccountMappings, qboSyncSchedules, zapierWebhooks, ZAPIER_EVENT_TYPES, projects } from "@shared/schema";
 import { db } from "./db";
 import { decryptMetadata } from "./integrations/encryption";
@@ -23,6 +23,7 @@ import { importProjects as stackctImportProjects, exportProjects as stackctExpor
 import { z } from "zod";
 import * as webhookService from "./integrations/webhookService";
 import { generateWebhookSecret, deliverZapierWebhook } from "./integrations/providers/zapier";
+import { MAX_SYNC_RETRIES, clearSyncRetryState } from "./integrations/syncRetry";
 
 const router = Router();
 
@@ -815,6 +816,106 @@ router.get("/connections/:id/sync-history", requireAuth, async (req, res, next) 
     } : null;
 
     res.json({ history, chartOfAccounts: accountData, connectionId: connection.id, provider: connection.provider });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Task #1378 — list pending/exhausted sync retries across all integrations
+// for the calling user's org so the integrations page can surface them.
+router.get("/sync-retries", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    const rows = await db
+      .select({
+        id: integrationSyncState.id,
+        connectionId: integrationSyncState.connectionId,
+        entityType: integrationSyncState.entityType,
+        lastError: integrationSyncState.lastError,
+        lastAttemptAt: integrationSyncState.lastAttemptAt,
+        retryCount: integrationSyncState.retryCount,
+        nextRetryAt: integrationSyncState.nextRetryAt,
+        provider: integrationConnections.provider,
+        connectionDisplayName: integrationConnections.displayName,
+        connectionStatus: integrationConnections.status,
+      })
+      .from(integrationSyncState)
+      .innerJoin(integrationConnections, eq(integrationConnections.id, integrationSyncState.connectionId))
+      .where(and(
+        eq(integrationSyncState.organizationId, user.organizationId),
+        isNotNull(integrationSyncState.lastError),
+      ))
+      .orderBy(desc(integrationSyncState.lastAttemptAt));
+
+    const retries = rows
+      .filter(r => r.retryCount > 0 || r.nextRetryAt !== null)
+      .map(r => ({
+        id: r.id,
+        connectionId: r.connectionId,
+        provider: r.provider,
+        connectionDisplayName: r.connectionDisplayName,
+        connectionStatus: r.connectionStatus,
+        entityType: r.entityType,
+        lastError: r.lastError,
+        lastAttemptAt: r.lastAttemptAt,
+        retryCount: r.retryCount,
+        nextRetryAt: r.nextRetryAt,
+        maxRetries: MAX_SYNC_RETRIES,
+        exhausted: r.retryCount >= MAX_SYNC_RETRIES,
+      }));
+
+    res.json({ retries, maxRetries: MAX_SYNC_RETRIES });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/sync-retries/:id/retry-now", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+
+    const [row] = await db
+      .select()
+      .from(integrationSyncState)
+      .where(and(
+        eq(integrationSyncState.id, req.params.id),
+        eq(integrationSyncState.organizationId, user.organizationId),
+      ))
+      .limit(1);
+
+    if (!row) return res.status(404).json({ error: "Sync retry not found" });
+
+    // For exhausted rows the sweep skips entirely (retryCount >= MAX_SYNC_RETRIES),
+    // so re-arm the schedule from scratch. Either way, set nextRetryAt to a past
+    // timestamp so the next sweep tick picks it up immediately.
+    const now = new Date();
+    const past = new Date(now.getTime() - 60_000);
+
+    if (row.retryCount >= MAX_SYNC_RETRIES) {
+      await clearSyncRetryState(
+        { id: row.connectionId, organizationId: row.organizationId },
+        row.entityType,
+      );
+    }
+
+    await db
+      .update(integrationSyncState)
+      .set({ nextRetryAt: past, updatedAt: now })
+      .where(eq(integrationSyncState.id, row.id));
+
+    logIntegrationAudit("sync_retry.manual_retry", {
+      orgId: user.organizationId,
+      userId: user.id,
+      syncStateId: row.id,
+      connectionId: row.connectionId,
+      entityType: row.entityType,
+      previousRetryCount: row.retryCount,
+    });
+
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }

@@ -13,6 +13,7 @@ import { IntegrationSyncPanel } from "@/components/integrations/IntegrationSyncP
 import { AccountMappingPanel, SyncSchedulePanel } from "@/components/integrations/QboMappingPanel";
 import { WebhookConfigPanel } from "@/components/integrations/WebhookConfigPanel";
 import { StackCTSyncPanel } from "@/components/integrations/StackCTSyncPanel";
+import { SyncRetryPanel } from "@/components/integrations/SyncRetryPanel";
 import { Badge } from "@/components/ui/badge";
 
 function StackCTConnectButton() {
@@ -181,6 +182,8 @@ export default function IntegrationsPage({ embedded }: { embedded?: boolean } = 
       )}
 
       <SecurityBanner />
+
+      <SyncRetryPanel />
 
       <ProviderCardGrid
         providers={providers || []}
