@@ -338,4 +338,215 @@ describe("DOT pay-item auto-match ranking", () => {
         .catch(() => {});
     }
   });
+
+  // Task #1249 — additional history-aware ranking + isolation cases.
+
+  it("rejects suppress an item that would otherwise win on token overlap", async () => {
+    const baseline = await match({
+      description: "Concrete pavement",
+      agencyIds: [agencyAId, agencyBId],
+    });
+    const baselineA002 = baseline.find((m) => m.payItem.id === itemIds["A002"]);
+    const baselineB002 = baseline.find((m) => m.payItem.id === itemIds["B002"]);
+    expect(baselineA002).toBeDefined();
+    expect(baselineB002).toBeDefined();
+
+    const fb = await request(app)
+      .post("/api/dot/pay-items/match/feedback")
+      .set("Cookie", cookie())
+      .send({
+        decisions: Array.from({ length: 4 }, () => ({
+          description: "Concrete pavement",
+          payItemId: itemIds["A002"],
+          accepted: false,
+        })),
+      });
+    expect(fb.status).toBe(200);
+
+    try {
+      const after = await match({
+        description: "Concrete pavement",
+        agencyIds: [agencyAId, agencyBId],
+      });
+      const a002After = after.find((m) => m.payItem.id === itemIds["A002"]);
+      const b002After = after.find((m) => m.payItem.id === itemIds["B002"]);
+      expect(a002After).toBeDefined();
+      expect(b002After).toBeDefined();
+      // A002's score must drop below baseline thanks to the reject penalty,
+      // and B002 (no history) must now rank above it.
+      expect(a002After!.score).toBeLessThan(baselineA002!.score);
+      expect(b002After!.score).toBeGreaterThan(a002After!.score);
+    } finally {
+      await db
+        .delete(dotPayItemMatchHistory)
+        .where(inArray(dotPayItemMatchHistory.organizationId, [orgId]))
+        .catch(() => {});
+    }
+  });
+
+  it("only applies the per-agency boost when the recorded agency matches the candidate's agency", async () => {
+    // Matching agency: B002 in agency B, accept tagged with agency B.
+    await request(app)
+      .post("/api/dot/pay-items/match/feedback")
+      .set("Cookie", cookie())
+      .send({
+        decisions: [{
+          description: "Concrete pavement",
+          payItemId: itemIds["B002"],
+          agencyId: agencyBId,
+          accepted: true,
+        }],
+      })
+      .expect(200);
+
+    const matchedAgency = await match({
+      description: "Concrete pavement",
+      agencyIds: [agencyAId, agencyBId],
+    });
+    const matchedAgencyB002 = matchedAgency.find((m) => m.payItem.id === itemIds["B002"]);
+    expect(matchedAgencyB002).toBeDefined();
+
+    await db
+      .delete(dotPayItemMatchHistory)
+      .where(inArray(dotPayItemMatchHistory.organizationId, [orgId]));
+
+    // Mismatched agency: same payItem (B002) but accept tagged with agency A.
+    // Same-description boost still applies (same payItem); per-agency +0.15
+    // must NOT fire because B002.agencyId !== agencyA.
+    await request(app)
+      .post("/api/dot/pay-items/match/feedback")
+      .set("Cookie", cookie())
+      .send({
+        decisions: [{
+          description: "Concrete pavement",
+          payItemId: itemIds["B002"],
+          agencyId: agencyAId,
+          accepted: true,
+        }],
+      })
+      .expect(200);
+
+    try {
+      const mismatchedAgency = await match({
+        description: "Concrete pavement",
+        agencyIds: [agencyAId, agencyBId],
+      });
+      const mismatchedB002 = mismatchedAgency.find((m) => m.payItem.id === itemIds["B002"]);
+      expect(mismatchedB002).toBeDefined();
+      const delta = matchedAgencyB002!.score - mismatchedB002!.score;
+      // Scores are rounded to 2 decimals; the +0.15 agency boost is the only
+      // difference between the two runs.
+      expect(delta).toBeGreaterThan(0.1);
+      expect(delta).toBeLessThan(0.2);
+    } finally {
+      await db
+        .delete(dotPayItemMatchHistory)
+        .where(inArray(dotPayItemMatchHistory.organizationId, [orgId]))
+        .catch(() => {});
+    }
+  });
+
+  it("the top endpoint never returns history rows from another organization", async () => {
+    const otherSlug = `${PREFIX}org2-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const [otherOrg] = await db
+      .insert(organizations)
+      .values({ name: "Other Match Org", slug: otherSlug, tradeType: "GENERAL_CONTRACTOR", onboardingStatus: "COMPLETED", isActive: true })
+      .returning();
+    const otherPasswordHash = await bcrypt.hash("TestPass123!", 10);
+    const [otherUser] = await db
+      .insert(users)
+      .values({
+        email: `${otherSlug}@test.local`,
+        passwordHash: otherPasswordHash,
+        firstName: "Other",
+        lastName: "User",
+        role: "ADMIN",
+        organizationId: otherOrg.id,
+        isActive: true,
+      })
+      .returning();
+    const otherToken = generateToken(otherUser.id, otherUser.tokenVersion ?? 0);
+    await setAllFeatureFlags(otherOrg.id, { DOT_PAY_ITEMS: true } as Record<FeatureFlagKey, boolean>);
+    const otherCookie = `auth_token=${otherToken}`;
+
+    await request(app)
+      .post("/api/dot/pay-items/match/feedback")
+      .set("Cookie", otherCookie)
+      .send({
+        decisions: Array.from({ length: 5 }, () => ({
+          description: "Roadway excavation common borrow",
+          payItemId: itemIds["B001"],
+          accepted: true,
+        })),
+      })
+      .expect(200);
+
+    await request(app)
+      .post("/api/dot/pay-items/match/feedback")
+      .set("Cookie", cookie())
+      .send({
+        decisions: [{
+          description: "Roadway excavation",
+          payItemId: itemIds["A001"],
+          accepted: true,
+        }],
+      })
+      .expect(200);
+
+    try {
+      const ours = await request(app)
+        .get("/api/dot/pay-items/match-history/top?limit=50")
+        .set("Cookie", cookie());
+      expect(ours.status).toBe(200);
+      const ourItems = ours.body.items as Array<{ payItem: { id: string }; acceptCount: number }>;
+      const ourB001 = ourItems.find((i) => i.payItem.id === itemIds["B001"]);
+      // Either B001 is absent, or its accept count must not include the other
+      // org's 5 entries (proving the org filter held).
+      if (ourB001) expect(ourB001.acceptCount).toBeLessThan(5);
+      expect(ourItems.some((i) => i.payItem.id === itemIds["A001"])).toBe(true);
+
+      const theirs = await request(app)
+        .get("/api/dot/pay-items/match-history/top?limit=50")
+        .set("Cookie", otherCookie);
+      expect(theirs.status).toBe(200);
+      const theirItems = theirs.body.items as Array<{ payItem: { id: string }; acceptCount: number }>;
+      const theirB001 = theirItems.find((i) => i.payItem.id === itemIds["B001"]);
+      expect(theirB001).toBeDefined();
+      expect(theirB001!.acceptCount).toBe(5);
+      expect(theirItems.some((i) => i.payItem.id === itemIds["A001"])).toBe(false);
+    } finally {
+      await db
+        .delete(dotPayItemMatchHistory)
+        .where(inArray(dotPayItemMatchHistory.organizationId, [orgId, otherOrg.id]))
+        .catch(() => {});
+      await db.delete(users).where(inArray(users.id, [otherUser.id])).catch(() => {});
+      await db.delete(organizations).where(inArray(organizations.id, [otherOrg.id])).catch(() => {});
+    }
+  });
+
+  it("returns 403 from both new endpoints when the DOT_PAY_ITEMS feature flag is off", async () => {
+    await setAllFeatureFlags(orgId, { DOT_PAY_ITEMS: false } as Record<FeatureFlagKey, boolean>);
+    try {
+      const fb = await request(app)
+        .post("/api/dot/pay-items/match/feedback")
+        .set("Cookie", cookie())
+        .send({
+          decisions: [{
+            description: "Concrete pavement",
+            payItemId: itemIds["A002"],
+            accepted: true,
+          }],
+        });
+      expect(fb.status).toBe(403);
+      expect(fb.body.featureFlag).toBe("DOT_PAY_ITEMS");
+
+      const top = await request(app)
+        .get("/api/dot/pay-items/match-history/top")
+        .set("Cookie", cookie());
+      expect(top.status).toBe(403);
+      expect(top.body.featureFlag).toBe("DOT_PAY_ITEMS");
+    } finally {
+      await setAllFeatureFlags(orgId, { DOT_PAY_ITEMS: true } as Record<FeatureFlagKey, boolean>);
+    }
+  });
 });
