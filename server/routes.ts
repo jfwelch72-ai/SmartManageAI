@@ -827,6 +827,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         events: recent.events,
         activeByJob: recent.activeByJob,
         defaults: mod.ALERT_DEFAULTS,
+        // Task #1452 — surface the per-job built-in overrides so the
+        // admin Job Metrics dashboard can show the *effective* default
+        // (e.g. 36h stall for `wage_decision_stale_refresh`) before the
+        // operator has authored any custom rule.
+        perJobDefaults: mod.PER_JOB_DEFAULTS,
         lastEvaluatedAt: mod.getLastEvaluationAt(),
       });
     } catch (err: any) {

@@ -4,8 +4,9 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ArrowLeft, RefreshCw, Cake, XCircle, Activity, BarChart3, Play, ListChecks, FileStack, HardHat, Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { ArrowLeft, RefreshCw, Cake, XCircle, Activity, BarChart3, Play, ListChecks, FileStack, HardHat, Trash2, BellRing, RotateCcw } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
@@ -757,6 +758,8 @@ export default function JobMetricsHealth() {
         </CardContent>
       </Card>
 
+      <WageRefreshAlertThresholdsCard />
+
       <Card data-testid="card-all-jobs">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -958,5 +961,452 @@ export default function JobMetricsHealth() {
         </Card>
       )}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------
+// Task #1452 — Wage refresh alert threshold editor
+// ---------------------------------------------------------------------
+// Lets a Super Admin tune the built-in alert defaults for the nightly
+// `wage_decision_stale_refresh` sweep without touching SQL. Surfaces:
+//   - the resolved built-in default (from PER_JOB_DEFAULTS, served via
+//     /api/admin/metrics/jobs/alerts), and
+//   - whether an operator-authored override row already exists.
+// Saving upserts a row in `job_metric_alert_rules` via the existing
+// `upsertJobMetricAlertRule` helper. "Reset to default" deletes the
+// override and falls back to the built-in.
+
+const WAGE_REFRESH_JOB = "wage_decision_stale_refresh";
+const WAGE_REFRESH_SPIKE_COUNTER = "failed";
+const ALERTS_KEY = ["/api/admin/metrics/jobs/alerts"] as const;
+
+interface JobMetricAlertRuleRow {
+  id: string;
+  job: string;
+  counter: string | null;
+  kind: "spike" | "stall";
+  threshold: string;
+  minAbsolute: number;
+  dedupeMinutes: number;
+  enabled: boolean;
+  emailWhenAbove: string | null;
+}
+
+interface PerJobDefaultsResponse {
+  [job: string]: {
+    stall?: {
+      thresholdHours: number;
+      dedupeMinutes?: number;
+      emailWhenAboveHours?: number | null;
+    };
+    spikes?: Record<
+      string,
+      {
+        multiplier: number;
+        minAbsolute: number;
+        dedupeMinutes?: number;
+        emailWhenAbove?: number | null;
+      }
+    >;
+  };
+}
+
+interface AlertsResponse {
+  rules: JobMetricAlertRuleRow[];
+  defaults: {
+    spike: { multiplier: number; minAbsolute: number; dedupeMinutes: number; emailWhenAbove: number };
+    stall: { hours: number; dedupeMinutes: number; emailWhenAbove: number };
+  };
+  perJobDefaults: PerJobDefaultsResponse;
+}
+
+interface ThresholdFormState {
+  threshold: string;
+  minAbsolute: string;
+  emailWhenAbove: string;
+}
+
+function findRule(
+  rules: JobMetricAlertRuleRow[],
+  kind: "spike" | "stall",
+  counter: string | null,
+): JobMetricAlertRuleRow | null {
+  return (
+    rules.find(
+      (r) =>
+        r.job === WAGE_REFRESH_JOB &&
+        r.kind === kind &&
+        (kind === "stall" ? r.counter === null : r.counter === counter),
+    ) ?? null
+  );
+}
+
+function WageRefreshAlertThresholdsCard() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const { data, isLoading, isError } = useQuery<AlertsResponse>({
+    queryKey: ALERTS_KEY,
+  });
+
+  const stallOverride = data ? findRule(data.rules, "stall", null) : null;
+  const spikeOverride = data ? findRule(data.rules, "spike", WAGE_REFRESH_SPIKE_COUNTER) : null;
+
+  const stallDefault = data?.perJobDefaults?.[WAGE_REFRESH_JOB]?.stall ?? null;
+  const spikeDefault =
+    data?.perJobDefaults?.[WAGE_REFRESH_JOB]?.spikes?.[WAGE_REFRESH_SPIKE_COUNTER] ?? null;
+
+  const resolvedStall = {
+    threshold: stallOverride
+      ? Number(stallOverride.threshold)
+      : stallDefault?.thresholdHours ?? data?.defaults.stall.hours ?? 4,
+    emailWhenAbove:
+      stallOverride && stallOverride.emailWhenAbove !== null
+        ? Number(stallOverride.emailWhenAbove)
+        : stallDefault?.emailWhenAboveHours ?? data?.defaults.stall.emailWhenAbove ?? null,
+  };
+  const resolvedSpike = {
+    threshold: spikeOverride
+      ? Number(spikeOverride.threshold)
+      : spikeDefault?.multiplier ?? data?.defaults.spike.multiplier ?? 3,
+    minAbsolute: spikeOverride
+      ? spikeOverride.minAbsolute
+      : spikeDefault?.minAbsolute ?? data?.defaults.spike.minAbsolute ?? 5,
+    emailWhenAbove:
+      spikeOverride && spikeOverride.emailWhenAbove !== null
+        ? Number(spikeOverride.emailWhenAbove)
+        : spikeDefault?.emailWhenAbove ?? data?.defaults.spike.emailWhenAbove ?? null,
+  };
+
+  const [stallForm, setStallForm] = useState<ThresholdFormState>({
+    threshold: "",
+    minAbsolute: "",
+    emailWhenAbove: "",
+  });
+  const [spikeForm, setSpikeForm] = useState<ThresholdFormState>({
+    threshold: "",
+    minAbsolute: "",
+    emailWhenAbove: "",
+  });
+
+  // Re-sync the form inputs whenever a fresh payload arrives. The init
+  // signatures collapse the resolved (default | override) values into a
+  // single string so the effect only fires when something actually
+  // changed (not on every render). Inputs stay as strings so operators
+  // can clear them mid-edit and so a blank emailWhenAbove can be
+  // distinguished from "0".
+  const stallInit = `${resolvedStall.threshold}|${resolvedStall.emailWhenAbove ?? ""}`;
+  const spikeInit = `${resolvedSpike.threshold}|${resolvedSpike.minAbsolute}|${resolvedSpike.emailWhenAbove ?? ""}`;
+  useEffect(() => {
+    if (!data) return;
+    setStallForm({
+      threshold: String(resolvedStall.threshold),
+      minAbsolute: "",
+      emailWhenAbove:
+        resolvedStall.emailWhenAbove === null || resolvedStall.emailWhenAbove === undefined
+          ? ""
+          : String(resolvedStall.emailWhenAbove),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stallInit, data]);
+  useEffect(() => {
+    if (!data) return;
+    setSpikeForm({
+      threshold: String(resolvedSpike.threshold),
+      minAbsolute: String(resolvedSpike.minAbsolute),
+      emailWhenAbove:
+        resolvedSpike.emailWhenAbove === null || resolvedSpike.emailWhenAbove === undefined
+          ? ""
+          : String(resolvedSpike.emailWhenAbove),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spikeInit, data]);
+
+  const upsertMutation = useMutation({
+    mutationFn: async (payload: {
+      id?: string | null;
+      kind: "spike" | "stall";
+      counter: string | null;
+      threshold: number;
+      minAbsolute?: number;
+      emailWhenAbove: number | null;
+    }) => {
+      const res = await apiRequest("POST", "/api/admin/metrics/jobs/alerts/rules", {
+        id: payload.id ?? undefined,
+        job: WAGE_REFRESH_JOB,
+        counter: payload.counter,
+        kind: payload.kind,
+        threshold: payload.threshold,
+        minAbsolute: payload.minAbsolute,
+        emailWhenAbove: payload.emailWhenAbove,
+      });
+      return res.json();
+    },
+    onSuccess: (_data, vars) => {
+      toast({
+        title: "Override saved",
+        description: `Custom ${vars.kind} threshold for ${WAGE_REFRESH_JOB} is now active.`,
+      });
+      queryClient.invalidateQueries({ queryKey: ALERTS_KEY });
+    },
+    onError: (err: unknown) => {
+      toast({
+        title: "Failed to save override",
+        description: err instanceof Error ? err.message : "Check server logs.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("DELETE", `/api/admin/metrics/jobs/alerts/rules/${id}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Override cleared",
+        description: "Reverted to the built-in default.",
+      });
+      queryClient.invalidateQueries({ queryKey: ALERTS_KEY });
+    },
+    onError: (err: unknown) => {
+      toast({
+        title: "Failed to clear override",
+        description: err instanceof Error ? err.message : "Check server logs.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const saveStall = () => {
+    const threshold = Number(stallForm.threshold);
+    if (!Number.isFinite(threshold) || threshold <= 0) {
+      toast({ title: "Invalid stall threshold", description: "Must be a positive number of hours.", variant: "destructive" });
+      return;
+    }
+    const emailRaw = stallForm.emailWhenAbove.trim();
+    const emailWhenAbove = emailRaw === "" ? null : Number(emailRaw);
+    if (emailWhenAbove !== null && (!Number.isFinite(emailWhenAbove) || emailWhenAbove <= 0)) {
+      toast({ title: "Invalid email threshold", description: "Leave blank to disable email, or enter a positive number of hours.", variant: "destructive" });
+      return;
+    }
+    upsertMutation.mutate({
+      id: stallOverride?.id ?? null,
+      kind: "stall",
+      counter: null,
+      threshold,
+      emailWhenAbove,
+    });
+  };
+
+  const saveSpike = () => {
+    const threshold = Number(spikeForm.threshold);
+    if (!Number.isFinite(threshold) || threshold <= 0) {
+      toast({ title: "Invalid spike multiplier", description: "Must be a positive number.", variant: "destructive" });
+      return;
+    }
+    const minAbsolute = Number(spikeForm.minAbsolute);
+    if (!Number.isInteger(minAbsolute) || minAbsolute < 0) {
+      toast({ title: "Invalid floor", description: "Must be a non-negative integer.", variant: "destructive" });
+      return;
+    }
+    const emailRaw = spikeForm.emailWhenAbove.trim();
+    const emailWhenAbove = emailRaw === "" ? null : Number(emailRaw);
+    if (emailWhenAbove !== null && (!Number.isFinite(emailWhenAbove) || emailWhenAbove <= 0)) {
+      toast({ title: "Invalid email threshold", description: "Leave blank to disable email, or enter a positive multiplier.", variant: "destructive" });
+      return;
+    }
+    upsertMutation.mutate({
+      id: spikeOverride?.id ?? null,
+      kind: "spike",
+      counter: WAGE_REFRESH_SPIKE_COUNTER,
+      threshold,
+      minAbsolute,
+      emailWhenAbove,
+    });
+  };
+
+  return (
+    <Card data-testid="card-wage-refresh-alert-thresholds">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <BellRing className="h-4 w-4" /> Wage refresh alert thresholds
+        </CardTitle>
+        <CardDescription>
+          Tune the built-in alert defaults for the nightly{" "}
+          <code>{WAGE_REFRESH_JOB}</code> sweep. Lower the stall threshold to page
+          sooner if a nightly run is missed, or raise the failed-spike floor if your
+          environment runs noisier. Saving writes an operator override to{" "}
+          <code>job_metric_alert_rules</code>; "Reset to default" removes the
+          override and falls back to the built-in. Super Admin only.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-48 w-full" data-testid="skeleton-wage-thresholds" />
+        ) : isError || !data ? (
+          <Alert variant="destructive" data-testid="alert-wage-thresholds-error">
+            <XCircle className="h-4 w-4" />
+            <AlertTitle>Failed to load alert configuration</AlertTitle>
+            <AlertDescription>Try refreshing or check server logs.</AlertDescription>
+          </Alert>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Stall rule */}
+            <div className="space-y-3 border rounded-md p-4" data-testid="section-wage-stall-threshold">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="font-medium flex items-center gap-2">
+                  Stall threshold
+                  {stallOverride ? (
+                    <Badge variant="default" data-testid="badge-stall-override">Override active</Badge>
+                  ) : (
+                    <Badge variant="secondary" data-testid="badge-stall-default">Built-in default</Badge>
+                  )}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Built-in: {stallDefault?.thresholdHours ?? data.defaults.stall.hours}h
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Fires a Super Admin alert when the sweep has not produced a sample for
+                this many hours. Raise to tolerate occasional missed runs; lower to
+                page faster.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="wage-stall-threshold">Stall hours</Label>
+                  <Input
+                    id="wage-stall-threshold"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={stallForm.threshold}
+                    onChange={(e) => setStallForm((s) => ({ ...s, threshold: e.target.value }))}
+                    data-testid="input-wage-stall-threshold"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="wage-stall-email">Email when ≥ (hours, blank = no email)</Label>
+                  <Input
+                    id="wage-stall-email"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={stallForm.emailWhenAbove}
+                    onChange={(e) => setStallForm((s) => ({ ...s, emailWhenAbove: e.target.value }))}
+                    data-testid="input-wage-stall-email"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap pt-1">
+                <Button
+                  size="sm"
+                  onClick={saveStall}
+                  disabled={upsertMutation.isPending}
+                  data-testid="button-save-wage-stall"
+                >
+                  {upsertMutation.isPending ? "Saving…" : stallOverride ? "Update override" : "Save override"}
+                </Button>
+                {stallOverride && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => deleteMutation.mutate(stallOverride.id)}
+                    disabled={deleteMutation.isPending}
+                    data-testid="button-reset-wage-stall"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                    Reset to default
+                  </Button>
+                )}
+              </div>
+            </div>
+
+            {/* Spike rule on `failed` counter */}
+            <div className="space-y-3 border rounded-md p-4" data-testid="section-wage-spike-threshold">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="font-medium flex items-center gap-2">
+                  Failed spike threshold
+                  {spikeOverride ? (
+                    <Badge variant="default" data-testid="badge-spike-override">Override active</Badge>
+                  ) : (
+                    <Badge variant="secondary" data-testid="badge-spike-default">Built-in default</Badge>
+                  )}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  Built-in: {spikeDefault?.multiplier ?? data.defaults.spike.multiplier}× /
+                  floor {spikeDefault?.minAbsolute ?? data.defaults.spike.minAbsolute}
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Fires when last-hour <code>failed</code> count exceeds{" "}
+                <em>multiplier × baseline</em> AND meets the absolute floor — keeps the
+                rule from tripping on a 1-vs-0-baseline blip.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="wage-spike-multiplier">Multiplier</Label>
+                  <Input
+                    id="wage-spike-multiplier"
+                    type="number"
+                    min={1}
+                    step={0.5}
+                    value={spikeForm.threshold}
+                    onChange={(e) => setSpikeForm((s) => ({ ...s, threshold: e.target.value }))}
+                    data-testid="input-wage-spike-multiplier"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="wage-spike-floor">Absolute floor</Label>
+                  <Input
+                    id="wage-spike-floor"
+                    type="number"
+                    min={0}
+                    step={1}
+                    value={spikeForm.minAbsolute}
+                    onChange={(e) => setSpikeForm((s) => ({ ...s, minAbsolute: e.target.value }))}
+                    data-testid="input-wage-spike-floor"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="wage-spike-email">Email when ≥ (blank = no email)</Label>
+                  <Input
+                    id="wage-spike-email"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={spikeForm.emailWhenAbove}
+                    onChange={(e) => setSpikeForm((s) => ({ ...s, emailWhenAbove: e.target.value }))}
+                    data-testid="input-wage-spike-email"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-wrap pt-1">
+                <Button
+                  size="sm"
+                  onClick={saveSpike}
+                  disabled={upsertMutation.isPending}
+                  data-testid="button-save-wage-spike"
+                >
+                  {upsertMutation.isPending ? "Saving…" : spikeOverride ? "Update override" : "Save override"}
+                </Button>
+                {spikeOverride && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => deleteMutation.mutate(spikeOverride.id)}
+                    disabled={deleteMutation.isPending}
+                    data-testid="button-reset-wage-spike"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5 mr-1" />
+                    Reset to default
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
