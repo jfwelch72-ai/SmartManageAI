@@ -39,6 +39,11 @@ const PREVAILING_WAGE_RATE_WRITERS = new Set<string>([
 
 const PROJECT_WAGE_DECISION_WRITERS = new Set<string>([
   "projectCrudRoutes.ts",
+  // Task #1386 — bid → project conversion now propagates `bid.wageDecision`
+  // onto the new project and fires queueWageDecisionSync post-commit so the
+  // Davis-Bacon rates auto-import. Regression coverage lives in
+  // server/__tests__/bid-conversion-davis-bacon-auto-sync.test.ts.
+  "bidRoutes2.ts",
 ]);
 
 // File names (relative to the server tree) that are out of scope: tests

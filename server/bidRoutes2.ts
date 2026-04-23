@@ -193,6 +193,7 @@ import { ObjectPermission } from "./objectAcl";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF, generateWarrantyContractPDF } from "./pdf-service";
 import { getOrganizationBranding } from "./organizationBranding";
 import { sendEmail } from "./email";
+import { queueWageDecisionSync } from "./integrations/providers/dol_davis_bacon/sync";
 
 const router = Router();
 
@@ -508,6 +509,7 @@ router.patch("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER", "ES
       "bidAmount", "dueDate", "locationAddress", "city", "state", "description",
       "estimatorId", "ownerRepOrganizationId", "status",
       "crmOpportunityId", "aiWinProbability", "force",
+      "wageDecision",
     ]);
     const filteredBody: Record<string, any> = {};
     for (const [key, value] of Object.entries(req.body)) {
@@ -938,6 +940,10 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
       gcOrganizationId: bid.gcOrganizationId,
       startDate: bodyStartDate ? new Date(bodyStartDate) : null,
       endDate: bodyEndDate ? new Date(bodyEndDate) : null,
+      // Task #1386 — propagate any prevailing-wage decision number set on
+      // the bid so the new project picks it up on day one. The post-commit
+      // queueWageDecisionSync below ensures the Davis-Bacon rates auto-import.
+      wageDecision: bid.wageDecision || null,
     }).returning();
 
     for (const estimate of bidEstimates) {
@@ -1522,6 +1528,22 @@ router.post("/api/bids/:code/convert", requireAuth, requireRole("ADMIN", "MANAGE
 
     return createdProject;
     }); // end db.transaction
+
+    // Task #1386 — fire-and-forget Davis-Bacon auto-sync. Mirrors the
+    // pattern used by projectCrudRoutes.ts and laborRateRoutes.ts so that
+    // the moment a project is created with a wage decision attached, the
+    // matching prevailing wage rates are queued for import.
+    if (newProject.wageDecision && newProject.gcOrganizationId) {
+      const orgId = newProject.gcOrganizationId;
+      const decision = newProject.wageDecision;
+      void queueWageDecisionSync(orgId, decision).catch((err) => {
+        logError("[Bid Conversion] queueWageDecisionSync failed", {
+          orgId,
+          decision,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
 
     try {
       const contractNum = `CTR-${newProject.code}-001`;

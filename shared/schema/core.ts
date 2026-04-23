@@ -607,6 +607,11 @@ export const bids = pgTable("bids", {
   aiWinProbability: integer("ai_win_probability"),
   awardedAt: timestamp("awarded_at"),
   submittedAt: timestamp("submitted_at"),
+  // Davis-Bacon / prevailing-wage decision number (e.g. "CA20260010").
+  // When set on a bid, it is propagated to projects.wageDecision during
+  // bid → project conversion (see server/bidRoutes2.ts) and triggers
+  // queueWageDecisionSync so the rates auto-import (Task #1386).
+  wageDecision: text("wage_decision"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
