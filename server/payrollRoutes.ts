@@ -1639,6 +1639,14 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
     let wageDecisionLastSyncAt: string | null = null;
     let wageDecisionLastAttemptAt: string | null = null;
     let wageDecisionLastError: string | null = null;
+    // Task #1367: expose auto-retry progress so the banner can show
+    // "next auto-retry at <time> (attempt N of M)" while the chain is
+    // running, and an "exhausted - manual action required" treatment once
+    // the retry budget is spent.
+    let wageDecisionRetryCount: number | null = null;
+    let wageDecisionNextRetryAt: string | null = null;
+    let wageDecisionRetryExhausted: boolean | null = null;
+    let wageDecisionMaxRetries: number | null = null;
     if (projectWageDecision) {
       try {
         wageDecisionCached = await isWageDeterminationCached(orgId, projectWageDecision);
@@ -1659,6 +1667,10 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
           wageDecisionLastSyncAt = status.lastSyncAt ? status.lastSyncAt.toISOString() : null;
           wageDecisionLastAttemptAt = status.lastAttemptAt ? status.lastAttemptAt.toISOString() : null;
           wageDecisionLastError = status.lastError ?? null;
+          wageDecisionRetryCount = status.retryCount;
+          wageDecisionNextRetryAt = status.nextRetryAt ? status.nextRetryAt.toISOString() : null;
+          wageDecisionRetryExhausted = status.retryExhausted;
+          wageDecisionMaxRetries = status.maxRetries;
         }
       } catch (err) {
         logWarn("Davis-Bacon sync status lookup failed (project PW summary)", {
@@ -1677,6 +1689,10 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
       wageDecisionLastSyncAt,
       wageDecisionLastAttemptAt,
       wageDecisionLastError,
+      wageDecisionRetryCount,
+      wageDecisionNextRetryAt,
+      wageDecisionRetryExhausted,
+      wageDecisionMaxRetries,
       classifications,
     });
   } catch (error) {

@@ -295,13 +295,23 @@ async function getWageDecisionRow(
 export async function getWageDecisionSyncStatus(
   organizationId: string,
   decisionNumber: string,
-): Promise<{ lastSyncAt: Date | null; lastAttemptAt: Date | null; lastError: string | null } | null> {
+): Promise<{
+  lastSyncAt: Date | null;
+  lastAttemptAt: Date | null;
+  lastError: string | null;
+  retryCount: number;
+  nextRetryAt: Date | null;
+  retryExhausted: boolean;
+  maxRetries: number;
+} | null> {
   const entityType = `wage_determination:${decisionNumber}`;
   const [row] = await db
     .select({
       lastSyncAt: integrationSyncState.lastSyncAt,
       lastAttemptAt: integrationSyncState.lastAttemptAt,
       lastError: integrationSyncState.lastError,
+      retryCount: integrationSyncState.retryCount,
+      nextRetryAt: integrationSyncState.nextRetryAt,
     })
     .from(integrationSyncState)
     .where(
@@ -312,10 +322,22 @@ export async function getWageDecisionSyncStatus(
     )
     .limit(1);
   if (!row) return null;
+  const retryCount = row.retryCount ?? 0;
+  const nextRetryAt = row.nextRetryAt ?? null;
+  // Task #1367: a row is "exhausted" when its last attempt failed
+  // (lastError set) and there is no scheduled next retry — either because
+  // we hit MAX_WAGE_DECISION_RETRIES, or because the failure path otherwise
+  // gave up scheduling (nextRetryAt = null).
+  const retryExhausted =
+    !!row.lastError && nextRetryAt === null && retryCount >= MAX_WAGE_DECISION_RETRIES;
   return {
     lastSyncAt: row.lastSyncAt ?? null,
     lastAttemptAt: row.lastAttemptAt ?? null,
     lastError: row.lastError ?? null,
+    retryCount,
+    nextRetryAt,
+    retryExhausted,
+    maxRetries: MAX_WAGE_DECISION_RETRIES,
   };
 }
 

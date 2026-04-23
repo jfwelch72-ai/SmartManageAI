@@ -47,6 +47,14 @@ interface PrevailingWageSummary {
   wageDecisionLastSyncAt?: string | null;
   wageDecisionLastAttemptAt?: string | null;
   wageDecisionLastError?: string | null;
+  // Task #1367: auto-retry progress (from integration_sync_state). Used to
+  // tell users when the next background retry will fire (so they don't have
+  // to babysit it) and to switch to a "manual action required" banner once
+  // the chain is exhausted.
+  wageDecisionRetryCount?: number | null;
+  wageDecisionNextRetryAt?: string | null;
+  wageDecisionRetryExhausted?: boolean | null;
+  wageDecisionMaxRetries?: number | null;
   classifications: PrevailingWageClassification[];
 }
 
@@ -176,6 +184,22 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
     !!data.wageDecision && !!data.wageDecisionLastError;
   const lastSyncDisplay = formatRelativeTimestamp(data.wageDecisionLastSyncAt);
   const lastAttemptDisplay = formatRelativeTimestamp(data.wageDecisionLastAttemptAt);
+  // Task #1367: derive retry state for the failure banner.
+  // - retryPending: a future auto-retry is scheduled, so the banner should
+  //   reassure the user that the system will keep trying.
+  // - retryExhausted: the chain is done, so the banner should escalate to
+  //   "manual action required" (different visual treatment).
+  const nextRetryDisplay = formatRelativeTimestamp(data.wageDecisionNextRetryAt);
+  const retryPending =
+    showFailureBanner &&
+    !data.wageDecisionRetryExhausted &&
+    !!data.wageDecisionNextRetryAt &&
+    new Date(data.wageDecisionNextRetryAt).getTime() > Date.now();
+  const retryExhausted = showFailureBanner && data.wageDecisionRetryExhausted === true;
+  // Attempt N of M — retryCount is "failures so far"; the *next* attempt
+  // number is retryCount + 1, capped at maxRetries.
+  const maxRetries = data.wageDecisionMaxRetries ?? 0;
+  const nextAttemptNumber = Math.min((data.wageDecisionRetryCount ?? 0) + 1, maxRetries || 1);
 
   const overrideCount = data.classifications.filter(c => c.source === "PROJECT_OVERRIDE").length;
   const dolCount = data.classifications.filter(c => c.source === "DOL_FEED").length;
@@ -215,12 +239,40 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
 
         {showFailureBanner && (
           <div
-            className="flex items-start gap-2 p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg"
-            data-testid="banner-wage-decision-sync-failed"
+            className={
+              retryPending
+                ? "flex items-start gap-2 p-3 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg"
+                : "flex items-start gap-2 p-3 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg"
+            }
+            data-testid={
+              retryExhausted
+                ? "banner-wage-decision-retry-exhausted"
+                : retryPending
+                  ? "banner-wage-decision-retry-pending"
+                  : "banner-wage-decision-sync-failed"
+            }
           >
-            <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-            <div className="flex-1 text-sm text-red-700 dark:text-red-300">
-              <p className="font-medium">Davis-Bacon auto-sync failed</p>
+            <AlertTriangle
+              className={
+                retryPending
+                  ? "w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5"
+                  : "w-5 h-5 text-red-600 flex-shrink-0 mt-0.5"
+              }
+            />
+            <div
+              className={
+                retryPending
+                  ? "flex-1 text-sm text-amber-800 dark:text-amber-200"
+                  : "flex-1 text-sm text-red-700 dark:text-red-300"
+              }
+            >
+              <p className="font-medium">
+                {retryExhausted
+                  ? "Davis-Bacon auto-retry exhausted - manual action required"
+                  : retryPending
+                    ? "Davis-Bacon auto-sync retrying in background"
+                    : "Davis-Bacon auto-sync failed"}
+              </p>
               <p className="mt-1">
                 The last attempt to sync <span className="font-mono">{data.wageDecision}</span>
                 {lastAttemptDisplay ? <> at <span className="font-medium">{lastAttemptDisplay}</span></> : null} returned an error:
@@ -231,10 +283,30 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
               >
                 {data.wageDecisionLastError}
               </p>
+              {retryPending && nextRetryDisplay && (
+                <p
+                  className="mt-2"
+                  data-testid="text-wage-decision-next-retry"
+                >
+                  Next auto-retry at <span className="font-medium">{nextRetryDisplay}</span>
+                  {maxRetries > 0 && (
+                    <> (attempt {nextAttemptNumber} of {maxRetries})</>
+                  )}
+                  . You don't need to do anything &mdash; we'll keep trying automatically.
+                </p>
+              )}
+              {retryExhausted && (
+                <p
+                  className="mt-2 font-medium"
+                  data-testid="text-wage-decision-retry-exhausted"
+                >
+                  We've exhausted all {maxRetries || data.wageDecisionRetryCount} automatic retry attempts. Please run a manual sync below.
+                </p>
+              )}
               <div className="mt-2">
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant={retryExhausted ? "default" : "outline"}
                   onClick={() => syncMutation.mutate()}
                   disabled={syncMutation.isPending}
                   data-testid="button-retry-wage-decision-sync"
@@ -242,7 +314,7 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
                   {syncMutation.isPending ? (
                     <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Retrying...</>
                   ) : (
-                    <><RefreshCw className="w-4 h-4 mr-2" /> Retry sync</>
+                    <><RefreshCw className="w-4 h-4 mr-2" /> {retryExhausted ? "Retry sync now" : "Retry sync"}</>
                   )}
                 </Button>
               </div>
