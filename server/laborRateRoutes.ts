@@ -13,6 +13,7 @@ import {
   annualSalaryCategories,
   burdenRates,
   employeeCostAssignments,
+  dolClassificationMappings,
   insertJobClassificationSchema,
   insertEmployeeClassificationSchema,
   insertPrevailingWageRateSchema,
@@ -636,11 +637,24 @@ router.post("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER
       }
       (rest as Record<string, unknown>).classificationId = resolvedId;
     }
-    if ("classificationName" in (rest as Record<string, unknown>)) {
-      delete (rest as Record<string, unknown>).classificationName;
+    // Task #1396: capture the original DOL feed classification name so we
+    // can persist an explicit mapping after the prevailing_wage_rates row
+    // is written. The feed name may differ from the resolved classification
+    // name (e.g. "Carpenter (Group 1)" feed -> existing "Carpenter").
+    const restRec = rest as Record<string, unknown>;
+    const dolFeedNameRaw = typeof restRec.dolFeedName === "string"
+      ? (restRec.dolFeedName as string).trim()
+      : typeof restRec.classificationName === "string"
+        ? (restRec.classificationName as string).trim()
+        : "";
+    if ("classificationName" in restRec) {
+      delete restRec.classificationName;
     }
-    if ("confirmCreateClassification" in (rest as Record<string, unknown>)) {
-      delete (rest as Record<string, unknown>).confirmCreateClassification;
+    if ("confirmCreateClassification" in restRec) {
+      delete restRec.confirmCreateClassification;
+    }
+    if ("dolFeedName" in restRec) {
+      delete restRec.dolFeedName;
     }
     const breakdown = [fringeHealthRate, fringePensionRate, fringeVacationRate, fringeTrainingRate]
       .map(v => parseFloat(v || "0"));
@@ -679,6 +693,35 @@ router.post("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER
       route: "POST /prevailing-wage-rates",
       rateId: rate.id,
     });
+
+    // Task #1396: persist the DOL feed -> classification mapping so
+    // subsequent syncs of this wage decision reuse the user's explicit
+    // choice instead of re-running the case-insensitive name match.
+    // Persistence is a contract of this endpoint — if the mapping write
+    // fails we must surface that to the caller instead of returning 201
+    // with a silently-missing mapping row.
+    if (dolFeedNameRaw && rate.projectId && rate.classificationId) {
+      const normalizedFeedName = dolFeedNameRaw.toLowerCase();
+      await db
+        .insert(dolClassificationMappings)
+        .values({
+          organizationId,
+          projectId: rate.projectId,
+          dolFeedName: normalizedFeedName,
+          classificationId: rate.classificationId,
+        })
+        .onConflictDoUpdate({
+          target: [
+            dolClassificationMappings.organizationId,
+            dolClassificationMappings.projectId,
+            dolClassificationMappings.dolFeedName,
+          ],
+          set: {
+            classificationId: rate.classificationId,
+            updatedAt: new Date(),
+          },
+        });
+    }
 
     res.status(201).json(rate);
   } catch (error) {

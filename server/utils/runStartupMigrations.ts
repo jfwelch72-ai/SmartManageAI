@@ -95,6 +95,7 @@ import { ensureCrmTranscriptBackfillNotificationSettingsTable } from "./ensureCr
 import { ensureFeatureFlagPresetApplicationsTable } from "./ensureFeatureFlagPresetApplicationsTable";
 import { ensureFeatureFlagManualChangesTable } from "./ensureFeatureFlagManualChangesTable";
 import { ensureDotPayItemMatchHistory } from "./ensureDotPayItemMatchHistory";
+import { ensureDolClassificationMappingsTable } from "./ensureDolClassificationMappingsTable";
 import { ensureCrmTranscriptBackfillNotificationsTable } from "./ensureCrmTranscriptBackfillNotificationsTable";
 import { ensureCrmTranscriptBackfillAlertDeliveriesTable } from "./ensureCrmTranscriptBackfillAlertDeliveriesTable";
 import { ensureUsersAlertFailureEmailModeColumn } from "./ensureUsersAlertFailureEmailModeColumn";
@@ -269,6 +270,10 @@ const migrations: MigrationStep[] = [
   // Task #1164 — match-history table for boosting frequently-accepted DOT pay
   // items. Must run AFTER `dot_tables` so dot_pay_items / dot_agencies exist.
   { name: "dot_pay_item_match_history", category: "CREATE_TABLE", fn: ensureDotPayItemMatchHistory },
+  // Task #1396 — per-project mapping of DOL feed classification names to the
+  // chosen `job_classifications` row. Must run AFTER `job_classifications`
+  // exists (Drizzle migrations cover that baseline table).
+  { name: "dol_classification_mappings_table", category: "CREATE_TABLE", fn: ensureDolClassificationMappingsTable },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

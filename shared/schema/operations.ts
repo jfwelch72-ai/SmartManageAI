@@ -256,6 +256,33 @@ export const prevailingWageRates = pgTable("prevailing_wage_rates", {
   projectIdIdx: index("prevailing_wage_rates_project_id_idx").on(table.projectId),
 }));
 
+// Task #1396: per-project mapping from a DOL feed classification name (as it
+// appears in the cached Davis-Bacon decision) to an existing
+// `job_classifications` row. Persisting the user's choice means subsequent
+// syncs of the same wage decision automatically reuse the chosen mapping
+// instead of re-running the case-insensitive name match (which can pick the
+// wrong row, e.g. "Carpenter (Group 1)" vs. "Carpenter").
+export const dolClassificationMappings = pgTable("dol_classification_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  dolFeedName: text("dol_feed_name").notNull(),
+  classificationId: varchar("classification_id").notNull().references(() => jobClassifications.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  projectFeedUnique: unique().on(table.organizationId, table.projectId, table.dolFeedName),
+  projectIdx: index("dol_class_mappings_project_idx").on(table.projectId),
+}));
+
+export const insertDolClassificationMappingSchema = createInsertSchema(dolClassificationMappings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertDolClassificationMapping = z.infer<typeof insertDolClassificationMappingSchema>;
+export type DolClassificationMapping = typeof dolClassificationMappings.$inferSelect;
+
 export const annualSalaryCategories = pgTable("annual_salary_categories", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),

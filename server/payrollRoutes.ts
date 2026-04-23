@@ -317,7 +317,7 @@ import { eventBus } from "./events";
 import { exportLimiter } from "./rateLimiter";
 import { lookupCachedWageRate, lookupCachedRateByLocale, isWageDeterminationCached, listCachedDecisionClassifications, queueWageDecisionSync, getWageDecisionSyncStatus } from "./integrations/providers/dol_davis_bacon/sync";
 import { notifyOrgAdminsOfWageDecisionSyncFailure } from "./services/davisBaconAdminNotifications";
-import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts, overtimeRules, costLedgerPostings, certifiedPayrollReports, auditLog } from "@shared/schema";
+import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts, overtimeRules, costLedgerPostings, certifiedPayrollReports, auditLog, dolClassificationMappings } from "@shared/schema";
 import { eq, and, gte, lte, sql, desc, inArray, count, asc, isNull, or } from "drizzle-orm";
 import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
 import { logAudit } from "./auditLogger";
@@ -1508,7 +1508,29 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
       expirationDate: string | null;
       wageDecision: string | null;
       source: "PROJECT_OVERRIDE" | "DOL_FEED";
+      // Task #1396: original DOL feed name (before name-based match or
+      // explicit mapping). Clients use it to round-trip the feed identity
+      // back to POST /prevailing-wage-rates so the chosen mapping is
+      // persisted for future syncs.
+      dolFeedName: string | null;
     }> = [];
+
+    // Task #1396: load user-saved mappings for this project so a DOL feed
+    // row lands on the classification the PM previously picked instead of
+    // the default case-insensitive name match.
+    const savedMappings = await db.select({
+      dolFeedName: dolClassificationMappings.dolFeedName,
+      classificationId: dolClassificationMappings.classificationId,
+    })
+      .from(dolClassificationMappings)
+      .where(and(
+        eq(dolClassificationMappings.organizationId, orgId),
+        eq(dolClassificationMappings.projectId, projectId),
+      ));
+    const mappingByFeedName = new Map<string, string>();
+    for (const m of savedMappings) {
+      mappingByFeedName.set(m.dolFeedName, m.classificationId);
+    }
 
     const seenClassIds = new Set<string>();
     for (const r of overrideRows) {
@@ -1524,6 +1546,7 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
         expirationDate: r.expirationDate,
         wageDecision: r.wageDecision,
         source: "PROJECT_OVERRIDE",
+        dolFeedName: null,
       });
     }
 
@@ -1570,6 +1593,7 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
                 expirationDate: null,
                 wageDecision: projectWageDecision,
                 source: "DOL_FEED",
+                dolFeedName: classificationName,
               });
             }
           } catch (err) {
@@ -1604,11 +1628,22 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
               classByName.set(c.name.trim().toLowerCase(), c);
             }
 
+            const orgClassById = new Map<string, { id: string; name: string }>();
+            for (const c of orgClassifications) {
+              orgClassById.set(c.id, c);
+            }
+
             for (const rate of cachedRates) {
               if (!rate || !rate.classification) continue;
               if (rate.baseRate <= 0) continue;
               const norm = rate.classification.trim().toLowerCase();
-              const match = classByName.get(norm);
+              // Task #1396: prefer a user-saved mapping for this feed name
+              // before falling back to the auto name-based match. This lets
+              // PMs permanently redirect "Carpenter (Group 1)" from the
+              // feed onto their existing "Carpenter" classification.
+              const mappedId = mappingByFeedName.get(norm);
+              const mapped = mappedId ? orgClassById.get(mappedId) : undefined;
+              const match = mapped ?? classByName.get(norm);
               const classificationId = match ? match.id : `dol-feed:${norm}`;
               const classificationName = match ? match.name : rate.classification;
               if (seenClassIds.has(classificationId)) continue;
@@ -1624,6 +1659,7 @@ router.get("/api/projects/:id/prevailing-wage-summary", requireAuth, async (req,
                 expirationDate: null,
                 wageDecision: projectWageDecision,
                 source: "DOL_FEED",
+                dolFeedName: rate.classification,
               });
             }
           }

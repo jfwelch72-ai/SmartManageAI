@@ -19,6 +19,7 @@ import {
   projects,
   jobClassifications,
   prevailingWageRates,
+  dolClassificationMappings,
 } from "@shared/schema";
 import { generateToken, authMiddleware } from "../auth";
 
@@ -40,6 +41,7 @@ async function cleanup(): Promise<void> {
   )) as unknown as { rows?: { id: string }[] };
   const orgIds = orgRows.rows?.map((r) => r.id) ?? [];
   if (orgIds.length === 0) return;
+  await db.delete(dolClassificationMappings).where(inArray(dolClassificationMappings.organizationId, orgIds)).catch(() => {});
   await db.delete(prevailingWageRates).where(inArray(prevailingWageRates.organizationId, orgIds)).catch(() => {});
   await db.delete(jobClassifications).where(inArray(jobClassifications.organizationId, orgIds)).catch(() => {});
   await db.delete(projects).where(inArray(projects.gcOrganizationId, orgIds)).catch(() => {});
@@ -102,6 +104,7 @@ afterAll(async () => {
 }, 30_000);
 
 beforeEach(async () => {
+  await db.delete(dolClassificationMappings).where(eq(dolClassificationMappings.organizationId, orgId));
   await db.delete(prevailingWageRates).where(eq(prevailingWageRates.organizationId, orgId));
   // Reset classifications back to just the seeded `Existing Carpenter` row
   // so each test starts from the same baseline.
@@ -239,6 +242,103 @@ describe("POST /api/labor-rates/prevailing-wage-rates — DOL feed override (Tas
       .where(eq(jobClassifications.organizationId, orgId));
     expect(all).toHaveLength(1);
     expect(all[0].id).toBe(existingClassId);
+  });
+
+  // Task #1396: when the user picks an existing classification (a real id)
+  // for a DOL feed row whose feed name does NOT match any org classification,
+  // the handler should persist a dol_classification_mappings row so future
+  // syncs of the same wage decision re-use the chosen mapping.
+  it("persists a dol_classification_mappings row when a DOL feed row is mapped to an existing classification", async () => {
+    const res = await request(app)
+      .post("/api/labor-rates/prevailing-wage-rates")
+      .set("Cookie", cookieFor(token))
+      .send({
+        projectId,
+        classificationId: existingClassId,
+        dolFeedName: "Carpenter (Group 1)",
+        wageRate: "55.00",
+        fringeRate: "7.00",
+        fringeHealthRate: "0",
+        fringePensionRate: "0",
+        fringeVacationRate: "0",
+        fringeTrainingRate: "0",
+        overtimeMultiplier: "1.5",
+        effectiveDate: "2026-01-01",
+        wageDecision: "WD-CARP-001",
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.classificationId).toBe(existingClassId);
+
+    const mappings = await db.select().from(dolClassificationMappings)
+      .where(and(
+        eq(dolClassificationMappings.organizationId, orgId),
+        eq(dolClassificationMappings.projectId, projectId),
+      ));
+    expect(mappings).toHaveLength(1);
+    expect(mappings[0].dolFeedName).toBe("carpenter (group 1)");
+    expect(mappings[0].classificationId).toBe(existingClassId);
+  });
+
+  // Task #1396: re-saving an override for the same feed name should update
+  // the existing mapping rather than failing on the unique constraint.
+  it("updates an existing mapping on re-save", async () => {
+    const [otherCls] = await db.insert(jobClassifications).values({
+      organizationId: orgId,
+      name: "Other Carpenter",
+    }).returning();
+
+    // First save -> mapping to existingClassId.
+    await request(app)
+      .post("/api/labor-rates/prevailing-wage-rates")
+      .set("Cookie", cookieFor(token))
+      .send({
+        projectId,
+        classificationId: existingClassId,
+        dolFeedName: "Carpenter (Group 2)",
+        wageRate: "50.00",
+        fringeRate: "5.00",
+        fringeHealthRate: "0",
+        fringePensionRate: "0",
+        fringeVacationRate: "0",
+        fringeTrainingRate: "0",
+        overtimeMultiplier: "1.5",
+        effectiveDate: "2026-01-01",
+      })
+      .expect(201);
+
+    // Delete the prevailing wage row so the second insert doesn't trip the
+    // projectClassUnique constraint (we're specifically exercising the
+    // mapping-upsert path here).
+    await db.delete(prevailingWageRates).where(eq(prevailingWageRates.organizationId, orgId));
+
+    // Second save -> remap feed name onto otherCls.
+    await request(app)
+      .post("/api/labor-rates/prevailing-wage-rates")
+      .set("Cookie", cookieFor(token))
+      .send({
+        projectId,
+        classificationId: otherCls.id,
+        dolFeedName: "Carpenter (Group 2)",
+        wageRate: "51.00",
+        fringeRate: "5.00",
+        fringeHealthRate: "0",
+        fringePensionRate: "0",
+        fringeVacationRate: "0",
+        fringeTrainingRate: "0",
+        overtimeMultiplier: "1.5",
+        effectiveDate: "2026-01-01",
+      })
+      .expect(201);
+
+    const mappings = await db.select().from(dolClassificationMappings)
+      .where(and(
+        eq(dolClassificationMappings.organizationId, orgId),
+        eq(dolClassificationMappings.projectId, projectId),
+        eq(dolClassificationMappings.dolFeedName, "carpenter (group 2)"),
+      ));
+    expect(mappings).toHaveLength(1);
+    expect(mappings[0].classificationId).toBe(otherCls.id);
   });
 
   it("real classification ids still flow through unchanged", async () => {

@@ -42,6 +42,10 @@ interface PrevailingWageClassification {
   expirationDate: string | null;
   wageDecision: string | null;
   source: PrevailingRateSource;
+  // Task #1396: original DOL feed name for DOL_FEED rows so the client can
+  // round-trip the feed identity to the POST endpoint and persist the
+  // user's chosen mapping for future syncs.
+  dolFeedName?: string | null;
 }
 
 interface PrevailingWageSummary {
@@ -109,14 +113,20 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
   const [ovEffectiveDate, setOvEffectiveDate] = useState("");
   const [ovExpirationDate, setOvExpirationDate] = useState("");
   const [ovNotes, setOvNotes] = useState("");
+  // Task #1396: explicit classification target chosen by the user. Empty
+  // string means "use the auto-matched classification"; the sentinel
+  // "__create_new__" means "create a brand-new classification using the
+  // DOL feed name". Anything else is a real job_classifications.id.
+  const CREATE_NEW_SENTINEL = "__create_new__";
+  const [ovMappingChoice, setOvMappingChoice] = useState<string>("");
 
   // Task #1382: confirmation step before auto-creating a brand-new job
-  // classification from a DOL feed override. The dialog lets the user pick
-  // an existing org classification (preventing typo-driven duplicates like
-  // "Carpenter" vs "Carpenter (Form Carpenter)") or explicitly opt in to
-  // creating a new one.
-  const [confirmCreateOpen, setConfirmCreateOpen] = useState(false);
-  const [pickedExistingId, setPickedExistingId] = useState<string>("");
+  // classification from a DOL feed override. Task #1396 merged the choice
+  // into the main override dialog's "Map to classification" selector, so
+  // these states are retained only to preserve the onSuccess reset path
+  // used by other callers that still reference them.
+  const [, setConfirmCreateOpen] = useState(false);
+  const [, setPickedExistingId] = useState<string>("");
 
   const { data: orgClassifications = [] } = useQuery<OrgJobClassification[]>({
     queryKey: ["/api/labor-rates/classifications"],
@@ -142,19 +152,27 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
   const overrideMutation = useMutation({
     mutationFn: async (opts: { classificationIdOverride?: string; confirmCreate?: boolean } = {}) => {
       if (!overrideRow) throw new Error("No row selected");
-      // Task #1350 / #1382: synthetic `dol-feed:<name>` ids have no matching
-      // job_classifications row yet. The user has either picked an existing
-      // org classification (we send that real id) or explicitly opted in to
-      // creating a new one (we forward the synthetic id + name + the
-      // `confirmCreateClassification` flag so the server is allowed to
-      // insert a new row). Real-id rows fall straight through.
+      // Task #1350 / #1382 / #1396: synthetic `dol-feed:<name>` ids have no
+      // matching job_classifications row yet. The user has either picked an
+      // existing org classification (we send that real id) or explicitly
+      // opted in to creating a new one (we forward the synthetic id + name
+      // + the `confirmCreateClassification` flag so the server is allowed
+      // to insert a new row). Real-id rows fall straight through. The
+      // optional `dolFeedName` field is included for every DOL_FEED row so
+      // the server can persist a `dol_classification_mappings` row.
       const classificationId = opts.classificationIdOverride ?? overrideRow.classificationId;
       const isSynthetic = classificationId.startsWith("dol-feed:");
+      // For DOL_FEED rows the feed name is the one reported by the
+      // summary endpoint; fall back to the display name for older payloads.
+      const feedName = overrideRow.source === "DOL_FEED"
+        ? (overrideRow.dolFeedName ?? overrideRow.classificationName)
+        : null;
       return await apiRequest("POST", "/api/labor-rates/prevailing-wage-rates", {
         projectId,
         classificationId,
         ...(isSynthetic ? { classificationName: overrideRow.classificationName } : {}),
         ...(isSynthetic && opts.confirmCreate ? { confirmCreateClassification: true } : {}),
+        ...(feedName ? { dolFeedName: feedName } : {}),
         wageRate: ovWageRate,
         fringeRate: ovFringeRate || "0",
         fringeHealthRate: "0",
@@ -191,6 +209,11 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
     setOvEffectiveDate(c.effectiveDate || new Date().toISOString().split("T")[0]);
     setOvExpirationDate(c.expirationDate || "");
     setOvNotes("");
+    // Task #1396: pre-select the current (auto-matched) classification when
+    // the DOL feed row is already mapped to an existing org row; otherwise
+    // default to "Create new" so the user sees what will happen by default.
+    const isSynthetic = c.classificationId.startsWith("dol-feed:");
+    setOvMappingChoice(isSynthetic ? CREATE_NEW_SENTINEL : c.classificationId);
     setOverrideOpen(true);
   };
 
@@ -535,21 +558,53 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
               ) : null}
               . Changes here only affect this project.
             </DialogDescription>
-            {overrideRow ? (
-              overrideRow.classificationId.startsWith("dol-feed:") ? (
-                <div className="text-xs text-muted-foreground" data-testid="text-override-mapping-hint">
-                  No matching org classification found &mdash; a new classification named{" "}
-                  <span className="font-medium text-foreground">{overrideRow.classificationName}</span>{" "}
-                  will be created when you save.
-                </div>
-              ) : (
-                <div className="text-xs text-muted-foreground" data-testid="text-override-mapping-hint">
-                  Mapped to existing classification{" "}
-                  <span className="font-medium text-foreground">{overrideRow.classificationName}</span>.
-                </div>
-              )
-            ) : null}
           </DialogHeader>
+          {overrideRow && overrideRow.classificationId.startsWith("dol-feed:") ? (
+            <div className="space-y-1" data-testid="field-override-mapping">
+              <Label htmlFor="ov-mapping">Map to classification</Label>
+              <Select value={ovMappingChoice} onValueChange={setOvMappingChoice}>
+                <SelectTrigger id="ov-mapping" data-testid="select-override-mapping">
+                  <SelectValue placeholder="Select a classification..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {orgClassifications.map((c) => (
+                    <SelectItem
+                      key={c.id}
+                      value={c.id}
+                      data-testid={`option-override-mapping-${c.id}`}
+                    >
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                  <SelectItem
+                    value={CREATE_NEW_SENTINEL}
+                    data-testid="option-override-mapping-create-new"
+                  >
+                    Create new: {overrideRow.dolFeedName ?? overrideRow.classificationName}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground" data-testid="text-override-mapping-hint">
+                {ovMappingChoice === CREATE_NEW_SENTINEL ? (
+                  <>
+                    A new classification named{" "}
+                    <span className="font-medium text-foreground">
+                      {overrideRow.dolFeedName ?? overrideRow.classificationName}
+                    </span>{" "}
+                    will be created. Future syncs will reuse this mapping.
+                  </>
+                ) : (
+                  <>
+                    Future syncs of this wage decision will map the DOL feed row{" "}
+                    <span className="font-medium text-foreground">
+                      {overrideRow.dolFeedName ?? overrideRow.classificationName}
+                    </span>{" "}
+                    to the selected classification.
+                  </>
+                )}
+              </p>
+            </div>
+          ) : null}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label htmlFor="ov-wage">Wage rate *</Label>
@@ -630,27 +685,23 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
                   return;
                 }
                 if (!overrideRow) return;
-                // Task #1382: if this DOL feed row's classification has no
-                // matching org row yet, prompt the user to confirm whether
-                // they really want to create a brand-new classification or
-                // map onto an existing one. Real-id rows skip the dialog.
-                const isSynthetic = overrideRow.classificationId.startsWith("dol-feed:");
-                const proposedName = overrideRow.classificationName.trim().toLowerCase();
-                const matchedExisting = isSynthetic
-                  ? orgClassifications.find((c) => c.name.trim().toLowerCase() === proposedName)
-                  : null;
-                if (isSynthetic && !matchedExisting) {
-                  setPickedExistingId("");
-                  setConfirmCreateOpen(true);
+                // Task #1396: the user now picks the target classification
+                // in the in-dialog selector. Dispatch based on that choice:
+                // - CREATE_NEW_SENTINEL => forward the synthetic dol-feed id
+                //   plus confirmCreateClassification so the server inserts a
+                //   new job_classification row.
+                // - Any other value => treat as an explicit existing
+                //   classification id (the happy path for re-mapping
+                //   "Carpenter (Group 1)" onto an existing "Carpenter").
+                if (!ovMappingChoice) {
+                  toast({ title: "Select a classification", description: "Pick a classification to map this DOL feed row to.", variant: "destructive" });
                   return;
                 }
-                if (matchedExisting) {
-                  // Name already exists in this org -- skip the dialog and
-                  // map onto the real id so we don't even risk a duplicate.
-                  overrideMutation.mutate({ classificationIdOverride: matchedExisting.id });
+                if (ovMappingChoice === CREATE_NEW_SENTINEL) {
+                  overrideMutation.mutate({ confirmCreate: true });
                   return;
                 }
-                overrideMutation.mutate();
+                overrideMutation.mutate({ classificationIdOverride: ovMappingChoice });
               }}
               disabled={overrideMutation.isPending}
               data-testid="button-save-override"
@@ -665,95 +716,6 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
         </DialogContent>
       </Dialog>
 
-      <Dialog
-        open={confirmCreateOpen}
-        onOpenChange={(o) => {
-          setConfirmCreateOpen(o);
-          if (!o) setPickedExistingId("");
-        }}
-      >
-        <DialogContent data-testid="dialog-confirm-create-classification">
-          <DialogHeader>
-            <DialogTitle>Create new job classification?</DialogTitle>
-            <DialogDescription>
-              The DOL feed lists{" "}
-              <span className="font-medium" data-testid="text-proposed-classification-name">
-                {overrideRow?.classificationName}
-              </span>
-              , but no matching classification exists in your organization yet. Saving will create a brand-new
-              classification under this name. If this is just a different spelling of one you already have, pick the
-              existing one below instead to avoid duplicates in employee assignments and reports.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label htmlFor="confirm-existing-classification">Map to an existing classification</Label>
-              <Select value={pickedExistingId} onValueChange={setPickedExistingId}>
-                <SelectTrigger id="confirm-existing-classification" data-testid="select-existing-classification">
-                  <SelectValue placeholder={
-                    orgClassifications.length === 0
-                      ? "No existing classifications"
-                      : "Select an existing classification..."
-                  } />
-                </SelectTrigger>
-                <SelectContent>
-                  {orgClassifications.map((c) => (
-                    <SelectItem
-                      key={c.id}
-                      value={c.id}
-                      data-testid={`option-existing-classification-${c.id}`}
-                    >
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-muted-foreground">
-                {orgClassifications.length === 0
-                  ? "Your organization has no job classifications yet."
-                  : `${orgClassifications.length} existing classification${orgClassifications.length === 1 ? "" : "s"} available.`}
-              </p>
-            </div>
-          </div>
-          <DialogFooter className="gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setConfirmCreateOpen(false)}
-              data-testid="button-cancel-confirm-create"
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={!pickedExistingId || overrideMutation.isPending}
-              onClick={() => {
-                if (!pickedExistingId) return;
-                overrideMutation.mutate({ classificationIdOverride: pickedExistingId });
-              }}
-              data-testid="button-use-existing-classification"
-            >
-              {overrideMutation.isPending ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving...</>
-              ) : (
-                "Use selected"
-              )}
-            </Button>
-            <Button
-              onClick={() => overrideMutation.mutate({ confirmCreate: true })}
-              disabled={overrideMutation.isPending}
-              data-testid="button-confirm-create-classification"
-            >
-              {overrideMutation.isPending ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> Creating...</>
-              ) : (
-                <>
-                  <Plus className="w-4 h-4 mr-2" /> Create new
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </Card>
   );
 }
