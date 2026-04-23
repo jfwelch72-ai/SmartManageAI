@@ -1096,6 +1096,7 @@ router.get(
           lastAcceptedAt: r.lastAcceptedAt,
           sampleDescriptions: samplesByItem.get(r.payItemId) ?? [],
           hasAlias: !!(ov?.internalAlias && ov.internalAlias.trim().length > 0),
+          internalAlias: ov?.internalAlias?.trim() ? ov.internalAlias.trim() : null,
         };
       })
       .filter((r): r is NonNullable<typeof r> => r !== null);

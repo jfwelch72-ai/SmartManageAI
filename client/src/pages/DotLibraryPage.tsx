@@ -567,6 +567,7 @@ interface TopMatchRow {
   lastAcceptedAt: string | null;
   sampleDescriptions: string[];
   hasAlias: boolean;
+  internalAlias: string | null;
 }
 
 interface TopMatchResponse {
@@ -650,9 +651,20 @@ function TopAutoMatchesSection({ canManage }: { canManage: boolean }) {
                     </span>
                   )}
                   {row.hasAlias && (
-                    <Badge variant="secondary" className="gap-1 text-[10px]" data-testid={`badge-has-alias-${row.payItem.id}`}>
-                      <Tag className="h-3 w-3" /> aliased
-                    </Badge>
+                    <span className="flex items-center gap-1 min-w-0">
+                      <Badge variant="secondary" className="gap-1 text-[10px]" data-testid={`badge-has-alias-${row.payItem.id}`}>
+                        <Tag className="h-3 w-3" /> aliased
+                      </Badge>
+                      {row.internalAlias && (
+                        <span
+                          className="text-[11px] text-muted-foreground italic truncate"
+                          title={row.internalAlias}
+                          data-testid={`text-alias-${row.payItem.id}`}
+                        >
+                          “{row.internalAlias}”
+                        </span>
+                      )}
+                    </span>
                   )}
                 </div>
                 <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
