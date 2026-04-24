@@ -34,6 +34,7 @@ import {
   organizations,
   users,
   crmTranscriptBackfillAlertDeliveries,
+  crmTranscriptBackfillJobs,
   auditLog,
 } from "@shared/schema";
 import { and, eq, desc } from "drizzle-orm";
@@ -50,6 +51,7 @@ let server: Server;
 
 let orgAId: string;
 let orgBId: string;
+let orgQuietId: string;
 let adminAId: string;
 let superAdminId: string;
 let fieldAId: string;
@@ -58,6 +60,8 @@ let superAdminCookie: string;
 let fieldACookie: string;
 
 const seededDeliveryIds: string[] = [];
+const seededJobIds: string[] = [];
+let quietJobLastActivity: Date;
 
 async function makeOrgAndAdmin(label: string) {
   const [org] = await db
@@ -274,6 +278,49 @@ beforeAll(async () => {
     errorMessage: "smtp 421",
     attemptedAt: new Date(now - 5 * hour),
   });
+
+  // Task #1580 — seed a "quiet" org: it ran a transcript backfill job
+  // inside the 24h window but produced ZERO alert deliveries (success or
+  // failure). Exercises the dataset=quiet CSV branch against real DB
+  // rows so the test isn't just asserting on an empty header.
+  const quiet = await makeOrgAndAdmin("quiet");
+  orgQuietId = quiet.org.id;
+  quietJobLastActivity = new Date(now - 1 * hour);
+  const quietJobId = `quiet-job-${SUFFIX}`;
+  seededJobIds.push(quietJobId);
+  await db.insert(crmTranscriptBackfillJobs).values({
+    id: quietJobId,
+    organizationId: orgQuietId,
+    status: "COMPLETED",
+    total: 5,
+    processed: 5,
+    succeeded: 5,
+    failed: 0,
+    errors: [],
+    startedAt: new Date(now - 3 * hour),
+    heartbeatAt: quietJobLastActivity,
+    completedAt: quietJobLastActivity,
+  });
+
+  // Also seed a job for org A so we can assert the quiet branch
+  // EXCLUDES orgs that have any delivery activity (orgA seeded failures
+  // above). Otherwise the quiet CSV could silently include "noisy"
+  // orgs and nobody would notice.
+  const orgAJobId = `quiet-noisy-orga-job-${SUFFIX}`;
+  seededJobIds.push(orgAJobId);
+  await db.insert(crmTranscriptBackfillJobs).values({
+    id: orgAJobId,
+    organizationId: orgAId,
+    status: "COMPLETED",
+    total: 3,
+    processed: 3,
+    succeeded: 3,
+    failed: 0,
+    errors: [],
+    startedAt: new Date(now - 4 * hour),
+    heartbeatAt: new Date(now - 2 * hour),
+    completedAt: new Date(now - 2 * hour),
+  });
 }, 120_000);
 
 afterAll(async () => {
@@ -286,6 +333,15 @@ afterAll(async () => {
         )
         .catch(() => {});
     }
+    // Task #1580 — drop the seeded backfill jobs (and any users in the
+    // quiet org) before the orgs themselves so the FK to organizations
+    // doesn't block deletion.
+    if (seededJobIds.length > 0) {
+      await db
+        .delete(crmTranscriptBackfillJobs)
+        .where(inArray(crmTranscriptBackfillJobs.id, seededJobIds))
+        .catch(() => {});
+    }
     // Task #1549 — clean up the audit rows our successful CSV exports
     // wrote so the audit_log table doesn't accumulate junk across runs.
     await db
@@ -294,11 +350,18 @@ afterAll(async () => {
       .catch(() => {});
     await db
       .delete(users)
-      .where(inArray(users.id, [adminAId, superAdminId, fieldAId]))
+      .where(
+        inArray(users.organizationId, [orgAId, orgBId, orgQuietId].filter(Boolean) as string[]),
+      )
       .catch(() => {});
     await db
       .delete(organizations)
-      .where(inArray(organizations.id, [orgAId, orgBId]))
+      .where(
+        inArray(
+          organizations.id,
+          [orgAId, orgBId, orgQuietId].filter(Boolean) as string[],
+        ),
+      )
       .catch(() => {});
   } catch {
     /* non-fatal */
@@ -573,5 +636,138 @@ describe("GET /api/crm/calls/transcripts/backfill/alert-failures-digest.csv", ()
       .get(ENDPOINT)
       .query({ crossOrg: "true" });
     expect(res.status).toBe(401);
+  });
+
+  // Task #1580 — pin the dataset=quiet branch (Task #1568). The "quiet
+  // org" signal — orgs that ran backfill in the window but produced ZERO
+  // alert deliveries — is only useful if the CSV column shape, filename
+  // suffix, and audit row stay stable. A future refactor that drops a
+  // header column or relabels the filename would silently break the
+  // downloads platform support attaches to incident reviews.
+  it("returns the quiet-orgs CSV with the documented header when dataset=quiet", async () => {
+    const res = await request(app)
+      .get(ENDPOINT)
+      .query({ crossOrg: "true", dataset: "quiet" })
+      .set("Cookie", superAdminCookie);
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/^text\/csv/);
+    expect(res.headers["content-disposition"]).toMatch(
+      /attachment; filename="alert-failures-quiet-24h-.*\.csv"/,
+    );
+
+    const rows = parseCsv(res.text);
+    expect(rows[0]).toEqual([
+      "organization_id",
+      "organization_name",
+      "organization_slug",
+      "jobs_in_window",
+      "last_job_at",
+      "window_hours",
+      "since",
+      "generated_at",
+    ]);
+
+    // The seeded quiet org MUST appear (had a job in the window, no
+    // delivery rows). The "noisy" orgs A and B (which seeded delivery
+    // rows in the same window) MUST NOT appear, otherwise the quiet
+    // signal is meaningless.
+    const byOrg = new Map<string, string[]>();
+    for (const row of rows.slice(1)) {
+      byOrg.set(row[0], row);
+    }
+    const quietRow = byOrg.get(orgQuietId);
+    expect(quietRow).toBeDefined();
+    expect(byOrg.has(orgAId)).toBe(false);
+    expect(byOrg.has(orgBId)).toBe(false);
+
+    expect(quietRow![1]).toMatch(/^__alert_failures_digest_csv_/);
+    expect(quietRow![2]).toMatch(
+      new RegExp(`alert-failures-digest-csv-.*-quiet$`),
+    );
+    expect(quietRow![3]).toBe("1"); // jobs_in_window
+    // last_job_at is an ISO timestamp matching the seeded heartbeat.
+    expect(new Date(quietRow![4]).toISOString()).toBe(quietRow![4]);
+    expect(new Date(quietRow![4]).getTime()).toBe(
+      quietJobLastActivity.getTime(),
+    );
+    expect(quietRow![5]).toBe("24"); // window_hours
+    expect(new Date(quietRow![6]).toISOString()).toBe(quietRow![6]); // since
+    expect(new Date(quietRow![7]).toISOString()).toBe(quietRow![7]); // generated_at
+  });
+
+  // Task #1580 — the route normalizes any unrecognized dataset to
+  // "summary" rather than 4xx'ing. Pin that fallback so a typo'd
+  // dataset query (or a stale UI build) keeps producing a usable
+  // export instead of an empty body or an error page.
+  it("falls back to the summary dataset for unknown dataset values", async () => {
+    const res = await request(app)
+      .get(ENDPOINT)
+      .query({ crossOrg: "true", dataset: "bogus" })
+      .set("Cookie", superAdminCookie);
+    expect(res.status).toBe(200);
+    expect(res.headers["content-disposition"]).toMatch(
+      /attachment; filename="alert-failures-summary-24h-.*\.csv"/,
+    );
+    const rows = parseCsv(res.text);
+    expect(rows[0]).toEqual([
+      "organization_id",
+      "organization_name",
+      "organization_slug",
+      "total",
+      "slack_count",
+      "email_count",
+      "window_hours",
+      "since",
+      "generated_at",
+    ]);
+    // The fallback is a real summary export, not an empty header row —
+    // our seeded orgs A and B must show up just like the explicit
+    // dataset=summary case above.
+    const orgIds = rows.slice(1).map((r) => r[0]);
+    expect(orgIds).toEqual(expect.arrayContaining([orgAId, orgBId]));
+  });
+
+  // Task #1580 — the audit-row side effect for the new quiet branch
+  // must capture dataset=quiet with orgRowCount = the number of quiet
+  // orgs exported and sampleRowCount = 0 (the quiet CSV has no
+  // failure samples). Without this assertion the SOC2 trail could
+  // silently drop the dataset tag for quiet downloads and nobody
+  // would notice until support tried to filter by dataset.
+  it("writes a dataset=quiet audit row with orgRowCount matching the body", async () => {
+    const res = await request(app)
+      .get(ENDPOINT)
+      .query({ crossOrg: "true", dataset: "quiet", windowHours: 24 })
+      .set("Cookie", superAdminCookie);
+    expect(res.status).toBe(200);
+    const bodyRowCount = parseCsv(res.text).slice(1).length;
+    expect(bodyRowCount).toBeGreaterThanOrEqual(1);
+
+    const allRows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.userId, superAdminId),
+          eq(auditLog.entityType, "admin_csv_export"),
+          eq(auditLog.entityId, "crm_transcript_backfill_alert_failures"),
+        ),
+      )
+      .orderBy(desc(auditLog.createdAt));
+    const quietRow = allRows.find((r) => {
+      try {
+        const v = JSON.parse(r.newValue ?? "{}");
+        return v.dataset === "quiet" && v.windowHours === 24;
+      } catch {
+        return false;
+      }
+    });
+    expect(quietRow).toBeDefined();
+    expect(quietRow!.action).toBe("CREATE");
+    const payload = JSON.parse(quietRow!.newValue!);
+    expect(payload.dataset).toBe("quiet");
+    expect(payload.windowHours).toBe(24);
+    expect(payload.sampleRowCount).toBe(0);
+    expect(payload.orgRowCount).toBe(bodyRowCount);
+    expect(typeof payload.generatedAt).toBe("string");
   });
 });
