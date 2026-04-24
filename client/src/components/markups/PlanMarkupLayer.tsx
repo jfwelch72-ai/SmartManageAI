@@ -79,10 +79,16 @@ export interface PlanMarkupLayerProps {
   /** Author's display name, used for the optimistic insert. */
   currentUserId?: string;
   /**
-   * Task #1653 — lets the layer reset the toolbar selection. Used to
-   * deselect the TEXT tool after the user cancels or submits a blank
-   * label, so the cursor returns to its default state instead of being
-   * stuck in TEXT mode.
+   * Task #1653 — used to allow the layer to swap the toolbar's active
+   * tool from inside the in-canvas text editor flow.
+   *
+   * Task #1658 — no longer invoked: cancelling or submitting blank
+   * text now leaves the active tool unchanged so the toolbar stays on
+   * TEXT and the user can immediately try again without re-picking
+   * the tool. Kept on the props type as an optional, unused
+   * passthrough so existing callers (PlansTab, UnifiedPlanToolbar)
+   * compile without changes; it can be removed entirely once those
+   * call sites are cleaned up.
    */
   onChangeTool?: (tool: MarkupTool | null) => void;
   /**
@@ -288,7 +294,10 @@ export default function PlanMarkupLayer({
   activeTool,
   color,
   thickness,
-  onChangeTool,
+  // Task #1658 — accepted on the props type for backwards compat
+  // with PlansTab / UnifiedPlanToolbar but no longer used internally.
+  // See the onChangeTool prop docstring above for context.
+  onChangeTool: _onChangeTool,
   spacePanActive,
   activeLayerId = null,
   hiddenLayerIds,
@@ -1018,21 +1027,22 @@ export default function PlanMarkupLayer({
     setDraft(null);
   }, [draft, createMutation]);
 
-  // Task #1653 — submit / cancel handlers for the in-canvas text input.
-  // `MarkupTextInput` trims internally and routes blank values through
-  // `onCancel`. Per the task acceptance criteria, cancelling or
-  // submitting blank text closes the editor *and* deselects the TEXT
-  // tool so the user is not left stuck in text-placement mode. A real
-  // submission creates the markup and leaves the tool active so the
-  // user can keep dropping labels — this matches the bid-side takeoff
-  // workspace, where submitting a label keeps `markup_text` selected.
+  // Task #1653 / Task #1658 — submit / cancel handlers for the in-canvas
+  // text input. `MarkupTextInput` trims internally and routes blank
+  // values through `onCancel`. Per the Task #1658 acceptance criteria,
+  // cancelling or submitting blank text closes the editor without
+  // creating a markup AND leaves the active tool unchanged — the
+  // toolbar stays on TEXT so the user can immediately try again
+  // without re-picking the tool (matching the bid-side takeoff
+  // workspace, where submitting or cancelling a label both keep
+  // `markup_text` selected). A real submission likewise leaves the
+  // tool active so the user can keep dropping labels in succession.
   const handleTextSubmit = useCallback(
     (text: string) => {
       const anchor = textInputAnchor;
       setTextInputAnchor(null);
       const trimmed = (text || "").trim();
       if (!anchor || !trimmed) {
-        onChangeTool?.(null);
         return;
       }
       createMutation.mutate({
@@ -1044,13 +1054,12 @@ export default function PlanMarkupLayer({
         text: trimmed,
       });
     },
-    [textInputAnchor, color, thickness, createMutation, onChangeTool],
+    [textInputAnchor, color, thickness, createMutation],
   );
 
   const handleTextCancel = useCallback(() => {
     setTextInputAnchor(null);
-    onChangeTool?.(null);
-  }, [onChangeTool]);
+  }, []);
 
   // Pixel position for the floating text input. Clamped to the canvas
   // so it never opens fully off-screen at the edges.
