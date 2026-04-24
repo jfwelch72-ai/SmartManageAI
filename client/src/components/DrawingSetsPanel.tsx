@@ -183,6 +183,8 @@ const ManageSetDialog = memo(function ManageSetDialog({
       queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "sheet-status"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "compare"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "drawing-sets"] });
+      // Task #1893 — keep the projects-list staleness roll-up in sync.
+      queryClient.invalidateQueries({ queryKey: ["/api/projects/drawing-sets/stale-summary"] });
       toast({ title: "Pinned sheets updated" });
     },
     // Task #1812 — surface duplicate-pin (409) responses with a friendly,
@@ -834,6 +836,7 @@ export default function DrawingSetsPanel({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "drawing-sets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects/drawing-sets/stale-summary"] });
       setCreateOpen(false);
       setNewName("");
       setNewDescription("");
@@ -865,6 +868,7 @@ export default function DrawingSetsPanel({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "drawing-sets"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects/drawing-sets/stale-summary"] });
       toast({ title: "Drawing set deleted" });
     },
     onError: () => {

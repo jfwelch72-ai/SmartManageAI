@@ -4,6 +4,8 @@ import { useUpdateProject } from "@/hooks/use-data";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import HealthScoreBadge from "./HealthScoreBadge";
+import StaleDrawingsBadge from "./StaleDrawingsBadge";
+import { useDrawingSetStaleSummary } from "@/hooks/use-drawing-set-stale-summary";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -65,6 +67,11 @@ export default function ProjectsKanbanView({ projects, onCardClick }: Props) {
     refetchInterval: 300000,
   });
   const healthMap = new Map(healthOverview.map((h) => [h.project_id, h]));
+
+  // Task #1893 — same org-scoped roll-up the table view uses; share the
+  // /stale-summary cache so flipping between views is instant.
+  const { data: staleSummaryData } = useDrawingSetStaleSummary(projects.length > 0);
+  const staleSummary = staleSummaryData?.summary ?? {};
 
   const grouped = STATUS_COLUMNS.reduce((acc, col) => {
     acc[col.key] = projects.filter((p) => p.status === col.key);
@@ -142,9 +149,15 @@ export default function ProjectsKanbanView({ projects, onCardClick }: Props) {
                                 <p className="text-xs text-muted-foreground truncate mt-0.5">{p.clientName}</p>
                               )}
                             </div>
-                            {health && (
-                              <HealthScoreBadge score={health.overall_score} trendDirection={health.trend_direction} size="sm" />
-                            )}
+                            <div className="flex items-center gap-1 shrink-0">
+                              <StaleDrawingsBadge
+                                projectCode={p.code}
+                                summary={staleSummary[p.id]}
+                              />
+                              {health && (
+                                <HealthScoreBadge score={health.overall_score} trendDirection={health.trend_direction} size="sm" />
+                              )}
+                            </div>
                           </div>
                           <div className="flex items-center justify-between text-xs">
                             <div className="flex items-center gap-2 min-w-0">

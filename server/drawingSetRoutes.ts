@@ -442,6 +442,84 @@ router.post("/drawing-sets/:setId/repin-stale", requireAuth, requireRoleOrFeatur
   }
 });
 
+// Task #1893 — Portfolio-level roll-up of drawing-set staleness. The projects
+// list renders an "out of date" indicator per-row, and rather than firing one
+// `/compare` request per drawing set on render (N×M problem at scale) the
+// frontend issues this single org-scoped query. Returns only projects that
+// have at least one drawing set with a pinned sheet whose `sheetName` matches
+// a different active sheet in the same project — mirroring the per-set
+// `/compare` heuristic so the badges agree with the in-project view.
+router.get("/drawing-sets/stale-summary", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
+
+    const sets = await db.select({
+      id: drawingSets.id,
+      projectId: drawingSets.projectId,
+    }).from(drawingSets)
+      .where(eq(drawingSets.organizationId, orgId));
+
+    if (sets.length === 0) return res.json({ summary: {} });
+
+    const setIds = sets.map(s => s.id);
+    const items = await db.select({
+      drawingSetId: drawingSetItems.drawingSetId,
+      sheetId: drawingSetItems.sheetId,
+    }).from(drawingSetItems)
+      .where(inArray(drawingSetItems.drawingSetId, setIds));
+
+    if (items.length === 0) return res.json({ summary: {} });
+
+    const projectIds = Array.from(new Set(sets.map(s => s.projectId)));
+    const allSheets = await db.select({
+      id: takeoffSheets.id,
+      projectId: takeoffSheets.projectId,
+      sheetName: takeoffSheets.sheetName,
+      isActive: takeoffSheets.isActive,
+    }).from(takeoffSheets)
+      .where(inArray(takeoffSheets.projectId, projectIds));
+
+    // active-by-name keyed per project (matches per-set /compare logic where
+    // `activeByName` is the most-recently-iterated active sheet for a name)
+    const activeByProjectAndName = new Map<string, Map<string, string>>();
+    for (const s of allSheets) {
+      if (s.isActive && s.sheetName && s.projectId) {
+        let m = activeByProjectAndName.get(s.projectId);
+        if (!m) { m = new Map(); activeByProjectAndName.set(s.projectId, m); }
+        m.set(s.sheetName, s.id);
+      }
+    }
+
+    const sheetById = new Map(allSheets.map(s => [s.id, s]));
+    const setIdToProject = new Map(sets.map(s => [s.id, s.projectId]));
+
+    const projectAgg = new Map<string, { staleSets: Set<string>; newerSheets: number }>();
+    for (const item of items) {
+      const projectId = setIdToProject.get(item.drawingSetId);
+      if (!projectId) continue;
+      const pinned = sheetById.get(item.sheetId);
+      if (!pinned?.sheetName) continue;
+      const latestId = activeByProjectAndName.get(projectId)?.get(pinned.sheetName);
+      if (latestId && latestId !== item.sheetId) {
+        let entry = projectAgg.get(projectId);
+        if (!entry) { entry = { staleSets: new Set(), newerSheets: 0 }; projectAgg.set(projectId, entry); }
+        entry.staleSets.add(item.drawingSetId);
+        entry.newerSheets += 1;
+      }
+    }
+
+    const summary: Record<string, { staleSetCount: number; newerSheetCount: number }> = {};
+    projectAgg.forEach((v, pid) => {
+      summary[pid] = { staleSetCount: v.staleSets.size, newerSheetCount: v.newerSheets };
+    });
+
+    res.json({ summary });
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/drawing-sets/:setId/sheet-status", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);

@@ -667,6 +667,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     if (projectId) {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "drawing-sets"] });
     }
+    // Task #1893 — keep the projects-list portfolio roll-up in sync.
+    queryClient.invalidateQueries({ queryKey: ["/api/projects/drawing-sets/stale-summary"] });
   }, [projectId]);
 
   // Task #1682 — three mutations mirror PlansTab's pinSheetToActiveSet /

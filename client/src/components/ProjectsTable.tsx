@@ -12,6 +12,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import StatusBadge from "./StatusBadge";
 import HealthScoreBadge from "./HealthScoreBadge";
+import StaleDrawingsBadge from "./StaleDrawingsBadge";
+import { useDrawingSetStaleSummary } from "@/hooks/use-drawing-set-stale-summary";
 import type { ProjectWithNames } from "@/hooks/use-data";
 import { Trash2, ChevronRight } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
@@ -52,6 +54,11 @@ export default function ProjectsTable({
   const healthMap = new Map(
     healthOverview.map((h) => [h.project_id, h])
   );
+
+  // Task #1893 — single roll-up call for the per-row "out of date drawings"
+  // indicator. Skipped entirely when the table has no rows.
+  const { data: staleSummaryData } = useDrawingSetStaleSummary(projects.length > 0);
+  const staleSummary = staleSummaryData?.summary ?? {};
 
   return (
     <>
@@ -118,7 +125,15 @@ export default function ProjectsTable({
                     {project.code}
                   </Badge>
                 </TableCell>
-                <TableCell className="font-medium">{project.name}</TableCell>
+                <TableCell className="font-medium">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span>{project.name}</span>
+                    <StaleDrawingsBadge
+                      projectCode={project.code}
+                      summary={staleSummary[project.id]}
+                    />
+                  </div>
+                </TableCell>
                 <TableCell>{project.clientName}</TableCell>
                 <TableCell>
                   <StatusBadge status={project.status} type="project" />
@@ -177,7 +192,7 @@ export default function ProjectsTable({
             <CardContent className="p-4">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <Badge variant="outline" className="font-mono text-xs shrink-0">
                       {project.code}
                     </Badge>
@@ -189,6 +204,10 @@ export default function ProjectsTable({
                         size="sm"
                       />
                     )}
+                    <StaleDrawingsBadge
+                      projectCode={project.code}
+                      summary={staleSummary[project.id]}
+                    />
                   </div>
                   <h3 className="font-medium text-sm leading-tight mb-1 truncate" data-testid={`text-project-name-${project.code}`}>
                     {project.name}
