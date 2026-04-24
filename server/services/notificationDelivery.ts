@@ -831,6 +831,12 @@ export function composeEmailContent(
       // `code` so the deep-link matches the GET /api/projects/:code
       // route the project detail page already uses.
       PROJECT_LOG_EMAIL_SCHEDULE: (id) => `${baseUrl}/projects/${id}`,
+      // Task #1715 — daily digest of failing scheduled log emails.
+      // The digest summarises every schedule on the org's failures
+      // dashboard so the deep-link points back to the dashboard
+      // itself rather than any one project. relatedEntityId is the
+      // digest's date string ("YYYY-MM-DD") and is unused in the URL.
+      PROJECT_LOG_EMAIL_FAILURES_DIGEST: () => `${baseUrl}/admin/log-email-failures`,
     };
 
     const urlBuilder = entityUrlMap[notification.relatedEntityType];

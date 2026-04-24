@@ -83,6 +83,11 @@ let suppressionResetPruneTask: ReturnType<typeof cron.schedule> | null = null;
 // `project_log_email_schedules`. Runs in batches so it can't lock the
 // table on large tenants. See `projectLogEmailScheduleAttemptPrune.ts`.
 let projectLogEmailAttemptPruneTask: ReturnType<typeof cron.schedule> | null = null;
+// Task #1715: daily digest to org ADMIN/SUPER_ADMIN users summarising
+// every schedule whose latest attempt was FAILURE / NO_RECIPIENTS so
+// admins get a proactive nudge instead of having to remember to open
+// the failures dashboard. See `processProjectLogEmailFailuresDigest`.
+let projectLogEmailFailuresDigestTask: ReturnType<typeof cron.schedule> | null = null;
 
 /**
  * Task #1491 — Publish a per-tick succeeded/failed sample for a cron
@@ -433,6 +438,24 @@ export function startJobRunner() {
     }
   });
 
+  // Task #1715: daily digest to org ADMIN / SUPER_ADMIN users
+  // summarising every schedule whose latest attempt was
+  // FAILURE / NO_RECIPIENTS — same conditions as the rows on
+  // /admin/log-email-failures. Catches broken distribution lists
+  // proactively so admins don't have to remember to open the
+  // dashboard. Runs once a day at 8am UTC; the per-org dedupe inside
+  // the handler ensures a re-run within the same day (manual fire,
+  // boot during the firing minute) doesn't re-send.
+  projectLogEmailFailuresDigestTask = cron.schedule("0 8 * * *", async () => {
+    try {
+      await processProjectLogEmailFailuresDigest();
+      recordJobOutcome("project_log_email_failures_digest", true);
+    } catch (err) {
+      recordJobOutcome("project_log_email_failures_digest", false);
+      logError("Project log email failures digest sweep failed", { error: String(err) });
+    }
+  });
+
   // Task #1173: nightly sweep that finds OPEN SWPPP inspections whose
   // corrective action due date has passed and notifies the assigned
   // assignee + the project manager once per overdue cycle. Runs at 7am
@@ -731,6 +754,10 @@ export function stopJobRunner() {
   if (projectLogEmailScheduleTask) {
     projectLogEmailScheduleTask.stop();
     projectLogEmailScheduleTask = null;
+  }
+  if (projectLogEmailFailuresDigestTask) {
+    projectLogEmailFailuresDigestTask.stop();
+    projectLogEmailFailuresDigestTask = null;
   }
   if (swpppOverdueTask) {
     swpppOverdueTask.stop();
@@ -4766,6 +4793,199 @@ async function maybeNotifyProjectLogEmailRepeatedFailure(args: {
     newCount: args.newCount,
     recipients: admins.length,
   });
+}
+
+// ============================================================
+// Task #1715 — daily failures-digest fan-out
+// ============================================================
+//
+// The per-failure ping (Task #1637) and the repeated-failure backstop
+// (Task #1651) both fire only on transitions: the first one when a
+// schedule first crosses into FAILURE / NO_RECIPIENTS, the second one
+// when the consecutive-failure streak crosses the configured threshold.
+// Once the dedupe markers are stamped, neither fires again until the
+// schedule recovers, which means a chronically broken schedule only
+// surfaces in the org failures dashboard (Task #1666). Admins who
+// don't open that dashboard end up missing the signal entirely.
+//
+// This helper closes the loop with a once-a-day digest. It mirrors the
+// dashboard query exactly — every schedule whose latest attempt was
+// FAILURE or NO_RECIPIENTS — and fans an in-app + email notification
+// to each org's active ADMIN / SUPER_ADMIN users. The notification's
+// related entity points at /admin/log-email-failures (resolved by both
+// the email composer's entityUrlMap and the in-app destination map),
+// so a click lands directly on the dashboard the digest summarises.
+//
+// Recipient role gate is the same as the dashboard's `relatedEntityType`-
+// based access (ADMIN / SUPER_ADMIN). MANAGER / SUPERINTENDENT are
+// intentionally *excluded* from the digest — the per-failure ping
+// already targets the project manager and the schedule's last editor,
+// and the digest's purpose is to surface "everywhere this is broken"
+// at the org level rather than per-project.
+//
+// Per-user opt-out is the existing `notification_type_prefs` row for
+// `PROJECT_LOG_EMAIL_FAILURES_DIGEST` — admins can mute the digest
+// (in-app and / or email) independently of the per-failure pings via
+// the standard notification settings page. No new opt-out plumbing is
+// required.
+//
+// Dedupe: a `relatedEntityId` of "YYYY-MM-DD" lets us keep this
+// helper idempotent — re-running on the same UTC day only inserts
+// rows for orgs that haven't already received that day's digest. We
+// rely on the `notifications` table itself for the dedupe sentinel
+// rather than adding a new column to `organizations`, which keeps the
+// schema surface area unchanged and means a manual rerun (e.g.
+// operator firing the cron from a debug endpoint) is safe.
+export async function processProjectLogEmailFailuresDigest(opts: { now?: Date } = {}) {
+  const now = opts.now ?? new Date();
+  const dayKey = now.toISOString().slice(0, 10);
+
+  // Pull every failing schedule in one sweep, joined with the project
+  // row so the digest body can render "Project name (code)" without a
+  // second round-trip per row. Org-scoped on both sides of the join
+  // matches the same defense-in-depth used by the dashboard endpoint
+  // (Task #1666). Capped to a sane maximum so a single misconfigured
+  // tenant with thousands of stale schedules can't blow the message
+  // size; the body footer surfaces the truncation when it bites.
+  const FAILURES_DIGEST_PER_ORG_CAP = 100;
+  const failures = await db
+    .select({
+      scheduleId: projectLogEmailSchedules.id,
+      organizationId: projectLogEmailSchedules.organizationId,
+      projectId: projectLogEmailSchedules.projectId,
+      projectName: projects.name,
+      projectCode: projects.code,
+      logType: projectLogEmailSchedules.logType,
+      cadence: projectLogEmailSchedules.cadence,
+      lastAttemptAt: projectLogEmailSchedules.lastAttemptAt,
+      lastAttemptStatus: projectLogEmailSchedules.lastAttemptStatus,
+      lastAttemptError: projectLogEmailSchedules.lastAttemptError,
+      lastAttemptRecipientCount: projectLogEmailSchedules.lastAttemptRecipientCount,
+      consecutiveFailureCount: projectLogEmailSchedules.consecutiveFailureCount,
+    })
+    .from(projectLogEmailSchedules)
+    .innerJoin(projects, and(
+      eq(projects.id, projectLogEmailSchedules.projectId),
+      eq(projects.gcOrganizationId, projectLogEmailSchedules.organizationId),
+    ))
+    .where(inArray(projectLogEmailSchedules.lastAttemptStatus, ["FAILURE", "NO_RECIPIENTS"]))
+    .orderBy(desc(projectLogEmailSchedules.lastAttemptAt));
+
+  if (failures.length === 0) return;
+
+  // Group by org so each org's admins get one digest covering only
+  // their own failing schedules.
+  const byOrg = new Map<string, typeof failures>();
+  for (const row of failures) {
+    const list = byOrg.get(row.organizationId);
+    if (list) list.push(row);
+    else byOrg.set(row.organizationId, [row]);
+  }
+
+  let totalNotifications = 0;
+  let totalOrgsNotified = 0;
+
+  for (const [organizationId, rows] of byOrg) {
+    try {
+      // Idempotency: skip orgs that already received today's digest.
+      // Querying the notifications table directly keeps the dedupe
+      // information close to where the row is written and avoids a
+      // schema change.
+      const [existing] = await db
+        .select({ id: notifications.id })
+        .from(notifications)
+        .where(and(
+          eq(notifications.organizationId, organizationId),
+          eq(notifications.type, "PROJECT_LOG_EMAIL_FAILURES_DIGEST"),
+          eq(notifications.relatedEntityType, "PROJECT_LOG_EMAIL_FAILURES_DIGEST"),
+          eq(notifications.relatedEntityId, dayKey),
+        ))
+        .limit(1);
+      if (existing) continue;
+
+      // Resolve recipients: active ADMIN / SUPER_ADMIN users in the
+      // org. MANAGER / SUPERINTENDENT can already see the dashboard
+      // (Task #1666) but the digest itself is org-admin-only — they
+      // get the per-failure ping (Task #1637) for projects they own.
+      const adminRows = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(
+          eq(users.organizationId, organizationId),
+          inArray(users.role, ["SUPER_ADMIN", "ADMIN"]),
+          eq(users.isActive, true),
+        ));
+
+      if (adminRows.length === 0) {
+        // No-one to notify — log loudly so on-call can see that the
+        // digest was effectively dropped (rare; happens during initial
+        // setup or after a bulk role change).
+        logWarn("Project log email failures digest: no admins to notify", {
+          organizationId,
+          failingSchedules: rows.length,
+        });
+        continue;
+      }
+
+      const truncated = rows.length > FAILURES_DIGEST_PER_ORG_CAP;
+      const renderRows = truncated ? rows.slice(0, FAILURES_DIGEST_PER_ORG_CAP) : rows;
+
+      const failureCount = rows.filter((r) => r.lastAttemptStatus === "FAILURE").length;
+      const noRecipientsCount = rows.filter((r) => r.lastAttemptStatus === "NO_RECIPIENTS").length;
+      const headerLine = `${rows.length} scheduled log email${rows.length === 1 ? "" : "s"} ${rows.length === 1 ? "is" : "are"} currently failing — ${failureCount} send error${failureCount === 1 ? "" : "s"}, ${noRecipientsCount} with no recipients.`;
+
+      const breakdownLines = renderRows.map((r) => {
+        const logLabel = r.logType === "SUBMITTAL" ? "Submittal" : "RFI";
+        const statusLabel = r.lastAttemptStatus === "NO_RECIPIENTS" ? "no recipients" : "failed";
+        const projectLabel = r.projectCode ? `${r.projectName} (${r.projectCode})` : r.projectName;
+        const reason = (r.lastAttemptError ?? "Unknown error").slice(0, 200);
+        const streak = r.consecutiveFailureCount && r.consecutiveFailureCount > 1
+          ? ` — ${r.consecutiveFailureCount} consecutive failures`
+          : "";
+        return `${projectLabel} — ${logLabel} log (${r.cadence.toLowerCase()}): ${statusLabel}${streak}. ${reason}`;
+      });
+
+      const truncationFooter = truncated
+        ? [
+            "",
+            `…and ${rows.length - FAILURES_DIGEST_PER_ORG_CAP} more — open the dashboard for the full list.`,
+          ]
+        : [];
+
+      const message = [headerLine, "", ...breakdownLines, ...truncationFooter].join("\n");
+      const title = `Scheduled log email failures: ${rows.length} schedule${rows.length === 1 ? "" : "s"} need attention`;
+
+      const notifs: InsertNotification[] = adminRows.map((u) => ({
+        userId: u.id,
+        organizationId,
+        type: "PROJECT_LOG_EMAIL_FAILURES_DIGEST" as const,
+        title,
+        message,
+        relatedEntityType: "PROJECT_LOG_EMAIL_FAILURES_DIGEST",
+        // The day key doubles as the dedupe sentinel for the
+        // org-level idempotency check above and as a stable
+        // relatedEntityId for the email composer's entityUrlMap, which
+        // ignores the value when building the dashboard URL.
+        relatedEntityId: dayKey,
+      }));
+
+      await insertNotifications(notifs);
+      totalNotifications += notifs.length;
+      totalOrgsNotified += 1;
+    } catch (err) {
+      logError("Project log email failures digest org iteration failed", {
+        organizationId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  if (totalNotifications > 0) {
+    logInfo("Project log email failures digest sent", {
+      orgs: totalOrgsNotified,
+      notifications: totalNotifications,
+    });
+  }
 }
 
 // ============================================================

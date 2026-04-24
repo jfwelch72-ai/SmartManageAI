@@ -160,7 +160,15 @@ const NOTIFICATION_TYPE_GROUPS: { label: string; types: string[] }[] = [
   },
   {
     label: "Admin Alerts",
-    types: ["CRM_TRANSCRIPT_BACKFILL_REAPED"],
+    types: [
+      "CRM_TRANSCRIPT_BACKFILL_REAPED",
+      // Task #1715 — Daily digest of every project log email
+      // schedule whose latest send was FAILURE / NO_RECIPIENTS.
+      // Lives next to the other org-admin-only digests so admins
+      // can mute it independently of the per-failure ping
+      // (which fires the moment a schedule first breaks).
+      "PROJECT_LOG_EMAIL_FAILURES_DIGEST",
+    ],
   },
 ];
 
@@ -175,6 +183,9 @@ const TYPE_LABEL_OVERRIDES: Record<string, string> = {
   // Task #1379 — Friendlier label for the generic integration sync
   // retry exhaustion alert (covers QuickBooks, STACK CT, Zapier, …).
   INTEGRATION_SYNC_RETRIES_EXHAUSTED: "Integration auto-sync gave up",
+  // Task #1715 — Friendlier label for the daily failures digest so
+  // admins can find it without knowing the enum name.
+  PROJECT_LOG_EMAIL_FAILURES_DIGEST: "Daily failing log-email schedules digest",
 };
 
 // Task #1379 — Anchor ids per notification type used by the

@@ -149,6 +149,15 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // notifications inbox without having to refresh the project settings
   // panel. Dedupe lives on `project_log_email_schedules.last_failure_notified_status`.
   "PROJECT_LOG_EMAIL_FAILED",
+  // Task #1715 — daily digest fan-out to org ADMIN / SUPER_ADMIN users
+  // summarising every schedule whose latest attempt was FAILURE or
+  // NO_RECIPIENTS. Mirrors the rows on /admin/log-email-failures so
+  // admins get a proactive "everywhere this is currently failing"
+  // signal without having to remember to open the dashboard. Distinct
+  // from PROJECT_LOG_EMAIL_FAILED so admins can mute the daily digest
+  // independently of the per-failure / repeated-failure pings the
+  // dashboard already raises.
+  "PROJECT_LOG_EMAIL_FAILURES_DIGEST",
 ]);
 
 export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["PENDING", "APPROVED", "DENIED"]);

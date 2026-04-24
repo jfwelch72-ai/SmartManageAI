@@ -54,6 +54,11 @@ const REQUIRED_NOTIFICATION_TYPES = [
   // FAILURE / NO_RECIPIENTS — fan-out to the schedule's last editor +
   // project manager.
   "PROJECT_LOG_EMAIL_FAILED",
+  // Task #1715: daily digest to org ADMIN / SUPER_ADMIN users
+  // summarising every schedule whose latest attempt was
+  // FAILURE / NO_RECIPIENTS. Distinct enum value so admins can mute
+  // the digest independently of the per-failure pings.
+  "PROJECT_LOG_EMAIL_FAILURES_DIGEST",
 ];
 
 export async function ensureNotificationEnumValues(): Promise<void> {

@@ -170,6 +170,13 @@ export function getNotificationDestination(notification: {
       }
       return getProjectDestination();
 
+    case "PROJECT_LOG_EMAIL_FAILURES_DIGEST":
+      // Task #1715 — daily digest summarises every failing schedule
+      // across the org. Always deep-link to the org-wide failures
+      // dashboard regardless of relatedEntityId/Type so admins land
+      // exactly where the digest's row contents are mirrored.
+      return "/admin/log-email-failures";
+
     case "GENERAL":
       if (relatedEntityType === "gantt_pdf_health") {
         return "/admin/gantt-pdf";
