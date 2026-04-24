@@ -21,6 +21,7 @@ const ShortcutsContext = createContext<ShortcutsContextValue | null>(null);
 const GLOBAL_SHORTCUTS: KeyboardShortcut[] = [
   { keys: "?", description: "Show keyboard shortcuts" },
   { keys: "⌘K / Ctrl+K", description: "Open command palette" },
+  { keys: "Hold Space", description: "Pan plan/takeoff canvas from any tool (release to restore tool)" },
 ];
 
 function isEditableTarget(el: EventTarget | null): boolean {

@@ -1,8 +1,8 @@
 import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } from "react";
 import PdfPreview from "@/components/PdfPreview";
-import { PlanPinLayer, PinPicker, PinFilterChips, PinCreateDialog, type PinFilter, type PinType, type PlanPin } from "@/components/PlanPinLayer";
+import { PlanPinLayer, PinPicker, PinCreateDialog, type PinFilter, type PinType, type PlanPin } from "@/components/PlanPinLayer";
 import PlanMarkupLayer from "@/components/markups/PlanMarkupLayer";
-import PlanMarkupToolbar from "@/components/markups/PlanMarkupToolbar";
+import UnifiedPlanToolbar from "@/components/plans/UnifiedPlanToolbar";
 import type { MarkupTool } from "@/components/markups/MarkupRenderer";
 import CarryoverAnnotationsDialog from "@/components/markups/CarryoverAnnotationsDialog";
 import { findSupersededPdfDoc, uploadOutcomeToast } from "@/components/project-tabs/planRevisionMatch";
@@ -196,6 +196,8 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const [markupTool, setMarkupTool] = useState<MarkupTool | null>(null);
   const [markupColor, setMarkupColor] = useState<string>("#ef4444");
   const [markupThickness, setMarkupThickness] = useState<number>(2);
+  // Task #1659 — hold-spacebar-to-pan from any tool (Figma / Bluebeam style).
+  const [spacePanActive, setSpacePanActive] = useState(false);
   const [sheetJumpOpen, setSheetJumpOpen] = useState(false);
   const [carryoverOpen, setCarryoverOpen] = useState(false);
   const [carryoverContext, setCarryoverContext] = useState<{
@@ -278,6 +280,51 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
     "project-plans",
     TABLE_NAV_SHORTCUTS.filter((s) => s.keys !== "/"),
   );
+
+  // Task #1659 — Hold-Space-to-pan from any tool (markup or pin) on the
+  // PDF preview surface. Mirrors `useTakeoffInteractions` behavior:
+  // skipped while typing, while a dialog/menu is open, and on key repeat.
+  useEffect(() => {
+    if (!previewDocId) return;
+    const isEditableTarget = (t: EventTarget | null) => {
+      if (!(t instanceof HTMLElement)) return false;
+      const tag = t.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if (t.isContentEditable) return true;
+      return false;
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code !== "Space") return;
+      if (e.repeat) return;
+      if (isEditableTarget(e.target)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // Don't hijack space when a Radix dialog/sheet is currently open.
+      // Radix keeps closed dialogs in the DOM with data-state="closed", so
+      // we must scope the selector to data-state="open" rather than just
+      // role="dialog" — otherwise stale portals would block panning.
+      if (typeof document !== "undefined" &&
+          document.querySelector(
+            '[role="dialog"][data-state="open"], [role="alertdialog"][data-state="open"]',
+          )) {
+        return;
+      }
+      e.preventDefault();
+      setSpacePanActive(true);
+    };
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code !== "Space") return;
+      setSpacePanActive(false);
+    };
+    const handleBlur = () => setSpacePanActive(false);
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", handleBlur);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }, [previewDocId]);
 
   const [panelWidth, setPanelWidth] = useState(256);
   const isResizingRef = useRef(false);
@@ -2106,53 +2153,27 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                       </Button>
                     </div>
                     {isPdf && (
-                      <div className="flex items-center gap-2 px-3 py-1.5 border-b bg-muted/10 shrink-0 overflow-x-auto" data-testid="plan-pin-toolbar">
-                        <PinFilterChips
-                          filter={pinFilter}
-                          onChange={setPinFilter}
-                          pinModeActive={pinModeActive}
-                          onTogglePinMode={() => setPinModeActive((v) => !v)}
-                          clusteringEnabled={pinClusteringEnabled}
-                          onToggleClustering={() => setPinClusteringEnabled((v) => !v)}
-                        />
-                        <div className="ml-auto flex items-center gap-1 text-xs">
-                          <span className="text-muted-foreground">Counts:</span>
-                          <button
-                            type="button"
-                            onClick={() => setPinCountMode("open")}
-                            className={
-                              "px-2 py-0.5 rounded border " +
-                              (pinCountMode === "open" ? "bg-primary text-primary-foreground border-primary" : "bg-card hover:bg-accent border-border")
-                            }
-                            data-testid="button-pin-count-mode-open"
-                          >
-                            Open
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setPinCountMode("all")}
-                            className={
-                              "px-2 py-0.5 rounded border " +
-                              (pinCountMode === "all" ? "bg-primary text-primary-foreground border-primary" : "bg-card hover:bg-accent border-border")
-                            }
-                            data-testid="button-pin-count-mode-all"
-                          >
-                            All
-                          </button>
-                        </div>
-                      </div>
+                      <UnifiedPlanToolbar
+                        markupTool={markupTool}
+                        onChangeMarkupTool={setMarkupTool}
+                        markupColor={markupColor}
+                        onChangeMarkupColor={setMarkupColor}
+                        markupThickness={markupThickness}
+                        onChangeMarkupThickness={setMarkupThickness}
+                        pinFilter={pinFilter}
+                        onChangePinFilter={setPinFilter}
+                        pinModeActive={pinModeActive}
+                        onTogglePinMode={() => setPinModeActive((v) => !v)}
+                        pinCountMode={pinCountMode}
+                        onChangePinCountMode={setPinCountMode}
+                        clusteringEnabled={pinClusteringEnabled}
+                        onToggleClustering={() => setPinClusteringEnabled((v) => !v)}
+                        spacePanActive={spacePanActive}
+                      />
                     )}
                     <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                       {isPdf ? (
                         <>
-                          <PlanMarkupToolbar
-                            activeTool={markupTool}
-                            onChangeTool={setMarkupTool}
-                            color={markupColor}
-                            onChangeColor={setMarkupColor}
-                            thickness={markupThickness}
-                            onChangeThickness={setMarkupThickness}
-                          />
                           <PdfPreview
                             url={`/api/projects/${projectCode}/documents/${doc.id}/stream`}
                             onOpenFile={() => handleOpenFile(doc.id, doc.fileUrl)}
@@ -2162,6 +2183,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                             pageBadges={planPinSummary[doc.id]?.pages}
                             pageBadgesClosed={planPinSummary[doc.id]?.closedPages}
                             pageBadgeMode={pinCountMode}
+                            spacePanActive={spacePanActive}
                             overlay={({ pageNumber, canvasWidth, canvasHeight }) => (
                               <>
                                 <PlanPinLayer
@@ -2182,6 +2204,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                   color={markupColor}
                                   thickness={markupThickness}
                                   onChangeTool={setMarkupTool}
+                                  spacePanActive={spacePanActive}
                                 />
                                 {pickerPosition && pendingPin && pendingPin.pageNumber === pageNumber && !isMobilePin && (
                                   <PinPicker

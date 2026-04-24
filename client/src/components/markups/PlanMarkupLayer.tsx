@@ -36,6 +36,12 @@ export interface PlanMarkupLayerProps {
    * stuck in TEXT mode.
    */
   onChangeTool?: (tool: MarkupTool | null) => void;
+  /**
+   * Task #1659 — When true, the user is holding spacebar to pan. The
+   * markup overlay must drop pointer-events so the underlying PDF
+   * scroll container receives the drag gestures.
+   */
+  spacePanActive?: boolean;
 }
 
 interface ServerMarkup extends MarkupShape {
@@ -56,6 +62,7 @@ export default function PlanMarkupLayer({
   color,
   thickness,
   onChangeTool,
+  spacePanActive,
 }: PlanMarkupLayerProps) {
   const { toast } = useToast();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -240,7 +247,12 @@ export default function PlanMarkupLayer({
         // open. Otherwise stay transparent so the underlying PdfPreview
         // keeps pin-drop, pan, and zoom. (To select existing markups in
         // browse mode, pick the SELECT tool from the toolbar.)
-        pointerEvents: activeTool || selectedId || textInputAnchor ? "auto" : "none",
+        // Task #1659: while space-pan is active, fall through to PDF.
+        pointerEvents: spacePanActive
+          ? "none"
+          : (activeTool || selectedId || textInputAnchor)
+            ? "auto"
+            : "none",
       }}
       data-testid="plan-markup-layer"
     >

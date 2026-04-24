@@ -28,11 +28,18 @@ interface PdfPreviewProps {
   pageBadges?: Record<number, number>;
   pageBadgesClosed?: Record<number, number>;
   pageBadgeMode?: "open" | "all";
+  /**
+   * Task #1659 — When true, the user is holding spacebar to temporarily
+   * pan from any tool. Pin drop and other click handlers are suppressed,
+   * the cursor switches to grab/grabbing, and pointer-drag scrolls the
+   * canvas container (Figma / Bluebeam / Photoshop muscle memory).
+   */
+  spacePanActive?: boolean;
 }
 
 const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
 
-export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPageChange, overlay, pageBadges, pageBadgesClosed, pageBadgeMode = "open" }: PdfPreviewProps) {
+export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPageChange, overlay, pageBadges, pageBadgesClosed, pageBadgeMode = "open", spacePanActive }: PdfPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [pageNum, setPageNum] = useState(1);
@@ -48,6 +55,52 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
   }, [pageNum, onPageChange]);
   const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null);
   const loadingTaskRef = useRef<pdfjsLib.PDFDocumentLoadingTask | null>(null);
+
+  // Task #1659 — spacebar-hold-to-pan drag state. Refs (not state) so the
+  // pointer handlers don't re-render the canvas mid-drag.
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const panDraggingRef = useRef(false);
+  const panStartRef = useRef<{ x: number; y: number; scrollLeft: number; scrollTop: number } | null>(null);
+
+  const onScrollPanPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!spacePanActive) return;
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    panDraggingRef.current = true;
+    panStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      scrollLeft: el.scrollLeft,
+      scrollTop: el.scrollTop,
+    };
+    try {
+      (e.currentTarget as HTMLDivElement).setPointerCapture(e.pointerId);
+    } catch {
+      /* setPointerCapture can throw if pointer already released */
+    }
+    e.preventDefault();
+  }, [spacePanActive]);
+
+  const onScrollPanPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!panDraggingRef.current || !panStartRef.current) return;
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const dx = e.clientX - panStartRef.current.x;
+    const dy = e.clientY - panStartRef.current.y;
+    el.scrollLeft = panStartRef.current.scrollLeft - dx;
+    el.scrollTop = panStartRef.current.scrollTop - dy;
+  }, []);
+
+  const onScrollPanPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!panDraggingRef.current) return;
+    panDraggingRef.current = false;
+    panStartRef.current = null;
+    try {
+      (e.currentTarget as HTMLDivElement).releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -287,8 +340,14 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
         </div>
       )}
       <div
+        ref={scrollContainerRef}
         className="flex-1 min-h-0 overflow-auto flex items-start justify-center bg-muted/10 p-4"
         data-testid="pdf-preview-canvas-container"
+        style={{ cursor: spacePanActive ? (panDraggingRef.current ? "grabbing" : "grab") : undefined }}
+        onPointerDown={onScrollPanPointerDown}
+        onPointerMove={onScrollPanPointerMove}
+        onPointerUp={onScrollPanPointerUp}
+        onPointerCancel={onScrollPanPointerUp}
       >
         {rendering && !canvasRef.current?.width && (
           <div className="absolute inset-0 flex items-center justify-center">
@@ -299,8 +358,12 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
           <canvas
             ref={canvasRef}
             className="shadow-md block"
-            style={{ maxWidth: "100%", cursor: pinMode ? "crosshair" : "default" }}
+            style={{
+              maxWidth: "100%",
+              cursor: spacePanActive ? "grab" : pinMode ? "crosshair" : "default",
+            }}
             onClick={(e) => {
+              if (spacePanActive) return; // suppress pin drop while panning
               if (!pinMode || !onPinDrop || !canvasRef.current) return;
               const rect = canvasRef.current.getBoundingClientRect();
               const x = (e.clientX - rect.left) / rect.width;
