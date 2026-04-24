@@ -42,9 +42,19 @@
  * Konva missed the drag-distance threshold or the click landed on the
  * wrong shape.
  *
- * Task #1905 extends the same treatment to `clickOnCanvas` because
- * several specs use it to select Konva shapes and the same "did the
- * click land on the wrong spot?" debugging problem applies there too.
+ * Task #1904: the same descriptive title is also opened as a
+ * `page.context().tracing.group(...)` so the Playwright trace viewer's
+ * left-hand action list shows the resolved gesture (e.g.
+ * "dragOnCanvas chromium (50,40) → (200,180) on canvas[…]") wrapping
+ * the raw `mouse.move/down/up` calls, instead of just the bare pointer
+ * actions. The grouping is best-effort — if tracing isn't recording
+ * (or the call site lacks a browser context), the helpers fall back
+ * to running the gesture without a group rather than failing the test.
+ *
+ * Task #1905 extends the same `test.step` + JSON attachment treatment
+ * to `clickOnCanvas` because several specs use it to select Konva
+ * shapes and the same "did the click land on the wrong spot?"
+ * debugging problem applies there too.
  */
 import { test, type Locator, type Page } from "@playwright/test";
 
@@ -114,6 +124,18 @@ function fmtPoint(p: Point): string {
 }
 
 /**
+ * Format a bounding box as a compact `[x,y w×h]` string suitable for
+ * embedding in trace-viewer group titles. The trace viewer's action
+ * list truncates aggressively, so keep this terse.
+ */
+function fmtBox(box: { x: number; y: number; width: number; height: number }): string {
+  return (
+    `[${box.x.toFixed(1)},${box.y.toFixed(1)} ` +
+    `${box.width.toFixed(1)}×${box.height.toFixed(1)}]`
+  );
+}
+
+/**
  * Attach a JSON blob describing the gesture to the active test step.
  *
  * Wrapped in try/catch so the helpers stay usable from contexts where
@@ -127,6 +149,46 @@ async function attachGesture(name: string, payload: unknown): Promise<void> {
     });
   } catch {
     // Outside a Playwright test runtime — skip the attachment silently.
+  }
+}
+
+/**
+ * Open a Playwright `tracing.group` named `title`, run `fn`, and make
+ * sure the matching `groupEnd()` runs even when `fn` throws. The group
+ * surfaces the resolved gesture in the trace viewer's left-hand action
+ * list, wrapping the raw `mouse.move/down/up` calls underneath.
+ *
+ * `tracing.group` is a no-op when tracing isn't recording, but the
+ * surrounding `page.context()` lookup throws if the helper is called
+ * outside a real browser context (e.g. ad-hoc scripts). We swallow
+ * those errors so the gesture still runs — the trace just won't have
+ * the pretty group label.
+ */
+async function withTracingGroup<T>(
+  page: Page,
+  title: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  let opened = false;
+  let tracing: ReturnType<Page["context"]>["tracing"] | undefined;
+  try {
+    tracing = page.context().tracing;
+    await tracing.group(title);
+    opened = true;
+  } catch {
+    // Tracing API unavailable (no context, or the channel rejected) —
+    // run the gesture without a group rather than failing the test.
+  }
+  try {
+    return await fn();
+  } finally {
+    if (opened && tracing) {
+      try {
+        await tracing.groupEnd();
+      } catch {
+        // Best effort — never let a teardown failure mask the real error.
+      }
+    }
   }
 }
 
@@ -186,22 +248,27 @@ export async function dragSequence(
       tuning,
     });
 
-    // Two `mouse.move()` calls so WebKit reliably dispatches the initial
-    // mousemove before the synthetic mousedown lands.
-    await page.mouse.move(from.x, from.y);
-    await page.mouse.move(from.x, from.y);
-    await page.mouse.down();
-    await page.waitForTimeout(edgeWait);
+    // Open a tracing group so the trace viewer's action list shows the
+    // resolved gesture title alongside the raw mouse events instead of
+    // a pile of bare `mouse.move/down/up` rows.
+    await withTracingGroup(page, stepTitle, async () => {
+      // Two `mouse.move()` calls so WebKit reliably dispatches the initial
+      // mousemove before the synthetic mousedown lands.
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.move(from.x, from.y);
+      await page.mouse.down();
+      await page.waitForTimeout(edgeWait);
 
-    for (const p of waypoints) {
-      await page.mouse.move(p.x, p.y, { steps: interStep });
-      await page.waitForTimeout(interWait);
-    }
+      for (const p of waypoints) {
+        await page.mouse.move(p.x, p.y, { steps: interStep });
+        await page.waitForTimeout(interWait);
+      }
 
-    await page.mouse.move(to.x, to.y, { steps: finalStep });
-    await page.waitForTimeout(edgeWait);
-    await page.mouse.up();
-    await page.waitForTimeout(postUpWait);
+      await page.mouse.move(to.x, to.y, { steps: finalStep });
+      await page.waitForTimeout(edgeWait);
+      await page.mouse.up();
+      await page.waitForTimeout(postUpWait);
+    });
   });
 }
 
@@ -259,16 +326,27 @@ export async function dragOnCanvas(
       tuning: getDragTuning(browserName),
     });
 
-    await dragSequence(
-      page,
-      resolvedStart,
-      resolvedEnd,
-      browserName,
-      {
-        ...options,
-        intermediate: resolvedIntermediate,
-      },
-    );
+    // Trace-viewer group title now that we know the canvas bounding box —
+    // having the box inline makes it possible to tell at a glance whether
+    // the canvas-relative coordinates resolved to the expected viewport
+    // pixels without scrubbing through the snapshot timeline. The inner
+    // dragSequence opens a nested group with the resolved viewport coords.
+    const tracingTitle =
+      `canvasDrag.dragOnCanvas ${browserName} ` +
+      `${fmtPoint(start)} → ${fmtPoint(end)} on canvas ${fmtBox(box)}`;
+
+    await withTracingGroup(page, tracingTitle, async () => {
+      await dragSequence(
+        page,
+        resolvedStart,
+        resolvedEnd,
+        browserName,
+        {
+          ...options,
+          intermediate: resolvedIntermediate,
+        },
+      );
+    });
   });
 }
 
