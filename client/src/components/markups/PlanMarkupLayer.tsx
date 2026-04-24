@@ -65,7 +65,7 @@ import type { KonvaEventObject, Node as KonvaNode } from "konva/lib/Node";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import MarkupRenderer, { type MarkupShape, type MarkupTool } from "./MarkupRenderer";
-import { MarkupTextInput } from "@/components/takeoff/MarkupTextInput";
+import { MarkupTextInput } from "./MarkupTextInput";
 
 export interface PlanMarkupLayerProps {
   documentId: string;

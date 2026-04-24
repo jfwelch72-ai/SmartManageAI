@@ -48,7 +48,7 @@ import { PlanScaleModal } from "./takeoff/PlanScaleModal";
 import { TakeoffSheetCompareDialog } from "./takeoff/TakeoffSheetCompareDialog";
 import { TakeoffPropertiesPanel } from "./takeoff/TakeoffPropertiesPanel";
 import { TakeoffVersionHistory } from "./takeoff/TakeoffVersionHistory";
-import { MarkupTextInput } from "./takeoff/MarkupTextInput";
+import { MarkupTextInput } from "./markups/MarkupTextInput";
 import { IssueDetailPanel } from "./takeoff/IssueDetailPanel";
 import { LiveCostPanel } from "./takeoff/LiveCostPanel";
 import AiTakeoffPanel, { type DetectedItem } from "@/components/AiTakeoffPanel";
