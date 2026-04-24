@@ -37,6 +37,35 @@ vi.mock("dns", async (importOriginal) => {
   };
 });
 
+// Task #1535 — Some translateSafeDownloadError branches can't be reached
+// without intercepting `safeDownload` itself: the "Invalid URL" branch is
+// shadowed by the route's own `new URL()` guard, and the streaming
+// oversize branch would otherwise need a >100MB body. We mock the helper
+// with a pass-through wrapper that lets individual tests swap in a
+// per-test override.
+type SafeDownloadOverride = (
+  opts: any,
+  real: (opts: any) => Promise<any>,
+  errors: { SafeDownloadError: typeof import("../services/safeDownload").SafeDownloadError },
+) => Promise<any>;
+let safeDownloadOverride: SafeDownloadOverride | null = null;
+function setSafeDownloadOverride(fn: SafeDownloadOverride | null) {
+  safeDownloadOverride = fn;
+}
+
+vi.mock("../services/safeDownload", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../services/safeDownload")>();
+  return {
+    ...actual,
+    safeDownload: (opts: any) => {
+      if (safeDownloadOverride) {
+        return safeDownloadOverride(opts, actual.safeDownload, { SafeDownloadError: actual.SafeDownloadError });
+      }
+      return actual.safeDownload(opts);
+    },
+  };
+});
+
 vi.mock("../objectStorage", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../objectStorage")>();
   class FakeObjectStorageService {
@@ -198,10 +227,12 @@ afterAll(async () => {
 beforeEach(() => {
   dnsMap.clear();
   setDns(PUBLIC_HOST, [PUBLIC_IP]);
+  setSafeDownloadOverride(null);
 });
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
+  setSafeDownloadOverride(null);
 });
 
 async function planDocsForProject(projectId: string) {
@@ -535,6 +566,143 @@ describe("Task #1499 — POST /api/documents/from-url", () => {
     expect(res.status).toBe(408);
     expect(res.body?.error).toBe(
       "The download took too long (over 30 seconds). Please try a smaller file or a faster link.",
+    );
+
+    const after = await planDocsForProject(org.projectId);
+    expect(after.length).toBe(before.length);
+  });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Task #1535 — Cover the remaining translateSafeDownloadError branches
+  // that aren't reachable through the success/error paths above.
+  // ───────────────────────────────────────────────────────────────────────
+
+  it("maps SafeDownloadError('Invalid URL') to 400 'Invalid URL format'", async () => {
+    // The route's own `new URL(url)` guard fires before safeDownload is
+    // ever called, so this branch can only be exercised by intercepting
+    // the helper. If that guard is ever removed/moved, the
+    // safeDownload-translated path must still produce the exact same
+    // user-visible string.
+    setSafeDownloadOverride(async (_opts, _real, { SafeDownloadError }) => {
+      throw new SafeDownloadError("Invalid URL");
+    });
+
+    const before = await planDocsForProject(org.projectId);
+
+    const res = await postFromUrl({
+      url: `https://${PUBLIC_HOST}/whatever.pdf`,
+      title: "Invalid",
+      type: "OTHER",
+      projectId: org.projectId,
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body?.error).toBe("Invalid URL format");
+
+    const after = await planDocsForProject(org.projectId);
+    expect(after.length).toBe(before.length);
+  });
+
+  it("rejects a body that exceeds maxBytes mid-stream when content-length is missing", async () => {
+    // Force the streaming oversize path: omit content-length so the
+    // pre-stream guard can't fire, then have the body exceed the cap.
+    // We override maxBytes to a tiny value so the test stays fast — the
+    // translator still maps the resulting "File is too large" error to
+    // the same user-visible 100MB message.
+    const oversizeBody = Buffer.alloc(2048, 0x41); // 2KB of 'A'
+
+    globalThis.fetch = (async (input: any): Promise<Response> => {
+      const url = typeof input === "string" ? input : (input?.url ?? String(input));
+      if (url.startsWith(`https://${PUBLIC_HOST}/`)) {
+        // Stream the body in chunks via a ReadableStream so safeDownload
+        // hits its in-loop `total > maxBytes` check rather than the
+        // post-buffer check. Critically, no content-length header.
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(new Uint8Array(oversizeBody.buffer, 0, 512));
+            controller.enqueue(new Uint8Array(oversizeBody.buffer, 512, 512));
+            controller.enqueue(new Uint8Array(oversizeBody.buffer, 1024, 1024));
+            controller.close();
+          },
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: { "content-type": "application/pdf" },
+        });
+      }
+      throw new Error("unexpected fetch: " + url);
+    }) as any;
+
+    setSafeDownloadOverride(async (opts, real) => real({ ...opts, maxBytes: 1024 }));
+
+    const before = await planDocsForProject(org.projectId);
+
+    const res = await postFromUrl({
+      url: `https://${PUBLIC_HOST}/streamed-huge.pdf`,
+      title: "Streamed too big",
+      type: "OTHER",
+      projectId: org.projectId,
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body?.error).toBe(
+      "This file is too large (over 100MB). Please use a smaller file.",
+    );
+
+    const after = await planDocsForProject(org.projectId);
+    expect(after.length).toBe(before.length);
+  });
+
+  it("maps an upstream HTTP failure (503) to the 'Download failed (HTTP 503)' message", async () => {
+    globalThis.fetch = (async (input: any): Promise<Response> => {
+      const url = typeof input === "string" ? input : (input?.url ?? String(input));
+      if (url.startsWith(`https://${PUBLIC_HOST}/`)) {
+        return new Response(Buffer.from("upstream is sad"), {
+          status: 503,
+          headers: { "content-type": "text/plain" },
+        });
+      }
+      throw new Error("unexpected fetch: " + url);
+    }) as any;
+
+    const before = await planDocsForProject(org.projectId);
+
+    const res = await postFromUrl({
+      url: `https://${PUBLIC_HOST}/down.pdf`,
+      title: "Upstream down",
+      type: "OTHER",
+      projectId: org.projectId,
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body?.error).toBe(
+      "The link returned an error (HTTP 503). Please check that the URL is correct and publicly accessible.",
+    );
+
+    const after = await planDocsForProject(org.projectId);
+    expect(after.length).toBe(before.length);
+  });
+
+  it("maps a DNS resolution failure to the 'Could not resolve the hostname' message", async () => {
+    // No setDns() for this hostname — the fake resolver returns
+    // ENOTFOUND, which safeDownload translates to "Could not resolve
+    // the hostname." and the route then surfaces with guidance.
+    globalThis.fetch = (async (): Promise<Response> => {
+      throw new Error("fetch should not be reached when DNS resolution fails");
+    }) as any;
+
+    const before = await planDocsForProject(org.projectId);
+
+    const res = await postFromUrl({
+      url: "https://nx-host.example.test/spec.pdf",
+      title: "DNS failure",
+      type: "OTHER",
+      projectId: org.projectId,
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body?.error).toBe(
+      "Could not resolve the hostname. Please check the URL and try again.",
     );
 
     const after = await planDocsForProject(org.projectId);
