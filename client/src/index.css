@@ -318,6 +318,79 @@
   display: none;
 }
 
+/* ------------------------------------------------------------------ */
+/* Global custom scrollbar                                             */
+/* Reference: attached_assets/image_1777037255903.png                  */
+/* Thin, rounded, semi-translucent thumb on a transparent track,       */
+/* tuned for both light and dark themes via the existing CSS vars.     */
+/* Applied to every scrollable element by default; opt-out with the    */
+/* existing `.scrollbar-hide` utility.                                 */
+/* ------------------------------------------------------------------ */
+
+/* Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+}
+
+/* WebKit / Blink (Chrome, Safari, Edge) */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  background: transparent;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+  border: none;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: hsl(var(--muted-foreground) / 0.30);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  min-height: 32px;
+  transition: background-color 150ms ease;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.55);
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background-color: hsl(var(--muted-foreground) / 0.70);
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Dark mode: lift the thumb a touch so it reads against dark surfaces,
+   matching the reference screenshot. */
+.dark * {
+  scrollbar-color: hsl(0 0% 100% / 0.18) transparent;
+}
+
+.dark *::-webkit-scrollbar-thumb {
+  background-color: hsl(0 0% 100% / 0.18);
+}
+
+.dark *::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(0 0% 100% / 0.35);
+}
+
+.dark *::-webkit-scrollbar-thumb:active {
+  background-color: hsl(0 0% 100% / 0.50);
+}
+
+/* Keep the existing `.scrollbar-hide` opt-out winning over the global rule */
+.scrollbar-hide,
+.dark .scrollbar-hide {
+  scrollbar-width: none;
+  scrollbar-color: transparent transparent;
+}
+
 @keyframes shimmer {
   100% {
     transform: translateX(100%);
