@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
+import { createContext, useContext, useState, useCallback, useEffect, useMemo, useRef } from "react";
 import Joyride, { CallBackProps, STATUS, EVENTS, ACTIONS, Step } from "react-joyride";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -694,59 +694,140 @@ async function persistPlansTourCompleted(completed: boolean): Promise<void> {
 // see the follow-up task to mirror it server-side once a column
 // exists. Cross-device sync is a known gap but the auto-tour and
 // replay UX work correctly per device.
-const bidPlansTourSteps: Step[] = [
-  {
-    target: '[data-testid="button-tool-pan"]',
-    title: "Navigate the plan",
-    content: (
-      <div className="space-y-2">
-        <p>Use <strong>Pan</strong> and <strong>Select</strong> to move around your sheet without drawing anything.</p>
-        <p className="text-sm text-muted-foreground">Tip: hold <kbd className="px-1 py-0.5 rounded border bg-muted text-xs">Space</kbd> from any tool to pan temporarily — release Space to restore your tool.</p>
-      </div>
-    ),
-    placement: "right" as const,
-    disableBeacon: true,
-  },
-  {
-    target: '[data-testid="button-tool-calibrate"]',
-    title: "Calibrate first",
-    content: (
-      <p>Before measuring, click <strong>Calibrate</strong> and pick two points of a known distance on the sheet. Every measurement after that comes out in real-world units.</p>
-    ),
-    placement: "right" as const,
-    disableBeacon: true,
-  },
-  {
-    target: '[data-testid="button-measure-group"]',
-    title: "Measure",
-    content: (
-      <p>Linear, area, volume, count and more — all the takeoff measurement tools live here. Pick one, click on the sheet, and the quantities flow straight into your bid.</p>
-    ),
-    placement: "right" as const,
-    disableBeacon: true,
-  },
-  {
-    target: '[data-testid="button-markup-group"]',
-    title: "Mark Up",
-    content: (
-      <p>Draw arrows, clouds, highlights, or freehand notes on top of the sheet to communicate intent. Markups don't affect quantities — they're just for collaboration.</p>
-    ),
-    placement: "right" as const,
-    disableBeacon: true,
-  },
-  {
-    target: '[data-testid="bid-plans-view-settings"], [data-testid="button-upload-plan"]',
-    title: "Push quantities into your estimate",
-    content: (
-      <div className="space-y-2">
-        <p>Once your takeoff measurements look right, send them straight into the bid estimate from the sidebar's <strong>Import Measurements</strong> button — no copy/paste required.</p>
-        <p className="text-sm text-muted-foreground">You can replay this tour anytime from the gear menu in the top right.</p>
-      </div>
-    ),
-    placement: "left" as const,
-    disableBeacon: true,
-  },
-];
+//
+// Task #1726 — On viewports below the takeoff toolbar's `sm:`
+// breakpoint (640 px), the desktop sidebar collapses and the toolbar
+// reflows to a horizontally-scrolling bottom bar with different
+// testids (`button-tool-mobile-*`) and no `button-measure-group` /
+// `button-markup-group` aggregator buttons. The desktop targets stay
+// in the DOM (with `display: none`), so a comma-list selector still
+// resolves them first via `querySelector` and the spotlight lands on
+// an invisible node. To prevent that we build the step list off a
+// live viewport check and swap to mobile-equivalent anchors below the
+// breakpoint, collapsing Measure + Mark Up into a single step that
+// spotlights the whole scrolling toolbar (no group anchor exists).
+const TAKEOFF_MOBILE_BREAKPOINT_PX = 640;
+
+function useTakeoffViewportIsMobile(): boolean {
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mql = window.matchMedia(
+      `(max-width: ${TAKEOFF_MOBILE_BREAKPOINT_PX - 1}px)`,
+    );
+    const update = () => setIsMobile(mql.matches);
+    update();
+    mql.addEventListener("change", update);
+    return () => mql.removeEventListener("change", update);
+  }, []);
+  return isMobile;
+}
+
+function getBidPlansTourSteps(isMobile: boolean): Step[] {
+  if (isMobile) {
+    return [
+      {
+        target: '[data-testid="button-tool-mobile-pan"]',
+        title: "Navigate the plan",
+        content: (
+          <div className="space-y-2">
+            <p>Use <strong>Pan</strong> and <strong>Select</strong> to move around your sheet without drawing anything.</p>
+            <p className="text-sm text-muted-foreground">Tip: pinch to zoom and drag with one finger to pan.</p>
+          </div>
+        ),
+        placement: "top" as const,
+        disableBeacon: true,
+      },
+      {
+        target: '[data-testid="button-tool-mobile-calibrate"]',
+        title: "Calibrate first",
+        content: (
+          <p>Before measuring, tap <strong>Calibrate</strong> and pick two points of a known distance on the sheet. Every measurement after that comes out in real-world units.</p>
+        ),
+        placement: "top" as const,
+        disableBeacon: true,
+      },
+      {
+        target: '[data-testid="takeoff-toolbar-mobile"]',
+        title: "Measure & mark up",
+        content: (
+          <div className="space-y-2">
+            <p>Scroll this toolbar sideways to find <strong>Linear, Area, Volume, Count</strong> and the <strong>markup</strong> tools (arrows, clouds, highlights, freehand notes).</p>
+            <p className="text-sm text-muted-foreground">Measurements flow into your bid; markups stay on the sheet for collaboration.</p>
+          </div>
+        ),
+        placement: "top" as const,
+        disableBeacon: true,
+      },
+      {
+        target: '[data-testid="bid-plans-view-settings"]',
+        title: "Push quantities into your estimate",
+        content: (
+          <div className="space-y-2">
+            <p>Once your takeoff measurements look right, send them straight into the bid estimate from the <strong>Import Measurements</strong> button on the sheet sidebar — no copy/paste required.</p>
+            <p className="text-sm text-muted-foreground">You can replay this tour anytime from the gear menu up top.</p>
+          </div>
+        ),
+        placement: "bottom" as const,
+        disableBeacon: true,
+      },
+    ];
+  }
+
+  return [
+    {
+      target: '[data-testid="button-tool-pan"]',
+      title: "Navigate the plan",
+      content: (
+        <div className="space-y-2">
+          <p>Use <strong>Pan</strong> and <strong>Select</strong> to move around your sheet without drawing anything.</p>
+          <p className="text-sm text-muted-foreground">Tip: hold <kbd className="px-1 py-0.5 rounded border bg-muted text-xs">Space</kbd> from any tool to pan temporarily — release Space to restore your tool.</p>
+        </div>
+      ),
+      placement: "right" as const,
+      disableBeacon: true,
+    },
+    {
+      target: '[data-testid="button-tool-calibrate"]',
+      title: "Calibrate first",
+      content: (
+        <p>Before measuring, click <strong>Calibrate</strong> and pick two points of a known distance on the sheet. Every measurement after that comes out in real-world units.</p>
+      ),
+      placement: "right" as const,
+      disableBeacon: true,
+    },
+    {
+      target: '[data-testid="button-measure-group"]',
+      title: "Measure",
+      content: (
+        <p>Linear, area, volume, count and more — all the takeoff measurement tools live here. Pick one, click on the sheet, and the quantities flow straight into your bid.</p>
+      ),
+      placement: "right" as const,
+      disableBeacon: true,
+    },
+    {
+      target: '[data-testid="button-markup-group"]',
+      title: "Mark Up",
+      content: (
+        <p>Draw arrows, clouds, highlights, or freehand notes on top of the sheet to communicate intent. Markups don't affect quantities — they're just for collaboration.</p>
+      ),
+      placement: "right" as const,
+      disableBeacon: true,
+    },
+    {
+      target: '[data-testid="bid-plans-view-settings"], [data-testid="button-upload-plan"]',
+      title: "Push quantities into your estimate",
+      content: (
+        <div className="space-y-2">
+          <p>Once your takeoff measurements look right, send them straight into the bid estimate from the sidebar's <strong>Import Measurements</strong> button — no copy/paste required.</p>
+          <p className="text-sm text-muted-foreground">You can replay this tour anytime from the gear menu in the top right.</p>
+        </div>
+      ),
+      placement: "left" as const,
+      disableBeacon: true,
+    },
+  ];
+}
 
 const BID_PLANS_TOUR_KEY_PREFIX = "bid-plans-tour-completed-";
 
@@ -835,6 +916,18 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     setBidPlansTourCompletedState(getBidPlansTourCompleted(user?.id));
   }, [user?.id]);
+
+  // Task #1726 — Recompute the bid Plans tour step list whenever the
+  // viewport crosses the takeoff toolbar's `sm:` breakpoint so each
+  // step always anchors to a visible target (the desktop sidebar or
+  // the mobile bottom bar). Joyride is keyed off the active flag, so
+  // a resize during an active tour just updates the in-flight steps;
+  // a resize while the tour is dormant only affects the next launch.
+  const isTakeoffViewportMobile = useTakeoffViewportIsMobile();
+  const bidPlansTourSteps = useMemo(
+    () => getBidPlansTourSteps(isTakeoffViewportMobile),
+    [isTakeoffViewportMobile],
+  );
   
   const role = user?.effectiveRole || user?.role || "FIELD_WORKER";
   

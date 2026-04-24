@@ -464,7 +464,10 @@ export function TakeoffToolbar({
         </span>
       </div>
 
-      <div className="sm:hidden bg-card border-t flex items-center gap-1 px-2 py-1.5 overflow-x-auto shrink-0">
+      <div
+        className="sm:hidden bg-card border-t flex items-center gap-1 px-2 py-1.5 overflow-x-auto shrink-0"
+        data-testid="takeoff-toolbar-mobile"
+      >
         {TOOL_CONFIG.map((tool) => {
           const Icon = tool.icon;
           return (
