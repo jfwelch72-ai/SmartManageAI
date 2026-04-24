@@ -286,6 +286,37 @@ function makeId() {
 import { buildBulkMoveUpdates, buildMoveSnapshot } from "./moveHelpers";
 export { buildBulkMoveUpdates, buildMoveSnapshot };
 
+// Task #1738 — Marquee / lasso selection gesture. The intersection
+// math lives in `./marqueeHelpers` for the same reason the move
+// helpers do (Node-friendly unit tests).
+import {
+  findMarkupsIntersectingMarquee,
+  rectFromPoints,
+} from "./marqueeHelpers";
+export { findMarkupsIntersectingMarquee, rectFromPoints };
+
+/**
+ * Task #1738 — Minimum drag distance (in canvas pixels) before a
+ * pointerdown+drag is treated as a marquee selection rather than a
+ * plain click. Below this threshold we fall through to the existing
+ * click-clears-selection behavior so a single tap on empty canvas
+ * still feels like a deselect, not a 0×0 marquee that selects nothing.
+ */
+export const MARQUEE_MIN_DRAG_PX = 3;
+
+/**
+ * Task #1738 — Active lasso state. Coordinates are normalized 0..1 to
+ * match `MarkupShape.points`; the overlay denormalizes when rendering
+ * the rectangle. `shift` is captured at pointerdown so the gesture
+ * still extends the prior selection even if the user releases Shift
+ * before lifting the mouse.
+ */
+interface MarqueeState {
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+  shift: boolean;
+}
+
 export default function PlanMarkupLayer({
   documentId,
   pageNumber,
@@ -310,6 +341,38 @@ export default function PlanMarkupLayer({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState<MarkupShape | null>(null);
   const drawingRef = useRef(false);
+  // Task #1738 — Lasso / marquee drag in SELECT mode. State is
+  // intentionally normalized 0..1 (matching `MarkupShape.points`) so
+  // the intersection math doesn't have to know about canvas
+  // dimensions, and the overlay rectangle just denormalizes for
+  // display. `shift` is captured at pointerdown so a Shift+drag still
+  // extends an existing selection even if the user releases Shift
+  // before lifting the mouse.
+  const [marquee, setMarquee] = useState<MarqueeState | null>(null);
+  // The latest marquee is also mirrored into a ref AND written
+  // synchronously by every gesture handler. React's setState is async
+  // — a `pointermove` that fires before the next commit would
+  // otherwise read a stale `marqueeRef.current` and skip updating
+  // the rectangle. Writing the ref alongside `setMarquee` keeps the
+  // pointer handlers correct between renders without re-binding
+  // them on every frame (which would defeat the ref-based
+  // optimization the rest of this component relies on).
+  const marqueeRef = useRef<MarqueeState | null>(null);
+  // Outer wrapper ref — used by the window-level pointermove/pointerup
+  // listeners installed while a marquee is in flight (see effect
+  // below). Falling back to window events makes the gesture survive
+  // Konva quirks where `Stage.onPointerUp` fails to fire (e.g. the
+  // pointer briefly leaves the stage canvas, or the synthetic event
+  // is suppressed because Konva's pointermove/up handlers gate on
+  // `getPointerPosition` returning a valid coord).
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  // Task #1738 — Konva fires `Stage.onClick` even after a drag whose
+  // mousedown and mouseup are on the empty stage; without this flag
+  // the click handler would immediately call `onSelect(null)` and
+  // wipe out a selection the marquee just produced. We set the flag
+  // when committing a non-empty marquee selection and the next
+  // empty-stage click consumes (and clears) it.
+  const suppressNextStageClickRef = useRef(false);
   // Task #1706 — group drag is intentionally NOT React state. With 50+
   // markups in one selection, calling setState on every `onDragMove`
   // re-rendered the whole layer on every frame and dropped frames on
@@ -971,11 +1034,22 @@ export default function PlanMarkupLayer({
         // Belt-and-suspenders: if the pointerdown landed on the empty
         // stage (target === stage), still clear so a quick mousedown
         // before the click event resolves doesn't leave a stale halo.
+        // Task #1738 — Empty-stage pointerdown in SELECT mode also
+        // arms the lasso / marquee gesture. If Shift is held, the
+        // existing selection is preserved (so the marquee extends it
+        // on release); otherwise it is cleared up front so the
+        // floating selection toolbar disappears for the duration of
+        // the drag — the same behavior Bluebeam ships.
         if (
           activeTool === "SELECT" &&
           evt.target === evt.target.getStage()
         ) {
-          setSelectedIds(new Set());
+          const native = evt.evt as PointerEvent | undefined;
+          const shift = native?.shiftKey === true;
+          if (!shift) setSelectedIds(new Set());
+          const next: MarqueeState = { start: point, end: point, shift };
+          marqueeRef.current = next;
+          setMarquee(next);
         }
         return;
       }
@@ -1001,6 +1075,17 @@ export default function PlanMarkupLayer({
 
   const handlePointerMove = useCallback(
     (point: { x: number; y: number }) => {
+      // Task #1738 — While the lasso is active, every pointermove just
+      // updates the marquee endpoint so the overlay rectangle tracks
+      // the cursor. The drawing branch below is reserved for the
+      // draw-tool drag (ARROW / RECTANGLE / etc.).
+      if (marqueeRef.current) {
+        const m = marqueeRef.current;
+        const next: MarqueeState = { start: m.start, end: point, shift: m.shift };
+        marqueeRef.current = next;
+        setMarquee(next);
+        return;
+      }
       if (!drawingRef.current || !draft || !activeTool) return;
       setDraft((prev) => {
         if (!prev) return prev;
@@ -1013,7 +1098,116 @@ export default function PlanMarkupLayer({
     [draft, activeTool],
   );
 
+  // Task #1738 — Marquee commit logic, shared between Konva's
+  // `onPointerUp` and the window-level pointerup fallback installed
+  // while a marquee is active. Returns true if a marquee was in
+  // flight (so callers can short-circuit any draw-tool branches).
+  const commitMarquee = useCallback(() => {
+    const m = marqueeRef.current;
+    if (!m) return false;
+    marqueeRef.current = null;
+    setMarquee(null);
+    const widthPx = Math.abs(m.end.x - m.start.x) * canvasWidth;
+    const heightPx = Math.abs(m.end.y - m.start.y) * canvasHeight;
+    if (widthPx < MARQUEE_MIN_DRAG_PX && heightPx < MARQUEE_MIN_DRAG_PX) {
+      // Treat as a click — selection state was already updated at
+      // pointerdown (cleared if no Shift), and the stage onClick
+      // will handle any further deselection if it fires.
+      return true;
+    }
+    const rect = rectFromPoints(m.start, m.end);
+    const ids = findMarkupsIntersectingMarquee(markups, rect);
+    setSelectedIds((prev) => {
+      if (m.shift) {
+        const next = new Set(prev);
+        for (const id of ids) next.add(id);
+        return next;
+      }
+      return new Set(ids);
+    });
+    // Suppress the trailing click-clear so a marquee that produced
+    // a selection isn't immediately wiped out by Konva's stage
+    // onClick handler. Konva fires `click` synchronously after
+    // `pointerup` (in the same event-loop tick) when the release
+    // happens over the stage, so a setTimeout(0) clear runs AFTER
+    // that click — meaning:
+    //   • If the trailing stage click fires, it consumes the flag
+    //     and our timeout clear is a harmless no-op.
+    //   • If the marquee was committed via the window-level fallback
+    //     (mouseup outside the stage), no Konva click follows, and
+    //     the timeout clears the flag so the next genuine empty-stage
+    //     click still clears the selection on the FIRST try.
+    suppressNextStageClickRef.current = true;
+    setTimeout(() => {
+      suppressNextStageClickRef.current = false;
+    }, 0);
+    return true;
+  }, [markups, canvasWidth, canvasHeight]);
+
+  // Mirror the latest `commitMarquee` into a ref so the window-level
+  // pointerup handler (bound once per gesture) can always invoke the
+  // current closure without forcing the effect to re-bind whenever
+  // `markups` / `canvasWidth` / `canvasHeight` change mid-drag.
+  const commitMarqueeRef = useRef(commitMarquee);
+  useEffect(() => {
+    commitMarqueeRef.current = commitMarquee;
+  }, [commitMarquee]);
+
+  // Task #1738 — Window-level pointermove/pointerup fallback that
+  // runs while a marquee is in flight. Konva's `Stage.onPointerUp`
+  // is unreliable here: it gates on `getPointerPosition()` returning
+  // a valid coordinate (which can be null at the moment the pointer
+  // is released, especially in synthetic test events) and fires only
+  // when the pointer is still over the stage canvas. By mirroring
+  // the gesture on `window` we guarantee the marquee always tracks
+  // the cursor and always commits/clears on release, even if the
+  // cursor briefly leaves the canvas mid-drag.
+  // We deliberately key this effect on `marqueeActive` (a boolean
+  // derived from whether a marquee exists) rather than on the marquee
+  // object itself. The marquee object is replaced on every pointermove
+  // frame; depending on it would tear down and re-bind the window
+  // listeners on every frame of the drag, which is wasted work and can
+  // be janky on lower-end devices. Binding once when the gesture
+  // starts and unbinding once when it ends is both correct and cheap.
+  const marqueeActive = marquee !== null;
+  useEffect(() => {
+    if (!marqueeActive) return;
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const onMove = (e: PointerEvent) => {
+      const m = marqueeRef.current;
+      if (!m) return;
+      const rect = wrapper.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const point = {
+        x: (e.clientX - rect.left) / rect.width,
+        y: (e.clientY - rect.top) / rect.height,
+      };
+      const next: MarqueeState = { start: m.start, end: point, shift: m.shift };
+      marqueeRef.current = next;
+      setMarquee(next);
+    };
+    const onUp = () => {
+      commitMarqueeRef.current?.();
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+    return () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+  }, [marqueeActive]);
+
   const handlePointerUp = useCallback(() => {
+    // Task #1738 — Commit the marquee selection on pointerup. A drag
+    // that never crossed the minimum threshold falls through to a
+    // plain click (the existing stage `onClick` handler clears the
+    // selection on its own when it fires); a real drag computes the
+    // intersecting markup ids and either replaces or extends the
+    // current selection depending on the captured Shift modifier.
+    if (commitMarquee()) return;
     if (!drawingRef.current || !draft) {
       drawingRef.current = false;
       return;
@@ -1025,7 +1219,7 @@ export default function PlanMarkupLayer({
     }
     createMutation.mutate(draft);
     setDraft(null);
-  }, [draft, createMutation]);
+  }, [draft, createMutation, commitMarquee]);
 
   // Task #1653 / Task #1658 — submit / cancel handlers for the in-canvas
   // text input. `MarkupTextInput` trims internally and routes blank
@@ -1087,6 +1281,15 @@ export default function PlanMarkupLayer({
   const handleSelectShape = useCallback(
     (id: string | null, modifiers?: { shift: boolean }) => {
       if (id === null) {
+        // Task #1738 — A marquee that just produced a selection arms
+        // `suppressNextStageClickRef` so Konva's stage `onClick`
+        // (which fires `onSelect(null)`) doesn't immediately wipe out
+        // the selection the lasso just made. Consume the flag here so
+        // the very next genuine empty-stage click still clears.
+        if (suppressNextStageClickRef.current) {
+          suppressNextStageClickRef.current = false;
+          return;
+        }
         setSelectedIds(new Set());
         return;
       }
@@ -1258,6 +1461,7 @@ export default function PlanMarkupLayer({
 
   return (
     <div
+      ref={wrapperRef}
       className="absolute inset-0"
       style={{
         // Capture pointer events only when a draw/select tool is active,
@@ -1290,6 +1494,18 @@ export default function PlanMarkupLayer({
         onPointerUp={handlePointerUp}
         getGroupProps={getGroupProps}
       />
+      {marquee && (
+        <div
+          className="absolute pointer-events-none border border-blue-500/80 bg-blue-500/15"
+          style={{
+            left: Math.min(marquee.start.x, marquee.end.x) * canvasWidth,
+            top: Math.min(marquee.start.y, marquee.end.y) * canvasHeight,
+            width: Math.abs(marquee.end.x - marquee.start.x) * canvasWidth,
+            height: Math.abs(marquee.end.y - marquee.start.y) * canvasHeight,
+          }}
+          data-testid="markup-marquee"
+        />
+      )}
       {selectionAnchor && lastSelected && (
         <div
           className="absolute z-10 -translate-x-1/2 -translate-y-full flex items-center gap-1 bg-background border border-border shadow-md rounded-full px-1 py-0.5"
