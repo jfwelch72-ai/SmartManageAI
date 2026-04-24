@@ -469,7 +469,7 @@ export default function DrawingSetsPanel({
             </div>
 
             <div>
-              <h4 className="text-sm font-medium mb-2">Currently Pinned ({manageItems.length})</h4>
+              <h4 className="text-sm font-medium mb-2" data-testid="text-pinned-count">Currently Pinned ({manageItems.length})</h4>
               {manageItems.length === 0 ? (
                 <p className="text-xs text-muted-foreground italic" data-testid="text-no-pinned-sheets">
                   No sheets pinned yet. Pin from the sheet list or use a bulk action above.
