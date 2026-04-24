@@ -21,7 +21,7 @@
  */
 import { Router } from "express";
 import { z } from "zod";
-import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
 import { db } from "./db";
 import {
   PROJECT_LOG_EMAIL_CADENCES,
@@ -229,6 +229,134 @@ router.get(
       // from the worker's `getProjectLogEmailFailureThreshold`.
       const failureThreshold = getProjectLogEmailFailureThreshold();
       res.json({ schedules, failureThreshold });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// Task #1675 — per-user view of "where am I currently a failure-alert
+// recipient?". The `Failure alerts go to:` panel on the project's
+// Scheduled Log Emails card already surfaces who would be paged for a
+// given project — but a project manager (or recent editor) who lives
+// in 30+ projects has no way to know, from their own settings page,
+// which routing currently lands on them. This endpoint mirrors the
+// recipient computation in `maybeNotifyProjectLogEmailFailure`
+// (`server/jobs/jobRunner.ts`) and the GET above:
+//   - PM = `projects.project_manager_id`
+//   - Last editor = `project_log_email_schedules.last_edited_by_id`
+// scoped to the caller's org.
+//
+// We deliberately *only* surface schedules with `cadence != OFF`:
+// the worker only fans out failure notifications when an active
+// cadence actually attempts a send, so an OFF row would be a phantom
+// listing here. The card on the project page intentionally surfaces
+// PMs even on default-OFF rows ("if a future schedule failed…"),
+// but for the user-side opt-out story we want the list to match the
+// real fan-out set so a "hand-off" action is meaningful.
+//
+// The response shape groups multiple log types into one row per
+// project so the client can render `Bridge 7 — RFI, SUBMITTAL` in a
+// single line. Each entry carries enough metadata for a deep-link
+// to `/projects/<code>` (the project detail route uses the human
+// project code, not the uuid id) without a second round-trip.
+router.get(
+  "/me/failure-alert-routes",
+  requireAuth,
+  async (req: AuthRequest, res, next) => {
+    try {
+      const userId = req.user?.id;
+      const organizationId = req.user?.organizationId;
+      if (!userId || !organizationId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const rows = await db
+        .select({
+          projectId: projects.id,
+          projectCode: projects.code,
+          projectName: projects.name,
+          logType: projectLogEmailSchedules.logType,
+          cadence: projectLogEmailSchedules.cadence,
+          projectManagerId: projects.projectManagerId,
+          lastEditedById: projectLogEmailSchedules.lastEditedById,
+        })
+        .from(projectLogEmailSchedules)
+        .innerJoin(projects, eq(projects.id, projectLogEmailSchedules.projectId))
+        .where(
+          and(
+            // Cross-tenant safety: scope by both the schedule row's
+            // organization (defense-in-depth in case a stray cross-org
+            // pointer exists) and the project's GC org (the canonical
+            // tenant boundary the rest of the routes use).
+            eq(projectLogEmailSchedules.organizationId, organizationId),
+            eq(projects.gcOrganizationId, organizationId),
+            // OFF schedules don't fan out failure alerts (see
+            // `runProjectLogEmailScheduleSweep` — the worker filters
+            // these out before even attempting a send), so they have
+            // no business showing up in a "you receive failure alerts
+            // for" list.
+            ne(projectLogEmailSchedules.cadence, "OFF"),
+            // The caller is a recipient if they're the project's PM
+            // OR the schedule row's last editor. Mirrors the dedupe
+            // in `maybeNotifyProjectLogEmailFailure`.
+            or(
+              eq(projects.projectManagerId, userId),
+              eq(projectLogEmailSchedules.lastEditedById, userId),
+            ),
+          ),
+        );
+
+      // Group by project so the UI can render one row per project
+      // with a comma-separated list of log types instead of
+      // duplicating the project name across two list items.
+      type RouteEntry = {
+        projectId: string;
+        projectCode: string;
+        projectName: string;
+        logTypes: Array<{
+          logType: "RFI" | "SUBMITTAL";
+          cadence: string;
+          asPm: boolean;
+          asLastEditor: boolean;
+        }>;
+      };
+      const byProject = new Map<string, RouteEntry>();
+      for (const r of rows) {
+        // Defense-in-depth: the SQL `ne(cadence, "OFF")` clause should
+        // already exclude these, but if a future caller refactors the
+        // query and accidentally drops the predicate we don't want to
+        // start surfacing phantom routes the worker would never page.
+        if (String(r.cadence) === "OFF") continue;
+        const key = String(r.projectId);
+        let entry = byProject.get(key);
+        if (!entry) {
+          entry = {
+            projectId: String(r.projectId),
+            projectCode: String(r.projectCode),
+            projectName: String(r.projectName),
+            logTypes: [],
+          };
+          byProject.set(key, entry);
+        }
+        entry.logTypes.push({
+          logType: r.logType === "SUBMITTAL" ? "SUBMITTAL" : "RFI",
+          cadence: String(r.cadence),
+          asPm: r.projectManagerId === userId,
+          asLastEditor: r.lastEditedById === userId,
+        });
+      }
+
+      // Stable, name-sorted output so the panel doesn't reshuffle
+      // between renders when the underlying query order changes.
+      const routes = Array.from(byProject.values())
+        .map((entry) => ({
+          ...entry,
+          logTypes: entry.logTypes.slice().sort((a, b) => a.logType.localeCompare(b.logType)),
+        }))
+        .sort((a, b) => a.projectName.localeCompare(b.projectName));
+
+      res.json({ routes });
     } catch (err) {
       next(err);
     }

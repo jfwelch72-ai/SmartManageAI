@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useRef, Fragment } from "react";
+import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -23,7 +24,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Bell, Loader2, Lock, AlertCircle, Cake, AlarmClock, Moon, Eye, Mail, Download, CheckCircle2, X } from "lucide-react";
+import { Bell, BellRing, Loader2, Lock, AlertCircle, Cake, AlarmClock, Moon, Eye, Mail, Download, CheckCircle2, X } from "lucide-react";
 import { useIntegrationStatus } from "@/hooks/use-integration-status";
 import { useAuth } from "@/hooks/use-auth";
 
@@ -523,6 +524,27 @@ export default function NotificationPrefsSection() {
       }
     };
   }, [loadingNotifPrefs, notifPrefs, muteBanner]);
+
+  // Task #1675 — surface, on this per-user page, every (project, log
+  // type) pairing where the signed-in user is currently a failure-alert
+  // recipient. The endpoint already scopes to the caller's org and only
+  // returns active (cadence != OFF) schedules so the list mirrors the
+  // worker's actual fan-out set.
+  const { data: failureAlertRoutesData, isLoading: loadingFailureAlertRoutes } = useQuery<{
+    routes: Array<{
+      projectId: string;
+      projectCode: string;
+      projectName: string;
+      logTypes: Array<{
+        logType: "RFI" | "SUBMITTAL";
+        cadence: string;
+        asPm: boolean;
+        asLastEditor: boolean;
+      }>;
+    }>;
+  }>({
+    queryKey: ["/api/me/failure-alert-routes"],
+  });
 
   // Task #696: per-user opt-out for the weekly CRM contact birthday digest.
   // Stored in user_settings (separate from notification channel/type prefs).
@@ -1646,6 +1668,83 @@ export default function NotificationPrefsSection() {
           </Alert>
         )
       ) : null}
+
+      {/*
+        Task #1675 — surface the project + log-type combos where this
+        user is currently a failure-alert recipient. The list mirrors
+        what the cron worker (`maybeNotifyProjectLogEmailFailure`)
+        would actually fan out to, so users can hand off the role
+        without spelunking through every project's Scheduled Log
+        Emails card. Each entry deep-links back to the relevant
+        project so users can change the cadence, last-editor, or PM
+        from where the routing is actually configured.
+      */}
+      <Card data-testid="card-failure-alert-routes">
+        <CardContent className="pt-6">
+          <div className="flex items-start gap-3">
+            <BellRing className="mt-0.5 h-5 w-5 text-muted-foreground" aria-hidden="true" />
+            <div className="flex-1 min-w-0">
+              <h3 className="text-sm font-semibold" data-testid="text-failure-alert-routes-title">
+                You receive failure alerts for
+              </h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Projects where a scheduled RFI or submittal log email would page you if a send fails. You're listed because you're the project manager or the most recent editor of the schedule.
+              </p>
+              <div className="mt-3" data-testid="container-failure-alert-routes">
+                {loadingFailureAlertRoutes ? (
+                  <div className="space-y-2" data-testid="skeleton-failure-alert-routes">
+                    <Skeleton className="h-6 w-3/4" />
+                    <Skeleton className="h-6 w-2/3" />
+                  </div>
+                ) : !failureAlertRoutesData || failureAlertRoutesData.routes.length === 0 ? (
+                  <p className="text-sm text-muted-foreground" data-testid="text-failure-alert-routes-empty">
+                    You aren't currently a failure-alert recipient on any project.
+                  </p>
+                ) : (
+                  <ul className="space-y-2" data-testid="list-failure-alert-routes">
+                    {failureAlertRoutesData.routes.map((route) => (
+                      <li
+                        key={route.projectId}
+                        className="flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md bg-muted/40 px-3 py-2 text-sm"
+                        data-testid={`row-failure-alert-route-${route.projectId}`}
+                      >
+                        <Link
+                          href={`/projects/${route.projectCode}`}
+                          className="font-medium underline decoration-dotted underline-offset-2 hover:text-foreground"
+                          data-testid={`link-failure-alert-route-${route.projectId}`}
+                        >
+                          {route.projectName}
+                        </Link>
+                        <span className="text-muted-foreground" aria-hidden="true">—</span>
+                        <div className="flex flex-wrap items-center gap-1">
+                          {route.logTypes.map((entry) => {
+                            const role = entry.asPm && entry.asLastEditor
+                              ? "PM, last editor"
+                              : entry.asPm
+                              ? "PM"
+                              : "Last editor";
+                            return (
+                              <Badge
+                                key={entry.logType}
+                                variant="outline"
+                                className="text-xs font-normal gap-1"
+                                data-testid={`badge-failure-alert-route-${route.projectId}-${entry.logType}`}
+                              >
+                                <span className="font-medium">{entry.logType}</span>
+                                <span className="text-muted-foreground">· {role}</span>
+                              </Badge>
+                            );
+                          })}
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardContent className="pt-6">
