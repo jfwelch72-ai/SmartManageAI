@@ -34,6 +34,9 @@ import { and, eq, inArray, lte, sql, asc } from "drizzle-orm";
 import { certifiedPayrollReports, organizationPayrollSettings, users } from "@shared/schema";
 import { logAudit } from "../auditLogger";
 import { logError, logInfo, logWarn } from "../utils/logger";
+import { recordJobMetrics } from "../utils/jobMetrics";
+
+export const CERTIFIED_PAYROLL_PURGE_JOB = "certified_payroll_purge";
 
 export async function processArchivedCertifiedPayrollPurge(opts: { now?: Date } = {}): Promise<{
   orgsProcessed: number;
@@ -42,6 +45,7 @@ export async function processArchivedCertifiedPayrollPurge(opts: { now?: Date } 
   storageFailures: number;
 }> {
   const now = opts.now ?? new Date();
+  const startedAt = Date.now();
   let orgsProcessed = 0;
   let rowsPurged = 0;
   let storageDeleted = 0;
@@ -55,7 +59,20 @@ export async function processArchivedCertifiedPayrollPurge(opts: { now?: Date } 
     .from(certifiedPayrollReports)
     .where(sql`${certifiedPayrollReports.archivedAt} IS NOT NULL`);
 
-  if (orgIdRows.length === 0) return { orgsProcessed, rowsPurged, storageDeleted, storageFailures };
+  if (orgIdRows.length === 0) {
+    // Task #1523 — emit a sample even on the "nothing to do" path so the
+    // dashboard shows every nightly tick and the Task #1502 spike rules
+    // on `deleted` / `hardDeleted` have a baseline to compare against.
+    recordJobMetrics(CERTIFIED_PAYROLL_PURGE_JOB, {
+      deleted: 0,
+      hardDeleted: 0,
+      storageDeleted: 0,
+      storageFailures: 0,
+      orgsProcessed: 0,
+      durationMs: Date.now() - startedAt,
+    });
+    return { orgsProcessed, rowsPurged, storageDeleted, storageFailures };
+  }
 
   const { ObjectStorageService } = await import("../objectStorage");
   const objectStorage = new ObjectStorageService();
@@ -187,6 +204,20 @@ export async function processArchivedCertifiedPayrollPurge(opts: { now?: Date } 
       });
     }
   }
+
+  // Task #1523 — surface per-run counts on the operations dashboard so
+  // operators see the nightly history and the Task #1502 over-delete
+  // spike rules on `deleted` / `hardDeleted` can fire end-to-end. The
+  // hard-delete on this table has no soft-delete column, so
+  // `hardDeleted` mirrors `rowsPurged`.
+  recordJobMetrics(CERTIFIED_PAYROLL_PURGE_JOB, {
+    deleted: rowsPurged,
+    hardDeleted: rowsPurged,
+    storageDeleted,
+    storageFailures,
+    orgsProcessed,
+    durationMs: Date.now() - startedAt,
+  });
 
   return { orgsProcessed, rowsPurged, storageDeleted, storageFailures };
 }

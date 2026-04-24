@@ -264,6 +264,73 @@ describe("processArchivedCertifiedPayrollPurge", () => {
     expect(oldValue.storageDeleted).toBe(1);
   });
 
+  it("records a per-run sample (deleted, hardDeleted, durationMs) via recordJobMetrics (Task #1523)", async () => {
+    const now = new Date("2026-04-23T03:30:00Z");
+    queueOrgsWithArchived(["org-1"]);
+    queueOrgSettings([{ retentionDays: 1095 }]);
+    const oldArchivedAt = new Date(now.getTime() - 1100 * 24 * 60 * 60 * 1000);
+    queueExpiredReports([
+      { id: "rep-1", objectKey: "/payroll/1.pdf", archivedAt: oldArchivedAt },
+      { id: "rep-2", objectKey: "/payroll/2.pdf", archivedAt: oldArchivedAt },
+    ]);
+    queueAdminLookup([{ id: "admin-1" }]);
+
+    const { resetJobMetrics, getJobMetrics } = await import("../utils/jobMetrics");
+    resetJobMetrics();
+
+    await processArchivedCertifiedPayrollPurge({ now });
+
+    const metrics = getJobMetrics("certified_payroll_purge");
+    expect(metrics.samples).toHaveLength(1);
+    expect(metrics.samples[0].counters.deleted).toBe(2);
+    expect(metrics.samples[0].counters.hardDeleted).toBe(2);
+    expect(metrics.samples[0].counters.storageDeleted).toBe(2);
+    expect(metrics.samples[0].counters.storageFailures).toBe(0);
+    expect(metrics.samples[0].counters.orgsProcessed).toBe(1);
+    expect(typeof metrics.samples[0].counters.durationMs).toBe("number");
+  });
+
+  it("records an empty-run sample when no orgs have archived rows (Task #1523)", async () => {
+    queueOrgsWithArchived([]);
+
+    const { resetJobMetrics, getJobMetrics } = await import("../utils/jobMetrics");
+    resetJobMetrics();
+
+    await processArchivedCertifiedPayrollPurge({ now: new Date("2026-04-23T03:30:00Z") });
+
+    const metrics = getJobMetrics("certified_payroll_purge");
+    expect(metrics.samples).toHaveLength(1);
+    expect(metrics.samples[0].counters.deleted).toBe(0);
+    expect(metrics.samples[0].counters.hardDeleted).toBe(0);
+    expect(metrics.samples[0].counters.storageDeleted).toBe(0);
+    expect(metrics.samples[0].counters.storageFailures).toBe(0);
+    expect(metrics.samples[0].counters.orgsProcessed).toBe(0);
+  });
+
+  it("records storage failures separately from successful deletes (Task #1523)", async () => {
+    const now = new Date("2026-04-23T03:30:00Z");
+    queueOrgsWithArchived(["org-mixed"]);
+    queueOrgSettings([{ retentionDays: 1095 }]);
+    queueExpiredReports([
+      { id: "rep-fails", objectKey: "/payroll/fails.pdf", archivedAt: new Date(now.getTime() - 2000 * 24 * 60 * 60 * 1000) },
+      { id: "rep-ok", objectKey: "/payroll/ok.pdf", archivedAt: new Date(now.getTime() - 2000 * 24 * 60 * 60 * 1000) },
+    ]);
+    queueAdminLookup([{ id: "admin-1" }]);
+    nextObjectDeleteFails = true;
+
+    const { resetJobMetrics, getJobMetrics } = await import("../utils/jobMetrics");
+    resetJobMetrics();
+
+    await processArchivedCertifiedPayrollPurge({ now });
+
+    const metrics = getJobMetrics("certified_payroll_purge");
+    expect(metrics.samples).toHaveLength(1);
+    expect(metrics.samples[0].counters.deleted).toBe(1);
+    expect(metrics.samples[0].counters.hardDeleted).toBe(1);
+    expect(metrics.samples[0].counters.storageDeleted).toBe(1);
+    expect(metrics.samples[0].counters.storageFailures).toBe(1);
+  });
+
   it("still purges when no admin user is available (skips audit instead of aborting)", async () => {
     const now = new Date("2026-04-23T03:30:00Z");
     queueOrgsWithArchived(["org-no-admin"]);

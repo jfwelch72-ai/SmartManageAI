@@ -757,32 +757,81 @@ async function processOutbox() {
   }
 }
 
-async function processRetentionPolicies() {
+export async function processRetentionPolicies() {
+  const startedAt = Date.now();
+  let deleted = 0;
+  let hardDeleted = 0;
+  let policiesProcessed = 0;
+  let policiesFailed = 0;
+
   const policies = await db.select()
     .from(retentionPolicies)
     .where(eq(retentionPolicies.enabled, true));
 
-  if (policies.length === 0) return;
+  if (policies.length === 0) {
+    // Task #1523 — always emit a per-run sample (even on the empty path)
+    // so the dashboard shows every nightly tick and the Task #1502 spike
+    // rules on `deleted` / `hardDeleted` actually have a baseline to
+    // compare against.
+    recordJobMetrics("retention_policy_sweep", {
+      deleted: 0,
+      hardDeleted: 0,
+      policiesProcessed: 0,
+      policiesFailed: 0,
+      durationMs: Date.now() - startedAt,
+    });
+    return;
+  }
 
   logInfo("Processing retention policies", { count: policies.length });
 
   for (const policy of policies) {
     try {
       const cutoff = new Date(Date.now() - policy.retentionDays * 24 * 60 * 60 * 1000);
+      let policyDeleted = 0;
 
       if (policy.entityType === "AUDIT_LOGS" && policy.action === "DELETE") {
-        await db.delete(auditLog).where(lt(auditLog.createdAt, cutoff));
+        // `.returning({ id })` so we can publish a per-policy delete
+        // count to the job-metrics surface — the spike rule in
+        // jobMetricAlerts.ts (Task #1502) compares this counter against
+        // a 5x baseline / 25-row floor.
+        const removed = await db
+          .delete(auditLog)
+          .where(lt(auditLog.createdAt, cutoff))
+          .returning({ id: auditLog.id });
+        policyDeleted = removed.length;
+        // AUDIT_LOGS DELETE is a true hard-delete (no soft-delete column
+        // on this table), so `hardDeleted` mirrors `deleted`.
+        deleted += policyDeleted;
+        hardDeleted += policyDeleted;
       }
 
       await db.update(retentionPolicies)
         .set({ lastRunAt: new Date(), updatedAt: new Date() })
         .where(eq(retentionPolicies.id, policy.id));
 
-      logInfo("Retention policy executed", { entityType: policy.entityType, action: policy.action });
+      policiesProcessed += 1;
+      logInfo("Retention policy executed", {
+        entityType: policy.entityType,
+        action: policy.action,
+        deleted: policyDeleted,
+      });
     } catch (err) {
+      policiesFailed += 1;
       logError("Retention policy failed", { policyId: policy.id, error: String(err) });
     }
   }
+
+  // Task #1523 — surface per-run counts so operators see the nightly
+  // history on the Jobs dashboard and the Task #1502 over-delete spike
+  // rules can fire end-to-end.
+  recordJobMetrics("retention_policy_sweep", {
+    deleted,
+    hardDeleted,
+    policiesProcessed,
+    policiesFailed,
+    durationMs: Date.now() - startedAt,
+  });
 }
 
 function computeNextRunAt(frequency: string): Date {
