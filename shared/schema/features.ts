@@ -9942,6 +9942,30 @@ export const insertOrganizationDotPreferenceSchema = createInsertSchema(organiza
 export type InsertOrganizationDotPreference = z.infer<typeof insertOrganizationDotPreferenceSchema>;
 export type OrganizationDotPreference = typeof organizationDotPreferences.$inferSelect;
 
+// Task #1743 — per-user × per-spec-book picker filter memory for the DOT
+// pay-item picker. Promoted off the device-local
+// `dot-pay-item-picker:facets:<uid>:<specBookId>` localStorage key flagged
+// by docs/per-user-localstorage-audit.md so an estimator's chosen
+// categories + spec sections follow them across devices. This needs a
+// dedicated table (rather than a `users.*` column) because the preference
+// is two-dimensional (user × DOT spec book) and naturally unbounded as
+// estimators visit more spec books.
+export const dotPayItemPickerFacets = pgTable("dot_pay_item_picker_facets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  specBookId: varchar("spec_book_id").notNull().references(() => dotSpecBooks.id, { onDelete: "cascade" }),
+  categories: text("categories").array().notNull().default(sql`ARRAY[]::text[]`),
+  specSections: text("spec_sections").array().notNull().default(sql`ARRAY[]::text[]`),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniquePerUserSpecBook: unique("dot_pay_item_picker_facets_user_spec_book_uniq").on(table.userId, table.specBookId),
+  userIdx: index("dot_pay_item_picker_facets_user_idx").on(table.userId),
+}));
+export const insertDotPayItemPickerFacetsSchema = createInsertSchema(dotPayItemPickerFacets).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDotPayItemPickerFacets = z.infer<typeof insertDotPayItemPickerFacetsSchema>;
+export type DotPayItemPickerFacets = typeof dotPayItemPickerFacets.$inferSelect;
+
 // ============================================
 // DBE / MBE / WBE / SBE / VOSB GOAL TRACKING
 // ============================================

@@ -39,6 +39,7 @@ import { ensureSiteLeaveTable } from "./ensureSiteLeaveTable";
 import { ensurePurchaseOrderColumns } from "./ensurePurchaseOrderColumns";
 import { ensureCrmOrgTypeEnumValues } from "./ensureCrmOrgTypeEnumValues";
 import { ensureDotTables } from "./ensureDotTables";
+import { ensureDotPayItemPickerFacetsTable } from "./ensureDotPayItemPickerFacetsTable";
 import { ensurePayrollFormVariantColumn } from "./ensurePayrollFormVariantColumn";
 import { ensureCertifiedPayrollArchiveColumns } from "./ensureCertifiedPayrollArchiveColumns";
 import { ensureCertifiedPayrollArchivedRetention } from "./ensureCertifiedPayrollArchivedRetention";
@@ -144,6 +145,13 @@ interface MigrationStep {
 
 const migrations: MigrationStep[] = [
   { name: "dot_tables", category: "CREATE_TABLE", fn: ensureDotTables },
+  // Task #1743 — per-user × per-spec-book picker filter memory for the DOT
+  // pay-item picker. Promotes the per-device
+  // `dot-pay-item-picker:facets:<uid>:<specBookId>` localStorage key off the
+  // device so an estimator's chosen categories + spec sections follow them
+  // across machines. Runs after `dot_tables` so the FK on spec_book_id can
+  // resolve.
+  { name: "dot_pay_item_picker_facets_table", category: "CREATE_TABLE", fn: ensureDotPayItemPickerFacetsTable },
   { name: "video_call_tables", category: "CREATE_TABLE", fn: ensureVideoCallTables },
   { name: "estimate_subcontractor_tables", category: "CREATE_TABLE", fn: ensureEstimateSubcontractorTables },
   { name: "line_item_photo_urls", category: "ADD_COLUMN", fn: ensureLineItemPhotoUrls },

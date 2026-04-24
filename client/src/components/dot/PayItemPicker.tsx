@@ -71,6 +71,13 @@ interface Props {
   seedCategory?: string | null;
 }
 
+function arraysEqualOrdered(a: readonly string[], b: readonly string[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 export function PayItemPicker({
   open,
   onOpenChange,
@@ -123,50 +130,169 @@ export function PayItemPicker({
 
   const effectiveSpecBookId = specBookId || specBooks.find((s) => s.isCurrent)?.id || specBooks[0]?.id;
 
-  // Persist facet selections per spec book in localStorage so estimators don't
-  // have to re-pick their usual categories every time the picker reopens.
-  const facetStorageKey = effectiveSpecBookId && user?.id
-    ? `dot-pay-item-picker:facets:${user.id}:${effectiveSpecBookId}`
-    : null;
+  // Task #1743 — Persist facet selections per spec book on the server so
+  // estimators don't have to re-pick their usual categories every time the
+  // picker reopens AND so the choice follows them across devices. The
+  // legacy localStorage key (`dot-pay-item-picker:facets:<uid>:<specBookId>`)
+  // is one-shot lifted up to the server below for any existing devices.
+  // Include user.id in the cache key so an account switch in the same
+  // browser session can't briefly show the previous user's facets from
+  // the leftover cache entry.
+  const facetsQueryKey =
+    effectiveSpecBookId && user?.id
+      ? (["/api/dot/pay-item-picker/facets", user.id, effectiveSpecBookId] as const)
+      : null;
+  const { data: serverFacets } = useQuery<{
+    specBookId: string;
+    categories: string[];
+    specSections: string[];
+  }>({
+    queryKey: facetsQueryKey ?? ["/api/dot/pay-item-picker/facets", "_disabled"],
+    enabled: open && !!facetsQueryKey && !!user?.id,
+    queryFn: async () => {
+      const r = await fetch(
+        `/api/dot/pay-item-picker/facets/${encodeURIComponent(effectiveSpecBookId!)}`,
+        { credentials: "include" },
+      );
+      if (!r.ok) throw new Error("Failed to load picker facets");
+      return r.json();
+    },
+    // The global default `staleTime: Infinity` would make React Query
+    // serve a previously cached payload on every reopen without ever
+    // refetching, which would shadow facet changes the same user made
+    // on another device. Override here so each open triggers a fresh
+    // GET while still showing the cached value instantly for snappiness.
+    staleTime: 0,
+    refetchOnMount: "always",
+  });
+
+  // Persist facet selections to the server. Defined BEFORE the hydrate
+  // effect because that effect reads `persistFacetsMut.isPending`. The
+  // mutation cancels any in-flight GET for this spec book and writes the
+  // new value into the React Query cache up-front so that a slower GET
+  // response can't clobber the user's click.
+  // Errors are swallowed to keep the picker responsive — the worst case
+  // is the next session re-hydrates from the server's older value, which
+  // the user can re-toggle.
+  // Out-of-order PUTs: if the user toggles A then B fast, the requests
+  // can resolve B-then-A, in which case A's response (older state)
+  // must NOT clobber the cache. We deliberately do NOT write the
+  // server response back into the cache in `onSuccess` — `onMutate`
+  // already wrote the optimistic value, and a subsequent reopen will
+  // refetch (staleTime: 0). That keeps the cache aligned with the
+  // user's most recent click rather than the first PUT to resolve.
+  const persistFacetsMut = useMutation<
+    unknown,
+    Error,
+    { specBookId: string; categories: string[]; specSections: string[] }
+  >({
+    mutationFn: async ({ specBookId: sb, categories, specSections }) => {
+      const r = await apiRequest(
+        "PUT",
+        `/api/dot/pay-item-picker/facets/${encodeURIComponent(sb)}`,
+        { categories, specSections },
+      );
+      return r.json();
+    },
+    onMutate: async ({ specBookId: sb, categories, specSections }) => {
+      if (!user?.id) return;
+      const key = ["/api/dot/pay-item-picker/facets", user.id, sb] as const;
+      await queryClient.cancelQueries({ queryKey: key });
+      queryClient.setQueryData(key, { specBookId: sb, categories, specSections });
+    },
+  });
+
+  // Hydrate local facet selections from the server whenever the server
+  // value changes for the current spec book. We deliberately do NOT
+  // permanently latch on the first hydrate per spec book — doing so means
+  // a stale cached payload that React Query returns synchronously on
+  // reopen would shadow the fresh GET response that arrives moments
+  // later, defeating the cross-device sync goal of the task.
+  //
+  // The race we DO need to guard against is: the user toggles a facet
+  // optimistically, and an in-flight GET (from this picker session) or
+  // some other refetch returns the stale empty value before the PUT
+  // settles. The persist mutation handles that race by (a) cancelling
+  // in-flight queries in `onMutate` and (b) optimistically writing the
+  // new value into the React Query cache, so by the time this effect
+  // runs after a toggle, `serverFacets` already reflects the user's
+  // optimistic value. The `isPending` skip below is a belt-and-braces
+  // fallback in case a refetch slips through while the PUT is mid-flight.
   useEffect(() => {
-    if (!facetStorageKey) {
+    if (!open) return;
+    if (!effectiveSpecBookId) {
       setSelectedCategories([]);
       setSelectedSections([]);
       return;
     }
-    try {
-      const raw = localStorage.getItem(facetStorageKey);
-      if (raw) {
-        const parsed = JSON.parse(raw) as { categories?: unknown; specSections?: unknown };
-        const onlyStrings = (v: unknown): string[] =>
-          Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
-        setSelectedCategories(onlyStrings(parsed.categories));
-        setSelectedSections(onlyStrings(parsed.specSections));
-      } else {
-        setSelectedCategories([]);
-        setSelectedSections([]);
-      }
-    } catch {
-      setSelectedCategories([]);
-      setSelectedSections([]);
-    }
-  }, [facetStorageKey]);
+    if (persistFacetsMut.isPending) return;
+    if (!serverFacets || serverFacets.specBookId !== effectiveSpecBookId) return;
+    setSelectedCategories((prev) =>
+      arraysEqualOrdered(prev, serverFacets.categories) ? prev : serverFacets.categories,
+    );
+    setSelectedSections((prev) =>
+      arraysEqualOrdered(prev, serverFacets.specSections) ? prev : serverFacets.specSections,
+    );
+  }, [open, effectiveSpecBookId, serverFacets, persistFacetsMut.isPending]);
 
+  // One-shot lift any legacy device-local entry up to the server, then
+  // remove it so we don't keep doing this work every time the picker opens.
+  // Guarded per (uid, specBookId) so we only run it once per session.
+  const liftedKeys = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!facetStorageKey) return;
+    if (!user?.id || !effectiveSpecBookId) return;
+    const legacyKey = `dot-pay-item-picker:facets:${user.id}:${effectiveSpecBookId}`;
+    if (liftedKeys.current.has(legacyKey)) return;
+    liftedKeys.current.add(legacyKey);
+    let raw: string | null;
     try {
-      if (selectedCategories.length === 0 && selectedSections.length === 0) {
-        localStorage.removeItem(facetStorageKey);
-      } else {
-        localStorage.setItem(
-          facetStorageKey,
-          JSON.stringify({ categories: selectedCategories, specSections: selectedSections }),
-        );
-      }
+      raw = localStorage.getItem(legacyKey);
     } catch {
-      // ignore quota/serialization errors — persistence is best-effort
+      return;
     }
-  }, [facetStorageKey, selectedCategories, selectedSections]);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw) as { categories?: unknown; specSections?: unknown };
+      const onlyStrings = (v: unknown): string[] =>
+        Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+      const legacyCategories = onlyStrings(parsed.categories);
+      const legacySections = onlyStrings(parsed.specSections);
+      if (legacyCategories.length === 0 && legacySections.length === 0) {
+        try { localStorage.removeItem(legacyKey); } catch { /* ignore */ }
+        return;
+      }
+      apiRequest("PUT", `/api/dot/pay-item-picker/facets/${encodeURIComponent(effectiveSpecBookId)}`, {
+        categories: legacyCategories,
+        specSections: legacySections,
+      })
+        .then(() => {
+          try { localStorage.removeItem(legacyKey); } catch { /* ignore */ }
+          // Push the lifted values into the cache. The hydrate effect
+          // will pick them up on the next render and apply them to local
+          // state — no longer blocked by a per-spec-book latch.
+          if (user?.id) {
+            queryClient.setQueryData(
+              ["/api/dot/pay-item-picker/facets", user.id, effectiveSpecBookId],
+              { specBookId: effectiveSpecBookId, categories: legacyCategories, specSections: legacySections },
+            );
+          }
+        })
+        .catch(() => {
+          // Leave the legacy key in place so a later attempt can lift it.
+          liftedKeys.current.delete(legacyKey);
+        });
+    } catch {
+      // Malformed legacy value — drop it so it stops cluttering storage.
+      try { localStorage.removeItem(legacyKey); } catch { /* ignore */ }
+    }
+    // `facetsQueryKey` intentionally omitted: it's a fresh array each
+    // render; only user.id and effectiveSpecBookId are functionally needed.
+  }, [user?.id, effectiveSpecBookId]);
+
+  const persistFacets = (categories: string[], specSections: string[]) => {
+    if (!effectiveSpecBookId || !user?.id) return;
+    persistFacetsMut.mutate({ specBookId: effectiveSpecBookId, categories, specSections });
+  };
 
   const { data: facets } = useQuery<PayItemFacets>({
     queryKey: ["/api/dot/pay-items/facets", { specBookId: effectiveSpecBookId }],
@@ -218,18 +344,23 @@ export function PayItemPicker({
   });
 
   const toggleCategory = (value: string) => {
-    setSelectedCategories((prev) =>
-      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
-    );
+    setSelectedCategories((prev) => {
+      const next = prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value];
+      persistFacets(next, selectedSections);
+      return next;
+    });
   };
   const toggleSection = (value: string) => {
-    setSelectedSections((prev) =>
-      prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value],
-    );
+    setSelectedSections((prev) => {
+      const next = prev.includes(value) ? prev.filter((v) => v !== value) : [...prev, value];
+      persistFacets(selectedCategories, next);
+      return next;
+    });
   };
   const clearFacets = () => {
     setSelectedCategories([]);
     setSelectedSections([]);
+    persistFacets([], []);
   };
   const hasActiveFacets = selectedCategories.length > 0 || selectedSections.length > 0;
 

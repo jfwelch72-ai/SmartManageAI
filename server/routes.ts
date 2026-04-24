@@ -702,6 +702,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const { default: dotRoutes } = await import("./dotRoutes");
   app.use(dotRoutes);
 
+  // Task #1743 — per-user × per-spec-book picker filter memory.
+  const { default: dotPayItemPickerFacetsRoutes } = await import("./dotPayItemPickerFacetsRoutes");
+  app.use(dotPayItemPickerFacetsRoutes);
+
   // DOT seed runs from server/index.ts AFTER runStartupMigrations has created
   // the dot_* tables. Avoid invoking it here to prevent a race on cold start.
 
