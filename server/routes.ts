@@ -938,6 +938,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             parameters: d.parameters ?? [],
             completedAt: row?.completedAt ?? null,
             details: row?.details ?? null,
+            // Task #1553 — per-job aggregates computed from
+            // `one_shot_job_runs`. Populated below in a single
+            // GROUP BY query so admins can triage chronically broken
+            // jobs without scrolling the recent-runs list.
+            lastSuccessAt: null as string | null,
+            failureCountLast7d: 0,
+            avgDurationMs: null as number | null,
             recentRuns: [] as Array<{
               id: string;
               at: string;
@@ -966,6 +973,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             parameters: [],
             completedAt: row.completedAt,
             details: row.details,
+            lastSuccessAt: null,
+            failureCountLast7d: 0,
+            avgDurationMs: null,
             recentRuns: [],
           });
         }
@@ -982,6 +992,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const RECENT_PER_JOB = perJobLimit;
         const jobNames = jobs.map((j) => j.name);
         if (jobNames.length > 0) {
+          // Task #1529 filter composition for the recent-runs query.
           const whereConditions: SQL[] = [
             inArray(oneShotJobRuns.jobName, jobNames),
           ];
@@ -991,24 +1002,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (sinceFilter) {
             whereConditions.push(gte(oneShotJobRuns.startedAt, sinceFilter));
           }
-          const runRows = await db
-            .select({
-              id: oneShotJobRuns.id,
-              jobName: oneShotJobRuns.jobName,
-              userId: oneShotJobRuns.runByUserId,
-              userEmail: users.email,
-              status: oneShotJobRuns.status,
-              ledgerCleared: oneShotJobRuns.ledgerCleared,
-              durationMs: oneShotJobRuns.durationMs,
-              errorText: oneShotJobRuns.errorText,
-              startedAt: oneShotJobRuns.startedAt,
-              finishedAt: oneShotJobRuns.finishedAt,
-            })
-            .from(oneShotJobRuns)
-            .leftJoin(users, eq(oneShotJobRuns.runByUserId, users.id))
-            .where(and(...whereConditions))
-            .orderBy(desc(oneShotJobRuns.startedAt))
-            .limit(jobNames.length * RECENT_PER_JOB * 4);
+
+          // Task #1553 — compute per-job aggregates (last successful
+          // run, failures in the last 7 days, avg duration of
+          // successful runs) in a single GROUP BY pass. Filtered
+          // aggregates keep this to one round-trip even though each
+          // metric has different status/time predicates. Run in
+          // parallel with the recent-runs query since neither depends
+          // on the other. Aggregates intentionally ignore the Task
+          // #1529 actor/since filters so the health metrics always
+          // reflect overall job health, not the admin's current view.
+          const [runRows, aggRows] = await Promise.all([
+            db
+              .select({
+                id: oneShotJobRuns.id,
+                jobName: oneShotJobRuns.jobName,
+                userId: oneShotJobRuns.runByUserId,
+                userEmail: users.email,
+                status: oneShotJobRuns.status,
+                ledgerCleared: oneShotJobRuns.ledgerCleared,
+                durationMs: oneShotJobRuns.durationMs,
+                errorText: oneShotJobRuns.errorText,
+                startedAt: oneShotJobRuns.startedAt,
+                finishedAt: oneShotJobRuns.finishedAt,
+              })
+              .from(oneShotJobRuns)
+              .leftJoin(users, eq(oneShotJobRuns.runByUserId, users.id))
+              .where(and(...whereConditions))
+              .orderBy(desc(oneShotJobRuns.startedAt))
+              .limit(jobNames.length * RECENT_PER_JOB * 4),
+            db
+              .select({
+                jobName: oneShotJobRuns.jobName,
+                lastSuccessAt: sql<Date | null>`MAX(${oneShotJobRuns.finishedAt}) FILTER (WHERE ${oneShotJobRuns.status} = 'completed')`,
+                failureCountLast7d: sql<string>`COUNT(*) FILTER (WHERE ${oneShotJobRuns.status} IN ('failed','bookkeeping_error') AND ${oneShotJobRuns.startedAt} >= NOW() - INTERVAL '7 days')`,
+                avgDurationMs: sql<string | null>`AVG(${oneShotJobRuns.durationMs}) FILTER (WHERE ${oneShotJobRuns.status} = 'completed')`,
+              })
+              .from(oneShotJobRuns)
+              .where(inArray(oneShotJobRuns.jobName, jobNames))
+              .groupBy(oneShotJobRuns.jobName),
+          ]);
+
+          const aggByJob = new Map(aggRows.map((r) => [r.jobName, r]));
+          for (const job of jobs) {
+            const a = aggByJob.get(job.name);
+            if (!a) continue;
+            job.lastSuccessAt = a.lastSuccessAt
+              ? (a.lastSuccessAt instanceof Date
+                  ? a.lastSuccessAt.toISOString()
+                  : new Date(a.lastSuccessAt as unknown as string).toISOString())
+              : null;
+            job.failureCountLast7d = Number(a.failureCountLast7d ?? 0);
+            job.avgDurationMs =
+              a.avgDurationMs === null || a.avgDurationMs === undefined
+                ? null
+                : Math.round(Number(a.avgDurationMs));
+          }
 
           const runsByJob = new Map<string, (typeof jobs)[number]["recentRuns"]>();
           for (const row of runRows) {

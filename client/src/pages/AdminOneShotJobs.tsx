@@ -66,6 +66,9 @@ interface OneShotJob {
   parameters?: OneShotJobParameter[];
   completedAt: string | null;
   details: Record<string, unknown> | null;
+  lastSuccessAt: string | null;
+  failureCountLast7d: number;
+  avgDurationMs: number | null;
   recentRuns?: OneShotJobRecentRun[];
 }
 
@@ -301,6 +304,49 @@ function JobCard({
           >
             {formatTimestamp(job.completedAt)}
           </span>
+        </div>
+        <div
+          className="grid grid-cols-1 sm:grid-cols-3 gap-2 rounded-md border bg-muted/20 p-3 text-xs"
+          data-testid={`aggregates-one-shot-${job.name}`}
+        >
+          <div className="flex flex-col gap-0.5">
+            <span className="uppercase tracking-wide text-muted-foreground">
+              Last successful run
+            </span>
+            <span
+              className="font-medium tabular-nums"
+              data-testid={`text-one-shot-last-success-${job.name}`}
+            >
+              {formatTimestamp(job.lastSuccessAt)}
+            </span>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <span className="uppercase tracking-wide text-muted-foreground">
+              Failures (7d)
+            </span>
+            <span
+              className="font-medium tabular-nums flex items-center gap-1.5"
+              data-testid={`text-one-shot-failures-7d-${job.name}`}
+            >
+              {job.failureCountLast7d}
+              {job.failureCountLast7d > 0 && (
+                <Badge variant="destructive" className="h-4 px-1 text-[10px]">
+                  needs triage
+                </Badge>
+              )}
+            </span>
+          </div>
+          <div className="flex flex-col gap-0.5">
+            <span className="uppercase tracking-wide text-muted-foreground">
+              Avg duration (success)
+            </span>
+            <span
+              className="font-medium tabular-nums"
+              data-testid={`text-one-shot-avg-duration-${job.name}`}
+            >
+              {job.avgDurationMs === null ? "—" : `${job.avgDurationMs}ms`}
+            </span>
+          </div>
         </div>
         {detailEntries.length > 0 && (
           <div
