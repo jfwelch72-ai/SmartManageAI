@@ -483,16 +483,33 @@ export default function NotificationPrefsSection() {
     scrolledMuteFamilyRef.current = family;
     let highlightTimeout: number | null = null;
     let highlightedEl: HTMLElement | null = null;
+    // Task #1509 — Respect the user's OS-level "reduce motion" preference
+    // (WCAG 2.3.3). When set, skip the smooth-scroll animation in favor
+    // of an instant jump and drop the ring's fade transition so the
+    // highlight appears/disappears without any animation. The ring is
+    // still applied so the user can see which toggle was just changed.
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const highlightClasses = prefersReducedMotion
+      ? MUTE_ROW_HIGHLIGHT_CLASSES.filter(
+          (c) => c !== "transition-shadow" && c !== "duration-500",
+        )
+      : MUTE_ROW_HIGHLIGHT_CLASSES;
     // Wait one frame so the rows are committed to the DOM after the
     // skeleton swap finishes.
     const raf = requestAnimationFrame(() => {
       const el = document.getElementById(rowId);
       if (!el) return;
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-      el.classList.add(...MUTE_ROW_HIGHLIGHT_CLASSES);
+      el.scrollIntoView({
+        behavior: prefersReducedMotion ? "auto" : "smooth",
+        block: "center",
+      });
+      el.classList.add(...highlightClasses);
       highlightedEl = el;
       highlightTimeout = window.setTimeout(() => {
-        el.classList.remove(...MUTE_ROW_HIGHLIGHT_CLASSES);
+        el.classList.remove(...highlightClasses);
         highlightTimeout = null;
       }, 2000);
     });
