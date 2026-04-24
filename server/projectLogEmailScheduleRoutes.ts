@@ -996,6 +996,19 @@ router.get(
 // schedules can't blow the response. The UI defaults to 50.
 const ORG_FAILURES_DEFAULT_LIMIT = 50;
 const ORG_FAILURES_MAX_LIMIT = 200;
+
+// Task #1785 — sort modes for the org-wide failing-schedules dashboard.
+// Default is "rolling" so chronically flaky pipelines surface above
+// schedules that just happen to be currently broken. "streak" surfaces
+// the longest consecutive-failure streaks first (the historical
+// pre-#1785 behavior weighted current pain), and "recent" surfaces the
+// most recently failed schedules first (the original pre-rolling
+// behavior). Tie-breakers always cascade through the other two
+// dimensions so equal-priority rows still have a deterministic order.
+const ORG_FAILURES_SORT_MODES = ["rolling", "streak", "recent"] as const;
+type OrgFailuresSortMode = (typeof ORG_FAILURES_SORT_MODES)[number];
+const ORG_FAILURES_DEFAULT_SORT: OrgFailuresSortMode = "rolling";
+
 router.get(
   "/log-email-schedule-failures",
   requireAuth,
@@ -1013,11 +1026,27 @@ router.get(
         ? Math.min(limitRaw, ORG_FAILURES_MAX_LIMIT)
         : ORG_FAILURES_DEFAULT_LIMIT;
 
+      // Task #1785 — admin-selectable sort. Unknown values silently
+      // fall back to the default so a typo'd query string surfaces
+      // the most useful ordering rather than a 400.
+      const sortRaw = String(req.query.sort ?? "").toLowerCase();
+      const sort: OrgFailuresSortMode = (ORG_FAILURES_SORT_MODES as readonly string[])
+        .includes(sortRaw)
+        ? (sortRaw as OrgFailuresSortMode)
+        : ORG_FAILURES_DEFAULT_SORT;
+
       // Inner-join projects so we can render "Project name (code)" on
       // each row without a second round-trip. Tenant-scoping on both
       // sides of the join is defense-in-depth: an attacker who somehow
       // controlled `organization_id` on a schedule row still couldn't
       // surface a project from a different tenant.
+      //
+      // Task #1785 — we always pull up to MAX_LIMIT here ordered by
+      // recency (a stable, cheap predicate the SQL planner already has
+      // an index for). The rolling-count aggregate below is then
+      // computed for those rows and the final sort + per-request
+      // `limit` slice is applied in memory, so a sort change doesn't
+      // require a second SQL round-trip per request.
       const rows = await db
         .select({
           scheduleId: projectLogEmailSchedules.id,
@@ -1042,9 +1071,98 @@ router.get(
           inArray(projectLogEmailSchedules.lastAttemptStatus, ["FAILURE", "NO_RECIPIENTS"]),
         ))
         .orderBy(desc(projectLogEmailSchedules.lastAttemptAt))
-        .limit(limit);
+        .limit(ORG_FAILURES_MAX_LIMIT);
 
-      res.json({ failures: rows });
+      // Task #1785 — rolling 30-day failure count per schedule. Mirrors
+      // the per-project aggregate in the GET above so admins can
+      // triage chronic offenders org-wide without having to open
+      // each project's settings card. We GROUP BY scheduleId in a
+      // single round-trip across every failing row in the page, so
+      // the cost is one extra query per dashboard load no matter how
+      // many failing schedules the org has.
+      const persistedScheduleIds = rows
+        .map((r) => r.scheduleId)
+        .filter((id): id is string => typeof id === "string" && id.length > 0);
+      const rollingFailureBySchedule = new Map<string, number>();
+      if (persistedScheduleIds.length > 0) {
+        const windowStart = new Date(
+          Date.now() - ROLLING_FAILURE_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+        );
+        const failureRows = await db
+          .select({
+            scheduleId: projectLogEmailScheduleAttempts.scheduleId,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(projectLogEmailScheduleAttempts)
+          .where(and(
+            // Defense-in-depth tenant scope: even though scheduleId
+            // came from an org-scoped query above, pinning the
+            // attempts query to the same org keeps this safe if a
+            // future caller widens the row selection.
+            eq(projectLogEmailScheduleAttempts.organizationId, organizationId),
+            inArray(projectLogEmailScheduleAttempts.scheduleId, persistedScheduleIds),
+            inArray(projectLogEmailScheduleAttempts.status, ["FAILURE", "NO_RECIPIENTS"]),
+            gte(projectLogEmailScheduleAttempts.createdAt, windowStart),
+          ))
+          .groupBy(projectLogEmailScheduleAttempts.scheduleId);
+        for (const f of failureRows) {
+          // count() is bigint over the wire; ::int keeps it a JS
+          // number, but coerce defensively in case the driver ever
+          // surfaces a string.
+          const n = typeof f.count === "number" ? f.count : Number(f.count);
+          if (Number.isFinite(n) && n > 0) {
+            rollingFailureBySchedule.set(f.scheduleId, n);
+          }
+        }
+      }
+
+      // Decorate each row with the rolling count + window so the
+      // client can render the new column without re-deriving the
+      // window length client-side.
+      const decorated = rows.map((r) => ({
+        ...r,
+        rollingFailureCount30d: rollingFailureBySchedule.get(r.scheduleId) ?? 0,
+        rollingFailureWindowDays: ROLLING_FAILURE_WINDOW_DAYS,
+      }));
+
+      // Task #1785 — apply the chosen sort. The tie-breakers always
+      // cascade through the other two dimensions so equal-priority
+      // rows have a deterministic order across reloads.
+      const lastAttemptMs = (v: Date | string | null | undefined): number => {
+        if (!v) return 0;
+        const ms = v instanceof Date ? v.getTime() : new Date(v).getTime();
+        return Number.isFinite(ms) ? ms : 0;
+      };
+      decorated.sort((a, b) => {
+        const aRolling = a.rollingFailureCount30d ?? 0;
+        const bRolling = b.rollingFailureCount30d ?? 0;
+        const aStreak = a.consecutiveFailureCount ?? 0;
+        const bStreak = b.consecutiveFailureCount ?? 0;
+        const aRecent = lastAttemptMs(a.lastAttemptAt as Date | string | null);
+        const bRecent = lastAttemptMs(b.lastAttemptAt as Date | string | null);
+        if (sort === "rolling") {
+          if (bRolling !== aRolling) return bRolling - aRolling;
+          if (bStreak !== aStreak) return bStreak - aStreak;
+          return bRecent - aRecent;
+        }
+        if (sort === "streak") {
+          if (bStreak !== aStreak) return bStreak - aStreak;
+          if (bRolling !== aRolling) return bRolling - aRolling;
+          return bRecent - aRecent;
+        }
+        // "recent"
+        if (bRecent !== aRecent) return bRecent - aRecent;
+        if (bRolling !== aRolling) return bRolling - aRolling;
+        return bStreak - aStreak;
+      });
+
+      const failures = decorated.slice(0, limit);
+
+      res.json({
+        failures,
+        sort,
+        rollingFailureWindowDays: ROLLING_FAILURE_WINDOW_DAYS,
+      });
     } catch (err) {
       next(err);
     }

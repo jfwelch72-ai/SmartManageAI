@@ -80,6 +80,17 @@ function queueFailures(rows: Row[]) {
   (selectByTable["project_log_email_schedules"] ??= []).push(rows);
 }
 
+// Task #1785 — the dashboard endpoint now also runs an aggregate
+// against the per-attempt history to compute `rollingFailureCount30d`
+// per schedule (matching the per-project GET in the same module). When
+// at least one persisted schedule row is returned, the route fires a
+// second SELECT against `project_log_email_schedule_attempts` returning
+// `[{ scheduleId, count }]` shaped rows. Tests that exercise the
+// rolling-count surface or the new sort modes seed those rows here.
+function queueRollingCounts(rows: Row[]) {
+  (selectByTable["project_log_email_schedule_attempts"] ??= []).push(rows);
+}
+
 function makeApp(routes: any): Express {
   const express = require("express");
   const app = express();
@@ -158,12 +169,16 @@ describe("GET /api/log-email-schedule-failures", () => {
         consecutiveFailureCount: 1,
       },
     ]);
+    queueRollingCounts([]);
 
     const res = await request(app)
       .get("/api/log-email-schedule-failures")
       .set(authedHeaders());
     expect(res.status).toBe(200);
     expect(res.body.failures).toHaveLength(2);
+    // Default sort = "rolling". With no rolling-count rows queued the
+    // tie-breaker cascades to the consecutive-failure streak, so
+    // sched-a (streak=4) should land above sched-b (streak=1).
     expect(res.body.failures[0]).toMatchObject({
       scheduleId: "sched-a",
       projectName: "Bridge 7",
@@ -171,20 +186,30 @@ describe("GET /api/log-email-schedule-failures", () => {
       logType: "RFI",
       lastAttemptStatus: "FAILURE",
       consecutiveFailureCount: 4,
+      // Task #1785 — rolling count decoration is always present, 0
+      // when the aggregate returned no row for this schedule id.
+      rollingFailureCount30d: 0,
+      rollingFailureWindowDays: 30,
     });
     expect(res.body.failures[1]).toMatchObject({
       projectName: "Tower 9",
       lastAttemptStatus: "NO_RECIPIENTS",
+      rollingFailureCount30d: 0,
     });
+    expect(res.body.sort).toBe("rolling");
+    expect(res.body.rollingFailureWindowDays).toBe(30);
   });
 
   it("returns an empty list when nothing is currently failing", async () => {
     queueFailures([]);
+    // No persisted schedule ids → the route skips the rolling
+    // aggregate entirely, so we don't queue a counts response here.
     const res = await request(app)
       .get("/api/log-email-schedule-failures")
       .set(authedHeaders());
     expect(res.status).toBe(200);
     expect(res.body.failures).toEqual([]);
+    expect(res.body.sort).toBe("rolling");
   });
 
   it("clamps the limit query param to the max so callers can't blow the response", async () => {
@@ -211,5 +236,188 @@ describe("GET /api/log-email-schedule-failures", () => {
       .get("/api/log-email-schedule-failures")
       .set(authedHeaders("SUPERINTENDENT"));
     expect(r2.status).toBe(200);
+  });
+
+  // Task #1785 — sorting + rolling 30-day count surfacing. The
+  // dashboard's headline benefit is bubbling chronic offenders above
+  // schedules that just happen to be currently broken, even if their
+  // most recent attempt is older.
+  describe("rolling 30-day count + sort modes (Task #1785)", () => {
+    // Build three failing schedules so each sort mode has a
+    // distinct expected order:
+    //   chronic   → low streak (1), most failures (12), oldest attempt
+    //   streaker  → highest streak (5), middling failures (3), middle attempt
+    //   fresh     → lowest streak (1), low failures (1), newest attempt
+    const SCHEDULES = [
+      {
+        scheduleId: "chronic",
+        projectId: "p-chronic",
+        projectName: "Chronic",
+        projectCode: "C-1",
+        logType: "RFI",
+        cadence: "DAILY",
+        lastAttemptAt: new Date("2026-04-10T08:00:00Z"),
+        lastAttemptStatus: "FAILURE",
+        lastAttemptError: "blip",
+        lastAttemptRecipientCount: 3,
+        consecutiveFailureCount: 1,
+      },
+      {
+        scheduleId: "streaker",
+        projectId: "p-streak",
+        projectName: "Streaker",
+        projectCode: "S-1",
+        logType: "RFI",
+        cadence: "WEEKLY",
+        lastAttemptAt: new Date("2026-04-15T08:00:00Z"),
+        lastAttemptStatus: "FAILURE",
+        lastAttemptError: "still down",
+        lastAttemptRecipientCount: 4,
+        consecutiveFailureCount: 5,
+      },
+      {
+        scheduleId: "fresh",
+        projectId: "p-fresh",
+        projectName: "Fresh",
+        projectCode: "F-1",
+        logType: "SUBMITTAL",
+        cadence: "DAILY",
+        lastAttemptAt: new Date("2026-04-22T08:00:00Z"),
+        lastAttemptStatus: "NO_RECIPIENTS",
+        lastAttemptError: "empty list",
+        lastAttemptRecipientCount: 0,
+        consecutiveFailureCount: 1,
+      },
+    ];
+    const ROLLING_COUNTS = [
+      { scheduleId: "chronic", count: 12 },
+      { scheduleId: "streaker", count: 3 },
+      { scheduleId: "fresh", count: 1 },
+    ];
+
+    it("decorates each row with rollingFailureCount30d from the aggregate", async () => {
+      queueFailures(SCHEDULES);
+      queueRollingCounts(ROLLING_COUNTS);
+      const res = await request(app)
+        .get("/api/log-email-schedule-failures")
+        .set(authedHeaders());
+      expect(res.status).toBe(200);
+      const byId = new Map<string, any>(
+        res.body.failures.map((r: any) => [r.scheduleId, r]),
+      );
+      expect(byId.get("chronic").rollingFailureCount30d).toBe(12);
+      expect(byId.get("streaker").rollingFailureCount30d).toBe(3);
+      expect(byId.get("fresh").rollingFailureCount30d).toBe(1);
+    });
+
+    it("defaults to rolling-count-desc so chronic offenders surface first", async () => {
+      queueFailures(SCHEDULES);
+      queueRollingCounts(ROLLING_COUNTS);
+      const res = await request(app)
+        .get("/api/log-email-schedule-failures")
+        .set(authedHeaders());
+      expect(res.status).toBe(200);
+      expect(res.body.sort).toBe("rolling");
+      expect(res.body.failures.map((r: any) => r.scheduleId)).toEqual([
+        "chronic",
+        "streaker",
+        "fresh",
+      ]);
+    });
+
+    it("uses the consecutive-failure streak as the rolling-sort tiebreaker", async () => {
+      // Two schedules with the same rolling count — streak should
+      // decide the order. `tied-A` and `tied-B` both have 7 failures
+      // in the window; `tied-B` has a longer current streak (4 vs 1)
+      // so it must land first.
+      queueFailures([
+        {
+          scheduleId: "tied-A",
+          projectId: "p-a",
+          projectName: "A",
+          projectCode: "A",
+          logType: "RFI",
+          cadence: "DAILY",
+          lastAttemptAt: new Date("2026-04-22T08:00:00Z"),
+          lastAttemptStatus: "FAILURE",
+          lastAttemptError: null,
+          lastAttemptRecipientCount: 1,
+          consecutiveFailureCount: 1,
+        },
+        {
+          scheduleId: "tied-B",
+          projectId: "p-b",
+          projectName: "B",
+          projectCode: "B",
+          logType: "RFI",
+          cadence: "DAILY",
+          lastAttemptAt: new Date("2026-04-20T08:00:00Z"),
+          lastAttemptStatus: "FAILURE",
+          lastAttemptError: null,
+          lastAttemptRecipientCount: 1,
+          consecutiveFailureCount: 4,
+        },
+      ]);
+      queueRollingCounts([
+        { scheduleId: "tied-A", count: 7 },
+        { scheduleId: "tied-B", count: 7 },
+      ]);
+      const res = await request(app)
+        .get("/api/log-email-schedule-failures")
+        .set(authedHeaders());
+      expect(res.body.failures.map((r: any) => r.scheduleId)).toEqual([
+        "tied-B",
+        "tied-A",
+      ]);
+    });
+
+    it("?sort=streak surfaces the longest current streak first", async () => {
+      queueFailures(SCHEDULES);
+      queueRollingCounts(ROLLING_COUNTS);
+      const res = await request(app)
+        .get("/api/log-email-schedule-failures?sort=streak")
+        .set(authedHeaders());
+      expect(res.body.sort).toBe("streak");
+      // streaker (streak=5) → chronic (streak=1, 12 failures) → fresh (streak=1, 1 failure)
+      expect(res.body.failures.map((r: any) => r.scheduleId)).toEqual([
+        "streaker",
+        "chronic",
+        "fresh",
+      ]);
+    });
+
+    it("?sort=recent surfaces the most recently failed schedule first", async () => {
+      queueFailures(SCHEDULES);
+      queueRollingCounts(ROLLING_COUNTS);
+      const res = await request(app)
+        .get("/api/log-email-schedule-failures?sort=recent")
+        .set(authedHeaders());
+      expect(res.body.sort).toBe("recent");
+      // fresh (Apr 22) → streaker (Apr 15) → chronic (Apr 10)
+      expect(res.body.failures.map((r: any) => r.scheduleId)).toEqual([
+        "fresh",
+        "streaker",
+        "chronic",
+      ]);
+    });
+
+    it("falls back to the default sort on an unknown ?sort value (no 400)", async () => {
+      queueFailures(SCHEDULES);
+      queueRollingCounts(ROLLING_COUNTS);
+      const res = await request(app)
+        .get("/api/log-email-schedule-failures?sort=nonsense")
+        .set(authedHeaders());
+      expect(res.status).toBe(200);
+      expect(res.body.sort).toBe("rolling");
+    });
+
+    it("coerces stringified count() output to a number (driver bigint quirk)", async () => {
+      queueFailures([SCHEDULES[0]]);
+      queueRollingCounts([{ scheduleId: "chronic", count: "12" }]);
+      const res = await request(app)
+        .get("/api/log-email-schedule-failures")
+        .set(authedHeaders());
+      expect(res.body.failures[0].rollingFailureCount30d).toBe(12);
+    });
   });
 });

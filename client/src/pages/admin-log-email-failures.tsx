@@ -75,6 +75,14 @@ import { Switch } from "@/components/ui/switch";
 // Mirrors the row shape returned by `GET /api/log-email-schedule-failures`.
 // The endpoint already filters to FAILURE/NO_RECIPIENTS, so we don't need
 // to second-guess `lastAttemptStatus` here — it's never SUCCESS.
+//
+// Task #1785 — `rollingFailureCount30d` is the count of FAILURE /
+// NO_RECIPIENTS attempts in the last 30 days for this schedule, surfaced
+// alongside the existing consecutive-failure streak so admins can
+// distinguish a chronically flaky schedule from a one-off transport
+// blip. `rollingFailureWindowDays` is the window the count was computed
+// over (server-driven so the column header doesn't drift if we ever
+// tune the window).
 interface FailureRow {
   scheduleId: string;
   projectId: string;
@@ -87,7 +95,33 @@ interface FailureRow {
   lastAttemptError: string | null;
   lastAttemptRecipientCount: number | null;
   consecutiveFailureCount: number;
+  rollingFailureCount30d: number;
+  rollingFailureWindowDays: number;
 }
+
+// Task #1785 — admin-selectable sort modes. Mirrors the server's
+// allow-list in `projectLogEmailScheduleRoutes.ts`. Default surfaces
+// chronic offenders (highest 30-day failure count) first; other modes
+// are escape hatches for admins who specifically want to triage by
+// "currently broken right now" or "most recently failed".
+type FailuresSortMode = "rolling" | "streak" | "recent";
+const FAILURES_SORT_OPTIONS: Array<{ value: FailuresSortMode; label: string; description: string }> = [
+  {
+    value: "rolling",
+    label: "Most failures (30d)",
+    description: "Chronic offenders first — sorted by failed sends in the last 30 days.",
+  },
+  {
+    value: "streak",
+    label: "Longest current streak",
+    description: "Currently broken pipelines first — sorted by consecutive-failure count.",
+  },
+  {
+    value: "recent",
+    label: "Most recent failure",
+    description: "Freshest breakage first — sorted by the timestamp of the last failed attempt.",
+  },
+];
 
 /**
  * Task #1691 — per-row "Resend now" action.
@@ -648,13 +682,29 @@ export default function AdminLogEmailFailuresPage() {
   const role = authUser?.effectiveRole || authUser?.role;
   const canManageDigestSubscription = role === "ADMIN" || role === "SUPER_ADMIN";
 
+  // Task #1785 — admin-selectable sort. Default is "rolling" so chronic
+  // offenders surface above schedules that just happen to be currently
+  // broken. The selection rides as a query string on the GET so the
+  // server returns rows in the right order; the cache key includes it
+  // so each mode caches independently and toggling between them
+  // doesn't refetch unnecessarily.
+  const [sort, setSort] = useState<FailuresSortMode>("rolling");
+
   const { data, isLoading, isError, refetch, isFetching } = useQuery<{
     failures: FailureRow[];
+    sort?: FailuresSortMode;
+    rollingFailureWindowDays?: number;
   }>({
-    queryKey: ["/api/log-email-schedule-failures"],
+    queryKey: ["/api/log-email-schedule-failures", { sort }],
   });
 
   const failures = useMemo(() => data?.failures ?? [], [data]);
+  // Server-driven so we don't have to hardcode "30" if the window
+  // is ever tuned. Falls back to 30 for the empty-state path before
+  // the first response lands.
+  const rollingWindowDays = data?.rollingFailureWindowDays ?? 30;
+  const activeSortLabel =
+    FAILURES_SORT_OPTIONS.find((o) => o.value === sort)?.label ?? "";
 
   // Task #1746 — One-shot capture of the `?muted=…` / `?mute=invalid`
   // query params appended by the failures-digest mute endpoint
@@ -792,13 +842,53 @@ export default function AdminLogEmailFailuresPage() {
       {canManageDigestSubscription && <DigestSubscriptionCard />}
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Failing schedules</CardTitle>
-          <CardDescription>
-            Sorted by most recent attempt. Capped at 50 rows; resolve the
-            distribution list and the row will clear on the next successful
-            send.
-          </CardDescription>
+        <CardHeader className="space-y-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle className="text-base">Failing schedules</CardTitle>
+              <CardDescription>
+                {/*
+                  Task #1785 — copy now reflects the rolling-count default
+                  so admins don't think "currently broken right now" is
+                  the only thing they're seeing.
+                */}
+                Sorted by {activeSortLabel.toLowerCase()}. Capped at 50
+                rows; resolve the distribution list and the row will clear
+                on the next successful send.
+              </CardDescription>
+            </div>
+          </div>
+          {/*
+            Task #1785 — sort toggle. Lets an admin pivot between
+            "chronic offenders first" (default), "longest current streak
+            first", and "most recently failed first" without having to
+            sort the table client-side. The selection drives the GET so
+            the server returns rows already in the right order.
+          */}
+          <div
+            className="flex flex-wrap items-center gap-2"
+            data-testid="group-failures-sort-options"
+          >
+            <span className="text-xs text-muted-foreground mr-1">Sort by:</span>
+            {FAILURES_SORT_OPTIONS.map((opt) => {
+              const isActive = sort === opt.value;
+              return (
+                <Button
+                  key={opt.value}
+                  type="button"
+                  size="sm"
+                  variant={isActive ? "default" : "outline"}
+                  className="h-7 px-2 text-xs"
+                  onClick={() => setSort(opt.value)}
+                  title={opt.description}
+                  aria-pressed={isActive}
+                  data-testid={`button-failures-sort-${opt.value}`}
+                >
+                  {opt.label}
+                </Button>
+              );
+            })}
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -834,6 +924,17 @@ export default function AdminLogEmailFailuresPage() {
                     <TableHead>Log</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Last attempt</TableHead>
+                    {/*
+                      Task #1785 — rolling 30-day failure count surfaces
+                      chronic offenders whose streak has reset on a
+                      transient SUCCESS but who keep breaking again.
+                    */}
+                    <TableHead
+                      className="text-right whitespace-nowrap"
+                      title={`Failed sends in the last ${rollingWindowDays} days, including past breakages that have since recovered.`}
+                    >
+                      Failures ({rollingWindowDays}d)
+                    </TableHead>
                     <TableHead className="text-right">In a row</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -870,6 +971,13 @@ export default function AdminLogEmailFailuresPage() {
                         </TableCell>
                         <TableCell className="text-xs whitespace-nowrap" data-testid={`text-last-attempt-${rowKey}`}>
                           {formatLogEmailAttemptTime(row.lastAttemptAt)}
+                        </TableCell>
+                        <TableCell
+                          className="text-right tabular-nums"
+                          data-testid={`text-rolling-failures-${rowKey}`}
+                          title={`${row.rollingFailureCount30d ?? 0} failed send${(row.rollingFailureCount30d ?? 0) === 1 ? "" : "s"} in the last ${row.rollingFailureWindowDays ?? rollingWindowDays} days.`}
+                        >
+                          {row.rollingFailureCount30d ?? 0}
                         </TableCell>
                         <TableCell
                           className="text-right tabular-nums"
