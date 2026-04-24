@@ -683,6 +683,109 @@ describe("Task #1499 — POST /api/documents/from-url", () => {
     expect(after.length).toBe(before.length);
   });
 
+  // ───────────────────────────────────────────────────────────────────────
+  // Task #1554 — Lock in the last three translateSafeDownloadError
+  // branches that weren't yet exercised by integration tests:
+  //   • "Redirect without a destination."
+  //   • "Redirect to invalid URL."
+  //   • "Failed to download the file." (catch-all 502 for non-Abort fetch
+  //     throws, which the route translates to 400)
+  // ───────────────────────────────────────────────────────────────────────
+
+  it("maps a redirect without a Location header to the 'redirect without a destination' message", async () => {
+    globalThis.fetch = (async (input: any): Promise<Response> => {
+      const url = typeof input === "string" ? input : (input?.url ?? String(input));
+      if (url.startsWith(`https://${PUBLIC_HOST}/`)) {
+        // 302 with no Location header — safeDownload throws
+        // SafeDownloadError("Redirect without a destination.").
+        return new Response(null, { status: 302 });
+      }
+      throw new Error("unexpected fetch: " + url);
+    }) as any;
+
+    const before = await planDocsForProject(org.projectId);
+
+    const res = await postFromUrl({
+      url: `https://${PUBLIC_HOST}/no-location.pdf`,
+      title: "No location",
+      type: "OTHER",
+      projectId: org.projectId,
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body?.error).toBe(
+      "The link sent a redirect without a destination. Please try a different link.",
+    );
+
+    const after = await planDocsForProject(org.projectId);
+    expect(after.length).toBe(before.length);
+  });
+
+  it("maps a redirect with a malformed Location header to the 'redirected to an invalid URL' message", async () => {
+    globalThis.fetch = (async (input: any): Promise<Response> => {
+      const url = typeof input === "string" ? input : (input?.url ?? String(input));
+      if (url.startsWith(`https://${PUBLIC_HOST}/`)) {
+        // A Location value that fails `new URL(location, currentUrl)`
+        // — `http://%` is an invalid host encoding the URL parser
+        // refuses even with a base, so safeDownload throws
+        // SafeDownloadError("Redirect to invalid URL.").
+        return new Response(null, {
+          status: 302,
+          headers: { location: "http://%" },
+        });
+      }
+      throw new Error("unexpected fetch: " + url);
+    }) as any;
+
+    const before = await planDocsForProject(org.projectId);
+
+    const res = await postFromUrl({
+      url: `https://${PUBLIC_HOST}/bad-location.pdf`,
+      title: "Bad location",
+      type: "OTHER",
+      projectId: org.projectId,
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body?.error).toBe(
+      "The link redirected to an invalid URL. Please try a different link.",
+    );
+
+    const after = await planDocsForProject(org.projectId);
+    expect(after.length).toBe(before.length);
+  });
+
+  it("maps a non-Abort fetch failure to the catch-all 'Failed to download the file' message", async () => {
+    // fetch throws a plain network error (not AbortError). safeDownload's
+    // outer catch wraps it in SafeDownloadError("Failed to download the
+    // file.", 502); the route's translator then emits the friendly 400
+    // message.
+    globalThis.fetch = (async (input: any): Promise<Response> => {
+      const url = typeof input === "string" ? input : (input?.url ?? String(input));
+      if (url.startsWith(`https://${PUBLIC_HOST}/`)) {
+        throw new Error("ECONNRESET socket hang up");
+      }
+      throw new Error("unexpected fetch: " + url);
+    }) as any;
+
+    const before = await planDocsForProject(org.projectId);
+
+    const res = await postFromUrl({
+      url: `https://${PUBLIC_HOST}/network-fail.pdf`,
+      title: "Network fail",
+      type: "OTHER",
+      projectId: org.projectId,
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body?.error).toBe(
+      "Failed to download the file. Please check the URL and try again.",
+    );
+
+    const after = await planDocsForProject(org.projectId);
+    expect(after.length).toBe(before.length);
+  });
+
   it("maps a DNS resolution failure to the 'Could not resolve the hostname' message", async () => {
     // No setDns() for this hostname — the fake resolver returns
     // ENOTFOUND, which safeDownload translates to "Could not resolve
