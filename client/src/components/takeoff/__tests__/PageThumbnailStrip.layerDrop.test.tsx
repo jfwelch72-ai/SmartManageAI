@@ -55,6 +55,57 @@ vi.mock("@/hooks/use-toast", () => ({
   useToast: () => ({ toast: vi.fn() }),
 }));
 
+// Task #1853 — Radix AlertDialog uses pointer-events + portals that
+// don't behave well in jsdom. Stub it with simple inline elements
+// that respect the controlled `open` prop so tests can drive the
+// themed duplicate-copy dialog directly (the new replacement for the
+// browser's native window.confirm).
+vi.mock("@/components/ui/alert-dialog", () => {
+  const React = require("react");
+  const AlertDialog = ({ open, onOpenChange, children }: any) =>
+    React.createElement(
+      "div",
+      { "data-mock-alert-dialog": open ? "open" : "closed" },
+      open
+        ? React.Children.map(children, (child: any) =>
+            React.isValidElement(child)
+              ? React.cloneElement(child, { __onOpenChange: onOpenChange })
+              : child,
+          )
+        : null,
+    );
+  const passThrough = (tag: string) => ({ children, ...rest }: any) =>
+    React.createElement(tag, rest, children);
+  const AlertDialogContent = ({ children, __onOpenChange, ...rest }: any) =>
+    React.createElement("div", rest, children);
+  const AlertDialogHeader = passThrough("div");
+  const AlertDialogFooter = passThrough("div");
+  const AlertDialogTitle = passThrough("h2");
+  const AlertDialogDescription = passThrough("p");
+  const AlertDialogAction = ({ children, onClick, ...rest }: any) =>
+    React.createElement(
+      "button",
+      { ...rest, type: "button", onClick },
+      children,
+    );
+  const AlertDialogCancel = ({ children, onClick, ...rest }: any) =>
+    React.createElement(
+      "button",
+      { ...rest, type: "button", onClick },
+      children,
+    );
+  return {
+    AlertDialog,
+    AlertDialogContent,
+    AlertDialogHeader,
+    AlertDialogFooter,
+    AlertDialogTitle,
+    AlertDialogDescription,
+    AlertDialogAction,
+    AlertDialogCancel,
+  };
+});
+
 // usePdfThumbnails kicks off canvas/IntersectionObserver work that
 // jsdom cannot service. Stub it so the strip renders synchronously.
 vi.mock("@/hooks/use-pdf-thumbnails", () => ({
@@ -148,7 +199,6 @@ function renderStrip(props?: { sheetDocumentIds?: Map<string, string> }) {
 // the mutation, so tests need to control what that endpoint returns.
 // Per-test bodies override this default by re-stubbing fetch.
 let fetchMock: ReturnType<typeof vi.fn>;
-let confirmSpy: ReturnType<typeof vi.spyOn>;
 
 function stubCopyTargetsFetch(
   targets: Array<{ documentId: string; existingCopyCount: number }>,
@@ -180,13 +230,11 @@ beforeEach(() => {
   // Default copy-targets response: no existing copies anywhere → no
   // confirm prompt, copies fire straight through.
   stubCopyTargetsFetch([]);
-  confirmSpy = vi.spyOn(window, "confirm");
 });
 
 afterEach(() => {
   cleanup();
   testQueryClient?.clear();
-  confirmSpy.mockRestore();
   vi.unstubAllGlobals();
 });
 
@@ -301,13 +349,12 @@ describe("PageThumbnailStrip layer drop (Task #1721)", () => {
   });
 });
 
-describe("PageThumbnailStrip drag-to-copy duplicate warning (Task #1806)", () => {
-  it("prompts before copying when the destination already holds copies of this layer (cancel = no API call)", async () => {
+describe("PageThumbnailStrip drag-to-copy duplicate warning (Task #1806 / #1853)", () => {
+  it("opens the themed AlertDialog before copying when the destination already holds copies (cancel = no API call)", async () => {
     // Destination doc-B already has 2 "(copy)" layers derived from
-    // L-qa, so a drag-to-copy must surface the same window.confirm
-    // the picker uses.
+    // L-qa, so a drag-to-copy must surface the same themed dialog
+    // the picker uses (Task #1853 — replaces window.confirm).
     stubCopyTargetsFetch([{ documentId: "doc-B", existingCopyCount: 2 }]);
-    confirmSpy.mockReturnValueOnce(false);
 
     renderStrip();
     const target = screen.getByTestId("thumbnail-sheet-sheet-B");
@@ -322,17 +369,23 @@ describe("PageThumbnailStrip drag-to-copy duplicate warning (Task #1806)", () =>
     fireEvent.dragOver(target, { dataTransfer: dt });
     fireEvent.drop(target, { dataTransfer: dt });
 
-    // Wait for the copy-targets fetch + confirm to complete.
+    // Wait for the copy-targets fetch + dialog to open.
     await waitFor(() => {
-      expect(confirmSpy).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId("dialog-duplicate-layer-copy")).toBeTruthy();
     });
-    const message = String(confirmSpy.mock.calls[0]?.[0] ?? "");
+    const message = screen.getByTestId("text-duplicate-layer-copy-message")
+      .textContent;
     expect(message).toMatch(/already has 2/);
     expect(message).toMatch(/QA\/QC/);
+    // The destination label should reflect the sheet name, not "this sheet".
+    expect(message).toMatch(/A-101/);
 
-    // User cancelled → mutation must NOT fire.
+    // User cancels → mutation must NOT fire.
     await act(async () => {
-      await Promise.resolve();
+      fireEvent.click(screen.getByTestId("button-duplicate-layer-copy-cancel"));
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId("dialog-duplicate-layer-copy")).toBeNull();
     });
     const postCalls = apiRequestMock.mock.calls.filter(
       (c) => c[0] === "POST" && /copy-to-document/.test(String(c[1])),
@@ -340,9 +393,8 @@ describe("PageThumbnailStrip drag-to-copy duplicate warning (Task #1806)", () =>
     expect(postCalls.length).toBe(0);
   });
 
-  it("fires the copy when the user accepts the duplicate-warning prompt", async () => {
+  it("fires the copy when the user accepts the themed duplicate-warning dialog", async () => {
     stubCopyTargetsFetch([{ documentId: "doc-B", existingCopyCount: 1 }]);
-    confirmSpy.mockReturnValueOnce(true);
 
     renderStrip();
     const target = screen.getByTestId("thumbnail-sheet-sheet-B");
@@ -358,9 +410,15 @@ describe("PageThumbnailStrip drag-to-copy duplicate warning (Task #1806)", () =>
     fireEvent.drop(target, { dataTransfer: dt });
 
     await waitFor(() => {
-      expect(confirmSpy).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId("dialog-duplicate-layer-copy")).toBeTruthy();
     });
-    expect(String(confirmSpy.mock.calls[0]?.[0] ?? "")).toMatch(/already has 1/);
+    expect(
+      screen.getByTestId("text-duplicate-layer-copy-message").textContent,
+    ).toMatch(/already has 1/);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("button-duplicate-layer-copy-confirm"));
+    });
 
     await waitFor(() => {
       const calls = apiRequestMock.mock.calls.filter(
@@ -373,9 +431,9 @@ describe("PageThumbnailStrip drag-to-copy duplicate warning (Task #1806)", () =>
     });
   });
 
-  it("does not prompt when the destination has no existing copies", async () => {
+  it("does not open the duplicate-copy dialog when the destination has no existing copies", async () => {
     // copy-targets returns an entry for a *different* doc, so doc-B
-    // has zero existing copies → no confirm, mutation fires.
+    // has zero existing copies → no dialog, mutation fires.
     stubCopyTargetsFetch([{ documentId: "doc-other", existingCopyCount: 5 }]);
 
     renderStrip();
@@ -397,7 +455,7 @@ describe("PageThumbnailStrip drag-to-copy duplicate warning (Task #1806)", () =>
       );
       expect(calls.length).toBe(1);
     });
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("dialog-duplicate-layer-copy")).toBeNull();
   });
 
   it("falls through to the copy when the copy-targets lookup fails (best-effort)", async () => {
@@ -428,6 +486,6 @@ describe("PageThumbnailStrip drag-to-copy duplicate warning (Task #1806)", () =>
       );
       expect(calls.length).toBe(1);
     });
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("dialog-duplicate-layer-copy")).toBeNull();
   });
 });

@@ -8,6 +8,7 @@ import { usePdfThumbnails } from "@/hooks/use-pdf-thumbnails";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { PLAN_MARKUP_LAYER_DRAG_MIME } from "@/components/markups/MarkupLayersPanel";
+import { useDuplicateLayerCopyConfirm } from "@/components/markups/DuplicateLayerCopyDialog";
 import type { TakeoffSheet } from "@shared/schema";
 
 interface PageThumbnailStripProps {
@@ -92,6 +93,8 @@ export function PageThumbnailStrip({
   const { thumbnails, failedSheets, isLoading, progress, observeRef } = usePdfThumbnails(sheets);
   const activeRef = useRef<HTMLButtonElement | null>(null);
   const { toast } = useToast();
+  const { dialog: duplicateCopyDialog, confirm: confirmDuplicateCopy } =
+    useDuplicateLayerCopyConfirm();
   // Task #1721 — track which thumbnail is the current layer-drop
   // hover target so we can render a visible affordance. Stored as the
   // sheet id so multiple thumbnails never highlight at once.
@@ -154,10 +157,12 @@ export function PageThumbnailStrip({
       layerId,
       layerName,
       targetDocumentId,
+      destinationLabel,
     }: {
       layerId: string;
       layerName: string;
       targetDocumentId: string;
+      destinationLabel: string;
     }) => {
       let existingCount = 0;
       try {
@@ -176,20 +181,20 @@ export function PageThumbnailStrip({
         // Best-effort lookup — fall through and let the copy itself
         // surface any server-side problem.
       }
-      if (
-        existingCount > 0 &&
-        typeof window !== "undefined" &&
-        !window.confirm(
-          `This sheet already has ${existingCount} ` +
-            `cop${existingCount === 1 ? "y" : "ies"} of "${layerName}". ` +
-            `Create another copy anyway?`,
-        )
-      ) {
-        return;
+      if (existingCount > 0) {
+        // Task #1853 — themed AlertDialog instead of window.confirm
+        // so the prompt matches the rest of the UI and is keyboard-/
+        // screen-reader-accessible.
+        const accepted = await confirmDuplicateCopy({
+          layerName,
+          destinationLabel,
+          existingCount,
+        });
+        if (!accepted) return;
       }
       copyLayerMutation.mutate({ layerId, targetDocumentId });
     },
-    [copyLayerMutation],
+    [copyLayerMutation, confirmDuplicateCopy],
   );
 
   // True iff the in-flight drag carries the markup-layer MIME we
@@ -317,6 +322,7 @@ export function PageThumbnailStrip({
                 layerId: payload.layerId,
                 layerName: payload.layerName,
                 targetDocumentId: layerDropTargetDocId,
+                destinationLabel: sheet.sheetName || "this sheet",
               });
             }}
             className={cn(
@@ -581,6 +587,7 @@ export function PageThumbnailStrip({
           {content}
         </ScrollArea>
       )}
+      {duplicateCopyDialog}
     </div>
   );
 }

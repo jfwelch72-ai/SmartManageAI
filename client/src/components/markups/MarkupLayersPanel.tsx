@@ -37,6 +37,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
+import { useDuplicateLayerCopyConfirm } from "@/components/markups/DuplicateLayerCopyDialog";
 
 // Task #1805 — how long the "Copy to sheet" success toast (and its
 // Undo button) stays on screen. Long enough for a user to notice the
@@ -110,6 +111,8 @@ export default function MarkupLayersPanel({
   copyDestinations = [],
 }: MarkupLayersPanelProps) {
   const { toast } = useToast();
+  const { dialog: duplicateCopyDialog, confirm: confirmDuplicateCopy } =
+    useDuplicateLayerCopyConfirm();
   const [newName, setNewName] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -718,18 +721,23 @@ export default function MarkupLayersPanel({
                           <DropdownMenuItem
                             key={dest.id}
                             onSelect={(e) => {
-                              if (
-                                existingCount > 0 &&
-                                typeof window !== "undefined" &&
-                                !window.confirm(
-                                  `"${dest.label}" already has ${existingCount} ` +
-                                    `cop${existingCount === 1 ? "y" : "ies"} of "${l.name}". ` +
-                                    `Create another copy anyway?`,
-                                )
-                              ) {
-                                // Block the menu from closing on cancel
-                                // so the user can pick a different sheet.
-                                e.preventDefault();
+                              if (existingCount > 0) {
+                                // Task #1853 — open the themed
+                                // AlertDialog instead of the browser's
+                                // native confirm. The menu closes on
+                                // selection (Radix default); the
+                                // dialog handles the actual decision.
+                                void confirmDuplicateCopy({
+                                  layerName: l.name,
+                                  destinationLabel: dest.label,
+                                  existingCount,
+                                }).then((accepted) => {
+                                  if (!accepted) return;
+                                  copyToSheetMutation.mutate({
+                                    layerId: l.id,
+                                    targetDocumentId: dest.id,
+                                  });
+                                });
                                 return;
                               }
                               copyToSheetMutation.mutate({
@@ -861,6 +869,7 @@ export default function MarkupLayersPanel({
           <Plus className="w-3.5 h-3.5" />
         </Button>
       </form>
+      {duplicateCopyDialog}
     </div>
   );
 }

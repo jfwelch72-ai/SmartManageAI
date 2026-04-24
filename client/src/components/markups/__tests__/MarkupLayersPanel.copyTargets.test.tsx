@@ -40,6 +40,56 @@ vi.mock("@/hooks/use-toast", () => ({
 // click and the content renders inline (no portal). Menu items invoke
 // onSelect with a mock event so the panel's preventDefault check still
 // runs.
+// Task #1853 — Radix AlertDialog uses pointer-events + portals that
+// don't behave well in jsdom. Stub it with simple inline elements
+// that respect the controlled `open` prop so tests can drive the
+// themed duplicate-copy dialog directly.
+vi.mock("@/components/ui/alert-dialog", () => {
+  const React = require("react");
+  const AlertDialog = ({ open, onOpenChange, children }: any) =>
+    React.createElement(
+      "div",
+      { "data-mock-alert-dialog": open ? "open" : "closed" },
+      open
+        ? React.Children.map(children, (child: any) =>
+            React.isValidElement(child)
+              ? React.cloneElement(child, { __onOpenChange: onOpenChange })
+              : child,
+          )
+        : null,
+    );
+  const passThrough = (tag: string) => ({ children, ...rest }: any) =>
+    React.createElement(tag, rest, children);
+  const AlertDialogContent = ({ children, __onOpenChange, ...rest }: any) =>
+    React.createElement("div", rest, children);
+  const AlertDialogHeader = passThrough("div");
+  const AlertDialogFooter = passThrough("div");
+  const AlertDialogTitle = passThrough("h2");
+  const AlertDialogDescription = passThrough("p");
+  const AlertDialogAction = ({ children, onClick, ...rest }: any) =>
+    React.createElement(
+      "button",
+      { ...rest, type: "button", onClick },
+      children,
+    );
+  const AlertDialogCancel = ({ children, onClick, ...rest }: any) =>
+    React.createElement(
+      "button",
+      { ...rest, type: "button", onClick },
+      children,
+    );
+  return {
+    AlertDialog,
+    AlertDialogContent,
+    AlertDialogHeader,
+    AlertDialogFooter,
+    AlertDialogTitle,
+    AlertDialogDescription,
+    AlertDialogAction,
+    AlertDialogCancel,
+  };
+});
+
 vi.mock("@/components/ui/dropdown-menu", () => {
   const React = require("react");
   const DropdownMenu = ({ open, onOpenChange, children }: any) => {
@@ -123,7 +173,6 @@ const destinations = [
 ];
 
 let fetchMock: ReturnType<typeof vi.fn>;
-let confirmSpy: ReturnType<typeof vi.spyOn>;
 
 function renderPanel() {
   const Wrapper = ({ children }: { children: ReactNode }) => (
@@ -171,12 +220,10 @@ beforeEach(() => {
     return new Response("[]", { status: 200 });
   });
   vi.stubGlobal("fetch", fetchMock);
-  confirmSpy = vi.spyOn(window, "confirm");
 });
 
 afterEach(() => {
   cleanup();
-  confirmSpy.mockRestore();
   testQueryClient?.clear();
   vi.unstubAllGlobals();
 });
@@ -202,7 +249,7 @@ describe("MarkupLayersPanel copy-targets badges + confirm (Task #1722)", () => {
     ).toBeNull();
   });
 
-  it("confirms before creating a second copy on a destination that already has one", async () => {
+  it("opens the themed AlertDialog before creating a second copy and respects cancel/accept (Task #1853)", async () => {
     renderPanel();
     fireEvent.click(screen.getByTestId("button-markup-layer-copy-L-rfi"));
     await waitFor(() => {
@@ -211,25 +258,45 @@ describe("MarkupLayersPanel copy-targets badges + confirm (Task #1722)", () => {
       ).toBeTruthy();
     });
 
-    // User cancels the duplicate-warning confirm → no API call.
-    confirmSpy.mockReturnValueOnce(false);
+    // Selecting a destination with existing copies should open the
+    // themed dialog rather than triggering a native window.confirm.
     await act(async () => {
       fireEvent.click(
         screen.getByTestId("menu-markup-layer-copy-L-rfi-to-doc-b"),
       );
     });
-    expect(confirmSpy).toHaveBeenCalledTimes(1);
+    await waitFor(() => {
+      expect(screen.getByTestId("dialog-duplicate-layer-copy")).toBeTruthy();
+    });
+    // The themed dialog surfaces the destination + existing-count text.
+    expect(
+      screen.getByTestId("text-duplicate-layer-copy-message").textContent,
+    ).toMatch(/Sheet B/);
+    expect(
+      screen.getByTestId("text-duplicate-layer-copy-message").textContent,
+    ).toMatch(/2 copies/);
+
+    // User cancels → no API call, dialog dismisses.
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("button-duplicate-layer-copy-cancel"));
+    });
     const postCallsAfterCancel = apiRequestMock.mock.calls.filter(
       (c) => c[0] === "POST",
     );
     expect(postCallsAfterCancel.length).toBe(0);
+    expect(screen.queryByTestId("dialog-duplicate-layer-copy")).toBeNull();
 
-    // User accepts → POST to copy-to-document fires.
-    confirmSpy.mockReturnValueOnce(true);
+    // Reopen and accept → POST to copy-to-document fires.
     await act(async () => {
       fireEvent.click(
         screen.getByTestId("menu-markup-layer-copy-L-rfi-to-doc-b"),
       );
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId("dialog-duplicate-layer-copy")).toBeTruthy();
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("button-duplicate-layer-copy-confirm"));
     });
     await waitFor(() => {
       const postCalls = apiRequestMock.mock.calls.filter(
@@ -370,7 +437,7 @@ describe("MarkupLayersPanel copy-targets badges + confirm (Task #1722)", () => {
     }
   });
 
-  it("does NOT confirm for destinations with zero existing copies", async () => {
+  it("does NOT open the duplicate-copy dialog for destinations with zero existing copies", async () => {
     renderPanel();
     fireEvent.click(screen.getByTestId("button-markup-layer-copy-L-rfi"));
     await waitFor(() => {
@@ -384,7 +451,7 @@ describe("MarkupLayersPanel copy-targets badges + confirm (Task #1722)", () => {
         screen.getByTestId("menu-markup-layer-copy-L-rfi-to-doc-c"),
       );
     });
-    expect(confirmSpy).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("dialog-duplicate-layer-copy")).toBeNull();
     await waitFor(() => {
       const postCalls = apiRequestMock.mock.calls.filter(
         (c) => c[0] === "POST" && /copy-to-document/.test(String(c[1])),
