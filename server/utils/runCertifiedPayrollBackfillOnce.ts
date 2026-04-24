@@ -147,23 +147,75 @@ registerOneShotJob({
     "Scans object storage for previously generated certified payroll PDFs " +
     "and inserts matching `certified_payroll_reports` rows so they appear in " +
     "the audit table. (Task #1118)",
-  run: async (): Promise<OneShotJobRunResult> => {
-    // The once-runner intentionally swallows internal failures so it can
-    // never crash startup — it only writes a `one_shot_jobs` ledger row when
-    // the backfill (or its no_private_dir short-circuit) actually succeeds.
-    // For manual re-runs we need a truthful status, so infer success from
-    // the post-run ledger row: a row means the runner marked itself complete,
-    // absence means the runner caught and logged an error.
-    await runCertifiedPayrollBackfillOnce();
-    const ledger = await readOneShotJobLedgerRow(JOB_NAME);
-    if (!ledger) {
+  // Task #1531 — orgFilter / dryRun were previously only available via the
+  // bespoke `POST /api/admin/jobs/certified-payroll-backfill/run` endpoint.
+  // Declaring them here lets the generic One-shot jobs panel collect them
+  // and ops scripts call the unified rerun endpoint with the same options.
+  parameters: [
+    {
+      name: "orgFilter",
+      label: "Org ID (optional)",
+      description:
+        "Limit the backfill to a single organization. Leave blank to scan every org.",
+      type: "string",
+      default: "",
+      placeholder: "org_…",
+    },
+    {
+      name: "dryRun",
+      label: "Dry run",
+      description:
+        "Scan and report what would be inserted without writing rows. Skips marking the ledger complete.",
+      type: "boolean",
+      default: false,
+    },
+  ],
+  run: async (params): Promise<OneShotJobRunResult> => {
+    const orgFilterRaw = typeof params.orgFilter === "string" ? params.orgFilter.trim() : "";
+    const orgFilter = orgFilterRaw.length > 0 ? orgFilterRaw : null;
+    const dryRun = params.dryRun === true;
+
+    // Default re-run (no org filter, not dry) preserves the existing
+    // ledger-writing behavior by going through the once-runner. Any
+    // operator-specified variant runs the underlying backfill directly so
+    // a dry-run or scoped run never marks the ledger as "completed for the
+    // whole environment".
+    if (!orgFilter && !dryRun) {
+      await runCertifiedPayrollBackfillOnce();
+      const ledger = await readOneShotJobLedgerRow(JOB_NAME);
+      if (!ledger) {
+        return {
+          status: "failed",
+          error:
+            "Certified payroll backfill did not mark itself complete — see " +
+            "server logs for the underlying error.",
+        };
+      }
+      return { status: "completed", details: ledger.details ?? undefined };
+    }
+
+    const start = Date.now();
+    try {
+      const stats = await runCertifiedPayrollBackfill({ orgFilter, dryRun });
+      return {
+        status: "completed",
+        details: {
+          orgFilter: orgFilter ?? "*",
+          dryRun,
+          inserted: stats.inserted,
+          alreadyPresent: stats.alreadyPresent,
+          missingPayRun: stats.missingPayRun,
+          skippedNonMatching: stats.skippedNonMatching,
+          totalListed: stats.totalListed,
+          orgsScanned: stats.orgsScanned,
+          elapsedMs: Date.now() - start,
+        },
+      };
+    } catch (err) {
       return {
         status: "failed",
-        error:
-          "Certified payroll backfill did not mark itself complete — see " +
-          "server logs for the underlying error.",
+        error: err instanceof Error ? err.message : String(err),
       };
     }
-    return { status: "completed", details: ledger.details ?? undefined };
   },
 });

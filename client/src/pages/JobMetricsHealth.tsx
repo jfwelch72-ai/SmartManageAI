@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ArrowLeft, RefreshCw, Cake, XCircle, Activity, BarChart3, Play, ListChecks, FileStack, HardHat, Trash2, BellRing, RotateCcw } from "lucide-react";
+import { ArrowLeft, RefreshCw, Cake, XCircle, Activity, BarChart3, Play, ListChecks, HardHat, Trash2, BellRing, RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { useEffect, useMemo, useState } from "react";
 import { apiRequest } from "@/lib/queryClient";
@@ -424,31 +424,10 @@ export default function JobMetricsHealth() {
       {/*
         Task #1490 — The bespoke certified-payroll backfill card was retired
         once the generic "One-shot jobs" admin panel (Task #1448) covered the
-        re-run flow. The orgFilter / dryRun specialised re-run still lives at
-        POST /api/admin/jobs/certified-payroll-backfill/run for ops scripts.
+        re-run flow. Task #1531 then folded the orgFilter / dryRun options
+        into that panel and removed the bespoke endpoint, so the link card
+        previously shown here is no longer necessary.
       */}
-      <Card data-testid="card-certified-payroll-backfill-link">
-        <CardHeader>
-          <div className="flex items-center justify-between gap-3 flex-wrap">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <FileStack className="h-4 w-4" /> Certified payroll backfill
-              </CardTitle>
-              <CardDescription>
-                Re-runs are now managed from the generic One-shot jobs panel.
-                Org-scoped or dry-run re-runs remain available via the
-                <code> /api/admin/jobs/certified-payroll-backfill/run</code>{" "}
-                endpoint for ops scripts.
-              </CardDescription>
-            </div>
-            <Link href="/admin/one-shot-jobs">
-              <Button variant="outline" size="sm" data-testid="link-cp-backfill-one-shot-jobs">
-                Manage in One-shot jobs
-              </Button>
-            </Link>
-          </div>
-        </CardHeader>
-      </Card>
 
       <Card data-testid="card-wage-decision-stale-refresh">
         <CardHeader>

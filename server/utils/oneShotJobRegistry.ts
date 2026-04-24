@@ -29,6 +29,31 @@ export interface OneShotJobRunResult {
   error?: string | null;
 }
 
+/**
+ * Task #1531 — A runtime-configurable parameter that the admin UI can
+ * collect before invoking a one-shot job's `run` callback. Replaces the
+ * bespoke per-job re-run endpoints (e.g. the certified-payroll
+ * `orgFilter` / `dryRun` variants) that previously had to live outside
+ * the generic registry because the runner had no way to receive
+ * arbitrary inputs.
+ */
+export type OneShotJobParameter =
+  | {
+      name: string;
+      label: string;
+      description?: string;
+      type: "string";
+      default?: string;
+      placeholder?: string;
+    }
+  | {
+      name: string;
+      label: string;
+      description?: string;
+      type: "boolean";
+      default?: boolean;
+    };
+
 export interface OneShotJobDescriptor {
   /** The exact `one_shot_jobs.name` ledger key. */
   name: string;
@@ -36,6 +61,13 @@ export interface OneShotJobDescriptor {
   title: string;
   /** Short description shown beneath the title in the admin UI. */
   description: string;
+  /**
+   * Optional per-job parameters surfaced as a small form in the admin
+   * "One-shot jobs" panel. Values entered by the operator are validated
+   * by `coerceOneShotJobParams` and forwarded to `run` as the `params`
+   * argument. Jobs that don't declare parameters always receive `{}`.
+   */
+  parameters?: OneShotJobParameter[];
   /**
    * Re-run the job. Implementations are expected to:
    *   1. Clear the existing ledger row (so the once-runner does work).
@@ -45,7 +77,7 @@ export interface OneShotJobDescriptor {
    * inspects the post-run ledger row to populate `details`, so most runners
    * only need to call the existing once-runner inside `run`.
    */
-  run: () => Promise<OneShotJobRunResult>;
+  run: (params: Record<string, unknown>) => Promise<OneShotJobRunResult>;
 }
 
 const registry = new Map<string, OneShotJobDescriptor>();
@@ -144,22 +176,77 @@ export interface RunOneShotJobOutcome {
   durationMs: number;
   details: Record<string, unknown> | null;
   error: string | null;
+  params: Record<string, unknown>;
+}
+
+/**
+ * Coerce the raw param object posted by the admin UI into a typed map
+ * matching the descriptor's `parameters` declaration. Unknown fields
+ * are dropped, missing fields fall back to the declared default, and
+ * values whose type can't be coerced trigger a thrown error so the
+ * request fails loudly rather than silently dropping inputs. Jobs
+ * without parameter declarations always get `{}`.
+ */
+export function coerceOneShotJobParams(
+  descriptor: OneShotJobDescriptor,
+  raw: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (!descriptor.parameters || descriptor.parameters.length === 0) {
+    return out;
+  }
+  const input = raw ?? {};
+  for (const param of descriptor.parameters) {
+    const provided = Object.prototype.hasOwnProperty.call(input, param.name)
+      ? input[param.name]
+      : undefined;
+    if (param.type === "boolean") {
+      if (provided === undefined || provided === null || provided === "") {
+        out[param.name] = param.default ?? false;
+      } else if (typeof provided === "boolean") {
+        out[param.name] = provided;
+      } else if (provided === "true") {
+        out[param.name] = true;
+      } else if (provided === "false") {
+        out[param.name] = false;
+      } else {
+        throw new Error(
+          `Invalid boolean value for parameter '${param.name}': ${String(provided)}`,
+        );
+      }
+    } else {
+      if (provided === undefined || provided === null) {
+        out[param.name] = param.default ?? "";
+      } else if (typeof provided === "string") {
+        out[param.name] = provided.trim();
+      } else {
+        throw new Error(
+          `Invalid string value for parameter '${param.name}': ${String(provided)}`,
+        );
+      }
+    }
+  }
+  return out;
 }
 
 /**
  * Generic "clear ledger and re-run" entrypoint used by the admin endpoint.
  * Catches and reports failures so a buggy runner cannot crash the request.
  */
-export async function runOneShotJob(name: string): Promise<RunOneShotJobOutcome> {
+export async function runOneShotJob(
+  name: string,
+  rawParams: Record<string, unknown> | null = null,
+): Promise<RunOneShotJobOutcome> {
   const descriptor = registry.get(name);
   if (!descriptor) {
     throw new Error(`Unknown one-shot job: ${name}`);
   }
 
+  const params = coerceOneShotJobParams(descriptor, rawParams);
   const ledgerCleared = await clearOneShotJobLedgerRow(name);
   const start = Date.now();
   try {
-    const result = await descriptor.run();
+    const result = await descriptor.run(params);
     const durationMs = Date.now() - start;
     let details = result.details ?? null;
     if (!details) {
@@ -173,6 +260,7 @@ export async function runOneShotJob(name: string): Promise<RunOneShotJobOutcome>
       durationMs,
       details,
       error: result.error ?? null,
+      params,
     };
   } catch (err) {
     const durationMs = Date.now() - start;
@@ -189,6 +277,7 @@ export async function runOneShotJob(name: string): Promise<RunOneShotJobOutcome>
       durationMs,
       details: null,
       error: message,
+      params,
     };
   }
 }

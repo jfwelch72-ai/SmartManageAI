@@ -1012,86 +1012,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Task #1176: Super-Admin one-click trigger for the certified payroll
-  // backfill (Task #1118). Lets ops re-run the post-deploy backfill without
-  // shelling in to delete the `one_shot_jobs` ledger row or running the tsx
-  // script. Optional `orgId` scopes the run; `clearLedger=true` deletes the
-  // existing ledger flag so the next deploy will also re-run automatically.
-  app.post(
-    "/api/admin/jobs/certified-payroll-backfill/run",
-    requireAuth,
-    requireRole("SUPER_ADMIN"),
-    async (req: AuthRequest, res: Response, next: NextFunction) => {
-      try {
-        const body = (req.body ?? {}) as {
-          orgId?: unknown;
-          dryRun?: unknown;
-          clearLedger?: unknown;
-        };
-        const orgFilter =
-          typeof body.orgId === "string" && body.orgId.trim().length > 0
-            ? body.orgId.trim()
-            : null;
-        const dryRun = body.dryRun === true;
-        const clearLedger = body.clearLedger === true;
-
-        const { runCertifiedPayrollBackfill } = await import(
-          "./scripts/backfill-certified-payroll-reports"
-        );
-        const { clearOneShotJob, JOB_NAME } = await import(
-          "./utils/runCertifiedPayrollBackfillOnce"
-        );
-
-        let ledgerCleared = false;
-        if (clearLedger) {
-          ledgerCleared = await clearOneShotJob(JOB_NAME);
-        }
-
-        const start = Date.now();
-        const stats = await runCertifiedPayrollBackfill({ orgFilter, dryRun });
-        const durationMs = Date.now() - start;
-
-        const { logAudit } = await import("./auditLogger");
-        await logAudit(
-          {
-            userId: req.user!.id,
-            action: "EXECUTE",
-            entityType: "background_job",
-            entityId: JOB_NAME,
-            newValue:
-              `Manual certified payroll backfill ` +
-              `(orgFilter=${orgFilter ?? "*"}, dryRun=${dryRun}, ` +
-              `clearLedger=${clearLedger}, ledgerCleared=${ledgerCleared}, ` +
-              `inserted=${stats.inserted}, alreadyPresent=${stats.alreadyPresent}, ` +
-              `missingPayRun=${stats.missingPayRun}, orgsScanned=${stats.orgsScanned}, ` +
-              `durationMs=${durationMs})`,
-          },
-          req,
-        );
-
-        logInfo(
-          `[admin] certified_payroll_backfill manual run by ${req.user!.id} ` +
-            `(orgFilter=${orgFilter ?? "*"}, dryRun=${dryRun}, ` +
-            `clearLedger=${clearLedger}) — ` +
-            `inserted=${stats.inserted}, alreadyPresent=${stats.alreadyPresent}, ` +
-            `missingPayRun=${stats.missingPayRun}, orgsScanned=${stats.orgsScanned}, ` +
-            `${durationMs}ms`,
-        );
-
-        res.json({
-          job: JOB_NAME,
-          status: "completed",
-          durationMs,
-          ledgerCleared,
-          orgFilter,
-          dryRun,
-          stats,
-        });
-      } catch (err: any) {
-        next(err);
-      }
-    },
-  );
+  // Task #1176's bespoke `POST /api/admin/jobs/certified-payroll-backfill/run`
+  // endpoint was retired in Task #1531 once the generic one-shot jobs
+  // panel learned how to collect per-job parameters (orgFilter / dryRun).
+  // Use `POST /api/admin/jobs/one-shot/backfill_certified_payroll_reports_v1/rerun`
+  // with a JSON body of `{ "params": { "orgFilter": "org_…", "dryRun": true } }`
+  // for ops scripts.
 
   // Task #1413's bespoke `POST /api/admin/jobs/exhausted-sync-retry-alerts-
   // backfill/run` endpoint was retired in Task #1490 once the generic
@@ -1134,6 +1060,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             title: d.title,
             description: d.description,
             registered: true,
+            // Task #1531 — surface declared parameters so the admin UI
+            // can render an inline form before invoking the runner.
+            parameters: d.parameters ?? [],
             completedAt: row?.completedAt ?? null,
             details: row?.details ?? null,
             recentRuns: [] as Array<{
@@ -1161,6 +1090,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               "Ledger row for a job that is no longer registered in this build. " +
               "Re-running is unavailable; the row can be cleared from psql if obsolete.",
             registered: false,
+            parameters: [],
             completedAt: row.completedAt,
             details: row.details,
             recentRuns: [],
@@ -1243,13 +1173,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
             .json({ error: `Unknown one-shot job: ${name}` });
         }
 
+        // Task #1531 — accept an optional `params` object so the panel
+        // (and ops scripts) can pass per-job options like the certified-
+        // payroll runner's orgFilter / dryRun. Validation lives in
+        // `coerceOneShotJobParams` inside `runOneShotJob`.
+        const body = (req.body ?? {}) as { params?: Record<string, unknown> | null };
+        const rawParams =
+          body.params && typeof body.params === "object" ? body.params : null;
+
         const startedAt = new Date();
-        const outcome = await runOneShotJob(name);
+        let outcome;
+        try {
+          outcome = await runOneShotJob(name, rawParams);
+        } catch (err) {
+          return res
+            .status(400)
+            .json({ error: err instanceof Error ? err.message : String(err) });
+        }
         // Capture a real wall-clock finish timestamp rather than
         // deriving startedAt + outcome.durationMs, since registry
         // implementations measure durationMs themselves and the two
         // can drift if a runner adjusts its own timing.
         const finishedAt = new Date();
+
+        const paramSummary = Object.keys(outcome.params).length
+          ? ` params=${JSON.stringify(outcome.params)}`
+          : "";
 
         // Task #1528 — persist the structured outcome so the admin
         // panel can read fields directly instead of regex-parsing the
@@ -1287,7 +1236,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             newValue:
               `Manual one-shot re-run via admin panel ` +
               `(status=${outcome.status}, ledgerCleared=${outcome.ledgerCleared}, ` +
-              `durationMs=${outcome.durationMs}` +
+              `durationMs=${outcome.durationMs}${paramSummary}` +
               `${outcome.error ? `, error=${outcome.error}` : ""})`,
           },
           req,
@@ -1296,7 +1245,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         logInfo(
           `[admin] one-shot job ${name} re-run by ${req.user!.id} — ` +
             `status=${outcome.status}, ledgerCleared=${outcome.ledgerCleared}, ` +
-            `${outcome.durationMs}ms`,
+            `${outcome.durationMs}ms${paramSummary}`,
         );
 
         res.json(outcome);

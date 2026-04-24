@@ -11,9 +11,13 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ArrowLeft, RefreshCw, Trash2, ListChecks, AlertCircle } from "lucide-react";
+import { ArrowLeft, RefreshCw, Trash2, ListChecks, AlertCircle, Settings2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import { useState } from "react";
 
 interface OneShotJobRecentRun {
   id: string;
@@ -27,11 +31,29 @@ interface OneShotJobRecentRun {
   raw: string | null;
 }
 
+type OneShotJobParameter =
+  | {
+      name: string;
+      label: string;
+      description?: string;
+      type: "string";
+      default?: string;
+      placeholder?: string;
+    }
+  | {
+      name: string;
+      label: string;
+      description?: string;
+      type: "boolean";
+      default?: boolean;
+    };
+
 interface OneShotJob {
   name: string;
   title: string;
   description: string;
   registered: boolean;
+  parameters?: OneShotJobParameter[];
   completedAt: string | null;
   details: Record<string, unknown> | null;
   recentRuns?: OneShotJobRecentRun[];
@@ -48,6 +70,21 @@ interface RerunOutcome {
   durationMs: number;
   details: Record<string, unknown> | null;
   error: string | null;
+  params?: Record<string, unknown>;
+}
+
+function buildInitialParamValues(
+  parameters: OneShotJobParameter[] | undefined,
+): Record<string, string | boolean> {
+  const initial: Record<string, string | boolean> = {};
+  for (const p of parameters ?? []) {
+    if (p.type === "boolean") {
+      initial[p.name] = p.default ?? false;
+    } else {
+      initial[p.name] = p.default ?? "";
+    }
+  }
+  return initial;
 }
 
 function formatTimestamp(ts: string | null): string {
@@ -69,12 +106,19 @@ function statusBadgeVariant(
 function JobCard({ job }: { job: OneShotJob }) {
   const { toast } = useToast();
   const qc = useQueryClient();
+  const [paramValues, setParamValues] = useState<Record<string, string | boolean>>(
+    () => buildInitialParamValues(job.parameters),
+  );
+
+  const hasParams = (job.parameters?.length ?? 0) > 0;
 
   const rerun = useMutation({
     mutationFn: async (): Promise<RerunOutcome> => {
+      const body = hasParams ? { params: paramValues } : undefined;
       const res = await apiRequest(
         "POST",
         `/api/admin/jobs/one-shot/${encodeURIComponent(job.name)}/rerun`,
+        body,
       );
       return (await res.json()) as RerunOutcome;
     },
@@ -157,6 +201,75 @@ function JobCard({ job }: { job: OneShotJob }) {
         </div>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
+        {hasParams && job.registered && (
+          <div
+            className="rounded-md border bg-muted/30 p-3 space-y-3"
+            data-testid={`params-one-shot-${job.name}`}
+          >
+            <div className="flex items-center gap-2 text-xs uppercase tracking-wide text-muted-foreground">
+              <Settings2 className="h-3.5 w-3.5" /> Run options
+            </div>
+            {job.parameters!.map((param) => {
+              const inputId = `param-${job.name}-${param.name}`;
+              if (param.type === "boolean") {
+                const checked = paramValues[param.name] === true;
+                return (
+                  <div key={param.name} className="flex items-start gap-2">
+                    <Checkbox
+                      id={inputId}
+                      checked={checked}
+                      onCheckedChange={(value) =>
+                        setParamValues((prev) => ({
+                          ...prev,
+                          [param.name]: value === true,
+                        }))
+                      }
+                      data-testid={`checkbox-param-${job.name}-${param.name}`}
+                    />
+                    <div className="space-y-0.5">
+                      <Label htmlFor={inputId} className="text-sm font-medium">
+                        {param.label}
+                      </Label>
+                      {param.description && (
+                        <p className="text-xs text-muted-foreground">
+                          {param.description}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+              const value =
+                typeof paramValues[param.name] === "string"
+                  ? (paramValues[param.name] as string)
+                  : "";
+              return (
+                <div key={param.name} className="space-y-1">
+                  <Label htmlFor={inputId} className="text-sm font-medium">
+                    {param.label}
+                  </Label>
+                  {param.description && (
+                    <p className="text-xs text-muted-foreground">
+                      {param.description}
+                    </p>
+                  )}
+                  <Input
+                    id={inputId}
+                    value={value}
+                    placeholder={param.placeholder}
+                    onChange={(e) =>
+                      setParamValues((prev) => ({
+                        ...prev,
+                        [param.name]: e.target.value,
+                      }))
+                    }
+                    data-testid={`input-param-${job.name}-${param.name}`}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
         <div className="flex items-center gap-2">
           <span className="text-muted-foreground">Last completed:</span>
           <span
