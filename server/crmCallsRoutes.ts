@@ -4440,6 +4440,173 @@ router.get(
   },
 );
 
+// Task #1518 — CSV export of the cross-org alert failure breakdown so platform
+// support can attach the same numbers they see in the "Recent alert failures"
+// card to incident reviews and weekly tenant health reports without
+// hand-copying. Mirrors the auth + cross-org gating of the digest endpoint
+// above; this export is SUPER_ADMIN + cross-org only since the in-app
+// single-org view already covers org-scoped admins.
+//   - dataset=summary (default): one row per org with totals
+//   - dataset=samples: one row per recent failure sample, joined to the org
+router.get(
+  "/api/crm/calls/transcripts/backfill/alert-failures-digest.csv",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const superAdmin = isSuperAdmin(req.user);
+      const crossOrg =
+        superAdmin && String(req.query.crossOrg ?? "") === "true";
+      if (!crossOrg) {
+        return res
+          .status(403)
+          .json({ error: "Cross-org CSV export is restricted to super admins" });
+      }
+
+      const rawHours = parseInt(String(req.query.windowHours ?? "24"), 10);
+      const windowHours = Math.min(
+        Math.max(Number.isFinite(rawHours) ? rawHours : 24, 1),
+        720,
+      );
+      const rawSample = parseInt(
+        String(req.query.recentSampleLimit ?? "20"),
+        10,
+      );
+      const recentSampleLimit = Math.min(
+        Math.max(Number.isFinite(rawSample) ? rawSample : 20, 1),
+        50,
+      );
+      const dataset =
+        String(req.query.dataset ?? "summary") === "samples"
+          ? "samples"
+          : "summary";
+      const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
+      const generatedAt = new Date();
+
+      const aggregates =
+        await aggregateRecentCrmTranscriptBackfillAlertFailures(since, {
+          recentSampleLimit,
+        });
+      const orgIds = aggregates.map((a) => a.organizationId);
+      const orgRows = orgIds.length
+        ? await db
+            .select({
+              id: organizations.id,
+              name: organizations.name,
+              slug: organizations.slug,
+            })
+            .from(organizations)
+            .where(inArray(organizations.id, orgIds))
+        : [];
+      const orgById = new Map(orgRows.map((o) => [o.id, o]));
+
+      const sortedAggregates = [...aggregates].sort((a, b) => {
+        if (b.total !== a.total) return b.total - a.total;
+        const am = orgById.get(a.organizationId);
+        const bm = orgById.get(b.organizationId);
+        const an = (am?.name ?? a.organizationId).toLowerCase();
+        const bn = (bm?.name ?? b.organizationId).toLowerCase();
+        return an.localeCompare(bn);
+      });
+
+      const escapeCsv = (v: unknown): string => {
+        if (v === null || v === undefined) return "";
+        const s = String(v);
+        if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+        return s;
+      };
+
+      const sinceIso = since.toISOString();
+      const generatedAtIso = generatedAt.toISOString();
+      const windowLabel = `${windowHours}h`;
+
+      let lines: string[];
+      let filenameSuffix: string;
+      if (dataset === "samples") {
+        const HEADERS = [
+          "organization_id",
+          "organization_name",
+          "organization_slug",
+          "job_id",
+          "channel",
+          "attempted_at",
+          "recipient",
+          "error",
+          "window_hours",
+          "since",
+          "generated_at",
+        ];
+        lines = [HEADERS.join(",")];
+        for (const entry of sortedAggregates) {
+          const meta = orgById.get(entry.organizationId);
+          for (const f of entry.recentFailures) {
+            lines.push(
+              [
+                entry.organizationId,
+                meta?.name ?? "",
+                meta?.slug ?? "",
+                f.jobId ?? "",
+                f.channel,
+                f.attemptedAt.toISOString(),
+                f.recipientSummary ?? "",
+                f.errorMessage ?? "",
+                windowHours,
+                sinceIso,
+                generatedAtIso,
+              ]
+                .map(escapeCsv)
+                .join(","),
+            );
+          }
+        }
+        filenameSuffix = "samples";
+      } else {
+        const HEADERS = [
+          "organization_id",
+          "organization_name",
+          "organization_slug",
+          "total",
+          "slack_count",
+          "email_count",
+          "window_hours",
+          "since",
+          "generated_at",
+        ];
+        lines = [HEADERS.join(",")];
+        for (const entry of sortedAggregates) {
+          const meta = orgById.get(entry.organizationId);
+          lines.push(
+            [
+              entry.organizationId,
+              meta?.name ?? "",
+              meta?.slug ?? "",
+              entry.total,
+              entry.slackCount,
+              entry.emailCount,
+              windowHours,
+              sinceIso,
+              generatedAtIso,
+            ]
+              .map(escapeCsv)
+              .join(","),
+          );
+        }
+        filenameSuffix = "summary";
+      }
+
+      const stamp = generatedAtIso.replace(/[:.]/g, "-");
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="alert-failures-${filenameSuffix}-${windowLabel}-${stamp}.csv"`,
+      );
+      res.send(lines.join("\n") + "\n");
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
 // Task #1050 — admin "Resend" action on a previously-failed alert delivery.
 // Re-runs the same dispatch (same job id, same channel) using the org's
 // currently-saved Slack/email destinations and writes a brand-new delivery

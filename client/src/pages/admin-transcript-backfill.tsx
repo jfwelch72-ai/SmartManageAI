@@ -5312,12 +5312,18 @@ export function BackfillAlertFailuresDigestCard({
   isSuperAdmin: boolean;
   onSelectOrg: (organizationId: string) => void;
 }) {
+  const { toast } = useToast();
   const [windowHours, setWindowHours] = useState<number>(24);
   // Default super admins to the cross-org view since that's the high-signal
   // mode for platform support; org-scoped admins never see the toggle and
   // always run in single-org mode.
   const [crossOrg, setCrossOrg] = useState<boolean>(isSuperAdmin);
   const effectiveCrossOrg = isSuperAdmin && crossOrg;
+  // Task #1518 — separate "exporting" flags per dataset so platform support
+  // can trigger one CSV without disabling the other button.
+  const [exportingDataset, setExportingDataset] = useState<
+    "summary" | "samples" | null
+  >(null);
   const queryKey = failuresDigestKey(windowHours, effectiveCrossOrg);
   const failuresQuery = useQuery<BackfillAlertFailuresDigest>({
     queryKey,
@@ -5336,6 +5342,42 @@ export function BackfillAlertFailuresDigestCard({
   const isCrossOrgView = !!data?.crossOrg;
   const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null);
 
+  // Task #1518 — download the cross-org breakdown as CSV. Two datasets:
+  // the per-org rollup (matches what's rendered in the table above) and the
+  // per-org recent failure samples for deeper incident review. Server enforces
+  // SUPER_ADMIN + crossOrg=true; we mirror that gating here so the buttons
+  // only appear when the cross-org view is active.
+  const handleExportCsv = async (dataset: "summary" | "samples") => {
+    setExportingDataset(dataset);
+    try {
+      const params = new URLSearchParams({
+        windowHours: String(windowHours),
+        crossOrg: "true",
+        dataset,
+      });
+      const url = `/api/crm/calls/transcripts/backfill/alert-failures-digest.csv?${params.toString()}`;
+      const res = await apiRequest("GET", url);
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+      a.download = `alert-failures-${dataset}-${windowHours}h-${stamp}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (err) {
+      toast({
+        title: "Failed to export CSV",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setExportingDataset(null);
+    }
+  };
+
   return (
     <Card data-testid="card-alert-failures-digest">
       <CardHeader className="pb-3">
@@ -5348,20 +5390,65 @@ export function BackfillAlertFailuresDigestCard({
               in from the digest's deep link without losing context.
             </CardDescription>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => queryClient.invalidateQueries({ queryKey })}
-            disabled={failuresQuery.isFetching}
-            data-testid="button-refresh-alert-failures-digest"
-          >
-            {failuresQuery.isFetching ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-            ) : (
-              <RefreshCw className="h-4 w-4 mr-2" />
+          <div className="flex items-center gap-2">
+            {isSuperAdmin && isCrossOrgView && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleExportCsv("summary")}
+                  disabled={
+                    failuresQuery.isLoading ||
+                    failuresQuery.isError ||
+                    exportingDataset !== null
+                  }
+                  data-testid="button-export-alert-failures-digest-csv"
+                  title="Download the per-org rollup as CSV"
+                >
+                  {exportingDataset === "summary" ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4 mr-2" />
+                  )}
+                  Download CSV
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleExportCsv("samples")}
+                  disabled={
+                    failuresQuery.isLoading ||
+                    failuresQuery.isError ||
+                    exportingDataset !== null ||
+                    orgs.length === 0
+                  }
+                  data-testid="button-export-alert-failures-digest-samples-csv"
+                  title="Download the per-org recent failure samples as CSV"
+                >
+                  {exportingDataset === "samples" ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4 mr-2" />
+                  )}
+                  Samples CSV
+                </Button>
+              </>
             )}
-            Refresh
-          </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => queryClient.invalidateQueries({ queryKey })}
+              disabled={failuresQuery.isFetching}
+              data-testid="button-refresh-alert-failures-digest"
+            >
+              {failuresQuery.isFetching ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="h-4 w-4 mr-2" />
+              )}
+              Refresh
+            </Button>
+          </div>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">

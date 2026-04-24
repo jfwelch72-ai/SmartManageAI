@@ -1,0 +1,456 @@
+/**
+ * Task #1518 — integration coverage for the new CSV export of the cross-org
+ * alert failure breakdown:
+ *   `GET /api/crm/calls/transcripts/backfill/alert-failures-digest.csv`
+ *
+ * The endpoint mirrors the auth + cross-org gating of the JSON
+ * `alert-failures-digest` route used by the in-app "Recent alert failures"
+ * card on /admin/transcript-backfill, so platform support can attach the
+ * same numbers they see on screen to incident reviews and weekly tenant
+ * health reports without copy/pasting from the panel.
+ *
+ * Coverage:
+ *   - SUPER_ADMIN with `crossOrg=true` gets a real CSV with one row per
+ *     org with at least one failure in the window, sorted by total desc,
+ *     with org id / name / slug / total / slack / email / window / since /
+ *     generated-at columns.
+ *   - `dataset=samples` returns one row per per-org recent failure sample,
+ *     joined to the org id/name/slug, with job id / channel / attempted_at
+ *     / recipient / error columns.
+ *   - `windowHours` clamping is consistent with the JSON route (24h →
+ *     excludes the 5d-old failure, 168h → includes it, 9999 → 720h).
+ *   - SUPER_ADMINs without the `crossOrg=true` flag are rejected so the
+ *     endpoint can never silently fall back to a single-org export.
+ *   - Non-super ADMINs are 403'd; non-admins are 403'd; anonymous → 401.
+ */
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import type { Server } from "http";
+import type { Express } from "express";
+import request from "supertest";
+import { inArray } from "drizzle-orm";
+
+import { db } from "../db";
+import {
+  organizations,
+  users,
+  crmTranscriptBackfillAlertDeliveries,
+} from "@shared/schema";
+import { generateToken } from "../auth";
+
+const SUFFIX = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const TEST_EMAIL_DOMAIN = `alert-failures-digest-csv-${SUFFIX}.test.invalid`;
+const TEST_ORG_PREFIX = `__alert_failures_digest_csv_${SUFFIX}__`;
+const ENDPOINT =
+  "/api/crm/calls/transcripts/backfill/alert-failures-digest.csv";
+
+let app: Express;
+let server: Server;
+
+let orgAId: string;
+let orgBId: string;
+let adminAId: string;
+let superAdminId: string;
+let fieldAId: string;
+let adminACookie: string;
+let superAdminCookie: string;
+let fieldACookie: string;
+
+const seededDeliveryIds: string[] = [];
+
+async function makeOrgAndAdmin(label: string) {
+  const [org] = await db
+    .insert(organizations)
+    .values({
+      name: `${TEST_ORG_PREFIX}${label}`,
+      slug: `${TEST_ORG_PREFIX}${label}`
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-"),
+    })
+    .returning();
+  const [admin] = await db
+    .insert(users)
+    .values({
+      email: `${label}-admin-${SUFFIX}@${TEST_EMAIL_DOMAIN}`,
+      passwordHash: "x",
+      firstName: label,
+      lastName: "Admin",
+      organizationId: org.id,
+      role: "ADMIN",
+    })
+    .returning();
+  return { org, admin };
+}
+
+async function seedDelivery(opts: {
+  orgId: string;
+  jobId: string | null;
+  channel: "slack" | "email";
+  status: "failure" | "success";
+  attemptedAt: Date;
+  errorMessage?: string | null;
+  recipientSummary?: string;
+}) {
+  const [row] = await db
+    .insert(crmTranscriptBackfillAlertDeliveries)
+    .values({
+      organizationId: opts.orgId,
+      jobId: opts.jobId,
+      channel: opts.channel,
+      status: opts.status,
+      recipientSummary:
+        opts.recipientSummary ??
+        (opts.channel === "slack" ? "hooks.slack.com" : "ops@example.com"),
+      errorMessage: opts.errorMessage ?? null,
+      attemptedAt: opts.attemptedAt,
+    })
+    .returning({ id: crmTranscriptBackfillAlertDeliveries.id });
+  seededDeliveryIds.push(row.id);
+  return row.id;
+}
+
+// CSV parser that handles RFC 4180-style quoted fields with embedded commas /
+// quotes / newlines. Just enough to validate what our route emits.
+function parseCsv(text: string): string[][] {
+  const rows: string[][] = [];
+  let cur: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') {
+          field += '"';
+          i += 1;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        field += c;
+      }
+      continue;
+    }
+    if (c === '"') {
+      inQuotes = true;
+    } else if (c === ",") {
+      cur.push(field);
+      field = "";
+    } else if (c === "\n") {
+      cur.push(field);
+      rows.push(cur);
+      cur = [];
+      field = "";
+    } else if (c === "\r") {
+      // ignore — we only emit \n
+    } else {
+      field += c;
+    }
+  }
+  if (field.length > 0 || cur.length > 0) {
+    cur.push(field);
+    rows.push(cur);
+  }
+  // Drop trailing empty row from final newline.
+  if (rows.length > 0 && rows[rows.length - 1].every((v) => v === "")) {
+    rows.pop();
+  }
+  return rows;
+}
+
+beforeAll(async () => {
+  const express = await import("express");
+  const cookieParser = await import("cookie-parser");
+  const { registerRoutes } = await import("../routes");
+
+  app = express.default();
+  app.use(express.default.json());
+  app.use(cookieParser.default());
+  server = await registerRoutes(app);
+
+  const a = await makeOrgAndAdmin("orga");
+  orgAId = a.org.id;
+  adminAId = a.admin.id;
+  adminACookie = `auth_token=${generateToken(a.admin.id, a.admin.tokenVersion)}`;
+
+  const b = await makeOrgAndAdmin("orgb");
+  orgBId = b.org.id;
+
+  const [superAdmin] = await db
+    .insert(users)
+    .values({
+      email: `super-${SUFFIX}@${TEST_EMAIL_DOMAIN}`,
+      passwordHash: "x",
+      firstName: "Super",
+      lastName: "Root",
+      organizationId: orgAId,
+      role: "SUPER_ADMIN",
+    })
+    .returning();
+  superAdminId = superAdmin.id;
+  superAdminCookie = `auth_token=${generateToken(
+    superAdmin.id,
+    superAdmin.tokenVersion,
+  )}`;
+
+  const [field] = await db
+    .insert(users)
+    .values({
+      email: `orga-field-${SUFFIX}@${TEST_EMAIL_DOMAIN}`,
+      passwordHash: "x",
+      firstName: "Field",
+      lastName: "Worker",
+      organizationId: orgAId,
+      role: "FIELD_WORKER",
+    })
+    .returning();
+  fieldAId = field.id;
+  fieldACookie = `auth_token=${generateToken(field.id, field.tokenVersion)}`;
+
+  const now = Date.now();
+  const minute = 60 * 1000;
+  const hour = 60 * minute;
+
+  // Org A: 2 slack + 1 email failure inside 24h, with a quote in one error
+  // message to exercise CSV escaping.
+  await seedDelivery({
+    orgId: orgAId,
+    jobId: "job-A-1",
+    channel: "slack",
+    status: "failure",
+    errorMessage: 'slack: "channel_not_found", retry_after=30',
+    attemptedAt: new Date(now - 2 * hour),
+  });
+  await seedDelivery({
+    orgId: orgAId,
+    jobId: "job-A-2",
+    channel: "slack",
+    status: "failure",
+    errorMessage: "500 boom",
+    attemptedAt: new Date(now - 4 * hour),
+  });
+  await seedDelivery({
+    orgId: orgAId,
+    jobId: "job-A-3",
+    channel: "email",
+    status: "failure",
+    errorMessage: "smtp 550",
+    recipientSummary: "ops+alerts@example.com",
+    attemptedAt: new Date(now - 6 * hour),
+  });
+  // success row — must NOT count.
+  await seedDelivery({
+    orgId: orgAId,
+    jobId: "job-A-ok",
+    channel: "slack",
+    status: "success",
+    attemptedAt: new Date(now - 30 * minute),
+  });
+  // 5d old failure — outside default 24h window, inside 168h.
+  await seedDelivery({
+    orgId: orgAId,
+    jobId: "job-A-old",
+    channel: "email",
+    status: "failure",
+    errorMessage: "ancient timeout",
+    attemptedAt: new Date(now - 5 * 24 * hour),
+  });
+
+  // Org B: 2 email failures inside 24h.
+  await seedDelivery({
+    orgId: orgBId,
+    jobId: "job-B-1",
+    channel: "email",
+    status: "failure",
+    errorMessage: "smtp 421",
+    attemptedAt: new Date(now - 3 * hour),
+  });
+  await seedDelivery({
+    orgId: orgBId,
+    jobId: "job-B-2",
+    channel: "email",
+    status: "failure",
+    errorMessage: "smtp 421",
+    attemptedAt: new Date(now - 5 * hour),
+  });
+}, 120_000);
+
+afterAll(async () => {
+  try {
+    if (seededDeliveryIds.length > 0) {
+      await db
+        .delete(crmTranscriptBackfillAlertDeliveries)
+        .where(
+          inArray(crmTranscriptBackfillAlertDeliveries.id, seededDeliveryIds),
+        )
+        .catch(() => {});
+    }
+    await db
+      .delete(users)
+      .where(inArray(users.id, [adminAId, superAdminId, fieldAId]))
+      .catch(() => {});
+    await db
+      .delete(organizations)
+      .where(inArray(organizations.id, [orgAId, orgBId]))
+      .catch(() => {});
+  } catch {
+    /* non-fatal */
+  }
+  if (server?.listening) {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+}, 30_000);
+
+describe("GET /api/crm/calls/transcripts/backfill/alert-failures-digest.csv", () => {
+  it("returns the per-org rollup CSV for SUPER_ADMIN cross-org callers", async () => {
+    const res = await request(app)
+      .get(ENDPOINT)
+      .query({ crossOrg: "true" })
+      .set("Cookie", superAdminCookie);
+    expect(res.status).toBe(200);
+    expect(res.headers["content-type"]).toMatch(/^text\/csv/);
+    expect(res.headers["content-disposition"]).toMatch(
+      /attachment; filename="alert-failures-summary-24h-.*\.csv"/,
+    );
+
+    const rows = parseCsv(res.text);
+    expect(rows[0]).toEqual([
+      "organization_id",
+      "organization_name",
+      "organization_slug",
+      "total",
+      "slack_count",
+      "email_count",
+      "window_hours",
+      "since",
+      "generated_at",
+    ]);
+
+    // We seeded only orgs A (3) and B (2) inside 24h. Other suites can
+    // also write to this table, so look up our two test orgs in the body
+    // rather than asserting on row count.
+    const byOrg = new Map<string, string[]>();
+    for (const row of rows.slice(1)) {
+      byOrg.set(row[0], row);
+    }
+    const a = byOrg.get(orgAId);
+    const b = byOrg.get(orgBId);
+    expect(a).toBeDefined();
+    expect(b).toBeDefined();
+
+    expect(a![1]).toMatch(/^__alert_failures_digest_csv_/); // name
+    // Slug is the sanitized form (the slug helper collapses leading
+    // underscores into a single dash), so just assert it contains our
+    // unique suffix and the org label.
+    expect(a![2]).toMatch(new RegExp(`alert-failures-digest-csv-.*-orga$`));
+    expect(a![3]).toBe("3"); // total
+    expect(a![4]).toBe("2"); // slack
+    expect(a![5]).toBe("1"); // email
+    expect(a![6]).toBe("24"); // window_hours
+
+    expect(b![3]).toBe("2");
+    expect(b![4]).toBe("0");
+    expect(b![5]).toBe("2");
+
+    // Sorted by total desc within our two orgs.
+    const aIdx = rows.findIndex((r) => r[0] === orgAId);
+    const bIdx = rows.findIndex((r) => r[0] === orgBId);
+    expect(aIdx).toBeLessThan(bIdx);
+
+    // since/generated_at are ISO timestamps.
+    expect(new Date(a![7]).toISOString()).toBe(a![7]);
+    expect(new Date(a![8]).toISOString()).toBe(a![8]);
+  });
+
+  it("widens the window to 7d (168h) so the 5d-old org-A failure is counted", async () => {
+    const res = await request(app)
+      .get(ENDPOINT)
+      .query({ crossOrg: "true", windowHours: 168 })
+      .set("Cookie", superAdminCookie);
+    expect(res.status).toBe(200);
+    const rows = parseCsv(res.text);
+    const a = rows.find((r) => r[0] === orgAId)!;
+    expect(a[3]).toBe("4"); // 3 in 24h + 1 older = 4
+    expect(a[5]).toBe("2"); // both email failures
+    expect(a[6]).toBe("168");
+  });
+
+  it("clamps too-large windowHours to 720", async () => {
+    const res = await request(app)
+      .get(ENDPOINT)
+      .query({ crossOrg: "true", windowHours: 99999 })
+      .set("Cookie", superAdminCookie);
+    expect(res.status).toBe(200);
+    const rows = parseCsv(res.text);
+    const a = rows.find((r) => r[0] === orgAId)!;
+    expect(a[6]).toBe("720");
+  });
+
+  it("returns the per-org recent failure samples CSV when dataset=samples", async () => {
+    const res = await request(app)
+      .get(ENDPOINT)
+      .query({ crossOrg: "true", dataset: "samples" })
+      .set("Cookie", superAdminCookie);
+    expect(res.status).toBe(200);
+    expect(res.headers["content-disposition"]).toMatch(
+      /alert-failures-samples-24h-/,
+    );
+    const rows = parseCsv(res.text);
+    expect(rows[0]).toEqual([
+      "organization_id",
+      "organization_name",
+      "organization_slug",
+      "job_id",
+      "channel",
+      "attempted_at",
+      "recipient",
+      "error",
+      "window_hours",
+      "since",
+      "generated_at",
+    ]);
+    const sampleJobIds = rows.slice(1).map((r) => r[3]);
+    // Our seeded org-A failures show up.
+    expect(sampleJobIds).toEqual(
+      expect.arrayContaining(["job-A-1", "job-A-2", "job-A-3"]),
+    );
+    // Old failure outside the default 24h window does not.
+    expect(sampleJobIds).not.toContain("job-A-old");
+    // Successful delivery never appears.
+    expect(sampleJobIds).not.toContain("job-A-ok");
+
+    // CSV escapes a recipient with embedded comma and an error message
+    // with embedded quotes correctly (parseCsv decodes both).
+    const a1 = rows.find((r) => r[3] === "job-A-1")!;
+    expect(a1[7]).toBe('slack: "channel_not_found", retry_after=30');
+  });
+
+  it("rejects SUPER_ADMINs without crossOrg=true so it can't fall back silently", async () => {
+    const res = await request(app)
+      .get(ENDPOINT)
+      .set("Cookie", superAdminCookie);
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects non-super ADMIN callers even with crossOrg=true", async () => {
+    const res = await request(app)
+      .get(ENDPOINT)
+      .query({ crossOrg: "true" })
+      .set("Cookie", adminACookie);
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects non-admin callers with 403", async () => {
+    const res = await request(app)
+      .get(ENDPOINT)
+      .query({ crossOrg: "true" })
+      .set("Cookie", fieldACookie);
+    expect(res.status).toBe(403);
+  });
+
+  it("rejects unauthenticated callers with 401", async () => {
+    const res = await request(app)
+      .get(ENDPOINT)
+      .query({ crossOrg: "true" });
+    expect(res.status).toBe(401);
+  });
+});
