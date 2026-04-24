@@ -296,7 +296,16 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [markupDrawing, setMarkupDrawing] = useState(false);
   const [markupDrawPoints, setMarkupDrawPoints] = useState<{ x: number; y: number }[]>([]);
   const [markupTextInput, setMarkupTextInput] = useState<{ x: number; y: number; value: string } | null>(null);
-  const [selectedMarkupId, setSelectedMarkupId] = useState<string | null>(null);
+  // Task #1736 — multi-select for takeoff markups. Plain click replaces
+  // the set with one id; Shift+click toggles a markup in/out of the
+  // set. The edit panel and resize handles only show when exactly one
+  // markup is selected; the selection halo + body-drag work for every
+  // member of the set so users can reposition entire callouts (an
+  // arrow + a label + a cloud) in a single gesture.
+  const [selectedMarkupIds, setSelectedMarkupIds] = useState<Set<string>>(new Set());
+  const selectedMarkupId = selectedMarkupIds.size === 1
+    ? (selectedMarkupIds.values().next().value as string)
+    : null;
   const [markupEditDraft, setMarkupEditDraft] = useState<{ color: string; thickness: number; text: string } | null>(null);
   // Task #1654 — Snap a markup's persisted thickness to the nearest
   // toolbar preset when opening the edit panel. Older markups created
@@ -320,11 +329,17 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   // don't lag behind the moving body, and restore + commit a single
   // PATCH on dragEnd. Konva translates the dragged Group internally,
   // so no per-frame work runs in React for the duration of the drag.
+  // Task #1736 — `siblings` carries the other selected markups' Konva
+  // group nodes when a multi-select drag begins. They are translated
+  // imperatively in onDragMove (no React state, no re-render) and
+  // restored to their original position in onDragEnd before the bulk
+  // PATCH lands. This mirrors the plan-side `getGroupProps` pattern.
   const markupBodyDragRef = useRef<{
     id: string;
     origX: number;
     origY: number;
     hiddenHandles: Array<{ visible: boolean; listening: boolean; node: any }>;
+    siblings: Array<{ id: string; node: any }>;
   } | null>(null);
   // Task #1724 — pre-move points of the most recent markup body drag,
   // kept so the user can undo the bulk move with Cmd/Ctrl+Z or the
@@ -935,14 +950,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   } = interactions;
 
   useEffect(() => {
-    if (activeTool !== "select" && selectedMarkupId) {
-      setSelectedMarkupId(null);
+    if (activeTool !== "select" && selectedMarkupIds.size > 0) {
+      setSelectedMarkupIds(new Set());
       setMarkupEditDraft(null);
     }
-  }, [activeTool, selectedMarkupId]);
+  }, [activeTool, selectedMarkupIds]);
 
   useEffect(() => {
-    setSelectedMarkupId(null);
+    setSelectedMarkupIds(new Set());
     setMarkupEditDraft(null);
   }, [selectedSheet]);
 
@@ -3818,7 +3833,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   const thickness = (markup.thickness as number) || MARKUP_TOOLBAR_DEFAULT_THICKNESS;
                   const tool = markup.tool as string;
                   const isSelectable = activeTool === "select";
-                  const isSelected = selectedMarkupId === markup.id;
+                  // Task #1736 — `isSelected` highlights every member of
+                  // the multi-selection (not just the size-1 anchor)
+                  // and makes them all draggable. The resize handles
+                  // and edit panel still gate on size === 1.
+                  const isSelected = selectedMarkupIds.has(markup.id);
+                  const isOnlySelected = selectedMarkupId === markup.id;
                   const pts = (markupResizePreview && markupResizePreview.id === markup.id)
                     ? markupResizePreview.points
                     : rawPts;
@@ -3840,6 +3860,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                     const origY = e.target.y();
                     const layer = e.target.getLayer();
                     const hiddenHandles: Array<{ visible: boolean; listening: boolean; node: any }> = [];
+                    const siblings: Array<{ id: string; node: any }> = [];
                     if (layer) {
                       const handles = layer.find(`.markup-handle-${markup.id}`);
                       handles.forEach((node: any) => {
@@ -3852,13 +3873,47 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         node.listening(false);
                       });
                       if (hiddenHandles.length > 0) layer.batchDraw();
+                      // Task #1736 — for a multi-select drag, find the
+                      // other selected markups' Konva groups by name
+                      // and disable hit-testing/draggable on them so
+                      // the gesture stays anchored to `e.target` for
+                      // the entire move. They're translated below in
+                      // onDragMove via `node.position({ x: dx, y: dy })`,
+                      // restored in onDragEnd, then re-rendered with
+                      // their new normalized points by the bulk PATCH.
+                      if (selectedMarkupIds.size > 1) {
+                        for (const id of selectedMarkupIds) {
+                          if (id === markup.id) continue;
+                          const node = layer.findOne(`.markup-drag-member-${id}`);
+                          if (node) {
+                            node.draggable(false);
+                            node.listening(false);
+                            siblings.push({ id, node });
+                          }
+                        }
+                      }
                     }
                     markupBodyDragRef.current = {
                       id: markup.id,
                       origX,
                       origY,
                       hiddenHandles,
+                      siblings,
                     };
+                  };
+                  const onBodyDragMove = (e: any) => {
+                    const drag = markupBodyDragRef.current;
+                    if (!drag || drag.siblings.length === 0) return;
+                    const dx = e.target.x() - drag.origX;
+                    const dy = e.target.y() - drag.origY;
+                    // Imperatively translate every sibling by the same
+                    // pixel delta. No setState / no React reconciliation
+                    // runs for the duration of the drag — that's what
+                    // keeps a 50+ selection at 60fps.
+                    for (const s of drag.siblings) {
+                      s.node.position({ x: dx, y: dy });
+                    }
+                    e.target.getLayer()?.batchDraw();
                   };
                   const onBodyDragEnd = (e: any) => {
                     const drag = markupBodyDragRef.current;
@@ -3876,33 +3931,72 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       h.node.visible(h.visible);
                       h.node.listening(h.listening);
                     }
+                    // Reset every sibling's Konva position before the
+                    // optimistic update lands so no shape "double-shifts"
+                    // when the re-render rewrites its points. Restore
+                    // listening + draggable so the user can immediately
+                    // start a new drag from any member.
+                    for (const s of drag.siblings) {
+                      s.node.position({ x: 0, y: 0 });
+                      s.node.listening(true);
+                      s.node.draggable(true);
+                    }
                     e.target.getLayer()?.batchDraw();
+                    const siblingIds = drag.siblings.map(s => s.id);
                     markupBodyDragRef.current = null;
-                    if (dx !== 0 || dy !== 0) {
-                      const newPts = rawPts.map(p => ({ x: p.x + dx, y: p.y + dy }));
-                      // Task #1724 — capture pre-move points BEFORE the
-                      // forward mutate so the snapshot reflects exactly
-                      // the layout the user dragged away from. Reuses
-                      // the shared `buildMoveSnapshot` helper from the
-                      // plan-side surface (PlanMarkupLayer, Task #1705).
-                      // The query cache shape (`markup.id` + raw `points`)
-                      // matches what `buildMoveSnapshot` expects, so we
-                      // pass the live `markups` array and the single
-                      // dragged id. Snapshot is consumed on undo.
-                      setLastMarkupMoveSnapshot(
-                        buildMoveSnapshot(markups as MarkupShape[], [markup.id]),
-                      );
+                    if (dx === 0 && dy === 0) return;
+                    // Task #1724 + #1736 — capture pre-move points for
+                    // EVERY member of the selection (dragged + siblings)
+                    // BEFORE issuing the forward mutates so a single
+                    // Cmd/Ctrl+Z restores the entire group. Reuses the
+                    // shared `buildMoveSnapshot` helper from PlanMarkupLayer
+                    // (Task #1705); it accepts an array of memberIds and
+                    // the per-markup undo handler (`undoLastMarkupMove`)
+                    // already replays multi-entry snapshots one mutate
+                    // at a time. Snapshot is consumed on undo.
+                    const allIds = [markup.id, ...siblingIds];
+                    setLastMarkupMoveSnapshot(
+                      buildMoveSnapshot(markups as MarkupShape[], allIds),
+                    );
+                    // Task #1736 — fire N parallel PATCHes for every
+                    // selected member. The dragged markup is committed
+                    // first; siblings are looked up in `markups` so we
+                    // translate their persisted points (not the Konva
+                    // group transform, which we just reset). If the
+                    // selection only had one member, `siblingIds` is
+                    // empty and this collapses to the same single PATCH
+                    // the pre-Task #1736 code did.
+                    const newPts = rawPts.map(p => ({ x: p.x + dx, y: p.y + dy }));
+                    updateMarkupMutation.mutate(
+                      { id: markup.id, points: newPts },
+                      {
+                        // Task #1724 — if the forward move never landed
+                        // (server error, permission denied, etc.) the
+                        // toast handler in `updateMarkupMutation` already
+                        // surfaces the failure. Clear the just-captured
+                        // snapshot too so the user doesn't see an Undo
+                        // button for a move that didn't happen — pressing
+                        // it would issue a no-op PATCH against points
+                        // that never changed on the server. Any sibling
+                        // PATCH failing also clears the snapshot, since a
+                        // partial-failure undo would put the group back
+                        // into an inconsistent layout.
+                        onError: () => setLastMarkupMoveSnapshot(null),
+                      },
+                    );
+                    for (const id of siblingIds) {
+                      const m = markups.find((x: any) => x.id === id);
+                      if (!m) continue;
+                      const sPts = (typeof m.points === "string"
+                        ? JSON.parse(m.points)
+                        : m.points) as { x: number; y: number }[];
+                      if (!sPts || sPts.length === 0) continue;
                       updateMarkupMutation.mutate(
-                        { id: markup.id, points: newPts },
                         {
-                          // Task #1724 — if the forward move never landed
-                          // (server error, permission denied, etc.) the
-                          // toast handler in `updateMarkupMutation` already
-                          // surfaces the failure. Clear the just-captured
-                          // snapshot too so the user doesn't see an Undo
-                          // button for a move that didn't happen — pressing
-                          // it would issue a no-op PATCH against points
-                          // that never changed on the server.
+                          id,
+                          points: sPts.map(p => ({ x: p.x + dx, y: p.y + dy })),
+                        },
+                        {
                           onError: () => setLastMarkupMoveSnapshot(null),
                         },
                       );
@@ -3910,8 +4004,15 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   };
                   const groupProps = isDraggable
                     ? {
+                        // Task #1736 — `name` lets a sibling's drag-start
+                        // locate this markup via `layer.findOne('.markup-drag-member-...')`
+                        // and disable hit-testing for the duration of the
+                        // gesture. Always set on selected members so the
+                        // first frame of any group drag finds them.
+                        name: `markup-drag-member-${markup.id}`,
                         draggable: true,
                         onDragStart: onBodyDragStart,
+                        onDragMove: onBodyDragMove,
                         onDragEnd: onBodyDragEnd,
                         onMouseEnter: (e: any) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = "move"; },
                         onMouseLeave: (e: any) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = "default"; },
@@ -3932,11 +4033,40 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       selected={isSelected}
                       onSelect={isSelectable
                         ? () => {
-                            setSelectedMarkupId(markup.id);
-                            setMarkupEditDraft({
+                            // Task #1736 — Shift+click toggles the
+                            // markup in/out of the multi-selection set;
+                            // plain click replaces the set with one id.
+                            // The Konva click handler doesn't surface
+                            // the original mouse event, so we read
+                            // shift state from `window.event` (mirrors
+                            // the plan-side `handleSelectShape`).
+                            const shift =
+                              typeof window !== "undefined" &&
+                              (window.event as MouseEvent | undefined)?.shiftKey === true;
+                            const draft = {
                               color,
                               thickness: snapToPresetThickness(thickness),
                               text: (markup.text as string) || "",
+                            };
+                            setSelectedMarkupIds(prev => {
+                              if (shift) {
+                                const next = new Set(prev);
+                                if (next.has(markup.id)) next.delete(markup.id);
+                                else next.add(markup.id);
+                                // Edit panel stays in sync: opens when
+                                // the new set has exactly one member,
+                                // closes otherwise.
+                                if (next.size === 1) {
+                                  const onlyId = next.values().next().value as string;
+                                  if (onlyId === markup.id) setMarkupEditDraft(draft);
+                                  else setMarkupEditDraft(null);
+                                } else {
+                                  setMarkupEditDraft(null);
+                                }
+                                return next;
+                              }
+                              setMarkupEditDraft(draft);
+                              return new Set([markup.id]);
                             });
                           }
                         : undefined}
@@ -3953,7 +4083,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   // imperatively via Konva (`node.visible(false)`) in
                   // `onBodyDragStart`, which avoids the previous
                   // setState-on-dragStart that re-rendered every markup.
-                  if (isSelected && tool !== "TEXT") {
+                  // Task #1736 — resize handles are intentionally
+                  // hidden for multi-selection. Vertex / endpoint
+                  // resize remains a single-markup operation; multi
+                  // means "translate as a group", which the body drag
+                  // covers.
+                  if (isOnlySelected && tool !== "TEXT") {
                     const handleHalf = 6 / stageScale;
                     const handleStroke = 1.5 / stageScale;
                     const commitResize = (newPts: { x: number; y: number }[]) => {
@@ -4784,7 +4919,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         if (!editing) return null;
         const isText = (editing.tool as string) === "TEXT";
         const isHighlight = (editing.tool as string) === "HIGHLIGHT";
-        const close = () => { setSelectedMarkupId(null); setMarkupEditDraft(null); };
+        const close = () => { setSelectedMarkupIds(new Set()); setMarkupEditDraft(null); };
         const save = async () => {
           const updates: { id: string; color?: string; thickness?: number; text?: string | null; previous?: { color?: string; thickness?: number; text?: string | null } } = { id: editing.id };
           const previous: { color?: string; thickness?: number; text?: string | null } = {};
