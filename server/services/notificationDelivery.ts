@@ -15,6 +15,7 @@ import { buildSwpppMuteUrl } from "../utils/swpppMuteToken";
 import { buildDavisBaconMuteUrl } from "../utils/davisBaconMuteToken";
 import { buildWageDecisionRatesChangedMuteUrl } from "../utils/wageDecisionRatesChangedMuteToken";
 import { buildIntegrationSyncMuteUrl } from "../utils/integrationSyncMuteToken";
+import { buildLogEmailFailuresDigestMuteUrl } from "../utils/logEmailFailuresDigestMuteToken";
 
 type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
 
@@ -799,6 +800,67 @@ export function composeEmailContent(
       body: notification.message,
       actionUrl: `${baseUrl}/admin/transcript-backfill`,
       actionText: "Start a new backfill",
+    };
+  }
+
+  // Task #1715 / Task #1746 — Daily digest of failing project log email
+  // schedules. The job's plain-text body is a header line followed by
+  // one bullet per failing schedule; render it as a simple HTML list
+  // and append a one-click "mute the digest" footer link bound to the
+  // recipient's userId (mirroring the SWPPP overdue / Davis-Bacon
+  // mute footers above). The mute endpoint upserts the per-type prefs
+  // row to disable both email + in-app for
+  // `PROJECT_LOG_EMAIL_FAILURES_DIGEST` and bounces the click back to
+  // the failures dashboard with a confirmation banner.
+  if (
+    type === "PROJECT_LOG_EMAIL_FAILURES_DIGEST" ||
+    notification.relatedEntityType === "PROJECT_LOG_EMAIL_FAILURES_DIGEST"
+  ) {
+    const actionUrl = `${baseUrl}/admin/log-email-failures`;
+    const subject = `${notification.title} — SmartManageAI`;
+    const actionText = "Open Failures Dashboard";
+
+    const lines = notification.message.split("\n");
+    const header = lines[0] ?? notification.message;
+    const breakdown = lines.slice(1).filter((l) => l.trim().length > 0);
+    const listHtml = breakdown
+      .map(
+        (line) =>
+          `<li style="padding: 6px 0; border-bottom: 1px solid #f0f0f0; color: #333;">${escapeHtml(line)}</li>`,
+      )
+      .join("");
+
+    const muteUrl = baseUrl ? buildLogEmailFailuresDigestMuteUrl(baseUrl, notification.userId) : "";
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; max-width: 640px; margin: 0 auto;">
+        <h2 style="color: #b91c1c;">${escapeHtml(notification.title)}</h2>
+        <p style="color: #444; line-height: 1.6;">${escapeHtml(header)}</p>
+        ${
+          listHtml
+            ? `<ul style="list-style: none; padding: 0; margin: 16px 0; background: #fafafa; border: 1px solid #eee; border-radius: 6px; padding: 8px 16px;">${listHtml}</ul>`
+            : ""
+        }
+        <p style="margin-top: 20px;">
+          <a href="${actionUrl}" style="background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;" data-testid="link-failures-digest-dashboard">
+            ${escapeHtml(actionText)}
+          </a>
+        </p>
+        <hr style="margin-top: 30px; border: none; border-top: 1px solid #eee;">
+        <p style="color: #999; font-size: 12px; line-height: 1.6;">
+          You are receiving this daily digest because you are an administrator for your organization.
+          The per-failure ping (sent the moment a schedule first breaks) is independent and is not affected by this link.
+          ${muteUrl ? `<br><a href="${muteUrl}" style="color: #0070f3; text-decoration: underline;" data-testid="link-mute-log-email-failures-digest">Mute this digest (email + in-app)</a>` : ""}
+        </p>
+      </div>
+    `;
+
+    return {
+      subject,
+      body: notification.message,
+      actionUrl,
+      actionText,
+      html,
     };
   }
 

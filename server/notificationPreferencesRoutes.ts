@@ -58,6 +58,7 @@ import { buildDigestCsv } from "./utils/jobMetricAlerts";
 import { verifySwpppMuteToken } from "./utils/swpppMuteToken";
 import { verifyDavisBaconMuteToken } from "./utils/davisBaconMuteToken";
 import { verifyWageDecisionRatesChangedMuteToken } from "./utils/wageDecisionRatesChangedMuteToken";
+import { verifyLogEmailFailuresDigestMuteToken } from "./utils/logEmailFailuresDigestMuteToken";
 import { logInfo } from "./utils/logger";
 
 const router = Router();
@@ -802,6 +803,66 @@ router.get("/api/notifications/mute/wage-decision-rates-changed", async (req, re
     return res.redirect(`/settings/notifications?muted=wage_decision_rates_changed${settingsAnchor}`);
   } catch (error) {
     logError("Failed to mute wage-decision rate change alerts via email link", { error: String(error) });
+    next(error);
+  }
+});
+
+/**
+ * Task #1746 — One-click "mute the daily failures digest" link rendered
+ * in the footer of PROJECT_LOG_EMAIL_FAILURES_DIGEST emails. Mirrors
+ * the SWPPP overdue (Task #1287), Davis-Bacon auto-sync failure (Task
+ * #1361), and Davis-Bacon wage-rate change (Task #1408) mute endpoints
+ * above: signed JWT bound to the recipient's userId so the endpoint
+ * can ONLY mute the recipient's own preferences (no cross-tenant
+ * abuse), upserts both email + in-app to disabled, then redirects back
+ * to the failures dashboard (which already hosts the inline mute card
+ * from Task #1731) with a confirmation banner.
+ */
+router.get("/api/notifications/mute/log-email-failures-digest", async (req, res, next) => {
+  try {
+    const token = typeof req.query.token === "string" ? req.query.token : "";
+    const payload = token ? verifyLogEmailFailuresDigestMuteToken(token) : null;
+
+    if (!payload) {
+      // Invalid / expired tokens land back on the same dashboard so
+      // the admin can use the inline DigestSubscriptionCard instead;
+      // a banner explains why the click didn't take effect.
+      return res.redirect(`/admin/log-email-failures?mute=invalid`);
+    }
+
+    const now = new Date();
+    await db
+      .insert(notificationTypePrefs)
+      .values({
+        userId: payload.userId,
+        notificationType: "PROJECT_LOG_EMAIL_FAILURES_DIGEST",
+        emailEnabled: false,
+        smsEnabled: false,
+        pushEnabled: false,
+        teamsEnabled: false,
+        slackEnabled: false,
+        inAppEnabled: false,
+        updatedAt: now,
+      })
+      .onConflictDoUpdate({
+        target: [notificationTypePrefs.userId, notificationTypePrefs.notificationType],
+        set: {
+          emailEnabled: false,
+          inAppEnabled: false,
+          updatedAt: now,
+        },
+      });
+
+    logInfo("Project log email failures digest muted via email link", {
+      userId: payload.userId,
+      source: "email_one_click",
+    });
+
+    return res.redirect(`/admin/log-email-failures?muted=log_email_failures_digest`);
+  } catch (error) {
+    logError("Failed to mute project log email failures digest via email link", {
+      error: String(error),
+    });
     next(error);
   }
 });

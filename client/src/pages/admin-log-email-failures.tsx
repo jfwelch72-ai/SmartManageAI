@@ -30,6 +30,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -50,12 +51,14 @@ import {
   AlertCircle,
   Bell,
   BellOff,
+  CheckCircle2,
   ExternalLink,
   History,
   Loader2,
   Mail,
   MailWarning,
   Send,
+  X,
 } from "lucide-react";
 import {
   RecentAttemptsBody,
@@ -456,6 +459,20 @@ function FailureStatusBadge({ status, rowKey }: { status: LogEmailAttemptStatus;
   );
 }
 
+// Task #1746 — Confirmation banner shown when the failures digest mute
+// link in the email footer redirects back here. Mirrors the pattern in
+// `NotificationPrefsSection.tsx` for the SWPPP / Davis-Bacon mute links:
+// captured once on mount from `?muted=…` / `?mute=invalid`, then the
+// query string is stripped via `history.replaceState` so a refresh or
+// shared URL doesn't re-show a stale banner. Stored in component state
+// so the banner stays visible after we rewrite the URL, and dismissable
+// inline.
+type DigestMuteBanner =
+  | { kind: "success"; key: string }
+  | { kind: "invalid"; key: string };
+
+const DIGEST_MUTE_FAMILY = "log_email_failures_digest";
+
 export default function AdminLogEmailFailuresPage() {
   const { user: authUser } = useAuth();
   // Task #1731 — Only ADMIN / SUPER_ADMIN actually receive the daily
@@ -472,6 +489,67 @@ export default function AdminLogEmailFailuresPage() {
   });
 
   const failures = useMemo(() => data?.failures ?? [], [data]);
+
+  // Task #1746 — One-shot capture of the `?muted=…` / `?mute=invalid`
+  // query params appended by the failures-digest mute endpoint
+  // (`GET /api/notifications/mute/log-email-failures-digest`). The
+  // params are stripped from the URL on mount so a reload or a shared
+  // link doesn't re-fire the banner; the captured value powers an
+  // inline confirmation/error banner below.
+  const [muteBanner] = useState<DigestMuteBanner | null>(() => {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    const muted = params.get("muted");
+    const mute = params.get("mute");
+    if (muted === DIGEST_MUTE_FAMILY) {
+      return { kind: "success", key: `muted:${muted}` };
+    }
+    if (mute === "invalid") {
+      return { kind: "invalid", key: "mute:invalid" };
+    }
+    return null;
+  });
+  const [dismissedMuteBannerKey, setDismissedMuteBannerKey] = useState<string | null>(null);
+  const showMuteBanner =
+    muteBanner !== null && dismissedMuteBannerKey !== muteBanner.key;
+
+  useEffect(() => {
+    if (!muteBanner) return;
+    if (typeof window === "undefined") return;
+    try {
+      const url = new URL(window.location.href);
+      let changed = false;
+      if (url.searchParams.has("muted")) {
+        url.searchParams.delete("muted");
+        changed = true;
+      }
+      if (url.searchParams.has("mute")) {
+        url.searchParams.delete("mute");
+        changed = true;
+      }
+      if (!changed) return;
+      const newSearch = url.searchParams.toString();
+      const newUrl =
+        url.pathname +
+        (newSearch ? `?${newSearch}` : "") +
+        (url.hash || "");
+      window.history.replaceState(window.history.state, "", newUrl);
+    } catch {
+      // Ignore — the banner is still rendered from in-memory state.
+    }
+  }, [muteBanner]);
+
+  // After a successful one-click mute, the digest subscription card's
+  // cached query is stale (the server just upserted the per-type prefs
+  // row). Invalidate it once on mount so the card's switches reflect
+  // the new "muted" state without a manual refresh.
+  useEffect(() => {
+    if (muteBanner?.kind === "success") {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/notifications/preferences/log-email-failures-digest"],
+      });
+    }
+  }, [muteBanner]);
 
   return (
     <div className="container mx-auto py-8 px-4 max-w-6xl space-y-6">
@@ -496,6 +574,54 @@ export default function AdminLogEmailFailuresPage() {
           {isFetching ? "Refreshing…" : "Refresh"}
         </Button>
       </div>
+
+      {showMuteBanner && muteBanner ? (
+        muteBanner.kind === "success" ? (
+          <Alert
+            data-testid="banner-digest-mute-success"
+            className="relative border-emerald-500/50 text-emerald-900 dark:text-emerald-100 [&>svg]:text-emerald-600 dark:[&>svg]:text-emerald-400"
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            <AlertTitle>Daily failures digest muted</AlertTitle>
+            <AlertDescription>
+              You won't receive this digest by email or in-app anymore. The
+              per-failure ping is unaffected. Use the toggles below to
+              re-enable either channel at any time.
+            </AlertDescription>
+            <button
+              type="button"
+              onClick={() => setDismissedMuteBannerKey(muteBanner.key)}
+              className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Dismiss"
+              data-testid="button-dismiss-digest-mute-banner"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </Alert>
+        ) : (
+          <Alert
+            variant="destructive"
+            data-testid="banner-digest-mute-invalid"
+            className="relative"
+          >
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>That mute link is no longer valid</AlertTitle>
+            <AlertDescription>
+              The link may have expired or already been used. Use the
+              digest subscription toggles below to mute it directly.
+            </AlertDescription>
+            <button
+              type="button"
+              onClick={() => setDismissedMuteBannerKey(muteBanner.key)}
+              className="absolute right-2 top-2 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              aria-label="Dismiss"
+              data-testid="button-dismiss-digest-mute-banner"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </Alert>
+        )
+      ) : null}
 
       {canManageDigestSubscription && <DigestSubscriptionCard />}
 
