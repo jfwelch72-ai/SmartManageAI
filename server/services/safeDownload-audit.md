@@ -23,6 +23,8 @@ JSON API. Those call sites are intentionally **not** migrated.
 | `server/aiOnboardingRoutes.ts` | `extractThemeFromWebsite` | User-supplied `websiteUrl` was being fetched with hand-rolled SSRF regexes. Now uses `safeDownload({ allowedContentTypes: ['text/html', 'application/xhtml+xml'], maxBytes: 1MB, timeoutMs: 10s })`. Adds DNS-resolution check, redirect re-validation, Authorization-header stripping, and streaming size cap. |
 | `server/integrations/providers/stackct/sync.ts` | ~419 | Fetches third-party `doc.fileUrl` (cloud storage). Existing host allowlist (`*.googleapis`, `*.amazonaws`, `*.blob.core.windows.net`) preserved as a first gate; `safeDownload({ allowedContentTypes: null })` now layered on top so redirects can't escape to internal hosts and downloads can't exceed the 100 MB cap. |
 | `server/social/publishService.ts` | YouTube upload (~365) | User-supplied `mediaUrl` is downloaded then forwarded to YouTube. Now goes through `safeDownload({ allowedContentTypes: null, maxBytes: 500 MB, timeoutMs: 60s })`. |
+| `server/services/callTranscriptionService.ts` | `fetchRecordingAudio` (~115) | Twilio recording fetched for Whisper transcription. The `api.twilio.com` host allowlist remains the first gate; `safeDownload({ allowedContentTypes: ['audio/mpeg', 'audio/mp3', 'audio/wav', 'audio/x-wav', 'audio/wave', 'audio/ogg'], maxBytes: 50 MB, timeoutMs: 60s })` now adds DNS-resolution checks, redirect re-validation with Authorization stripping, and a streaming size cap. (Task #1542) |
+| `server/crmCallsRoutes.ts` | `downloadRecordingToStorage` (~141) | Twilio recording cached to object storage. Same Twilio host allowlist preserved as a first gate; `safeDownload({ allowedContentTypes: [...audio types...], maxBytes: 100 MB, timeoutMs: 60s })` layered on top. (Task #1542) |
 
 ## Already protected (previous tasks)
 
@@ -86,10 +88,13 @@ JSON API. Those call sites are intentionally **not** migrated.
   (`127.0.0.1:1106`).
 
 ### Already gated by their own SSRF defenses
-- `server/services/callTranscriptionService.ts:115` — Twilio host
-  allowlist + Basic auth. Could be migrated for parity in a follow-up
-  but already enforces a tighter host policy than `safeDownload` would.
-- `server/crmCallsRoutes.ts:141,892` — same Twilio allowlist.
+- `server/crmCallsRoutes.ts:~892` — Twilio recording streaming proxy
+  (`GET /api/crm/calls/:id/recording`). Preserves the `api.twilio.com`
+  allowlist and forwards the client's `Range` header so the audio
+  player can seek. `safeDownload()` buffers the full body in memory
+  before returning, which would defeat both range-request streaming
+  and the multi-MB memory budget for long calls. Left as a streaming
+  passthrough; the host allowlist + HTTPS check remain the SSRF gate.
 
 ### Tests
 - `server/__tests__/email-provider-pushback.test.ts` — fixtures only.

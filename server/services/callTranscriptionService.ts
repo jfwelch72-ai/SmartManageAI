@@ -13,6 +13,7 @@ import { db } from "../db";
 import { crmCallRecordings } from "@shared/schema";
 import { openai, AI_MODEL_GPT5 } from "../ai/openaiClient";
 import { logError, logInfo, logWarn } from "../utils/logger";
+import { safeDownload, SafeDownloadError } from "./safeDownload";
 
 const TWILIO_ACCOUNT_SID = process.env.TWILIO_ACCOUNT_SID || "";
 const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
@@ -20,6 +21,21 @@ const TWILIO_AUTH_TOKEN = process.env.TWILIO_AUTH_TOKEN || "";
 const WHISPER_MODEL = "whisper-1";
 const PROVIDER_NAME = "openai-whisper-1";
 const ALLOWED_HOSTS = new Set(["api.twilio.com"]);
+// Twilio recordings come back as MPEG by default; WAV when ?RequestedChannels
+// or .wav is appended. Accept the common audio variants so safeDownload's
+// content-type allowlist doesn't false-reject a legitimate recording.
+const ALLOWED_RECORDING_CONTENT_TYPES = [
+  "audio/mpeg",
+  "audio/mp3",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/wave",
+  "audio/ogg",
+];
+// Hard cap for a single recording; very long calls would exceed this but
+// Twilio segments long recordings, and Whisper has its own ~25 MB upload
+// limit anyway.
+const MAX_RECORDING_BYTES = 50 * 1024 * 1024;
 
 // Task #947 — only summarize transcripts that are long enough to benefit from
 // a skim-friendly bullet summary. Short transcripts (e.g. voicemail-length
@@ -112,15 +128,26 @@ async function fetchRecordingAudio(rawUrl: string): Promise<{ buffer: Buffer; co
     headers.Authorization = `Basic ${basic}`;
   }
 
-  const res = await fetch(targetUrl, { headers });
-  if (!res.ok) {
-    logWarn("callTranscription: fetch failed", { status: res.status });
+  // Task #1542 — layer safeDownload on top of the Twilio host allowlist so
+  // we additionally get DNS-resolution checks, redirect re-validation with
+  // Authorization stripping, and a streaming size cap.
+  try {
+    const result = await safeDownload({
+      url: targetUrl,
+      headers,
+      maxBytes: MAX_RECORDING_BYTES,
+      timeoutMs: 60_000,
+      allowedContentTypes: ALLOWED_RECORDING_CONTENT_TYPES,
+    });
+    return { buffer: result.buffer, contentType: result.contentType };
+  } catch (e) {
+    if (e instanceof SafeDownloadError) {
+      logWarn("callTranscription: safeDownload failed", { message: e.message, status: e.status });
+    } else {
+      logWarn("callTranscription: fetch failed", { message: e instanceof Error ? e.message : String(e) });
+    }
     return null;
   }
-  const arrayBuf = await res.arrayBuffer();
-  const buffer = Buffer.from(arrayBuf);
-  const contentType = res.headers.get("content-type") || "audio/mpeg";
-  return { buffer, contentType };
 }
 
 export interface TranscribeResult {

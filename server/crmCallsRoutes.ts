@@ -90,6 +90,7 @@ import { logUpdate } from "./auditLogger";
 import { getOrgIdForFilter, isSuperAdmin } from "./orgFilter";
 import { isFeatureEnabled } from "./services/featureFlagService";
 import { logError, logInfo, logWarn } from "./utils/logger";
+import { safeDownload, SafeDownloadError } from "./services/safeDownload";
 import { eventBus } from "./events";
 import {
   queueCallTranscription,
@@ -134,19 +135,59 @@ async function downloadRecordingToStorage(
       return null;
     }
 
-    const url = twilioRecordingUrl.endsWith(".mp3")
-      ? twilioRecordingUrl
-      : `${twilioRecordingUrl}.mp3`;
+    // SSRF guard: only cache recordings whose URL points at a known
+    // recording-host. Twilio is the only provider today; extend if more
+    // are integrated later.
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(twilioRecordingUrl);
+    } catch {
+      logWarn("crmCalls: malformed recording URL for cache", { callId });
+      return null;
+    }
+    if (
+      parsedUrl.protocol !== "https:" ||
+      parsedUrl.hostname.toLowerCase() !== "api.twilio.com"
+    ) {
+      logWarn("crmCalls: recording host not allowed for cache", {
+        callId,
+        host: parsedUrl.hostname,
+      });
+      return null;
+    }
+    const url = parsedUrl.pathname.endsWith(".mp3")
+      ? parsedUrl.toString()
+      : `${parsedUrl.toString()}.mp3`;
     const basic = Buffer.from(`${TWILIO_ACCOUNT_SID}:${TWILIO_AUTH_TOKEN}`).toString("base64");
-    const upstream = await fetch(url, { headers: { Authorization: `Basic ${basic}` } });
-    if (!upstream.ok) {
+    // Task #1542 — use safeDownload so DNS-resolution checks, redirect
+    // re-validation with Authorization stripping, and the streaming size
+    // cap apply on top of the host allowlist.
+    let buf: Buffer;
+    try {
+      const result = await safeDownload({
+        url,
+        headers: { Authorization: `Basic ${basic}` },
+        maxBytes: 100 * 1024 * 1024,
+        timeoutMs: 60_000,
+        allowedContentTypes: [
+          "audio/mpeg",
+          "audio/mp3",
+          "audio/wav",
+          "audio/x-wav",
+          "audio/wave",
+          "audio/ogg",
+        ],
+      });
+      buf = result.buffer;
+    } catch (e) {
+      const status = e instanceof SafeDownloadError ? e.status : undefined;
       logWarn("crmCalls: failed to fetch recording from Twilio for cache", {
-        status: upstream.status,
+        status,
+        message: e instanceof Error ? e.message : String(e),
         callId,
       });
       return null;
     }
-    const buf = Buffer.from(await upstream.arrayBuffer());
 
     const storageKey = `crm/call-recordings/${callId}/${recordingSid}.mp3`;
     const fullPath = `${privateDir}/${storageKey}`;
