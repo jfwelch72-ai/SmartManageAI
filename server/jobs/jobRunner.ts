@@ -23,6 +23,7 @@ import { emailAccounts, emailCampaigns, emailCampaignContacts } from "@shared/sc
 import { syncImapAccount, syncOutlookAccount, syncGmailAccount, drainAccountProviderPushes } from "../emailRoutes";
 import { processArchivedCertifiedPayrollPurge } from "./certifiedPayrollPurge";
 import { pruneProjectLogEmailScheduleAttempts } from "./projectLogEmailScheduleAttemptPrune";
+import { purgePlanDocumentMarkupTrash } from "./planDocumentMarkupSoftDeletePurge";
 import { processFailedWageDecisionRetries, processStaleWageDecisions } from "../integrations/providers/dol_davis_bacon/sync";
 import { processMissingWageDecisionReminders } from "../services/davisBaconAdminNotifications";
 import { processIntegrationSyncRetries, recordSyncFailure, recordSyncSuccess } from "../integrations/syncRetry";
@@ -83,6 +84,11 @@ let suppressionResetPruneTask: ReturnType<typeof cron.schedule> | null = null;
 // `project_log_email_schedules`. Runs in batches so it can't lock the
 // table on large tenants. See `projectLogEmailScheduleAttemptPrune.ts`.
 let projectLogEmailAttemptPruneTask: ReturnType<typeof cron.schedule> | null = null;
+// Task #1846: nightly hard-delete sweep for soft-deleted
+// `plan_document_markups` rows whose `deleted_at` is older than the
+// configured retention window (default 30 days). Keeps the table and
+// indexes bounded while preserving the one-click undo window.
+let planDocumentMarkupTrashPurgeTask: ReturnType<typeof cron.schedule> | null = null;
 // Task #1715: daily digest to org ADMIN/SUPER_ADMIN users summarising
 // every schedule whose latest attempt was FAILURE / NO_RECIPIENTS so
 // admins get a proactive nudge instead of having to remember to open
@@ -615,6 +621,30 @@ export function startJobRunner() {
     }
   });
 
+  // Task #1846: nightly hard-delete sweep for soft-deleted
+  // `plan_document_markups` rows whose `deleted_at` is older than the
+  // configured retention window (default 30 days). Runs at 04:15 UTC,
+  // just after the project-log attempt-history prune so the two
+  // batched table sweeps don't overlap. Batched inside the helper so
+  // a large tenant can't hold long row-level locks.
+  planDocumentMarkupTrashPurgeTask = cron.schedule("15 4 * * *", async () => {
+    try {
+      const result = await purgePlanDocumentMarkupTrash();
+      if (result.deleted > 0 || result.cappedAtMaxBatches) {
+        logInfo("Plan document markup trash purge sweep", {
+          deleted: result.deleted,
+          batches: result.batches,
+          cappedAtMaxBatches: result.cappedAtMaxBatches,
+          durationMs: result.durationMs,
+        });
+      }
+      recordJobOutcome("plan_document_markup_trash_purge", true);
+    } catch (err) {
+      recordJobOutcome("plan_document_markup_trash_purge", false);
+      logError("Plan document markup trash purge sweep failed", { error: String(err) });
+    }
+  });
+
   // Task #1344: daily 08:00 UTC fan-out reminder to org admins about
   // projects whose Davis-Bacon wage decision has been missing for >24h.
   // The handler itself enforces a 1-per-project-per-week throttle so a
@@ -800,6 +830,10 @@ export function stopJobRunner() {
     projectLogEmailAttemptPruneTask.stop();
     projectLogEmailAttemptPruneTask = null;
   }
+  if (planDocumentMarkupTrashPurgeTask) {
+    planDocumentMarkupTrashPurgeTask.stop();
+    planDocumentMarkupTrashPurgeTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -876,6 +910,11 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   // PROJECT_LOG_EMAIL_ATTEMPT_RETENTION_DAYS. Batched inside the
   // helper so a large tenant can't hold long row-level locks.
   project_log_email_attempt_prune: { fn: async () => { await pruneProjectLogEmailScheduleAttempts(); }, description: "Delete project_log_email_schedule_attempts rows older than PROJECT_LOG_EMAIL_ATTEMPT_RETENTION_DAYS (default 90 days), in batches", schedule: "0 4 * * *" },
+  // Task #1846: bound the soft-deleted slice of plan_document_markups.
+  // Default 30 days; configurable via PLAN_DOCUMENT_MARKUP_TRASH_RETENTION_DAYS.
+  // Batched inside the helper so a large tenant can't hold long row-level
+  // locks on the markup table.
+  plan_document_markup_trash_purge: { fn: async () => { await purgePlanDocumentMarkupTrash(); }, description: "Hard-delete plan_document_markups rows whose deleted_at is older than PLAN_DOCUMENT_MARKUP_TRASH_RETENTION_DAYS (default 30 days), in batches", schedule: "15 4 * * *" },
 };
 
 async function processOutbox() {
