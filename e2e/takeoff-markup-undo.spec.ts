@@ -7,17 +7,29 @@
  * `<PlanMarkupToolbar />` (`PlanMarkupToolbar.undo.test.tsx`), but nothing
  * proves end-to-end that the takeoff workspace's body-drag pipeline
  * (TakeoffWorkspace.onBodyDragEnd → setLastMarkupMoveSnapshot →
- * undoLastMarkupMove) actually round-trips through the popover toolbar
- * prop forwarding and the global Cmd/Ctrl+Z handler.
+ * undoLastMarkupMove) actually round-trips through the global Cmd/Ctrl+Z
+ * handler.
  *
- * Two scenarios:
- *   1. Drag a takeoff markup, hit Ctrl+Z, assert the markup snaps back.
- *   2. Drag a takeoff markup, open the markup popover, click the in-toolbar
- *      Undo button, assert the markup snaps back.
+ * Scenario:
+ *   - Drag a takeoff markup, hit Ctrl+Z, assert the markup snaps back.
+ *
+ * Note (Task #1822): The original spec also covered an in-popover Undo
+ * button click. Task #1742 routed markup body moves through the unified
+ * `useTakeoffHistory` stack and *removed* the `onUndoLastMove` prop the
+ * takeoff workspace used to forward to its embedded `<PlanMarkupToolbar>`;
+ * the popover Undo button (`button-markup-undo-move`) is therefore no
+ * longer rendered inside the takeoff workspace, so that scenario was
+ * deleted. The equivalent sidebar Undo button click is covered by
+ * `takeoff-markup-history-wiring.spec.ts` (Task #1761).
  *
  * Markups are seeded via the API so the test is deterministic and does not
  * depend on the canvas drawing flow already covered by
  * `takeoff-markup-drawing.spec.ts`.
+ *
+ * Cross-engine coverage (Task #1822): the Playwright config declares
+ * `chromium`, `firefox`, and `webkit` projects and the CI workflow runs
+ * `npm run test:e2e` (which fans out across all three) on Ubuntu where the
+ * required system libraries are present.
  */
 import { test, expect, type Page } from "@playwright/test";
 import { installCsrf } from "./helpers/csrf";
@@ -357,50 +369,11 @@ test.describe("Takeoff markup body-drag undo - Task #1741", () => {
     );
   });
 
-  test("Popover Undo button restores the markup after a body drag", async ({
-    page,
-    browserName,
-  }) => {
-    test.setTimeout(60_000);
-    await devLogin(page, "ADMIN");
-    const { sheetId, markup, initialPoints, centroid } = await seedWorkspace(
-      page,
-      Date.now() + 1,
-    );
-
-    await selectMarkup(page, centroid);
-
-    const dragEnd = {
-      x: centroid.x + DRAG_DELTA.dx,
-      y: centroid.y + DRAG_DELTA.dy,
-    };
-    await dragOnCanvas(page, centroid, dragEnd, browserName);
-    await waitForPointsToChange(page, sheetId, markup.id, initialPoints);
-
-    // Open the markup popover. Its embedded `<PlanMarkupToolbar>`
-    // renders the Undo button via the `onMarkupUndoLastMove` /
-    // `canMarkupUndoLastMove` props that TakeoffToolbar forwards.
-    await page.getByTestId("button-markup-group").click();
-    const undoBtn = page.getByTestId("button-markup-undo-move");
-    await undoBtn.waitFor({ state: "visible", timeout: 5_000 });
-    await expect(undoBtn).toBeEnabled();
-    // The popover's tool-row buttons are wrapped in shadcn `<Tooltip>`s
-    // that pop a hovering "Arrow" / "Rectangle" / etc. tip above the
-    // toolbar as soon as the popover opens (Radix focuses the first
-    // focusable child, which fires Tooltip's focus-open behavior). That
-    // tip overlays the Undo button below it and Playwright's pointer-event
-    // intercept check then refuses to click. Dispatching the click
-    // directly on the resolved button bypasses the pointer overlay while
-    // still exercising the React `onClick` handler that calls
-    // `onMarkupUndoLastMove` — exactly what we're trying to verify.
-    await undoBtn.dispatchEvent("click");
-
-    await waitForPointsToMatch(
-      page,
-      sheetId,
-      markup.id,
-      initialPoints,
-      "expected popover Undo to restore the markup's original points",
-    );
-  });
+  // Note (Task #1822): the original "Popover Undo button restores the
+  // markup after a body drag" scenario was removed because Task #1742
+  // dropped the `onUndoLastMove` prop the takeoff workspace used to
+  // forward to its embedded `<PlanMarkupToolbar>` — `button-markup-undo-move`
+  // no longer renders inside the takeoff popover. The sidebar Undo button
+  // click that replaced it is covered by
+  // `takeoff-markup-history-wiring.spec.ts`.
 });
