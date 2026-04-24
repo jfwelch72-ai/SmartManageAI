@@ -8,6 +8,7 @@ import { sanitizeShortText, sanitizeText } from "./sanitization";
 import { verifyOrgAccess, requireOrgOwnership } from "./orgFilter";
 import { verifySheetAccess, safeParsePoints } from "./takeoffHelpers";
 import { logError } from "./utils/logger";
+import { recordJobMetrics } from "./utils/jobMetrics";
 
 const router = Router();
 
@@ -575,6 +576,8 @@ router.post("/api/takeoff/markups", requireAuth, requireRole("ADMIN", "MANAGER",
 // Route MUST be registered before `/api/takeoff/markups/:markupId`
 // or Express will route "bulk" into `:markupId` and 404.
 router.patch("/api/takeoff/markups/bulk", requireAuth, async (req: AuthRequest, res, next) => {
+  const startedAt = Date.now();
+  let batchCount = 0;
   try {
     const { takeoffMarkups } = await import("@shared/schema");
     const { z } = await import("zod");
@@ -609,6 +612,7 @@ router.patch("/api/takeoff/markups/bulk", requireAuth, async (req: AuthRequest, 
     });
 
     const validated = bulkSchema.parse(req.body);
+    batchCount = validated.updates.length;
     const ids = validated.updates.map((u) => u.id);
 
     const rows = await db
@@ -664,6 +668,11 @@ router.patch("/api/takeoff/markups/bulk", requireAuth, async (req: AuthRequest, 
       return out;
     });
 
+    recordJobMetrics("takeoff_markups_bulk_move", {
+      ok: 1,
+      count: batchCount,
+      ms: Date.now() - startedAt,
+    });
     res.json(
       updated.map((r) => ({
         ...r,
@@ -671,6 +680,11 @@ router.patch("/api/takeoff/markups/bulk", requireAuth, async (req: AuthRequest, 
       })),
     );
   } catch (error: any) {
+    recordJobMetrics("takeoff_markups_bulk_move", {
+      error: 1,
+      count: batchCount,
+      ms: Date.now() - startedAt,
+    });
     logError("Error bulk-updating markups:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error?.name === "ZodError") {
       res.status(400).json({ error: "Invalid bulk patch", details: error.errors });
