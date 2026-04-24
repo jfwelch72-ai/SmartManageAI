@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, Fragment } from "react";
-import { Stage, Layer, Image as KonvaImage, Line, Circle, Text, Arrow, Rect, Group, Path } from "react-konva";
+import { Stage, Layer, Image as KonvaImage, Line, Circle, Text, Rect, Group } from "react-konva";
+import { MarkupShapeView, type MarkupShape } from "@/components/markups/MarkupRenderer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -371,47 +372,6 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       y: (pos.y - stagePosition.y) / stageScale,
     };
     return inverseRotate(raw);
-  };
-
-  const buildCloudPath = (x1: number, y1: number, x2: number, y2: number, bumpSize: number): string => {
-    const left = Math.min(x1, x2);
-    const right = Math.max(x1, x2);
-    const top = Math.min(y1, y2);
-    const bottom = Math.max(y1, y2);
-    const w = right - left;
-    const h = bottom - top;
-    if (w < 4 || h < 4) {
-      return `M ${left} ${top} L ${right} ${top} L ${right} ${bottom} L ${left} ${bottom} Z`;
-    }
-    const bx = Math.max(3, Math.round(w / bumpSize));
-    const by = Math.max(3, Math.round(h / bumpSize));
-    const sx = w / bx;
-    const sy = h / by;
-    const px = Math.max(4, sx * 0.45);
-    const py = Math.max(4, sy * 0.45);
-    let d = `M ${left} ${top}`;
-    for (let i = 0; i < bx; i++) {
-      const ex = left + (i + 1) * sx;
-      const cx = left + i * sx + sx / 2;
-      d += ` Q ${cx} ${top - py}, ${ex} ${top}`;
-    }
-    for (let i = 0; i < by; i++) {
-      const ey = top + (i + 1) * sy;
-      const cy = top + i * sy + sy / 2;
-      d += ` Q ${right + px} ${cy}, ${right} ${ey}`;
-    }
-    for (let i = 0; i < bx; i++) {
-      const ex = right - (i + 1) * sx;
-      const cx = right - i * sx - sx / 2;
-      d += ` Q ${cx} ${bottom + py}, ${ex} ${bottom}`;
-    }
-    for (let i = 0; i < by; i++) {
-      const ey = bottom - (i + 1) * sy;
-      const cy = bottom - i * sy - sy / 2;
-      d += ` Q ${left - px} ${cy}, ${left} ${ey}`;
-    }
-    d += " Z";
-    return d;
   };
 
   const toolToMarkupType = (tool: string): string => {
@@ -3711,18 +3671,6 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   const pts = (markupResizePreview && markupResizePreview.id === markup.id)
                     ? markupResizePreview.points
                     : rawPts;
-                  const onMarkupClick = (e: any) => {
-                    if (!isSelectable) return;
-                    e.cancelBubble = true;
-                    setSelectedMarkupId(markup.id);
-                    setMarkupEditDraft({
-                      color,
-                      thickness,
-                      text: (markup.text as string) || "",
-                    });
-                  };
-                  const selectedStrokeBoost = isSelected ? Math.max(1, 2 / stageScale) : 0;
-                  const selectionStroke = isSelected ? "#3b82f6" : undefined;
                   const isDraggable = isSelected;
                   const onBodyDragStart = (e: any) => {
                     e.cancelBubble = true;
@@ -3742,116 +3690,44 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       updateMarkupMutation.mutate({ id: markup.id, points: newPts });
                     }
                   };
-                  const bodyHandlers = isDraggable ? {
-                    draggable: true,
-                    onDragStart: onBodyDragStart,
-                    onDragEnd: onBodyDragEnd,
-                    onMouseEnter: (e: any) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = "move"; },
-                    onMouseLeave: (e: any) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = "default"; },
-                  } : {};
-                  let shape: any = null;
-                  if (tool === "ARROW" && pts.length >= 2) {
-                    shape = (
-                      <Arrow
-                        points={[pts[0].x, pts[0].y, pts[pts.length - 1].x, pts[pts.length - 1].y]}
-                        stroke={selectionStroke || color}
-                        strokeWidth={thickness + selectedStrokeBoost}
-                        fill={color}
-                        pointerLength={12}
-                        pointerWidth={8}
-                        listening={isSelectable}
-                        onClick={onMarkupClick}
-                        onTap={onMarkupClick}
-                        {...bodyHandlers}
-                      />
-                    );
-                  } else if (tool === "TEXT" && pts.length >= 1) {
-                    shape = (
-                      <Text
-                        x={pts[0].x}
-                        y={pts[0].y}
-                        text={(markup.text as string) || ""}
-                        fontSize={16 / stageScale}
-                        fill={color}
-                        stroke={selectionStroke}
-                        strokeWidth={isSelected ? 0.5 / stageScale : 0}
-                        listening={isSelectable}
-                        onClick={onMarkupClick}
-                        onTap={onMarkupClick}
-                        {...bodyHandlers}
-                      />
-                    );
-                  } else if (tool === "RECTANGLE" && pts.length >= 2) {
-                    const x = Math.min(pts[0].x, pts[1].x);
-                    const y = Math.min(pts[0].y, pts[1].y);
-                    const w = Math.abs(pts[1].x - pts[0].x);
-                    const h = Math.abs(pts[1].y - pts[0].y);
-                    shape = (
-                      <Rect
-                        x={x} y={y} width={w} height={h}
-                        stroke={selectionStroke || color}
-                        strokeWidth={thickness + selectedStrokeBoost}
-                        fill="transparent"
-                        listening={isSelectable}
-                        onClick={onMarkupClick}
-                        onTap={onMarkupClick}
-                        {...bodyHandlers}
-                      />
-                    );
-                  } else if (tool === "HIGHLIGHT" && pts.length >= 2) {
-                    const x = Math.min(pts[0].x, pts[1].x);
-                    const y = Math.min(pts[0].y, pts[1].y);
-                    const w = Math.abs(pts[1].x - pts[0].x);
-                    const h = Math.abs(pts[1].y - pts[0].y);
-                    shape = (
-                      <Rect
-                        x={x} y={y} width={w} height={h}
-                        fill={color}
-                        opacity={0.3}
-                        stroke={selectionStroke || color}
-                        strokeWidth={(selectionStroke ? 0 : thickness) + selectedStrokeBoost}
-                        listening={isSelectable}
-                        onClick={onMarkupClick}
-                        onTap={onMarkupClick}
-                        {...bodyHandlers}
-                      />
-                    );
-                  } else if (tool === "CLOUD" && pts.length >= 2) {
-                    const a = pts[0];
-                    const b = pts[pts.length - 1];
-                    const bump = Math.max(12, Math.min(32, Math.min(Math.abs(b.x - a.x), Math.abs(b.y - a.y)) / 4)) / stageScale;
-                    const d = buildCloudPath(a.x, a.y, b.x, b.y, bump);
-                    shape = (
-                      <Path
-                        data={d}
-                        stroke={selectionStroke || color}
-                        strokeWidth={thickness + selectedStrokeBoost}
-                        fill="transparent"
-                        lineCap="round"
-                        lineJoin="round"
-                        listening={isSelectable}
-                        onClick={onMarkupClick}
-                        onTap={onMarkupClick}
-                        {...bodyHandlers}
-                      />
-                    );
-                  } else if (tool === "FREEHAND" && pts.length >= 2) {
-                    shape = (
-                      <Line
-                        points={pts.flatMap(p => [p.x, p.y])}
-                        stroke={selectionStroke || color}
-                        strokeWidth={thickness + selectedStrokeBoost}
-                        tension={0}
-                        lineCap="round"
-                        lineJoin="round"
-                        listening={isSelectable}
-                        onClick={onMarkupClick}
-                        onTap={onMarkupClick}
-                        {...bodyHandlers}
-                      />
-                    );
-                  }
-                  if (!shape) return null;
+                  const groupProps = isDraggable
+                    ? {
+                        draggable: true,
+                        onDragStart: onBodyDragStart,
+                        onDragEnd: onBodyDragEnd,
+                        onMouseEnter: (e: any) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = "move"; },
+                        onMouseLeave: (e: any) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = "default"; },
+                      }
+                    : undefined;
+                  const sharedShape: MarkupShape = {
+                    id: markup.id,
+                    tool,
+                    points: rawPts,
+                    color,
+                    thickness,
+                    text: (markup.text as string) || "",
+                  };
+                  const shape = (
+                    <MarkupShapeView
+                      shape={sharedShape}
+                      pts={pts}
+                      selected={isSelected}
+                      onSelect={isSelectable
+                        ? () => {
+                            setSelectedMarkupId(markup.id);
+                            setMarkupEditDraft({
+                              color,
+                              thickness,
+                              text: (markup.text as string) || "",
+                            });
+                          }
+                        : undefined}
+                      readOnly={!isSelectable}
+                      listening={isSelectable}
+                      pixelScale={1 / stageScale}
+                      groupProps={groupProps}
+                    />
+                  );
 
                   const handles: any[] = [];
                   if (isSelected && markupBodyDragId !== markup.id && tool !== "TEXT") {
@@ -4101,88 +3977,25 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   </Group>
                 ))}
 
-                {markupDrawing && markupDrawPoints.length >= 2 && (() => {
-                  const pts = markupDrawPoints;
-                  if (activeTool === "markup_arrow") {
-                    return (
-                      <Arrow
-                        key="markup-preview"
-                        points={[pts[0].x, pts[0].y, pts[pts.length - 1].x, pts[pts.length - 1].y]}
-                        stroke={markupColor}
-                        strokeWidth={markupThickness}
-                        fill={markupColor}
-                        pointerLength={12}
-                        pointerWidth={8}
-                        opacity={0.7}
-                        listening={false}
-                      />
-                    );
-                  }
-                  if (activeTool === "markup_rectangle") {
-                    const x = Math.min(pts[0].x, pts[1].x);
-                    const y = Math.min(pts[0].y, pts[1].y);
-                    const w = Math.abs(pts[1].x - pts[0].x);
-                    const h = Math.abs(pts[1].y - pts[0].y);
-                    return (
-                      <Rect
-                        key="markup-preview"
-                        x={x} y={y} width={w} height={h}
-                        stroke={markupColor}
-                        strokeWidth={markupThickness}
-                        fill="transparent"
-                        opacity={0.7}
-                        listening={false}
-                      />
-                    );
-                  }
-                  if (activeTool === "markup_highlight") {
-                    const x = Math.min(pts[0].x, pts[1].x);
-                    const y = Math.min(pts[0].y, pts[1].y);
-                    const w = Math.abs(pts[1].x - pts[0].x);
-                    const h = Math.abs(pts[1].y - pts[0].y);
-                    return (
-                      <Rect
-                        key="markup-preview"
-                        x={x} y={y} width={w} height={h}
-                        fill={markupColor}
-                        opacity={0.2}
-                        listening={false}
-                      />
-                    );
-                  }
-                  if (activeTool === "markup_cloud") {
-                    const a = pts[0];
-                    const b = pts[pts.length - 1];
-                    const bump = Math.max(12, Math.min(32, Math.min(Math.abs(b.x - a.x), Math.abs(b.y - a.y)) / 4)) / stageScale;
-                    const d = buildCloudPath(a.x, a.y, b.x, b.y, bump);
-                    return (
-                      <Path
-                        key="markup-preview"
-                        data={d}
-                        stroke={markupColor}
-                        strokeWidth={markupThickness}
-                        fill="transparent"
-                        lineCap="round"
-                        lineJoin="round"
-                        opacity={0.7}
-                        listening={false}
-                      />
-                    );
-                  }
-                  return (
-                    <Line
-                      key="markup-preview"
-                      points={pts.flatMap(p => [p.x, p.y])}
-                      stroke={markupColor}
-                      strokeWidth={markupThickness}
-                      tension={0}
-                      lineCap="round"
-                      lineJoin="round"
-                      opacity={0.7}
-                      listening={false}
-                    />
-                  );
-                })()}
+                {markupDrawing && markupDrawPoints.length >= 2 && isMarkupTool(activeTool) && (
+                  <MarkupShapeView
+                    key="markup-preview"
+                    shape={{
+                      id: "markup-preview",
+                      tool: toolToMarkupType(activeTool),
+                      points: markupDrawPoints,
+                      color: markupColor,
+                      thickness: markupThickness,
+                      text: "",
+                    }}
+                    pts={markupDrawPoints}
+                    selected={false}
+                    readOnly
+                    listening={false}
+                    pixelScale={1 / stageScale}
+                    groupProps={{ opacity: 0.7 }}
+                  />
+                )}
                 </Group>
               </Layer>
             </Stage>

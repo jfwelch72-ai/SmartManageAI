@@ -1,13 +1,18 @@
 /**
  * Task #1609 — react-konva renderer for plan_document_markups.
  *
- * Pure presentational layer. Reused by `<PlanMarkupLayer />` (interactive)
+ * Pure presentational layer. Reused by `<PlanMarkupLayer />` (interactive),
+ * the bid-side `<TakeoffWorkspace />` (rendered inside the takeoff Stage),
  * and any future read-only viewer. Coordinates in `points` are normalized
- * 0-1 and scaled to the supplied stage dimensions.
+ * 0-1 and scaled to the supplied stage dimensions when used through
+ * `<MarkupRenderer />`. When `<MarkupShapeView />` is consumed directly,
+ * callers pass already-denormalized `pts` in their own coordinate space
+ * (e.g. raw PDF pixels for the takeoff workspace).
  */
 import { useMemo } from "react";
 import { Stage, Layer, Arrow, Rect, Path, Line, Text, Group, Circle } from "react-konva";
 import type { KonvaEventObject } from "konva/lib/Node";
+import type Konva from "konva";
 
 // "SELECT" is a non-drawing mode that allows clicking existing markups
 // to select/delete them without engaging a drawing tool. Drawing logic
@@ -43,10 +48,15 @@ export interface MarkupRendererProps {
   onPointerUp?: (point: { x: number; y: number }, evt: KonvaEventObject<PointerEvent>) => void;
 }
 
-/** Mirror of TakeoffWorkspace.buildCloudPath — kept inline so the
- *  PlansTab renderer doesn't have a transitive import on the 5000-line
- *  takeoff workspace file. */
-function buildCloudPath(x1: number, y1: number, x2: number, y2: number, bumpSize: number): string {
+/**
+ * Builds an SVG path describing a "revision cloud" rectangle between the
+ * two diagonal corners (x1, y1) and (x2, y2). `bumpSize` controls the
+ * approximate world-coordinate spacing between bumps.
+ *
+ * Exported so the takeoff workspace and the print/PDF canvas-2D renderer
+ * stay byte-for-byte identical with what `<MarkupShapeView />` paints.
+ */
+export function buildCloudPath(x1: number, y1: number, x2: number, y2: number, bumpSize: number): string {
   const left = Math.min(x1, x2);
   const right = Math.max(x1, x2);
   const top = Math.min(y1, y2);
@@ -103,87 +113,118 @@ function denormalize(
   return { shape, pts };
 }
 
+export interface MarkupShapeViewProps {
+  shape: MarkupShape;
+  pts: Array<{ x: number; y: number }>;
+  selected: boolean;
+  onSelect?: () => void;
+  readOnly?: boolean;
+  /** Per-shape hit-testing toggle. Defaults to !readOnly. The takeoff
+   *  workspace flips this off when the active tool is not "select" so
+   *  markup shapes don't intercept clicks meant for the underlying PDF. */
+  listening?: boolean;
+  /** Multiplier applied to all on-screen sizes (cloud bump, arrow head,
+   *  text fontSize, selection shadow). Defaults to 1. The takeoff
+   *  workspace passes 1 / stageScale so visuals stay constant in pixels
+   *  regardless of zoom. */
+  pixelScale?: number;
+  /** Extra props spread on the wrapping `<Group>`. Lets the takeoff
+   *  workspace make selected markups draggable without re-implementing
+   *  the per-tool rendering switch. */
+  groupProps?: Konva.NodeConfig & {
+    onMouseEnter?: (evt: KonvaEventObject<MouseEvent>) => void;
+    onMouseLeave?: (evt: KonvaEventObject<MouseEvent>) => void;
+    onDragStart?: (evt: KonvaEventObject<DragEvent>) => void;
+    onDragMove?: (evt: KonvaEventObject<DragEvent>) => void;
+    onDragEnd?: (evt: KonvaEventObject<DragEvent>) => void;
+  };
+}
+
 export function MarkupShapeView({
   shape,
   pts,
   selected,
   onSelect,
   readOnly,
-}: {
-  shape: MarkupShape;
-  pts: Array<{ x: number; y: number }>;
-  selected: boolean;
-  onSelect?: () => void;
-  readOnly?: boolean;
-}) {
+  listening,
+  pixelScale = 1,
+  groupProps,
+}: MarkupShapeViewProps) {
   const stroke = shape.color || "#ff0000";
   const thickness = shape.thickness || 2;
-  const handle = readOnly ? undefined : onSelect;
+  const isInteractive = listening ?? !readOnly;
+  const handle = isInteractive && onSelect
+    ? (evt: KonvaEventObject<MouseEvent>) => {
+        evt.cancelBubble = true;
+        onSelect();
+      }
+    : undefined;
+  const shadow = {
+    shadowEnabled: selected,
+    shadowColor: "#3b82f6",
+    shadowBlur: 6 * pixelScale,
+  } as const;
 
   if (pts.length === 0) return null;
 
+  let inner: React.ReactNode = null;
+
   switch (shape.tool) {
     case "ARROW": {
-      if (pts.length < 2) return null;
+      if (pts.length < 2) break;
       const flat = [pts[0].x, pts[0].y, pts[pts.length - 1].x, pts[pts.length - 1].y];
-      return (
+      inner = (
         <Arrow
           points={flat}
           stroke={stroke}
           fill={stroke}
-          strokeWidth={thickness}
-          pointerLength={Math.max(8, thickness * 3)}
-          pointerWidth={Math.max(8, thickness * 3)}
-          shadowEnabled={selected}
-          shadowColor="#3b82f6"
-          shadowBlur={6}
-          onClick={handle}
-          onTap={handle}
+          strokeWidth={thickness * pixelScale}
+          pointerLength={Math.max(8, thickness * 3) * pixelScale}
+          pointerWidth={Math.max(8, thickness * 3) * pixelScale}
+          listening={isInteractive}
+          {...shadow}
         />
       );
+      break;
     }
     case "RECTANGLE": {
-      if (pts.length < 2) return null;
+      if (pts.length < 2) break;
       const a = pts[0];
       const b = pts[pts.length - 1];
-      return (
+      inner = (
         <Rect
           x={Math.min(a.x, b.x)}
           y={Math.min(a.y, b.y)}
           width={Math.abs(b.x - a.x)}
           height={Math.abs(b.y - a.y)}
           stroke={stroke}
-          strokeWidth={thickness}
-          shadowEnabled={selected}
-          shadowColor="#3b82f6"
-          shadowBlur={6}
-          onClick={handle}
-          onTap={handle}
+          strokeWidth={thickness * pixelScale}
+          listening={isInteractive}
+          {...shadow}
         />
       );
+      break;
     }
     case "CLOUD": {
-      if (pts.length < 2) return null;
+      if (pts.length < 2) break;
       const a = pts[0];
       const b = pts[pts.length - 1];
-      return (
+      inner = (
         <Path
-          data={buildCloudPath(a.x, a.y, b.x, b.y, 24)}
+          data={buildCloudPath(a.x, a.y, b.x, b.y, 24 * pixelScale)}
           stroke={stroke}
-          strokeWidth={thickness}
-          shadowEnabled={selected}
-          shadowColor="#3b82f6"
-          shadowBlur={6}
-          onClick={handle}
-          onTap={handle}
+          strokeWidth={thickness * pixelScale}
+          listening={isInteractive}
+          {...shadow}
         />
       );
+      break;
     }
     case "HIGHLIGHT": {
-      if (pts.length < 2) return null;
+      if (pts.length < 2) break;
       const a = pts[0];
       const b = pts[pts.length - 1];
-      return (
+      inner = (
         <Rect
           x={Math.min(a.x, b.x)}
           y={Math.min(a.y, b.y)}
@@ -191,53 +232,76 @@ export function MarkupShapeView({
           height={Math.abs(b.y - a.y)}
           fill={stroke}
           opacity={0.35}
-          shadowEnabled={selected}
-          shadowColor="#3b82f6"
-          shadowBlur={6}
-          onClick={handle}
-          onTap={handle}
+          listening={isInteractive}
+          {...shadow}
         />
       );
+      break;
     }
     case "FREEHAND": {
-      if (pts.length < 2) return null;
-      return (
+      if (pts.length < 2) break;
+      inner = (
         <Line
           points={pts.flatMap((p) => [p.x, p.y])}
           stroke={stroke}
-          strokeWidth={thickness}
+          strokeWidth={thickness * pixelScale}
           tension={0.4}
           lineCap="round"
           lineJoin="round"
-          shadowEnabled={selected}
-          shadowColor="#3b82f6"
-          shadowBlur={6}
-          onClick={handle}
-          onTap={handle}
+          listening={isInteractive}
+          {...shadow}
         />
       );
+      break;
     }
     case "TEXT": {
       const a = pts[0];
-      const fontSize = Math.max(12, thickness * 6);
-      return (
-        <Group onClick={handle} onTap={handle}>
+      const fontSize = Math.max(12, thickness * 6) * pixelScale;
+      inner = (
+        <>
           <Text
             x={a.x}
             y={a.y}
             text={shape.text || ""}
             fontSize={fontSize}
             fill={stroke}
+            listening={isInteractive}
           />
           {selected && (
-            <Circle x={a.x} y={a.y} radius={4} stroke="#3b82f6" strokeWidth={1} />
+            <Circle x={a.x} y={a.y} radius={4 * pixelScale} stroke="#3b82f6" strokeWidth={1 * pixelScale} listening={false} />
           )}
-        </Group>
+        </>
       );
+      break;
     }
     default:
-      return null;
+      break;
   }
+
+  if (!inner) return null;
+
+  // Wrap in a Group so callers can attach drag handlers / extra props
+  // without re-implementing the per-tool rendering switch. We also hoist
+  // the click handler to the group so any child shape that bubbles up
+  // triggers selection consistently.
+  const userOnClick = groupProps?.onClick;
+  const userOnTap = groupProps?.onTap;
+  return (
+    <Group
+      listening={isInteractive}
+      {...groupProps}
+      onClick={(evt) => {
+        handle?.(evt);
+        userOnClick?.(evt);
+      }}
+      onTap={(evt) => {
+        handle?.(evt);
+        userOnTap?.(evt);
+      }}
+    >
+      {inner}
+    </Group>
+  );
 }
 
 export default function MarkupRenderer({
