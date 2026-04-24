@@ -4321,8 +4321,6 @@ router.get(
   requireRole("ADMIN"),
   async (req: AuthRequest, res, next) => {
     try {
-      const orgId = resolveOrg(req, res);
-      if (!orgId) return;
       const rawHours = parseInt(String(req.query.windowHours ?? "24"), 10);
       const windowHours = Math.min(
         Math.max(Number.isFinite(rawHours) ? rawHours : 24, 1),
@@ -4334,27 +4332,107 @@ router.get(
         50,
       );
       const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
+
+      // Task #1482 — SUPER_ADMINs managing many tenants need a platform-wide
+      // breakdown so they don't have to org-switch to find whose alerts are
+      // failing. Pass `?crossOrg=true` to opt in. Org-scoped admins are
+      // hard-locked to their own org and ignore the flag.
+      const superAdmin = isSuperAdmin(req.user);
+      const crossOrg = superAdmin && String(req.query.crossOrg ?? "") === "true";
+
       const aggregates = await aggregateRecentCrmTranscriptBackfillAlertFailures(
         since,
         { recentSampleLimit },
       );
-      // The aggregator returns one entry per org with at least one failure;
-      // pick out this caller's org (or synthesize an empty rollup so the UI
-      // can still render the windowed totals as zero).
-      const entry = aggregates.find((e) => e.organizationId === orgId);
-      res.json({
-        windowHours,
-        since: since.toISOString(),
-        total: entry?.total ?? 0,
-        slackCount: entry?.slackCount ?? 0,
-        emailCount: entry?.emailCount ?? 0,
-        recentFailures: (entry?.recentFailures ?? []).map((f) => ({
+
+      const mapFailures = (
+        rows: Array<{
+          jobId: string | null;
+          channel: "slack" | "email";
+          recipientSummary: string;
+          errorMessage: string | null;
+          attemptedAt: Date;
+        }>,
+      ) =>
+        rows.map((f) => ({
           jobId: f.jobId,
           channel: f.channel,
           recipientSummary: f.recipientSummary,
           errorMessage: f.errorMessage,
           attemptedAt: f.attemptedAt.toISOString(),
-        })),
+        }));
+
+      if (crossOrg) {
+        // Enrich each org entry with display name/slug so the UI can render
+        // a useful per-tenant table without making N follow-up requests.
+        const orgIds = aggregates.map((a) => a.organizationId);
+        const orgRows = orgIds.length
+          ? await db
+              .select({
+                id: organizations.id,
+                name: organizations.name,
+                slug: organizations.slug,
+              })
+              .from(organizations)
+              .where(inArray(organizations.id, orgIds))
+          : [];
+        const orgById = new Map(orgRows.map((o) => [o.id, o]));
+
+        const orgs = aggregates
+          .map((entry) => {
+            const meta = orgById.get(entry.organizationId);
+            return {
+              organizationId: entry.organizationId,
+              organizationName: meta?.name ?? null,
+              organizationSlug: meta?.slug ?? null,
+              total: entry.total,
+              slackCount: entry.slackCount,
+              emailCount: entry.emailCount,
+              recentFailures: mapFailures(entry.recentFailures),
+            };
+          })
+          .sort((a, b) => {
+            if (b.total !== a.total) return b.total - a.total;
+            const an = (a.organizationName ?? a.organizationId).toLowerCase();
+            const bn = (b.organizationName ?? b.organizationId).toLowerCase();
+            return an.localeCompare(bn);
+          });
+
+        const totals = orgs.reduce(
+          (acc, o) => {
+            acc.total += o.total;
+            acc.slackCount += o.slackCount;
+            acc.emailCount += o.emailCount;
+            return acc;
+          },
+          { total: 0, slackCount: 0, emailCount: 0 },
+        );
+
+        return res.json({
+          crossOrg: true,
+          windowHours,
+          since: since.toISOString(),
+          total: totals.total,
+          slackCount: totals.slackCount,
+          emailCount: totals.emailCount,
+          orgs,
+        });
+      }
+
+      const orgId = resolveOrg(req, res);
+      if (!orgId) return;
+      // The aggregator returns one entry per org with at least one failure;
+      // pick out this caller's org (or synthesize an empty rollup so the UI
+      // can still render the windowed totals as zero).
+      const entry = aggregates.find((e) => e.organizationId === orgId);
+      res.json({
+        crossOrg: false,
+        windowHours,
+        since: since.toISOString(),
+        total: entry?.total ?? 0,
+        slackCount: entry?.slackCount ?? 0,
+        emailCount: entry?.emailCount ?? 0,
+        recentFailures: mapFailures(entry?.recentFailures ?? []),
       });
     } catch (e) {
       next(e);

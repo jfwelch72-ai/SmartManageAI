@@ -1664,6 +1664,8 @@ export default function AdminTranscriptBackfillPage() {
       <BackfillAlertFailuresDigestCard
         onJumpToJob={handleJumpToHistoryRow}
         isJumping={isJumping}
+        isSuperAdmin={isSuperAdmin}
+        onSelectOrg={(id) => setOrgFilter(id)}
       />
 
       {job && (
@@ -5242,18 +5244,34 @@ export function BackfillAdminAlertFailureModesCard() {
 // Sources its data from the same aggregation helper the digest scheduler
 // uses (`aggregateRecentCrmTranscriptBackfillAlertFailures`).
 // ---------------------------------------------------------------------------
+interface BackfillAlertFailureRow {
+  jobId: string | null;
+  channel: "slack" | "email";
+  recipientSummary: string;
+  errorMessage: string | null;
+  attemptedAt: string;
+}
+
 interface BackfillAlertFailuresDigest {
   windowHours: number;
   since: string;
   total: number;
   slackCount: number;
   emailCount: number;
-  recentFailures: Array<{
-    jobId: string | null;
-    channel: "slack" | "email";
-    recipientSummary: string;
-    errorMessage: string | null;
-    attemptedAt: string;
+  // Present in single-org mode (default). Absent in cross-org mode.
+  recentFailures?: BackfillAlertFailureRow[];
+  // Task #1482 — populated only when the SUPER_ADMIN cross-org toggle is on.
+  // One entry per org with at least one failure in the window, sorted by
+  // total desc.
+  crossOrg?: boolean;
+  orgs?: Array<{
+    organizationId: string;
+    organizationName: string | null;
+    organizationSlug: string | null;
+    total: number;
+    slackCount: number;
+    emailCount: number;
+    recentFailures: BackfillAlertFailureRow[];
   }>;
 }
 
@@ -5266,36 +5284,57 @@ const FAILURES_DIGEST_WINDOWS: Array<{
   { hours: 168, label: "Last 7d", testId: "tab-failures-window-7d" },
 ];
 
-function failuresDigestKey(windowHours: number) {
+function failuresDigestKey(windowHours: number, crossOrg: boolean) {
   return [
     "/api/crm/calls/transcripts/backfill/alert-failures-digest",
     windowHours,
+    crossOrg ? "all-orgs" : "my-org",
   ] as const;
 }
 
-function failuresDigestPath(windowHours: number) {
-  return `/api/crm/calls/transcripts/backfill/alert-failures-digest?windowHours=${windowHours}`;
+function failuresDigestPath(windowHours: number, crossOrg: boolean) {
+  const params = new URLSearchParams({ windowHours: String(windowHours) });
+  if (crossOrg) params.set("crossOrg", "true");
+  return `/api/crm/calls/transcripts/backfill/alert-failures-digest?${params.toString()}`;
 }
 
 export function BackfillAlertFailuresDigestCard({
   onJumpToJob,
   isJumping,
+  isSuperAdmin,
+  onSelectOrg,
 }: {
   onJumpToJob: (jobId: string) => void | Promise<void>;
   isJumping: boolean;
+  // Task #1482 — surface a cross-org toggle so platform support can see
+  // every tenant with failures in one place. Org-scoped admins keep the
+  // single-org view they had before.
+  isSuperAdmin: boolean;
+  onSelectOrg: (organizationId: string) => void;
 }) {
   const [windowHours, setWindowHours] = useState<number>(24);
-  const queryKey = failuresDigestKey(windowHours);
+  // Default super admins to the cross-org view since that's the high-signal
+  // mode for platform support; org-scoped admins never see the toggle and
+  // always run in single-org mode.
+  const [crossOrg, setCrossOrg] = useState<boolean>(isSuperAdmin);
+  const effectiveCrossOrg = isSuperAdmin && crossOrg;
+  const queryKey = failuresDigestKey(windowHours, effectiveCrossOrg);
   const failuresQuery = useQuery<BackfillAlertFailuresDigest>({
     queryKey,
     queryFn: async () => {
-      const res = await apiRequest("GET", failuresDigestPath(windowHours));
+      const res = await apiRequest(
+        "GET",
+        failuresDigestPath(windowHours, effectiveCrossOrg),
+      );
       return (await res.json()) as BackfillAlertFailuresDigest;
     },
   });
 
   const data = failuresQuery.data;
   const failures = data?.recentFailures ?? [];
+  const orgs = data?.orgs ?? [];
+  const isCrossOrgView = !!data?.crossOrg;
+  const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null);
 
   return (
     <Card data-testid="card-alert-failures-digest">
@@ -5326,31 +5365,67 @@ export function BackfillAlertFailuresDigestCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        <div
-          className="inline-flex rounded-md border bg-muted/40 p-0.5"
-          role="tablist"
-          data-testid="group-failures-window"
-        >
-          {FAILURES_DIGEST_WINDOWS.map((w) => {
-            const active = w.hours === windowHours;
-            return (
-              <button
-                key={w.hours}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                onClick={() => setWindowHours(w.hours)}
-                className={`px-3 py-1 text-xs rounded ${
-                  active
-                    ? "bg-background shadow-sm font-medium"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                data-testid={w.testId}
-              >
-                {w.label}
-              </button>
-            );
-          })}
+        <div className="flex flex-wrap items-center gap-2">
+          <div
+            className="inline-flex rounded-md border bg-muted/40 p-0.5"
+            role="tablist"
+            data-testid="group-failures-window"
+          >
+            {FAILURES_DIGEST_WINDOWS.map((w) => {
+              const active = w.hours === windowHours;
+              return (
+                <button
+                  key={w.hours}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setWindowHours(w.hours)}
+                  className={`px-3 py-1 text-xs rounded ${
+                    active
+                      ? "bg-background shadow-sm font-medium"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  data-testid={w.testId}
+                >
+                  {w.label}
+                </button>
+              );
+            })}
+          </div>
+          {isSuperAdmin && (
+            <div
+              className="inline-flex rounded-md border bg-muted/40 p-0.5"
+              role="tablist"
+              data-testid="group-failures-scope"
+            >
+              {[
+                { value: false, label: "My org", testId: "tab-failures-scope-my-org" },
+                { value: true, label: "All orgs", testId: "tab-failures-scope-all-orgs" },
+              ].map((opt) => {
+                const active = crossOrg === opt.value;
+                return (
+                  <button
+                    key={opt.label}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    onClick={() => {
+                      setCrossOrg(opt.value);
+                      setExpandedOrgId(null);
+                    }}
+                    className={`px-3 py-1 text-xs rounded ${
+                      active
+                        ? "bg-background shadow-sm font-medium"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                    data-testid={opt.testId}
+                  >
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {failuresQuery.isLoading ? (
@@ -5397,7 +5472,150 @@ export function BackfillAlertFailuresDigestCard({
               )}
             </div>
 
-            {failures.length === 0 ? (
+            {isCrossOrgView ? (
+              orgs.length === 0 ? (
+                <div
+                  className="text-sm text-muted-foreground"
+                  data-testid="text-alert-failures-digest-orgs-empty"
+                >
+                  No organizations had alert delivery failures in this
+                  window.
+                </div>
+              ) : (
+                <div
+                  className="rounded-md border divide-y"
+                  data-testid="list-alert-failures-digest-orgs"
+                >
+                  {orgs.map((o) => {
+                    const expanded = expandedOrgId === o.organizationId;
+                    const display =
+                      o.organizationName ||
+                      o.organizationSlug ||
+                      o.organizationId;
+                    return (
+                      <div
+                        key={o.organizationId}
+                        className="p-2.5"
+                        data-testid={`row-alert-failure-org-${o.organizationId}`}
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setExpandedOrgId(expanded ? null : o.organizationId)
+                            }
+                            className="inline-flex items-center gap-1 text-sm font-medium hover:underline"
+                            data-testid={`button-toggle-failure-org-${o.organizationId}`}
+                            title={
+                              expanded
+                                ? "Hide recent failures"
+                                : "Show recent failures"
+                            }
+                          >
+                            {expanded ? (
+                              <ChevronDown className="h-3.5 w-3.5" />
+                            ) : (
+                              <ChevronRight className="h-3.5 w-3.5" />
+                            )}
+                            <span data-testid={`text-failure-org-name-${o.organizationId}`}>
+                              {display}
+                            </span>
+                          </button>
+                          <Badge
+                            variant="destructive"
+                            data-testid={`badge-failure-org-total-${o.organizationId}`}
+                          >
+                            {o.total} total
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            data-testid={`badge-failure-org-slack-${o.organizationId}`}
+                          >
+                            Slack: {o.slackCount}
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            data-testid={`badge-failure-org-email-${o.organizationId}`}
+                          >
+                            Email: {o.emailCount}
+                          </Badge>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="ml-auto h-7 px-2 text-xs"
+                            onClick={() => onSelectOrg(o.organizationId)}
+                            data-testid={`button-filter-failure-org-${o.organizationId}`}
+                            title="Filter the history table to this organization"
+                          >
+                            <ArrowRight className="h-3 w-3 mr-1" />
+                            View this org
+                          </Button>
+                        </div>
+                        {expanded && (
+                          <ul
+                            className="mt-2 divide-y border-t"
+                            data-testid={`list-alert-failure-org-recent-${o.organizationId}`}
+                          >
+                            {o.recentFailures.length === 0 ? (
+                              <li
+                                className="py-2 text-xs text-muted-foreground"
+                                data-testid={`text-failure-org-recent-empty-${o.organizationId}`}
+                              >
+                                No recent failure samples available.
+                              </li>
+                            ) : (
+                              o.recentFailures.map((f, idx) => {
+                                const rowKey = `${o.organizationId}-${f.attemptedAt}-${f.channel}-${f.jobId ?? "no-job"}-${idx}`;
+                                return (
+                                  <li
+                                    key={rowKey}
+                                    className="py-2 flex items-start gap-2"
+                                    data-testid={`row-alert-failure-org-${o.organizationId}-${idx}`}
+                                  >
+                                    <AlertTriangle className="h-3.5 w-3.5 mt-0.5 text-destructive shrink-0" />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                                        <Badge
+                                          variant={
+                                            f.channel === "slack"
+                                              ? "secondary"
+                                              : "outline"
+                                          }
+                                        >
+                                          {f.channel}
+                                        </Badge>
+                                        <span
+                                          className="text-[11px] text-muted-foreground"
+                                          title={f.attemptedAt}
+                                        >
+                                          {format(new Date(f.attemptedAt), "PPpp")}
+                                        </span>
+                                      </div>
+                                      <div
+                                        className="text-[11px] text-muted-foreground mt-0.5 truncate"
+                                        title={f.recipientSummary}
+                                      >
+                                        To: {f.recipientSummary || "(unspecified)"}
+                                      </div>
+                                      {f.errorMessage && (
+                                        <div className="text-[11px] text-destructive mt-0.5 break-words">
+                                          {f.errorMessage}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </li>
+                                );
+                              })
+                            )}
+                          </ul>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            ) : failures.length === 0 ? (
               <div
                 className="text-sm text-muted-foreground"
                 data-testid="text-alert-failures-digest-empty"
