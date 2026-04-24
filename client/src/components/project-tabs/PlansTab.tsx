@@ -46,6 +46,7 @@ import { useProjectDocuments } from "@/hooks/use-data";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
+import { useTour } from "@/components/TourProvider";
 import type { TakeoffSheet } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { useFeatureFlags } from "@/hooks/use-feature-flags";
@@ -107,6 +108,49 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const { isEnabled: isFeatureFlagEnabled } = useFeatureFlags();
   const bimEnabled = isFeatureFlagEnabled("BIM_VIEWER");
 
+  // Task #1663 — Per-user "Labeled toolbar" preference. Toggled from
+  // the plans view settings menu and stored in localStorage scoped by
+  // user id so each person keeps their own preference. The state is
+  // re-hydrated whenever user.id resolves or changes (including
+  // account switches) so no preference leaks across users.
+  const { startPlansTour, isPlansTourCompleted } = useTour();
+  const labeledStorageKey = (uid: string | undefined | null) =>
+    uid ? `plan-toolbar-labeled-${uid}` : null;
+  const readLabeledPref = (uid: string | undefined | null): boolean => {
+    if (typeof window === "undefined") return false;
+    const key = labeledStorageKey(uid);
+    if (!key) return false;
+    try {
+      return window.localStorage.getItem(key) === "1";
+    } catch {
+      return false;
+    }
+  };
+  const [labeledToolbar, setLabeledToolbar] = useState<boolean>(() =>
+    readLabeledPref(user?.id),
+  );
+  // Re-hydrate when the active user changes (initial resolve or switch).
+  useEffect(() => {
+    setLabeledToolbar(readLabeledPref(user?.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+  // Save the preference inline at toggle time (not in a state-sync
+  // effect) so re-hydrating one user's value never overwrites
+  // another user's localStorage entry.
+  const toggleLabeledToolbar = useCallback(() => {
+    setLabeledToolbar((prev) => {
+      const next = !prev;
+      const key = labeledStorageKey(user?.id);
+      if (key && typeof window !== "undefined") {
+        try {
+          if (next) window.localStorage.setItem(key, "1");
+          else window.localStorage.removeItem(key);
+        } catch {}
+      }
+      return next;
+    });
+  }, [user?.id]);
+
   const { data: documents = [], isLoading: documentsLoading } = useProjectDocuments(projectCode);
   type PinSummaryEntry = {
     total: number;
@@ -161,6 +205,29 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   });
 
   const [subTab, setSubTab] = useState<SubTab>("plans");
+
+  // Task #1663 — Auto-trigger the plans tour the first time a user
+  // opens the plans sub-tab. Wait briefly so the takeoff workspace
+  // toolbar (the tour's first targets) has time to mount in the DOM
+  // before Joyride tries to anchor onto it.
+  const tourTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (tourTriggeredRef.current) return;
+    if (!user?.id) return;
+    if (isPlansTourCompleted) return;
+    if (subTab !== "plans") return;
+    // Set the "triggered" flag inside the timer (not before it). If the
+    // user navigates away from the plans subtab before 800ms elapses,
+    // the cleanup clears the timer and the flag stays false, so the
+    // auto-tour will fire on a later visit within the same session.
+    const timer = window.setTimeout(() => {
+      tourTriggeredRef.current = true;
+      startPlansTour();
+    }, 800);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, isPlansTourCompleted, subTab]);
+
   const [documentTitle, setDocumentTitle] = useState("");
   const [documentType, setDocumentType] = useState<string>("OTHER");
   const [searchQuery, setSearchQuery] = useState("");
@@ -2386,6 +2453,14 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                         clusteringEnabled={pinClusteringEnabled}
                         onToggleClustering={() => setPinClusteringEnabled((v) => !v)}
                         spacePanActive={spacePanActive}
+                        labeled={labeledToolbar}
+                        onToggleLabeled={toggleLabeledToolbar}
+                        onReplayTour={() => {
+                          // Tour anchors to the takeoff toolbar; close the
+                          // preview first so its targets exist in the DOM.
+                          setPreviewDocId(null);
+                          window.setTimeout(() => startPlansTour(), 250);
+                        }}
                       />
                     )}
                     <div className="flex-1 min-h-0 overflow-hidden flex flex-col">

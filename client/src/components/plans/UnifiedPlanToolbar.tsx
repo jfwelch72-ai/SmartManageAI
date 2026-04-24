@@ -14,11 +14,27 @@
  * Navigate-group hint so users know how to pan from any tool.
  *
  * Underlying drawing/pin logic is unchanged — this is a UI consolidation.
+ *
+ * Task #1663 — Adds a per-user "Labeled toolbar" preference toggle plus a
+ * "Replay tour" entry point in a small Settings menu at the right end of
+ * the toolbar. Pin-count mode buttons and the pan hint also gain hover
+ * tooltips so first-time users can discover what each control does.
  */
-import { Hand, Pin } from "lucide-react";
+import { Hand, Pin, Settings2, Type, BookOpen } from "lucide-react";
 import PlanMarkupToolbar from "@/components/markups/PlanMarkupToolbar";
 import { PinFilterChips, type PinFilter } from "@/components/PlanPinLayer";
 import type { MarkupTool } from "@/components/markups/MarkupRenderer";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuCheckboxItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 export interface UnifiedPlanToolbarProps {
@@ -41,6 +57,11 @@ export interface UnifiedPlanToolbarProps {
   onToggleClustering?: () => void;
   // Navigate (informational — pan/zoom controls live inside PdfPreview)
   spacePanActive?: boolean;
+  // Task #1663 — Labeled toolbar preference (icon-only ↔ icon+label).
+  labeled?: boolean;
+  onToggleLabeled?: () => void;
+  // Task #1663 — Replay first-run plans tour from the settings menu.
+  onReplayTour?: () => void;
 }
 
 function GroupLabel({ children }: { children: React.ReactNode }) {
@@ -71,6 +92,9 @@ export default function UnifiedPlanToolbar({
   clusteringEnabled,
   onToggleClustering,
   spacePanActive,
+  labeled = false,
+  onToggleLabeled,
+  onReplayTour,
 }: UnifiedPlanToolbarProps) {
   return (
     <div
@@ -80,23 +104,29 @@ export default function UnifiedPlanToolbar({
       {/* ── Navigate ──────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 shrink-0" data-testid="toolbar-group-navigate">
         <GroupLabel>Navigate</GroupLabel>
-        <div
-          className={cn(
-            "flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] border",
-            spacePanActive
-              ? "bg-primary/10 border-primary text-primary font-medium"
-              : "bg-card border-border text-muted-foreground",
-          )}
-          title="Hold Space to temporarily pan from any tool"
-          data-testid="toolbar-pan-hint"
-        >
-          <Hand className="w-3 h-3" />
-          <span>Hold</span>
-          <kbd className="px-1 py-0 rounded border bg-background font-mono text-[9px] leading-none">
-            Space
-          </kbd>
-          <span>to pan</span>
-        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div
+              className={cn(
+                "flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] border cursor-default",
+                spacePanActive
+                  ? "bg-primary/10 border-primary text-primary font-medium"
+                  : "bg-card border-border text-muted-foreground",
+              )}
+              data-testid="toolbar-pan-hint"
+            >
+              <Hand className="w-3 h-3" />
+              <span>Hold</span>
+              <kbd className="px-1 py-0 rounded border bg-background font-mono text-[9px] leading-none">
+                Space
+              </kbd>
+              <span>to pan</span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <span>Hold Space to temporarily pan from any tool. Release to restore your tool.</span>
+          </TooltipContent>
+        </Tooltip>
       </div>
 
       <GroupDivider />
@@ -113,6 +143,7 @@ export default function UnifiedPlanToolbar({
           onChangeThickness={onChangeMarkupThickness}
           showLabel={false}
           showSelect={true}
+          labeled={labeled}
           className="border-0 bg-transparent px-0 py-0"
         />
       </div>
@@ -140,32 +171,89 @@ export default function UnifiedPlanToolbar({
       {/* ── Pin counts (right-aligned) ───────────────────────────── */}
       <div className="ml-auto flex items-center gap-1 text-xs shrink-0" data-testid="toolbar-pin-counts">
         <span className="text-muted-foreground">Counts:</span>
-        <button
-          type="button"
-          onClick={() => onChangePinCountMode("open")}
-          className={cn(
-            "px-2 py-0.5 rounded border",
-            pinCountMode === "open"
-              ? "bg-primary text-primary-foreground border-primary"
-              : "bg-card hover:bg-accent border-border",
-          )}
-          data-testid="button-pin-count-mode-open"
-        >
-          Open
-        </button>
-        <button
-          type="button"
-          onClick={() => onChangePinCountMode("all")}
-          className={cn(
-            "px-2 py-0.5 rounded border",
-            pinCountMode === "all"
-              ? "bg-primary text-primary-foreground border-primary"
-              : "bg-card hover:bg-accent border-border",
-          )}
-          data-testid="button-pin-count-mode-all"
-        >
-          All
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => onChangePinCountMode("open")}
+              className={cn(
+                "px-2 py-0.5 rounded border",
+                pinCountMode === "open"
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-card hover:bg-accent border-border",
+              )}
+              data-testid="button-pin-count-mode-open"
+            >
+              Open
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom"><span>Show only open pin counts on each page</span></TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              onClick={() => onChangePinCountMode("all")}
+              className={cn(
+                "px-2 py-0.5 rounded border",
+                pinCountMode === "all"
+                  ? "bg-primary text-primary-foreground border-primary"
+                  : "bg-card hover:bg-accent border-border",
+              )}
+              data-testid="button-pin-count-mode-all"
+            >
+              All
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom"><span>Show counts for all pins, including closed ones</span></TooltipContent>
+        </Tooltip>
+
+        {/* ── View settings (Labeled toolbar / Replay tour) ─────── */}
+        {(onToggleLabeled || onReplayTour) && (
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 ml-1"
+                    data-testid="button-plans-view-settings"
+                    aria-label="Plans view settings"
+                  >
+                    <Settings2 className="w-3.5 h-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent side="bottom"><span>Plans view settings</span></TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>Plans view</DropdownMenuLabel>
+              {onToggleLabeled && (
+                <DropdownMenuCheckboxItem
+                  checked={!!labeled}
+                  onCheckedChange={() => onToggleLabeled()}
+                  data-testid="menu-item-labeled-toolbar"
+                >
+                  <Type className="w-3.5 h-3.5 mr-2" />
+                  Labeled toolbar
+                </DropdownMenuCheckboxItem>
+              )}
+              {onReplayTour && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={() => onReplayTour()}
+                    data-testid="menu-item-replay-plans-tour"
+                  >
+                    <BookOpen className="w-3.5 h-3.5 mr-2" />
+                    Show me the tour again
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
     </div>
   );

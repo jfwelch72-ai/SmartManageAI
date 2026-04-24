@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -950,41 +951,70 @@ export function PinFilterChips({
   clusteringEnabled,
   onToggleClustering,
 }: PinFilterChipsProps) {
-  const chip = (label: string, active: boolean, onClick: () => void, testId: string) => (
-    <button
-      onClick={onClick}
-      className={cn(
-        "px-2.5 py-1 text-xs rounded-full border transition-colors",
-        active ? "bg-primary text-primary-foreground border-primary" : "bg-card hover:bg-accent border-border",
-      )}
-      data-testid={testId}
-    >
-      {label}
-    </button>
+  // Task #1663 — Every chip gets a hover tooltip explaining what the
+  // filter does. None of these have keyboard shortcuts wired, so the
+  // tooltip is name + description only.
+  const chip = (
+    label: string,
+    tooltip: string,
+    active: boolean,
+    onClick: () => void,
+    testId: string,
+  ) => (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          onClick={onClick}
+          className={cn(
+            "px-2.5 py-1 text-xs rounded-full border transition-colors",
+            active ? "bg-primary text-primary-foreground border-primary" : "bg-card hover:bg-accent border-border",
+          )}
+          aria-label={label}
+          aria-pressed={active}
+          data-testid={testId}
+        >
+          {label}
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom"><span>{tooltip}</span></TooltipContent>
+    </Tooltip>
   );
   return (
     <div className="flex items-center gap-1.5 flex-wrap">
-      <Button
-        size="sm"
-        variant={pinModeActive ? "default" : "outline"}
-        className="h-7 text-xs"
-        onClick={onTogglePinMode}
-        data-testid="button-toggle-pin-mode"
-      >
-        {pinModeActive ? "Exit Pin Mode" : "Pin Mode"}
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            size="sm"
+            variant={pinModeActive ? "default" : "outline"}
+            className="h-7 text-xs"
+            onClick={onTogglePinMode}
+            aria-pressed={pinModeActive}
+            data-testid="button-toggle-pin-mode"
+          >
+            {pinModeActive ? "Exit Pin Mode" : "Pin Mode"}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">
+          <span>
+            {pinModeActive
+              ? "Exit Pin Mode — stop dropping pins"
+              : "Enter Pin Mode — click the plan to drop a pin"}
+          </span>
+        </TooltipContent>
+      </Tooltip>
       <span className="w-px h-5 bg-border mx-1" />
-      {chip("All", filter.type === "ALL", () => onChange({ ...filter, type: "ALL" }), "chip-filter-all")}
-      {chip("RFIs", filter.type === "RFI", () => onChange({ ...filter, type: "RFI" }), "chip-filter-rfi")}
-      {chip("Punch", filter.type === "PUNCH", () => onChange({ ...filter, type: "PUNCH" }), "chip-filter-punch")}
-      {chip("Submittals", filter.type === "SUBMITTAL", () => onChange({ ...filter, type: "SUBMITTAL" }), "chip-filter-submittal")}
+      {chip("All", "Show all pin types", filter.type === "ALL", () => onChange({ ...filter, type: "ALL" }), "chip-filter-all")}
+      {chip("RFIs", "Show only RFI pins", filter.type === "RFI", () => onChange({ ...filter, type: "RFI" }), "chip-filter-rfi")}
+      {chip("Punch", "Show only punch list pins", filter.type === "PUNCH", () => onChange({ ...filter, type: "PUNCH" }), "chip-filter-punch")}
+      {chip("Submittals", "Show only submittal pins", filter.type === "SUBMITTAL", () => onChange({ ...filter, type: "SUBMITTAL" }), "chip-filter-submittal")}
       <span className="w-px h-5 bg-border mx-1" />
-      {chip("Open only", filter.openOnly, () => onChange({ ...filter, openOnly: !filter.openOnly }), "chip-filter-open")}
+      {chip("Open only", "Hide pins linked to closed items", filter.openOnly, () => onChange({ ...filter, openOnly: !filter.openOnly }), "chip-filter-open")}
       {onToggleClustering && (
         <>
           <span className="w-px h-5 bg-border mx-1" />
           {chip(
             "Cluster pins",
+            "Group nearby pins into clusters when zoomed out",
             !!clusteringEnabled,
             onToggleClustering,
             "chip-filter-cluster",

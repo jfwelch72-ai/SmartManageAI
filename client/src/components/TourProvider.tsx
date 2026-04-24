@@ -20,6 +20,13 @@ interface TourContextType {
   isTourActive: boolean;
   currentStep: number;
   currentTourTarget: string | null;
+  // Task #1663 — Plans-surface guided tour. Independent from the
+  // role-based dashboard tour above; persisted per user via
+  // localStorage so it does not auto-replay once dismissed.
+  startPlansTour: () => void;
+  skipPlansTour: () => void;
+  isPlansTourActive: boolean;
+  isPlansTourCompleted: boolean;
 }
 
 const TourContext = createContext<TourContextType | null>(null);
@@ -536,6 +543,90 @@ function TourCompletionModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+// Task #1663 — Plans-surface tour. Steps target the takeoff workspace
+// sidebar (visible by default when no PDF is previewed), which is where
+// new users first encounter the intimidating icon-only toolbars. Each
+// step explains a toolbar group: Navigate, Calibrate, Measure, Mark Up,
+// the spacebar-pan shortcut, and the Pin features they'll find when
+// previewing a PDF.
+const plansTourSteps: Step[] = [
+  {
+    target: '[data-testid="button-tool-pan"]',
+    title: "Navigate the plan",
+    content: (
+      <div className="space-y-2">
+        <p>Use <strong>Pan</strong> and <strong>Select</strong> to move around your sheet without drawing anything.</p>
+        <p className="text-sm text-muted-foreground">Tip: hold <kbd className="px-1 py-0.5 rounded border bg-muted text-xs">Space</kbd> from any tool to pan temporarily — release Space to restore your tool.</p>
+      </div>
+    ),
+    placement: "right" as const,
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="button-tool-calibrate"]',
+    title: "Calibrate first",
+    content: (
+      <p>Before measuring, click <strong>Calibrate</strong> and pick two points of a known distance on the sheet. Every measurement after that comes out in real-world units.</p>
+    ),
+    placement: "right" as const,
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="button-measure-group"]',
+    title: "Measure",
+    content: (
+      <p>Linear, area, volume, count and more — all the takeoff measurement tools live here. Pick one, click on the sheet, and the quantities flow straight into your bid.</p>
+    ),
+    placement: "right" as const,
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="button-markup-group"]',
+    title: "Mark Up",
+    content: (
+      <p>Draw arrows, clouds, highlights, or freehand notes on top of the sheet to communicate intent. Markups don't affect quantities — they're just for collaboration.</p>
+    ),
+    placement: "right" as const,
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="sidebar-doc-list"], [data-testid="button-upload-plan"]',
+    title: "Pin RFIs, Punches & Submittals",
+    content: (
+      <div className="space-y-2">
+        <p>When you open a PDF preview, the toolbar at the top of the page lets you drop <strong>Pins</strong> for RFIs, punch items, and submittals tied to a specific spot on the drawing.</p>
+        <p className="text-sm text-muted-foreground">Open any sheet from the list to try it.</p>
+      </div>
+    ),
+    placement: "right" as const,
+    disableBeacon: true,
+  },
+];
+
+const PLANS_TOUR_KEY_PREFIX = "plans-tour-completed-";
+
+function getPlansTourCompleted(userId: string | undefined | null): boolean {
+  if (!userId || typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(`${PLANS_TOUR_KEY_PREFIX}${userId}`) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function setPlansTourCompleted(userId: string | undefined | null, completed: boolean) {
+  if (!userId || typeof window === "undefined") return;
+  try {
+    if (completed) {
+      window.localStorage.setItem(`${PLANS_TOUR_KEY_PREFIX}${userId}`, "1");
+    } else {
+      window.localStorage.removeItem(`${PLANS_TOUR_KEY_PREFIX}${userId}`);
+    }
+  } catch {
+    // localStorage unavailable (private browsing, quota) — silently ignore
+  }
+}
+
 export function TourProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [location, setLocation] = useLocation();
@@ -548,6 +639,14 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const [pendingNavigation, setPendingNavigation] = useState<{ path: string; targetStep: number } | null>(null);
   const skipCheckRef = useRef(false);
   const [targetReady, setTargetReady] = useState(false);
+
+  // Task #1663 — Plans-surface tour state, independent from the
+  // role-based dashboard tour above.
+  const [isPlansTourActive, setIsPlansTourActive] = useState(false);
+  const [plansTourCompleted, setPlansTourCompletedState] = useState<boolean>(false);
+  useEffect(() => {
+    setPlansTourCompletedState(getPlansTourCompleted(user?.id));
+  }, [user?.id]);
   
   const role = user?.effectiveRole || user?.role || "FIELD_WORKER";
   
@@ -800,9 +899,48 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const handleCompletionClose = useCallback(() => {
     setShowCompletion(false);
   }, []);
-  
+
+  // ── Task #1663 — Plans-surface tour controls ─────────────────────────
+  const startPlansTour = useCallback(() => {
+    setIsPlansTourActive(true);
+  }, []);
+
+  const skipPlansTour = useCallback(() => {
+    setIsPlansTourActive(false);
+    setPlansTourCompleted(user?.id, true);
+    setPlansTourCompletedState(true);
+  }, [user?.id]);
+
+  const handlePlansTourCallback = useCallback(
+    (data: CallBackProps) => {
+      const { status, action } = data;
+      if (status === STATUS.FINISHED) {
+        setIsPlansTourActive(false);
+        setPlansTourCompleted(user?.id, true);
+        setPlansTourCompletedState(true);
+        return;
+      }
+      if (status === STATUS.SKIPPED || action === ACTIONS.CLOSE) {
+        setIsPlansTourActive(false);
+        setPlansTourCompleted(user?.id, true);
+        setPlansTourCompletedState(true);
+      }
+    },
+    [user?.id],
+  );
+
   return (
-    <TourContext.Provider value={{ startTour, skipTour, isTourActive, currentStep, currentTourTarget }}>
+    <TourContext.Provider value={{
+      startTour,
+      skipTour,
+      isTourActive,
+      currentStep,
+      currentTourTarget,
+      startPlansTour,
+      skipPlansTour,
+      isPlansTourActive,
+      isPlansTourCompleted: plansTourCompleted,
+    }}>
       {children}
       
       {isTourActive && tourSteps.length > 0 && (
@@ -870,6 +1008,47 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       )}
       
       {showCompletion && <TourCompletionModal onClose={handleCompletionClose} />}
+
+      {/* Task #1663 — Plans-surface tour. Joyride manages its own step
+          state (uncontrolled) since this tour stays on a single page. */}
+      {isPlansTourActive && (
+        <Joyride
+          steps={plansTourSteps}
+          run={isPlansTourActive}
+          continuous
+          showProgress
+          showSkipButton
+          hideCloseButton={false}
+          scrollToFirstStep
+          disableOverlayClose
+          spotlightClicks={false}
+          callback={handlePlansTourCallback}
+          styles={{
+            options: {
+              primaryColor: "hsl(var(--primary))",
+              textColor: "hsl(var(--foreground))",
+              backgroundColor: "hsl(var(--card))",
+              arrowColor: "hsl(var(--card))",
+              overlayColor: "rgba(0, 0, 0, 0.5)",
+              zIndex: 10000,
+            },
+            tooltip: { borderRadius: "8px", padding: "16px" },
+            tooltipContainer: { textAlign: "left" },
+            tooltipTitle: { fontSize: "16px", fontWeight: 600, marginBottom: "8px" },
+            tooltipContent: { fontSize: "13px" },
+            buttonNext: {
+              backgroundColor: "hsl(var(--primary))",
+              color: "hsl(var(--primary-foreground))",
+              borderRadius: "6px",
+              padding: "8px 16px",
+            },
+            buttonBack: { color: "hsl(var(--muted-foreground))", marginRight: "8px" },
+            buttonSkip: { color: "hsl(var(--muted-foreground))" },
+            spotlight: { borderRadius: "8px" },
+          }}
+          locale={{ back: "Back", close: "Close", last: "Got it", next: "Next", skip: "Skip" }}
+        />
+      )}
     </TourContext.Provider>
   );
 }
