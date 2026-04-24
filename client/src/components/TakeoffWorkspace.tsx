@@ -313,6 +313,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   // when the per-markup current value happened to equal the draft.
   // For single-selection this stays semantically equivalent to the
   // pre-#1758 `draft !== editing.color` check.
+  //
+  // Task #1751 (rebase) — Task #1758 in main implemented multi-select
+  // bulk color/thickness edits by extending this same `panel-markup-
+  // properties` panel to render whenever `selectedMarkupIds.size >= 1`,
+  // which fully covers the original Task #1751 ask. The standalone
+  // `panel-markup-bulk-edit` from #1751 was therefore dropped during
+  // rebase to avoid two competing edit panels rendering on a multi
+  // selection.
   const [markupEditInitial, setMarkupEditInitial] = useState<{ color: string; thickness: number; text: string } | null>(null);
   // Task #1654 — Snap a markup's persisted thickness to the nearest
   // toolbar preset when opening the edit panel. Older markups created
