@@ -68,6 +68,16 @@ let wageDecisionRetryTask: ReturnType<typeof cron.schedule> | null = null;
 let wageDecisionMissingReminderTask: ReturnType<typeof cron.schedule> | null = null;
 let wageDecisionStaleRefreshTask: ReturnType<typeof cron.schedule> | null = null;
 
+/**
+ * Task #1491 — Publish a per-tick succeeded/failed sample for a cron
+ * job so the alert engine in `jobMetricAlerts.ts` can evaluate the
+ * tuned stall thresholds in PER_JOB_DEFAULTS. The job name MUST match
+ * the snake_case key already present in PER_JOB_DEFAULTS.
+ */
+function recordJobOutcome(job: string, ok: boolean): void {
+  recordJobMetrics(job, { succeeded: ok ? 1 : 0, failed: ok ? 0 : 1 });
+}
+
 export function startJobRunner() {
   logInfo("Starting background job runner");
 
@@ -138,7 +148,9 @@ export function startJobRunner() {
   retentionTask = cron.schedule("0 2 * * *", async () => {
     try {
       await processRetentionPolicies();
+      recordJobOutcome("retention_policy_sweep", true);
     } catch (err) {
+      recordJobOutcome("retention_policy_sweep", false);
       logError("Retention processing failed", { error: String(err) });
     }
   });
@@ -162,7 +174,9 @@ export function startJobRunner() {
   tokenExpiryTask = cron.schedule("0 3 * * *", async () => {
     try {
       await checkSocialTokenExpiry();
+      recordJobOutcome("social_token_expiry_check", true);
     } catch (err) {
+      recordJobOutcome("social_token_expiry_check", false);
       logError("Token expiry check failed", { error: String(err) });
     }
   });
@@ -170,7 +184,9 @@ export function startJobRunner() {
   complianceCheckTask = cron.schedule("0 7 * * *", async () => {
     try {
       await processComplianceExpirations();
+      recordJobOutcome("compliance_expiration_check", true);
     } catch (err) {
+      recordJobOutcome("compliance_expiration_check", false);
       logError("Compliance expiration check failed", { error: String(err) });
     }
   });
@@ -189,7 +205,9 @@ export function startJobRunner() {
   portfolioKpiSnapshotTask = cron.schedule("15 2 * * *", async () => {
     try {
       await captureWeeklyKpiSnapshots();
+      recordJobOutcome("portfolio_kpi_snapshot", true);
     } catch (err) {
+      recordJobOutcome("portfolio_kpi_snapshot", false);
       logError("Portfolio KPI snapshot capture failed", { error: String(err) });
     }
   });
@@ -197,7 +215,9 @@ export function startJobRunner() {
   idleOpportunityTask = cron.schedule("0 8 * * *", async () => {
     try {
       await processIdleOpportunities();
+      recordJobOutcome("idle_opportunity_check", true);
     } catch (err) {
+      recordJobOutcome("idle_opportunity_check", false);
       logError("Idle opportunity check failed", { error: String(err) });
     }
   });
@@ -275,7 +295,9 @@ export function startJobRunner() {
   weeklyReportTask = cron.schedule("0 7 * * 1", async () => {
     try {
       await processPeriodicReports("WEEKLY");
+      recordJobOutcome("periodic_report_weekly", true);
     } catch (err) {
+      recordJobOutcome("periodic_report_weekly", false);
       logError("Weekly report generation failed", { error: String(err) });
     }
   });
@@ -283,7 +305,9 @@ export function startJobRunner() {
   monthlyReportTask = cron.schedule("0 7 1 * *", async () => {
     try {
       await processPeriodicReports("MONTHLY");
+      recordJobOutcome("periodic_report_monthly", true);
     } catch (err) {
+      recordJobOutcome("periodic_report_monthly", false);
       logError("Monthly report generation failed", { error: String(err) });
     }
   });
@@ -291,7 +315,9 @@ export function startJobRunner() {
   dbHealthCheckTask = cron.schedule("0 */6 * * *", async () => {
     try {
       await runDbHealthCheck();
+      recordJobOutcome("db_health_check", true);
     } catch (err) {
+      recordJobOutcome("db_health_check", false);
       logError("DB health check failed", { error: String(err) });
     }
   });
@@ -325,7 +351,9 @@ export function startJobRunner() {
   projectGeocodeTask = cron.schedule("30 4 * * *", async () => {
     try {
       await geocodePendingProjects();
+      recordJobOutcome("project_geocode", true);
     } catch (err) {
+      recordJobOutcome("project_geocode", false);
       logError("Project geocoding job failed", { error: String(err) });
     }
   });
@@ -382,7 +410,9 @@ export function startJobRunner() {
   swpppOverdueTask = cron.schedule("0 7 * * *", async () => {
     try {
       await processSwpppOverdueCorrectiveActions();
+      recordJobOutcome("swppp_overdue_corrective_actions", true);
     } catch (err) {
+      recordJobOutcome("swppp_overdue_corrective_actions", false);
       logError("SWPPP overdue corrective action sweep failed", { error: String(err) });
     }
   });
@@ -398,7 +428,9 @@ export function startJobRunner() {
       if (result.rowsPurged > 0) {
         logInfo("Archived certified payroll auto-purge run", result);
       }
+      recordJobOutcome("certified_payroll_purge", true);
     } catch (err) {
+      recordJobOutcome("certified_payroll_purge", false);
       logError("Archived certified payroll auto-purge failed", { error: String(err) });
     }
   });
@@ -410,7 +442,9 @@ export function startJobRunner() {
   crmBirthdayDailyTask = cron.schedule("0 7 * * *", async () => {
     try {
       await processCrmContactBirthdayDailyDigest();
+      recordJobOutcome("crm_birthday_daily_digest", true);
     } catch (err) {
+      recordJobOutcome("crm_birthday_daily_digest", false);
       logError("CRM contact birthday daily digest failed", { error: String(err) });
     }
   });
@@ -460,7 +494,9 @@ export function startJobRunner() {
       if (out.remindersSent > 0) {
         logInfo("Wage decision missing reminder sweep", out);
       }
+      recordJobOutcome("wage_decision_missing_reminder", true);
     } catch (err) {
+      recordJobOutcome("wage_decision_missing_reminder", false);
       logError("Wage decision missing reminder sweep failed", { error: String(err) });
     }
   });
