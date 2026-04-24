@@ -2,7 +2,7 @@ import { useRef, useCallback, useState } from "react";
 import type { TakeoffMeasurement, TakeoffMarkup } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
-type ActionType = "CREATE" | "DELETE" | "UPDATE" | "MEASUREMENT_UPDATE" | "MEASUREMENT_UPDATE_BATCH" | "MARKUP_CREATE" | "MARKUP_DELETE" | "MARKUP_UPDATE" | "MARKUP_UPDATE_BATCH";
+type ActionType = "CREATE" | "DELETE" | "UPDATE" | "MEASUREMENT_UPDATE" | "MEASUREMENT_UPDATE_BATCH" | "MARKUP_CREATE" | "MARKUP_DELETE" | "MARKUP_DELETE_BATCH" | "MARKUP_UPDATE" | "MARKUP_UPDATE_BATCH";
 
 export interface MarkupSnapshot {
   id: string;
@@ -39,6 +39,12 @@ interface HistoryEntry {
   markupAfter?: MarkupSnapshot;
   markupBatchBefore?: MarkupSnapshot[];
   markupBatchAfter?: MarkupSnapshot[];
+  // Task #1860 — full-row snapshots of every markup removed by a
+  // bulk DELETE. Used by `MARKUP_DELETE_BATCH` so a single Undo press
+  // can POST `/api/takeoff/markups/restore-bulk` with the original
+  // ids / authorship / sheet preserved (and a single Redo press can
+  // re-issue the same bulk DELETE that produced them).
+  markupBatch?: Array<TakeoffMarkup & { points: { x: number; y: number }[] }>;
   sheetId: string;
 }
 
@@ -93,6 +99,24 @@ export function useTakeoffHistory(selectedSheet: string | null) {
 
   const pushMarkupAction = useCallback((type: "MARKUP_CREATE" | "MARKUP_DELETE", markup: TakeoffMarkup & { points: { x: number; y: number }[] }, sheetId: string) => {
     undoStack.current.push({ type, markup, sheetId });
+    redoStack.current = [];
+    updateFlags();
+  }, [updateFlags]);
+
+  // Task #1860 — Coalesce a bulk DELETE of N markups into a single
+  // history entry so one Undo press restores the whole selection in
+  // one server round-trip (POST /api/takeoff/markups/restore-bulk),
+  // preserving the original ids / authorship / sheet. Without this,
+  // the bulk DELETE pushed one MARKUP_DELETE entry per row and Undo
+  // fanned out N parallel POSTs to the per-id create route — the
+  // exact N-roundtrip problem the bulk DELETE itself was meant to
+  // solve. Empty arrays are no-ops so callers don't have to guard.
+  const pushMarkupDeleteBatchAction = useCallback((
+    markups: Array<TakeoffMarkup & { points: { x: number; y: number }[] }>,
+    sheetId: string,
+  ) => {
+    if (markups.length === 0) return;
+    undoStack.current.push({ type: "MARKUP_DELETE_BATCH", markupBatch: markups, sheetId });
     redoStack.current = [];
     updateFlags();
   }, [updateFlags]);
@@ -254,6 +278,26 @@ export function useTakeoffHistory(selectedSheet: string | null) {
         const res = await apiRequest("POST", "/api/takeoff/markups", payload);
         const restored = await res.json();
         entry.markup = { ...restored, points: typeof restored.points === "string" ? JSON.parse(restored.points) : restored.points };
+      } else if (entry.type === "MARKUP_DELETE_BATCH" && entry.markupBatch) {
+        // Task #1860 — Single round-trip restore. The server preserves
+        // the original id / authorship / sheet of each row, so the
+        // companion redo branch can target the same ids without any
+        // client-side mapping of "old id → new id".
+        const payload = {
+          markups: entry.markupBatch.map((m) => ({
+            id: m.id,
+            sheetId: m.sheetId,
+            organizationId: m.organizationId,
+            createdBy: m.createdBy,
+            tool: m.tool,
+            points: typeof m.points === "string" ? JSON.parse(m.points as any) : m.points,
+            color: m.color,
+            thickness: m.thickness,
+            text: (m as any).text ?? null,
+            categoryId: (m as any).categoryId ?? null,
+          })),
+        };
+        await apiRequest("POST", "/api/takeoff/markups/restore-bulk", payload);
       } else if (entry.type === "MARKUP_UPDATE" && entry.markupBefore) {
         await applyMarkupSnapshot(entry.markupBefore);
       } else if (entry.type === "MARKUP_UPDATE_BATCH" && entry.markupBatchBefore) {
@@ -307,6 +351,12 @@ export function useTakeoffHistory(selectedSheet: string | null) {
         entry.markup = { ...restored, points: typeof restored.points === "string" ? JSON.parse(restored.points) : restored.points };
       } else if (entry.type === "MARKUP_DELETE" && entry.markup) {
         await apiRequest("DELETE", `/api/takeoff/markups/${entry.markup.id}`);
+      } else if (entry.type === "MARKUP_DELETE_BATCH" && entry.markupBatch) {
+        // Task #1860 — Redo replays the original bulk DELETE in a
+        // single round-trip. The Undo branch restored every row with
+        // its original id, so the same id list still applies.
+        const ids = entry.markupBatch.map((m) => m.id);
+        await apiRequest("DELETE", "/api/takeoff/markups/bulk", { ids });
       } else if (entry.type === "MARKUP_UPDATE" && entry.markupAfter) {
         await applyMarkupSnapshot(entry.markupAfter);
       } else if (entry.type === "MARKUP_UPDATE_BATCH" && entry.markupBatchAfter) {
@@ -332,5 +382,5 @@ export function useTakeoffHistory(selectedSheet: string | null) {
     updateFlags();
   }, [updateFlags]);
 
-  return { pushAction, pushMarkupAction, pushMarkupUpdateAction, pushMarkupUpdateBatchAction, pushMeasurementUpdateAction, pushMeasurementUpdateBatchAction, undo, redo, canUndo, canRedo, isPending, clear };
+  return { pushAction, pushMarkupAction, pushMarkupDeleteBatchAction, pushMarkupUpdateAction, pushMarkupUpdateBatchAction, pushMeasurementUpdateAction, pushMeasurementUpdateBatchAction, undo, redo, canUndo, canRedo, isPending, clear };
 }

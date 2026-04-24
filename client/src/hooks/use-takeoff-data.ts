@@ -784,12 +784,22 @@ export function useTakeoffData({
     },
     onSuccess: (_data, _vars, ctx) => {
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "markups"] });
-      // Push one history entry per deleted markup so existing Undo
-      // semantics (per-row recreate) keep working unchanged.
-      if (selectedSheet && ctx?.deletedSnapshots) {
-        for (const m of ctx.deletedSnapshots) {
-          takeoffHistory.pushMarkupAction("MARKUP_DELETE", m as any, selectedSheet);
-        }
+      // Task #1860 — Coalesce the deletion into a single
+      // MARKUP_DELETE_BATCH history entry so Undo restores every row
+      // in one POST /api/takeoff/markups/restore-bulk round-trip
+      // (preserving original ids / authorship / sheet) and Redo
+      // re-issues the same bulk DELETE in one round-trip — instead
+      // of fanning out N parallel per-id POSTs / DELETEs as the
+      // original "one entry per row" approach did.
+      //
+      // Single-row deletes still go through this same batch entry to
+      // keep the history wiring uniform; the restore endpoint accepts
+      // a 1-element batch identically to the per-id POST it replaces.
+      if (selectedSheet && ctx?.deletedSnapshots && ctx.deletedSnapshots.length > 0) {
+        takeoffHistory.pushMarkupDeleteBatchAction(
+          ctx.deletedSnapshots as any,
+          selectedSheet,
+        );
       }
       const count = ctx?.deletedSnapshots.length ?? 0;
       toast({ title: count === 1 ? "Markup deleted" : `${count} markups deleted` });

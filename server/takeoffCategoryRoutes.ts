@@ -1047,6 +1047,221 @@ router.delete("/api/takeoff/markups/bulk", requireAuth, async (req: AuthRequest,
   }
 });
 
+// Task #1860 — Bulk RESTORE for undoing a multi-select markup delete in
+// one transactional round-trip. The bulk DELETE endpoint above (Task
+// #1832) records each removed row in the local undo history; without
+// this companion route, pressing Undo would fan out N parallel
+// per-id POST /api/takeoff/markups calls — the same N-roundtrip
+// problem the bulk DELETE itself was meant to solve.
+//
+// The route accepts the full snapshot of each deleted markup (id,
+// sheetId, organizationId, createdBy, tool, points, color, thickness,
+// text, categoryId) so the restored rows preserve their original ids,
+// authorship, sheet, and category — a redo of the bulk DELETE then
+// targets the same ids without any client-side mapping.
+//
+// Per-row authorization mirrors the bulk DELETE handler above:
+// SUPER_ADMIN bypasses org checks; ADMIN/MANAGER may restore any row
+// in their org; FIELD_WORKER/ESTIMATOR may only restore rows they
+// themselves authored (the same constraint that lets them delete in
+// the first place). Auth is evaluated against the snapshot the client
+// supplies — the original rows no longer exist, so there is nothing
+// to re-read. Cross-org rows are rejected up-front (403) before the
+// transaction opens, so a bad payload can never partially restore.
+//
+// Failure responses mirror the bulk DELETE structured shape:
+//   - 409 conflict (with `failedMarkupIds` listing ids that already
+//     exist — restoring a still-live row would otherwise hit a
+//     primary-key UNIQUE violation and surface as a generic 500)
+//   - 403 access_denied / not_owner (with `failedMarkupIds` and
+//     `failuresByReason` enumerating each cause)
+//   - 400 validation (with `failedMarkupIds` mapped from the offending
+//     entry indices)
+//
+// Route MUST be registered before `/api/takeoff/markups/:markupId`
+// or Express will route "restore-bulk" into `:markupId`.
+router.post("/api/takeoff/markups/restore-bulk", requireAuth, async (req: AuthRequest, res, next) => {
+  const startedAt = Date.now();
+  let batchCount = 0;
+  try {
+    const { takeoffMarkups } = await import("@shared/schema");
+    const { z } = await import("zod");
+    const { inArray } = await import("drizzle-orm");
+
+    const bulkSchema = z.object({
+      markups: z.array(
+        z.object({
+          id: z.string().min(1),
+          sheetId: z.string().min(1),
+          organizationId: z.string().min(1),
+          createdBy: z.string().min(1),
+          tool: z.enum(["ARROW", "TEXT", "RECTANGLE", "CLOUD", "HIGHLIGHT", "FREEHAND"]),
+          points: z.array(z.object({ x: z.number(), y: z.number() })).min(1).max(4096),
+          color: z.string().min(1),
+          thickness: z.number().int().min(1).max(64),
+          text: z.string().nullable().optional(),
+          categoryId: z.string().nullable().optional(),
+          createdAt: z.union([z.string(), z.date()]).optional(),
+        }),
+      ).min(1).max(500),
+    });
+
+    const validated = bulkSchema.parse(req.body);
+    batchCount = validated.markups.length;
+    const ids = validated.markups.map((m) => m.id);
+
+    const userRole = req.user!.role;
+    const userId = req.user!.id;
+    const orgId = req.user!.organizationId;
+    const isSuperAdmin = userRole === "SUPER_ADMIN";
+    const isAdminOrManager = isSuperAdmin || userRole === "ADMIN" || userRole === "MANAGER";
+
+    // Per-row org / ownership checks against the SUPPLIED snapshot
+    // (the rows are gone — we can't re-read them). The snapshot is the
+    // same one the client just held in its query cache before the
+    // bulk DELETE that is now being undone, so the values are trusted
+    // only as far as the FK constraints + per-row auth re-validation
+    // here go: a forged organizationId / createdBy that doesn't match
+    // what the current user could have authored or managed individually
+    // is rejected with the same access_denied / not_owner reasons the
+    // bulk DELETE uses.
+    const crossOrg: string[] = [];
+    const notOwner: string[] = [];
+    for (const m of validated.markups) {
+      if (!isSuperAdmin && m.organizationId !== orgId) crossOrg.push(m.id);
+      if (!isAdminOrManager && m.createdBy !== userId) notOwner.push(m.id);
+    }
+    const groups: Array<{
+      reason: "access_denied" | "not_owner";
+      ids: string[];
+      message: string;
+    }> = [];
+    if (crossOrg.length > 0) {
+      groups.push({
+        reason: "access_denied",
+        ids: crossOrg,
+        message: "Some markups belong to another organization and were not restored",
+      });
+    }
+    if (notOwner.length > 0) {
+      groups.push({
+        reason: "not_owner",
+        ids: notOwner,
+        message: "Some markups were created by another user — only the author or a manager can restore them",
+      });
+    }
+    if (groups.length > 0) {
+      const allFailed = Array.from(new Set(groups.flatMap((g) => g.ids)));
+      const dominant = groups.reduce((acc, g) => (g.ids.length > acc.ids.length ? g : acc));
+      res.status(403).json({
+        error: groups.map((g) => g.message).join("; "),
+        reason: dominant.reason,
+        failedMarkupIds: allFailed,
+        failuresByReason: groups.map((g) => ({
+          reason: g.reason,
+          failedMarkupIds: g.ids,
+          message: g.message,
+        })),
+      });
+      return;
+    }
+
+    // Conflict pre-check: every id must currently NOT exist. If any
+    // are still live (e.g. another tab restored them, or the client
+    // double-fired the Undo gesture) we bail out before opening the
+    // transaction so we never partially restore. The alternative —
+    // letting INSERT throw a primary-key UNIQUE violation — would
+    // surface as a generic 500 and the user would have no idea which
+    // of their N siblings got blocked.
+    const existing = await db
+      .select({ id: takeoffMarkups.id })
+      .from(takeoffMarkups)
+      .where(inArray(takeoffMarkups.id, ids));
+    if (existing.length > 0) {
+      const conflicts = existing.map((r) => r.id);
+      res.status(409).json({
+        error: "Some markups already exist and cannot be restored",
+        reason: "conflict",
+        failedMarkupIds: conflicts,
+      });
+      return;
+    }
+
+    const restored = await db.transaction(async (tx) => {
+      const inserted: any[] = [];
+      for (const m of validated.markups) {
+        const values: Record<string, unknown> = {
+          id: m.id,
+          sheetId: m.sheetId,
+          organizationId: m.organizationId,
+          createdBy: m.createdBy,
+          tool: m.tool,
+          points: JSON.stringify(m.points),
+          color: m.color,
+          thickness: m.thickness,
+          text: m.text ?? null,
+          categoryId: m.categoryId ?? null,
+        };
+        if (m.createdAt) {
+          values.createdAt = m.createdAt instanceof Date ? m.createdAt : new Date(m.createdAt);
+        }
+        const [row] = await tx.insert(takeoffMarkups).values(values as any).returning();
+        inserted.push(row);
+      }
+      // Defensive: if the row count diverges (a concurrent writer or
+      // a silent FK rejection on a single row) throw so the whole
+      // batch rolls back — the route's atomicity contract is the
+      // entire reason it exists.
+      if (inserted.length !== validated.markups.length) {
+        throw new Error("Bulk restore inserted fewer rows than expected");
+      }
+      return inserted;
+    });
+
+    recordJobMetrics("takeoff_markups_bulk_restore", {
+      ok: 1,
+      count: batchCount,
+      ms: Date.now() - startedAt,
+    });
+    res.json({
+      ok: true,
+      count: restored.length,
+      markups: restored.map((r) => ({
+        ...r,
+        points: safeParsePoints(r.points) || [],
+      })),
+    });
+  } catch (error: any) {
+    recordJobMetrics("takeoff_markups_bulk_restore", {
+      error: 1,
+      count: batchCount,
+      ms: Date.now() - startedAt,
+    });
+    logError("Error bulk-restoring markups:", {}, error instanceof Error ? error : new Error(String(error)));
+    if (error?.name === "ZodError") {
+      const submittedMarkups = Array.isArray(req.body?.markups) ? req.body.markups : [];
+      const failedIndices = new Set<number>();
+      for (const issue of (error.errors || [])) {
+        const path = Array.isArray(issue?.path) ? issue.path : [];
+        if (path[0] === "markups" && typeof path[1] === "number") {
+          failedIndices.add(path[1]);
+        }
+      }
+      const failedMarkupIds = Array.from(failedIndices)
+        .map((i) => submittedMarkups[i]?.id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0);
+      res.status(400).json({
+        error: "Invalid bulk restore",
+        reason: "validation",
+        failedMarkupIds,
+        details: error.errors,
+      });
+      return;
+    }
+    next(error);
+  }
+});
+
 // Delete a markup
 router.delete("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthRequest, res, next) => {
   try {
