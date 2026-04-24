@@ -13,6 +13,12 @@ import { useMemo } from "react";
 import { Stage, Layer, Arrow, Rect, Path, Line, Text, Group, Circle } from "react-konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import type Konva from "konva";
+import { buildCloudPath } from "./cloudPath";
+
+// Re-exported for backwards compatibility with existing call sites and
+// tests that imported `buildCloudPath` from this module before the
+// geometry was extracted into ./cloudPath (Task #1632).
+export { buildCloudPath };
 
 // "SELECT" is a non-drawing mode that allows clicking existing markups
 // to select/delete them without engaging a drawing tool. Drawing logic
@@ -46,55 +52,6 @@ export interface MarkupRendererProps {
   onPointerDown?: (point: { x: number; y: number }, evt: KonvaEventObject<PointerEvent>) => void;
   onPointerMove?: (point: { x: number; y: number }, evt: KonvaEventObject<PointerEvent>) => void;
   onPointerUp?: (point: { x: number; y: number }, evt: KonvaEventObject<PointerEvent>) => void;
-}
-
-/**
- * Builds an SVG path describing a "revision cloud" rectangle between the
- * two diagonal corners (x1, y1) and (x2, y2). `bumpSize` controls the
- * approximate world-coordinate spacing between bumps.
- *
- * Exported so the takeoff workspace and the print/PDF canvas-2D renderer
- * stay byte-for-byte identical with what `<MarkupShapeView />` paints.
- */
-export function buildCloudPath(x1: number, y1: number, x2: number, y2: number, bumpSize: number): string {
-  const left = Math.min(x1, x2);
-  const right = Math.max(x1, x2);
-  const top = Math.min(y1, y2);
-  const bottom = Math.max(y1, y2);
-  const w = right - left;
-  const h = bottom - top;
-  if (w < 4 || h < 4) {
-    return `M ${left} ${top} L ${right} ${top} L ${right} ${bottom} L ${left} ${bottom} Z`;
-  }
-  const bx = Math.max(3, Math.round(w / bumpSize));
-  const by = Math.max(3, Math.round(h / bumpSize));
-  const sx = w / bx;
-  const sy = h / by;
-  const px = Math.max(4, sx * 0.45);
-  const py = Math.max(4, sy * 0.45);
-  let d = `M ${left} ${top}`;
-  for (let i = 0; i < bx; i++) {
-    const ex = left + (i + 1) * sx;
-    const cx = left + i * sx + sx / 2;
-    d += ` Q ${cx} ${top - py}, ${ex} ${top}`;
-  }
-  for (let i = 0; i < by; i++) {
-    const ey = top + (i + 1) * sy;
-    const cy = top + i * sy + sy / 2;
-    d += ` Q ${right + px} ${cy}, ${right} ${ey}`;
-  }
-  for (let i = 0; i < bx; i++) {
-    const ex = right - (i + 1) * sx;
-    const cx = right - i * sx - sx / 2;
-    d += ` Q ${cx} ${bottom + py}, ${ex} ${bottom}`;
-  }
-  for (let i = 0; i < by; i++) {
-    const ey = bottom - (i + 1) * sy;
-    const cy = bottom - i * sy - sy / 2;
-    d += ` Q ${left - px} ${cy}, ${left} ${ey}`;
-  }
-  d += " Z";
-  return d;
 }
 
 interface RenderedShape {

@@ -6,7 +6,13 @@
  *
  * Coordinates in `points` are normalized 0-1 within the page; the
  * renderer scales them to the supplied canvas dimensions.
+ *
+ * Cloud-bump geometry lives in `./cloudPath` and is shared verbatim with
+ * the on-screen renderer (Task #1632) so SVG output and Path2D output
+ * stay in lockstep.
  */
+
+import { buildCloudPath2D } from "./cloudPath";
 
 export type MarkupTool =
   | "ARROW"
@@ -22,56 +28,6 @@ export interface MarkupForRender {
   color: string;
   thickness: number;
   text?: string;
-}
-
-/** Mirror of TakeoffWorkspace.buildCloudPath but emits a Path2D. */
-function buildCloudPath2D(
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number,
-  bumpSize: number,
-): Path2D {
-  const left = Math.min(x1, x2);
-  const right = Math.max(x1, x2);
-  const top = Math.min(y1, y2);
-  const bottom = Math.max(y1, y2);
-  const w = right - left;
-  const h = bottom - top;
-  const path = new Path2D();
-  if (w < 4 || h < 4) {
-    path.rect(left, top, w, h);
-    return path;
-  }
-  const bx = Math.max(3, Math.round(w / bumpSize));
-  const by = Math.max(3, Math.round(h / bumpSize));
-  const sx = w / bx;
-  const sy = h / by;
-  const px = Math.max(4, sx * 0.45);
-  const py = Math.max(4, sy * 0.45);
-  path.moveTo(left, top);
-  for (let i = 0; i < bx; i++) {
-    const ex = left + (i + 1) * sx;
-    const cx = left + i * sx + sx / 2;
-    path.quadraticCurveTo(cx, top - py, ex, top);
-  }
-  for (let i = 0; i < by; i++) {
-    const ey = top + (i + 1) * sy;
-    const cy = top + i * sy + sy / 2;
-    path.quadraticCurveTo(right + px, cy, right, ey);
-  }
-  for (let i = 0; i < bx; i++) {
-    const ex = right - (i + 1) * sx;
-    const cx = right - i * sx - sx / 2;
-    path.quadraticCurveTo(cx, bottom + py, ex, bottom);
-  }
-  for (let i = 0; i < by; i++) {
-    const ey = bottom - (i + 1) * sy;
-    const cy = bottom - i * sy - sy / 2;
-    path.quadraticCurveTo(left - px, cy, left, ey);
-  }
-  path.closePath();
-  return path;
 }
 
 export function renderMarkupToCanvas(

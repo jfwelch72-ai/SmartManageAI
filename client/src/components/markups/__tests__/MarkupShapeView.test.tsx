@@ -206,3 +206,133 @@ describe("buildCloudPath", () => {
     expect(d.endsWith("Z")).toBe(true);
   });
 });
+
+// Task #1632 — the SVG and Path2D variants must stay in lockstep because
+// the same algorithm drives both the on-screen Konva renderer and the
+// print/PDF canvas renderer. This pins the geometry by emitting both
+// representations through a shared trace and asserting they match the
+// expected per-step sequence for a representative cloud rectangle.
+describe("traceCloudPath shared geometry", () => {
+  it("drives SVG and Path2D outputs from the same operation sequence", async () => {
+    const { traceCloudPath, buildCloudPath: svgFromShared, buildCloudPath2D } =
+      await import("../cloudPath");
+
+    type Op =
+      | ["M", number, number]
+      | ["L", number, number]
+      | ["Q", number, number, number, number]
+      | ["Z"];
+
+    const ops: Op[] = [];
+    traceCloudPath(0, 0, 200, 100, 24, {
+      moveTo(x, y) {
+        ops.push(["M", x, y]);
+      },
+      lineTo(x, y) {
+        ops.push(["L", x, y]);
+      },
+      quadraticCurveTo(cx, cy, x, y) {
+        ops.push(["Q", cx, cy, x, y]);
+      },
+      close() {
+        ops.push(["Z"]);
+      },
+    });
+
+    expect(ops[0]).toEqual(["M", 0, 0]);
+    expect(ops[ops.length - 1]).toEqual(["Z"]);
+    // Every non-terminal op for a non-degenerate cloud is a quadratic.
+    expect(ops.slice(1, -1).every((op) => op[0] === "Q")).toBe(true);
+
+    // The convenience wrappers must agree with what the public renderer
+    // module exposes (the test imports `buildCloudPath` from there).
+    expect(svgFromShared(0, 0, 200, 100, 24)).toBe(
+      buildCloudPath(0, 0, 200, 100, 24),
+    );
+
+    // Path2D isn't available in jsdom, so polyfill it with a tiny shim
+    // that records calls. The shim just needs to exist; the test only
+    // cares that buildCloudPath2D drives the same op sequence into it.
+    type RecordedCall = [string, ...number[]];
+    const calls: RecordedCall[] = [];
+    const Path2DShim = class {
+      moveTo(x: number, y: number) {
+        calls.push(["moveTo", x, y]);
+      }
+      lineTo(x: number, y: number) {
+        calls.push(["lineTo", x, y]);
+      }
+      quadraticCurveTo(cx: number, cy: number, x: number, y: number) {
+        calls.push(["quadraticCurveTo", cx, cy, x, y]);
+      }
+      closePath() {
+        calls.push(["closePath"]);
+      }
+    };
+    const g = globalThis as unknown as { Path2D?: unknown };
+    const previous = g.Path2D;
+    g.Path2D = Path2DShim;
+    try {
+      buildCloudPath2D(0, 0, 200, 100, 24);
+    } finally {
+      if (previous === undefined) delete g.Path2D;
+      else g.Path2D = previous;
+    }
+
+    // The Path2D op stream must mirror the trace op stream 1:1.
+    const expected: RecordedCall[] = ops.map((op) => {
+      if (op[0] === "M") return ["moveTo", op[1], op[2]];
+      if (op[0] === "L") return ["lineTo", op[1], op[2]];
+      if (op[0] === "Q") return ["quadraticCurveTo", op[1], op[2], op[3], op[4]];
+      return ["closePath"];
+    });
+    expect(calls).toEqual(expected);
+  });
+
+  // The pre-consolidation Path2D code used `path.rect()` for tiny boxes.
+  // The shared geometry instead emits `moveTo + lineTo*3 + closePath`.
+  // Both render to the same stroked rectangle, but pinning the explicit
+  // op sequence here prevents anyone from "optimizing" tiny clouds back
+  // into a bare `rect()` call (which would silently re-introduce the
+  // SVG/canvas drift this task was meant to eliminate).
+  it("emits a four-corner closed outline for tiny boxes in buildCloudPath2D", async () => {
+    const { buildCloudPath2D } = await import("../cloudPath");
+
+    type RecordedCall = [string, ...number[]];
+    const calls: RecordedCall[] = [];
+    const Path2DShim = class {
+      moveTo(x: number, y: number) {
+        calls.push(["moveTo", x, y]);
+      }
+      lineTo(x: number, y: number) {
+        calls.push(["lineTo", x, y]);
+      }
+      quadraticCurveTo(cx: number, cy: number, x: number, y: number) {
+        calls.push(["quadraticCurveTo", cx, cy, x, y]);
+      }
+      closePath() {
+        calls.push(["closePath"]);
+      }
+      rect(x: number, y: number, w: number, h: number) {
+        calls.push(["rect", x, y, w, h]);
+      }
+    };
+    const g = globalThis as unknown as { Path2D?: unknown };
+    const previous = g.Path2D;
+    g.Path2D = Path2DShim;
+    try {
+      buildCloudPath2D(0, 0, 2, 2, 24);
+    } finally {
+      if (previous === undefined) delete g.Path2D;
+      else g.Path2D = previous;
+    }
+
+    expect(calls).toEqual([
+      ["moveTo", 0, 0],
+      ["lineTo", 2, 0],
+      ["lineTo", 2, 2],
+      ["lineTo", 0, 2],
+      ["closePath"],
+    ]);
+  });
+});
