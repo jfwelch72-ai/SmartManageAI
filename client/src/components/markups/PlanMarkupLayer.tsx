@@ -158,58 +158,17 @@ function makeId() {
   return `tmp-${Math.random().toString(36).slice(2)}`;
 }
 
-/**
- * Task #1676 — pure helper that builds the bulk-PATCH payload for a
- * group drag. Exported for unit tests so the delta math can be locked
- * down without driving the full Konva stage.
- *
- * @param markups   The current cached markups (after layer filter).
- * @param memberIds Ids of the markups that should move (expandedSelection).
- * @param ndx       Normalized x-delta in [0,1] of canvas width.
- * @param ndy       Normalized y-delta in [0,1] of canvas height.
- */
-export function buildBulkMoveUpdates(
-  markups: MarkupShape[],
-  memberIds: string[],
-  ndx: number,
-  ndy: number,
-): Array<{ id: string; points: Array<{ x: number; y: number }> }> {
-  if (ndx === 0 && ndy === 0) return [];
-  const out: Array<{ id: string; points: Array<{ x: number; y: number }> }> = [];
-  for (const id of memberIds) {
-    const m = markups.find((x) => x.id === id);
-    if (!m) continue;
-    out.push({
-      id: m.id,
-      points: m.points.map((p) => ({ x: p.x + ndx, y: p.y + ndy })),
-    });
-  }
-  return out;
-}
-
-/**
- * Task #1705 — pure helper that captures a snapshot of every moved
- * markup's pre-move points for the bulk-PATCH undo. Run this BEFORE
- * `buildBulkMoveUpdates` is sent to the server so the snapshot reflects
- * the points as they were when the user grabbed the group. Replaying
- * this same array as a bulk-PATCH payload restores the prior layout.
- */
-export function buildMoveSnapshot(
-  markups: MarkupShape[],
-  memberIds: string[],
-): Array<{ id: string; points: Array<{ x: number; y: number }> }> {
-  const out: Array<{ id: string; points: Array<{ x: number; y: number }> }> = [];
-  for (const id of memberIds) {
-    const m = markups.find((x) => x.id === id);
-    if (!m) continue;
-    out.push({
-      id: m.id,
-      // Defensive copy — callers may mutate the snapshot otherwise.
-      points: m.points.map((p) => ({ x: p.x, y: p.y })),
-    });
-  }
-  return out;
-}
+// Task #1725 — `buildBulkMoveUpdates` and `buildMoveSnapshot` were
+// extracted into `./moveHelpers` so the server-side undo round-trip
+// integration test can import them under a Node test environment
+// without dragging in `react-konva`. Imported AND re-exported here so
+// existing call sites (this component's onDragEnd, plus the
+// client-side helper unit tests at
+// `__tests__/PlanMarkupLayer.bulkMove.test.tsx`) keep working.
+// NOTE: `export { ... } from "./moveHelpers"` alone would NOT create
+// local bindings — the runtime calls below would throw ReferenceError.
+import { buildBulkMoveUpdates, buildMoveSnapshot } from "./moveHelpers";
+export { buildBulkMoveUpdates, buildMoveSnapshot };
 
 export default function PlanMarkupLayer({
   documentId,
