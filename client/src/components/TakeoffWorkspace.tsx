@@ -3952,10 +3952,36 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         afterSnaps.push({ id, points: sNewPts });
                         bulkUpdates.push({ id, points: sNewPts });
                       }
-                      if (selectedSheet) {
-                        takeoffHistory.pushMarkupUpdateBatchAction(beforeSnaps, afterSnaps, selectedSheet);
-                      }
-                      bulkUpdateMarkupsMutation.mutate({ updates: bulkUpdates });
+                      // Task #1759 — defer the MARKUP_UPDATE_BATCH
+                      // history push until the bulk PATCH actually
+                      // succeeds. `bulkUpdateMarkupsMutation` already
+                      // rolls the optimistic cache back on failure
+                      // (its `onError` restores `previousMarkups`), so
+                      // the only remaining failure-mode bug from the
+                      // pre-Task-#1752 parallel-PATCH world was the
+                      // phantom Undo entry: pushing the history entry
+                      // up front meant a failed group still left a
+                      // MARKUP_UPDATE_BATCH on the undo stack,
+                      // claiming a move that never happened, and Redo
+                      // would silently re-fire the failed payload.
+                      // Awaiting via `mutateAsync` and pushing only on
+                      // resolve closes that hole; the mutation's own
+                      // `onError` toast covers the failure case.
+                      const sheetIdForBatch = selectedSheet;
+                      bulkUpdateMarkupsMutation
+                        .mutateAsync({ updates: bulkUpdates })
+                        .then(() => {
+                          if (sheetIdForBatch) {
+                            takeoffHistory.pushMarkupUpdateBatchAction(beforeSnaps, afterSnaps, sheetIdForBatch);
+                          }
+                        })
+                        .catch(() => {
+                          // No-op: the mutation's onError handler
+                          // restores the optimistic cache snapshot
+                          // and surfaces the error toast. Skipping
+                          // the history push (above) is the only
+                          // additional Task #1759 obligation.
+                        });
                     }
                   };
                   const groupProps = isDraggable
