@@ -416,11 +416,14 @@ export async function exportPlans(
             if (!isAllowed) {
               logError("STACK CT: Skipping untrusted file URL domain", { host: url.hostname });
             } else {
-              const resp = await fetch(doc.fileUrl);
-              if (resp.ok) {
-                const ab = await resp.arrayBuffer();
-                fileBuffer = Buffer.from(ab);
-              }
+              // Task #1498: route through safeDownload so SSRF, redirect, and
+              // size-cap protections apply uniformly to imported plan files.
+              const { safeDownload } = await import("../../../services/safeDownload");
+              const result = await safeDownload({
+                url: doc.fileUrl,
+                allowedContentTypes: null,
+              });
+              fileBuffer = result.buffer;
             }
           } catch (fetchErr) {
             logError("STACK CT: Failed to fetch file from URL", { fileUrl: doc.fileUrl, error: String(fetchErr) });

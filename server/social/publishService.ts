@@ -362,11 +362,23 @@ async function publishToYouTube(post: PostData, token: string): Promise<PublishR
         return { success: false, platformSupported: true, error: "YouTube did not return an upload URL" };
       }
 
-      const videoRes = await fetch(mediaUrl, { signal: AbortSignal.timeout(60000) });
-      if (!videoRes.ok) {
-        return { success: false, platformSupported: true, error: "Failed to fetch video from media URL for YouTube upload" };
+      // Task #1498: route the user-supplied media URL through safeDownload
+      // so SSRF, redirect re-validation, and a size cap apply before we
+      // forward the payload to YouTube.
+      const { safeDownload, SafeDownloadError } = await import("../services/safeDownload");
+      let videoBuffer: Buffer;
+      try {
+        const result = await safeDownload({
+          url: mediaUrl,
+          timeoutMs: 60000,
+          allowedContentTypes: null,
+          maxBytes: 500 * 1024 * 1024,
+        });
+        videoBuffer = result.buffer;
+      } catch (err: any) {
+        const reason = err instanceof SafeDownloadError ? err.message : "Failed to fetch video from media URL for YouTube upload";
+        return { success: false, platformSupported: true, error: reason };
       }
-      const videoBuffer = await videoRes.arrayBuffer();
 
       const uploadRes = await fetch(uploadUrl, {
         method: "PUT",

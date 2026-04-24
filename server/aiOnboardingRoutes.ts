@@ -834,58 +834,31 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
 
 async function extractThemeFromWebsite(organizationId: string, websiteUrl: string, userId: string | null): Promise<void> {
   try {
-    const url = new URL(websiteUrl);
-    
-    if (!['http:', 'https:'].includes(url.protocol)) {
-      console.log("Theme extraction: Invalid protocol");
-      return;
+    // Task #1498: route this third-party fetch through the shared
+    // safeDownload helper so SSRF checks (incl. DNS resolution),
+    // redirect re-validation, and the streaming size cap apply.
+    const { safeDownload, SafeDownloadError } = await import("./services/safeDownload");
+
+    let html: string;
+    try {
+      const result = await safeDownload({
+        url: websiteUrl,
+        headers: {
+          'User-Agent': 'SmartManageAI-Theme-Extractor/1.0',
+          'Accept': 'text/html',
+        },
+        timeoutMs: 10000,
+        maxBytes: 1_000_000,
+        allowedContentTypes: ['text/html', 'application/xhtml+xml'],
+      });
+      html = result.buffer.toString('utf8');
+    } catch (err: any) {
+      if (err instanceof SafeDownloadError) {
+        console.log(`Theme extraction: ${err.message}`);
+        return;
+      }
+      throw err;
     }
-    
-    const hostname = url.hostname.toLowerCase();
-    const blockedPatterns = [
-      /^localhost$/i,
-      /^127\./,
-      /^10\./,
-      /^172\.(1[6-9]|2[0-9]|3[01])\./,
-      /^192\.168\./,
-      /^0\./,
-      /^169\.254\./,
-      /\.local$/i,
-      /^::1$/,
-      /^fc00:/i,
-      /^fe80:/i,
-    ];
-    
-    if (blockedPatterns.some(pattern => pattern.test(hostname))) {
-      console.log("Theme extraction: Blocked internal IP/hostname");
-      return;
-    }
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-    const response = await fetch(websiteUrl, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'SmartManageAI-Theme-Extractor/1.0',
-        'Accept': 'text/html',
-      },
-    });
-    
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      console.log("Theme extraction: Failed to fetch website");
-      return;
-    }
-
-    const contentLength = response.headers.get('content-length');
-    if (contentLength && parseInt(contentLength) > 1000000) {
-      console.log("Theme extraction: Response too large");
-      return;
-    }
-
-    const html = await response.text();
     
     const colorPatterns = [
       /#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g,
