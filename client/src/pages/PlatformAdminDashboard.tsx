@@ -1,11 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Building2, Users, TrendingUp, Activity, ChevronRight, Database, Clock, Server, DollarSign, FileText, ListChecks } from "lucide-react";
+import { Building2, Users, TrendingUp, Activity, ChevronRight, Database, Clock, Server, DollarSign, FileText, ListChecks, Headphones } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/use-auth";
+import { apiRequest } from "@/lib/queryClient";
+import { isSuperAdmin } from "@/lib/rbac";
 
 interface PlatformStats {
   totalOrganizations: number;
@@ -59,6 +61,33 @@ export default function PlatformAdminDashboard() {
   const { data: subStats } = useQuery<SubscriptionStats>({
     queryKey: ["/api/platform/subscriptions/stats"],
   });
+
+  // Task #1594 — surface a small "N quiet org(s)" badge on the
+  // transcript-backfill tile so platform support can spot tenants whose
+  // alert pipeline is silently broken without opening the deep-link page.
+  // Reuses the existing JSON digest endpoint (and its query key shape, to
+  // share cache with `BackfillAlertFailuresDigestCard`) so tile + card
+  // never drift. Cross-org + quietOrgs are SUPER_ADMIN-only on the server,
+  // so we mirror that gating here to skip the request for non-supers.
+  const isSuper = isSuperAdmin(user?.role);
+  const { data: quietDigest } = useQuery<{
+    quietOrgs?: Array<{ organizationId: string }>;
+  }>({
+    queryKey: [
+      "/api/crm/calls/transcripts/backfill/alert-failures-digest",
+      24,
+      "all-orgs",
+    ],
+    queryFn: async () => {
+      const res = await apiRequest(
+        "GET",
+        "/api/crm/calls/transcripts/backfill/alert-failures-digest?windowHours=24&crossOrg=true",
+      );
+      return await res.json();
+    },
+    enabled: isSuper,
+  });
+  const quietOrgsCount = quietDigest?.quietOrgs?.length ?? 0;
 
   const userName = user ? `${user.firstName} ${user.lastName}` : "Admin";
   const userRole = user?.role || "SUPER_ADMIN";
@@ -414,42 +443,76 @@ export default function PlatformAdminDashboard() {
           </Card>
         </Link>
 
-        <Link href="/admin/job-metrics">
-          <Card className="hover-elevate cursor-pointer transition-colors" data-testid="link-admin-job-metrics">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="h-5 w-5" />
-                Background job metrics
-              </CardTitle>
-              <CardDescription>Birthday digest delivery health and counters from other tracked jobs</CardDescription>
-            </CardHeader>
-          </Card>
-        </Link>
-
-        <Link href="/admin/one-shot-jobs">
-          <Card className="hover-elevate cursor-pointer transition-colors" data-testid="link-admin-one-shot-jobs">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <ListChecks className="h-5 w-5" />
-                One-shot jobs
-              </CardTitle>
-              <CardDescription>Post-deploy backfills with last-completion details and one-click re-run</CardDescription>
-            </CardHeader>
-          </Card>
-        </Link>
-
-        <Link href="/admin/jobs/metrics">
-          <Card className="hover-elevate cursor-pointer transition-colors" data-testid="link-admin-jobs-metrics">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Activity className="h-5 w-5" />
-                Job metrics dashboard
-              </CardTitle>
-              <CardDescription>Rolling 24h trend charts for every tracked background job</CardDescription>
-            </CardHeader>
-          </Card>
-        </Link>
+        {isSuper && (
+          <Link href="/admin/transcript-backfill">
+            <Card className="hover-elevate cursor-pointer transition-colors" data-testid="link-admin-transcript-backfill">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Headphones className="h-5 w-5" />
+                  Transcript backfill
+                  {quietOrgsCount > 0 && (
+                    <Badge
+                      variant="destructive"
+                      className="ml-auto"
+                      data-testid="badge-transcript-backfill-quiet-orgs"
+                    >
+                      {quietOrgsCount} quiet org{quietOrgsCount === 1 ? "" : "s"}
+                    </Badge>
+                  )}
+                </CardTitle>
+                <CardDescription>Cross-org alert-failure CSVs and silent-pipeline digest for tenants whose alerts have stopped</CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+        )}
       </div>
+
+      <section data-testid="section-admin-background-jobs" className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold" data-testid="heading-background-jobs">Background jobs</h2>
+          <p className="text-sm text-muted-foreground">
+            Per-job counter health, one-shot post-deploy run history, and rolling 24h trend charts for every tracked job.
+          </p>
+        </div>
+
+        <div className="grid gap-3 sm:gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3">
+          <Link href="/admin/job-metrics">
+            <Card className="hover-elevate cursor-pointer transition-colors" data-testid="link-admin-job-metrics">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-5 w-5" />
+                  Background job metrics
+                </CardTitle>
+                <CardDescription>Birthday digest delivery health and counters from other tracked jobs</CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+
+          <Link href="/admin/one-shot-jobs">
+            <Card className="hover-elevate cursor-pointer transition-colors" data-testid="link-admin-one-shot-jobs">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ListChecks className="h-5 w-5" />
+                  One-shot jobs
+                </CardTitle>
+                <CardDescription>Post-deploy backfills with last-completion details and one-click re-run</CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+
+          <Link href="/admin/jobs/metrics">
+            <Card className="hover-elevate cursor-pointer transition-colors" data-testid="link-admin-jobs-metrics">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-5 w-5" />
+                  Job metrics dashboard
+                </CardTitle>
+                <CardDescription>Rolling 24h trend charts for every tracked background job</CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+        </div>
+      </section>
       </main>
     </div>
   );
