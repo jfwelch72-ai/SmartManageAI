@@ -34,7 +34,9 @@ import {
   organizations,
   users,
   crmTranscriptBackfillAlertDeliveries,
+  auditLog,
 } from "@shared/schema";
+import { and, eq, desc } from "drizzle-orm";
 import { generateToken } from "../auth";
 
 const SUFFIX = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -284,6 +286,12 @@ afterAll(async () => {
         )
         .catch(() => {});
     }
+    // Task #1549 — clean up the audit rows our successful CSV exports
+    // wrote so the audit_log table doesn't accumulate junk across runs.
+    await db
+      .delete(auditLog)
+      .where(inArray(auditLog.userId, [adminAId, superAdminId, fieldAId]))
+      .catch(() => {});
     await db
       .delete(users)
       .where(inArray(users.id, [adminAId, superAdminId, fieldAId]))
@@ -422,6 +430,119 @@ describe("GET /api/crm/calls/transcripts/backfill/alert-failures-digest.csv", ()
     // with embedded quotes correctly (parseCsv decodes both).
     const a1 = rows.find((r) => r[3] === "job-A-1")!;
     expect(a1[7]).toBe('slack: "channel_not_found", retry_after=30');
+  });
+
+  // Task #1549 — SOC2 / tenant-trust requirement: every successful
+  // cross-org CSV export must leave an audit_log breadcrumb capturing
+  // the actor, the dataset (summary vs samples), the windowHours, and
+  // the row counts in the export. Failed/forbidden requests (covered
+  // by the 401/403 cases below) must NOT leave a row.
+  it("writes an admin audit_log row with actor, dataset, window and row counts", async () => {
+    const before = new Date();
+    // Summary export — should write a row with orgRowCount > 0 and
+    // sampleRowCount = 0 (the summary CSV doesn't include samples).
+    const summaryRes = await request(app)
+      .get(ENDPOINT)
+      .query({ crossOrg: "true", windowHours: 48 })
+      .set("Cookie", superAdminCookie);
+    expect(summaryRes.status).toBe(200);
+
+    const summaryRows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.userId, superAdminId),
+          eq(auditLog.entityType, "admin_csv_export"),
+          eq(auditLog.entityId, "crm_transcript_backfill_alert_failures"),
+        ),
+      )
+      .orderBy(desc(auditLog.createdAt));
+    const summaryRow = summaryRows.find((r) => {
+      try {
+        const v = JSON.parse(r.newValue ?? "{}");
+        return v.dataset === "summary" && v.windowHours === 48;
+      } catch {
+        return false;
+      }
+    });
+    expect(summaryRow).toBeDefined();
+    expect(summaryRow!.action).toBe("CREATE");
+    expect(summaryRow!.createdAt.getTime()).toBeGreaterThanOrEqual(
+      before.getTime() - 1000,
+    );
+    const summaryPayload = JSON.parse(summaryRow!.newValue!);
+    expect(summaryPayload.dataset).toBe("summary");
+    expect(summaryPayload.windowHours).toBe(48);
+    expect(typeof summaryPayload.orgRowCount).toBe("number");
+    expect(summaryPayload.orgRowCount).toBeGreaterThanOrEqual(2);
+    expect(summaryPayload.sampleRowCount).toBe(0);
+    expect(typeof summaryPayload.generatedAt).toBe("string");
+
+    // Samples export — should write a *separate* row tagged
+    // dataset=samples with sampleRowCount matching the body length.
+    const samplesRes = await request(app)
+      .get(ENDPOINT)
+      .query({ crossOrg: "true", dataset: "samples", windowHours: 24 })
+      .set("Cookie", superAdminCookie);
+    expect(samplesRes.status).toBe(200);
+    const samplesBodyRows = parseCsv(samplesRes.text).slice(1).length;
+
+    const allRows = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.userId, superAdminId),
+          eq(auditLog.entityType, "admin_csv_export"),
+          eq(auditLog.entityId, "crm_transcript_backfill_alert_failures"),
+        ),
+      )
+      .orderBy(desc(auditLog.createdAt));
+    const samplesRow = allRows.find((r) => {
+      try {
+        const v = JSON.parse(r.newValue ?? "{}");
+        return v.dataset === "samples" && v.windowHours === 24;
+      } catch {
+        return false;
+      }
+    });
+    expect(samplesRow).toBeDefined();
+    const samplesPayload = JSON.parse(samplesRow!.newValue!);
+    expect(samplesPayload.dataset).toBe("samples");
+    expect(samplesPayload.windowHours).toBe(24);
+    expect(samplesPayload.sampleRowCount).toBe(samplesBodyRows);
+    expect(samplesPayload.orgRowCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("does NOT write an audit_log row when the request is rejected", async () => {
+    // A non-super ADMIN gets 403'd by the route — no audit row should
+    // be written for them, otherwise the trail fills with noise from
+    // probing / misconfigured callers and the SOC2 signal is diluted.
+    const beforeRows = await db
+      .select({ id: auditLog.id })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.userId, adminAId),
+          eq(auditLog.entityType, "admin_csv_export"),
+        ),
+      );
+    const res = await request(app)
+      .get(ENDPOINT)
+      .query({ crossOrg: "true" })
+      .set("Cookie", adminACookie);
+    expect(res.status).toBe(403);
+    const afterRows = await db
+      .select({ id: auditLog.id })
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.userId, adminAId),
+          eq(auditLog.entityType, "admin_csv_export"),
+        ),
+      );
+    expect(afterRows.length).toBe(beforeRows.length);
   });
 
   it("rejects SUPER_ADMINs without crossOrg=true so it can't fall back silently", async () => {

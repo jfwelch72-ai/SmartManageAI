@@ -86,7 +86,7 @@ import {
   type AuthRequest,
   invalidateAuthCache,
 } from "./auth";
-import { logUpdate } from "./auditLogger";
+import { logAudit, logUpdate } from "./auditLogger";
 import { getOrgIdForFilter, isSuperAdmin } from "./orgFilter";
 import { isFeatureEnabled } from "./services/featureFlagService";
 import { logError, logInfo, logWarn } from "./utils/logger";
@@ -4642,6 +4642,47 @@ router.get(
         `attachment; filename="alert-failures-${filenameSuffix}-${windowLabel}-${stamp}.csv"`,
       );
       res.send(lines.join("\n") + "\n");
+
+      // Task #1549 — write a SOC2 / tenant-trust audit row whenever a super
+      // admin successfully pulls one of the cross-org CSVs. Captures actor,
+      // dataset (summary vs samples), windowHours, the org row count and
+      // (for samples) the total sample row count exported, so the existing
+      // admin audit dashboard can surface "who pulled what, when" alongside
+      // other super-admin actions. Logged after res.send so a slow audit
+      // write never blocks the download, and only on the success path so
+      // we don't pollute the trail with rows for callers that 4xx'd above.
+      try {
+        const orgRowCount = sortedAggregates.length;
+        const sampleRowCount =
+          dataset === "samples"
+            ? sortedAggregates.reduce(
+                (n, e) => n + e.recentFailures.length,
+                0,
+              )
+            : 0;
+        const summary = {
+          dataset,
+          windowHours,
+          orgRowCount,
+          sampleRowCount,
+          recentSampleLimit,
+          generatedAt: generatedAtIso,
+        };
+        await logAudit(
+          {
+            userId: req.user!.id,
+            action: "CREATE",
+            entityType: "admin_csv_export",
+            entityId: "crm_transcript_backfill_alert_failures",
+            newValue: JSON.stringify(summary),
+          },
+          req,
+        );
+      } catch {
+        // logAudit already swallows DB errors; this catch is just defence
+        // in depth so a bad summary value never bubbles up after the
+        // response has been sent.
+      }
     } catch (e) {
       next(e);
     }
