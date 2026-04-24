@@ -96,6 +96,14 @@ export interface MarkupShapeViewProps {
   pts: Array<{ x: number; y: number }>;
   selected: boolean;
   /**
+   * Task #1768 — When true, the shape renders with a red attention
+   * glow instead of (or in addition to) the regular blue selection
+   * shadow. Used by `TakeoffWorkspace` to flash the markups whose
+   * most-recent move PATCH was rejected by the server, so a 50-markup
+   * batch failure points at exactly which siblings to fix.
+   */
+  failed?: boolean;
+  /**
    * Task #1729 — Selection callback. Receives the modifier flags read
    * off the actual Konva click event (Shift today). The argument is
    * optional so existing callers that don't care about modifiers keep
@@ -128,6 +136,7 @@ export function MarkupShapeView({
   shape,
   pts,
   selected,
+  failed,
   onSelect,
   readOnly,
   listening,
@@ -150,11 +159,20 @@ export function MarkupShapeView({
         onSelect({ shift: native?.shiftKey === true });
       }
     : undefined;
-  const shadow = {
-    shadowEnabled: selected,
-    shadowColor: "#3b82f6",
-    shadowBlur: 6 * pixelScale,
-  } as const;
+  // Task #1768 — Failed-move highlight wins over the normal selection
+  // shadow so a rejected markup is unmistakable even when it is also
+  // part of the current selection. Red + a stronger blur.
+  const shadow = failed
+    ? ({
+        shadowEnabled: true,
+        shadowColor: "#ef4444",
+        shadowBlur: 12 * pixelScale,
+      } as const)
+    : ({
+        shadowEnabled: selected,
+        shadowColor: "#3b82f6",
+        shadowBlur: 6 * pixelScale,
+      } as const);
 
   if (pts.length === 0) return null;
 

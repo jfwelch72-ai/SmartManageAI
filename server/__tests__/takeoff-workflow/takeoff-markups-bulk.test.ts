@@ -56,6 +56,11 @@ let app: Express;
 let server: Server;
 let adminToken: string;
 let otherOrgToken: string;
+// Task #1768 — Same-org USER (no manager privileges) so we can
+// exercise the `not_owner` reason and prove that mixed-reason batches
+// (e.g. `cross_sheet` + `not_owner`) surface every cause, not just
+// the first one the legacy code happened to short-circuit on.
+let userToken: string;
 let bidId: string;
 let sheetIdA: string;
 let sheetIdB: string;
@@ -145,6 +150,20 @@ beforeAll(async () => {
     isActive: true,
   }).returning();
   otherOrgToken = generateToken(otherAdmin.id, otherAdmin.tokenVersion ?? 0);
+
+  // Task #1768 — Same-org regular user. Used in the mixed-reason
+  // batch test below to trigger `not_owner` on markups created by
+  // the admin while ALSO triggering `cross_sheet` on the same batch.
+  const [regularUser] = await db.insert(users).values({
+    email: `${slug}-user@test.local`,
+    passwordHash,
+    firstName: "Regular",
+    lastName: "User",
+    role: "ESTIMATOR",
+    organizationId: org.id,
+    isActive: true,
+  }).returning();
+  userToken = generateToken(regularUser.id, regularUser.tokenVersion ?? 0);
 
   const [bid] = await db.insert(bids).values({
     code: `${slug}-BID`,
@@ -277,6 +296,10 @@ describe("PATCH /api/takeoff/markups/bulk", () => {
       otherOrgToken,
     );
     expect(res.status).toBe(403);
+    // Task #1768 — Structured response so the client can name the
+    // offending markup in the toast and flash it on the canvas.
+    expect(res.body.reason).toBe("access_denied");
+    expect(res.body.failedMarkupIds).toEqual([m.id]);
 
     const refreshed = await fetchMarkupsForSheet(sheetIdA);
     const found = refreshed.find((r) => r.id === m.id)!;
@@ -296,6 +319,10 @@ describe("PATCH /api/takeoff/markups/bulk", () => {
       ],
     });
     expect(res.status).toBe(400);
+    // Task #1768 — Cross-sheet failure should call out the mismatched
+    // markup id (the row whose sheetId differs from the rest).
+    expect(res.body.reason).toBe("cross_sheet");
+    expect(res.body.failedMarkupIds).toEqual(expect.arrayContaining([b.id]));
 
     const refreshedA = await fetchMarkupsForSheet(sheetIdA);
     const refreshedB = await fetchMarkupsForSheet(sheetIdB);
@@ -318,6 +345,13 @@ describe("PATCH /api/takeoff/markups/bulk", () => {
       ],
     });
     expect(res.status).toBe(404);
+    // Task #1768 — The 404 must enumerate the missing ids so the
+    // client toast can name them ("X was deleted") and the canvas
+    // can flash them. Real ids must NOT appear in the failed set.
+    expect(res.body.reason).toBe("not_found");
+    expect(res.body.failedMarkupIds).toEqual([fakeId]);
+    expect(res.body.failedMarkupIds).not.toContain(real1.id);
+    expect(res.body.failedMarkupIds).not.toContain(real2.id);
 
     const refreshed = await fetchMarkupsForSheet(sheetIdA);
     const r1 = refreshed.find((r) => r.id === real1.id)!;
@@ -326,7 +360,92 @@ describe("PATCH /api/takeoff/markups/bulk", () => {
     expect(r2.points).toEqual(before2);
   });
 
-  it("rejects malformed payloads with 400", async () => {
+  it("enumerates every missing id when several siblings were deleted, not just the first", async () => {
+    // Task #1768 — A 50-markup batch where two siblings were deleted
+    // should call out BOTH so the user retries the right ones; the
+    // pre-#1768 endpoint short-circuited on the first failure.
+    const real = await createMarkup(sheetIdA, 200, 200);
+    const fakeA = "00000000-0000-0000-0000-0000000000aa";
+    const fakeB = "00000000-0000-0000-0000-0000000000bb";
+
+    const res = await apiPatch("/api/takeoff/markups/bulk", {
+      updates: [
+        { id: real.id, points: [{ x: 1, y: 1 }, { x: 2, y: 2 }] },
+        { id: fakeA, points: [{ x: 3, y: 3 }, { x: 4, y: 4 }] },
+        { id: fakeB, points: [{ x: 5, y: 5 }, { x: 6, y: 6 }] },
+      ],
+    });
+    expect(res.status).toBe(404);
+    expect(res.body.reason).toBe("not_found");
+    expect(res.body.failedMarkupIds).toEqual(expect.arrayContaining([fakeA, fakeB]));
+    expect(res.body.failedMarkupIds).not.toContain(real.id);
+  });
+
+  it("surfaces every reason in a mixed-reason batch via failuresByReason (cross_sheet + not_owner)", async () => {
+    // Task #1768 — Two markups created by the admin: one on sheetA,
+    // one on sheetB. When a same-org USER tries to move both at
+    // once, the bulk endpoint must call out BOTH causes — `cross_sheet`
+    // (the markups span two sheets) AND `not_owner` (neither was
+    // created by this user) — instead of the legacy short-circuit that
+    // only reported whichever bucket fired first.
+    const a = await createMarkup(sheetIdA, 700, 700);
+    const b = await createMarkup(sheetIdB, 800, 800);
+
+    const res = await apiPatch(
+      "/api/takeoff/markups/bulk",
+      {
+        updates: [
+          { id: a.id, points: [{ x: 1, y: 1 }, { x: 2, y: 2 }] },
+          { id: b.id, points: [{ x: 3, y: 3 }, { x: 4, y: 4 }] },
+        ],
+      },
+      userToken,
+    );
+
+    // 403 because `not_owner` is the dominant failure (2 ids vs the
+    // 1 id flagged for cross_sheet) and any access-class reason
+    // forces 403 over the cross-sheet 400.
+    expect(res.status).toBe(403);
+    expect(res.body.reason).toBe("not_owner");
+
+    // Both reasons must appear in `failuresByReason`. Row order from
+    // `inArray` isn't guaranteed by Postgres without ORDER BY, so
+    // `cross_sheet` may name either id (whichever wasn't `rows[0]`),
+    // but it must always have exactly one entry; `not_owner` always
+    // names both.
+    expect(Array.isArray(res.body.failuresByReason)).toBe(true);
+    const reasons = (res.body.failuresByReason as Array<{ reason: string }>)
+      .map((g) => g.reason)
+      .sort();
+    expect(reasons).toEqual(["cross_sheet", "not_owner"]);
+
+    const crossSheetGroup = (res.body.failuresByReason as Array<{
+      reason: string;
+      failedMarkupIds: string[];
+    }>).find((g) => g.reason === "cross_sheet")!;
+    expect(crossSheetGroup.failedMarkupIds).toHaveLength(1);
+    expect([a.id, b.id]).toContain(crossSheetGroup.failedMarkupIds[0]);
+
+    const notOwnerGroup = (res.body.failuresByReason as Array<{
+      reason: string;
+      failedMarkupIds: string[];
+    }>).find((g) => g.reason === "not_owner")!;
+    expect(notOwnerGroup.failedMarkupIds).toEqual(expect.arrayContaining([a.id, b.id]));
+    expect(notOwnerGroup.failedMarkupIds).toHaveLength(2);
+
+    // The flat union still carries every offending id so the canvas
+    // can flash both at once even on older clients.
+    expect(res.body.failedMarkupIds).toEqual(expect.arrayContaining([a.id, b.id]));
+    expect(res.body.failedMarkupIds).toHaveLength(2);
+
+    // No row was mutated (atomicity).
+    const refreshedA = await fetchMarkupsForSheet(sheetIdA);
+    const refreshedB = await fetchMarkupsForSheet(sheetIdB);
+    expect(refreshedA.find((r) => r.id === a.id)!.points).toEqual(a.points);
+    expect(refreshedB.find((r) => r.id === b.id)!.points).toEqual(b.points);
+  });
+
+  it("rejects malformed payloads with 400 and identifies the offending update by id", async () => {
     // Empty updates array
     const empty = await apiPatch("/api/takeoff/markups/bulk", { updates: [] });
     expect(empty.status).toBe(400);
@@ -343,6 +462,10 @@ describe("PATCH /api/takeoff/markups/bulk", () => {
       updates: [{ id: "abc", points: [{ x: "oops", y: 1 }] }],
     });
     expect(badCoords.status).toBe(400);
+    // Task #1768 — Zod's per-update path lets us map back to the
+    // submitted markup id so the client toast can name it.
+    expect(badCoords.body.reason).toBe("validation");
+    expect(badCoords.body.failedMarkupIds).toEqual(["abc"]);
   });
 
   // Task #1765 — color / thickness / text bulk updates.

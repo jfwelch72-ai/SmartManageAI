@@ -1,10 +1,11 @@
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useTakeoffHistory } from "@/hooks/use-takeoff-history";
 import type { TakeoffSheet, TakeoffMeasurement, TakeoffMeasurementGroup, QuantityCategory, TakeoffMarkup, TakeoffSheetLink, TakeoffCondition } from "@shared/schema";
 import type { PlanDocument, AddendumOverlayData, MeasurementType } from "@/components/takeoff/types";
+import { buildMarkupFailureSummary } from "@/components/markups/markup-failure-helpers";
 
 export type TakeoffMarkupWithAuthor = TakeoffMarkup & { authorName?: string | null; points: { x: number; y: number }[] };
 
@@ -51,6 +52,37 @@ export function useTakeoffData({
   callbacks,
 }: UseTakeoffDataParams) {
   const { toast } = useToast();
+
+  // Task #1768 — Tracks markup ids whose most-recent move PATCH was
+  // rejected by the server. The TakeoffWorkspace renders a temporary
+  // red glow on every id in this set so a 50-markup batch failure
+  // points the user at exactly which siblings to fix instead of a
+  // black-box "try again". Auto-clears after a few seconds; the
+  // mutation onError handlers replace the set on every new failure so
+  // an old highlight never lingers from a previous gesture.
+  const [failedMarkupIds, setFailedMarkupIdsState] = useState<Set<string>>(() => new Set());
+  const failedMarkupIdsTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashFailedMarkupIds = useCallback((ids: string[]) => {
+    if (failedMarkupIdsTimerRef.current) {
+      clearTimeout(failedMarkupIdsTimerRef.current);
+      failedMarkupIdsTimerRef.current = null;
+    }
+    if (ids.length === 0) {
+      setFailedMarkupIdsState(new Set());
+      return;
+    }
+    setFailedMarkupIdsState(new Set(ids));
+    failedMarkupIdsTimerRef.current = setTimeout(() => {
+      setFailedMarkupIdsState(new Set());
+      failedMarkupIdsTimerRef.current = null;
+    }, 6000);
+  }, []);
+  const clearFailedMarkupIds = useCallback(() => {
+    flashFailedMarkupIds([]);
+  }, [flashFailedMarkupIds]);
+  useEffect(() => () => {
+    if (failedMarkupIdsTimerRef.current) clearTimeout(failedMarkupIdsTimerRef.current);
+  }, []);
 
   const isBid = context?.type === "bid";
   const ctxId = isBid ? context.bidId : projectId;
@@ -552,14 +584,29 @@ export function useTakeoffData({
         }
       }
     },
-    onError: (_error, _vars, ctx) => {
+    onError: (error, vars, ctx) => {
       // Task #1735 — Roll the cache back to its pre-drag points so the
       // markup returns to its real location instead of being stranded
       // at the failed optimistic position.
       if (ctx?.previousMarkups) {
         queryClient.setQueryData(ctx.queryKey, ctx.previousMarkups);
       }
-      toast({ title: "Error", description: "Failed to update markup", variant: "destructive" });
+      // Task #1768 — Single-markup edits and resizes route through this
+      // mutation too, so reuse the same per-id / per-reason toast and
+      // canvas-flash treatment used by the bulk path. The structured
+      // server response (`reason`, `failedMarkupIds`) lets us name the
+      // markup and tell the user *why* it rejected (deleted, owned by
+      // another user, etc.) instead of the legacy generic toast.
+      const cachedMarkups = ctx?.previousMarkups
+        ?? queryClient.getQueryData<TakeoffMarkupWithAuthor[]>(["/api/takeoff/sheets", selectedSheet, "markups"])
+        ?? [];
+      const summary = buildMarkupFailureSummary({
+        error,
+        attemptedMarkupIds: vars?.id ? [vars.id] : [],
+        markups: cachedMarkups.map(m => ({ id: m.id, tool: m.tool, text: m.text })),
+      });
+      flashFailedMarkupIds(summary.failedMarkupIds);
+      toast({ title: summary.title, description: summary.description, variant: "destructive" });
     },
   });
 
@@ -614,16 +661,30 @@ export function useTakeoffData({
           });
         });
       }
-      return { previousMarkups, queryKey };
+      return { previousMarkups, queryKey, attemptedIds: updates.map(u => u.id) };
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "markups"] });
     },
-    onError: (_error, _vars, ctx) => {
+    onError: (error, _vars, ctx) => {
       if (ctx?.previousMarkups) {
         queryClient.setQueryData(ctx.queryKey, ctx.previousMarkups);
       }
-      toast({ title: "Error", description: "Failed to update markups", variant: "destructive" });
+      // Task #1768 — Replace the legacy generic toast with a per-id /
+      // per-reason summary so a 50-markup batch failure tells the user
+      // *which* siblings rejected and *why* (deleted, owned by another
+      // user, etc.) and flashes them on the canvas. Falls back to the
+      // raw server message if no structured `reason` is present.
+      const cachedMarkups = ctx?.previousMarkups
+        ?? queryClient.getQueryData<TakeoffMarkupWithAuthor[]>(["/api/takeoff/sheets", selectedSheet, "markups"])
+        ?? [];
+      const summary = buildMarkupFailureSummary({
+        error,
+        attemptedMarkupIds: ctx?.attemptedIds ?? [],
+        markups: cachedMarkups.map(m => ({ id: m.id, tool: m.tool, text: m.text })),
+      });
+      flashFailedMarkupIds(summary.failedMarkupIds);
+      toast({ title: summary.title, description: summary.description, variant: "destructive" });
     },
   });
 
@@ -921,5 +982,10 @@ export function useTakeoffData({
     deleteGroupMutation,
     toggleGroupVisibilityMutation,
     measurementCountsPerSheet,
+    // Task #1768 — Set of markup ids whose most-recent move PATCH was
+    // rejected. The workspace renders a temporary red glow on every id
+    // in this set so the user can see exactly which siblings to fix.
+    failedMarkupIds,
+    clearFailedMarkupIds,
   };
 }

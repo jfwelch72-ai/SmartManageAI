@@ -4,9 +4,10 @@ async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
     let message = `${res.status}: ${res.statusText}`;
+    let parsed: any = undefined;
     try {
-      const parsed = JSON.parse(text);
-      if (parsed.error) {
+      parsed = JSON.parse(text);
+      if (parsed?.error) {
         message = parsed.error;
         if (parsed.details && Array.isArray(parsed.details)) {
           const fieldErrors = parsed.details
@@ -22,7 +23,16 @@ async function throwIfResNotOk(res: Response) {
     } catch {
       if (text) message = text;
     }
-    throw new Error(message);
+    // Task #1768 — Attach the parsed JSON body and HTTP status to the
+    // Error so onError handlers can read structured fields like
+    // `failedMarkupIds` / `reason` and surface them to the user
+    // (toast naming the offending markup, canvas highlight, etc.).
+    // Existing callers that only inspect `error.message` are
+    // unaffected.
+    const err: Error & { status?: number; data?: any } = new Error(message);
+    err.status = res.status;
+    if (parsed !== undefined) err.data = parsed;
+    throw err;
   }
 }
 

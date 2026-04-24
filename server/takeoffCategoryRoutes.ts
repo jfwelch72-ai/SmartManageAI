@@ -620,8 +620,19 @@ router.patch("/api/takeoff/markups/bulk", requireAuth, async (req: AuthRequest, 
       .from(takeoffMarkups)
       .where(inArray(takeoffMarkups.id, ids));
 
+    // Task #1768 — Surface every offending markup id (not just "the
+    // first failure") so the client toast can name them and the canvas
+    // can flash them. Previously this endpoint short-circuited on the
+    // first violation, leaving the user to retry the whole gesture
+    // with no idea which sibling actually rejected.
     if (rows.length !== ids.length) {
-      res.status(404).json({ error: "One or more markups were not found" });
+      const present = new Set(rows.map((r) => r.id));
+      const missing = ids.filter((id) => !present.has(id));
+      res.status(404).json({
+        error: "Some markups could not be moved because they no longer exist",
+        reason: "not_found",
+        failedMarkupIds: missing,
+      });
       return;
     }
 
@@ -632,19 +643,78 @@ router.patch("/api/takeoff/markups/bulk", requireAuth, async (req: AuthRequest, 
     const isAdminOrManager = isSuperAdmin || userRole === "ADMIN" || userRole === "MANAGER";
 
     const firstSheetId = rows[0].sheetId;
+    const crossSheet: string[] = [];
+    const crossOrg: string[] = [];
+    const notOwner: string[] = [];
     for (const r of rows) {
-      if (r.sheetId !== firstSheetId) {
-        res.status(400).json({ error: "All markups must belong to the same sheet" });
-        return;
-      }
-      if (!isSuperAdmin && r.organizationId !== orgId) {
-        res.status(403).json({ error: "Access denied" });
-        return;
-      }
-      if (!isAdminOrManager && r.createdBy !== userId) {
-        res.status(403).json({ error: "You can only edit your own markups" });
-        return;
-      }
+      if (r.sheetId !== firstSheetId) crossSheet.push(r.id);
+      if (!isSuperAdmin && r.organizationId !== orgId) crossOrg.push(r.id);
+      if (!isAdminOrManager && r.createdBy !== userId) notOwner.push(r.id);
+    }
+    // Task #1768 — Mixed-reason atomic failures (e.g. "two markups
+    // belong to a different sheet AND one was created by someone
+    // else") used to surface only the FIRST non-empty bucket, which
+    // hid the other root causes from the user. Group every offending
+    // id under its reason and return them all so the client toast
+    // can call out each cause separately. The legacy flat
+    // `failedMarkupIds` is preserved (union of all groups) so
+    // older clients still flash the same canvas markups.
+    const groups: Array<{
+      reason: "cross_sheet" | "access_denied" | "not_owner";
+      ids: string[];
+      message: string;
+    }> = [];
+    if (crossSheet.length > 0) {
+      groups.push({
+        reason: "cross_sheet",
+        ids: crossSheet,
+        message: "Some markups belong to a different sheet and were not moved",
+      });
+    }
+    if (crossOrg.length > 0) {
+      groups.push({
+        reason: "access_denied",
+        ids: crossOrg,
+        message: "Some markups belong to another organization and were not moved",
+      });
+    }
+    if (notOwner.length > 0) {
+      groups.push({
+        reason: "not_owner",
+        ids: notOwner,
+        message: "Some markups were created by another user — only the author or a manager can move them",
+      });
+    }
+    if (groups.length > 0) {
+      const allFailed = Array.from(
+        new Set(groups.flatMap((g) => g.ids)),
+      );
+      // Pick the most-restrictive HTTP status across the active
+      // reasons: 403 if any access reason fired (the user is not
+      // allowed to do this), otherwise 400 (the request shape was
+      // wrong because of cross-sheet mixing). The single `reason`
+      // field stays for backward compatibility — it carries the
+      // group with the most failed ids so a single-reason batch
+      // continues to behave exactly like before.
+      const status = groups.some(
+        (g) => g.reason === "access_denied" || g.reason === "not_owner",
+      )
+        ? 403
+        : 400;
+      const dominant = groups.reduce((acc, g) =>
+        g.ids.length > acc.ids.length ? g : acc,
+      );
+      res.status(status).json({
+        error: groups.map((g) => g.message).join("; "),
+        reason: dominant.reason,
+        failedMarkupIds: allFailed,
+        failuresByReason: groups.map((g) => ({
+          reason: g.reason,
+          failedMarkupIds: g.ids,
+          message: g.message,
+        })),
+      });
+      return;
     }
 
     const updated = await db.transaction(async (tx) => {
@@ -687,7 +757,26 @@ router.patch("/api/takeoff/markups/bulk", requireAuth, async (req: AuthRequest, 
     });
     logError("Error bulk-updating markups:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error?.name === "ZodError") {
-      res.status(400).json({ error: "Invalid bulk patch", details: error.errors });
+      // Task #1768 — Each Zod issue's `path` is `["updates", N, ...]`.
+      // Map the offending update indices back to the markup id the
+      // caller submitted so the client can name + flash the bad ones.
+      const submittedUpdates = Array.isArray(req.body?.updates) ? req.body.updates : [];
+      const failedIndices = new Set<number>();
+      for (const issue of (error.errors || [])) {
+        const path = Array.isArray(issue?.path) ? issue.path : [];
+        if (path[0] === "updates" && typeof path[1] === "number") {
+          failedIndices.add(path[1]);
+        }
+      }
+      const failedMarkupIds = Array.from(failedIndices)
+        .map((i) => submittedUpdates[i]?.id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0);
+      res.status(400).json({
+        error: "Invalid bulk patch",
+        reason: "validation",
+        failedMarkupIds,
+        details: error.errors,
+      });
       return;
     }
     next(error);
@@ -717,7 +806,15 @@ router.patch("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthRequ
       .limit(1);
 
     if (!markup) {
-      res.status(404).json({ error: "Markup not found" });
+      // Task #1768 — Mirror the structured shape used by the bulk
+      // endpoint so the client error handler can name the markup that
+      // failed and flash it on the canvas regardless of whether the
+      // commit went through the single or bulk path.
+      res.status(404).json({
+        error: "Markup not found — it may have been deleted",
+        reason: "not_found",
+        failedMarkupIds: [markupId],
+      });
       return;
     }
 
@@ -727,7 +824,11 @@ router.patch("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthRequ
     const isSuperAdmin = userRole === "SUPER_ADMIN";
 
     if (!isSuperAdmin && markup.organizationId !== orgId) {
-      res.status(403).json({ error: "Access denied" });
+      res.status(403).json({
+        error: "Markup belongs to another organization",
+        reason: "access_denied",
+        failedMarkupIds: [markupId],
+      });
       return;
     }
 
@@ -735,7 +836,11 @@ router.patch("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthRequ
     const isAdminOrManager = isSuperAdmin || userRole === "ADMIN" || userRole === "MANAGER";
 
     if (!isOwner && !isAdminOrManager) {
-      res.status(403).json({ error: "You can only edit your own markups" });
+      res.status(403).json({
+        error: "Markup was created by another user — only the author or a manager can edit it",
+        reason: "not_owner",
+        failedMarkupIds: [markupId],
+      });
       return;
     }
 
@@ -756,7 +861,11 @@ router.patch("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthRequ
       .returning();
 
     if (!updated) {
-      res.status(404).json({ error: "Markup not found" });
+      res.status(404).json({
+        error: "Markup not found — it may have been deleted",
+        reason: "not_found",
+        failedMarkupIds: [markupId],
+      });
       return;
     }
 
@@ -767,7 +876,12 @@ router.patch("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthRequ
   } catch (error: any) {
     logError("Error updating markup:", {}, error instanceof Error ? error : new Error(String(error)));
     if (error.name === "ZodError") {
-      res.status(400).json({ error: "Invalid markup data", details: error.errors });
+      res.status(400).json({
+        error: "Invalid markup data",
+        reason: "validation",
+        failedMarkupIds: [req.params.markupId].filter(Boolean),
+        details: error.errors,
+      });
     } else {
       next(error);
     }

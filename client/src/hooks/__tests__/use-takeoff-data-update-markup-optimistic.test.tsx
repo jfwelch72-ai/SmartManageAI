@@ -247,14 +247,22 @@ describe("updateMarkupMutation — optimistic cache update for body drags", () =
       expect(cached[0].points).toEqual(ORIGINAL_POINTS);
     });
 
-    // The destructive toast is what tells the user the drag did not
-    // persist — without it the rollback would be silent.
+    // Task #1768 — The toast now names the failed markup and the
+    // reason instead of the legacy generic "Failed to update markup".
+    // The seeded markup has no text, so `describeMarkup` falls back to
+    // `Arrow <id-prefix>`; the rejection has no structured `reason`
+    // (`Error("network down")`), so the helper takes the unknown
+    // branch and surfaces the raw network error followed by the
+    // affected-markup name.
     expect(toastMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        title: "Error",
-        description: "Failed to update markup",
+        title: "Markup could not be moved",
         variant: "destructive",
       }),
     );
+    const description = toastMock.mock.calls.at(-1)?.[0]?.description as string;
+    expect(description).toContain("network down");
+    expect(description).toContain("Arrow m-1");
+    expect(description).toContain("rolled back");
   });
 });

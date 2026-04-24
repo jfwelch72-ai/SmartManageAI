@@ -511,6 +511,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     deleteGroupMutation, toggleGroupVisibilityMutation,
     conditions, createConditionMutation, updateConditionMutation, deleteConditionMutation,
     measurementCountsPerSheet,
+    // Task #1768 — Set of markup ids whose most-recent move PATCH was
+    // rejected by the server. Used below to render a temporary red
+    // glow on each rejected markup so a 50-markup batch failure
+    // points the user at exactly which siblings to fix.
+    failedMarkupIds,
   } = data;
 
   useEffect(() => {
@@ -4152,11 +4157,19 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                     thickness,
                     text: (markup.text as string) || "",
                   };
+                  // Task #1768 — Flash a red glow on any markup whose
+                  // most-recent move PATCH was rejected. The set lives
+                  // on `useTakeoffData` and auto-clears after a few
+                  // seconds, so a 50-markup batch failure makes the
+                  // bad siblings unmistakable instead of leaving the
+                  // user to guess from a generic toast.
+                  const isFailed = failedMarkupIds.has(markup.id);
                   const shape = (
                     <MarkupShapeView
                       shape={sharedShape}
                       pts={pts}
                       selected={isSelected}
+                      failed={isFailed}
                       onSelect={isSelectable
                         ? () => {
                             // Task #1736 — Shift+click toggles the
