@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { useTakeoffHistory, type MeasurementSnapshot } from "@/hooks/use-takeoff-history";
 import type { TakeoffSheet, TakeoffMeasurement, TakeoffMeasurementGroup, QuantityCategory, TakeoffMarkup, TakeoffSheetLink, TakeoffCondition } from "@shared/schema";
 import type { PlanDocument, AddendumOverlayData, MeasurementType } from "@/components/takeoff/types";
@@ -82,6 +83,25 @@ export function useTakeoffData({
   }, [flashFailedMarkupIds]);
   useEffect(() => () => {
     if (failedMarkupIdsTimerRef.current) clearTimeout(failedMarkupIdsTimerRef.current);
+  }, []);
+
+  // Task #1882 — Track the most recent "Deleted N markups" undo toast
+  // so we can auto-dismiss it when the user navigates away from the
+  // sheet the deletion happened on. Without this, the toast (and its
+  // Undo button) would linger on a different sheet where invoking the
+  // restore would put the markups back on the wrong canvas context for
+  // the user.
+  const bulkDeleteToastRef = useRef<{ dismiss: () => void; sheetId: string } | null>(null);
+  useEffect(() => {
+    const tracked = bulkDeleteToastRef.current;
+    if (tracked && tracked.sheetId !== selectedSheet) {
+      tracked.dismiss();
+      bulkDeleteToastRef.current = null;
+    }
+  }, [selectedSheet]);
+  useEffect(() => () => {
+    bulkDeleteToastRef.current?.dismiss();
+    bulkDeleteToastRef.current = null;
   }, []);
 
   const isBid = context?.type === "bid";
@@ -802,7 +822,37 @@ export function useTakeoffData({
         );
       }
       const count = ctx?.deletedSnapshots.length ?? 0;
-      toast({ title: count === 1 ? "Markup deleted" : `${count} markups deleted` });
+      // Task #1882 — Surface the new restore endpoint to non-power
+      // users via a destructive-style toast with an explicit Undo
+      // button (Cmd/Ctrl+Z still works in parallel via the history
+      // entry pushed above). Clicking Undo replays the same
+      // MARKUP_DELETE_BATCH undo path (POST /api/takeoff/markups/restore-bulk)
+      // by calling `takeoffHistory.undo()`, which the entry above just
+      // placed at the top of the undo stack. The toast auto-dismisses
+      // after 8s and is also force-dismissed if the user navigates to
+      // a different sheet (see `bulkDeleteToastRef` effect above).
+      if (count > 0 && selectedSheet) {
+        bulkDeleteToastRef.current?.dismiss();
+        const sheetIdAtDelete = selectedSheet;
+        const handle = toast({
+          variant: "destructive",
+          title: `Deleted ${count} ${count === 1 ? "markup" : "markups"}`,
+          duration: 8000,
+          action: (
+            <ToastAction
+              altText="Undo bulk delete of markups"
+              data-testid="button-toast-undo-bulk-delete-markups"
+              onClick={() => {
+                bulkDeleteToastRef.current = null;
+                takeoffHistory.undo();
+              }}
+            >
+              Undo
+            </ToastAction>
+          ),
+        });
+        bulkDeleteToastRef.current = { dismiss: handle.dismiss, sheetId: sheetIdAtDelete };
+      }
     },
     onError: (error: any, _vars, ctx) => {
       if (ctx?.previousMarkups) {
