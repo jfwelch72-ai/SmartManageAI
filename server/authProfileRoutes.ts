@@ -1069,6 +1069,25 @@ const upload = multer({
         // settings sync across devices.
         plansToolbarLabeled: z.boolean().optional(),
         plansTourCompleted: z.boolean().optional(),
+        // Task #1720 — per-user CRM owner-filter selections. Replaces
+        // the per-user-id localStorage keys
+        // `crm:contactOwnerFilter:<uid>` and `crm:orgOwnerFilter:<uid>`
+        // so the "Show only my orgs / contacts" picks sync across
+        // devices. Accepts `null` so the client can clear a stored
+        // preference and fall back to "all". Capped at 256 chars
+        // because the only valid payloads are short sentinels
+        // ("all", "me", "__unassigned__") or a `users.id` UUID — the
+        // cap is purely a guardrail against unbounded text writes.
+        crmContactOwnerFilter: z
+          .string()
+          .max(256)
+          .nullable()
+          .optional(),
+        crmOrgOwnerFilter: z
+          .string()
+          .max(256)
+          .nullable()
+          .optional(),
       });
       const parsed = profileSchema.safeParse(req.body);
       if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
@@ -1092,7 +1111,9 @@ const upload = multer({
         alertFailureEmailMode,
         integrationSyncExhaustedEmailOptOut,
         plansToolbarLabeled,
-        plansTourCompleted } = parsed.data;
+        plansTourCompleted,
+        crmContactOwnerFilter,
+        crmOrgOwnerFilter } = parsed.data;
       const updateData: Record<string, unknown> = { updatedAt: new Date() };
       if (firstName !== undefined) updateData.firstName = firstName;
       if (lastName !== undefined) updateData.lastName = lastName;
@@ -1138,6 +1159,16 @@ const upload = multer({
       // across devices instead of being trapped in per-user-id localStorage.
       if (plansToolbarLabeled !== undefined) updateData.plansToolbarLabeled = plansToolbarLabeled;
       if (plansTourCompleted !== undefined) updateData.plansTourCompleted = plansTourCompleted;
+      // Task #1720 — CRM owner-filter selections (contacts + orgs).
+      // `null` is a valid clear-the-preference signal, so we honour it
+      // explicitly via `?? null` instead of falling back to the empty
+      // string (which the CRM page does not treat as "no preference").
+      if (crmContactOwnerFilter !== undefined) {
+        updateData.crmContactOwnerFilter = crmContactOwnerFilter ?? null;
+      }
+      if (crmOrgOwnerFilter !== undefined) {
+        updateData.crmOrgOwnerFilter = crmOrgOwnerFilter ?? null;
+      }
 
       const [updated] = await db.update(users).set(updateData).where(eq(users.id, userId)).returning();
       if (!updated) { res.status(404).json({ error: "User not found" }); return; }

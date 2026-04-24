@@ -565,6 +565,18 @@ export const users = pgTable("users", {
   //     does not auto-replay; users can still relaunch it manually.
   plansToolbarLabeled: boolean("plans_toolbar_labeled").notNull().default(false),
   plansTourCompleted: boolean("plans_tour_completed").notNull().default(false),
+  // Task #1720 — Per-user CRM owner-filter selections, promoted from
+  // per-user-id `localStorage` keys (`crm:contactOwnerFilter:<uid>` and
+  // `crm:orgOwnerFilter:<uid>`) to server-side columns so the
+  // estimator's "Show only my orgs / contacts" toggle survives device
+  // switches and cache clears. Stored as plain text so we can carry
+  // the special sentinels ("all", "me", "__unassigned__") and
+  // arbitrary user-id selections without an enum migration every time
+  // a new sentinel is added. Nullable: NULL means "no preference saved
+  // yet" so the CRM page falls back to its default ("all") instead of
+  // being forced into a stale value on first render.
+  crmContactOwnerFilter: text("crm_contact_owner_filter"),
+  crmOrgOwnerFilter: text("crm_org_owner_filter"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

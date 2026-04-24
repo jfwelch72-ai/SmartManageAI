@@ -239,6 +239,14 @@ export async function authMiddleware(
       // every device the user signs in on.
       plansToolbarLabeled: user.plansToolbarLabeled,
       plansTourCompleted: user.plansTourCompleted,
+      // Task #1720 — per-user CRM owner-filter selections promoted
+      // from per-user-id localStorage so the "Show only my orgs /
+      // contacts" picks travel with the user across devices. Same
+      // hydrate/persist contract as the Plans-surface preferences
+      // above; NULL means "no preference saved yet" and the client
+      // falls back to its default ("all").
+      crmContactOwnerFilter: user.crmContactOwnerFilter,
+      crmOrgOwnerFilter: user.crmOrgOwnerFilter,
       effectiveRole,
       isHustlerOwner,
     };

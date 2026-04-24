@@ -638,44 +638,133 @@ export default function CRMPage() {
   const [contactSearch, setContactSearch] = useState("");
   // Task #701: filter contacts table by owner. "all" = no filter, "me" = current
   // user, "__unassigned__" = no owner, otherwise a specific user id.
-  // Task #708: persist the selection across visits (per user, via localStorage).
-  const contactOwnerFilterStorageKey = user?.id
-    ? `crm:contactOwnerFilter:${user.id}`
-    : "crm:contactOwnerFilter";
-  const [contactOwnerFilter, setContactOwnerFilterState] = useState<string>(() => {
-    try {
-      const stored = localStorage.getItem(contactOwnerFilterStorageKey);
-      if (stored) return stored;
-    } catch {}
-    return "all";
-  });
-  const setContactOwnerFilter = useCallback((value: string) => {
-    setContactOwnerFilterState(value);
-    try {
-      localStorage.setItem(contactOwnerFilterStorageKey, value);
-    } catch {}
-  }, [contactOwnerFilterStorageKey]);
-  // When the auth user becomes available (or changes), pick up that user's
-  // saved selection so the filter sticks across visits even if it was stored
-  // before the user id was known. If we have a value stored under the
-  // anonymous key but nothing yet under the user-scoped key, migrate it so
-  // selections made before auth resolved are not lost.
+  //
+  // Task #708 originally persisted the selection in per-user-id
+  // `localStorage` (`crm:contactOwnerFilter:<uid>`) which never synced
+  // across devices. Task #1720 promotes it to a server-side column on
+  // `users.crmContactOwnerFilter`, mirroring the Plans-surface
+  // preferences pattern from Task #1695: hydrate from `user.*`,
+  // optimistic-update local state on change, persist via PATCH
+  // `/api/auth/profile`, and run a one-shot migration that lifts any
+  // legacy per-user-id (or pre-auth anonymous) localStorage value up
+  // to the server before clearing it.
+  const LEGACY_CONTACT_OWNER_KEY_PREFIX = "crm:contactOwnerFilter:";
+  const LEGACY_CONTACT_OWNER_ANON_KEY = "crm:contactOwnerFilter";
+  const [contactOwnerFilter, setContactOwnerFilterState] = useState<string>(
+    () => user?.crmContactOwnerFilter ?? "all",
+  );
+  // Re-sync from the server whenever the active user changes or the
+  // server-side preference value updates (e.g. another device picked
+  // a different filter and the next /api/auth/me poll returned it).
   useEffect(() => {
-    try {
-      let stored = localStorage.getItem(contactOwnerFilterStorageKey);
-      if (!stored && contactOwnerFilterStorageKey !== "crm:contactOwnerFilter") {
-        const anon = localStorage.getItem("crm:contactOwnerFilter");
-        if (anon) {
-          localStorage.setItem(contactOwnerFilterStorageKey, anon);
-          stored = anon;
+    setContactOwnerFilterState(user?.crmContactOwnerFilter ?? "all");
+  }, [user?.id, user?.crmContactOwnerFilter]);
+  // Persist filter choices to the server. We optimistically flip
+  // local state in `setContactOwnerFilter` so the table updates
+  // instantly; on failure we restore the captured prior value
+  // (deterministic across rapid changes / races) and surface a toast.
+  // A monotonically increasing request id lets us ignore stale
+  // failures: only the most recent change's failure may roll back, so
+  // rapid back-to-back changes converge on the latest user intent
+  // rather than thrashing local state.
+  const contactOwnerFilterRequestSeq = useRef(0);
+  const persistContactOwnerFilter = useCallback(
+    async (next: string, previous: string) => {
+      const requestId = ++contactOwnerFilterRequestSeq.current;
+      try {
+        await apiRequest("PATCH", "/api/auth/profile", {
+          crmContactOwnerFilter: next,
+        });
+        await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      } catch (error) {
+        console.error("Failed to save CRM contact owner filter:", error);
+        if (requestId !== contactOwnerFilterRequestSeq.current) {
+          // A newer change superseded this one; let its outcome
+          // decide the final local state instead of stomping it with
+          // a stale rollback.
+          return;
         }
+        setContactOwnerFilterState(previous);
+        toast({
+          title: "Couldn't save filter",
+          description:
+            "We couldn't sync your contacts owner filter to your account. Please try again.",
+          variant: "destructive",
+        });
       }
-      if (stored && stored !== contactOwnerFilter) {
-        setContactOwnerFilterState(stored);
+    },
+    [toast, queryClient],
+  );
+  const setContactOwnerFilter = useCallback(
+    (value: string) => {
+      setContactOwnerFilterState((prev) => {
+        if (prev === value) return prev;
+        void persistContactOwnerFilter(value, prev);
+        return value;
+      });
+    },
+    [persistContactOwnerFilter],
+  );
+  // One-shot migration: if the server still reports `null` for this
+  // user's contact owner filter but the legacy per-user-id (or
+  // pre-auth anonymous) localStorage key holds a value, push the
+  // local value up once and clear both legacy keys. Runs at most once
+  // per user (the server flag flips to non-null and the legacy keys
+  // are removed).
+  const legacyContactFilterMigratedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const uid = user?.id;
+    if (!uid) return;
+    if (typeof window === "undefined") return;
+    if (user?.crmContactOwnerFilter != null) return;
+    if (legacyContactFilterMigratedRef.current === uid) return;
+    let legacy: string | null = null;
+    try {
+      legacy =
+        window.localStorage.getItem(`${LEGACY_CONTACT_OWNER_KEY_PREFIX}${uid}`) ||
+        window.localStorage.getItem(LEGACY_CONTACT_OWNER_ANON_KEY);
+    } catch {
+      // localStorage unavailable — nothing to migrate.
+      return;
+    }
+    if (!legacy || legacy === "all") {
+      // "all" is the implicit default — no need to round-trip a write
+      // just to record the absence of a filter. Still drop the legacy
+      // keys so they cannot resurface later.
+      try {
+        window.localStorage.removeItem(`${LEGACY_CONTACT_OWNER_KEY_PREFIX}${uid}`);
+        window.localStorage.removeItem(LEGACY_CONTACT_OWNER_ANON_KEY);
+      } catch {}
+      legacyContactFilterMigratedRef.current = uid;
+      return;
+    }
+    legacyContactFilterMigratedRef.current = uid;
+    void (async () => {
+      try {
+        await apiRequest("PATCH", "/api/auth/profile", {
+          crmContactOwnerFilter: legacy,
+        });
+        try {
+          window.localStorage.removeItem(`${LEGACY_CONTACT_OWNER_KEY_PREFIX}${uid}`);
+          window.localStorage.removeItem(LEGACY_CONTACT_OWNER_ANON_KEY);
+        } catch {}
+        // Server is now the source of truth; the invalidation
+        // triggers a /api/auth/me refetch which propagates the new
+        // value into local state via the hydrate effect above. We
+        // avoid eagerly flipping local state so a failed migration
+        // cannot leave the UI temporarily diverged from the server.
+        await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      } catch (error) {
+        console.error(
+          "Failed to migrate legacy CRM contact owner filter:",
+          error,
+        );
+        // Allow another attempt on the next render so a transient
+        // failure does not strand the user on the wrong filter.
+        legacyContactFilterMigratedRef.current = null;
       }
-    } catch {}
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contactOwnerFilterStorageKey]);
+    })();
+  }, [user?.id, user?.crmContactOwnerFilter, queryClient]);
   const contactSearchRef = useRef<HTMLInputElement>(null);
   const [selectedContactIds, setSelectedContactIds] = useState<Set<string>>(new Set());
   const [selectedOrgIds, setSelectedOrgIds] = useState<Set<string>>(new Set());
@@ -689,37 +778,95 @@ export default function CRMPage() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [stateFilter, setStateFilter] = useState<string>("");
   const [specialtyFilters, setSpecialtyFilters] = useState<string[]>([]);
-  // Task #741: orgs tab owner filter. Mirrors contactOwnerFilter — persists per
-  // user in localStorage so triaging "my organisations" is sticky across visits.
-  const orgOwnerFilterStorageKey = user?.id
-    ? `crm:orgOwnerFilter:${user.id}`
-    : "crm:orgOwnerFilter";
-  const [orgOwnerFilter, setOrgOwnerFilterState] = useState<string>(() => {
-    if (typeof window === "undefined") return "all";
-    const stored = localStorage.getItem(orgOwnerFilterStorageKey);
-    return stored ?? "all";
-  });
-  const setOrgOwnerFilter = useCallback((value: string) => {
-    setOrgOwnerFilterState(value);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(orgOwnerFilterStorageKey, value);
-    }
-  }, [orgOwnerFilterStorageKey]);
+  // Task #741: orgs tab owner filter. Mirrors contactOwnerFilter and
+  // shares its server-side persistence story (Task #1720) so the
+  // selection syncs across devices via `users.crmOrgOwnerFilter`
+  // instead of being trapped in `crm:orgOwnerFilter:<uid>` localStorage.
+  // Same hydrate / optimistic-set / PATCH / one-shot legacy migration
+  // pattern as the contacts filter above.
+  const LEGACY_ORG_OWNER_KEY_PREFIX = "crm:orgOwnerFilter:";
+  const LEGACY_ORG_OWNER_ANON_KEY = "crm:orgOwnerFilter";
+  const [orgOwnerFilter, setOrgOwnerFilterState] = useState<string>(
+    () => user?.crmOrgOwnerFilter ?? "all",
+  );
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!user?.id) return;
-    let stored = localStorage.getItem(orgOwnerFilterStorageKey);
-    if (!stored && orgOwnerFilterStorageKey !== "crm:orgOwnerFilter") {
-      const anon = localStorage.getItem("crm:orgOwnerFilter");
-      if (anon) {
-        localStorage.setItem(orgOwnerFilterStorageKey, anon);
-        stored = anon;
+    setOrgOwnerFilterState(user?.crmOrgOwnerFilter ?? "all");
+  }, [user?.id, user?.crmOrgOwnerFilter]);
+  const orgOwnerFilterRequestSeq = useRef(0);
+  const persistOrgOwnerFilter = useCallback(
+    async (next: string, previous: string) => {
+      const requestId = ++orgOwnerFilterRequestSeq.current;
+      try {
+        await apiRequest("PATCH", "/api/auth/profile", {
+          crmOrgOwnerFilter: next,
+        });
+        await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      } catch (error) {
+        console.error("Failed to save CRM org owner filter:", error);
+        if (requestId !== orgOwnerFilterRequestSeq.current) {
+          return;
+        }
+        setOrgOwnerFilterState(previous);
+        toast({
+          title: "Couldn't save filter",
+          description:
+            "We couldn't sync your organisations owner filter to your account. Please try again.",
+          variant: "destructive",
+        });
       }
+    },
+    [toast, queryClient],
+  );
+  const setOrgOwnerFilter = useCallback(
+    (value: string) => {
+      setOrgOwnerFilterState((prev) => {
+        if (prev === value) return prev;
+        void persistOrgOwnerFilter(value, prev);
+        return value;
+      });
+    },
+    [persistOrgOwnerFilter],
+  );
+  const legacyOrgFilterMigratedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const uid = user?.id;
+    if (!uid) return;
+    if (typeof window === "undefined") return;
+    if (user?.crmOrgOwnerFilter != null) return;
+    if (legacyOrgFilterMigratedRef.current === uid) return;
+    let legacy: string | null = null;
+    try {
+      legacy =
+        window.localStorage.getItem(`${LEGACY_ORG_OWNER_KEY_PREFIX}${uid}`) ||
+        window.localStorage.getItem(LEGACY_ORG_OWNER_ANON_KEY);
+    } catch {
+      return;
     }
-    if (stored && stored !== orgOwnerFilter) {
-      setOrgOwnerFilterState(stored);
+    if (!legacy || legacy === "all") {
+      try {
+        window.localStorage.removeItem(`${LEGACY_ORG_OWNER_KEY_PREFIX}${uid}`);
+        window.localStorage.removeItem(LEGACY_ORG_OWNER_ANON_KEY);
+      } catch {}
+      legacyOrgFilterMigratedRef.current = uid;
+      return;
     }
-  }, [orgOwnerFilterStorageKey]);
+    legacyOrgFilterMigratedRef.current = uid;
+    void (async () => {
+      try {
+        await apiRequest("PATCH", "/api/auth/profile", {
+          crmOrgOwnerFilter: legacy,
+        });
+        try {
+          window.localStorage.removeItem(`${LEGACY_ORG_OWNER_KEY_PREFIX}${uid}`);
+          window.localStorage.removeItem(LEGACY_ORG_OWNER_ANON_KEY);
+        } catch {}
+        await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      } catch (error) {
+        console.error("Failed to migrate legacy CRM org owner filter:", error);
+        legacyOrgFilterMigratedRef.current = null;
+      }
+    })();
+  }, [user?.id, user?.crmOrgOwnerFilter, queryClient]);
 
   useEffect(() => {
     setSelectedOrgIds(new Set());

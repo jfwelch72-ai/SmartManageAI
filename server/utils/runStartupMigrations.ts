@@ -120,6 +120,7 @@ import { ensureUsersAlertFailureEmailModeColumn } from "./ensureUsersAlertFailur
 import { ensureUsersIntegrationSyncExhaustedEmailOptOutColumn } from "./ensureUsersIntegrationSyncExhaustedEmailOptOutColumn";
 import { ensureUsersCrmBackfillSummaryPreferenceColumns } from "./ensureUsersCrmBackfillSummaryPreferenceColumns";
 import { ensureUsersPlansSurfacePreferenceColumns } from "./ensureUsersPlansSurfacePreferenceColumns";
+import { ensureUsersCrmOwnerFilterColumns } from "./ensureUsersCrmOwnerFilterColumns";
 import { ensureCrmTranscriptBackfillTestAlertsTable } from "./ensureCrmTranscriptBackfillTestAlertsTable";
 import { ensureCrmAndReportingTables } from "./ensureCrmAndReportingTables";
 import { ensureCrmTranscriptBackfillAlertResendCooldownsTable } from "./ensureCrmTranscriptBackfillAlertResendCooldownsTable";
@@ -347,6 +348,12 @@ const migrations: MigrationStep[] = [
   // from per-user-id `localStorage` keys so the settings sync across
   // devices instead of being lost on cache clears or device switches.
   { name: "users_plans_surface_preference_columns", category: "ADD_COLUMN", fn: ensureUsersPlansSurfacePreferenceColumns },
+  // Task #1720 — server-side per-user CRM owner-filter selections
+  // (contacts + organisations tabs). Promoted from per-user-id
+  // `localStorage` keys so the "Show only my orgs / contacts" toggle
+  // syncs across every device the user signs in on, the same way the
+  // Plans-surface preferences (Task #1695) do.
+  { name: "users_crm_owner_filter_columns", category: "ADD_COLUMN", fn: ensureUsersCrmOwnerFilterColumns },
   // Task #1087 — fresh checkouts were missing 14 CRM/reporting tables that
   // never had a static migration. The schema-drift reconciler only adds
   // missing columns/enums, never whole tables, so users had to run
