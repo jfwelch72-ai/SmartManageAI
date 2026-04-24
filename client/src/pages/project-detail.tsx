@@ -126,6 +126,7 @@ import LidarTab from "@/components/project-tabs/LidarTab";
 import ProjectNotesTab from "@/components/project-tabs/ProjectNotesTab";
 import MobilizationTab from "@/components/project-tabs/MobilizationTab";
 import ProjectReportsTab from "@/components/project-tabs/ProjectReportsTab";
+import ScheduledLogEmailsCard from "@/components/project-tabs/ScheduledLogEmailsCard";
 import PermitsTab from "@/components/PermitsTab";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import HealthScoreBadge from "@/components/HealthScoreBadge";
@@ -988,6 +989,9 @@ export default function ProjectDetailPage() {
             )}
             <AutoChangeOrderSettingsCard project={project} projectCode={projectCode} />
             <CertifiedPayrollFormCard project={project} projectCode={projectCode} />
+            {hasManagementAccess(user?.role) && (
+              <ScheduledLogEmailsCard projectId={project.id as string} />
+            )}
             {hasManagementAccess(user?.role) && (
               <GeofenceComplianceSection projectId={project.id as string} />
             )}
