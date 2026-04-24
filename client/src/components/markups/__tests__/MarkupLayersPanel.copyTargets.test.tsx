@@ -241,6 +241,74 @@ describe("MarkupLayersPanel copy-targets badges + confirm (Task #1722)", () => {
     });
   });
 
+  it("renders a relative 'last copied' timestamp next to the existing-copy badge (Task #1804)", async () => {
+    // Override the default fetch mock with one fresh copy (just now)
+    // and one stale copy (~3 days ago) so we can assert both flavours
+    // of the relative label appear in the picker.
+    const threeDaysAgoIso = new Date(
+      Date.now() - 3 * 24 * 60 * 60 * 1000 - 60_000,
+    ).toISOString();
+    fetchMock.mockImplementation(async (url: string) => {
+      if (typeof url === "string" && url.includes("/copy-targets")) {
+        return new Response(
+          JSON.stringify({
+            targets: [
+              {
+                documentId: "doc-b",
+                existingCopyCount: 1,
+                lastCopiedAt: new Date().toISOString(),
+              },
+              {
+                documentId: "doc-c",
+                existingCopyCount: 2,
+                lastCopiedAt: threeDaysAgoIso,
+              },
+            ],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }
+      return new Response("[]", { status: 200 });
+    });
+
+    renderPanel();
+    fireEvent.click(screen.getByTestId("button-markup-layer-copy-L-rfi"));
+
+    await waitFor(() => {
+      expect(
+        screen.getByTestId(
+          "text-markup-layer-copy-last-copied-L-rfi-to-doc-b",
+        ),
+      ).toBeTruthy();
+    });
+    expect(
+      screen
+        .getByTestId("text-markup-layer-copy-last-copied-L-rfi-to-doc-b")
+        .textContent,
+    ).toBe("just now");
+    expect(
+      screen
+        .getByTestId("text-markup-layer-copy-last-copied-L-rfi-to-doc-c")
+        .textContent,
+    ).toMatch(/3 days ago/);
+  });
+
+  it("omits the 'last copied' timestamp on destinations with zero copies (Task #1804)", async () => {
+    renderPanel();
+    fireEvent.click(screen.getByTestId("button-markup-layer-copy-L-rfi"));
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("menu-markup-layer-copy-L-rfi-to-doc-c"),
+      ).toBeTruthy();
+    });
+    // Sheet C has no existing copies in the default mock → no timestamp.
+    expect(
+      screen.queryByTestId(
+        "text-markup-layer-copy-last-copied-L-rfi-to-doc-c",
+      ),
+    ).toBeNull();
+  });
+
   it("does NOT confirm for destinations with zero existing copies", async () => {
     renderPanel();
     fireEvent.click(screen.getByTestId("button-markup-layer-copy-L-rfi"));

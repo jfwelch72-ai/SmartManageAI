@@ -12,6 +12,7 @@
  */
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { formatDistanceToNow, parseISO } from "date-fns";
 import {
   Eye,
   EyeOff,
@@ -159,6 +160,15 @@ export default function MarkupLayersPanel({
   const copyTargetsByDoc = new Map<string, CopyTarget>(
     (copyTargetsData?.targets ?? []).map((t) => [t.documentId, t]),
   );
+
+  // Task #1804 — special-case the sub-minute window so we render
+  // "just now" instead of date-fns's awkward "less than a minute ago".
+  const formatLastCopied = (iso: string): string | null => {
+    const parsed = parseISO(iso);
+    if (Number.isNaN(parsed.getTime())) return null;
+    if (Date.now() - parsed.getTime() < 60_000) return "just now";
+    return formatDistanceToNow(parsed, { addSuffix: true });
+  };
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: layersQueryKey });
@@ -607,6 +617,10 @@ export default function MarkupLayersPanel({
                         // menu is currently open.
                         const existing = copyTargetsByDoc.get(dest.id);
                         const existingCount = existing?.existingCopyCount ?? 0;
+                        const lastCopiedLabel =
+                          existingCount > 0 && existing?.lastCopiedAt
+                            ? formatLastCopied(existing.lastCopiedAt)
+                            : null;
                         return (
                           <DropdownMenuItem
                             key={dest.id}
@@ -641,6 +655,16 @@ export default function MarkupLayersPanel({
                                 {existingCount === 1
                                   ? "1 copy"
                                   : `${existingCount} copies`}
+                                {lastCopiedLabel && (
+                                  <>
+                                    {" · "}
+                                    <span
+                                      data-testid={`text-markup-layer-copy-last-copied-${l.id}-to-${dest.id}`}
+                                    >
+                                      {lastCopiedLabel}
+                                    </span>
+                                  </>
+                                )}
                               </span>
                             )}
                           </DropdownMenuItem>
