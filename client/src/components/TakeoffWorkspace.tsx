@@ -1058,6 +1058,52 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     setMarkupEditInitial(null);
   }, [selectedSheet]);
 
+  // Task #1884 — Measurement selection and markup selection are tracked
+  // independently, so without this effect a user could have a
+  // measurement *and* one or more markups selected at the same time.
+  // Pressing Delete/Backspace would then fire BOTH the measurement
+  // handler in `use-takeoff-interactions.ts` AND the markup handler
+  // above on the same keypress, silently bulk-deleting work the user
+  // didn't mean to remove. This effect enforces that the canvas only
+  // ever has one "active" entity class: when the user grows one
+  // selection (selects a new measurement, expands the measurement
+  // multi-set, or shift-clicks a markup), the other class is cleared.
+  // Shrinking either selection (deselecting, sheet change, escape) is
+  // intentionally a no-op so we don't fight the existing teardown
+  // effects. With both selections mutually exclusive, the two Delete
+  // handlers can never both fire on the same keypress.
+  const prevSelMeasIdRef = useRef(selectedMeasurementId);
+  const prevSelMeasIdsSizeRef = useRef(selectedMeasurementIds.size);
+  const prevSelMarkupIdsSizeRef = useRef(selectedMarkupIds.size);
+  useEffect(() => {
+    const decision = resolveCrossClassSelection({
+      selectedMeasurementId,
+      selectedMeasurementIdsSize: selectedMeasurementIds.size,
+      selectedMarkupIdsSize: selectedMarkupIds.size,
+      prevSelectedMeasurementId: prevSelMeasIdRef.current,
+      prevSelectedMeasurementIdsSize: prevSelMeasIdsSizeRef.current,
+      prevSelectedMarkupIdsSize: prevSelMarkupIdsSizeRef.current,
+    });
+    if (decision === "clear-markups") {
+      setSelectedMarkupIds(new Set());
+      setMarkupEditDraft(null);
+      setMarkupEditInitial(null);
+    } else if (decision === "clear-measurements") {
+      if (selectedMeasurementId !== null) setSelectedMeasurementId(null);
+      if (selectedMeasurementIds.size > 0) setSelectedMeasurementIds(new Set());
+    }
+
+    prevSelMeasIdRef.current = selectedMeasurementId;
+    prevSelMeasIdsSizeRef.current = selectedMeasurementIds.size;
+    prevSelMarkupIdsSizeRef.current = selectedMarkupIds.size;
+  }, [
+    selectedMeasurementId,
+    selectedMeasurementIds,
+    selectedMarkupIds,
+    setSelectedMeasurementId,
+    setSelectedMeasurementIds,
+  ]);
+
   // Task #1861 — route Delete/Backspace through the same bulk-delete
   // mutation the multi-select panel button uses, so the keyboard and
   // the button never drift apart. Scope is intentionally narrow:
@@ -5687,6 +5733,63 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 // could otherwise produce two MARKUP_UPDATE_BATCH entries from a single
 // user intent).
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Cross-class selection mutual exclusion (extracted for Task #1884
+// testability). Pure decision helper: given current and previous
+// selection sizes/ids for both measurements and markups, return which
+// (if any) class should be cleared so the canvas only ever has one
+// "active" entity class. The caller (the `useEffect` inside
+// `TakeoffWorkspace`) is responsible for actually invoking the
+// setters and resetting the markup edit panel state. Keeping the
+// decision pure means we can unit-test every mixed-selection edge
+// case without mounting the full workspace + Konva stage.
+// ---------------------------------------------------------------------------
+
+export type CrossClassSelectionInputs = {
+  selectedMeasurementId: string | null;
+  selectedMeasurementIdsSize: number;
+  selectedMarkupIdsSize: number;
+  prevSelectedMeasurementId: string | null;
+  prevSelectedMeasurementIdsSize: number;
+  prevSelectedMarkupIdsSize: number;
+};
+
+export type CrossClassSelectionDecision =
+  | "noop"
+  | "clear-markups"
+  | "clear-measurements";
+
+export function resolveCrossClassSelection(
+  inputs: CrossClassSelectionInputs,
+): CrossClassSelectionDecision {
+  const {
+    selectedMeasurementId,
+    selectedMeasurementIdsSize,
+    selectedMarkupIdsSize,
+    prevSelectedMeasurementId,
+    prevSelectedMeasurementIdsSize,
+    prevSelectedMarkupIdsSize,
+  } = inputs;
+
+  // "Grew" = the user expanded this class's selection on this render
+  // (selected a new measurement, added to the multi-set, or shift-clicked
+  // a new markup). Shrinking — deselecting, sheet change, escape — is
+  // intentionally a no-op so we don't fight existing teardown effects.
+  const measurementGrew =
+    (selectedMeasurementId !== null &&
+      selectedMeasurementId !== prevSelectedMeasurementId) ||
+    selectedMeasurementIdsSize > prevSelectedMeasurementIdsSize;
+  const markupGrew = selectedMarkupIdsSize > prevSelectedMarkupIdsSize;
+
+  if (measurementGrew && !markupGrew && selectedMarkupIdsSize > 0) {
+    return "clear-markups";
+  }
+  if (markupGrew && !measurementGrew) {
+    return "clear-measurements";
+  }
+  return "noop";
+}
 
 export function MarkupStylingPopoverSaveButton({
   onSave,
