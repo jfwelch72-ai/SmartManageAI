@@ -307,9 +307,31 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast, failureThresh
       {/* Task #1652 — collapsible audit trail of the most recent
           attempts (cron + manual). Only mounted when the schedule
           has been persisted; default-OFF rows have no scheduleId
-          and no history to show. */}
+          and no history to show.
+
+          Task #1664 — we plumb the parent's send-now mutation down
+          here so the Retry action on each FAILURE row reuses the
+          exact same pipeline as the schedule card's "Send now"
+          button (and inherits its toasts + cache invalidations).
+          We disable retry while there are unsaved cadence edits to
+          avoid the same "send now triggers stale config" footgun
+          the main button guards against. */}
       {schedule.id !== null && (
-        <RecentAttempts projectId={projectId} logType={schedule.logType} testIdSuffix={testIdSuffix} />
+        <RecentAttempts
+          projectId={projectId}
+          logType={schedule.logType}
+          testIdSuffix={testIdSuffix}
+          onRetry={canSendNow ? () => sendNowMutation.mutate() : null}
+          isRetrying={sendNowMutation.isPending}
+          retryDisabled={sendNowDisabled}
+          retryDisabledReason={
+            !canSendNow
+              ? "Set a cadence and save the schedule before retrying."
+              : dirty
+                ? "Save your unsaved changes first, then retry."
+                : null
+          }
+        />
       )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
@@ -559,10 +581,21 @@ function RecentAttempts({
   projectId,
   logType,
   testIdSuffix,
+  onRetry,
+  isRetrying,
+  retryDisabled,
+  retryDisabledReason,
 }: {
   projectId: string;
   logType: LogType;
   testIdSuffix: string;
+  // Task #1664 — null when the schedule cannot be retried at all
+  // (e.g. cadence is OFF). When non-null, FAILURE rows show a Retry
+  // button that invokes this callback.
+  onRetry: (() => void) | null;
+  isRetrying: boolean;
+  retryDisabled: boolean;
+  retryDisabledReason: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const queryKey = useMemo(
@@ -613,6 +646,13 @@ function RecentAttempts({
                   <TableHead className="text-xs">Status</TableHead>
                   <TableHead className="text-xs">Triggered by</TableHead>
                   <TableHead className="text-xs text-right">Recipients</TableHead>
+                  {/* Task #1664 — actions column hosts the per-row
+                      Retry button on FAILURE rows. We only render
+                      the column when retry is wired up at all
+                      (cadence != OFF, schedule persisted) so we
+                      don't add a permanently empty column for
+                      retired schedules. */}
+                  {onRetry !== null && <TableHead className="text-xs text-right w-0">Actions</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -642,6 +682,35 @@ function RecentAttempts({
                     <TableCell className="text-xs text-right tabular-nums" data-testid={`text-attempt-recipients-${a.id}`}>
                       {a.recipientCount}
                     </TableCell>
+                    {/* Task #1664 — Retry action. Only meaningful
+                        for FAILURE rows; SUCCESS / NO_RECIPIENTS
+                        rows render an empty cell so column
+                        alignment stays consistent. */}
+                    {onRetry !== null && (
+                      <TableCell className="text-xs text-right">
+                        {a.status === "FAILURE" && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={retryDisabled}
+                            onClick={() => onRetry()}
+                            data-testid={`button-retry-attempt-${a.id}`}
+                            title={
+                              retryDisabledReason ??
+                              "Retry this send using the saved cadence's recipients."
+                            }
+                          >
+                            {isRetrying ? (
+                              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                            ) : (
+                              <Send className="w-3 h-3 mr-1" />
+                            )}
+                            Retry
+                          </Button>
+                        )}
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>
