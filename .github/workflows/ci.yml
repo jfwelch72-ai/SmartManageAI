@@ -193,6 +193,17 @@ jobs:
       - name: Audit Express handlers for missing `next` parameter
         run: node scripts/audit-next-without-param.mjs
 
+      # Task #1492 — guard against the audit-trail regression where a route
+      # calls e.g. `logCreate(req, ...)` instead of
+      # `logCreate(req.user!.id, ..., req)`. The audit helpers swallow errors
+      # in a try/catch, so the bad call shape (originally fixed in Task #1454
+      # for server/projectOpsRoutes.ts) silently drops audit rows.
+      # `scripts/audit-audit-logger-userid.mjs` scans server/ for any
+      # log{Audit,Create,Update,Delete,Approve,Reject} call whose userId
+      # argument looks like an Express Request, and fails the build on a hit.
+      - name: Audit calls to auditLogger for misplaced request arguments
+        run: node scripts/audit-audit-logger-userid.mjs
+
   security:
     name: Security Gate (SOC 2 CC8.1 / CC7.1)
     runs-on: ubuntu-latest

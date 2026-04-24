@@ -7,11 +7,42 @@ import type { Request } from "express";
 // DbTransaction type is optional - tx parameter will be undefined
 type DbTransaction = any;
 
+// Runtime guard for Task #1492: reject non-string userId values before they
+// reach the database. The original Task #1454 bug
+//   logCreate(req, "plan_document", ..., req)
+// passed the entire Express Request as the userId. Drizzle/Neon then tried to
+// JSON.stringify the request and failed with "Converting circular structure
+// to JSON", which is swallowed by the catch below — silently dropping the
+// audit row. This guard fails loudly (and visibly in logs) if a non-string
+// userId is ever passed, so the next regression is caught immediately rather
+// than discovered later via a missing audit trail.
+//
+// The companion lint at scripts/audit-audit-logger-userid.mjs prevents the
+// bad shape from being introduced at the call site in the first place.
+function assertStringUserId(userId: unknown, helper: string): userId is string {
+  if (typeof userId === "string" && userId.length > 0) return true;
+  const received =
+    userId === null
+      ? "null"
+      : userId === undefined
+        ? "undefined"
+        : typeof userId === "object"
+          ? `object (likely an Express Request — pass req.user!.id instead)`
+          : `${typeof userId}`;
+  logError(
+    `Audit logging refused: ${helper} received a non-string userId (${received}). This is a programming error — pass the user id string, not the request.`,
+    { helper, receivedType: typeof userId },
+    new Error(`${helper}: userId must be a non-empty string`),
+  );
+  return false;
+}
+
 export async function logAudit(
   data: Omit<InsertAuditLog, "ipAddress" | "userAgent">, 
   req?: Request,
   tx?: DbTransaction
 ): Promise<void> {
+  if (!assertStringUserId(data?.userId, "logAudit")) return;
   try {
     const dbClient = tx || db;
     await dbClient.insert(auditLog).values({
