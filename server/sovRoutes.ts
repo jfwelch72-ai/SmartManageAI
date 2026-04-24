@@ -207,9 +207,25 @@ router.get("/sov/projects", requireAuth, async (req: AuthRequest, res: Response,
   }
 });
 
+// Task #1539 — `/sov/co-tieout`, `/sov/lien-waivers`, and `/sov/payments`
+// are sibling literal namespaces registered later in this file (merged
+// from the sovBillingRoutes / sovPaymentRoutes consolidation). Without
+// this guard, requests for those literals would be captured by the
+// parametric `:id` handler and 404 as "SOV not found", silently
+// shadowing the real handlers — same registration-order bug fixed for
+// `/api/admin/metrics/jobs/alerts` in Task #1495.
+const RESERVED_SOV_LITERALS = new Set([
+  "co-tieout",
+  "lien-waivers",
+  "payments",
+]);
+
 router.get("/sov/:id", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
+    if (RESERVED_SOV_LITERALS.has(id)) {
+      return next();
+    }
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
     
     if (mustDenyAccess) {
