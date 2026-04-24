@@ -15,6 +15,18 @@ import { ArrowLeft, RefreshCw, Trash2, ListChecks, AlertCircle } from "lucide-re
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
+interface OneShotJobRecentRun {
+  id: string;
+  at: string;
+  actorId: string;
+  actorEmail: string | null;
+  status: string | null;
+  ledgerCleared: boolean | null;
+  durationMs: number | null;
+  error: string | null;
+  raw: string | null;
+}
+
 interface OneShotJob {
   name: string;
   title: string;
@@ -22,6 +34,7 @@ interface OneShotJob {
   registered: boolean;
   completedAt: string | null;
   details: Record<string, unknown> | null;
+  recentRuns?: OneShotJobRecentRun[];
 }
 
 interface OneShotJobsResponse {
@@ -173,6 +186,66 @@ function JobCard({ job }: { job: OneShotJob }) {
                 </div>
               ))}
             </dl>
+          </div>
+        )}
+        {job.recentRuns && job.recentRuns.length > 0 && (
+          <div
+            className="rounded-md border p-3"
+            data-testid={`history-one-shot-${job.name}`}
+          >
+            <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
+              Recent manual re-runs
+            </div>
+            <ul className="space-y-1.5 text-xs">
+              {job.recentRuns.map((run) => (
+                <li
+                  key={run.id}
+                  className="flex flex-wrap items-center gap-x-2 gap-y-1"
+                  data-testid={`history-row-${job.name}-${run.id}`}
+                >
+                  <span
+                    className="font-medium tabular-nums"
+                    data-testid={`history-at-${run.id}`}
+                  >
+                    {formatTimestamp(run.at)}
+                  </span>
+                  <span
+                    className="text-muted-foreground"
+                    data-testid={`history-actor-${run.id}`}
+                  >
+                    {run.actorEmail ?? run.actorId}
+                  </span>
+                  {run.status ? (
+                    <Badge
+                      variant={statusBadgeVariant(run.status)}
+                      data-testid={`history-status-${run.id}`}
+                    >
+                      {run.status}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline">unknown</Badge>
+                  )}
+                  {run.durationMs !== null && (
+                    <span
+                      className="text-muted-foreground tabular-nums"
+                      data-testid={`history-duration-${run.id}`}
+                    >
+                      {run.durationMs}ms
+                    </span>
+                  )}
+                  {run.ledgerCleared !== null && (
+                    <span className="text-muted-foreground">
+                      ledger cleared: {run.ledgerCleared ? "yes" : "no"}
+                    </span>
+                  )}
+                  {run.error && (
+                    <span className="text-destructive break-all">
+                      — {run.error}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
         {rerun.data && (

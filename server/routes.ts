@@ -1241,6 +1241,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
             registered: true,
             completedAt: row?.completedAt ?? null,
             details: row?.details ?? null,
+            recentRuns: [] as Array<{
+              id: string;
+              at: string;
+              actorId: string;
+              actorEmail: string | null;
+              status: string | null;
+              ledgerCleared: boolean | null;
+              durationMs: number | null;
+              error: string | null;
+              raw: string | null;
+            }>,
           };
         });
 
@@ -1257,7 +1268,82 @@ export async function registerRoutes(app: Express): Promise<Server> {
             registered: false,
             completedAt: row.completedAt,
             details: row.details,
+            recentRuns: [],
           });
+        }
+
+        // Task #1488 — surface recent manual re-run audit entries inline so
+        // admins can see who re-ran what and when without spelunking through
+        // the audit log. We pull the last ~5 entries per job (capped overall)
+        // by entityType=background_job + entityId=<job name>.
+        const RECENT_PER_JOB = 5;
+        const jobNames = jobs.map((j) => j.name);
+        if (jobNames.length > 0) {
+          const auditRows = await db
+            .select({
+              id: auditLog.id,
+              entityId: auditLog.entityId,
+              userId: auditLog.userId,
+              userEmail: users.email,
+              newValue: auditLog.newValue,
+              createdAt: auditLog.createdAt,
+            })
+            .from(auditLog)
+            .leftJoin(users, eq(auditLog.userId, users.id))
+            .where(
+              and(
+                eq(auditLog.entityType, "background_job"),
+                eq(auditLog.action, "EXECUTE"),
+                inArray(auditLog.entityId, jobNames),
+              ),
+            )
+            .orderBy(desc(auditLog.createdAt))
+            .limit(jobNames.length * RECENT_PER_JOB * 4);
+
+          const parseRunSummary = (raw: string | null) => {
+            if (!raw) {
+              return {
+                status: null as string | null,
+                ledgerCleared: null as boolean | null,
+                durationMs: null as number | null,
+                error: null as string | null,
+              };
+            }
+            const status = raw.match(/status=([^,)\s]+)/)?.[1] ?? null;
+            const ledgerRaw = raw.match(/ledgerCleared=(true|false)/)?.[1];
+            const ledgerCleared =
+              ledgerRaw === "true"
+                ? true
+                : ledgerRaw === "false"
+                  ? false
+                  : null;
+            const durStr = raw.match(/durationMs=(\d+)/)?.[1];
+            const durationMs = durStr ? Number.parseInt(durStr, 10) : null;
+            const error = raw.match(/error=([^)]+)\)?$/)?.[1]?.trim() ?? null;
+            return { status, ledgerCleared, durationMs, error };
+          };
+
+          const runsByJob = new Map<string, (typeof jobs)[number]["recentRuns"]>();
+          for (const row of auditRows) {
+            const list = runsByJob.get(row.entityId) ?? [];
+            if (list.length >= RECENT_PER_JOB) continue;
+            const parsed = parseRunSummary(row.newValue);
+            list.push({
+              id: row.id,
+              at: row.createdAt.toISOString(),
+              actorId: row.userId,
+              actorEmail: row.userEmail ?? null,
+              status: parsed.status,
+              ledgerCleared: parsed.ledgerCleared,
+              durationMs: parsed.durationMs,
+              error: parsed.error,
+              raw: row.newValue,
+            });
+            runsByJob.set(row.entityId, list);
+          }
+          for (const job of jobs) {
+            job.recentRuns = runsByJob.get(job.name) ?? [];
+          }
         }
 
         res.json({ jobs });
