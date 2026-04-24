@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, CheckCircle2, Loader2, Mail, MailWarning } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, Mail, MailWarning, Send } from "lucide-react";
 import { format } from "date-fns";
 import {
   COMMON_TIMEZONES,
@@ -174,6 +174,55 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast }: ScheduleRow
     },
   });
 
+  // Task #1638 — admin-on-demand retry. Hits the same flatten →
+  // build PDF → send → stamp-outcome pipeline the cron uses, so the
+  // "Last send failed" badge gets refreshed in place. We surface the
+  // outcome inline (success/no-recipients/failure) so the admin
+  // doesn't have to re-read the badge to know whether their fix
+  // worked.
+  const sendNowMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(
+        "POST",
+        `/api/projects/${projectId}/log-email-schedules/${schedule.logType}/send-now`,
+      );
+      return res.json() as Promise<{
+        result: { status: AttemptStatus | "PROJECT_NOT_FOUND"; error: string | null; recipientCount: number };
+        schedule: ScheduleRow;
+      }>;
+    },
+    onSuccess: (data) => {
+      const { status, error, recipientCount } = data.result;
+      const label = LOG_TYPE_LABELS[schedule.logType];
+      if (status === "SUCCESS") {
+        toast({
+          title: "Log emailed",
+          description: `${label} sent to ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}.`,
+        });
+      } else if (status === "NO_RECIPIENTS") {
+        toast({
+          title: "No recipients to email",
+          description: `Add at least one valid email to this project's distribution lists, then try again.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Couldn't send the log",
+          description: error ?? "The email transport rejected the message.",
+          variant: "destructive",
+        });
+      }
+      queryClient.invalidateQueries({ queryKey });
+    },
+    onError: (err) => {
+      toast({
+        title: "Couldn't send the log",
+        description: err instanceof Error ? err.message : "Please try again in a moment.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const dirty =
     cadence !== schedule.cadence ||
     weekday !== schedule.weekday ||
@@ -182,6 +231,15 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast }: ScheduleRow
 
   const showWeekday = cadence === "WEEKLY" || cadence === "BIWEEKLY";
   const testIdSuffix = schedule.logType.toLowerCase();
+  // The "Send now" button is only meaningful for an actually-scheduled
+  // row. Hide it when cadence is OFF (matches the task's UX spec) or
+  // when the schedule row hasn't been saved at all yet (`id === null`),
+  // since the server-side endpoint requires a persisted row.
+  const canSendNow = schedule.cadence !== "OFF" && schedule.id !== null;
+  // Disable the button while there are unsaved cadence/recipient
+  // edits — sending the *current saved* configuration after the user
+  // has just changed it would be misleading.
+  const sendNowDisabled = !canSendNow || dirty || sendNowMutation.isPending || saveMutation.isPending;
 
   return (
     <div
@@ -272,7 +330,29 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast }: ScheduleRow
         </div>
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        {canSendNow && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={sendNowDisabled}
+            onClick={() => sendNowMutation.mutate()}
+            data-testid={`button-send-now-${testIdSuffix}`}
+            title={
+              dirty
+                ? "Save your changes first, then trigger a manual send."
+                : `Email the ${LOG_TYPE_LABELS[schedule.logType].toLowerCase()} now using the saved cadence's recipients.`
+            }
+          >
+            {sendNowMutation.isPending ? (
+              <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+            ) : (
+              <Send className="w-3 h-3 mr-2" />
+            )}
+            Send now
+          </Button>
+        )}
         <Button
           size="sm"
           disabled={!dirty || saveMutation.isPending}

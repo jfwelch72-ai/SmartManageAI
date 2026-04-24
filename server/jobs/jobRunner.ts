@@ -3787,6 +3787,14 @@ export async function processCertifiedPayrollWeeklyDigest(opts: { now?: Date } =
 //
 // On a successful send we stamp `lastSentAt` so the dedupe gates
 // above will keep us from double-firing.
+//
+// Task #1638 — the per-row "do the send" path is factored into
+// `executeProjectLogEmailScheduleSend` below so the new manual
+// `POST .../send-now` endpoint can run the exact same
+// flatten-recipients → build PDF → send → stamp-outcome pipeline
+// without duplicating the logic. The cron retains its gating logic
+// here (cadence/weekday/hour/lastSentAt dedupe) and just delegates
+// the actual send.
 export async function processProjectLogEmailSchedules(opts: { now?: Date } = {}) {
   const now = opts.now ?? new Date();
 
@@ -3810,190 +3818,258 @@ export async function processProjectLogEmailSchedules(opts: { now?: Date } = {})
   let totalSent = 0;
 
   for (const sched of schedules) {
-    try {
-      const cadence = sched.cadence as "OFF" | "DAILY" | "WEEKLY" | "BIWEEKLY";
-      if (cadence === "OFF") continue;
+    const cadence = sched.cadence as "OFF" | "DAILY" | "WEEKLY" | "BIWEEKLY";
+    if (cadence === "OFF") continue;
 
-      const weekday = sched.weekday ?? 1;
-      const hour = sched.hour ?? 8;
-      const tz = isValidTimezone(sched.timezone) ? sched.timezone : "UTC";
-      const lastSentAt = sched.lastSentAt;
+    const weekday = sched.weekday ?? 1;
+    const hour = sched.hour ?? 8;
+    const tz = isValidTimezone(sched.timezone) ? sched.timezone : "UTC";
+    const lastSentAt = sched.lastSentAt;
 
-      const local = getLocalDateParts(now, tz);
-      if (local.hour !== hour) continue;
-      if ((cadence === "WEEKLY" || cadence === "BIWEEKLY") && local.weekday !== weekday) continue;
-      if (cadence === "BIWEEKLY" && lastSentAt) {
-        const daysSince = (now.getTime() - new Date(lastSentAt).getTime()) / (24 * 60 * 60 * 1000);
-        if (daysSince < 13) continue;
-      }
-      if (lastSentAt) {
-        const hoursSince = (now.getTime() - new Date(lastSentAt).getTime()) / (60 * 60 * 1000);
-        if ((cadence === "DAILY" || cadence === "WEEKLY") && hoursSince < 23) continue;
-      }
+    const local = getLocalDateParts(now, tz);
+    if (local.hour !== hour) continue;
+    if ((cadence === "WEEKLY" || cadence === "BIWEEKLY") && local.weekday !== weekday) continue;
+    if (cadence === "BIWEEKLY" && lastSentAt) {
+      const daysSince = (now.getTime() - new Date(lastSentAt).getTime()) / (24 * 60 * 60 * 1000);
+      if (daysSince < 13) continue;
+    }
+    if (lastSentAt) {
+      const hoursSince = (now.getTime() - new Date(lastSentAt).getTime()) / (60 * 60 * 1000);
+      if ((cadence === "DAILY" || cadence === "WEEKLY") && hoursSince < 23) continue;
+    }
 
-      const logType = sched.logType === "SUBMITTAL" ? "SUBMITTAL" : "RFI";
-
-      const [project] = await db
-        .select({
-          id: projects.id,
-          name: projects.name,
-          gcOrganizationId: projects.gcOrganizationId,
-        })
-        .from(projects)
-        .where(eq(projects.id, sched.projectId))
-        .limit(1);
-      if (!project) continue;
-
-      // Distribution lists: project-scoped + org-level fallback.
-      const lists = await db
-        .select({
-          contactEmails: projectEmailDistributionLists.contactEmails,
-          extraEmails: projectEmailDistributionLists.extraEmails,
-        })
-        .from(projectEmailDistributionLists)
-        .where(and(
-          eq(projectEmailDistributionLists.organizationId, sched.organizationId),
-          or(
-            eq(projectEmailDistributionLists.projectId, sched.projectId),
-            isNull(projectEmailDistributionLists.projectId),
-          ),
-        ));
-
-      const recipientSet = new Set<string>();
-      for (const l of lists) {
-        for (const e of l.contactEmails ?? []) {
-          if (e && e.includes("@")) recipientSet.add(e.trim().toLowerCase());
-        }
-        for (const e of l.extraEmails ?? []) {
-          if (e && e.includes("@")) recipientSet.add(e.trim().toLowerCase());
-        }
-      }
-
-      if (recipientSet.size === 0) {
-        // Task #1622 — stamp NO_RECIPIENTS so the project settings UI
-        // can surface "Last send failed" with a clear hint to fix the
-        // distribution lists. Note we deliberately do NOT touch
-        // `lastSentAt` here so the cadence dedupe windows continue to
-        // treat this as "never sent" and keep retrying on the next
-        // firing — the only thing that changes is that admins now have
-        // an in-app signal that nothing went out.
-        logInfo("Project log email schedule has no recipients; skipping", {
-          scheduleId: sched.id,
-          projectId: sched.projectId,
-          logType,
-        });
-        await db
-          .update(projectLogEmailSchedules)
-          .set({
-            lastAttemptAt: now,
-            lastAttemptStatus: "NO_RECIPIENTS",
-            lastAttemptError: "No recipients resolved from the project's distribution lists.",
-            lastAttemptRecipientCount: 0,
-            updatedAt: new Date(),
-          })
-          .where(eq(projectLogEmailSchedules.id, sched.id));
-        continue;
-      }
-
-      const pdfBuffer = await buildProjectLogPdfBuffer(logType, {
-        id: project.id,
-        name: project.name,
-        gcOrganizationId: project.gcOrganizationId,
-      });
-
-      const logLabel = logType === "RFI" ? "RFI" : "Submittal";
-      const safeName = project.name.replace(/[^a-z0-9]+/gi, "_");
-      const filename = `${logType.toLowerCase()}-log-${safeName}.pdf`;
-      const subject = `${logLabel} log — ${project.name}`;
-      const text = `Attached is the latest ${logLabel} log for project "${project.name}".`;
-      const html = `<p>Attached is the latest ${logLabel} log for project <strong>${project.name}</strong>.</p>`;
-
-      const recipients = Array.from(recipientSet);
-      const result = await sendEmailWithResult({
-        to: recipients,
-        subject,
-        text,
-        html,
-        attachments: [{ filename, content: pdfBuffer, contentType: "application/pdf" }],
-      });
-
-      if (!result.ok) {
-        // Task #1622 — record the FAILURE so the project settings panel
-        // can show "Last send failed: <reason>". Like NO_RECIPIENTS we
-        // skip stamping `lastSentAt` so the next cadence tick will try
-        // again instead of believing today's send already happened.
-        logError("Project log email send failed", {
-          scheduleId: sched.id,
-          projectId: sched.projectId,
-          logType,
-          error: result.error,
-          recipients: recipients.length,
-        });
-        await db
-          .update(projectLogEmailSchedules)
-          .set({
-            lastAttemptAt: now,
-            lastAttemptStatus: "FAILURE",
-            lastAttemptError: result.error ?? "Unknown email send error",
-            lastAttemptRecipientCount: recipients.length,
-            updatedAt: new Date(),
-          })
-          .where(eq(projectLogEmailSchedules.id, sched.id));
-        continue;
-      }
-
-      await db
-        .update(projectLogEmailSchedules)
-        .set({
-          lastSentAt: now,
-          // Task #1622 — clear any prior failure marker on success so
-          // the UI badge disappears as soon as the next scheduled run
-          // recovers. We keep the recipient count + status so admins
-          // can still see how many people received the most recent
-          // successful send at a glance.
-          lastAttemptAt: now,
-          lastAttemptStatus: "SUCCESS",
-          lastAttemptError: null,
-          lastAttemptRecipientCount: recipients.length,
-          updatedAt: new Date(),
-        })
-        .where(eq(projectLogEmailSchedules.id, sched.id));
-
-      totalSent += 1;
-    } catch (err) {
-      // Task #1622 — record an unexpected failure (PDF builder threw,
-      // db lookup blew up, etc.) so it's visible in-app rather than
-      // disappearing into the server log. Wrapped in its own try/catch
-      // because we never want telemetry writes to mask the original
-      // iteration error.
-      const errMsg = err instanceof Error ? err.message : String(err);
-      logError("Project log email schedule iteration failed", {
+    const result = await executeProjectLogEmailScheduleSend(
+      {
         scheduleId: sched.id,
+        organizationId: sched.organizationId,
         projectId: sched.projectId,
         logType: sched.logType,
-        error: errMsg,
-      });
-      try {
-        await db
-          .update(projectLogEmailSchedules)
-          .set({
-            lastAttemptAt: now,
-            lastAttemptStatus: "FAILURE",
-            lastAttemptError: errMsg.slice(0, 500),
-            updatedAt: new Date(),
-          })
-          .where(eq(projectLogEmailSchedules.id, sched.id));
-      } catch (stampErr) {
-        logError("Failed to stamp project log email schedule failure", {
-          scheduleId: sched.id,
-          error: String(stampErr),
-        });
-      }
-    }
+      },
+      { now },
+    );
+    if (result.status === "SUCCESS") totalSent += 1;
   }
 
   if (totalSent > 0) {
     logInfo("Project log email schedules sent", { sent: totalSent });
+  }
+}
+
+/**
+ * Task #1638 — shared helper that runs the per-schedule send pipeline
+ * (flatten distribution-list recipients → build the log PDF → call
+ * `sendEmailWithResult` → stamp the per-attempt outcome columns on
+ * the schedule row). Used by both:
+ *
+ *   1. The hourly cron in `processProjectLogEmailSchedules` after it
+ *      decides a row is due, and
+ *   2. The new manual `POST /api/projects/:projectId/log-email-schedules/:logType/send-now`
+ *      endpoint that lets an admin retry immediately after fixing a
+ *      bad distribution list, instead of waiting up to a week for
+ *      the next WEEKLY tick.
+ *
+ * The helper is intentionally GATING-FREE — it always attempts the
+ * send and stamps `lastSentAt` on success (so a manual send still
+ * counts toward the cadence dedupe window and the next cron tick
+ * won't double-fire). Callers that need cadence/weekday/hour gating
+ * (i.e. the cron) apply it before calling.
+ */
+export interface ExecuteProjectLogEmailScheduleSendInput {
+  scheduleId: string;
+  organizationId: string;
+  projectId: string;
+  logType: string;
+}
+
+export type ProjectLogEmailScheduleSendStatus =
+  | "SUCCESS"
+  | "FAILURE"
+  | "NO_RECIPIENTS"
+  | "PROJECT_NOT_FOUND";
+
+export interface ExecuteProjectLogEmailScheduleSendResult {
+  status: ProjectLogEmailScheduleSendStatus;
+  error: string | null;
+  recipientCount: number;
+}
+
+export async function executeProjectLogEmailScheduleSend(
+  input: ExecuteProjectLogEmailScheduleSendInput,
+  opts: { now?: Date } = {},
+): Promise<ExecuteProjectLogEmailScheduleSendResult> {
+  const now = opts.now ?? new Date();
+  const logType = input.logType === "SUBMITTAL" ? "SUBMITTAL" : "RFI";
+
+  try {
+    const [project] = await db
+      .select({
+        id: projects.id,
+        name: projects.name,
+        gcOrganizationId: projects.gcOrganizationId,
+      })
+      .from(projects)
+      .where(eq(projects.id, input.projectId))
+      .limit(1);
+
+    if (!project) {
+      // Defensive: the cron filters by schedule rows whose projectId
+      // exists, but if the project was deleted between the schedule
+      // load and now, surface it cleanly instead of throwing.
+      return {
+        status: "PROJECT_NOT_FOUND",
+        error: "Project not found.",
+        recipientCount: 0,
+      };
+    }
+
+    // Distribution lists: project-scoped + org-level fallback.
+    const lists = await db
+      .select({
+        contactEmails: projectEmailDistributionLists.contactEmails,
+        extraEmails: projectEmailDistributionLists.extraEmails,
+      })
+      .from(projectEmailDistributionLists)
+      .where(and(
+        eq(projectEmailDistributionLists.organizationId, input.organizationId),
+        or(
+          eq(projectEmailDistributionLists.projectId, input.projectId),
+          isNull(projectEmailDistributionLists.projectId),
+        ),
+      ));
+
+    const recipientSet = new Set<string>();
+    for (const l of lists) {
+      for (const e of l.contactEmails ?? []) {
+        if (e && e.includes("@")) recipientSet.add(e.trim().toLowerCase());
+      }
+      for (const e of l.extraEmails ?? []) {
+        if (e && e.includes("@")) recipientSet.add(e.trim().toLowerCase());
+      }
+    }
+
+    if (recipientSet.size === 0) {
+      // Task #1622 — stamp NO_RECIPIENTS so the project settings UI
+      // can surface "Last send failed" with a clear hint to fix the
+      // distribution lists. Note we deliberately do NOT touch
+      // `lastSentAt` here so the cadence dedupe windows continue to
+      // treat this as "never sent" and keep retrying on the next
+      // firing — the only thing that changes is that admins now have
+      // an in-app signal that nothing went out.
+      const noRecipientsError = "No recipients resolved from the project's distribution lists.";
+      logInfo("Project log email schedule has no recipients; skipping", {
+        scheduleId: input.scheduleId,
+        projectId: input.projectId,
+        logType,
+      });
+      await db
+        .update(projectLogEmailSchedules)
+        .set({
+          lastAttemptAt: now,
+          lastAttemptStatus: "NO_RECIPIENTS",
+          lastAttemptError: noRecipientsError,
+          lastAttemptRecipientCount: 0,
+          updatedAt: new Date(),
+        })
+        .where(eq(projectLogEmailSchedules.id, input.scheduleId));
+      return { status: "NO_RECIPIENTS", error: noRecipientsError, recipientCount: 0 };
+    }
+
+    const pdfBuffer = await buildProjectLogPdfBuffer(logType, {
+      id: project.id,
+      name: project.name,
+      gcOrganizationId: project.gcOrganizationId,
+    });
+
+    const logLabel = logType === "RFI" ? "RFI" : "Submittal";
+    const safeName = project.name.replace(/[^a-z0-9]+/gi, "_");
+    const filename = `${logType.toLowerCase()}-log-${safeName}.pdf`;
+    const subject = `${logLabel} log — ${project.name}`;
+    const text = `Attached is the latest ${logLabel} log for project "${project.name}".`;
+    const html = `<p>Attached is the latest ${logLabel} log for project <strong>${project.name}</strong>.</p>`;
+
+    const recipients = Array.from(recipientSet);
+    const result = await sendEmailWithResult({
+      to: recipients,
+      subject,
+      text,
+      html,
+      attachments: [{ filename, content: pdfBuffer, contentType: "application/pdf" }],
+    });
+
+    if (!result.ok) {
+      // Task #1622 — record the FAILURE so the project settings panel
+      // can show "Last send failed: <reason>". Like NO_RECIPIENTS we
+      // skip stamping `lastSentAt` so the next cadence tick will try
+      // again instead of believing today's send already happened.
+      const errMsg = result.error ?? "Unknown email send error";
+      logError("Project log email send failed", {
+        scheduleId: input.scheduleId,
+        projectId: input.projectId,
+        logType,
+        error: result.error,
+        recipients: recipients.length,
+      });
+      await db
+        .update(projectLogEmailSchedules)
+        .set({
+          lastAttemptAt: now,
+          lastAttemptStatus: "FAILURE",
+          lastAttemptError: errMsg,
+          lastAttemptRecipientCount: recipients.length,
+          updatedAt: new Date(),
+        })
+        .where(eq(projectLogEmailSchedules.id, input.scheduleId));
+      return { status: "FAILURE", error: errMsg, recipientCount: recipients.length };
+    }
+
+    await db
+      .update(projectLogEmailSchedules)
+      .set({
+        lastSentAt: now,
+        // Task #1622 — clear any prior failure marker on success so
+        // the UI badge disappears as soon as the next scheduled run
+        // recovers. We keep the recipient count + status so admins
+        // can still see how many people received the most recent
+        // successful send at a glance.
+        lastAttemptAt: now,
+        lastAttemptStatus: "SUCCESS",
+        lastAttemptError: null,
+        lastAttemptRecipientCount: recipients.length,
+        updatedAt: new Date(),
+      })
+      .where(eq(projectLogEmailSchedules.id, input.scheduleId));
+
+    return { status: "SUCCESS", error: null, recipientCount: recipients.length };
+  } catch (err) {
+    // Task #1622 — record an unexpected failure (PDF builder threw,
+    // db lookup blew up, etc.) so it's visible in-app rather than
+    // disappearing into the server log. Wrapped in its own try/catch
+    // because we never want telemetry writes to mask the original
+    // iteration error.
+    const errMsg = err instanceof Error ? err.message : String(err);
+    logError("Project log email schedule iteration failed", {
+      scheduleId: input.scheduleId,
+      projectId: input.projectId,
+      logType,
+      error: errMsg,
+    });
+    try {
+      await db
+        .update(projectLogEmailSchedules)
+        .set({
+          lastAttemptAt: now,
+          lastAttemptStatus: "FAILURE",
+          lastAttemptError: errMsg.slice(0, 500),
+          updatedAt: new Date(),
+        })
+        .where(eq(projectLogEmailSchedules.id, input.scheduleId));
+    } catch (stampErr) {
+      logError("Failed to stamp project log email schedule failure", {
+        scheduleId: input.scheduleId,
+        error: String(stampErr),
+      });
+    }
+    return { status: "FAILURE", error: errMsg, recipientCount: 0 };
   }
 }
 
