@@ -1270,6 +1270,238 @@ router.post(
 );
 
 // ============================================================================
+// Task #1701 — COPY a single layer (and all its markups) from one
+// plan_document onto another within the same project. Wraps the existing
+// layer-name / group-id remapping logic used by carryover-annotations
+// but is keyed on a *single* source layer rather than every primary
+// markup on the source doc, so users can grab one named layer
+// (e.g. "QA/QC", "Owner Comments") and replicate it to a sibling sheet
+// without re-creating every annotation by hand.
+//
+// Behaviour:
+//   - Source layer is unchanged.
+//   - Destination receives a NEW layer named "<source name> (copy)".
+//     If that name is already taken, the suffix bumps to "(copy 2)",
+//     "(copy 3)", … so repeat invocations always succeed.
+//   - The new layer inherits the source layer's color and is appended
+//     to the end of the target's order.
+//   - Every markup on the source layer is cloned onto the target doc
+//     with `sourceMarkupId = NULL` so a future "Copy" call from the
+//     same source produces *another* copy (the action is explicitly
+//     non-idempotent, unlike carryover-annotations which is keyed on
+//     source_markup_id for revision rollovers).
+//   - Group ids are remapped per-call so grouped markups stay grouped
+//     on the destination without colliding with existing groups.
+//   - Cross-project copies are denied — copying annotations between
+//     unrelated projects is never desirable and would silently leak
+//     drawing context across a customer's portfolio.
+// ============================================================================
+const copyLayerBody = z.object({
+  targetDocumentId: z.string().min(1),
+});
+
+router.post(
+  "/api/plan-markup-layers/:layerId/copy-to-document",
+  requireAuth,
+  requireRole(...MARKUP_AUTHOR_ROLES),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const startedAt = Date.now();
+    try {
+      const body = copyLayerBody.parse(req.body || {});
+      const user = req.user!;
+
+      // Load source layer + assert org access.
+      const [sourceLayer] = await db
+        .select()
+        .from(planMarkupLayers)
+        .where(eq(planMarkupLayers.id, req.params.layerId))
+        .limit(1);
+      if (!sourceLayer) {
+        res.status(404).json({ error: "Layer not found" });
+        return;
+      }
+      if (
+        user.role !== "SUPER_ADMIN" &&
+        sourceLayer.organizationId !== user.organizationId
+      ) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
+
+      // Load source + target plan documents using the shared helper so
+      // org filtering matches every other endpoint in this router.
+      const sourceAccess = await loadDocAndAssertOrg(sourceLayer.planDocumentId, req);
+      if (!sourceAccess.ok) {
+        res.status(sourceAccess.status).json({ error: sourceAccess.error });
+        return;
+      }
+      const targetAccess = await loadDocAndAssertOrg(body.targetDocumentId, req);
+      if (!targetAccess.ok) {
+        res.status(targetAccess.status).json({ error: targetAccess.error });
+        return;
+      }
+
+      if (sourceAccess.doc.id === targetAccess.doc.id) {
+        res
+          .status(400)
+          .json({ error: "Source and destination sheets must be different" });
+        return;
+      }
+
+      // Cross-project copies are denied — see comment block above.
+      if (
+        sourceAccess.doc.projectId &&
+        targetAccess.doc.projectId &&
+        sourceAccess.doc.projectId !== targetAccess.doc.projectId
+      ) {
+        res
+          .status(400)
+          .json({ error: "Source and destination must belong to the same project" });
+        return;
+      }
+
+      const { newLayer, markupsCopied } = await db.transaction(async (tx) => {
+        // Pick a unique target name. Start with "<name> (copy)" and bump
+        // a counter on collision so a second click on the same source
+        // produces "(copy 2)", etc. Bounded to 50 attempts so a
+        // pathological state can never wedge the request.
+        const baseName = sourceLayer.name;
+        const existingNames = new Set(
+          (
+            await tx
+              .select({ name: planMarkupLayers.name })
+              .from(planMarkupLayers)
+              .where(eq(planMarkupLayers.planDocumentId, targetAccess.doc.id))
+          ).map((r) => r.name),
+        );
+        const buildCandidate = (i: number) =>
+          i === 1 ? `${baseName} (copy)` : `${baseName} (copy ${i})`;
+        let candidate = buildCandidate(1);
+        for (let i = 1; i <= 50 && existingNames.has(candidate); i++) {
+          candidate = buildCandidate(i + 1);
+        }
+
+        // Append to the end of the target's layer order.
+        const [{ maxSort } = { maxSort: 0 }] = await tx
+          .select({
+            maxSort: sql<number>`COALESCE(MAX(${planMarkupLayers.sortOrder}), 0)::int`,
+          })
+          .from(planMarkupLayers)
+          .where(eq(planMarkupLayers.planDocumentId, targetAccess.doc.id));
+
+        const [created] = await tx
+          .insert(planMarkupLayers)
+          .values({
+            organizationId: targetAccess.doc.organizationId!,
+            planDocumentId: targetAccess.doc.id,
+            name: candidate,
+            color: sourceLayer.color,
+            sortOrder: (Number(maxSort) || 0) + 1000,
+            isDefault: false,
+            createdById: user.id,
+          })
+          .returning();
+
+        // Copy every markup currently on the source layer. We pull
+        // *all* rows (not just primaries) because a layer may have
+        // been built up over several revisions; the user expects the
+        // visible state of the layer to be replicated verbatim.
+        const sourceMarkups = await tx
+          .select()
+          .from(planDocumentMarkups)
+          .where(
+            and(
+              eq(planDocumentMarkups.planDocumentId, sourceAccess.doc.id),
+              eq(planDocumentMarkups.layerId, sourceLayer.id),
+            ),
+          );
+
+        if (sourceMarkups.length === 0) {
+          return { newLayer: created, markupsCopied: 0 };
+        }
+
+        // Remap group ids per-call so the cloned markups stay grouped
+        // together on the destination but never collide with an
+        // existing group there.
+        const groupMap = new Map<string, string>();
+        for (const m of sourceMarkups) {
+          if (m.groupId && !groupMap.has(m.groupId)) {
+            groupMap.set(m.groupId, crypto.randomUUID());
+          }
+        }
+
+        const inserted = await tx
+          .insert(planDocumentMarkups)
+          .values(
+            sourceMarkups.map((m) => ({
+              organizationId: targetAccess.doc.organizationId!,
+              projectId: targetAccess.doc.projectId,
+              planDocumentId: targetAccess.doc.id,
+              pageNumber: m.pageNumber,
+              tool: m.tool,
+              points: m.points,
+              color: m.color,
+              thickness: m.thickness,
+              text: m.text,
+              createdBy: user.id,
+              // Explicitly NULL — a "Copy to sheet" action is
+              // intentionally non-idempotent: clicking it twice yields
+              // two independent destination layers ("(copy)",
+              // "(copy 2)"). Setting sourceMarkupId to the original
+              // would trip the (planDocumentId, sourceMarkupId) unique
+              // index on the second copy.
+              sourceMarkupId: null,
+              layerId: created.id,
+              groupId: m.groupId ? groupMap.get(m.groupId) ?? null : null,
+            })),
+          )
+          .returning({ id: planDocumentMarkups.id });
+
+        return { newLayer: created, markupsCopied: inserted.length };
+      });
+
+      await logAudit(
+        {
+          userId: user.id,
+          action: "CREATE",
+          entityType: "planMarkupLayer",
+          entityId: newLayer.id,
+          newValue: JSON.stringify({
+            sourceLayerId: sourceLayer.id,
+            sourceDocumentId: sourceAccess.doc.id,
+            targetDocumentId: targetAccess.doc.id,
+            markupsCopied,
+          }),
+        },
+        req,
+      );
+
+      recordJobMetrics("plan_document_layer_copy", {
+        ok: 1,
+        markupsCopied,
+        ms: Date.now() - startedAt,
+      });
+
+      res.status(201).json({
+        ok: true,
+        layer: { ...newLayer, isVisible: true, markupCount: markupsCopied },
+        markupsCopied,
+      });
+    } catch (err: any) {
+      recordJobMetrics("plan_document_layer_copy", {
+        error: 1,
+        ms: Date.now() - startedAt,
+      });
+      if (err?.name === "ZodError") {
+        res.status(400).json({ error: "Invalid copy request", details: err.errors });
+        return;
+      }
+      next(err);
+    }
+  },
+);
+
+// ============================================================================
 // LIST pins for a single plan_document. Convenience endpoint used by the
 // print page so it can fetch overlays without first resolving the
 // project code.

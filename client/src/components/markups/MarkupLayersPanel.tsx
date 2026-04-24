@@ -12,11 +12,35 @@
  */
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Eye, EyeOff, Plus, Trash2, Pencil, Check, X, GripVertical } from "lucide-react";
+import {
+  Eye,
+  EyeOff,
+  Plus,
+  Trash2,
+  Pencil,
+  Check,
+  X,
+  GripVertical,
+  Copy,
+} from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+
+// Task #1701 — custom drag-and-drop MIME type used by drop targets
+// (e.g. PageThumbnailStrip) to recognise a "copy this layer" drag and
+// distinguish it from the panel's internal reorder drag (which uses
+// `text/plain` only).
+export const PLAN_MARKUP_LAYER_DRAG_MIME = "application/x-plan-markup-layer";
 
 export interface MarkupLayer {
   id: string;
@@ -29,6 +53,15 @@ export interface MarkupLayer {
   markupCount: number;
 }
 
+/** Sibling sheet a user can copy a layer onto (Task #1701). The list
+ *  is supplied by the parent (PlansTab) since destinations come from
+ *  the project-document query, not from this layer-scoped panel. */
+export interface CopyDestination {
+  id: string;
+  /** User-visible label for the destination (`title` or `fileName`). */
+  label: string;
+}
+
 export interface MarkupLayersPanelProps {
   documentId: string;
   activeLayerId: string | null;
@@ -38,6 +71,11 @@ export interface MarkupLayersPanelProps {
    *  unassigned markups, which inherit the default layer's state). */
   hiddenLayerIds: Set<string>;
   onChangeHiddenLayerIds: (next: Set<string>) => void;
+  /** Task #1701 — sibling plan documents in the same project that the
+   *  user can copy a layer onto. The current document MUST be excluded
+   *  by the parent so the menu never offers a self-copy. When omitted
+   *  or empty, the "Copy to sheet" affordance is hidden. */
+  copyDestinations?: CopyDestination[];
 }
 
 export default function MarkupLayersPanel({
@@ -46,6 +84,7 @@ export default function MarkupLayersPanel({
   onChangeActiveLayer,
   hiddenLayerIds,
   onChangeHiddenLayerIds,
+  copyDestinations = [],
 }: MarkupLayersPanelProps) {
   const { toast } = useToast();
   const [newName, setNewName] = useState("");
@@ -125,6 +164,62 @@ export default function MarkupLayersPanel({
     onSuccess: () => invalidate(),
     onError: (e: Error) =>
       toast({ title: "Could not toggle visibility", description: e.message, variant: "destructive" }),
+  });
+
+  // Task #1701 — Copy a layer (and its markups) to another sheet in
+  // the same project. Drives both the dropdown menu under each layer
+  // row and the drag-onto-thumbnail affordance below.
+  const copyToSheetMutation = useMutation({
+    mutationFn: async ({
+      layerId,
+      targetDocumentId,
+    }: {
+      layerId: string;
+      targetDocumentId: string;
+    }) => {
+      const r = await apiRequest(
+        "POST",
+        `/api/plan-markup-layers/${layerId}/copy-to-document`,
+        { targetDocumentId },
+      );
+      return r.json() as Promise<{
+        ok: boolean;
+        layer: { id: string; name: string };
+        markupsCopied: number;
+      }>;
+    },
+    onSuccess: (data, variables) => {
+      // Invalidate the destination's layers + markups so the next time
+      // a user opens that sheet they see the new "(copy)" layer.
+      queryClient.invalidateQueries({
+        queryKey: [
+          "/api/plan-documents",
+          variables.targetDocumentId,
+          "markup-layers",
+        ],
+      });
+      queryClient.invalidateQueries({
+        queryKey: [
+          "/api/plan-documents",
+          variables.targetDocumentId,
+          "markups",
+        ],
+      });
+      const dest = copyDestinations.find((d) => d.id === variables.targetDocumentId);
+      toast({
+        title: `Copied "${data.layer.name}" to ${dest?.label ?? "sheet"}`,
+        description:
+          data.markupsCopied === 0
+            ? "Layer was empty; an empty layer was created on the destination."
+            : `${data.markupsCopied} markup${data.markupsCopied === 1 ? "" : "s"} copied.`,
+      });
+    },
+    onError: (e: Error) =>
+      toast({
+        title: "Could not copy layer",
+        description: e.message,
+        variant: "destructive",
+      }),
   });
 
   // Persist a new layer order. The caller computes the minimal set of
@@ -389,6 +484,81 @@ export default function MarkupLayersPanel({
                   {l.name}
                   <span className="ml-1 text-muted-foreground">({l.markupCount})</span>
                 </button>
+              )}
+              {!isRenaming && (
+                /* Task #1701 — "Copy to sheet" affordance, available on
+                   every layer (including the default) so users can
+                   replicate any layer's markup set onto a sibling
+                   sheet. The button doubles as a drag-source: dropping
+                   onto a `data-layer-drop-target` element (e.g. a
+                   PageThumbnailStrip thumbnail) fires the same copy
+                   mutation. */
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      draggable={copyDestinations.length > 0}
+                      onDragStart={(e) => {
+                        try {
+                          e.dataTransfer.effectAllowed = "copy";
+                          e.dataTransfer.setData(
+                            PLAN_MARKUP_LAYER_DRAG_MIME,
+                            JSON.stringify({
+                              layerId: l.id,
+                              layerName: l.name,
+                              sourceDocumentId: documentId,
+                            }),
+                          );
+                          // Some browsers (Safari) only fire drop events
+                          // reliably when text/plain is also set.
+                          e.dataTransfer.setData("text/plain", l.name);
+                        } catch {
+                          // Older browsers may throw on setData; safe to ignore.
+                        }
+                      }}
+                      className="text-muted-foreground hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={
+                        copyDestinations.length === 0 || copyToSheetMutation.isPending
+                      }
+                      aria-label={`Copy ${l.name} to another sheet`}
+                      title={
+                        copyDestinations.length === 0
+                          ? "No other sheets available to copy to"
+                          : "Copy to another sheet"
+                      }
+                      data-testid={`button-markup-layer-copy-${l.id}`}
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="max-h-72 overflow-y-auto">
+                    <DropdownMenuLabel>Copy to sheet</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {copyDestinations.length === 0 ? (
+                      <DropdownMenuItem
+                        disabled
+                        data-testid={`menu-markup-layer-copy-empty-${l.id}`}
+                      >
+                        No other sheets available
+                      </DropdownMenuItem>
+                    ) : (
+                      copyDestinations.map((dest) => (
+                        <DropdownMenuItem
+                          key={dest.id}
+                          onSelect={() =>
+                            copyToSheetMutation.mutate({
+                              layerId: l.id,
+                              targetDocumentId: dest.id,
+                            })
+                          }
+                          data-testid={`menu-markup-layer-copy-${l.id}-to-${dest.id}`}
+                        >
+                          <span className="truncate">{dest.label}</span>
+                        </DropdownMenuItem>
+                      ))
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
               {!isRenaming && !l.isDefault && (
                 <>

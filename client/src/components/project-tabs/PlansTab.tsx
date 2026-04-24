@@ -2496,6 +2496,27 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                 onChangeActiveLayer={setActiveMarkupLayerId}
                                 hiddenLayerIds={hiddenMarkupLayerIds}
                                 onChangeHiddenLayerIds={setHiddenMarkupLayerIds}
+                                /* Task #1701 — sibling PDFs in this
+                                   project the user can copy a layer
+                                   onto. Filter to PDFs (the only doc
+                                   type that supports markups) and
+                                   exclude the current sheet so the
+                                   menu never offers a self-copy. */
+                                copyDestinations={documents
+                                  .filter(
+                                    (d) =>
+                                      d.id !== doc.id &&
+                                      ((d.mimeType || "")
+                                        .toLowerCase()
+                                        .includes("pdf") ||
+                                        (d.fileName || "")
+                                          .toLowerCase()
+                                          .endsWith(".pdf")),
+                                  )
+                                  .map((d) => ({
+                                    id: d.id,
+                                    label: d.title || d.fileName || "Untitled sheet",
+                                  }))}
                               />
                             </div>
                           </div>

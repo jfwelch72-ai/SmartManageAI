@@ -769,3 +769,212 @@ describe("plan_document_markups — bulk reposition (Task #1676)", () => {
     expect(noPoints.status).toBe(400);
   });
 });
+
+// Task #1701 — copy a single layer + its markups onto a sibling sheet.
+// Verifies the per-call "(copy)" / "(copy 2)" naming, group-id remap,
+// markup count, RBAC, and same-project guard.
+describe("plan-markup-layers — copy-to-document (Task #1701)", () => {
+  let copyTenant: Tenant;
+  let otherTenant: Tenant;
+  let secondProjectDocId: string;
+
+  beforeAll(async () => {
+    copyTenant = await setupTenant("copyL");
+    otherTenant = await setupTenant("copyL2");
+
+    // Spin up a second project under the same org so we can prove the
+    // endpoint refuses copies that would cross project boundaries.
+    const [project2] = await db
+      .insert(projects)
+      .values({
+        code: `${TEST_PREFIX}copyL-PRJ2-${Date.now()}`,
+        name: "PD Markup Project copyL #2",
+        clientName: "PD Markup Client copyL #2",
+        gcOrganizationId: copyTenant.orgId,
+      })
+      .returning();
+    const [doc] = await db
+      .insert(planDocuments)
+      .values({
+        projectId: project2.id,
+        organizationId: copyTenant.orgId,
+        scope: "PROJECT",
+        type: "PLANS",
+        title: "Doc cross-project",
+        fileName: "cross.pdf",
+        fileUrl: "https://example.com/cross.pdf",
+        uploadedById: copyTenant.userId,
+      })
+      .returning();
+    secondProjectDocId = doc.id;
+  }, 60_000);
+
+  it("copies a layer + its markups, names destination '(copy)', and remaps group ids", async () => {
+    // Source layer + two grouped markups + one ungrouped markup.
+    const layer = await apiPost(
+      `/api/plan-documents/${copyTenant.docA}/markup-layers`,
+      copyTenant.token,
+      { name: "Owner Comments", color: "#0066cc" },
+    );
+    expect(layer.status).toBe(201);
+    const sourceLayerId = layer.body.id as string;
+
+    const m1 = await apiPost(
+      `/api/plan-documents/${copyTenant.docA}/markups`,
+      copyTenant.token,
+      {
+        pageNumber: 3,
+        tool: "ARROW",
+        points: [{ x: 0.1, y: 0.1 }, { x: 0.2, y: 0.2 }],
+        layerId: sourceLayerId,
+      },
+    );
+    const m2 = await apiPost(
+      `/api/plan-documents/${copyTenant.docA}/markups`,
+      copyTenant.token,
+      {
+        pageNumber: 3,
+        tool: "ARROW",
+        points: [{ x: 0.3, y: 0.3 }, { x: 0.4, y: 0.4 }],
+        layerId: sourceLayerId,
+      },
+    );
+    const m3 = await apiPost(
+      `/api/plan-documents/${copyTenant.docA}/markups`,
+      copyTenant.token,
+      {
+        pageNumber: 4,
+        tool: "RECTANGLE",
+        points: [{ x: 0.5, y: 0.5 }, { x: 0.6, y: 0.6 }],
+        layerId: sourceLayerId,
+      },
+    );
+    expect([m1.status, m2.status, m3.status]).toEqual([201, 201, 201]);
+
+    // Group m1 + m2 so we can assert the group id is REMAPPED on the copy.
+    const grouped = await apiPost(
+      `/api/plan-documents/${copyTenant.docA}/markup-groups`,
+      copyTenant.token,
+      { markupIds: [m1.body.id, m2.body.id] },
+    );
+    expect(grouped.status).toBe(200);
+    const sourceGroupId = grouped.body.groupId as string;
+
+    // First copy → "(copy)" suffix.
+    const first = await apiPost(
+      `/api/plan-markup-layers/${sourceLayerId}/copy-to-document`,
+      copyTenant.token,
+      { targetDocumentId: copyTenant.docB },
+    );
+    expect(first.status).toBe(201);
+    expect(first.body.layer.name).toBe("Owner Comments (copy)");
+    expect(first.body.layer.color).toBe("#0066cc");
+    expect(first.body.markupsCopied).toBe(3);
+
+    // Source layer is unchanged: still has 3 markups, name unchanged.
+    const sourceList = await apiGet(
+      `/api/plan-documents/${copyTenant.docA}/markup-layers`,
+      copyTenant.token,
+    );
+    const sourceStill = (sourceList.body as Array<{ id: string; name: string; markupCount: number }>)
+      .find((l) => l.id === sourceLayerId);
+    expect(sourceStill?.name).toBe("Owner Comments");
+    expect(sourceStill?.markupCount).toBe(3);
+
+    // Destination has the new layer with the right markup count.
+    const destLayers = await apiGet(
+      `/api/plan-documents/${copyTenant.docB}/markup-layers`,
+      copyTenant.token,
+    );
+    const copied = (destLayers.body as Array<{ id: string; name: string; markupCount: number }>)
+      .find((l) => l.name === "Owner Comments (copy)");
+    expect(copied).toBeTruthy();
+    expect(copied!.markupCount).toBe(3);
+
+    // Group id is remapped: same group on the destination, but different
+    // UUID than the source group.
+    const destPage3 = await apiGet(
+      `/api/plan-documents/${copyTenant.docB}/markups?page=3`,
+      copyTenant.token,
+    );
+    const destGroupedMarkups = (destPage3.body as Array<{ layerId: string; groupId: string | null }>)
+      .filter((m) => m.layerId === copied!.id);
+    expect(destGroupedMarkups.length).toBe(2);
+    expect(destGroupedMarkups[0].groupId).toBeTruthy();
+    expect(destGroupedMarkups[0].groupId).toBe(destGroupedMarkups[1].groupId);
+    expect(destGroupedMarkups[0].groupId).not.toBe(sourceGroupId);
+
+    // Second copy → "(copy 2)" suffix and brand-new layer (action is
+    // intentionally non-idempotent).
+    const second = await apiPost(
+      `/api/plan-markup-layers/${sourceLayerId}/copy-to-document`,
+      copyTenant.token,
+      { targetDocumentId: copyTenant.docB },
+    );
+    expect(second.status).toBe(201);
+    expect(second.body.layer.name).toBe("Owner Comments (copy 2)");
+    expect(second.body.layer.id).not.toBe(first.body.layer.id);
+    expect(second.body.markupsCopied).toBe(3);
+  });
+
+  it("copies an empty layer (zero markups) without error", async () => {
+    const layer = await apiPost(
+      `/api/plan-documents/${copyTenant.docA}/markup-layers`,
+      copyTenant.token,
+      { name: "Blank" },
+    );
+    expect(layer.status).toBe(201);
+    const res = await apiPost(
+      `/api/plan-markup-layers/${layer.body.id}/copy-to-document`,
+      copyTenant.token,
+      { targetDocumentId: copyTenant.docB },
+    );
+    expect(res.status).toBe(201);
+    expect(res.body.markupsCopied).toBe(0);
+    expect(res.body.layer.name).toBe("Blank (copy)");
+  });
+
+  it("rejects a copy onto the same document", async () => {
+    const layer = await apiPost(
+      `/api/plan-documents/${copyTenant.docA}/markup-layers`,
+      copyTenant.token,
+      { name: "Self" },
+    );
+    const res = await apiPost(
+      `/api/plan-markup-layers/${layer.body.id}/copy-to-document`,
+      copyTenant.token,
+      { targetDocumentId: copyTenant.docA },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a cross-project copy", async () => {
+    const layer = await apiPost(
+      `/api/plan-documents/${copyTenant.docA}/markup-layers`,
+      copyTenant.token,
+      { name: "Stay-Put" },
+    );
+    const res = await apiPost(
+      `/api/plan-markup-layers/${layer.body.id}/copy-to-document`,
+      copyTenant.token,
+      { targetDocumentId: secondProjectDocId },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("denies cross-tenant copy attempts", async () => {
+    const layer = await apiPost(
+      `/api/plan-documents/${copyTenant.docA}/markup-layers`,
+      copyTenant.token,
+      { name: "TenantSafe" },
+    );
+    // otherTenant has no business touching copyTenant's layer; the
+    // org check on the source layer (or doc) must short-circuit.
+    const res = await apiPost(
+      `/api/plan-markup-layers/${layer.body.id}/copy-to-document`,
+      otherTenant.token,
+      { targetDocumentId: otherTenant.docA },
+    );
+    expect([403, 404]).toContain(res.status);
+  });
+});
