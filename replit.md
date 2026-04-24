@@ -54,6 +54,9 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Auto-Synced Test Database**: Vitest runs `server/__tests__/globalSetup.ts` before any test suites. It hashes `shared/schema/**` + `drizzle.config.ts`, compares against a hash stored in `_test_schema_meta` inside the test DB, and — only when they differ — rebuilds the schema by running `drizzle-kit export --sql`, dropping `public`, and reapplying the exported SQL in one query. Cold rebuild is ~12s; warm path is ~1.5s. Set `SKIP_TEST_DB_PUSH=1` to bypass entirely or `FORCE_TEST_DB_REBUILD=1` to force a rebuild. See `DATABASE_MIGRATION_STRATEGY.md` for details.
 *   **One-shot test DB bootstrap for new contributors**: New contributors run `npm run test:setup` once. The script (`scripts/setup-test-db.ts`) provisions a sibling `<dbname>_test` database next to the dev DB and writes a gitignored `.env.test` with a matching `DATABASE_URL`. `server/__tests__/loadEnvTest.ts` (wired into vitest as both a `setupFiles` entry and a `globalSetup` side-effect import) auto-loads `.env.test` before the destructive-rebuild safety check, so plain `npm test` then works without any manual env exports. Inline `DATABASE_URL=… npm test` still wins when the URL already looks like a test DB. Full instructions in `TESTING.md`.
 
+## Backfills
+*   **Cloud document import audit backfill (Task #1493)** — Run `npx tsx scripts/backfill-cloud-document-audit.ts` once on 2026-04-24 to synthesize CREATE `audit_log` rows for `plan_documents` previously imported via `POST /api/documents/from-url` and `POST /api/documents/from-cloud`. Those routes silently lost their audit row prior to the circular-JSON fix in Task #1454. The script identifies cloud/URL imports via `file_url = object_key`, skips documents that already have a CREATE audit row, and is safe to re-run.
+
 ## External Dependencies
 *   PostgreSQL (Neon)
 *   Replit Object Storage (Google Cloud Storage backend)
