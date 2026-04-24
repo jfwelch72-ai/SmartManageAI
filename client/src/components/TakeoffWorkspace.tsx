@@ -1,6 +1,10 @@
 import { useState, useRef, useEffect, useLayoutEffect, useCallback, Fragment } from "react";
 import { Stage, Layer, Image as KonvaImage, Line, Circle, Text, Rect, Group } from "react-konva";
 import { MarkupShapeView, type MarkupShape } from "@/components/markups/MarkupRenderer";
+import {
+  MARKUP_TOOLBAR_DEFAULT_COLOR,
+  MARKUP_TOOLBAR_DEFAULT_THICKNESS,
+} from "@/components/markups/PlanMarkupToolbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -277,8 +281,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [verifyResult, setVerifyResult] = useState<{ expected: number; measured: number; errorPct: number } | null>(null);
   const [multiCalibPoints, setMultiCalibPoints] = useState<Array<{ points: [{ x: number; y: number }, { x: number; y: number }]; distance: number }>>([]);
   const [multiCalibMode, setMultiCalibMode] = useState(false);
-  const [markupColor, setMarkupColor] = useState("#ff0000");
-  const [markupThickness, setMarkupThickness] = useState(2);
+  // Task #1631 — defaults match the project-side toolbar so a fresh
+  // markup looks the same on either surface.
+  const [markupColor, setMarkupColor] = useState(MARKUP_TOOLBAR_DEFAULT_COLOR);
+  const [markupThickness, setMarkupThickness] = useState(MARKUP_TOOLBAR_DEFAULT_THICKNESS);
   const [markupDrawing, setMarkupDrawing] = useState(false);
   const [markupDrawPoints, setMarkupDrawPoints] = useState<{ x: number; y: number }[]>([]);
   const [markupTextInput, setMarkupTextInput] = useState<{ x: number; y: number; value: string } | null>(null);
@@ -3663,8 +3669,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   if (markup.categoryId && hiddenCategoryIds.has(markup.categoryId)) return null;
                   const rawPts = markup.points as { x: number; y: number }[];
                   if (!rawPts || rawPts.length === 0) return null;
-                  const color = (markup.color as string) || "#ff0000";
-                  const thickness = (markup.thickness as number) || 2;
+                  // Task #1631 — fall back to the same shared toolbar
+                  // defaults the project-side surface uses so legacy /
+                  // malformed markups don't drift into the old red.
+                  const color = (markup.color as string) || MARKUP_TOOLBAR_DEFAULT_COLOR;
+                  const thickness = (markup.thickness as number) || MARKUP_TOOLBAR_DEFAULT_THICKNESS;
                   const tool = markup.tool as string;
                   const isSelectable = activeTool === "select";
                   const isSelected = selectedMarkupId === markup.id;

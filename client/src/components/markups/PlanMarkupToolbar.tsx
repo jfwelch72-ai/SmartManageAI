@@ -3,6 +3,13 @@
  * Mirrors the six tools from `takeoff_markups`: ARROW, TEXT, RECTANGLE,
  * CLOUD, HIGHLIGHT, FREEHAND. Tool, color, and thickness are owned by the
  * parent and passed down so the toolbar is fully controlled.
+ *
+ * Task #1631 — Now also embedded inside the bid-side `<TakeoffToolbar />`
+ * markup popover so both surfaces show the same tool icons, color
+ * swatches, thickness presets, default values, and active-state styling.
+ * Optional `className`, `showLabel`, and `showSelect` props let the
+ * takeoff popover reuse the component without the project-side surface
+ * elements (header label, SELECT button — takeoff has its own select tool).
  */
 import {
   ArrowUpRight,
@@ -18,8 +25,17 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { MarkupTool } from "./MarkupRenderer";
 
-const COLORS = ["#ef4444", "#f59e0b", "#10b981", "#3b82f6", "#a855f7", "#000000"];
-const THICKNESSES = [1, 2, 4, 8];
+export const MARKUP_TOOLBAR_COLORS = [
+  "#ef4444",
+  "#f59e0b",
+  "#10b981",
+  "#3b82f6",
+  "#a855f7",
+  "#000000",
+];
+export const MARKUP_TOOLBAR_THICKNESSES = [1, 2, 4, 8];
+export const MARKUP_TOOLBAR_DEFAULT_COLOR = MARKUP_TOOLBAR_COLORS[0];
+export const MARKUP_TOOLBAR_DEFAULT_THICKNESS = 2;
 
 const TOOLS: Array<{ tool: MarkupTool; label: string; Icon: typeof Square }> = [
   // SELECT lets users click an existing markup to select/delete it
@@ -41,6 +57,16 @@ export interface PlanMarkupToolbarProps {
   onChangeColor: (color: string) => void;
   thickness: number;
   onChangeThickness: (thickness: number) => void;
+  /** Override container classes. Defaults to the project-side horizontal
+   *  toolbar styling; the takeoff popover supplies its own container. */
+  className?: string;
+  /** Show the leading "Markup:" label. PlansTab keeps it; the takeoff
+   *  popover hides it because the popover header already says "Markup". */
+  showLabel?: boolean;
+  /** Render the SELECT button. PlansTab keeps it (no other select tool);
+   *  the takeoff sidebar already has its own select tool, so it hides
+   *  this entry to avoid duplication. */
+  showSelect?: boolean;
 }
 
 export default function PlanMarkupToolbar({
@@ -50,14 +76,23 @@ export default function PlanMarkupToolbar({
   onChangeColor,
   thickness,
   onChangeThickness,
+  className,
+  showLabel = true,
+  showSelect = true,
 }: PlanMarkupToolbarProps) {
+  const visibleTools = showSelect
+    ? TOOLS
+    : TOOLS.filter((t) => t.tool !== "SELECT");
   return (
     <div
-      className="flex flex-wrap items-center gap-1 border-b bg-card/60 px-2 py-1 text-xs"
+      className={cn(
+        "flex flex-wrap items-center gap-1 border-b bg-card/60 px-2 py-1 text-xs",
+        className,
+      )}
       data-testid="plan-markup-toolbar"
     >
-      <span className="text-muted-foreground mr-1">Markup:</span>
-      {TOOLS.map(({ tool, label, Icon }) => (
+      {showLabel && <span className="text-muted-foreground mr-1">Markup:</span>}
+      {visibleTools.map(({ tool, label, Icon }) => (
         <Button
           key={tool}
           type="button"
@@ -90,7 +125,7 @@ export default function PlanMarkupToolbar({
       <div className="mx-2 h-4 w-px bg-border" />
 
       <div className="flex items-center gap-1">
-        {COLORS.map((c) => (
+        {MARKUP_TOOLBAR_COLORS.map((c) => (
           <button
             key={c}
             type="button"
@@ -109,7 +144,7 @@ export default function PlanMarkupToolbar({
       <div className="mx-2 h-4 w-px bg-border" />
 
       <div className="flex items-center gap-1">
-        {THICKNESSES.map((t) => (
+        {MARKUP_TOOLBAR_THICKNESSES.map((t) => (
           <Button
             key={t}
             type="button"

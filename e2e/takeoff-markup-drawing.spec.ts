@@ -35,13 +35,29 @@ async function listMarkups(page: Page, sheetId: string): Promise<MarkupResponse[
   return (await res.json()) as MarkupResponse[];
 }
 
+// Task #1631 — bid-side and project-side markup toolbars share
+// `<PlanMarkupToolbar>`, which exposes `button-markup-tool-<lower>` ids
+// (e.g. `button-markup-tool-arrow`) instead of the takeoff-specific
+// `button-tool-markup_arrow`. Translate from the takeoff Tool id used by
+// the rest of this spec.
+const MARKUP_TOOL_TESTID: Record<string, string> = {
+  markup_arrow: "button-markup-tool-arrow",
+  markup_text: "button-markup-tool-text",
+  markup_rectangle: "button-markup-tool-rectangle",
+  markup_cloud: "button-markup-tool-cloud",
+  markup_highlight: "button-markup-tool-highlight",
+  markup_freehand: "button-markup-tool-freehand",
+};
+
 async function selectMarkupTool(page: Page, toolId: string) {
+  const testId = MARKUP_TOOL_TESTID[toolId];
+  if (!testId) throw new Error(`Unknown markup tool: ${toolId}`);
   await page.getByTestId("button-markup-group").click();
-  const toolBtn = page.getByTestId(`button-tool-${toolId}`);
+  const toolBtn = page.getByTestId(testId);
   await toolBtn.waitFor({ state: "visible" });
   await toolBtn.click();
   // Popover should close after selecting a tool.
-  await expect(page.getByTestId(`button-tool-${toolId}`)).toHaveCount(0, {
+  await expect(page.getByTestId(testId)).toHaveCount(0, {
     timeout: 5000,
   });
 }

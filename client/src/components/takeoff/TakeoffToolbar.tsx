@@ -1,10 +1,9 @@
-import { useState, useRef, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Label } from "@/components/ui/label";
 import {
   ZoomIn, ZoomOut, Eraser, Upload, Sparkles, Undo2, Redo2, Magnet, CornerDownRight, Layers, Pen, Download, HelpCircle,
   RotateCw, RotateCcw, FlipVertical2, Grid3X3, Maximize2, ChevronDown, MousePointer2, Hand, Ruler, Tag, LayoutGrid,
@@ -15,8 +14,30 @@ import { TOOL_CONFIG, MARKUP_TOOL_IDS, type Tool } from "./types";
 import type { TakeoffMeasurement } from "@shared/schema";
 import type { useTakeoffHistory } from "@/hooks/use-takeoff-history";
 import { cn } from "@/lib/utils";
+import PlanMarkupToolbar from "@/components/markups/PlanMarkupToolbar";
+import type { MarkupTool } from "@/components/markups/MarkupRenderer";
 
-const MARKUP_COLORS = ["#ff0000", "#ff6600", "#ffcc00", "#00cc00", "#0066ff", "#9900ff", "#ff00ff", "#00cccc"];
+// Task #1631 — bid-side and project-side markup toolbars now share
+// `<PlanMarkupToolbar>`. The takeoff sidebar uses Tool ids like
+// `markup_arrow`; the shared toolbar uses MarkupTool tags like `ARROW`.
+// These maps translate between the two.
+const TOOL_TO_MARKUP: Partial<Record<Tool, MarkupTool>> = {
+  markup_arrow: "ARROW",
+  markup_text: "TEXT",
+  markup_rectangle: "RECTANGLE",
+  markup_cloud: "CLOUD",
+  markup_highlight: "HIGHLIGHT",
+  markup_freehand: "FREEHAND",
+};
+const MARKUP_TO_TOOL: Record<MarkupTool, Tool> = {
+  SELECT: "select",
+  ARROW: "markup_arrow",
+  TEXT: "markup_text",
+  RECTANGLE: "markup_rectangle",
+  CLOUD: "markup_cloud",
+  HIGHLIGHT: "markup_highlight",
+  FREEHAND: "markup_freehand",
+};
 
 interface TakeoffToolbarProps {
   activeTool: Tool;
@@ -246,36 +267,29 @@ export function TakeoffToolbar({
             </TooltipTrigger>
             <TooltipContent side="right"><span>{activeMarkupTool ? activeMarkupTool.label : "Markup Tools"}</span></TooltipContent>
           </Tooltip>
-          <PopoverContent side="right" align="start" className="w-[220px] p-1.5 z-[100]" sideOffset={4}>
-            <div className="flex flex-col gap-px">
+          <PopoverContent side="right" align="start" className="w-[280px] p-1.5 z-[100]" sideOffset={4}>
+            <div className="flex flex-col gap-1">
               <span className="text-[9px] font-semibold text-muted-foreground px-2 py-1 uppercase tracking-wider">Markup</span>
-              {markupTools.map(tool => (
-                <SmallToolBtn key={tool.id} tool={tool} isMarkup onClick={() => setMarkupOpen(false)} />
-              ))}
-              <Separator className="my-1" />
-              <div className="px-2 py-1 space-y-2">
-                <div>
-                  <Label className="text-[10px] font-medium">Color</Label>
-                  <div className="grid grid-cols-8 gap-1 mt-1">
-                    {MARKUP_COLORS.map(c => (
-                      <button
-                        key={c}
-                        className={cn("w-5 h-5 rounded border transition-all", markupColor === c ? "border-foreground scale-110 ring-1 ring-foreground" : "border-transparent hover:border-muted-foreground")}
-                        style={{ backgroundColor: c }}
-                        onClick={() => setMarkupColor(c)}
-                        data-testid={`button-markup-color-${c.replace('#','')}`}
-                      />
-                    ))}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input type="color" value={markupColor} onChange={e => setMarkupColor(e.target.value)} className="w-5 h-5 cursor-pointer rounded border p-0" data-testid="input-markup-color-custom" />
-                  <div className="flex-1">
-                    <Label className="text-[9px]">Size: {markupThickness}px</Label>
-                    <input type="range" min={1} max={10} value={markupThickness} onChange={e => setMarkupThickness(Number(e.target.value))} className="w-full h-3" data-testid="input-markup-thickness" />
-                  </div>
-                </div>
-              </div>
+              {/* Task #1631 — shared toolbar so bid-side and project-side
+                  markup controls have identical icons, defaults, color
+                  swatches, thickness presets, and selected-state styling. */}
+              <PlanMarkupToolbar
+                activeTool={TOOL_TO_MARKUP[activeTool] ?? null}
+                onChangeTool={(t) => {
+                  // Null = toggle off / cancel. Takeoff has no "no tool"
+                  // state, so fall back to its existing select tool.
+                  const next: Tool = t == null ? "select" : MARKUP_TO_TOOL[t];
+                  onToolSelect(next);
+                  setMarkupOpen(false);
+                }}
+                color={markupColor}
+                onChangeColor={setMarkupColor}
+                thickness={markupThickness}
+                onChangeThickness={setMarkupThickness}
+                showLabel={false}
+                showSelect={false}
+                className="border-0 bg-transparent px-1 py-1"
+              />
             </div>
           </PopoverContent>
         </Popover>
