@@ -19,7 +19,7 @@ import type { Server } from "http";
 import type { Express } from "express";
 import request from "supertest";
 import bcrypt from "bcrypt";
-import { sql, eq } from "drizzle-orm";
+import { sql, eq, and, desc } from "drizzle-orm";
 
 import { db } from "../db";
 import {
@@ -28,6 +28,7 @@ import {
   projects,
   planDocuments,
   planDocumentMarkups,
+  auditLog,
 } from "@shared/schema";
 import { generateToken } from "../auth";
 
@@ -448,6 +449,190 @@ describe("plan_document_markups — delete + restore round-trips through the pub
       (x) => x.id === m.id,
     );
     expect(matches).toHaveLength(1);
+  });
+
+  /**
+   * Task #1872 — Lock down the audit row written by the soft-delete
+   * restore routes. Task #1847 changed both restore handlers (the
+   * per-id `POST /api/plan-document-markups/:id/restore` and the
+   * cached-snapshot bulk `POST /api/plan-documents/:docId/markups/restore`)
+   * from logging under `action: "UPDATE"` / `action: "CREATE"` (with an
+   * `op: "restore"` JSON shim crammed into `new_value`) to a first-class
+   * `action: "RESTORE"`. The earlier round-trip suite proves the data
+   * flow but never reads the audit_log itself, so a regression that
+   * quietly reverts to `UPDATE` / `CREATE` (or drops the audit log call
+   * entirely) would be invisible to CI. These two assertions read the
+   * row back from `audit_log` directly so any drift in the action /
+   * entity_type / entity_id / user_id contract trips immediately.
+   */
+  it("POST /api/plan-document-markups/:id/restore writes a first-class RESTORE audit row keyed to the markup id and caller", async () => {
+    const seed = {
+      pageNumber: 9,
+      tool: "RECTANGLE" as const,
+      points: [
+        { x: 0.1, y: 0.1 },
+        { x: 0.9, y: 0.9 },
+      ],
+      color: "#0f766e",
+      thickness: 4,
+    };
+    const created = await apiPost(
+      `/api/plan-documents/${tenant.docId}/markups`,
+      tenant.token,
+      seed,
+    );
+    expect(created.status).toBe(201);
+    const m = created.body as MarkupResponse;
+
+    const del = await apiDelete(
+      `/api/plan-document-markups/${m.id}`,
+      tenant.token,
+    );
+    expect(del.status).toBe(200);
+
+    const restored = await apiPost(
+      `/api/plan-document-markups/${m.id}/restore`,
+      tenant.token,
+    );
+    expect(restored.status).toBe(200);
+
+    // Read the most recent audit row keyed to this exact markup id so
+    // we can never confuse it with the DELETE row written moments
+    // earlier (which has the same entity_id but a different action).
+    const [row] = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.entityType, "planDocumentMarkup"),
+          eq(auditLog.entityId, m.id),
+        ),
+      )
+      .orderBy(desc(auditLog.createdAt))
+      .limit(1);
+
+    expect(row).toBeTruthy();
+    // The whole point of Task #1847 — restore is no longer logged as
+    // `UPDATE` (with an `op: "restore"` JSON shim) but as a dedicated
+    // `RESTORE` action that an auditor can grep for directly.
+    expect(row!.action).toBe("RESTORE");
+    expect(row!.entityType).toBe("planDocumentMarkup");
+    // entity_id on the per-id route must point at the restored
+    // markup's id (NOT the document id) so a SIEM filter on a
+    // specific markup catches the restore alongside the create /
+    // update / delete events for that same row.
+    expect(row!.entityId).toBe(m.id);
+    expect(row!.userId).toBe(tenant.userId);
+  });
+
+  it("POST /api/plan-documents/:docId/markups/restore (cached-snapshot bulk) writes a first-class RESTORE audit row keyed to the document id and caller", async () => {
+    // Seed two live markups so we have real ids to round-trip
+    // through the cached-snapshot bulk restore endpoint.
+    const seedA = {
+      pageNumber: 11,
+      tool: "FREEHAND" as const,
+      points: [
+        { x: 0.1, y: 0.1 },
+        { x: 0.2, y: 0.2 },
+      ],
+      color: "#9333ea",
+      thickness: 3,
+    };
+    const seedB = {
+      pageNumber: 11,
+      tool: "ARROW" as const,
+      points: [
+        { x: 0.3, y: 0.3 },
+        { x: 0.4, y: 0.4 },
+      ],
+      color: "#ea580c",
+      thickness: 2,
+    };
+    const aRes = await apiPost(
+      `/api/plan-documents/${tenant.docId}/markups`,
+      tenant.token,
+      seedA,
+    );
+    const bRes = await apiPost(
+      `/api/plan-documents/${tenant.docId}/markups`,
+      tenant.token,
+      seedB,
+    );
+    expect(aRes.status).toBe(201);
+    expect(bRes.status).toBe(201);
+    const a = aRes.body as MarkupResponse;
+    const b = bRes.body as MarkupResponse;
+
+    // Soft-delete both rows so the bulk restore has work to do.
+    expect(
+      (await apiDelete(`/api/plan-document-markups/${a.id}`, tenant.token))
+        .status,
+    ).toBe(200);
+    expect(
+      (await apiDelete(`/api/plan-document-markups/${b.id}`, tenant.token))
+        .status,
+    ).toBe(200);
+
+    // Cached-snapshot bulk restore — the client hands back the full
+    // pre-deletion snapshot of every removed markup. This is the
+    // route Task #1847 changed to log under `action: "RESTORE"` with
+    // entity_id pointing at the document (not any single markup).
+    const bulk = await apiPost(
+      `/api/plan-documents/${tenant.docId}/markups/restore`,
+      tenant.token,
+      {
+        markups: [
+          {
+            id: a.id,
+            pageNumber: 11,
+            tool: seedA.tool,
+            points: seedA.points,
+            color: seedA.color,
+            thickness: seedA.thickness,
+          },
+          {
+            id: b.id,
+            pageNumber: 11,
+            tool: seedB.tool,
+            points: seedB.points,
+            color: seedB.color,
+            thickness: seedB.thickness,
+          },
+        ],
+      },
+    );
+    expect(bulk.status).toBe(201);
+    expect((bulk.body as { ok: boolean; count: number }).ok).toBe(true);
+    expect((bulk.body as { count: number }).count).toBe(2);
+
+    // The bulk restore writes its audit row keyed to the DOCUMENT id
+    // (since it covers many markups in one call). Filter on that
+    // entity_id + the RESTORE action so we don't pick up an
+    // unrelated row for the same document written by some other
+    // test's interleaved write.
+    const [row] = await db
+      .select()
+      .from(auditLog)
+      .where(
+        and(
+          eq(auditLog.entityType, "planDocumentMarkup"),
+          eq(auditLog.entityId, tenant.docId),
+          eq(auditLog.action, "RESTORE"),
+        ),
+      )
+      .orderBy(desc(auditLog.createdAt))
+      .limit(1);
+
+    expect(row).toBeTruthy();
+    expect(row!.action).toBe("RESTORE");
+    expect(row!.entityType).toBe("planDocumentMarkup");
+    // Bulk-restore: entity_id is the document id, NOT any single
+    // markup id, because one bulk call covers an arbitrary number
+    // of rows. (The per-row ids are still preserved inside
+    // new_value for SIEM exports — see the route handler — but
+    // entity_id is the indexed column auditors filter on.)
+    expect(row!.entityId).toBe(tenant.docId);
+    expect(row!.userId).toBe(tenant.userId);
   });
 
   it("restoring a row that is already live is a no-op (idempotent double-click)", async () => {
