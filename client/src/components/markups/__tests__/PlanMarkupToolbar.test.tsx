@@ -4,25 +4,40 @@
  * controls. The toolbar is a fully controlled component so verifying the
  * onChange callbacks fire with the expected value locks down the contract
  * the parent (PlansTab) relies on.
+ *
+ * Task #1734 — Each tool/color/thickness button is now wrapped in a Radix
+ * Tooltip, which throws "Tooltip must be used within TooltipProvider" if
+ * mounted bare. The `renderToolbar()` helper wraps every render in a
+ * `<TooltipProvider>` so future tooltip wiring can't silently re-break
+ * this suite.
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
-import PlanMarkupToolbar from "../PlanMarkupToolbar";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import PlanMarkupToolbar, {
+  type PlanMarkupToolbarProps,
+} from "../PlanMarkupToolbar";
 
 afterEach(() => cleanup());
 
+function renderToolbar(props: PlanMarkupToolbarProps) {
+  return render(
+    <TooltipProvider>
+      <PlanMarkupToolbar {...props} />
+    </TooltipProvider>,
+  );
+}
+
 describe("PlanMarkupToolbar", () => {
   it("renders all six tool buttons", () => {
-    render(
-      <PlanMarkupToolbar
-        activeTool={null}
-        onChangeTool={() => {}}
-        color="#ef4444"
-        onChangeColor={() => {}}
-        thickness={2}
-        onChangeThickness={() => {}}
-      />,
-    );
+    renderToolbar({
+      activeTool: null,
+      onChangeTool: () => {},
+      color: "#ef4444",
+      onChangeColor: () => {},
+      thickness: 2,
+      onChangeThickness: () => {},
+    });
     expect(screen.getByTestId("button-markup-tool-arrow")).toBeTruthy();
     expect(screen.getByTestId("button-markup-tool-text")).toBeTruthy();
     expect(screen.getByTestId("button-markup-tool-rectangle")).toBeTruthy();
@@ -33,28 +48,28 @@ describe("PlanMarkupToolbar", () => {
 
   it("clicking a tool button toggles it on then off", () => {
     const onChangeTool = vi.fn();
-    const { rerender } = render(
-      <PlanMarkupToolbar
-        activeTool={null}
-        onChangeTool={onChangeTool}
-        color="#ef4444"
-        onChangeColor={() => {}}
-        thickness={2}
-        onChangeThickness={() => {}}
-      />,
-    );
+    const { rerender } = renderToolbar({
+      activeTool: null,
+      onChangeTool,
+      color: "#ef4444",
+      onChangeColor: () => {},
+      thickness: 2,
+      onChangeThickness: () => {},
+    });
     fireEvent.click(screen.getByTestId("button-markup-tool-arrow"));
     expect(onChangeTool).toHaveBeenLastCalledWith("ARROW");
 
     rerender(
-      <PlanMarkupToolbar
-        activeTool="ARROW"
-        onChangeTool={onChangeTool}
-        color="#ef4444"
-        onChangeColor={() => {}}
-        thickness={2}
-        onChangeThickness={() => {}}
-      />,
+      <TooltipProvider>
+        <PlanMarkupToolbar
+          activeTool="ARROW"
+          onChangeTool={onChangeTool}
+          color="#ef4444"
+          onChangeColor={() => {}}
+          thickness={2}
+          onChangeThickness={() => {}}
+        />
+      </TooltipProvider>,
     );
     fireEvent.click(screen.getByTestId("button-markup-tool-arrow"));
     expect(onChangeTool).toHaveBeenLastCalledWith(null);
@@ -63,16 +78,14 @@ describe("PlanMarkupToolbar", () => {
   it("color and thickness pickers fire their respective callbacks", () => {
     const onChangeColor = vi.fn();
     const onChangeThickness = vi.fn();
-    render(
-      <PlanMarkupToolbar
-        activeTool={null}
-        onChangeTool={() => {}}
-        color="#ef4444"
-        onChangeColor={onChangeColor}
-        thickness={2}
-        onChangeThickness={onChangeThickness}
-      />,
-    );
+    renderToolbar({
+      activeTool: null,
+      onChangeTool: () => {},
+      color: "#ef4444",
+      onChangeColor,
+      thickness: 2,
+      onChangeThickness,
+    });
     fireEvent.click(screen.getByTestId("button-markup-color-3b82f6"));
     expect(onChangeColor).toHaveBeenLastCalledWith("#3b82f6");
 
