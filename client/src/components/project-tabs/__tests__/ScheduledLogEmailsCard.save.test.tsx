@@ -155,6 +155,11 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  // `vi.spyOn` re-uses an existing spy if the method was already
+  // wrapped, so without restoring between tests the call counts from
+  // the success-path test would leak into the error-path assertions
+  // below.
+  vi.restoreAllMocks();
 });
 
 describe("ScheduledLogEmailsCard — save round-trip", () => {
@@ -261,5 +266,110 @@ describe("ScheduledLogEmailsCard — save round-trip", () => {
     expect(
       screen.getByTestId("text-log-email-status-rfi").textContent,
     ).toBe("Currently: Daily");
+  });
+
+  // Task #1693 — error-path counterpart to the round-trip test above.
+  // If the PUT rejects, the mutation's `onError` only toasts; it must
+  // NOT invalidate `["/api/projects", projectId, "log-email-schedules"]`
+  // (which would refetch and replace the cached row with whoever the
+  // server currently knows about) and the failure-alerts panel must
+  // continue rendering the *previous* recipient list along with the
+  // *previous* "Currently:" cadence. Otherwise an admin might see a
+  // destructive toast yet a panel reflecting partial-save state and
+  // assume the change actually landed.
+  it("keeps the failure-alerts panel and cadence status intact when the save PUT rejects", async () => {
+    // Only one GET is expected — a regression that invalidates on
+    // error would trigger a second call and we'd assert against it
+    // below.
+    mockQueryFn.mockImplementationOnce(async () => ({
+      schedules: [
+        { ...baseRfiRow, failureNotificationRecipients: [PM_USER] },
+      ],
+    }));
+
+    mockApiRequest.mockRejectedValue(new Error("500: server exploded"));
+
+    const invalidateSpy = vi.spyOn(testQueryClient, "invalidateQueries");
+
+    render(
+      <QueryClientProvider client={testQueryClient}>
+        <ScheduledLogEmailsCard projectId={PROJECT_ID} />
+      </QueryClientProvider>,
+    );
+
+    // Wait for the initial GET to resolve and the panel to render the PM.
+    await waitFor(() => {
+      expect(
+        screen.getByTestId(`failure-recipient-name-rfi-${PM_ID}`),
+      ).toBeTruthy();
+    });
+
+    // Flip the cadence WEEKLY → DAILY so the form is dirty and Save is
+    // enabled.
+    fireEvent.click(
+      screen.getByTestId("option-log-email-cadence-rfi-daily"),
+    );
+
+    // Click Save and assert the PUT mutation is fired.
+    fireEvent.click(
+      screen.getByTestId("button-save-log-email-schedule-rfi"),
+    );
+
+    await waitFor(() => {
+      expect(mockApiRequest).toHaveBeenCalledWith(
+        "PUT",
+        `/api/projects/${PROJECT_ID}/log-email-schedules/RFI`,
+        expect.objectContaining({ cadence: "DAILY" }),
+      );
+    });
+
+    // Wait until the mutation has settled (the Save button re-enables
+    // once `isPending` flips back to false). Using the dirty form
+    // means Save stays enabled after the failed attempt — which is
+    // intentional UX so the user can retry.
+    await waitFor(() => {
+      expect(
+        (
+          screen.getByTestId(
+            "button-save-log-email-schedule-rfi",
+          ) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false);
+    });
+
+    // The schedules query must NOT be invalidated on the error path —
+    // the only invalidation in the file lives in `onSuccess`. A
+    // regression that moves it to `onSettled` would silently refetch
+    // after a failure and replace the recipient list with whatever
+    // the server currently has, which is exactly the partial-save
+    // illusion we're guarding against.
+    expect(invalidateSpy).not.toHaveBeenCalledWith({
+      queryKey: SCHEDULES_KEY,
+    });
+
+    // Only the initial GET should have fired — no post-error refetch.
+    expect(mockQueryFn).toHaveBeenCalledTimes(1);
+
+    // The failure-alerts panel must still render the original
+    // recipient (just the PM) — no editor pointer should have crept
+    // in, and the empty-state copy must not be shown.
+    expect(
+      screen.getByTestId(`failure-recipient-name-rfi-${PM_ID}`)
+        .textContent,
+    ).toBe("Pat Manager");
+    expect(
+      screen.queryByTestId(`failure-recipient-name-rfi-${EDITOR_ID}`),
+    ).toBeNull();
+    expect(
+      screen.queryByTestId("failure-recipients-empty-rfi"),
+    ).toBeNull();
+
+    // The "Currently:" status copy must reflect the *original*
+    // cadence (Weekly), not the dirty/just-attempted DAILY value —
+    // otherwise admins would think the cadence change took effect
+    // despite the destructive toast.
+    expect(
+      screen.getByTestId("text-log-email-status-rfi").textContent,
+    ).toBe("Currently: Weekly");
   });
 });
