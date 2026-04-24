@@ -100,7 +100,7 @@ export default function CertifiedPayrollHistoryPage() {
   const [endDate, setEndDate] = useState<string>(initial.endDate);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [ackExportFormat, setAckExportFormat] = useState<"csv" | "json" | null>(null);
+  const [ackExportFormat, setAckExportFormat] = useState<"csv" | "json" | "pdf" | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [archiveDialog, setArchiveDialog] = useState<CertifiedPayrollReportRow | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<CertifiedPayrollReportRow | null>(null);
@@ -211,7 +211,7 @@ export default function CertifiedPayrollHistoryPage() {
   // decision referenced by any project in the org — multi-decision
   // audit binders that the per-project "Export acknowledgements"
   // control on the Prevailing Wage card cannot produce.
-  const handleExportAcknowledgements = async (fmt: "csv" | "json") => {
+  const handleExportAcknowledgements = async (fmt: "csv" | "json" | "pdf") => {
     setAckExportFormat(fmt);
     try {
       const res = await fetch(`/api/payroll/acknowledgement-export?format=${fmt}`, {
@@ -351,6 +351,12 @@ export default function CertifiedPayrollHistoryPage() {
                 data-testid="menu-download-acknowledgement-history-csv"
               >
                 Download CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => handleExportAcknowledgements("pdf")}
+                data-testid="menu-download-acknowledgement-history-pdf"
+              >
+                Download PDF
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => handleExportAcknowledgements("json")}

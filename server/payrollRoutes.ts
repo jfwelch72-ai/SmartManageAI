@@ -2427,7 +2427,7 @@ router.get(
       if (mustDenyAccess || !orgId) {
         return res.status(403).json({ error: "Access denied" });
       }
-      const formatSchema = z.object({ format: z.enum(["csv", "json"]).optional() });
+      const formatSchema = z.object({ format: z.enum(["csv", "pdf", "json"]).optional() });
       const parsed = formatSchema.safeParse(req.query);
       if (!parsed.success) {
         return res.status(400).json({ error: "Invalid format", details: parsed.error.flatten() });
@@ -2516,6 +2516,132 @@ router.get(
             affectedProjects: projectsByDecision.get(r.decisionNumber) ?? [],
           })),
         });
+      }
+
+      const fileStem = `wage-decision-acknowledgements-org-${generatedAt.toISOString().slice(0, 10)}`;
+
+      if (outputFormat === "pdf") {
+        // Task #1547 — org-wide compliance binder PDF. Mirrors the
+        // per-decision PDF (`/api/payroll/wage-decisions/:decisionNumber/
+        // acknowledgement-export?format=pdf`) but groups rows by wage
+        // decision so a single binder spans every decision referenced by
+        // any project in the caller's org. Streamed straight to the
+        // response so very large multi-decision binders never have to
+        // materialize in memory.
+        const PDFDocument = (await import("pdfkit")).default;
+        const doc = new PDFDocument({ size: "LETTER", margin: 50 });
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `attachment; filename="${fileStem}.pdf"`);
+        doc.pipe(res);
+
+        doc
+          .fontSize(16)
+          .font("Helvetica-Bold")
+          .text("Prevailing Wage Acknowledgement Report — Organization-wide", { align: "left" });
+        doc.moveDown(0.3);
+        doc.fontSize(10).font("Helvetica").fillColor("#444444");
+        doc.text(`Generated: ${generatedAt.toISOString()}`);
+
+        const decisionNumbers = Array.from(
+          new Set<string>([
+            ...rows.map((r) => r.decisionNumber),
+            ...projectsByDecision.keys(),
+          ]),
+        ).sort();
+        const ackedTotal = rows.filter((r) => r.acknowledgedAt).length;
+        const unackedTotal = rows.length - ackedTotal;
+        doc.text(
+          `Wage Decisions: ${decisionNumbers.length}    Rate-change rows: ${rows.length} (${ackedTotal} acknowledged, ${unackedTotal} unacknowledged)`,
+        );
+        doc.moveDown(0.5);
+        doc.fillColor("#000000");
+
+        if (decisionNumbers.length === 0) {
+          doc
+            .fontSize(10)
+            .font("Helvetica")
+            .text(
+              "No wage decisions are referenced by any project in this organization, and no rate-change records exist.",
+              { width: 500 },
+            );
+        } else {
+          const rowsByDecision = new Map<string, typeof rows>();
+          for (const r of rows) {
+            const list = rowsByDecision.get(r.decisionNumber) ?? [];
+            list.push(r);
+            rowsByDecision.set(r.decisionNumber, list);
+          }
+
+          for (const decisionNumber of decisionNumbers) {
+            const decisionRows = rowsByDecision.get(decisionNumber) ?? [];
+            const decisionProjects = projectsByDecision.get(decisionNumber) ?? [];
+            const decisionAcked = decisionRows.filter((r) => r.acknowledgedAt).length;
+            const decisionUnacked = decisionRows.length - decisionAcked;
+
+            doc.moveDown(0.4);
+            doc.fontSize(12).font("Helvetica-Bold").fillColor("#000000");
+            doc.text(`Wage Decision: ${decisionNumber}`);
+            doc.font("Helvetica").fontSize(9).fillColor("#444444");
+            doc.text(
+              `Affected Projects (${decisionProjects.length}): ${
+                decisionProjects.length === 0
+                  ? "(no projects reference this decision)"
+                  : decisionProjects.join(", ")
+              }`,
+              { width: 500 },
+            );
+            doc.text(
+              `Rate-change rows: ${decisionRows.length} (${decisionAcked} acknowledged, ${decisionUnacked} unacknowledged)`,
+            );
+            doc.fillColor("#000000");
+            doc.moveDown(0.2);
+
+            if (decisionRows.length === 0) {
+              doc
+                .fontSize(9)
+                .font("Helvetica")
+                .text("   No recorded rate changes for this decision.", { width: 500 });
+              continue;
+            }
+
+            for (const r of decisionRows) {
+              const ackName = r.acknowledgedByUserId
+                ? fmtName(
+                    r.acknowledgerFirstName,
+                    r.acknowledgerLastName,
+                    r.acknowledgerEmail,
+                    r.acknowledgedByUserId,
+                  )
+                : "";
+              const ackStatus = r.acknowledgedAt
+                ? `Acknowledged by ${ackName || "unknown"} on ${
+                    r.acknowledgedAt instanceof Date
+                      ? r.acknowledgedAt.toISOString()
+                      : r.acknowledgedAt
+                  }`
+                : "Unacknowledged";
+              doc.fontSize(10).font("Helvetica-Bold").text(`• ${r.classification}`);
+              doc.font("Helvetica").fontSize(9);
+              doc.text(`   Change kind: ${r.changeKind}`);
+              doc.text(
+                `   Base: ${fmtRate(r.oldBaseRate) || "—"} → ${fmtRate(r.newBaseRate) || "—"}    Fringe: ${
+                  fmtRate(r.oldFringeRate) || "—"
+                } → ${fmtRate(r.newFringeRate) || "—"}    Total: ${fmtRate(r.oldTotalRate) || "—"} → ${
+                  fmtRate(r.newTotalRate) || "—"
+                }`,
+              );
+              doc.text(
+                `   Detected: ${
+                  r.detectedAt instanceof Date ? r.detectedAt.toISOString() : (r.detectedAt ?? "—")
+                }`,
+              );
+              doc.text(`   ${ackStatus}`);
+              doc.moveDown(0.4);
+            }
+          }
+        }
+        doc.end();
+        return;
       }
 
       const escape = (val: unknown) => {
