@@ -96,7 +96,11 @@ describe("useTakeoffHistory MARKUP_UPDATE", () => {
 
   // Task #1755 — multi-select markup body drag should be reversible
   // by a single Undo press (not N), and reapplied by a single Redo.
-  it("MARKUP_UPDATE_BATCH undo PATCHes every member, redo reapplies every member", async () => {
+  // Task #1764 — points-only batches now route through the bulk
+  // endpoint so a 50-markup group move costs one PATCH to undo and
+  // one PATCH to redo (matching the commit cost from #1752), instead
+  // of fanning out N parallel per-id PATCHes.
+  it("MARKUP_UPDATE_BATCH undo/redo points-only sends one bulk PATCH per press", async () => {
     const { result } = renderHook(() => useTakeoffHistory("sheet-1"));
     const beforeA = [{ x: 0, y: 0 }];
     const beforeB = [{ x: 1, y: 1 }];
@@ -122,13 +126,18 @@ describe("useTakeoffHistory MARKUP_UPDATE", () => {
 
     await act(async () => { await result.current.undo(); });
 
-    const undoCalls = apiRequestMock.mock.calls;
-    expect(undoCalls).toEqual(
-      expect.arrayContaining([
-        ["PATCH", "/api/takeoff/markups/a", { points: beforeA }],
-        ["PATCH", "/api/takeoff/markups/b", { points: beforeB }],
-      ]),
+    expect(apiRequestMock).toHaveBeenCalledTimes(1);
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      "PATCH",
+      "/api/takeoff/markups/bulk",
+      {
+        updates: [
+          { id: "a", points: beforeA },
+          { id: "b", points: beforeB },
+        ],
+      },
     );
+    expect(invalidateQueriesMock).toHaveBeenCalledTimes(1);
     expect(invalidateQueriesMock).toHaveBeenCalledWith({
       queryKey: ["/api/takeoff/sheets", "sheet-1", "markups"],
     });
@@ -136,17 +145,57 @@ describe("useTakeoffHistory MARKUP_UPDATE", () => {
     expect(result.current.canRedo).toBe(true);
 
     apiRequestMock.mockClear();
+    invalidateQueriesMock.mockClear();
     await act(async () => { await result.current.redo(); });
 
-    const redoCalls = apiRequestMock.mock.calls;
-    expect(redoCalls).toEqual(
-      expect.arrayContaining([
-        ["PATCH", "/api/takeoff/markups/a", { points: afterA }],
-        ["PATCH", "/api/takeoff/markups/b", { points: afterB }],
-      ]),
+    expect(apiRequestMock).toHaveBeenCalledTimes(1);
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      "PATCH",
+      "/api/takeoff/markups/bulk",
+      {
+        updates: [
+          { id: "a", points: afterA },
+          { id: "b", points: afterB },
+        ],
+      },
     );
+    expect(invalidateQueriesMock).toHaveBeenCalledTimes(1);
     expect(result.current.canUndo).toBe(true);
     expect(result.current.canRedo).toBe(false);
+  });
+
+  // Task #1764 — explicit guard for the headline N-roundtrip win:
+  // a 50-member group-drag undo/redo must collapse into one PATCH
+  // each (not 50). Mirrors the bulk-commit shape from #1752.
+  it("MARKUP_UPDATE_BATCH undo/redo of a 50-member points-only batch issues one PATCH per press", async () => {
+    const { result } = renderHook(() => useTakeoffHistory("sheet-1"));
+    const before = Array.from({ length: 50 }, (_, i) => ({
+      id: `m${i}`,
+      points: [{ x: i, y: i }],
+    }));
+    const after = Array.from({ length: 50 }, (_, i) => ({
+      id: `m${i}`,
+      points: [{ x: i + 100, y: i + 100 }],
+    }));
+
+    act(() => {
+      result.current.pushMarkupUpdateBatchAction(before, after, "sheet-1");
+    });
+
+    await act(async () => { await result.current.undo(); });
+    expect(apiRequestMock).toHaveBeenCalledTimes(1);
+    expect(apiRequestMock.mock.calls[0][0]).toBe("PATCH");
+    expect(apiRequestMock.mock.calls[0][1]).toBe("/api/takeoff/markups/bulk");
+    expect((apiRequestMock.mock.calls[0][2] as { updates: unknown[] }).updates).toHaveLength(50);
+    expect(invalidateQueriesMock).toHaveBeenCalledTimes(1);
+
+    apiRequestMock.mockClear();
+    invalidateQueriesMock.mockClear();
+    await act(async () => { await result.current.redo(); });
+    expect(apiRequestMock).toHaveBeenCalledTimes(1);
+    expect(apiRequestMock.mock.calls[0][1]).toBe("/api/takeoff/markups/bulk");
+    expect((apiRequestMock.mock.calls[0][2] as { updates: unknown[] }).updates).toHaveLength(50);
+    expect(invalidateQueriesMock).toHaveBeenCalledTimes(1);
   });
 
   // Task #1758 — bulk color/thickness style edits coalesce into one
@@ -180,6 +229,15 @@ describe("useTakeoffHistory MARKUP_UPDATE", () => {
         ["PATCH", "/api/takeoff/markups/b", { color: "#222222", thickness: 4 }],
       ]),
     );
+    // Task #1764 — style-only batches must NOT route through the
+    // bulk endpoint (its schema only accepts `{ id, points }`); they
+    // stay on the per-id Promise.all fallback so undo still restores
+    // every member's prior color/thickness.
+    expect(apiRequestMock.mock.calls).not.toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining(["/api/takeoff/markups/bulk"]),
+      ]),
+    );
     expect(result.current.canUndo).toBe(false);
     expect(result.current.canRedo).toBe(true);
 
@@ -189,6 +247,11 @@ describe("useTakeoffHistory MARKUP_UPDATE", () => {
       expect.arrayContaining([
         ["PATCH", "/api/takeoff/markups/a", { color: "#ff0000", thickness: 6 }],
         ["PATCH", "/api/takeoff/markups/b", { color: "#ff0000", thickness: 6 }],
+      ]),
+    );
+    expect(apiRequestMock.mock.calls).not.toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining(["/api/takeoff/markups/bulk"]),
       ]),
     );
     expect(result.current.canUndo).toBe(true);
@@ -230,6 +293,46 @@ describe("useTakeoffHistory MARKUP_UPDATE", () => {
       expect.arrayContaining([
         ["PATCH", "/api/takeoff/markups/t1", { text: "Stair detail" }],
         ["PATCH", "/api/takeoff/markups/t2", { text: "Stair detail" }],
+      ]),
+    );
+  });
+
+  // Task #1764 — pin down what counts as a "points-only" batch for
+  // bulk routing. `applyMarkupSnapshot` already treats any non-
+  // `undefined` field as a real update, so a snapshot that explicitly
+  // sets `text: null` (clearing a TEXT label) is NOT points-only and
+  // must stay on the per-id fallback. The bulk endpoint's Zod schema
+  // would reject the extra field anyway. This test guards against a
+  // future "optimization" that strips nullable fields and accidentally
+  // routes label-clear gestures through /bulk, where they'd silently
+  // drop the text:null clear.
+  it("MARKUP_UPDATE_BATCH treats snapshots with text:null as non-points-only and uses per-id PATCHes", async () => {
+    const { result } = renderHook(() => useTakeoffHistory("sheet-1"));
+
+    act(() => {
+      result.current.pushMarkupUpdateBatchAction(
+        [
+          { id: "a", points: [{ x: 0, y: 0 }], text: "old" },
+          { id: "b", points: [{ x: 1, y: 1 }], text: "old" },
+        ],
+        [
+          { id: "a", points: [{ x: 5, y: 5 }], text: null },
+          { id: "b", points: [{ x: 6, y: 6 }], text: null },
+        ],
+        "sheet-1",
+      );
+    });
+
+    await act(async () => { await result.current.undo(); });
+    expect(apiRequestMock.mock.calls).not.toEqual(
+      expect.arrayContaining([
+        expect.arrayContaining(["/api/takeoff/markups/bulk"]),
+      ]),
+    );
+    expect(apiRequestMock.mock.calls).toEqual(
+      expect.arrayContaining([
+        ["PATCH", "/api/takeoff/markups/a", { text: "old", points: [{ x: 0, y: 0 }] }],
+        ["PATCH", "/api/takeoff/markups/b", { text: "old", points: [{ x: 1, y: 1 }] }],
       ]),
     );
   });

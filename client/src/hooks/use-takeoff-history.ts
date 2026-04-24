@@ -111,6 +111,41 @@ export function useTakeoffHistory(selectedSheet: string | null) {
     await apiRequest("PATCH", `/api/takeoff/markups/${snapshot.id}`, payload);
   };
 
+  // Task #1764 — Group body-drag snapshots only carry `points`, so we
+  // can replay them through the same `/api/takeoff/markups/bulk`
+  // endpoint that Task #1752 introduced for the original commit. That
+  // collapses an N-member Undo/Redo from N PATCHes into one round-trip
+  // (a 50-markup group move now costs one PATCH to undo and one to
+  // redo, matching the commit cost).
+  //
+  // Style-only batches (color/thickness/text from the bulk style
+  // popover) still fall back to the per-id Promise.all path because
+  // the bulk endpoint's schema only accepts `{ id, points }`.
+  // Mixed-field batches are not produced anywhere in the codebase
+  // today (group drags push points-only; the bulk style popover pushes
+  // style-only), but the predicate is defensive: any snapshot that
+  // carries a field other than `points` forces the fallback.
+  const isPointsOnlyBatch = (
+    snaps: MarkupSnapshot[],
+  ): snaps is Array<MarkupSnapshot & { points: { x: number; y: number }[] }> =>
+    snaps.every(
+      (s) =>
+        s.points !== undefined &&
+        s.color === undefined &&
+        s.thickness === undefined &&
+        s.text === undefined,
+    );
+
+  const applyMarkupBatchSnapshots = async (snaps: MarkupSnapshot[]) => {
+    if (isPointsOnlyBatch(snaps)) {
+      await apiRequest("PATCH", "/api/takeoff/markups/bulk", {
+        updates: snaps.map((s) => ({ id: s.id, points: s.points })),
+      });
+      return;
+    }
+    await Promise.all(snaps.map(applyMarkupSnapshot));
+  };
+
   const invalidate = useCallback((sheetId: string, isMarkup = false) => {
     const key = isMarkup ? "markups" : "measurements";
     queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", sheetId, key] });
@@ -153,7 +188,7 @@ export function useTakeoffHistory(selectedSheet: string | null) {
       } else if (entry.type === "MARKUP_UPDATE" && entry.markupBefore) {
         await applyMarkupSnapshot(entry.markupBefore);
       } else if (entry.type === "MARKUP_UPDATE_BATCH" && entry.markupBatchBefore) {
-        await Promise.all(entry.markupBatchBefore.map(applyMarkupSnapshot));
+        await applyMarkupBatchSnapshots(entry.markupBatchBefore);
       }
       redoStack.current.push(entry);
       invalidate(entry.sheetId, entry.type.startsWith("MARKUP"));
@@ -202,7 +237,7 @@ export function useTakeoffHistory(selectedSheet: string | null) {
       } else if (entry.type === "MARKUP_UPDATE" && entry.markupAfter) {
         await applyMarkupSnapshot(entry.markupAfter);
       } else if (entry.type === "MARKUP_UPDATE_BATCH" && entry.markupBatchAfter) {
-        await Promise.all(entry.markupBatchAfter.map(applyMarkupSnapshot));
+        await applyMarkupBatchSnapshots(entry.markupBatchAfter);
       }
       undoStack.current.push(entry);
       invalidate(entry.sheetId, entry.type.startsWith("MARKUP"));
