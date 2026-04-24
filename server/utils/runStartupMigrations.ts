@@ -11,6 +11,7 @@ import { ensureIntegrationSyncStateFailureColumns } from "./ensureIntegrationSyn
 import { ensureIntegrationSyncStateExhaustedNotifiedColumn } from "./ensureIntegrationSyncStateExhaustedNotifiedColumn";
 import { ensureIntegrationSyncAlertMutes } from "./ensureIntegrationSyncAlertMutes";
 import { ensureWageDecisionRateChanges } from "./ensureWageDecisionRateChanges";
+import { ensureWageDecisionRateChangeAcknowledgements } from "./ensureWageDecisionRateChangeAcknowledgements";
 import { ensureEstimateCategoryEnumValues } from "./ensureEstimateCategoryEnumValues";
 import { ensureTakeoffEnhancements } from "./ensureTakeoffEnhancements";
 import { ensureFieldWorkerPermColumns } from "./ensureFieldWorkerPermColumns";
@@ -142,6 +143,11 @@ const migrations: MigrationStep[] = [
   // Davis-Bacon stale-refresh diff so the project prevailing wage panel
   // can flag classifications whose rate just changed.
   { name: "wage_decision_rate_changes", category: "CREATE_TABLE", fn: ensureWageDecisionRateChanges },
+  // Task #1480 — append-only audit history of every PM acknowledgement
+  // of a Davis-Bacon rate-change flag. Lets the prevailing-wage panel
+  // surface a chronological trail per classification even after the
+  // live row was re-armed or auto-cleared.
+  { name: "wage_decision_rate_change_acknowledgements", category: "CREATE_TABLE", fn: ensureWageDecisionRateChangeAcknowledgements },
   { name: "estimate_category_enum_values", category: "ADD_ENUM", fn: ensureEstimateCategoryEnumValues },
   // Task #1144 — close baseline-migration gaps for ALTER TYPE ADD VALUE
   // operations that `reconcileSchemaDrift` cannot replay (it creates missing

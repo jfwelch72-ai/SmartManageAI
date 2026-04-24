@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, FileText, RefreshCw, Plus, Loader2, Sparkles, Pencil, Trash2, Bell, BellOff, Download } from "lucide-react";
+import { AlertTriangle, FileText, RefreshCw, Plus, Loader2, Sparkles, Pencil, Trash2, Bell, BellOff, Download, History } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -120,6 +120,33 @@ interface PrevailingWageLastAcknowledgement {
   acknowledgedAt: string | null;
   acknowledgedByUserId: string | null;
   acknowledgedByName: string | null;
+}
+
+// Task #1480: one chronological entry from the rate-change
+// acknowledgement history endpoint. Each entry captures the diff
+// payload that was acknowledged at the time so superseded
+// acknowledgements (re-armed or auto-cleared since) still expose the
+// numbers an auditor needs for compliance review.
+interface RateChangeHistoryEntry {
+  id: string;
+  classification: string;
+  changeKind: "added" | "changed" | "removed" | string;
+  oldBaseRate: string | null;
+  newBaseRate: string | null;
+  oldFringeRate: string | null;
+  newFringeRate: string | null;
+  oldTotalRate: string | null;
+  newTotalRate: string | null;
+  detectedAt: string | null;
+  acknowledgedAt: string | null;
+  acknowledgedByUserId: string | null;
+  acknowledgedByName: string | null;
+}
+
+interface RateChangeHistoryResponse {
+  decisionNumber?: string;
+  classification?: string | null;
+  entries: RateChangeHistoryEntry[];
 }
 
 interface PrevailingWageClassification {
@@ -585,6 +612,28 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
   // used by other callers that still reference them.
   const [, setConfirmCreateOpen] = useState(false);
   const [, setPickedExistingId] = useState<string>("");
+
+  // Task #1480 — when set, opens the chronological "Acknowledgement
+  // history" dialog scoped to a single classification on the project's
+  // wage decision.
+  const [historyClassification, setHistoryClassification] = useState<string | null>(null);
+  const historyQuery = useQuery<RateChangeHistoryResponse>({
+    queryKey: [
+      "/api/projects",
+      projectId,
+      "prevailing-wage-summary",
+      "rate-change-history",
+      historyClassification ?? "",
+    ],
+    queryFn: async () => {
+      const url = `/api/projects/${projectId}/prevailing-wage-summary/rate-change-history${
+        historyClassification ? `?classification=${encodeURIComponent(historyClassification)}` : ""
+      }`;
+      const res = await apiRequest("GET", url);
+      return (await res.json()) as RateChangeHistoryResponse;
+    },
+    enabled: historyClassification !== null,
+  });
 
   const { data: orgClassifications = [] } = useQuery<OrgJobClassification[]>({
     queryKey: ["/api/labor-rates/classifications"],
@@ -1259,18 +1308,46 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
                         {c.effectiveDate || "\u2014"}
                       </TableCell>
                       <TableCell className="text-right">
-                        {c.source === "DOL_FEED" ? (
+                        <div className="flex items-center justify-end gap-2">
+                          {/* Task #1480 — chronological audit trail of every
+                              past acknowledgement of a rate change on this
+                              classification. Always available so auditors
+                              can review even classifications whose live
+                              flag is currently clear. */}
                           <Button
                             size="sm"
-                            variant="outline"
-                            onClick={() => openOverrideDialog(c)}
-                            data-testid={`button-promote-override-${c.classificationId}`}
+                            variant="ghost"
+                            onClick={() => {
+                              // Task #1480 — the history table keys
+                              // entries by the original DOL feed name
+                              // (that's what `acknowledgeRateChanges`
+                              // wrote into `classification`). When the
+                              // panel row has a `dolFeedName` (i.e. a
+                              // DOL_FEED row that may have been mapped
+                              // to a different display name), prefer
+                              // it so the history filter actually
+                              // matches; otherwise fall back to the
+                              // visible name.
+                              setHistoryClassification(c.dolFeedName ?? c.classificationName);
+                            }}
+                            data-testid={`button-view-rate-change-history-${c.classificationId}`}
+                            title="View full acknowledgement history"
                           >
-                            <Plus className="w-3.5 h-3.5 mr-1" /> Override
+                            <History className="w-3.5 h-3.5 mr-1" /> History
                           </Button>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">—</span>
-                        )}
+                          {c.source === "DOL_FEED" ? (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openOverrideDialog(c)}
+                              data-testid={`button-promote-override-${c.classificationId}`}
+                            >
+                              <Plus className="w-3.5 h-3.5 mr-1" /> Override
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -1527,6 +1604,103 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
               ) : (
                 "Save override"
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Task #1480 — chronological audit trail of every PM
+          acknowledgement of a rate change on the selected
+          classification. Survives re-arm and auto-clear of the live
+          row, so it is the canonical source for compliance reviews. */}
+      <Dialog
+        open={historyClassification !== null}
+        onOpenChange={(o) => { if (!o) setHistoryClassification(null); }}
+      >
+        <DialogContent className="max-w-2xl" data-testid="dialog-rate-change-history">
+          <DialogHeader>
+            <DialogTitle>Rate change acknowledgement history</DialogTitle>
+            <DialogDescription>
+              Every past acknowledgement of a Davis-Bacon rate change for
+              {" "}
+              <span className="font-medium text-foreground">{historyClassification ?? ""}</span>
+              {", including superseded ones."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[60vh] overflow-y-auto">
+            {historyQuery.isLoading ? (
+              <div className="py-6 flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading history...
+              </div>
+            ) : historyQuery.isError ? (
+              <div className="py-6 text-sm text-red-600 dark:text-red-400" data-testid="text-rate-change-history-error">
+                Failed to load history: {(historyQuery.error as Error)?.message ?? "Unknown error"}
+              </div>
+            ) : (historyQuery.data?.entries.length ?? 0) === 0 ? (
+              <div
+                className="py-6 text-sm text-muted-foreground"
+                data-testid="text-rate-change-history-empty"
+              >
+                No acknowledgements recorded for this classification yet.
+              </div>
+            ) : (
+              <Table data-testid="table-rate-change-history">
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Acknowledged</TableHead>
+                    <TableHead>By</TableHead>
+                    <TableHead>Detected</TableHead>
+                    <TableHead>Change</TableHead>
+                    <TableHead className="text-right">Base</TableHead>
+                    <TableHead className="text-right">Fringe</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {historyQuery.data!.entries.map((e) => {
+                    const fmtDiff = (oldV: string | null, newV: string | null) => {
+                      const o = oldV ?? "\u2014";
+                      const n = newV ?? "\u2014";
+                      if (o === n) return o;
+                      return `${o} → ${n}`;
+                    };
+                    return (
+                      <TableRow key={e.id} data-testid={`row-rate-change-history-${e.id}`}>
+                        <TableCell className="text-xs">
+                          {e.acknowledgedAt ? new Date(e.acknowledgedAt).toLocaleString() : "\u2014"}
+                        </TableCell>
+                        <TableCell className="text-xs" data-testid={`text-rate-change-history-by-${e.id}`}>
+                          {e.acknowledgedByName || e.acknowledgedByUserId || "\u2014"}
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {e.detectedAt ? new Date(e.detectedAt).toLocaleString() : "\u2014"}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          <Badge variant="outline" className="text-[10px]">{e.changeKind}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right text-xs font-mono">
+                          {fmtDiff(e.oldBaseRate, e.newBaseRate)}
+                        </TableCell>
+                        <TableCell className="text-right text-xs font-mono">
+                          {fmtDiff(e.oldFringeRate, e.newFringeRate)}
+                        </TableCell>
+                        <TableCell className="text-right text-xs font-mono">
+                          {fmtDiff(e.oldTotalRate, e.newTotalRate)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setHistoryClassification(null)}
+              data-testid="button-close-rate-change-history"
+            >
+              Close
             </Button>
           </DialogFooter>
         </DialogContent>

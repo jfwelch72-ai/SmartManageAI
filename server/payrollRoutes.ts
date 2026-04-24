@@ -316,7 +316,7 @@ import { db } from "./db";
 import { eventBus } from "./events";
 import { exportLimiter } from "./rateLimiter";
 import { lookupCachedWageRate, lookupCachedRateByLocale, isWageDeterminationCached, listCachedDecisionClassifications, queueWageDecisionSync, getWageDecisionSyncStatus } from "./integrations/providers/dol_davis_bacon/sync";
-import { loadUnacknowledgedRateChanges, loadAcknowledgedRateChanges, acknowledgeRateChanges, normalizeClassificationKey } from "./integrations/providers/dol_davis_bacon/rateChangeFlags";
+import { loadUnacknowledgedRateChanges, loadAcknowledgedRateChanges, acknowledgeRateChanges, normalizeClassificationKey, loadRateChangeAcknowledgementHistory } from "./integrations/providers/dol_davis_bacon/rateChangeFlags";
 import { notifyOrgAdminsOfWageDecisionSyncFailure } from "./services/davisBaconAdminNotifications";
 import { payRuns, payRunLineItems, timeEntries, users, projects, organizationPayrollSettings, insertPayRunSchema, projectEmployeeRates, projectLaborRates, payrollDeductionTypes, employeeDeductions, payStubDeductions, insertPayrollDeductionTypeSchema, insertEmployeeDeductionSchema, organizations, jobClassifications, employeeClassifications, prevailingWageRates, payrollNotifications, notifications, weeklyPayrollReports, timeClockShifts, overtimeRules, costLedgerPostings, certifiedPayrollReports, auditLog, dolClassificationMappings, wageDecisionRateChanges } from "@shared/schema";
 import { eq, and, gte, lte, sql, desc, inArray, count, asc, isNull, or } from "drizzle-orm";
@@ -2576,6 +2576,88 @@ router.get(
     }
   },
 );
+// Task #1480 — chronological audit history of every PM acknowledgement
+// of a Davis-Bacon rate-change flag for the project's wage decision.
+// The live `wage_decision_rate_changes` table only retains the *most
+// recent* acknowledgement per (org, decision, classification) because a
+// re-arm overwrites the prior `acknowledgedAt`/`acknowledgedByUserId`
+// (and an auto-clear refresh deletes the row entirely). The
+// append-only `wage_decision_rate_change_acknowledgements` table —
+// written from `acknowledgeRateChanges` — preserves the full trail so
+// auditors can review every superseded acknowledgement event with the
+// diff payload that was acknowledged at the time. Optional query
+// param: `classification` to scope the trail to one row.
+router.get("/api/projects/:id/prevailing-wage-summary/rate-change-history", requireAuth, async (req, res, next) => {
+  try {
+    const authReq = req as AuthRequest;
+    const { orgId, mustDenyAccess } = getOrgIdForFilter(authReq);
+    if (mustDenyAccess || !orgId) {
+      return res.status(403).json({ error: "Access denied" });
+    }
+    const projectId = req.params.id;
+    const [project] = await db.select().from(projects)
+      .where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, orgId)));
+    if (!project) {
+      return res.status(404).json({ error: "Project not found" });
+    }
+    const decision = (project.wageDecision || "").trim();
+    if (!decision) {
+      return res.json({ entries: [] });
+    }
+    const classificationParam = typeof req.query.classification === "string"
+      ? req.query.classification
+      : undefined;
+
+    const rows = await loadRateChangeAcknowledgementHistory({
+      organizationId: orgId,
+      decisionNumber: decision,
+      classification: classificationParam,
+    });
+
+    // Resolve acknowledger user ids -> display names in one batched query
+    // so the response is auditor-friendly without N+1ing the users table.
+    const ackUserIds = Array.from(
+      new Set(
+        rows
+          .map((r) => r.acknowledgedByUserId)
+          .filter((id): id is string => typeof id === "string" && id.length > 0),
+      ),
+    );
+    const userNameMap = new Map<string, string>();
+    if (ackUserIds.length > 0) {
+      const userRows = await db
+        .select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email })
+        .from(users)
+        .where(inArray(users.id, ackUserIds));
+      for (const u of userRows) {
+        const name = [u.firstName, u.lastName].filter((s) => s && s.trim().length > 0).join(" ").trim();
+        userNameMap.set(u.id, name || u.email || u.id);
+      }
+    }
+
+    res.json({
+      decisionNumber: decision,
+      classification: classificationParam ?? null,
+      entries: rows.map((r) => ({
+        id: r.id,
+        classification: r.classification,
+        changeKind: r.changeKind,
+        oldBaseRate: r.oldBaseRate,
+        newBaseRate: r.newBaseRate,
+        oldFringeRate: r.oldFringeRate,
+        newFringeRate: r.newFringeRate,
+        oldTotalRate: r.oldTotalRate,
+        newTotalRate: r.newTotalRate,
+        detectedAt: r.detectedAt ? r.detectedAt.toISOString() : null,
+        acknowledgedAt: r.acknowledgedAt ? r.acknowledgedAt.toISOString() : null,
+        acknowledgedByUserId: r.acknowledgedByUserId,
+        acknowledgedByName: r.acknowledgedByUserId ? (userNameMap.get(r.acknowledgedByUserId) ?? null) : null,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 // Trigger an inline Davis-Bacon sync for the project's wage decision so PMs
 // can resolve the missing-decision warning without leaving the project page.

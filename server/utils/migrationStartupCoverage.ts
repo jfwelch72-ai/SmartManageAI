@@ -247,4 +247,8 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   // can flag classifications whose rate just changed (and clear the flag
   // once a PM acknowledges or a follow-up refresh has no diff).
   "0053_wage_decision_rate_changes.sql": { helper: "ensureWageDecisionRateChanges" },
+  // Task #1480 — append-only audit history of every PM acknowledgement
+  // of a Davis-Bacon rate-change flag, surfaced via the prevailing-wage
+  // panel's "View history" affordance for compliance reviews.
+  "0055_wage_decision_rate_change_acknowledgements.sql": { helper: "ensureWageDecisionRateChangeAcknowledgements" },
 };

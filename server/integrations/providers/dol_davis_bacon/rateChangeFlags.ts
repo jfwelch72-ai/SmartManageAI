@@ -13,9 +13,9 @@
  */
 
 import { db } from "../../../db";
-import { wageDecisionRateChanges } from "@shared/schema";
-import type { WageDecisionRateChange } from "@shared/schema";
-import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { wageDecisionRateChanges, wageDecisionRateChangeAcknowledgements } from "@shared/schema";
+import type { WageDecisionRateChange, WageDecisionRateChangeAcknowledgement } from "@shared/schema";
+import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import type { WageRateDiffEntry } from "../../../services/davisBaconAdminNotifications";
 import { logError } from "../../../utils/logger";
 
@@ -261,15 +261,99 @@ export async function acknowledgeRateChanges(args: {
     );
   }
 
-  const result = await db
-    .update(wageDecisionRateChanges)
-    .set({
-      acknowledgedAt: new Date(),
-      acknowledgedByUserId: args.userId,
-      updatedAt: new Date(),
-    })
-    .where(and(...conditions))
-    .returning({ id: wageDecisionRateChanges.id });
+  // Task #1480 — record the acknowledgement(s) in the live table AND
+  // the append-only audit history transactionally. We capture the
+  // pre-image of every row about to be acknowledged BEFORE the UPDATE
+  // so we can append a fully-populated history record (the live row
+  // may later be re-armed via upsert in `persistRateChangeRecords` or
+  // auto-cleared on a no-diff refresh, both of which would otherwise
+  // erase the auditor-visible "PM X acknowledged Carpenter on Y"
+  // record). The transaction guarantees we never clear a badge
+  // without persisting the corresponding history event — a partial
+  // success is unacceptable for a compliance audit trail.
+  const ackTime = new Date();
+  const result = await db.transaction(async (tx) => {
+    // Lock the matching rows FOR UPDATE so a concurrent
+    // acknowledge call can't squeeze in between our SELECT and our
+    // UPDATE. Without the lock we could record a history event for
+    // rows that ended up not being mutated by this transaction.
+    const toAcknowledge = await tx
+      .select()
+      .from(wageDecisionRateChanges)
+      .where(and(...conditions))
+      .for("update");
+
+    const updated = await tx
+      .update(wageDecisionRateChanges)
+      .set({
+        acknowledgedAt: ackTime,
+        acknowledgedByUserId: args.userId,
+        updatedAt: ackTime,
+      })
+      .where(and(...conditions))
+      .returning({ id: wageDecisionRateChanges.id });
+
+    if (toAcknowledge.length > 0) {
+      await tx.insert(wageDecisionRateChangeAcknowledgements).values(
+        toAcknowledge.map((r) => ({
+          organizationId: r.organizationId,
+          decisionNumber: r.decisionNumber,
+          classification: r.classification,
+          changeKind: r.changeKind,
+          oldBaseRate: r.oldBaseRate ?? undefined,
+          newBaseRate: r.newBaseRate ?? undefined,
+          oldFringeRate: r.oldFringeRate ?? undefined,
+          newFringeRate: r.newFringeRate ?? undefined,
+          oldTotalRate: r.oldTotalRate ?? undefined,
+          newTotalRate: r.newTotalRate ?? undefined,
+          detectedAt: r.detectedAt,
+          acknowledgedAt: ackTime,
+          acknowledgedByUserId: args.userId,
+        })),
+      );
+    }
+
+    return updated;
+  });
 
   return result.length;
+}
+
+/**
+ * Task #1480 — load the chronological acknowledgement history for a
+ * given (org, decision) pair, optionally filtered to a single
+ * classification (case-insensitive match). Most-recent acknowledgement
+ * first. Records survive re-arm and auto-clear of the live
+ * `wage_decision_rate_changes` row, so this is the canonical source for
+ * compliance auditors who need the full trail of every acknowledgement
+ * event ever made on a classification.
+ */
+export async function loadRateChangeAcknowledgementHistory(args: {
+  organizationId: string;
+  decisionNumber: string;
+  classification?: string;
+  limit?: number;
+}): Promise<WageDecisionRateChangeAcknowledgement[]> {
+  const decision = args.decisionNumber.trim();
+  if (!decision) return [];
+
+  const conditions = [
+    eq(wageDecisionRateChangeAcknowledgements.organizationId, args.organizationId),
+    eq(wageDecisionRateChangeAcknowledgements.decisionNumber, decision),
+  ];
+  if (args.classification && args.classification.trim().length > 0) {
+    const key = normalizeClassificationKey(args.classification);
+    conditions.push(
+      sql`lower(trim(${wageDecisionRateChangeAcknowledgements.classification})) = ${key}`,
+    );
+  }
+
+  const rows = await db
+    .select()
+    .from(wageDecisionRateChangeAcknowledgements)
+    .where(and(...conditions))
+    .orderBy(desc(wageDecisionRateChangeAcknowledgements.acknowledgedAt))
+    .limit(Math.min(Math.max(args.limit ?? 200, 1), 500));
+
+  return rows;
 }
