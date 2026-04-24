@@ -329,4 +329,15 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   "0063_project_log_email_failures_digest_schedule.sql": {
     helper: "ensureProjectLogEmailFailuresDigestSchedule",
   },
+  // Task #1847 — promote the ad-hoc `op: "restore"` JSON shim used by
+  // the soft-delete restore routes (per-id + bulk) to a first-class
+  // RESTORE value on the long-lived `audit_action` Postgres enum so
+  // the audit trail is directly searchable on the `action` column.
+  // `reconcileSchemaDrift` (Task #1075) creates missing enum *types*
+  // but never adds values to an existing one, so the runtime helper
+  // is required to keep long-lived dev / production DBs in sync.
+  "0066_audit_action_restore.sql": {
+    helper: "ensureAuditActionEnumValues",
+    note: "Task #1847 — RESTORE added to ensureAuditActionEnumValues alongside ARCHIVE/UNARCHIVE",
+  },
 };

@@ -190,7 +190,13 @@ export const auditActionEnum = pgEnum("audit_action", [
   // Without these, the route's `logAudit` call silently fails at the
   // DB layer (audit_action is a Postgres enum) and admins lose any
   // record of who archived a report and why.
-  "ARCHIVE", "UNARCHIVE"
+  "ARCHIVE", "UNARCHIVE",
+  // Task #1847: explicit RESTORE action so soft-delete restores
+  // (e.g. the per-id `POST /api/plan-document-markups/:id/restore`
+  // route and the bulk `POST .../markups/restore` route) are
+  // directly searchable in the audit trail without having to parse
+  // the `op: "restore"` JSON shim out of the `newValue` column.
+  "RESTORE"
 ]);
 export const clockEventTypeEnum = pgEnum("clock_event_type", ["CLOCK_IN", "CLOCK_OUT", "ADJUSTMENT", "ADMIN_OVERRIDE", "AUTO_CLOCK_OUT"]);
 export const shiftApprovalStatusEnum = pgEnum("shift_approval_status", ["PENDING", "APPROVED", "REJECTED"]);

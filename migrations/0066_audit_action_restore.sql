@@ -1,0 +1,20 @@
+-- Task #1847: Add a dedicated RESTORE value to the audit_action enum so
+-- the soft-delete restore routes can write a first-class action instead
+-- of the previous shim:
+--
+--   * `POST /api/plan-document-markups/:id/restore` (per-id soft-delete
+--      restore from Task #1775) used `action: "UPDATE"` with a
+--      `newValue: { op: "restore", deletedAt: null }` JSON payload.
+--   * `POST /api/plan-documents/:docId/markups/restore` (bulk
+--      cached-snapshot restore from Task #1737) used `action: "CREATE"`
+--      with a `newValue: { op: "restore", ... }` JSON payload.
+--
+-- Both routes now log under `action: "RESTORE"` so auditors filtering
+-- the audit trail for "who restored what and when" can query the
+-- `action` column directly instead of parsing JSON out of `newValue`.
+--
+-- IF NOT EXISTS is required because the runtime
+-- `ensureAuditActionEnumValues` migration also adds this value on
+-- startup, and the two paths can race on long-lived DBs that already
+-- received the runtime addition before this SQL migration runs.
+ALTER TYPE "public"."audit_action" ADD VALUE IF NOT EXISTS 'RESTORE';

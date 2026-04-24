@@ -11,8 +11,16 @@ import { logError } from "./logger";
  * type that already exists. Without this migration, long-lived dev /
  * production DBs would silently drop those audit rows because
  * `logAudit` swallows the enum-mismatch insert error.
+ *
+ * Task #1847 — adds RESTORE so the soft-delete restore routes
+ * (`POST /api/plan-document-markups/:id/restore` and the bulk
+ * `POST .../markups/restore`) can write a first-class action value
+ * instead of the previous `action: "UPDATE"` / `action: "CREATE"`
+ * shim with an `op: "restore"` JSON payload. Auditors filtering for
+ * "who restored what and when" no longer need to parse JSON out of
+ * the `newValue` column.
  */
-const REQUIRED_AUDIT_ACTION_VALUES = ["ARCHIVE", "UNARCHIVE"];
+const REQUIRED_AUDIT_ACTION_VALUES = ["ARCHIVE", "UNARCHIVE", "RESTORE"];
 
 export async function ensureAuditActionEnumValues(): Promise<void> {
   try {

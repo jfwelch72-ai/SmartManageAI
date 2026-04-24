@@ -1003,14 +1003,19 @@ router.post(
         }
       });
 
+      // Task #1847 — log under the dedicated RESTORE action so the
+      // bulk cached-snapshot restore is directly searchable in the
+      // audit trail without having to parse the `op: "restore"` JSON
+      // shim out of the `newValue` column. The newValue payload still
+      // carries the requested/inserted counts and the ids that were
+      // restored so SIEM exports keep their existing per-row detail.
       await logAudit(
         {
           userId: user.id,
-          action: "CREATE",
+          action: "RESTORE",
           entityType: "planDocumentMarkup",
           entityId: access.doc.id,
           newValue: JSON.stringify({
-            op: "restore",
             requested: body.markups.length,
             inserted: inserted.length,
             ids: body.markups.map((m) => m.id),
@@ -1102,16 +1107,20 @@ router.post(
         .where(eq(planDocumentMarkups.id, m.id))
         .returning();
 
-      // Log under "UPDATE" because the auditAction enum doesn't have a
-      // dedicated RESTORE value yet; the newValue payload describes
-      // the operation explicitly so the audit trail is still searchable.
+      // Task #1847 — log under the dedicated RESTORE action so the
+      // per-id soft-delete restore is directly searchable in the
+      // audit trail. Previously this logged under `action: "UPDATE"`
+      // with a `newValue: { op: "restore", deletedAt: null }` JSON
+      // shim that auditors had to parse. The `newValue` payload is
+      // intentionally dropped because the action itself now carries
+      // all the meaning, and the per-id route only ever clears
+      // `deleted_at` (no other fields change).
       await logAudit(
         {
           userId: user.id,
-          action: "UPDATE",
+          action: "RESTORE",
           entityType: "planDocumentMarkup",
           entityId: m.id,
-          newValue: JSON.stringify({ op: "restore", deletedAt: null }),
         },
         req,
       );
