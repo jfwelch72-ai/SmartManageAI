@@ -64,6 +64,7 @@ import { ensureUserSavedViewsTable } from "./ensureUserSavedViewsTable";
 import { ensureMyWorkSavedViewsTable } from "./ensureMyWorkSavedViewsTable";
 import { ensureScheduleBaselinesTable } from "./ensureScheduleBaselinesTable";
 import { ensurePlanPinsTable } from "./ensurePlanPinsTable";
+import { ensurePlanDocumentMarkupsTable } from "./ensurePlanDocumentMarkupsTable";
 import { ensureProjectEmailDistributionLists } from "./ensureProjectEmailDistributionLists";
 import { ensureProjectLogEmailSchedules } from "./ensureProjectLogEmailSchedules";
 import { ensureGanttPdfRenderSamplesTable } from "./ensureGanttPdfRenderSamplesTable";
@@ -228,6 +229,7 @@ const migrations: MigrationStep[] = [
   { name: "my_work_saved_views_table", category: "CREATE_TABLE", fn: ensureMyWorkSavedViewsTable },
   { name: "schedule_baselines_table", category: "CREATE_TABLE", fn: ensureScheduleBaselinesTable },
   { name: "plan_pins_table", category: "CREATE_TABLE", fn: ensurePlanPinsTable },
+  { name: "plan_document_markups_table", category: "CREATE_TABLE", fn: ensurePlanDocumentMarkupsTable },
   { name: "project_email_distribution_lists", category: "CREATE_TABLE", fn: ensureProjectEmailDistributionLists },
   { name: "project_log_email_schedules", category: "CREATE_TABLE", fn: ensureProjectLogEmailSchedules },
   { name: "geocode_status_columns", category: "ADD_COLUMN", fn: ensureGeocodeStatusColumns },

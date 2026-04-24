@@ -95,6 +95,7 @@ import NotFound from "@/pages/not-found";
 const LandingPage = lazy(() => import("@/pages/landing"));
 import LoginPage from "@/pages/login";
 import SchedulePrintPage from "@/pages/SchedulePrintPage";
+import PlanDocumentPrintPage from "@/pages/PlanDocumentPrintPage";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
 import RegisterPage from "@/pages/register";
@@ -382,6 +383,7 @@ function Router() {
       <Route path="/portal" component={UnifiedPortal} />
       <Route path="/rfq-response/:token" component={RfqResponsePage} />
       <Route path="/print/projects/:code/schedule" component={() => <ProtectedRoute component={SchedulePrintPage} skipOnboardingCheck />} />
+      <Route path="/print/plan-documents/:id" component={() => <ProtectedRoute component={PlanDocumentPrintPage} skipOnboardingCheck />} />
       <Route path="/onboarding" component={() => <ProtectedRoute component={OnboardingPage} skipOnboardingCheck />} />
       
       {/* Routes accessible to all authenticated users */}

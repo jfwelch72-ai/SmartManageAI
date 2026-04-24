@@ -1823,10 +1823,16 @@ export const planPins = pgTable("plan_pins", {
   refId: varchar("ref_id").notNull(),
   createdById: varchar("created_by_id").notNull().references(() => users.id),
   createdAt: timestamp("created_at").notNull().defaultNow(),
+  // Task #1609: carryover-from-revision tracking. When a pin is copied
+  // forward to a new plan_document revision via the carryover endpoint
+  // we record the source pin id so re-running the carryover is idempotent
+  // (UNIQUE on (plan_document_id, source_pin_id)).
+  sourcePinId: varchar("source_pin_id"),
 }, (table) => ({
   docPageIdx: index("plan_pins_doc_page_idx").on(table.planDocumentId, table.pageNumber),
   projectCodeIdx: index("plan_pins_project_code_idx").on(table.projectCode),
   orgIdx: index("plan_pins_org_idx").on(table.organizationId),
+  uniqueDocSource: unique("plan_pins_doc_source_unique").on(table.planDocumentId, table.sourcePinId),
 }));
 
 export const insertPlanPinSchema = createInsertSchema(planPins).omit({
@@ -1835,6 +1841,47 @@ export const insertPlanPinSchema = createInsertSchema(planPins).omit({
 });
 export type InsertPlanPin = z.infer<typeof insertPlanPinSchema>;
 export type PlanPin = typeof planPins.$inferSelect;
+
+// Task #1609: Plan-document-scoped markups. Mirrors `takeoff_markups`
+// shape but is keyed to (plan_document_id, page_number) so the
+// project-side PlansTab gets independent annotation storage from the
+// bid-side takeoff workspace. The shape intentionally mirrors
+// `takeoff_markups.tool/points/color/thickness/text` so the React
+// rendering layer can be shared.
+export const planDocumentMarkups = pgTable("plan_document_markups", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  planDocumentId: varchar("plan_document_id").notNull().references(() => planDocuments.id, { onDelete: "cascade" }),
+  pageNumber: integer("page_number").notNull().default(1),
+  // Tool name: ARROW, TEXT, RECTANGLE, CLOUD, HIGHLIGHT, FREEHAND.
+  // Stored as text (not the takeoff_markup_tool enum) so the two
+  // surfaces can evolve independently in future phases.
+  tool: text("tool").notNull(),
+  // JSON array of {x, y} normalized 0-1 coordinates per the page.
+  points: text("points").notNull(),
+  color: text("color").notNull().default("#ff0000"),
+  thickness: integer("thickness").notNull().default(2),
+  text: text("text"),
+  createdBy: varchar("created_by").notNull().references(() => users.id, { onDelete: "cascade" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  // Task #1609: carryover tracking — when this markup was copied from a
+  // previous revision's markup, source_markup_id records that origin so
+  // a repeat carryover is idempotent.
+  sourceMarkupId: varchar("source_markup_id"),
+}, (table) => ({
+  docPageIdx: index("plan_document_markups_doc_page_idx").on(table.planDocumentId, table.pageNumber),
+  orgIdx: index("plan_document_markups_org_idx").on(table.organizationId),
+  createdByIdx: index("plan_document_markups_created_by_idx").on(table.createdBy),
+  uniqueDocSource: unique("plan_document_markups_doc_source_unique").on(table.planDocumentId, table.sourceMarkupId),
+}));
+
+export const insertPlanDocumentMarkupSchema = createInsertSchema(planDocumentMarkups).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertPlanDocumentMarkup = z.infer<typeof insertPlanDocumentMarkupSchema>;
+export type PlanDocumentMarkup = typeof planDocumentMarkups.$inferSelect;
 
 export const insertTimeEntrySchema = createInsertSchema(timeEntries).omit({
   id: true,

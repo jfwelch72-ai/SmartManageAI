@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import * as pdfjsLib from "pdfjs-dist";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -333,26 +334,60 @@ interface PageThumbStripProps {
 
 function PageThumbStrip({ pdfDoc, numPages, currentPage, onSelect }: PageThumbStripProps) {
   const activeRef = useRef<HTMLButtonElement | null>(null);
+  const parentRef = useRef<HTMLDivElement | null>(null);
+
+  // Task #1609 — virtualize the strip so 600+ pages stays buttery smooth.
+  const ITEM_W = 72 + 6; // tile width + gap
+  const virtualizer = useVirtualizer({
+    count: numPages,
+    horizontal: true,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => ITEM_W,
+    overscan: 8,
+  });
 
   useEffect(() => {
-    activeRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-  }, [currentPage]);
+    if (!parentRef.current) return;
+    virtualizer.scrollToIndex(Math.max(0, currentPage - 1), { align: "center" });
+  }, [currentPage, virtualizer]);
 
   return (
     <div
-      className="flex items-center gap-1.5 px-2 py-1.5 border-b bg-muted/20 shrink-0 overflow-x-auto"
+      ref={parentRef}
+      className="flex items-center px-2 py-1.5 border-b bg-muted/20 shrink-0 overflow-x-auto"
       data-testid="pdf-page-strip"
     >
-      {Array.from({ length: numPages }, (_, i) => i + 1).map((n) => (
-        <PageThumb
-          key={n}
-          pdfDoc={pdfDoc}
-          pageNumber={n}
-          active={n === currentPage}
-          onSelect={onSelect}
-          buttonRef={n === currentPage ? activeRef : undefined}
-        />
-      ))}
+      <div
+        style={{
+          width: virtualizer.getTotalSize(),
+          height: 96,
+          position: "relative",
+        }}
+      >
+        {virtualizer.getVirtualItems().map((vi) => {
+          const n = vi.index + 1;
+          return (
+            <div
+              key={vi.key}
+              style={{
+                position: "absolute",
+                left: vi.start,
+                top: 0,
+                width: vi.size,
+                paddingRight: 6,
+              }}
+            >
+              <PageThumb
+                pdfDoc={pdfDoc}
+                pageNumber={n}
+                active={n === currentPage}
+                onSelect={onSelect}
+                buttonRef={n === currentPage ? activeRef : undefined}
+              />
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

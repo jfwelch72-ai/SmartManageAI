@@ -5,6 +5,9 @@ import { logError } from "./logger";
 /**
  * Task #576: plan_pins — pins for RFI/Punch/Submittal anchored to a plan sheet
  * at normalized 0-1 (x,y) coordinates per page.
+ *
+ * Task #1609: extended with `source_pin_id` so the carryover-on-revision
+ * endpoint can copy pins forward idempotently.
  */
 export async function ensurePlanPinsTable(): Promise<void> {
   try {
@@ -37,6 +40,14 @@ export async function ensurePlanPinsTable(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "plan_pins_doc_page_idx" ON "plan_pins"("plan_document_id","page_number")`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "plan_pins_project_code_idx" ON "plan_pins"("project_code")`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS "plan_pins_org_idx" ON "plan_pins"("organization_id")`);
+
+    // Task #1609: carryover tracking column + idempotency unique index.
+    await db.execute(sql`ALTER TABLE "plan_pins" ADD COLUMN IF NOT EXISTS "source_pin_id" varchar`);
+    await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS "plan_pins_doc_source_unique"
+      ON "plan_pins"("plan_document_id","source_pin_id")
+      WHERE "source_pin_id" IS NOT NULL
+    `);
 
     console.log("[migration] plan_pins table ready");
   } catch (err) {

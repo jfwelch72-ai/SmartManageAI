@@ -1,6 +1,11 @@
 import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } from "react";
 import PdfPreview from "@/components/PdfPreview";
 import { PlanPinLayer, PinPicker, PinFilterChips, PinCreateDialog, type PinFilter, type PinType, type PlanPin } from "@/components/PlanPinLayer";
+import PlanMarkupLayer from "@/components/markups/PlanMarkupLayer";
+import PlanMarkupToolbar from "@/components/markups/PlanMarkupToolbar";
+import type { MarkupTool } from "@/components/markups/MarkupRenderer";
+import CarryoverAnnotationsDialog from "@/components/markups/CarryoverAnnotationsDialog";
+import SheetJumpPalette, { useSheetJumpPaletteHotkey, type SheetJumpResult } from "@/components/SheetJumpPalette";
 import { useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -172,6 +177,18 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const [pickerPosition, setPickerPosition] = useState<{ left: number; top: number } | null>(null);
   const [pinDialogOpen, setPinDialogOpen] = useState(false);
   const [pinDialogType, setPinDialogType] = useState<PinType | null>(null);
+  const [markupTool, setMarkupTool] = useState<MarkupTool | null>(null);
+  const [markupColor, setMarkupColor] = useState<string>("#ef4444");
+  const [markupThickness, setMarkupThickness] = useState<number>(2);
+  const [sheetJumpOpen, setSheetJumpOpen] = useState(false);
+  const [carryoverOpen, setCarryoverOpen] = useState(false);
+  const [carryoverContext, setCarryoverContext] = useState<{
+    fromDocumentId: string;
+    toDocumentId: string;
+    fromLabel?: string;
+    toLabel?: string;
+  } | null>(null);
+  useSheetJumpPaletteHotkey(setSheetJumpOpen);
   const isMobilePin = typeof window !== "undefined" && window.innerWidth < 640;
 
   const handlePinDrop = useCallback((info: { x: number; y: number; pageNumber: number }) => {
@@ -1297,6 +1314,48 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                         Download
                                       </DropdownMenuItem>
                                       {(doc.mimeType?.includes("pdf") || doc.fileName?.toLowerCase().endsWith(".pdf")) && (
+                                        <DropdownMenuSub>
+                                          <DropdownMenuSubTrigger data-testid={`button-download-with-markups-${doc.id}`}>
+                                            <Download className="w-4 h-4 mr-2" />
+                                            Download PDF (with markups)
+                                          </DropdownMenuSubTrigger>
+                                          <DropdownMenuSubContent>
+                                            {[
+                                              { label: "Markups + Pins", q: "includeMarkups=true&includePins=true" },
+                                              { label: "Markups only", q: "includeMarkups=true&includePins=false" },
+                                              { label: "Pins only", q: "includeMarkups=false&includePins=true" },
+                                              { label: "Plain (no annotations)", q: "includeMarkups=false&includePins=false" },
+                                            ].map(opt => (
+                                              <DropdownMenuItem
+                                                key={opt.label}
+                                                onClick={() => {
+                                                  window.open(`/api/plan-documents/${doc.id}/export.pdf?${opt.q}`, "_blank");
+                                                }}
+                                                data-testid={`button-export-pdf-${doc.id}-${opt.label.replace(/\s+/g, "-").toLowerCase()}`}
+                                              >
+                                                {opt.label}
+                                              </DropdownMenuItem>
+                                            ))}
+                                          </DropdownMenuSubContent>
+                                        </DropdownMenuSub>
+                                      )}
+                                      {(doc.mimeType?.includes("pdf") || doc.fileName?.toLowerCase().endsWith(".pdf")) && (
+                                        <DropdownMenuItem
+                                          onClick={() => {
+                                            setCarryoverContext({
+                                              fromDocumentId: "",
+                                              toDocumentId: doc.id,
+                                              toLabel: doc.title || doc.fileName,
+                                            });
+                                            setCarryoverOpen(true);
+                                          }}
+                                          data-testid={`button-carryover-annotations-${doc.id}`}
+                                        >
+                                          <RefreshCw className="w-4 h-4 mr-2" />
+                                          Carry over annotations…
+                                        </DropdownMenuItem>
+                                      )}
+                                      {(doc.mimeType?.includes("pdf") || doc.fileName?.toLowerCase().endsWith(".pdf")) && (
                                         <DropdownMenuItem
                                           onClick={() => handleImportToTakeoff(doc.id)}
                                           data-testid={`button-import-takeoff-${doc.id}`}
@@ -1994,9 +2053,17 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                         </div>
                       </div>
                     )}
-                    <div className="flex-1 min-h-0 overflow-hidden">
+                    <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                       {isPdf ? (
                         <>
+                          <PlanMarkupToolbar
+                            activeTool={markupTool}
+                            onChangeTool={setMarkupTool}
+                            color={markupColor}
+                            onChangeColor={setMarkupColor}
+                            thickness={markupThickness}
+                            onChangeThickness={setMarkupThickness}
+                          />
                           <PdfPreview
                             url={`/api/projects/${projectCode}/documents/${doc.id}/stream`}
                             onOpenFile={() => handleOpenFile(doc.id, doc.fileUrl)}
@@ -2006,7 +2073,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                             pageBadges={planPinSummary[doc.id]?.pages}
                             pageBadgesClosed={planPinSummary[doc.id]?.closedPages}
                             pageBadgeMode={pinCountMode}
-                            overlay={({ pageNumber }) => (
+                            overlay={({ pageNumber, canvasWidth, canvasHeight }) => (
                               <>
                                 <PlanPinLayer
                                   projectCode={projectCode}
@@ -2015,6 +2082,15 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                   pageNumber={pageNumber}
                                   filter={pinFilter}
                                   onOpenSource={handleOpenPinSource}
+                                />
+                                <PlanMarkupLayer
+                                  documentId={doc.id}
+                                  pageNumber={pageNumber}
+                                  canvasWidth={canvasWidth}
+                                  canvasHeight={canvasHeight}
+                                  activeTool={markupTool}
+                                  color={markupColor}
+                                  thickness={markupThickness}
                                 />
                                 {pickerPosition && pendingPin && pendingPin.pageNumber === pageNumber && !isMobilePin && (
                                   <PinPicker
@@ -2292,6 +2368,37 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <SheetJumpPalette
+        open={sheetJumpOpen}
+        onOpenChange={setSheetJumpOpen}
+        projectCode={projectCode}
+        projectId={project?.id}
+        onPick={(r: SheetJumpResult) => {
+          if (r.documentId) {
+            setPreviewDocId(r.documentId);
+            if (r.pageNumber) setPreviewPageNumber(r.pageNumber);
+          } else if (r.pageNumber) {
+            setPreviewPageNumber(r.pageNumber);
+          }
+        }}
+      />
+      <CarryoverAnnotationsDialog
+        open={carryoverOpen}
+        onOpenChange={(o) => { setCarryoverOpen(o); if (!o) setCarryoverContext(null); }}
+        toDocumentId={carryoverContext?.toDocumentId ?? null}
+        fromDocumentId={carryoverContext?.fromDocumentId || null}
+        fromDocumentLabel={carryoverContext?.fromLabel}
+        toDocumentLabel={carryoverContext?.toLabel}
+        projectCode={projectCode}
+        candidates={
+          carryoverContext
+            ? documents
+                .filter((d: any) => d.id !== carryoverContext.toDocumentId &&
+                  (d.mimeType?.includes("pdf") || d.fileName?.toLowerCase?.().endsWith(".pdf")))
+                .map((d: any) => ({ id: d.id, label: d.title || d.fileName }))
+            : undefined
+        }
+      />
     </div>
   );
 }
