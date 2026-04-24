@@ -101,6 +101,56 @@ export function resetJobMetricAlertsClockForTests(): void {
   nowFn = () => Date.now();
 }
 
+/**
+ * Task #1573 — Side-channel for the retention-policy sweep to publish
+ * the offending `(entityType, action)` pairs from each run, so the
+ * `policiesUnsupported` spike alert can include them in the message
+ * (and SendGrid escalation) without operators having to crack open the
+ * warning logs to identify the offenders.
+ *
+ * The `JobCounters` payload is numeric-only (see `jobMetrics.ts`), so
+ * structured per-policy details cannot ride along on the metrics
+ * sample. Instead the sweep calls
+ * `setRetentionPolicyUnsupportedPairsForAlerts` at the end of each run
+ * with the unsupported pairs and the alert engine reads them via the
+ * matching getter when constructing the alert message.
+ */
+export interface UnsupportedRetentionPolicyPair {
+  entityType: string;
+  action: string;
+}
+
+let lastRetentionPolicyUnsupportedPairs: UnsupportedRetentionPolicyPair[] = [];
+
+export function setRetentionPolicyUnsupportedPairsForAlerts(
+  pairs: ReadonlyArray<UnsupportedRetentionPolicyPair>,
+): void {
+  lastRetentionPolicyUnsupportedPairs = pairs.map((p) => ({
+    entityType: p.entityType,
+    action: p.action,
+  }));
+}
+
+export function getRetentionPolicyUnsupportedPairsForAlerts(): UnsupportedRetentionPolicyPair[] {
+  return lastRetentionPolicyUnsupportedPairs.map((p) => ({ ...p }));
+}
+
+function formatRetentionPolicyUnsupportedPairs(
+  pairs: ReadonlyArray<UnsupportedRetentionPolicyPair>,
+): string {
+  if (pairs.length === 0) return "";
+  const formatted = pairs.map((p) => `${p.entityType}/${p.action}`);
+  // Cap the rendered list so a runaway misconfig (dozens of policies)
+  // can't blow out the alert message / email body. The exact pairs are
+  // still in the warning logs and on the dashboard.
+  const MAX_RENDERED = 10;
+  if (formatted.length <= MAX_RENDERED) return formatted.join(", ");
+  return (
+    formatted.slice(0, MAX_RENDERED).join(", ") +
+    `, +${formatted.length - MAX_RENDERED} more`
+  );
+}
+
 function toNumber(value: string | number | null | undefined, fallback: number): number {
   if (value === null || value === undefined) return fallback;
   if (typeof value === "number") return value;
@@ -277,6 +327,20 @@ export const PER_JOB_DEFAULTS: Record<string, PerJobDefaults> = {
   // outage doesn't re-page on every 15-minute alert tick. Email
   // escalation matches the absolute floor so the very first run that
   // crosses the threshold escalates to SendGrid.
+  //
+  // Task #1573 — `policiesUnsupported` is an absolute-floor spike rule
+  // (multiplier `0`, minAbsolute `1`) that fires on any nightly run
+  // where at least one enabled policy quietly did nothing because its
+  // `(entityType, action)` pair has no implementation. Without this
+  // alert a misconfigured no-op policy can sit enabled for weeks.
+  // Dedupe matches the once-daily cadence so a sustained
+  // misconfiguration pages once per day, not every 15-minute alert
+  // tick. Email escalation matches the floor so the first nightly run
+  // that records a no-op escalates to SendGrid. The offending
+  // `(entityType, action)` pairs are appended to the alert message via
+  // `setRetentionPolicyUnsupportedPairsForAlerts` (populated by the
+  // sweep at the end of each run) so operators land on the dashboard
+  // already knowing which policies need fixing.
   retention_policy_sweep: {
     stall: DAILY_STALL,
     spikes: {
@@ -291,6 +355,12 @@ export const PER_JOB_DEFAULTS: Record<string, PerJobDefaults> = {
         minAbsolute: 25,
         dedupeMinutes: 24 * 60,
         emailWhenAbove: 25,
+      },
+      policiesUnsupported: {
+        multiplier: 0,
+        minAbsolute: 1,
+        dedupeMinutes: 24 * 60,
+        emailWhenAbove: 1,
       },
     },
   },
@@ -856,9 +926,14 @@ async function emailSuperAdminsForAlert(
     alert.kind === "spike"
       ? `[High severity] Job spike: ${alert.job}${alert.counter ? ` · ${alert.counter}` : ""}`
       : `[High severity] Job stalled: ${alert.job}`;
+  // Task #1573 — absolute-floor spike rules (threshold === 0) skip the
+  // baseline comparison entirely, so the escalation copy must avoid
+  // referencing baseline / "× baseline" too.
   const escalation =
     alert.kind === "spike"
-      ? `Observed ${alert.observedValue?.toFixed?.(2) ?? alert.observedValue} in the last hour vs baseline ${alert.baselineValue?.toFixed?.(2) ?? alert.baselineValue}/hr (email threshold ≥ ${rule.emailWhenAbove}× baseline).`
+      ? rule.threshold > 0
+        ? `Observed ${alert.observedValue?.toFixed?.(2) ?? alert.observedValue} in the last hour vs baseline ${alert.baselineValue?.toFixed?.(2) ?? alert.baselineValue}/hr (email threshold ≥ ${rule.emailWhenAbove}× baseline).`
+        : `Observed ${alert.observedValue?.toFixed?.(2) ?? alert.observedValue} in the last hour (email threshold ≥ ${rule.emailWhenAbove}).`
       : `Job has been silent for ${alert.observedValue?.toFixed?.(1) ?? alert.observedValue}h (email threshold ≥ ${rule.emailWhenAbove}h).`;
   const baseUrl = (
     process.env.APP_URL ||
@@ -969,10 +1044,18 @@ export async function evaluateJobMetricAlerts(
       const baseline = baselineAvgPerHour(j.samples, counter, now - HOUR_MS, 23);
 
       if (lastHour < rule.minAbsolute) continue;
-      // A non-zero baseline of 0 means we have no comparison data yet —
-      // skip rather than firing a divide-by-zero false positive.
-      if (baseline <= 0) continue;
-      if (lastHour < rule.threshold * baseline) continue;
+      // Task #1573 — `threshold === 0` opts out of the baseline
+      // comparison entirely and turns this into a pure absolute-floor
+      // rule (fires whenever `lastHour >= minAbsolute`). Used by
+      // counters like `policiesUnsupported` where any non-zero value is
+      // a misconfiguration worth paging on regardless of history. For
+      // the standard multiplicative spike rules (threshold > 0) we
+      // still skip when baseline is 0, since "1 vs 0" is a divide-by-
+      // zero false positive.
+      if (rule.threshold > 0) {
+        if (baseline <= 0) continue;
+        if (lastHour < rule.threshold * baseline) continue;
+      }
 
       const dedupeKey = `${j.job}::${counter}::spike`;
       const snoozedUntil = activeSnoozes.get(dedupeKey);
@@ -986,7 +1069,27 @@ export async function evaluateJobMetricAlerts(
         continue;
       }
 
-      const message = `Counter "${counter}" on job "${j.job}" spiked: ${lastHour} in the last hour vs baseline ${baseline.toFixed(2)}/hr (≥ ${rule.threshold}× baseline${rule.isDefault ? ", default rule" : ""}).`;
+      // Task #1573 — absolute-floor rules (threshold === 0) get a
+      // distinct message that doesn't reference baselines (they were
+      // skipped above) and, for the retention-policy sweep's
+      // `policiesUnsupported` counter, append the offending
+      // `(entityType, action)` pairs the sweep stashed via
+      // `setRetentionPolicyUnsupportedPairsForAlerts` so operators
+      // know which policies need fixing without first cracking open
+      // the warning logs.
+      let message: string;
+      if (rule.threshold > 0) {
+        message = `Counter "${counter}" on job "${j.job}" spiked: ${lastHour} in the last hour vs baseline ${baseline.toFixed(2)}/hr (≥ ${rule.threshold}× baseline${rule.isDefault ? ", default rule" : ""}).`;
+      } else {
+        message = `Counter "${counter}" on job "${j.job}" exceeded floor: ${lastHour} in the last hour (≥ ${rule.minAbsolute}${rule.isDefault ? ", default rule" : ""}).`;
+        if (j.job === "retention_policy_sweep" && counter === "policiesUnsupported") {
+          const pairs = getRetentionPolicyUnsupportedPairsForAlerts();
+          const formatted = formatRetentionPolicyUnsupportedPairs(pairs);
+          if (formatted.length > 0) {
+            message += ` Offending policies: ${formatted}.`;
+          }
+        }
+      }
       const alert: JobMetricAlert = {
         job: j.job,
         counter,
@@ -1000,7 +1103,16 @@ export async function evaluateJobMetricAlerts(
       fired.push(alert);
       // For spike emails, compare the observed multiple-vs-baseline to
       // the email threshold so "emailWhenAbove: 10" means ">=10× baseline".
-      firedRules.push({ rule, emailMetric: baseline > 0 ? lastHour / baseline : 0 });
+      // Task #1573 — for absolute-floor rules (threshold === 0) compare
+      // the absolute observed count instead, so "emailWhenAbove: 1"
+      // means ">=1 in the last hour".
+      const emailMetric =
+        rule.threshold > 0
+          ? baseline > 0
+            ? lastHour / baseline
+            : 0
+          : lastHour;
+      firedRules.push({ rule, emailMetric });
       eventRows.push({
         job: alert.job,
         counter: alert.counter,

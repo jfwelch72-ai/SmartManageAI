@@ -27,6 +27,20 @@ vi.mock("../services/notificationService", () => ({
 vi.mock("../services/emailService", () => ({
   sendEmail: vi.fn(async () => undefined),
 }));
+// Task #1573 — spy on the side-channel that ferries the offending
+// `(entityType, action)` pairs from the sweep over to the alert engine
+// so the new `policiesUnsupported` spike alert can name them.
+vi.mock("../utils/jobMetricAlerts", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("../utils/jobMetricAlerts")
+  >();
+  return {
+    ...actual,
+    setRetentionPolicyUnsupportedPairsForAlerts: vi.fn(
+      actual.setRetentionPolicyUnsupportedPairsForAlerts,
+    ),
+  };
+});
 vi.mock("../emailRoutes", () => ({
   syncImapAccount: vi.fn(),
   syncOutlookAccount: vi.fn(),
@@ -118,6 +132,15 @@ beforeEach(async () => {
   );
   setJobMetricsPersistenceEnabled(false);
   resetJobMetrics();
+  // Task #1573 — clear the underlying side-channel first (so any pairs
+  // a previous test stashed don't leak in) and then clear the spy so
+  // the test only counts calls made by `processRetentionPolicies`.
+  const {
+    setRetentionPolicyUnsupportedPairsForAlerts,
+  } = await import("../utils/jobMetricAlerts");
+  setRetentionPolicyUnsupportedPairsForAlerts([]);
+  (setRetentionPolicyUnsupportedPairsForAlerts as ReturnType<typeof vi.fn>)
+    .mockClear();
 });
 
 describe("processRetentionPolicies metrics (Task #1523)", () => {
@@ -226,6 +249,28 @@ describe("processRetentionPolicies metrics (Task #1523)", () => {
     // Each unsupported policy should produce its own warning so
     // operators can find the offender in the logs.
     expect((logWarn as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2);
+
+    // Task #1573 — the sweep must hand the offending pairs over to the
+    // alert engine via `setRetentionPolicyUnsupportedPairsForAlerts` so
+    // the absolute-floor `policiesUnsupported` spike alert can name
+    // them in the dashboard message and SendGrid escalation.
+    const {
+      getRetentionPolicyUnsupportedPairsForAlerts,
+      setRetentionPolicyUnsupportedPairsForAlerts,
+    } = await import("../utils/jobMetricAlerts");
+    expect(
+      (setRetentionPolicyUnsupportedPairsForAlerts as ReturnType<typeof vi.fn>)
+        .mock.calls.length,
+    ).toBe(1);
+    const published = getRetentionPolicyUnsupportedPairsForAlerts();
+    expect(published).toHaveLength(2);
+    const formatted = published
+      .map((p) => `${p.entityType}/${p.action}`)
+      .sort();
+    expect(formatted).toEqual([
+      "AUDIT_LOGS/ARCHIVE",
+      "NOTIFICATIONS/DELETE",
+    ]);
   });
 
   it("records `policiesUnsupported: 0` on the empty-policies path (Task #1552)", async () => {
@@ -238,6 +283,19 @@ describe("processRetentionPolicies metrics (Task #1523)", () => {
     const metrics = getJobMetrics("retention_policy_sweep");
     expect(metrics.samples).toHaveLength(1);
     expect(metrics.samples[0].counters.policiesUnsupported).toBe(0);
+
+    // Task #1573 — the empty-policies path also clears the offender
+    // side-channel so a stale set of pairs from a previous run can't
+    // get attached to a future `policiesUnsupported` alert.
+    const {
+      getRetentionPolicyUnsupportedPairsForAlerts,
+      setRetentionPolicyUnsupportedPairsForAlerts,
+    } = await import("../utils/jobMetricAlerts");
+    expect(
+      (setRetentionPolicyUnsupportedPairsForAlerts as ReturnType<typeof vi.fn>)
+        .mock.calls.length,
+    ).toBe(1);
+    expect(getRetentionPolicyUnsupportedPairsForAlerts()).toEqual([]);
   });
 
   it("records zero deletions when an enabled policy matches no rows", async () => {

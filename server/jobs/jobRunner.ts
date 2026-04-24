@@ -5,7 +5,7 @@ import * as webhookService from "../integrations/webhookService";
 import * as connectionService from "../integrations/connectionService";
 import { logInfo, logError, logWarn } from "../utils/logger";
 import { recordJobMetrics, loadJobMetricsFromDb, pruneJobMetricsDb } from "../utils/jobMetrics";
-import { evaluateJobMetricAlerts, sendJobMetricAlertQuietHoursDigests } from "../utils/jobMetricAlerts";
+import { evaluateJobMetricAlerts, sendJobMetricAlertQuietHoursDigests, setRetentionPolicyUnsupportedPairsForAlerts } from "../utils/jobMetricAlerts";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
 import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, type InsertNotification } from "@shared/schema";
@@ -769,6 +769,13 @@ export async function processRetentionPolicies() {
   // operators can see in the dashboard exactly how many policies are
   // silently doing nothing, and we log a warning per offender.
   let policiesUnsupported = 0;
+  // Task #1573 — collect the offending (entityType, action) pairs so
+  // the absolute-floor `policiesUnsupported` spike alert in
+  // `jobMetricAlerts.ts` can include them in the message and SendGrid
+  // escalation. Pairs are deduped because nothing prevents an operator
+  // from creating two enabled policies for the same combo.
+  const unsupportedPairs: Array<{ entityType: string; action: string }> = [];
+  const unsupportedSeen = new Set<string>();
 
   const policies = await db.select()
     .from(retentionPolicies)
@@ -787,6 +794,10 @@ export async function processRetentionPolicies() {
       policiesUnsupported: 0,
       durationMs: Date.now() - startedAt,
     });
+    // Task #1573 — empty-policy run has no offenders; clear the
+    // side-channel so a previously-unsupported pair from an earlier
+    // run doesn't get attached to a future alert.
+    setRetentionPolicyUnsupportedPairsForAlerts([]);
     return;
   }
 
@@ -818,6 +829,17 @@ export async function processRetentionPolicies() {
         // attempt" timestamp stays accurate, but this policy does NOT
         // count toward `policiesProcessed`.
         policiesUnsupported += 1;
+        // Task #1573 — capture the offending pair (deduped) so the
+        // alert engine can name the misconfigured combos in the
+        // `policiesUnsupported` spike alert message.
+        const pairKey = `${policy.entityType}::${policy.action}`;
+        if (!unsupportedSeen.has(pairKey)) {
+          unsupportedSeen.add(pairKey);
+          unsupportedPairs.push({
+            entityType: policy.entityType,
+            action: policy.action,
+          });
+        }
         logWarn("Retention policy skipped: unsupported entityType/action", {
           policyId: policy.id,
           entityType: policy.entityType,
@@ -858,6 +880,11 @@ export async function processRetentionPolicies() {
     policiesUnsupported,
     durationMs: Date.now() - startedAt,
   });
+  // Task #1573 — publish the offending (entityType, action) pairs (or
+  // an empty list when the run was clean) so the absolute-floor
+  // `policiesUnsupported` spike alert can name the misconfigured combos
+  // in the dashboard message and SendGrid escalation.
+  setRetentionPolicyUnsupportedPairsForAlerts(unsupportedPairs);
 }
 
 /**

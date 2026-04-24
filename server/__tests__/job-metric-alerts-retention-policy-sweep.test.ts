@@ -380,3 +380,205 @@ describe("jobMetricAlerts — retention_policy_sweep per-job defaults (Task #150
     expect(state.sendEmailCalls).toHaveLength(0);
   });
 });
+
+// ---------------------------------------------------------------------
+// Task #1573 — `policiesUnsupported` absolute-floor spike alert
+// ---------------------------------------------------------------------
+// `policiesUnsupported` counts enabled retention policies whose
+// `(entityType, action)` pair has no implementation in the sweep — they
+// silently do nothing every night. The Task #1552 dashboard counter
+// surfaces this, but operators can still leave a misconfigured no-op
+// policy enabled for weeks. The absolute-floor spike rule (multiplier
+// `0`, minAbsolute `1`) ensures any nightly run with `> 0` no-op
+// policies pages Super Admins and includes the offending pairs the
+// sweep stashed via `setRetentionPolicyUnsupportedPairsForAlerts`.
+// ---------------------------------------------------------------------
+describe("jobMetricAlerts — retention_policy_sweep `policiesUnsupported` (Task #1573)", () => {
+  beforeEach(() => {
+    // Each test seeds (or clears) the offender side-channel itself so a
+    // pair from one case can't bleed into the next.
+    alerts.setRetentionPolicyUnsupportedPairsForAlerts([]);
+  });
+
+  it("exposes a `policiesUnsupported` absolute-floor spike override out of the box", () => {
+    const cfg = alerts.PER_JOB_DEFAULTS[JOB];
+    expect(cfg.spikes?.policiesUnsupported).toBeDefined();
+    // multiplier `0` is the new "absolute-floor only" semantic — the
+    // engine skips the baseline comparison entirely so any run with at
+    // least `minAbsolute` no-op policies pages.
+    expect(cfg.spikes?.policiesUnsupported?.multiplier).toBe(0);
+    expect(cfg.spikes?.policiesUnsupported?.minAbsolute).toBe(1);
+    expect(cfg.spikes?.policiesUnsupported?.dedupeMinutes).toBe(24 * 60);
+    // Email escalation matches the floor so the very first nightly run
+    // with a no-op policy escalates to SendGrid.
+    expect(cfg.spikes?.policiesUnsupported?.emailWhenAbove).toBe(1);
+  });
+
+  it("fires a `policiesUnsupported` spike alert AND emails Super Admins on the first run with `policiesUnsupported > 0`, even with zero baseline", async () => {
+    const now = Date.now();
+    alerts.setJobMetricAlertsClockForTests(() => now);
+    // Mirror the sweep's side-channel publish that happens at the end of
+    // a nightly run so the alert message can name the misconfigured
+    // combos.
+    alerts.setRetentionPolicyUnsupportedPairsForAlerts([
+      { entityType: "NOTIFICATIONS", action: "DELETE" },
+      { entityType: "AUDIT_LOGS", action: "ARCHIVE" },
+    ]);
+    // Single sample in the last hour with `policiesUnsupported: 2` and
+    // no prior baseline — historically this would NOT have fired
+    // (baseline === 0 short-circuits the spike rule). With the
+    // absolute-floor rule it must fire on this very first tick.
+    const samples = [
+      {
+        timestamp: now - 60_000,
+        counters: { policiesUnsupported: 2, policiesProcessed: 1 },
+      },
+    ];
+
+    const result = await alerts.evaluateJobMetricAlerts({
+      metricsSource: () => [
+        {
+          job: JOB,
+          samples,
+          latest: samples[0],
+          totals: { policiesUnsupported: 2, policiesProcessed: 1 },
+        },
+      ],
+    });
+
+    const spikes = result.alertsFired.filter(
+      (a) => a.kind === "spike" && a.counter === "policiesUnsupported",
+    );
+    expect(spikes).toHaveLength(1);
+    expect(spikes[0].emailed).toBe(true);
+    // Message names the offending (entityType, action) pairs so
+    // operators don't have to crack open the warning logs to find them.
+    expect(spikes[0].message).toContain("NOTIFICATIONS/DELETE");
+    expect(spikes[0].message).toContain("AUDIT_LOGS/ARCHIVE");
+    // ...and avoids the "× baseline" verbiage from the multiplicative
+    // spike rules — there is no baseline for this counter.
+    expect(spikes[0].message).not.toContain("× baseline");
+
+    expect(result.notifiedAdmins).toBe(2);
+    expect(result.emailsSent).toBe(1);
+    expect(state.sendEmailCalls).toHaveLength(1);
+    expect(state.sendEmailCalls[0].subject).toContain(JOB);
+    expect(state.sendEmailCalls[0].subject).toContain("policiesUnsupported");
+    // The escalation copy in the email body must also avoid the
+    // baseline phrasing for the absolute-floor rule.
+    expect(state.sendEmailCalls[0].text ?? "").not.toContain("× baseline");
+    // Offending pairs should ride along in the email body too.
+    expect(state.sendEmailCalls[0].text ?? "").toContain(
+      "NOTIFICATIONS/DELETE",
+    );
+  });
+
+  it("does NOT fire when `policiesUnsupported` is 0 even though the counter has shown up before", async () => {
+    const now = Date.now();
+    alerts.setJobMetricAlertsClockForTests(() => now);
+    // Yesterday saw 2 no-op policies; today the operator fixed them so
+    // the latest tick reports `policiesUnsupported: 0`. The minAbsolute
+    // floor is 1, so no alert should fire.
+    const samples = [
+      {
+        timestamp: now - 24 * HOUR - 1000,
+        counters: { policiesUnsupported: 2 },
+      },
+      {
+        timestamp: now - 60_000,
+        counters: { policiesUnsupported: 0, policiesProcessed: 3 },
+      },
+    ];
+
+    const result = await alerts.evaluateJobMetricAlerts({
+      metricsSource: () => [
+        {
+          job: JOB,
+          samples,
+          latest: samples[samples.length - 1],
+          totals: { policiesUnsupported: 2, policiesProcessed: 3 },
+        },
+      ],
+    });
+
+    const spikes = result.alertsFired.filter(
+      (a) => a.kind === "spike" && a.counter === "policiesUnsupported",
+    );
+    expect(spikes).toHaveLength(0);
+    expect(state.sendEmailCalls).toHaveLength(0);
+  });
+
+  it("includes a clean message (no offender list) when the side-channel is empty but the counter is non-zero", async () => {
+    // Edge case: the metrics sample shows a non-zero count but the
+    // side-channel was never populated (e.g. a stale process restarted
+    // between the sweep and the alert tick). The alert must still fire
+    // — operators can still pull the offenders from the warning logs.
+    const now = Date.now();
+    alerts.setJobMetricAlertsClockForTests(() => now);
+    alerts.setRetentionPolicyUnsupportedPairsForAlerts([]);
+    const samples = [
+      {
+        timestamp: now - 60_000,
+        counters: { policiesUnsupported: 1 },
+      },
+    ];
+
+    const result = await alerts.evaluateJobMetricAlerts({
+      metricsSource: () => [
+        {
+          job: JOB,
+          samples,
+          latest: samples[0],
+          totals: { policiesUnsupported: 1 },
+        },
+      ],
+    });
+
+    const spikes = result.alertsFired.filter(
+      (a) => a.kind === "spike" && a.counter === "policiesUnsupported",
+    );
+    expect(spikes).toHaveLength(1);
+    expect(spikes[0].message).not.toContain("Offending policies:");
+  });
+
+  it("renders pairs and a `+N more` suffix when the offender list is large enough to risk a runaway message", async () => {
+    const now = Date.now();
+    alerts.setJobMetricAlertsClockForTests(() => now);
+    // 12 distinct pairs — the formatter should render the first 10 and
+    // collapse the rest into "+2 more" so the message / email body
+    // can't blow out under a runaway misconfig.
+    const pairs = Array.from({ length: 12 }, (_, i) => ({
+      entityType: `ENTITY_${i}`,
+      action: "DELETE",
+    }));
+    alerts.setRetentionPolicyUnsupportedPairsForAlerts(pairs);
+    const samples = [
+      {
+        timestamp: now - 60_000,
+        counters: { policiesUnsupported: 12 },
+      },
+    ];
+
+    const result = await alerts.evaluateJobMetricAlerts({
+      metricsSource: () => [
+        {
+          job: JOB,
+          samples,
+          latest: samples[0],
+          totals: { policiesUnsupported: 12 },
+        },
+      ],
+    });
+
+    const spikes = result.alertsFired.filter(
+      (a) => a.kind === "spike" && a.counter === "policiesUnsupported",
+    );
+    expect(spikes).toHaveLength(1);
+    expect(spikes[0].message).toContain("ENTITY_0/DELETE");
+    expect(spikes[0].message).toContain("ENTITY_9/DELETE");
+    expect(spikes[0].message).toContain("+2 more");
+    // Pairs that were truncated should NOT appear individually.
+    expect(spikes[0].message).not.toContain("ENTITY_10/DELETE");
+    expect(spikes[0].message).not.toContain("ENTITY_11/DELETE");
+  });
+});
