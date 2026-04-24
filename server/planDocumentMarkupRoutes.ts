@@ -453,6 +453,119 @@ router.patch(
 );
 
 // ============================================================================
+// Task #1676 — Bulk PATCH: reposition multiple markups in one request.
+// Used by the plan-side overlay when the user drags a grouped markup —
+// every member of the group needs to move by the same delta atomically
+// so the visual group stays intact even if the network blips mid-flight.
+//
+// Each entry carries the markup id and its NEW normalized points array.
+// Per-row owner-or-manager check still applies, so a FIELD_WORKER can
+// only move groups composed of their own markups (an admin/manager can
+// move any). All updates run in a single transaction so a partial
+// failure either commits everything or nothing.
+// ============================================================================
+const bulkPatchPointsBody = z.object({
+  updates: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        points: z
+          .array(z.object({ x: z.number(), y: z.number() }))
+          .min(1)
+          .max(4096),
+      }),
+    )
+    .min(1)
+    .max(500),
+});
+
+router.patch(
+  "/api/plan-documents/:docId/markups/bulk",
+  requireAuth,
+  requireRole(...MARKUP_AUTHOR_ROLES),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const startedAt = Date.now();
+    try {
+      const access = await loadDocAndAssertOrg(req.params.docId, req);
+      if (!access.ok) {
+        res.status(access.status).json({ error: access.error });
+        return;
+      }
+      const body = bulkPatchPointsBody.parse(req.body || {});
+      const ids = body.updates.map((u) => u.id);
+      const rows = await db
+        .select()
+        .from(planDocumentMarkups)
+        .where(inArray(planDocumentMarkups.id, ids));
+      if (rows.length !== ids.length) {
+        res.status(404).json({ error: "One or more markups were not found" });
+        return;
+      }
+      const user = req.user!;
+      const isSuperAdmin = user.role === "SUPER_ADMIN";
+      const isAdminOrManager =
+        isSuperAdmin || user.role === "ADMIN" || user.role === "MANAGER";
+      for (const r of rows) {
+        if (r.planDocumentId !== access.doc.id) {
+          res
+            .status(400)
+            .json({ error: "All markups must belong to the same plan document" });
+          return;
+        }
+        if (!isSuperAdmin && r.organizationId !== user.organizationId) {
+          res.status(403).json({ error: "Access denied" });
+          return;
+        }
+        if (!isAdminOrManager && r.createdBy !== user.id) {
+          res
+            .status(403)
+            .json({ error: "You can only edit your own markups" });
+          return;
+        }
+      }
+      await db.transaction(async (tx) => {
+        for (const u of body.updates) {
+          await tx
+            .update(planDocumentMarkups)
+            .set({ points: JSON.stringify(u.points) })
+            .where(eq(planDocumentMarkups.id, u.id));
+        }
+      });
+      await logAudit(
+        {
+          userId: user.id,
+          action: "UPDATE",
+          entityType: "planDocumentMarkup",
+          entityId: access.doc.id,
+          newValue: JSON.stringify({
+            op: "bulkMove",
+            count: body.updates.length,
+            ids,
+          }),
+        },
+        req,
+      );
+      recordJobMetrics("plan_document_markups_bulk_move", {
+        ok: 1,
+        count: body.updates.length,
+        ms: Date.now() - startedAt,
+      });
+      res.json({ ok: true, count: body.updates.length });
+    } catch (err: any) {
+      recordJobMetrics("plan_document_markups_bulk_move", {
+        error: 1,
+        ms: Date.now() - startedAt,
+      });
+      if (err?.name === "ZodError") {
+        res.status(400).json({ error: "Invalid bulk patch", details: err.errors });
+        return;
+      }
+      next(err);
+    }
+  },
+);
+
+// ============================================================================
 // Task #1662 — Group / Ungroup multiple markups. Group assigns the same
 // new uuid to every markup id in the request body so they move + delete
 // as one unit. Ungroup clears it. Both operations are scoped to a single

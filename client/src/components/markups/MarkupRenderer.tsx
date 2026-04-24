@@ -40,6 +40,13 @@ export interface MarkupRendererProps {
   height: number;
   markups: MarkupShape[];
   selectedId?: string | null;
+  /**
+   * Task #1676 — multi-selection halo support. When provided, every
+   * markup whose id is in this set renders with the selected outline.
+   * Falls back to single-id `selectedId` when omitted so existing
+   * callers (read-only viewers, print page) keep working unchanged.
+   */
+  selectedIds?: Set<string>;
   onSelect?: (id: string | null) => void;
   /** When true, the stage is non-interactive (just a render) — used in
    *  read-only contexts like the print page or the gallery. */
@@ -52,6 +59,14 @@ export interface MarkupRendererProps {
   onPointerDown?: (point: { x: number; y: number }, evt: KonvaEventObject<PointerEvent>) => void;
   onPointerMove?: (point: { x: number; y: number }, evt: KonvaEventObject<PointerEvent>) => void;
   onPointerUp?: (point: { x: number; y: number }, evt: KonvaEventObject<PointerEvent>) => void;
+  /**
+   * Task #1676 — per-shape Konva Group props supplied by the caller.
+   * Used by the plan-side overlay to attach drag handlers to selected
+   * markups (and to translate non-dragged group members in lockstep
+   * during a group drag). Returning `undefined` leaves the shape with
+   * its default behavior.
+   */
+  getGroupProps?: (shape: MarkupShape) => MarkupShapeViewProps["groupProps"];
 }
 
 interface RenderedShape {
@@ -266,12 +281,14 @@ export default function MarkupRenderer({
   height,
   markups,
   selectedId,
+  selectedIds,
   onSelect,
   readOnly,
   draft,
   onPointerDown,
   onPointerMove,
   onPointerUp,
+  getGroupProps,
 }: MarkupRendererProps) {
   const rendered = useMemo(
     () => markups.map((m) => denormalize(m, width, height)),
@@ -313,9 +330,12 @@ export default function MarkupRenderer({
             key={shape.id}
             shape={shape}
             pts={pts}
-            selected={selectedId === shape.id}
+            selected={
+              selectedIds ? selectedIds.has(shape.id) : selectedId === shape.id
+            }
             onSelect={() => onSelect?.(shape.id)}
             readOnly={readOnly}
+            groupProps={getGroupProps?.(shape)}
           />
         ))}
         {renderedDraft && (

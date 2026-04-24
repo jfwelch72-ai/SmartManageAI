@@ -13,11 +13,19 @@
  *  - Multi-select (Shift+click) and a floating Group/Ungroup/Delete bar
  *  - Per-layer visibility filtering (driven by the parent panel)
  *  - Posting `layerId` on create so new markups land in the active layer
+ *
+ * Task #1676 — Now also owns:
+ *  - Dragging a selected markup (or any member of a group) repositions
+ *    every member of the expanded selection by the same delta. The
+ *    plan-side bulk PATCH endpoint persists the new normalized points
+ *    atomically. Halos render on every group member during selection so
+ *    the user can see exactly what they are about to move.
  */
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Trash2, Group as GroupIcon, Ungroup } from "lucide-react";
+import type { KonvaEventObject } from "konva/lib/Node";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import MarkupRenderer, { type MarkupShape, type MarkupTool } from "./MarkupRenderer";
@@ -65,6 +73,35 @@ function makeId() {
   return `tmp-${Math.random().toString(36).slice(2)}`;
 }
 
+/**
+ * Task #1676 — pure helper that builds the bulk-PATCH payload for a
+ * group drag. Exported for unit tests so the delta math can be locked
+ * down without driving the full Konva stage.
+ *
+ * @param markups   The current cached markups (after layer filter).
+ * @param memberIds Ids of the markups that should move (expandedSelection).
+ * @param ndx       Normalized x-delta in [0,1] of canvas width.
+ * @param ndy       Normalized y-delta in [0,1] of canvas height.
+ */
+export function buildBulkMoveUpdates(
+  markups: MarkupShape[],
+  memberIds: string[],
+  ndx: number,
+  ndy: number,
+): Array<{ id: string; points: Array<{ x: number; y: number }> }> {
+  if (ndx === 0 && ndy === 0) return [];
+  const out: Array<{ id: string; points: Array<{ x: number; y: number }> }> = [];
+  for (const id of memberIds) {
+    const m = markups.find((x) => x.id === id);
+    if (!m) continue;
+    out.push({
+      id: m.id,
+      points: m.points.map((p) => ({ x: p.x + ndx, y: p.y + ndy })),
+    });
+  }
+  return out;
+}
+
 export default function PlanMarkupLayer({
   documentId,
   pageNumber,
@@ -85,6 +122,14 @@ export default function PlanMarkupLayer({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState<MarkupShape | null>(null);
   const drawingRef = useRef(false);
+  // Task #1676 — when the user drags a selected (or grouped) markup,
+  // we mirror the live pixel delta here so the OTHER members of the
+  // expanded selection can be visually translated in lockstep via Konva
+  // Group x/y. The dragged markup itself is moved by Konva's native
+  // drag so its `groupProps.x/y` is intentionally NOT bound here.
+  const [groupDrag, setGroupDrag] = useState<
+    { id: string; dx: number; dy: number } | null
+  >(null);
   // Task #1653 — anchor for the in-canvas text input that replaces the
   // legacy `window.prompt()` flow. Coordinates are normalized 0-1 to
   // match `MarkupShape.points`; we denormalize when positioning the
@@ -187,6 +232,56 @@ export default function PlanMarkupLayer({
       toast({ title: "Could not ungroup markups", description: e.message, variant: "destructive" }),
   });
 
+  // Task #1676 — atomic bulk reposition. Used after a group/selection
+  // drag ends. Optimistically rewrites the cached points so the UI
+  // doesn't snap back to the pre-drag location while the request is
+  // in flight; rolls back on error.
+  const bulkMoveMutation = useMutation({
+    mutationFn: async (
+      updates: Array<{ id: string; points: Array<{ x: number; y: number }> }>,
+    ) =>
+      apiRequest(
+        "PATCH",
+        `/api/plan-documents/${encodeURIComponent(documentId)}/markups/bulk`,
+        { updates },
+      ),
+    onMutate: async (updates) => {
+      const queryKey = [
+        "/api/plan-documents",
+        documentId,
+        "markups",
+        pageNumber,
+      ];
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<ServerMarkup[]>(queryKey);
+      const updateById = new Map(updates.map((u) => [u.id, u.points]));
+      queryClient.setQueryData<ServerMarkup[]>(queryKey, (old) => {
+        if (!old) return old;
+        return old.map((m) =>
+          updateById.has(m.id)
+            ? { ...m, points: updateById.get(m.id)! }
+            : m,
+        );
+      });
+      return { previous };
+    },
+    onError: (e: Error, _vars, ctx) => {
+      const queryKey = [
+        "/api/plan-documents",
+        documentId,
+        "markups",
+        pageNumber,
+      ];
+      if (ctx?.previous) queryClient.setQueryData(queryKey, ctx.previous);
+      toast({
+        title: "Could not move markups",
+        description: e.message,
+        variant: "destructive",
+      });
+    },
+    onSettled: () => invalidate(),
+  });
+
   // For the toolbar/anchor we still highlight the most-recently-selected
   // markup, but groups expand so the whole sibling set highlights.
   const expandedSelection = useMemo(() => {
@@ -226,11 +321,23 @@ export default function PlanMarkupLayer({
   }, [lastSelected, canvasWidth, canvasHeight]);
 
   const handlePointerDown = useCallback(
-    (point: { x: number; y: number }) => {
+    (point: { x: number; y: number }, evt: KonvaEventObject<PointerEvent>) => {
       // SELECT is a non-drawing mode: clicking shapes is handled by
-      // MarkupRenderer's onSelect; clicking empty space deselects.
+      // MarkupRenderer's onSelect, and clicking empty stage area is
+      // already cleared by MarkupRenderer's onClick. We must NOT clear
+      // the selection here on every pointerdown — Task #1676's group
+      // drag relies on the selection persisting from mouse-down through
+      // drag-end so getGroupProps keeps returning draggable handlers.
       if (!activeTool || activeTool === "SELECT") {
-        if (activeTool === "SELECT") setSelectedIds(new Set());
+        // Belt-and-suspenders: if the pointerdown landed on the empty
+        // stage (target === stage), still clear so a quick mousedown
+        // before the click event resolves doesn't leave a stale halo.
+        if (
+          activeTool === "SELECT" &&
+          evt.target === evt.target.getStage()
+        ) {
+          setSelectedIds(new Set());
+        }
         return;
       }
       drawingRef.current = true;
@@ -351,19 +458,93 @@ export default function PlanMarkupLayer({
     [],
   );
 
+  // Task #1676 — wire per-shape Konva Group props so any markup that is
+  // part of the current expanded selection becomes draggable. Dragging
+  // any one member translates every other member by the same pixel
+  // delta in real time (via Konva Group x/y on the non-dragged members)
+  // and persists every member's new normalized points atomically when
+  // the drag ends. Single-selected (non-grouped) markups are also
+  // draggable so the plan-side surface matches the bid-side takeoff
+  // workspace's behavior.
+  const getGroupProps = useCallback(
+    (shape: MarkupShape) => {
+      if (!expandedSelection.has(shape.id)) return undefined;
+      const isBeingDragged = groupDrag?.id === shape.id;
+      // Non-dragged group members during an active drag: visually
+      // translate by the dragged delta and stop intercepting pointer
+      // events so the user keeps holding the original shape.
+      if (groupDrag && !isBeingDragged) {
+        return {
+          x: groupDrag.dx,
+          y: groupDrag.dy,
+          listening: false,
+        };
+      }
+      return {
+        draggable: true,
+        onMouseEnter: (e: KonvaEventObject<MouseEvent>) => {
+          const c = e.target.getStage()?.container();
+          if (c) c.style.cursor = "move";
+        },
+        onMouseLeave: (e: KonvaEventObject<MouseEvent>) => {
+          const c = e.target.getStage()?.container();
+          if (c) c.style.cursor = "default";
+        },
+        onDragStart: (e: KonvaEventObject<DragEvent>) => {
+          e.cancelBubble = true;
+          e.target.setAttr("_origX", e.target.x());
+          e.target.setAttr("_origY", e.target.y());
+          setGroupDrag({ id: shape.id, dx: 0, dy: 0 });
+        },
+        onDragMove: (e: KonvaEventObject<DragEvent>) => {
+          const origX = (e.target.getAttr("_origX") as number | undefined) ?? 0;
+          const origY = (e.target.getAttr("_origY") as number | undefined) ?? 0;
+          setGroupDrag({
+            id: shape.id,
+            dx: e.target.x() - origX,
+            dy: e.target.y() - origY,
+          });
+        },
+        onDragEnd: (e: KonvaEventObject<DragEvent>) => {
+          const origX = (e.target.getAttr("_origX") as number | undefined) ?? 0;
+          const origY = (e.target.getAttr("_origY") as number | undefined) ?? 0;
+          const dx = e.target.x() - origX;
+          const dy = e.target.y() - origY;
+          // Reset Konva-managed Group position before the optimistic
+          // update lands so the dragged shape doesn't "double-shift"
+          // when the cache is rewritten with the new normalized points.
+          e.target.position({ x: origX, y: origY });
+          setGroupDrag(null);
+          if (dx === 0 && dy === 0) return;
+          if (canvasWidth <= 0 || canvasHeight <= 0) return;
+          const updates = buildBulkMoveUpdates(
+            markups,
+            Array.from(expandedSelection),
+            dx / canvasWidth,
+            dy / canvasHeight,
+          );
+          if (updates.length === 0) return;
+          bulkMoveMutation.mutate(updates);
+        },
+      };
+    },
+    [
+      expandedSelection,
+      groupDrag,
+      markups,
+      canvasWidth,
+      canvasHeight,
+      bulkMoveMutation,
+    ],
+  );
+
 
   if (canvasWidth <= 0 || canvasHeight <= 0) return null;
 
-  // The renderer's `selectedId` only highlights one shape. To highlight
-  // the whole group when one member is selected, we tag every member of
-  // the expanded set as "selected" by passing them through a wrapper
-  // markups list. The renderer accepts a single id, so we exploit
-  // matching ids by injecting selection styling at MarkupShapeView level
-  // — the simpler workaround here is to compare via expandedSelection
-  // and pass the lastSelected id; the rest of the group renders selected
-  // because the toolbar acts on the expanded set, not the highlight.
-  // Visual halo on every group member can be added later — this keeps
-  // the change minimal.
+  // Task #1676 — every member of the expanded selection now renders
+  // with the selection halo (passed through `selectedIds` on the
+  // shared renderer), so the user sees the entire group light up when
+  // any one member is clicked or shift-extended.
   const selectionCount = expandedSelection.size;
 
   return (
@@ -389,12 +570,16 @@ export default function PlanMarkupLayer({
         height={canvasHeight}
         markups={markups}
         selectedId={lastSelected?.id ?? null}
+        // Task #1676 — halo every member of the selection (incl. group
+        // siblings) so the user sees what's about to move.
+        selectedIds={expandedSelection}
         onSelect={(id) => handleSelectShape(id)}
         readOnly={false}
         draft={draft}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
+        getGroupProps={getGroupProps}
       />
       {selectionAnchor && lastSelected && (
         <div

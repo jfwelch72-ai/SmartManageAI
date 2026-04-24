@@ -59,6 +59,11 @@ function apiPost(path: string, token: string, body?: Record<string, unknown>) {
 function apiDelete(path: string, token: string) {
   return request(app).delete(path).set("Cookie", `auth_token=${token}`);
 }
+function apiPatch(path: string, token: string, body?: Record<string, unknown>) {
+  const r = request(app).patch(path).set("Cookie", `auth_token=${token}`);
+  if (body) r.send(body).set("Content-Type", "application/json");
+  return r;
+}
 
 async function setupTenant(label: string): Promise<Tenant> {
   const slug = `${TEST_PREFIX}${label}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
@@ -612,5 +617,155 @@ describe("plan_document_markups — layers, groups, visibility (Task #1662)", ()
     );
     expect(orphan).toBeTruthy();
     expect(orphan!.layerId).toBeNull();
+  });
+});
+
+// Task #1676 — bulk PATCH to reposition multiple markups atomically.
+// Drives the plan-side group-drag flow where every member of a selected
+// group must move by the same delta in a single transaction.
+describe("plan_document_markups — bulk reposition (Task #1676)", () => {
+  let bulkTenant: Tenant;
+  let crossTenant: Tenant;
+
+  beforeAll(async () => {
+    bulkTenant = await setupTenant("bulk");
+    crossTenant = await setupTenant("bulk2");
+  }, 60_000);
+
+  async function seedMarkup(
+    tenant: Tenant,
+    docId: string,
+    pageNumber: number,
+    points: Array<{ x: number; y: number }>,
+  ): Promise<MarkupResponse> {
+    const r = await apiPost(
+      `/api/plan-documents/${docId}/markups`,
+      tenant.token,
+      { pageNumber, tool: "ARROW", points },
+    );
+    expect(r.status).toBe(201);
+    return r.body as MarkupResponse;
+  }
+
+  it("translates every member of a group by the same delta", async () => {
+    const a = await seedMarkup(bulkTenant, bulkTenant.docA, 21, [
+      { x: 0.1, y: 0.1 },
+      { x: 0.2, y: 0.2 },
+    ]);
+    const b = await seedMarkup(bulkTenant, bulkTenant.docA, 21, [
+      { x: 0.3, y: 0.3 },
+      { x: 0.4, y: 0.4 },
+    ]);
+    const dx = 0.05;
+    const dy = -0.02;
+    const updates = [
+      {
+        id: a.id,
+        points: a.points.map((p) => ({ x: p.x + dx, y: p.y + dy })),
+      },
+      {
+        id: b.id,
+        points: b.points.map((p) => ({ x: p.x + dx, y: p.y + dy })),
+      },
+    ];
+    const res = await apiPatch(
+      `/api/plan-documents/${bulkTenant.docA}/markups/bulk`,
+      bulkTenant.token,
+      { updates },
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.count).toBe(2);
+
+    const list = await apiGet(
+      `/api/plan-documents/${bulkTenant.docA}/markups?page=21`,
+      bulkTenant.token,
+    );
+    const after = (list.body as MarkupResponse[]).filter(
+      (m) => m.id === a.id || m.id === b.id,
+    );
+    const byId = new Map(after.map((m) => [m.id, m]));
+    expect(byId.get(a.id)!.points[0].x).toBeCloseTo(0.15, 6);
+    expect(byId.get(a.id)!.points[0].y).toBeCloseTo(0.08, 6);
+    expect(byId.get(a.id)!.points[1].x).toBeCloseTo(0.25, 6);
+    expect(byId.get(b.id)!.points[0].x).toBeCloseTo(0.35, 6);
+    expect(byId.get(b.id)!.points[1].y).toBeCloseTo(0.38, 6);
+  });
+
+  it("rejects updates that reference markups in another document", async () => {
+    const a = await seedMarkup(bulkTenant, bulkTenant.docA, 22, [
+      { x: 0, y: 0 },
+      { x: 0.1, y: 0.1 },
+    ]);
+    const b = await seedMarkup(bulkTenant, bulkTenant.docB, 22, [
+      { x: 0, y: 0 },
+      { x: 0.1, y: 0.1 },
+    ]);
+    // Mixing a docA markup and a docB markup against /docA/markups/bulk
+    // must fail with 400 — the route refuses cross-doc bulk moves so a
+    // group can never span sheets.
+    const res = await apiPatch(
+      `/api/plan-documents/${bulkTenant.docA}/markups/bulk`,
+      bulkTenant.token,
+      {
+        updates: [
+          { id: a.id, points: [{ x: 0.5, y: 0.5 }, { x: 0.6, y: 0.6 }] },
+          { id: b.id, points: [{ x: 0.5, y: 0.5 }, { x: 0.6, y: 0.6 }] },
+        ],
+      },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("denies cross-tenant bulk moves", async () => {
+    const a = await seedMarkup(bulkTenant, bulkTenant.docA, 23, [
+      { x: 0, y: 0 },
+      { x: 0.1, y: 0.1 },
+    ]);
+    // The cross-tenant user has no access to bulkTenant's doc — the
+    // org-scoped loadDocAndAssertOrg helper short-circuits with 403.
+    const res = await apiPatch(
+      `/api/plan-documents/${bulkTenant.docA}/markups/bulk`,
+      crossTenant.token,
+      {
+        updates: [
+          { id: a.id, points: [{ x: 0.9, y: 0.9 }, { x: 1, y: 1 }] },
+        ],
+      },
+    );
+    expect([403, 404]).toContain(res.status);
+  });
+
+  it("returns 404 if any markup id does not exist", async () => {
+    const a = await seedMarkup(bulkTenant, bulkTenant.docA, 24, [
+      { x: 0, y: 0 },
+      { x: 0.1, y: 0.1 },
+    ]);
+    const res = await apiPatch(
+      `/api/plan-documents/${bulkTenant.docA}/markups/bulk`,
+      bulkTenant.token,
+      {
+        updates: [
+          { id: a.id, points: [{ x: 0.5, y: 0.5 }] },
+          { id: "00000000-0000-0000-0000-000000000000", points: [{ x: 0, y: 0 }] },
+        ],
+      },
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("validates request body shape", async () => {
+    const empty = await apiPatch(
+      `/api/plan-documents/${bulkTenant.docA}/markups/bulk`,
+      bulkTenant.token,
+      { updates: [] },
+    );
+    expect(empty.status).toBe(400);
+
+    const noPoints = await apiPatch(
+      `/api/plan-documents/${bulkTenant.docA}/markups/bulk`,
+      bulkTenant.token,
+      { updates: [{ id: "x", points: [] }] },
+    );
+    expect(noPoints.status).toBe(400);
   });
 });
