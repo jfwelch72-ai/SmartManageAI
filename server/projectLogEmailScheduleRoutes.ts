@@ -21,7 +21,7 @@
  */
 import { Router } from "express";
 import { z } from "zod";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "./db";
 import {
   PROJECT_LOG_EMAIL_CADENCES,
@@ -29,6 +29,7 @@ import {
   projectEmailDistributionLists,
   projectLogEmailSchedules,
   projects,
+  users,
 } from "@shared/schema";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { isValidTimezone } from "@shared/timezones";
@@ -54,12 +55,30 @@ async function loadProject(projectId: string, organizationId: string) {
       id: projects.id,
       name: projects.name,
       gcOrganizationId: projects.gcOrganizationId,
+      // Task #1649 — surface the PM on the schedule GET so the UI can
+      // render "Failure alerts go to: <PM>, <last editor>" without
+      // having to round-trip to a separate /api/projects/:id query.
+      projectManagerId: projects.projectManagerId,
     })
     .from(projects)
     .where(and(eq(projects.id, projectId), eq(projects.gcOrganizationId, organizationId)))
     .limit(1);
   return project ?? null;
 }
+
+// Task #1649 — shape the GET endpoint returns for each user that
+// would receive a failure-notification fanout. Mirrors the dedupe
+// done in `maybeNotifyProjectLogEmailFailure` (last editor + PM,
+// deduped by user id) so the card surfaces exactly who the worker
+// would notify if the next send fails. The shape is intentionally
+// narrow — the card only needs a display name + a way to disambiguate
+// two people with the same first/last name.
+type FailureNotificationRecipient = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+};
 
 router.get(
   "/projects/:projectId/log-email-schedules",
@@ -83,6 +102,57 @@ router.get(
           eq(projectLogEmailSchedules.projectId, project.id),
         ));
 
+      // Task #1649 — resolve display names for the failure-notification
+      // recipients (PM + each row's last editor) in a single batched
+      // lookup so the card can render "Failure alerts go to: <names>"
+      // without N+1 round-trips. We only pull users from the same
+      // organization to defend against any cross-tenant pointer drift —
+      // surfacing a user from a different org would be both confusing
+      // and a privacy leak. Inactive users are intentionally still
+      // included since the worker would still attempt to notify them
+      // (their notification record would simply go unread); the UI can
+      // decide whether to flag them later.
+      const userIdsToResolve = new Set<string>();
+      if (project.projectManagerId) userIdsToResolve.add(project.projectManagerId);
+      for (const r of rows) {
+        if (r.lastEditedById) userIdsToResolve.add(r.lastEditedById);
+      }
+      const userById = new Map<string, FailureNotificationRecipient>();
+      if (userIdsToResolve.size > 0) {
+        const userRows = await db
+          .select({
+            id: users.id,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            email: users.email,
+          })
+          .from(users)
+          .where(and(
+            inArray(users.id, Array.from(userIdsToResolve)),
+            eq(users.organizationId, organizationId),
+          ));
+        for (const u of userRows) userById.set(u.id, u);
+      }
+
+      function recipientsFor(lastEditedById: string | null): FailureNotificationRecipient[] {
+        // Mirrors `maybeNotifyProjectLogEmailFailure`'s dedupe: PM and
+        // last editor, in that order, deduped by user id. PM appears
+        // first because it represents the project's owning role; the
+        // last editor is the secondary "you touched this most recently"
+        // signal that the task brief calls out as surprising.
+        const ordered: FailureNotificationRecipient[] = [];
+        const seen = new Set<string>();
+        const candidates = [project.projectManagerId, lastEditedById];
+        for (const id of candidates) {
+          if (!id || seen.has(id)) continue;
+          const user = userById.get(id);
+          if (!user) continue;
+          seen.add(id);
+          ordered.push(user);
+        }
+        return ordered;
+      }
+
       const byType = new Map(rows.map((r) => [r.logType, r]));
       // Always return both log types; missing rows surface as the
       // default-OFF schedule the worker would also infer. Task #1622
@@ -92,7 +162,15 @@ router.get(
       // properties.
       const schedules = PROJECT_LOG_EMAIL_LOG_TYPES.map((logType) => {
         const existing = byType.get(logType);
-        if (existing) return existing;
+        if (existing) {
+          return {
+            ...existing,
+            // Task #1649 — decorate each existing row with the resolved
+            // recipient set so the card can render the dedupe message
+            // without re-implementing the join client-side.
+            failureNotificationRecipients: recipientsFor(existing.lastEditedById),
+          };
+        }
         return {
           id: null,
           organizationId,
@@ -115,6 +193,11 @@ router.get(
           lastFailureNotifiedStatus: null,
           createdAt: null,
           updatedAt: null,
+          // Task #1649 — even on the default OFF row, the PM (if any)
+          // would still be notified, so surface that single-name set
+          // instead of forcing the empty-state copy when the project
+          // has an owner.
+          failureNotificationRecipients: recipientsFor(null),
         };
       });
 

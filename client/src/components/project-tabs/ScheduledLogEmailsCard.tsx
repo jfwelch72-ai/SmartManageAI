@@ -13,7 +13,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Mail, Loader2, Send } from "lucide-react";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
+import { Mail, Loader2, Send, BellRing } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { COMMON_TIMEZONES } from "@shared/timezones";
 import {
@@ -25,6 +30,17 @@ import {
 
 interface ScheduledLogEmailsCardProps {
   projectId: string;
+}
+
+// Task #1649 — narrow shape returned by the GET endpoint for each
+// user the worker would notify on a failed send. PM is listed first,
+// followed by the schedule's last editor (deduped). Email is included
+// so the hover-card can disambiguate two users with the same name.
+interface FailureNotificationRecipient {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
 }
 
 interface ScheduleRow {
@@ -39,6 +55,7 @@ interface ScheduleRow {
   lastSentAt: string | null;
   createdAt: string | null;
   updatedAt: string | null;
+  failureNotificationRecipients?: FailureNotificationRecipient[];
 }
 
 interface SchedulesResponse {
@@ -125,6 +142,7 @@ export default function ScheduledLogEmailsCard({ projectId }: ScheduledLogEmails
                 lastSentAt: null,
                 createdAt: null,
                 updatedAt: null,
+                failureNotificationRecipients: [],
               }}
             />
           ))
@@ -261,6 +279,11 @@ function ScheduleRowEditor({ projectId, logType, initial }: ScheduleRowEditorPro
         </div>
       </div>
 
+      <FailureNotificationRecipients
+        logType={logType}
+        recipients={initial.failureNotificationRecipients ?? []}
+      />
+
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="space-y-2">
           <Label htmlFor={`cadence-${lowerType}`}>Cadence</Label>
@@ -396,6 +419,79 @@ function ScheduleRowEditor({ projectId, logType, initial }: ScheduleRowEditorPro
           {mutation.isPending ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
           Save
         </Button>
+      </div>
+    </div>
+  );
+}
+
+// Task #1649 — surfaces the resolved display names of the project
+// manager and the schedule's last editor so admins editing the
+// cadence can see who would actually be notified by the worker if
+// the next send fails. Mirrors `maybeNotifyProjectLogEmailFailure`'s
+// dedupe (PM + last editor, deduped by user id) and shows an explicit
+// empty state when both pointers are null so admins know the alert
+// would otherwise go nowhere.
+interface FailureNotificationRecipientsProps {
+  logType: ProjectLogEmailLogType;
+  recipients: FailureNotificationRecipient[];
+}
+
+function fullName(user: FailureNotificationRecipient): string {
+  const name = `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim();
+  return name.length > 0 ? name : user.email;
+}
+
+function FailureNotificationRecipients({ logType, recipients }: FailureNotificationRecipientsProps) {
+  const lowerType = logType.toLowerCase();
+  return (
+    <div
+      className="flex items-start gap-2 rounded-md bg-muted/40 px-3 py-2 text-xs"
+      data-testid={`failure-recipients-${lowerType}`}
+    >
+      <BellRing className="mt-0.5 h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
+      <div className="space-y-0.5">
+        <div className="font-medium text-muted-foreground">Failure alerts go to:</div>
+        {recipients.length === 0 ? (
+          <div
+            className="text-muted-foreground"
+            data-testid={`failure-recipients-empty-${lowerType}`}
+          >
+            Nobody — set a project manager or update the cadence to record an editor.
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+            {recipients.map((user, idx) => (
+              <span
+                key={user.id}
+                className="inline-flex items-center"
+                data-testid={`failure-recipient-${lowerType}-${user.id}`}
+              >
+                <HoverCard openDelay={150}>
+                  <HoverCardTrigger asChild>
+                    <button
+                      type="button"
+                      className="underline decoration-dotted underline-offset-2 hover:text-foreground focus:outline-none focus:ring-1 focus:ring-ring rounded-sm"
+                      data-testid={`failure-recipient-name-${lowerType}-${user.id}`}
+                    >
+                      {fullName(user)}
+                    </button>
+                  </HoverCardTrigger>
+                  <HoverCardContent className="w-64 text-xs" align="start">
+                    <div className="font-medium">{fullName(user)}</div>
+                    <a
+                      href={`mailto:${user.email}`}
+                      className="mt-1 block text-muted-foreground hover:text-foreground break-all"
+                      data-testid={`failure-recipient-email-${lowerType}-${user.id}`}
+                    >
+                      {user.email}
+                    </a>
+                  </HoverCardContent>
+                </HoverCard>
+                {idx < recipients.length - 1 ? <span aria-hidden="true">,</span> : null}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
