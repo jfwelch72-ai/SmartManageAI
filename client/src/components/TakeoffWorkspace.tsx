@@ -1058,6 +1058,69 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     setMarkupEditInitial(null);
   }, [selectedSheet]);
 
+  // Task #1861 — route Delete/Backspace through the same bulk-delete
+  // mutation the multi-select panel button uses, so the keyboard and
+  // the button never drift apart. Scope is intentionally narrow:
+  // canvas/workspace must own focus, no text-editing context, no
+  // active drawing/calibration, no in-flight bulk delete.
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Delete" && event.key !== "Backspace") return;
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
+      if (selectedMarkupIds.size === 0) return;
+      if (isDrawing || markupDrawing) return;
+      if (calibrationMode !== "idle") return;
+      if (bulkDeleteMarkupsMutation.isPending) return;
+      const target = event.target as HTMLElement | null;
+      if (target) {
+        const tag = target.tagName;
+        if (
+          tag === "INPUT" ||
+          tag === "TEXTAREA" ||
+          tag === "SELECT" ||
+          target.isContentEditable
+        ) {
+          return;
+        }
+      }
+      // Only fire when focus is inside the takeoff workspace (or on
+      // the document body / a Konva canvas, which is what
+      // `selectedMarkupIds.size > 0` already implies). This prevents
+      // a Delete keypress from a focused button or link elsewhere on
+      // the page from accidentally bulk-deleting markups.
+      const active = document.activeElement as HTMLElement | null;
+      const root = workspaceRef.current;
+      const isBodyOrNull =
+        !active || active === document.body || active === document.documentElement;
+      const isInsideWorkspace = !!root && !!active && root.contains(active);
+      if (!isBodyOrNull && !isInsideWorkspace) return;
+      event.preventDefault();
+      const ids = Array.from(selectedMarkupIds);
+      // Match the toolbar button: clear selection/edit state only
+      // after the bulk DELETE resolves so a server failure leaves the
+      // UI in the same state as before the keypress (markups still
+      // selected, edit panel still open, undo history unchanged).
+      bulkDeleteMarkupsMutation
+        .mutateAsync(ids)
+        .then(() => {
+          setSelectedMarkupIds(new Set());
+          setMarkupEditDraft(null);
+          setMarkupEditInitial(null);
+        })
+        .catch((err) => {
+          console.warn("[Takeoff] Failed to bulk-delete markups via key:", err);
+        });
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    selectedMarkupIds,
+    isDrawing,
+    markupDrawing,
+    calibrationMode,
+    bulkDeleteMarkupsMutation,
+  ]);
+
   const handleMarkupMouseDown = (e: any) => {
     if (!isMarkupTool(activeTool) || !selectedSheet) return;
     const pos = getStagePointer();
