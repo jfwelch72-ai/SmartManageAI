@@ -33,7 +33,7 @@
  * `intermediate` array to override that with a custom path (e.g. the
  * FREEHAND tool that needs a real curve recorded).
  *
- * Task #1887: every gesture is wrapped in a `test.step` with a
+ * Task #1887: every drag gesture is wrapped in a `test.step` with a
  * descriptive title and a JSON attachment that records the resolved
  * from/to points, intermediate waypoints, engine tuning, and (for
  * canvas-relative drags) the canvas bounding box. When a spec flakes
@@ -41,6 +41,10 @@
  * we no longer have to re-run with extra logging to figure out whether
  * Konva missed the drag-distance threshold or the click landed on the
  * wrong shape.
+ *
+ * Task #1905 extends the same treatment to `clickOnCanvas` because
+ * several specs use it to select Konva shapes and the same "did the
+ * click land on the wrong spot?" debugging problem applies there too.
  */
 import { test, type Locator, type Page } from "@playwright/test";
 
@@ -272,6 +276,13 @@ export async function dragOnCanvas(
  * Click on a Konva canvas (or any element) at a canvas-relative point.
  * Two `mouse.move()` calls so WebKit reliably dispatches the initial
  * mousemove before the click sequence.
+ *
+ * Wrapped in a `test.step` so the trace records both the
+ * canvas-relative point the spec asked for and the resolved viewport
+ * coordinates. Mirrors the format used by `dragOnCanvas` so a failing
+ * click-based spec shows the resolved coordinates inline in the
+ * Playwright HTML report — no need to re-run with extra logging to
+ * figure out whether the click landed on the wrong shape.
  */
 export async function clickOnCanvas(
   page: Page,
@@ -279,14 +290,41 @@ export async function clickOnCanvas(
   point: Point,
   browserName = "chromium",
 ): Promise<void> {
+  // Resolve the canvas bounding box up-front so the `test.step` title
+  // can include the resolved viewport coordinates. That makes a failing
+  // click-based spec scannable in the Playwright HTML report without
+  // having to expand the step's JSON attachment.
   const box = await canvas.boundingBox();
-  if (!box) throw new Error("Canvas has no bounding box");
-  const x = box.x + point.x;
-  const y = box.y + point.y;
-  const { clickHoldWait } = getDragTuning(browserName);
-  await page.mouse.move(x, y);
-  await page.mouse.move(x, y);
-  await page.mouse.down();
-  await page.waitForTimeout(clickHoldWait);
-  await page.mouse.up();
+  if (!box) {
+    await attachGesture("canvas-drag.gesture", {
+      kind: "clickOnCanvas",
+      browserName,
+      relative: { point },
+      error: "Canvas has no bounding box",
+    });
+    throw new Error("Canvas has no bounding box");
+  }
+  const resolved: Point = { x: box.x + point.x, y: box.y + point.y };
+  const tuning = getDragTuning(browserName);
+
+  const stepTitle =
+    `canvasDrag.clickOnCanvas ${browserName} ` +
+    `${fmtPoint(point)} → ${fmtPoint(resolved)} (viewport)`;
+
+  await test.step(stepTitle, async () => {
+    await attachGesture("canvas-drag.gesture", {
+      kind: "clickOnCanvas",
+      browserName,
+      canvasBoundingBox: box,
+      relative: { point },
+      resolved: { point: resolved },
+      tuning,
+    });
+
+    await page.mouse.move(resolved.x, resolved.y);
+    await page.mouse.move(resolved.x, resolved.y);
+    await page.mouse.down();
+    await page.waitForTimeout(tuning.clickHoldWait);
+    await page.mouse.up();
+  });
 }
