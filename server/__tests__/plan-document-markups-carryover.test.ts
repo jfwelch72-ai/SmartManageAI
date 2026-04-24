@@ -17,7 +17,9 @@ import {
   planDocuments,
   planPins,
   planDocumentMarkups,
+  planMarkupLayers,
 } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import { generateToken } from "../auth";
 
 const TEST_PREFIX = "__plandoc_markup_e2e__";
@@ -131,6 +133,10 @@ async function cleanup(): Promise<void> {
     const docSub = sql`(SELECT id FROM plan_documents WHERE project_id IN ${projSub})`;
     await db.execute(sql`DELETE FROM plan_document_markups WHERE plan_document_id IN ${docSub}`).catch(() => {});
     await db.execute(sql`DELETE FROM plan_pins WHERE plan_document_id IN ${docSub}`).catch(() => {});
+    // Task #1662 — visibility rows reference plan_markup_layers, so they
+    // need to come down before the layers themselves.
+    await db.execute(sql`DELETE FROM plan_markup_layer_visibility WHERE layer_id IN (SELECT id FROM plan_markup_layers WHERE plan_document_id IN ${docSub})`).catch(() => {});
+    await db.execute(sql`DELETE FROM plan_markup_layers WHERE plan_document_id IN ${docSub}`).catch(() => {});
     await db.execute(sql`DELETE FROM plan_documents WHERE project_id IN ${projSub}`).catch(() => {});
     await db.execute(sql`DELETE FROM projects WHERE gc_organization_id = ${orgId}`).catch(() => {});
     await db.execute(sql`DELETE FROM users WHERE organization_id = ${orgId}`).catch(() => {});
@@ -345,5 +351,266 @@ describe("plan-documents carryover-annotations — idempotent", () => {
       { fromDocumentId: tenant1.docA, includeMarkups: true, includePins: true },
     );
     expect([403, 404]).toContain(res.status);
+  });
+});
+
+// Task #1662 — layer + group + visibility coverage. We use a dedicated
+// tenant so this block is independent of the carryover/CRUD tests above
+// (those mutate docA/docB markup state in ways that would interfere).
+describe("plan_document_markups — layers, groups, visibility (Task #1662)", () => {
+  let tenant: Tenant;
+
+  beforeAll(async () => {
+    tenant = await setupTenant("layers");
+  }, 60_000);
+
+  it("auto-materialises a Default layer on first list", async () => {
+    const res = await apiGet(
+      `/api/plan-documents/${tenant.docA}/markup-layers`,
+      tenant.token,
+    );
+    expect(res.status).toBe(200);
+    const layers = res.body as Array<{ id: string; name: string; isDefault: boolean; isVisible: boolean }>;
+    expect(layers.length).toBeGreaterThanOrEqual(1);
+    const def = layers.find((l) => l.isDefault);
+    expect(def).toBeTruthy();
+    expect(def!.name).toBe("Default");
+    expect(def!.isVisible).toBe(true);
+  });
+
+  it("creates a custom layer and rejects reserved 'Default' name", async () => {
+    const ok = await apiPost(
+      `/api/plan-documents/${tenant.docA}/markup-layers`,
+      tenant.token,
+      { name: "QA/QC", color: "#ff0000" },
+    );
+    expect(ok.status).toBe(201);
+    expect(ok.body.name).toBe("QA/QC");
+
+    const reserved = await apiPost(
+      `/api/plan-documents/${tenant.docA}/markup-layers`,
+      tenant.token,
+      { name: "default" },
+    );
+    expect(reserved.status).toBe(400);
+  });
+
+  it("creates a markup with explicit layerId and lists it back", async () => {
+    const layers = await apiGet(
+      `/api/plan-documents/${tenant.docA}/markup-layers`,
+      tenant.token,
+    );
+    const qaLayer = (layers.body as Array<{ id: string; name: string }>).find(
+      (l) => l.name === "QA/QC",
+    )!;
+    const res = await apiPost(
+      `/api/plan-documents/${tenant.docA}/markups`,
+      tenant.token,
+      {
+        pageNumber: 7,
+        tool: "RECTANGLE",
+        points: [{ x: 0.1, y: 0.1 }, { x: 0.2, y: 0.2 }],
+        layerId: qaLayer.id,
+      },
+    );
+    expect(res.status).toBe(201);
+    expect(res.body.layerId).toBe(qaLayer.id);
+
+    const list = await apiGet(
+      `/api/plan-documents/${tenant.docA}/markups?page=7`,
+      tenant.token,
+    );
+    expect(list.status).toBe(200);
+    const m = (list.body as Array<{ id: string; layerId: string | null }>).find(
+      (x) => x.id === res.body.id,
+    );
+    expect(m?.layerId).toBe(qaLayer.id);
+  });
+
+  it("rejects layerId from a different document", async () => {
+    const layers = await apiGet(
+      `/api/plan-documents/${tenant.docA}/markup-layers`,
+      tenant.token,
+    );
+    const qaLayer = (layers.body as Array<{ id: string; name: string }>).find(
+      (l) => l.name === "QA/QC",
+    )!;
+    // Try to use docA's layer when posting against docB.
+    const res = await apiPost(
+      `/api/plan-documents/${tenant.docB}/markups`,
+      tenant.token,
+      {
+        pageNumber: 1,
+        tool: "RECTANGLE",
+        points: [{ x: 0, y: 0 }, { x: 0.1, y: 0.1 }],
+        layerId: qaLayer.id,
+      },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("groups + ungroups multiple markups", async () => {
+    // Seed two markups on a fresh page so they're easy to isolate.
+    const a = await apiPost(
+      `/api/plan-documents/${tenant.docA}/markups`,
+      tenant.token,
+      { pageNumber: 9, tool: "ARROW", points: [{ x: 0, y: 0 }, { x: 0.5, y: 0.5 }] },
+    );
+    const b = await apiPost(
+      `/api/plan-documents/${tenant.docA}/markups`,
+      tenant.token,
+      { pageNumber: 9, tool: "ARROW", points: [{ x: 0.5, y: 0.5 }, { x: 0.9, y: 0.9 }] },
+    );
+    expect(a.status).toBe(201);
+    expect(b.status).toBe(201);
+
+    const grouped = await apiPost(
+      `/api/plan-documents/${tenant.docA}/markup-groups`,
+      tenant.token,
+      { markupIds: [a.body.id, b.body.id] },
+    );
+    expect(grouped.status).toBe(200);
+    expect(grouped.body.groupId).toBeTruthy();
+
+    const list = await apiGet(
+      `/api/plan-documents/${tenant.docA}/markups?page=9`,
+      tenant.token,
+    );
+    const groupIds = (list.body as Array<{ id: string; groupId: string | null }>)
+      .filter((m) => m.id === a.body.id || m.id === b.body.id)
+      .map((m) => m.groupId);
+    expect(groupIds[0]).toBeTruthy();
+    expect(groupIds[0]).toBe(groupIds[1]);
+
+    const ungroup = await apiPost(
+      `/api/plan-documents/${tenant.docA}/markup-ungroup`,
+      tenant.token,
+      { markupIds: [a.body.id, b.body.id] },
+    );
+    expect(ungroup.status).toBe(200);
+
+    const after = await apiGet(
+      `/api/plan-documents/${tenant.docA}/markups?page=9`,
+      tenant.token,
+    );
+    const afterGroups = (after.body as Array<{ id: string; groupId: string | null }>)
+      .filter((m) => m.id === a.body.id || m.id === b.body.id)
+      .map((m) => m.groupId);
+    expect(afterGroups[0]).toBeNull();
+    expect(afterGroups[1]).toBeNull();
+  });
+
+  it("toggles per-user layer visibility", async () => {
+    const layers = await apiGet(
+      `/api/plan-documents/${tenant.docA}/markup-layers`,
+      tenant.token,
+    );
+    const def = (layers.body as Array<{ id: string; isDefault: boolean }>)
+      .find((l) => l.isDefault)!;
+    const off = await request(app)
+      .put(`/api/plan-markup-layers/${def.id}/visibility`)
+      .set("Cookie", `auth_token=${tenant.token}`)
+      .send({ isVisible: false });
+    expect(off.status).toBe(200);
+    expect(off.body.isVisible).toBe(false);
+
+    const layers2 = await apiGet(
+      `/api/plan-documents/${tenant.docA}/markup-layers`,
+      tenant.token,
+    );
+    const def2 = (layers2.body as Array<{ id: string; isDefault: boolean; isVisible: boolean }>)
+      .find((l) => l.isDefault)!;
+    expect(def2.isVisible).toBe(false);
+  });
+
+  it("preserves layer assignments through carryover", async () => {
+    // Fresh sheet: a markup tagged with QA/QC layer on docA, carried into docB.
+    const layersA = await apiGet(
+      `/api/plan-documents/${tenant.docA}/markup-layers`,
+      tenant.token,
+    );
+    const qaA = (layersA.body as Array<{ id: string; name: string }>).find(
+      (l) => l.name === "QA/QC",
+    )!;
+    const tagged = await apiPost(
+      `/api/plan-documents/${tenant.docA}/markups`,
+      tenant.token,
+      {
+        pageNumber: 12,
+        tool: "ARROW",
+        points: [{ x: 0.2, y: 0.2 }, { x: 0.6, y: 0.6 }],
+        layerId: qaA.id,
+      },
+    );
+    expect(tagged.status).toBe(201);
+
+    const carry = await apiPost(
+      `/api/plan-documents/${tenant.docB}/carryover-annotations`,
+      tenant.token,
+      { fromDocumentId: tenant.docA, includeMarkups: true, includePins: false },
+    );
+    expect(carry.status).toBe(200);
+    expect(carry.body.markupsCopied).toBeGreaterThan(0);
+
+    // The target doc should now have a layer named "QA/QC" too, and the
+    // carried-over markup should reference it (NOT the source layer id).
+    const layersB = await apiGet(
+      `/api/plan-documents/${tenant.docB}/markup-layers`,
+      tenant.token,
+    );
+    const qaB = (layersB.body as Array<{ id: string; name: string }>).find(
+      (l) => l.name === "QA/QC",
+    );
+    expect(qaB).toBeTruthy();
+    expect(qaB!.id).not.toBe(qaA.id);
+
+    const listB = await apiGet(
+      `/api/plan-documents/${tenant.docB}/markups?page=12`,
+      tenant.token,
+    );
+    const carriedM = (listB.body as Array<{ layerId: string | null; sourceMarkupId?: string | null }>)
+      .find((m) => m.sourceMarkupId === tagged.body.id);
+    expect(carriedM).toBeTruthy();
+    expect(carriedM!.layerId).toBe(qaB!.id);
+  });
+
+  it("deleting a custom layer SET NULLs its markups (they fall back to default)", async () => {
+    // Seed a throwaway layer with one markup, then delete the layer.
+    const created = await apiPost(
+      `/api/plan-documents/${tenant.docA}/markup-layers`,
+      tenant.token,
+      { name: "Throwaway" },
+    );
+    expect(created.status).toBe(201);
+    const layerId = created.body.id as string;
+
+    const m = await apiPost(
+      `/api/plan-documents/${tenant.docA}/markups`,
+      tenant.token,
+      {
+        pageNumber: 13,
+        tool: "ARROW",
+        points: [{ x: 0, y: 0 }, { x: 0.4, y: 0.4 }],
+        layerId,
+      },
+    );
+    expect(m.status).toBe(201);
+
+    const del = await apiDelete(`/api/plan-markup-layers/${layerId}`, tenant.token);
+    expect(del.status).toBe(200);
+
+    const layers = await db.select().from(planMarkupLayers).where(eq(planMarkupLayers.id, layerId));
+    expect(layers.length).toBe(0);
+
+    // The orphaned markup row's layer_id is now NULL (FK SET NULL).
+    const list = await apiGet(
+      `/api/plan-documents/${tenant.docA}/markups?page=13`,
+      tenant.token,
+    );
+    const orphan = (list.body as Array<{ id: string; layerId: string | null }>).find(
+      (x) => x.id === m.body.id,
+    );
+    expect(orphan).toBeTruthy();
+    expect(orphan!.layerId).toBeNull();
   });
 });

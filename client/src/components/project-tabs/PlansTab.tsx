@@ -3,6 +3,7 @@ import PdfPreview from "@/components/PdfPreview";
 import { PlanPinLayer, PinPicker, PinCreateDialog, type PinFilter, type PinType, type PlanPin } from "@/components/PlanPinLayer";
 import PlanMarkupLayer from "@/components/markups/PlanMarkupLayer";
 import UnifiedPlanToolbar from "@/components/plans/UnifiedPlanToolbar";
+import MarkupLayersPanel from "@/components/markups/MarkupLayersPanel";
 import type { MarkupTool } from "@/components/markups/MarkupRenderer";
 import CarryoverAnnotationsDialog from "@/components/markups/CarryoverAnnotationsDialog";
 import { findSupersededPdfDoc, uploadOutcomeToast } from "@/components/project-tabs/planRevisionMatch";
@@ -198,6 +199,12 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const [markupThickness, setMarkupThickness] = useState<number>(2);
   // Task #1659 — hold-spacebar-to-pan from any tool (Figma / Bluebeam style).
   const [spacePanActive, setSpacePanActive] = useState(false);
+  // Task #1662 — active layer + visibility set are owned here so the
+  // panel and the canvas overlay stay in sync. Both are scoped to the
+  // currently-open document; we reset them whenever that changes via
+  // useEffect below.
+  const [activeMarkupLayerId, setActiveMarkupLayerId] = useState<string | null>(null);
+  const [hiddenMarkupLayerIds, setHiddenMarkupLayerIds] = useState<Set<string>>(new Set());
   const [sheetJumpOpen, setSheetJumpOpen] = useState(false);
   const [carryoverOpen, setCarryoverOpen] = useState(false);
   const [carryoverContext, setCarryoverContext] = useState<{
@@ -2174,6 +2181,24 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                     <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
                       {isPdf ? (
                         <>
+                          {/* Task #1662 — Layers panel sits above the
+                              PDF preview so users can manage layers
+                              without leaving the plan view. The unified
+                              toolbar (above) already owns the markup
+                              tool/color/thickness controls. The panel
+                              handles its own data fetching, RBAC errors,
+                              and empty state. */}
+                          <div className="hidden lg:flex justify-end px-3 pt-1">
+                            <div className="w-56 shrink-0">
+                              <MarkupLayersPanel
+                                documentId={doc.id}
+                                activeLayerId={activeMarkupLayerId}
+                                onChangeActiveLayer={setActiveMarkupLayerId}
+                                hiddenLayerIds={hiddenMarkupLayerIds}
+                                onChangeHiddenLayerIds={setHiddenMarkupLayerIds}
+                              />
+                            </div>
+                          </div>
                           <PdfPreview
                             url={`/api/projects/${projectCode}/documents/${doc.id}/stream`}
                             onOpenFile={() => handleOpenFile(doc.id, doc.fileUrl)}
@@ -2205,6 +2230,8 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                   thickness={markupThickness}
                                   onChangeTool={setMarkupTool}
                                   spacePanActive={spacePanActive}
+                                  activeLayerId={activeMarkupLayerId}
+                                  hiddenLayerIds={hiddenMarkupLayerIds}
                                 />
                                 {pickerPosition && pendingPin && pendingPin.pageNumber === pageNumber && !isMobilePin && (
                                   <PinPicker

@@ -1842,6 +1842,56 @@ export const insertPlanPinSchema = createInsertSchema(planPins).omit({
 export type InsertPlanPin = z.infer<typeof insertPlanPinSchema>;
 export type PlanPin = typeof planPins.$inferSelect;
 
+// Task #1662: User-defined markup layers (parity with takeoff layer
+// metadata). Each plan_document gets one auto-created `Default` layer
+// and zero or more user-named layers (e.g. "QA/QC", "Design Review").
+// Markups reference a layer via `plan_document_markups.layer_id`; a
+// null layer_id means "default layer" so the original behaviour for
+// pre-#1662 rows is preserved without a backfill.
+export const planMarkupLayers = pgTable("plan_markup_layers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  planDocumentId: varchar("plan_document_id").notNull().references(() => planDocuments.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  // Optional swatch shown in the layers panel; not applied to markups
+  // (markups carry their own color).
+  color: text("color").notNull().default("#94a3b8"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  // Auto-created default layer per plan_document. Cannot be deleted
+  // and cannot be renamed away from "Default".
+  isDefault: boolean("is_default").notNull().default(false),
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  docIdx: index("plan_markup_layers_doc_idx").on(table.planDocumentId),
+  orgIdx: index("plan_markup_layers_org_idx").on(table.organizationId),
+  uniqueName: unique("plan_markup_layers_doc_name_unique").on(table.planDocumentId, table.name),
+}));
+
+export const insertPlanMarkupLayerSchema = createInsertSchema(planMarkupLayers).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertPlanMarkupLayer = z.infer<typeof insertPlanMarkupLayerSchema>;
+export type PlanMarkupLayer = typeof planMarkupLayers.$inferSelect;
+
+// Per-user, per-layer visibility toggle. Absence of a row means
+// "visible" (the default), so toggling a layer hidden writes a row
+// with is_visible=false. Scoped to (user, layer) so two users sharing
+// a sheet can independently focus on their own layers.
+export const planMarkupLayerVisibility = pgTable("plan_markup_layer_visibility", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  layerId: varchar("layer_id").notNull().references(() => planMarkupLayers.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  isVisible: boolean("is_visible").notNull().default(true),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqueUserLayer: unique("plan_markup_layer_visibility_user_layer_unique").on(table.userId, table.layerId),
+  layerIdx: index("plan_markup_layer_visibility_layer_idx").on(table.layerId),
+}));
+
+export type PlanMarkupLayerVisibility = typeof planMarkupLayerVisibility.$inferSelect;
+
 // Task #1609: Plan-document-scoped markups. Mirrors `takeoff_markups`
 // shape but is keyed to (plan_document_id, page_number) so the
 // project-side PlansTab gets independent annotation storage from the
@@ -1869,11 +1919,21 @@ export const planDocumentMarkups = pgTable("plan_document_markups", {
   // previous revision's markup, source_markup_id records that origin so
   // a repeat carryover is idempotent.
   sourceMarkupId: varchar("source_markup_id"),
+  // Task #1662: layer membership. NULL means "default layer" so legacy
+  // rows continue rendering without backfill. SET NULL on delete so a
+  // layer deletion drops the markup back to the default.
+  layerId: varchar("layer_id").references(() => planMarkupLayers.id, { onDelete: "set null" }),
+  // Task #1662: opaque grouping handle. Markups sharing a non-null
+  // group_id move and delete together as one unit. Ungrouping sets
+  // this to NULL on every member.
+  groupId: varchar("group_id"),
 }, (table) => ({
   docPageIdx: index("plan_document_markups_doc_page_idx").on(table.planDocumentId, table.pageNumber),
   orgIdx: index("plan_document_markups_org_idx").on(table.organizationId),
   createdByIdx: index("plan_document_markups_created_by_idx").on(table.createdBy),
   uniqueDocSource: unique("plan_document_markups_doc_source_unique").on(table.planDocumentId, table.sourceMarkupId),
+  layerIdx: index("plan_document_markups_layer_idx").on(table.layerId),
+  groupIdx: index("plan_document_markups_group_idx").on(table.groupId),
 }));
 
 export const insertPlanDocumentMarkupSchema = createInsertSchema(planDocumentMarkups).omit({

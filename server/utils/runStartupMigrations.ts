@@ -65,6 +65,7 @@ import { ensureMyWorkSavedViewsTable } from "./ensureMyWorkSavedViewsTable";
 import { ensureScheduleBaselinesTable } from "./ensureScheduleBaselinesTable";
 import { ensurePlanPinsTable } from "./ensurePlanPinsTable";
 import { ensurePlanDocumentMarkupsTable } from "./ensurePlanDocumentMarkupsTable";
+import { ensurePlanMarkupLayersTables } from "./ensurePlanMarkupLayersTables";
 import { ensureProjectEmailDistributionLists } from "./ensureProjectEmailDistributionLists";
 import { ensureProjectLogEmailSchedules } from "./ensureProjectLogEmailSchedules";
 import { ensureProjectLogEmailAttemptTracking } from "./ensureProjectLogEmailAttemptTracking";
@@ -235,6 +236,10 @@ const migrations: MigrationStep[] = [
   { name: "schedule_baselines_table", category: "CREATE_TABLE", fn: ensureScheduleBaselinesTable },
   { name: "plan_pins_table", category: "CREATE_TABLE", fn: ensurePlanPinsTable },
   { name: "plan_document_markups_table", category: "CREATE_TABLE", fn: ensurePlanDocumentMarkupsTable },
+  // Task #1662 — markup layers + per-user visibility. Runs AFTER the
+  // plan_document_markups migration so the FK on layer_id can be
+  // wired by the layers migration once both tables exist.
+  { name: "plan_markup_layers_tables", category: "CREATE_TABLE", fn: ensurePlanMarkupLayersTables },
   { name: "project_email_distribution_lists", category: "CREATE_TABLE", fn: ensureProjectEmailDistributionLists },
   { name: "project_log_email_schedules", category: "CREATE_TABLE", fn: ensureProjectLogEmailSchedules },
   // Task #1622 — per-attempt outcome tracking columns on

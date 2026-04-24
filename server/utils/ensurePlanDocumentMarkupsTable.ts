@@ -9,6 +9,11 @@ import { logError } from "./logger";
  * of changes in either surface stays bounded. Carryover-on-revision
  * is supported via `source_markup_id` + a partial unique index on
  * (plan_document_id, source_markup_id) for idempotency.
+ *
+ * Task #1662: also adds the `layer_id` + `group_id` columns for the
+ * markups parity pass (named layers, grouping, per-user visibility).
+ * Both columns are nullable so legacy rows render unchanged: a NULL
+ * `layer_id` means "default layer", a NULL `group_id` means "ungrouped".
  */
 export async function ensurePlanDocumentMarkupsTable(): Promise<void> {
   try {
@@ -49,6 +54,27 @@ export async function ensurePlanDocumentMarkupsTable(): Promise<void> {
       CREATE UNIQUE INDEX IF NOT EXISTS "plan_document_markups_doc_source_unique"
       ON "plan_document_markups"("plan_document_id","source_markup_id")
       WHERE "source_markup_id" IS NOT NULL
+    `);
+
+    // Task #1662: layer + group membership columns. Added via ALTER so
+    // existing deployments pick them up without rebuilding the table.
+    // The FK on layer_id is added below in ensurePlanMarkupLayersTables
+    // (after the parent table exists) to avoid a circular bootstrap.
+    await db.execute(sql`
+      ALTER TABLE "plan_document_markups"
+      ADD COLUMN IF NOT EXISTS "layer_id" varchar
+    `);
+    await db.execute(sql`
+      ALTER TABLE "plan_document_markups"
+      ADD COLUMN IF NOT EXISTS "group_id" varchar
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS "plan_document_markups_layer_idx"
+      ON "plan_document_markups"("layer_id")
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS "plan_document_markups_group_idx"
+      ON "plan_document_markups"("group_id")
     `);
 
     console.log("[migration] plan_document_markups table ready");
