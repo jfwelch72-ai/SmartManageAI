@@ -5,8 +5,8 @@ import { uploadFixturePdf } from "./helpers/uploadFixturePdf";
 const BASE_URL =
   process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
 
-async function devLogin(page: Page, role: string) {
-  const response = await page.request.post(`${BASE_URL}/api/dev/test-login`, {
+async function devLogin(page: Page, role: string, endpoint = "/api/dev/test-login") {
+  const response = await page.request.post(`${BASE_URL}${endpoint}`, {
     data: { role },
   });
   expect(response.status()).toBe(200);
@@ -516,11 +516,26 @@ test.describe("Takeoff Workflow - Playwright E2E", () => {
     expect(finalBody).toContain(bidCode);
   });
 
-  test("role-based access: ESTIMATOR role cannot access ADMIN-created takeoff data", async ({
+  // NOTE: Takeoff data access on these endpoints is org-scoped, not role-
+  // restricted within an org. ESTIMATORs in the SAME org as the bid have
+  // legitimate read/write access (see `requireRole("ADMIN","MANAGER",
+  // "ESTIMATOR")` on the write routes and `verifySheetAccess` /
+  // `verifyOrgAccess` for reads in `server/takeoffSheetRoutes.ts` and
+  // `server/takeoffMeasurementRoutes.ts`). This test therefore must be a
+  // genuine cross-org scenario to assert denial — see Task #1745.
+  test("cross-org access: ESTIMATOR cannot access another organization's takeoff data", async ({
     page,
   }) => {
     const suffix = Date.now();
-    await devLogin(page, "ADMIN");
+    // Create the bid in a fresh, isolated organization so the ESTIMATOR (who
+    // logs in via the shared Dev Sandbox org) is genuinely cross-org. Using
+    // devLogin("ADMIN") here would put both users in the same dev-sandbox
+    // org — and ESTIMATORs in the same org legitimately have read/write
+    // access to takeoff data, so the denial assertions below would fail.
+    await devLogin(page, "ADMIN", "/api/dev/fresh-admin-login");
+    // CSRF tokens are bound to the previous session, so refresh after the
+    // login swap.
+    await installCsrf(page);
 
     const createRes = await page.request.post(`${BASE_URL}/api/bids`, {
       data: {
@@ -564,7 +579,10 @@ test.describe("Takeoff Workflow - Playwright E2E", () => {
     expect(mRes.status()).toBe(201);
     const measurement = (await mRes.json()) as MeasurementResponse;
 
+    // Switch to an ESTIMATOR in the standard Dev Sandbox org — a different
+    // organization than the fresh-admin one above.
     await devLogin(page, "ESTIMATOR");
+    await installCsrf(page);
 
     const sheetsRes = await page.request.get(
       `${BASE_URL}/api/bids/${bidId}/takeoff/sheets`
