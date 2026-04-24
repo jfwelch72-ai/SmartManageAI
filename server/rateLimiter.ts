@@ -1,6 +1,7 @@
 import rateLimit from "express-rate-limit";
 import type { Request } from "express";
 import { getUserIdFromRequest } from "./auth";
+import { isDevSeedEnabled } from "./utils/devSeedFlag";
 
 function normalizeIp(req: Request): string {
   const ip = req.ip || "unknown";
@@ -13,6 +14,16 @@ function getUserKeyOrIp(req: Request): string {
   if (userId) return `user:${userId}`;
   return normalizeIp(req);
 }
+
+// In dev / test environments (the same gate that exposes /api/dev/test-login)
+// the global apiLimiter would otherwise stop chatty e2e suites mid-run when
+// the same server instance is reused across multiple Playwright invocations
+// (see playwright.config.ts `reuseExistingServer: !process.env.CI`). The
+// limiter is a production DDoS protection — not business logic — so skipping
+// it in dev matches the existing dev-only bypasses for CSRF and the dev
+// route surface. Per-endpoint limiters (sensitive/auth/export/feedback)
+// remain in force so any test that asserts limiter behavior still works.
+const skipInDevSeed = () => isDevSeedEnabled();
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -38,6 +49,7 @@ export const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: getUserKeyOrIp,
+  skip: skipInDevSeed,
 });
 
 export const exportLimiter = rateLimit({

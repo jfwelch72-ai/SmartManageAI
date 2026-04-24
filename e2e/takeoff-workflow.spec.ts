@@ -99,10 +99,14 @@ test.describe("Takeoff Workflow - Playwright E2E", () => {
     const bidId = bid.id;
     const bidCode = bid.code;
 
-    await page.goto(`${BASE_URL}/bids/${bidCode}`);
-    await page.waitForLoadState("networkidle");
-    const bodyText = await page.locator("body").textContent();
-    expect(bodyText).toContain(bidCode);
+    // Note: do NOT use page.waitForLoadState("networkidle") here. The app
+    // mounts a GlobalSSEProvider that opens a long-lived EventSource to
+    // /api/messaging/events as soon as the user is authenticated, so the
+    // page never reaches "no in-flight requests for 500ms" and the wait
+    // burns the full 60s test timeout. Auto-retrying on the bid code text
+    // is both faster and a more meaningful readiness signal.
+    await page.goto(`${BASE_URL}/bids/${bidCode}`, { waitUntil: "domcontentloaded" });
+    await expect(page.locator("body")).toContainText(bidCode, { timeout: 15_000 });
 
     // --- Upload plans and create sheets ---
     const plan1Upload = await uploadFixturePdf(page, { baseUrl: BASE_URL });
@@ -510,10 +514,11 @@ test.describe("Takeoff Workflow - Playwright E2E", () => {
     expect(allMeasurements.length).toBeGreaterThan(0);
 
     // --- Final navigation check ---
-    await page.goto(`${BASE_URL}/bids/${bidCode}`);
-    await page.waitForLoadState("networkidle");
-    const finalBody = await page.locator("body").textContent();
-    expect(finalBody).toContain(bidCode);
+    // Same rationale as the first navigation: the GlobalSSEProvider's
+    // persistent EventSource means networkidle never settles. Use an
+    // auto-retrying content assertion instead.
+    await page.goto(`${BASE_URL}/bids/${bidCode}`, { waitUntil: "domcontentloaded" });
+    await expect(page.locator("body")).toContainText(bidCode, { timeout: 15_000 });
   });
 
   // NOTE: Takeoff data access on these endpoints is org-scoped, not role-
