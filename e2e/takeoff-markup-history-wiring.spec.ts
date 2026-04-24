@@ -54,6 +54,7 @@ import { installCsrf } from "./helpers/csrf";
 import {
   clickOnCanvas as clickOnCanvasHelper,
   dragOnCanvas as dragOnCanvasHelper,
+  type DragOptions,
   type Point,
 } from "./helpers/canvasDrag";
 
@@ -128,8 +129,16 @@ async function dragOnCanvas(
   start: Point,
   end: Point,
   browserName: string,
+  options: DragOptions = {},
 ) {
-  await dragOnCanvasHelper(page, canvasLocator(page), start, end, browserName);
+  await dragOnCanvasHelper(
+    page,
+    canvasLocator(page),
+    start,
+    end,
+    browserName,
+    options,
+  );
 }
 
 interface SeededWorkspace {

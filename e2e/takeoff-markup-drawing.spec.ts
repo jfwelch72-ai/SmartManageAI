@@ -3,6 +3,7 @@ import { installCsrf } from "./helpers/csrf";
 import {
   clickOnCanvas as clickOnCanvasHelper,
   dragOnCanvas as dragOnCanvasHelper,
+  type DragOptions,
   type Point,
 } from "./helpers/canvasDrag";
 
@@ -75,12 +76,17 @@ async function dragOnCanvas(
   page: Page,
   start: Point,
   end: Point,
-  intermediate: Point[] = [],
-  browserName: string = "chromium",
+  browserName: string,
+  options: DragOptions = {},
 ) {
-  await dragOnCanvasHelper(page, canvasLocator(page), start, end, browserName, {
-    intermediate: intermediate.length > 0 ? intermediate : undefined,
-  });
+  await dragOnCanvasHelper(
+    page,
+    canvasLocator(page),
+    start,
+    end,
+    browserName,
+    options,
+  );
 }
 
 async function clickOnCanvas(page: Page, point: Point) {
@@ -160,25 +166,25 @@ test.describe("Takeoff markup drawing - Playwright E2E", () => {
 
     // 1) ARROW
     await selectMarkupTool(page, "markup_arrow");
-    await dragOnCanvas(page, { x: 120, y: 120 }, { x: 240, y: 200 }, [], browserName);
+    await dragOnCanvas(page, { x: 120, y: 120 }, { x: 240, y: 200 }, browserName);
     expectedCount += 1;
     await waitForMarkupCount(page, sheetId, expectedCount);
 
     // 2) RECTANGLE
     await selectMarkupTool(page, "markup_rectangle");
-    await dragOnCanvas(page, { x: 260, y: 130 }, { x: 360, y: 230 }, [], browserName);
+    await dragOnCanvas(page, { x: 260, y: 130 }, { x: 360, y: 230 }, browserName);
     expectedCount += 1;
     await waitForMarkupCount(page, sheetId, expectedCount);
 
     // 3) CLOUD
     await selectMarkupTool(page, "markup_cloud");
-    await dragOnCanvas(page, { x: 120, y: 240 }, { x: 240, y: 320 }, [], browserName);
+    await dragOnCanvas(page, { x: 120, y: 240 }, { x: 240, y: 320 }, browserName);
     expectedCount += 1;
     await waitForMarkupCount(page, sheetId, expectedCount);
 
     // 4) HIGHLIGHT
     await selectMarkupTool(page, "markup_highlight");
-    await dragOnCanvas(page, { x: 260, y: 250 }, { x: 380, y: 330 }, [], browserName);
+    await dragOnCanvas(page, { x: 260, y: 250 }, { x: 380, y: 330 }, browserName);
     expectedCount += 1;
     await waitForMarkupCount(page, sheetId, expectedCount);
 
@@ -192,8 +198,8 @@ test.describe("Takeoff markup drawing - Playwright E2E", () => {
       page,
       { x: 120, y: 360 },
       { x: 240, y: 360 },
-      freehandIntermediate,
       browserName,
+      { intermediate: freehandIntermediate },
     );
     expectedCount += 1;
     await waitForMarkupCount(page, sheetId, expectedCount);
