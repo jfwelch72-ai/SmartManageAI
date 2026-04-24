@@ -286,6 +286,13 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   // toolbar (the tour's first targets) has time to mount in the DOM
   // before Joyride tries to anchor onto it.
   const tourTriggeredRef = useRef(false);
+  // Reset the per-mount auto-trigger guard whenever the active user
+  // changes. Without this, an account switch while this tab is still
+  // mounted would carry user A's "already triggered this session" flag
+  // into user B's session and silently suppress B's first-run tour.
+  useEffect(() => {
+    tourTriggeredRef.current = false;
+  }, [user?.id]);
   useEffect(() => {
     if (tourTriggeredRef.current) return;
     if (!user?.id) return;

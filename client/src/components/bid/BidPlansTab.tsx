@@ -133,6 +133,13 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
   // same session, but the flag is only set inside the timer so a
   // user who tabs away before 800ms still sees it next visit.
   const tourTriggeredRef = useRef(false);
+  // Reset the per-mount auto-trigger guard whenever the active user
+  // changes. Without this, an account switch while this tab is still
+  // mounted would carry user A's "already triggered this session" flag
+  // into user B's session and silently suppress B's first-run tour.
+  useEffect(() => {
+    tourTriggeredRef.current = false;
+  }, [user?.id]);
   useEffect(() => {
     if (tourTriggeredRef.current) return;
     if (!user?.id) return;

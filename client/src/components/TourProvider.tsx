@@ -614,9 +614,11 @@ const plansTourSteps: Step[] = [
 // Task #1695 — The plans-tour dismissal marker moved server-side under
 // `users.plansTourCompleted` so it syncs across devices alongside the
 // labeled-toolbar preference. The legacy per-user-id localStorage key
-// remains here only for one-shot migration (read once, push to the
-// server, then clear) so users who already dismissed the tour on a
-// previous session do not see it replay on the new flow.
+// is still read for one-shot migration (read once, push to the server,
+// then clear) so users who already dismissed the tour on a previous
+// session do not see it replay on the new flow. The same key is also
+// written synchronously when the user dismisses the tour as a sticky
+// backstop — see the looping-tour fix below.
 const LEGACY_PLANS_TOUR_KEY_PREFIX = "plans-tour-completed-";
 
 function readLegacyPlansTourCompleted(userId: string | undefined | null): boolean {
@@ -637,11 +639,44 @@ function clearLegacyPlansTourCompleted(userId: string | undefined | null) {
   }
 }
 
+function writePlansTourCompletedLocal(userId: string | undefined | null) {
+  if (!userId || typeof window === "undefined") return;
+  try {
+    window.localStorage.setItem(`${LEGACY_PLANS_TOUR_KEY_PREFIX}${userId}`, "1");
+  } catch {
+    // localStorage unavailable (private browsing, quota) — silently ignore
+  }
+}
+
+// Looping-tour fix — when the user dismisses the plans tour, optimistically
+// flip `user.plansTourCompleted` in the React Query cache so the next render
+// sees the dismissed state immediately, instead of waiting for the PATCH +
+// `/api/auth/me` refetch to land. Without this, a child remount during the
+// in-flight window (e.g. navigating away from the plans subtab and back, or
+// closing a PDF preview) re-fires the auto-tour trigger.
+function optimisticallyMarkPlansTourCompleted() {
+  queryClient.setQueriesData<{ user?: { plansTourCompleted?: boolean } } | undefined>(
+    { queryKey: ["/api/auth/me"] },
+    (prev) => {
+      if (!prev || !prev.user) return prev;
+      if (prev.user.plansTourCompleted) return prev;
+      return { ...prev, user: { ...prev.user, plansTourCompleted: true } };
+    },
+  );
+}
+
 async function persistPlansTourCompleted(completed: boolean): Promise<void> {
   await apiRequest("PATCH", "/api/auth/profile", {
     plansTourCompleted: completed,
   });
-  await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+  // No invalidate needed when `completed: true` — the optimistic cache
+  // update already reflects the new value and the requireAuth user-cache
+  // bust on the server side keeps a fresh /api/auth/me consistent. We
+  // still invalidate on the rare `completed: false` path (replay) so the
+  // server's authoritative state wins.
+  if (!completed) {
+    await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+  }
 }
 
 // Task #1696 — Bid Plans tour. The first four steps mirror the
@@ -767,6 +802,14 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     if (legacyPlansTourMigratedRef.current === uid) return;
     if (!readLegacyPlansTourCompleted(uid)) return;
     legacyPlansTourMigratedRef.current = uid;
+    // Optimistically flip the cache before the migration PATCH lands so
+    // the auto-trigger in PlansTab/BidPlansTab can short-circuit on this
+    // very render even though the server-side `users.plansTourCompleted`
+    // isn't yet `true`. Without this, a slow PATCH on a previously-
+    // dismissed user could let the tour replay during the migration
+    // window — exactly the looping-tour symptom this fix is meant to
+    // eliminate.
+    optimisticallyMarkPlansTourCompleted();
     void (async () => {
       try {
         await persistPlansTourCompleted(true);
@@ -1047,18 +1090,40 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
 
   // ── Task #1663 / #1695 — Plans-surface tour controls ────────────────
   // The dismissal marker (`users.plansTourCompleted`) is persisted on
-  // the server so it carries across devices. /api/auth/me is then
-  // invalidated so `user.plansTourCompleted` flips to `true` on the
-  // next refetch and PlansTab stops auto-launching the tour. Failures
-  // are logged but do not block the UX (the modal still closes); the
-  // next visit will simply see the tour again.
+  // the server so it carries across devices. To stop the tour from
+  // looping when a child like PlansTab unmounts/remounts during the
+  // in-flight PATCH window (looping-tour fix), we also flip three
+  // synchronous backstops the moment the user dismisses:
+  //   1. `plansTourDismissedSession` — in-memory state on the provider
+  //      (which lives above the router and never unmounts during a
+  //      session) so re-mounted children see the dismissal immediately.
+  //   2. The React Query cache for `/api/auth/me` is optimistically
+  //      patched so `user.plansTourCompleted` flips synchronously
+  //      without waiting for the server round-trip.
+  //   3. The legacy localStorage key is rewritten so a hard reload
+  //      during the in-flight window still hydrates as dismissed
+  //      (the migration effect above promotes it back to the server).
+  // Failures are logged but do not block the UX.
+  const [plansTourDismissedSession, setPlansTourDismissedSession] = useState(false);
+  // Reset the session-sticky dismissal whenever the active user changes
+  // (initial sign-in, account switch, sign-out → sign-in) so user B never
+  // inherits user A's "dismissed this session" backstop and miss their
+  // own first-run tour. The provider lives above the router so without
+  // this guard the in-memory flag would persist across user switches.
+  useEffect(() => {
+    setPlansTourDismissedSession(false);
+  }, [user?.id]);
   const startPlansTour = useCallback(() => {
+    setPlansTourDismissedSession(false);
     setIsPlansTourActive(true);
   }, []);
 
   const finishPlansTour = useCallback(async () => {
     setIsPlansTourActive(false);
+    setPlansTourDismissedSession(true);
     if (!user?.id) return;
+    optimisticallyMarkPlansTourCompleted();
+    writePlansTourCompletedLocal(user.id);
     try {
       await persistPlansTourCompleted(true);
     } catch (error) {
@@ -1085,32 +1150,45 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   );
 
   // ── Task #1696 — Bid Plans tour controls ─────────────────────────────
+  // Same looping-tour fix: the in-memory `bidPlansTourDismissedSession`
+  // backstop lives on the provider so a BidPlansTab unmount/remount
+  // can't slip past the dismissal between the localStorage write and
+  // the next render. The localStorage write itself is already
+  // synchronous, so cross-session persistence is unaffected.
+  const [bidPlansTourDismissedSession, setBidPlansTourDismissedSession] = useState(false);
+  // Same account-switch reset as the project plans dismissal above —
+  // user B should never inherit user A's in-memory bid-tour dismissal.
+  useEffect(() => {
+    setBidPlansTourDismissedSession(false);
+  }, [user?.id]);
   const startBidPlansTour = useCallback(() => {
+    setBidPlansTourDismissedSession(false);
     setIsBidPlansTourActive(true);
   }, []);
 
-  const skipBidPlansTour = useCallback(() => {
+  const dismissBidPlansTour = useCallback(() => {
     setIsBidPlansTourActive(false);
     setBidPlansTourCompleted(user?.id, true);
     setBidPlansTourCompletedState(true);
+    setBidPlansTourDismissedSession(true);
   }, [user?.id]);
+
+  const skipBidPlansTour = useCallback(() => {
+    dismissBidPlansTour();
+  }, [dismissBidPlansTour]);
 
   const handleBidPlansTourCallback = useCallback(
     (data: CallBackProps) => {
       const { status, action } = data;
       if (status === STATUS.FINISHED) {
-        setIsBidPlansTourActive(false);
-        setBidPlansTourCompleted(user?.id, true);
-        setBidPlansTourCompletedState(true);
+        dismissBidPlansTour();
         return;
       }
       if (status === STATUS.SKIPPED || action === ACTIONS.CLOSE) {
-        setIsBidPlansTourActive(false);
-        setBidPlansTourCompleted(user?.id, true);
-        setBidPlansTourCompletedState(true);
+        dismissBidPlansTour();
       }
     },
-    [user?.id],
+    [dismissBidPlansTour],
   );
 
   return (
@@ -1123,11 +1201,23 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       startPlansTour,
       skipPlansTour,
       isPlansTourActive,
-      isPlansTourCompleted: plansTourCompleted,
+      // Looping-tour fix — surface the in-memory session dismissal AND the
+      // synchronous localStorage backstop too so child components like
+      // <PlansTab> see the close synchronously and their auto-trigger
+      // effect cannot re-fire on remount before the /api/auth/me refetch
+      // lands. The localStorage read also covers the hard-reload case
+      // where the user dismissed but the server PATCH was still in flight
+      // when they refreshed: the legacy key is hydrated synchronously
+      // here while the existing migration effect promotes it back to the
+      // server in the background.
+      isPlansTourCompleted:
+        plansTourCompleted ||
+        plansTourDismissedSession ||
+        readLegacyPlansTourCompleted(user?.id),
       startBidPlansTour,
       skipBidPlansTour,
       isBidPlansTourActive,
-      isBidPlansTourCompleted: bidPlansTourCompleted,
+      isBidPlansTourCompleted: bidPlansTourCompleted || bidPlansTourDismissedSession,
     }}>
       {children}
       
