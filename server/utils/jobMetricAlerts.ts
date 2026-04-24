@@ -266,7 +266,34 @@ export const PER_JOB_DEFAULTS: Record<string, PerJobDefaults> = {
 
   // Retention-policy sweep that hard-deletes rows past their org's
   // retention window — `0 2 * * *`.
-  retention_policy_sweep: { stall: DAILY_STALL },
+  //
+  // Task #1502 — spike rules on `deleted` / `hardDeleted` so a
+  // misconfigured retention window or a buggy code path that suddenly
+  // removes a large batch of rows in a single nightly tick pages
+  // Super Admins before whole tables are decimated. 5× baseline with
+  // a 25-row absolute floor avoids flapping on routine "small batch
+  // vs 0-baseline" cases while still catching genuine over-deletes.
+  // Dedupe matches the once-daily natural cadence so a sustained
+  // outage doesn't re-page on every 15-minute alert tick. Email
+  // escalation matches the absolute floor so the very first run that
+  // crosses the threshold escalates to SendGrid.
+  retention_policy_sweep: {
+    stall: DAILY_STALL,
+    spikes: {
+      deleted: {
+        multiplier: 5,
+        minAbsolute: 25,
+        dedupeMinutes: 24 * 60,
+        emailWhenAbove: 25,
+      },
+      hardDeleted: {
+        multiplier: 5,
+        minAbsolute: 25,
+        dedupeMinutes: 24 * 60,
+        emailWhenAbove: 25,
+      },
+    },
+  },
 
   // OAuth token expiry warning sweep for connected social accounts —
   // `0 3 * * *`.
@@ -302,7 +329,32 @@ export const PER_JOB_DEFAULTS: Record<string, PerJobDefaults> = {
 
   // Hard-delete sweep for archived certified payroll PDFs past their
   // org's retention window — `30 3 * * *`.
-  certified_payroll_purge: { stall: DAILY_STALL },
+  //
+  // Task #1502 — spike rules on `deleted` / `hardDeleted` so a
+  // misconfigured retention window (e.g. operator drops the value
+  // from 1095 to 30 days) or a buggy code path that suddenly removes
+  // a large batch of archived PDFs in a single nightly tick pages
+  // Super Admins before the underlying GCS blobs are gone for good.
+  // 5× baseline with a 25-row absolute floor mirrors the retention
+  // policy sweep above; dedupe matches the once-daily natural cadence
+  // and email escalation matches the floor.
+  certified_payroll_purge: {
+    stall: DAILY_STALL,
+    spikes: {
+      deleted: {
+        multiplier: 5,
+        minAbsolute: 25,
+        dedupeMinutes: 24 * 60,
+        emailWhenAbove: 25,
+      },
+      hardDeleted: {
+        multiplier: 5,
+        minAbsolute: 25,
+        dedupeMinutes: 24 * 60,
+        emailWhenAbove: 25,
+      },
+    },
+  },
 
   // ---- Every 6 hours (cron `0 */6 * * *`) ---------------------------
 
