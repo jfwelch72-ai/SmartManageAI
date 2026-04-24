@@ -124,9 +124,30 @@ jobs:
     # /usr/lib/x86_64-linux-gnu paths supply every lib WebKit needs, and
     # `playwright install --with-deps` adds anything else (libnss3, libxkbcommon,
     # libgbm, etc.) so the host-requirements validator passes.
-    name: E2E Canvas Specs (Firefox + WebKit)
+    #
+    # Task #1896 — Originally a single runner ran both engines sequentially
+    # (`--project=firefox --project=webkit`) with `workers: 1` pinned in
+    # `playwright.config.ts`, so ~60 tests/engine ran end-to-end on one box.
+    # Now the work is sharded across a 2×2 matrix (one engine per job, two
+    # Playwright `--shard`s per engine = 4 parallel runners), cutting
+    # wall-clock time roughly in 4 without changing the engine-aware drag
+    # helper. The helper only branches on `browserName` and holds no shared
+    # state, so it remains correct under parallel shards on separate
+    # runners. Per-shard reports upload as separate, clearly-named
+    # artifacts so a failure points straight at the engine + shard that
+    # produced it.
+    name: E2E Canvas Specs (${{ matrix.project }} shard ${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
+    strategy:
+      # Don't cancel the other shards/engines when one fails — we want to
+      # see every failing shard in a single PR run instead of guessing
+      # whether the other engine would have passed.
+      fail-fast: false
+      matrix:
+        project: [firefox, webkit]
+        shard: [1, 2]
 
     services:
       postgres:
@@ -168,16 +189,28 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Install Playwright Firefox + WebKit with system deps
-        run: npx playwright install --with-deps firefox webkit
+      - name: Install Playwright ${{ matrix.project }} with system deps
+        # Each shard only needs its own engine binary, so install just
+        # that one. Skips ~150MB of unused download/extract per runner
+        # vs. installing both engines.
+        run: npx playwright install --with-deps ${{ matrix.project }}
 
       - name: Push database schema
         run: npm run db:push -- --force
 
-      - name: Run canvas-heavy specs on Firefox + WebKit
+      - name: Run canvas-heavy specs (${{ matrix.project }} shard ${{ matrix.shard }}/2)
+        # `--shard=N/2` deals the six enumerated spec files across two
+        # runners per engine. Playwright shards at the test-file level by
+        # default, so each shard owns ~3 of the six specs end-to-end (no
+        # mid-spec splits that could trip up the engine-aware drag
+        # helper). `workers: 1` stays pinned in `playwright.config.ts`,
+        # so within a shard the tests still run serially against the
+        # single dev server — the parallelism comes from running 4
+        # GitHub-hosted runners side by side.
         run: |
           npx playwright test \
-            --project=firefox --project=webkit \
+            --project=${{ matrix.project }} \
+            --shard=${{ matrix.shard }}/2 \
             e2e/takeoff-markup-drawing.spec.ts \
             e2e/plan-markup-group-drag.spec.ts \
             e2e/plan-markup-marquee-select.spec.ts \
@@ -189,7 +222,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-canvas-firefox-webkit
+          # Per-shard, per-engine name so all four artifacts coexist on
+          # the run page and a failure points straight at the right one.
+          name: playwright-report-canvas-${{ matrix.project }}-shard-${{ matrix.shard }}-of-2
           path: playwright-report/
           retention-days: 14
 
@@ -197,7 +232,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-test-results-canvas-firefox-webkit
+          name: playwright-test-results-canvas-${{ matrix.project }}-shard-${{ matrix.shard }}-of-2
           path: test-results/
           retention-days: 14
 
