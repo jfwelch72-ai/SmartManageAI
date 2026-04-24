@@ -157,6 +157,19 @@ export function getNotificationDestination(notification: {
       // is org-scoped, so we don't need to thread it through the URL.
       return "/admin/transcript-backfill";
 
+    case "PROJECT_LOG_EMAIL_FAILED":
+      // Task #1637 — clicking the failure notification opens the
+      // project detail page, where the "Scheduled log emails" card on
+      // the overview tab surfaces the "Last send failed" badge and
+      // lets the editor fix recipients / re-trigger the cadence.
+      // relatedEntityId is the project's human-readable `code`
+      // (matching /api/projects/:code), so the wouter route at
+      // /projects/:code resolves directly.
+      if (relatedEntityType === "PROJECT_LOG_EMAIL_SCHEDULE" && relatedEntityId) {
+        return `/projects/${relatedEntityId}`;
+      }
+      return getProjectDestination();
+
     case "GENERAL":
       if (relatedEntityType === "gantt_pdf_health") {
         return "/admin/gantt-pdf";

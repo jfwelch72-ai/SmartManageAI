@@ -62,11 +62,32 @@ function makeSelectChain() {
 }
 
 const updates: Array<{ table: string; values?: Row; where: boolean }> = [];
+// Task #1637 — captured `db.insert(...).values(...)` calls so tests can
+// assert the new failure-notification fan-out. Existing Task #1606
+// behaviour didn't insert anything via the worker, so the old mock
+// returned a fire-and-forget no-op; the new mock has to also support
+// `.returning()` because `insertNotifications` reads back the inserted
+// rows to feed `deliverNotification` (mocked separately).
+const inserts: Array<{ table: string; values: Row[] }> = [];
 
 const dbMock = {
   execute: async () => ({ rows: [] }),
   select: () => makeSelectChain(),
-  insert: () => ({ values: async () => undefined, returning: async () => [] }),
+  insert: (t: unknown) => {
+    const table = tableName(t);
+    return {
+      values: (vals: Row | Row[]) => {
+        const arr = Array.isArray(vals) ? vals : [vals];
+        inserts.push({ table, values: arr });
+        const stamped = arr.map((v, i) => ({ id: `${table}-insert-${i}`, ...v }));
+        const thenable: PromiseLike<unknown> & { returning: () => Promise<Row[]> } = {
+          returning: async () => stamped,
+          then: (resolve, reject) => Promise.resolve(undefined).then(resolve, reject),
+        };
+        return thenable;
+      },
+    };
+  },
   update: (t: unknown) => {
     const table = tableName(t);
     return {
@@ -87,6 +108,15 @@ vi.mock("../utils/logger", () => ({
   logError: vi.fn(),
   logWarn: vi.fn(),
   logDebug: vi.fn(),
+}));
+
+// Task #1637 — `insertNotifications` (used by the failure fan-out)
+// schedules `deliverNotification` via `setImmediate`. Mock the
+// delivery side to a no-op so the in-flight delivery doesn't try to
+// touch the real SendGrid transport / DB during the test (the inserts
+// themselves are still observed via the `inserts` array on dbMock).
+vi.mock("../services/notificationDelivery", () => ({
+  deliverNotification: vi.fn(async () => undefined),
 }));
 
 const sendEmailCalls: Array<Record<string, unknown>> = [];
@@ -124,6 +154,7 @@ let processProjectLogEmailSchedules: typeof import("../jobs/jobRunner")["process
 beforeEach(async () => {
   for (const k of Object.keys(selectByTable)) delete selectByTable[k];
   updates.length = 0;
+  inserts.length = 0;
   sendEmailCalls.length = 0;
   sendEmailNextResults.length = 0;
   pdfCalls.length = 0;
@@ -165,8 +196,10 @@ describe("processProjectLogEmailSchedules", () => {
       hour: 8,
       timezone: "UTC",
       lastSentAt: null,
+      lastEditedById: null,
+      lastFailureNotifiedStatus: null,
     }]);
-    queueProject([{ id: "proj-1", name: "Bridge 7", gcOrganizationId: "org-1" }]);
+    queueProject([{ id: "proj-1", code: "PRJ-7", name: "Bridge 7", gcOrganizationId: "org-1", projectManagerId: null }]);
     queueDistLists([
       { contactEmails: ["pm@example.com"], extraEmails: ["owner@example.com"] },
     ]);
@@ -190,6 +223,9 @@ describe("processProjectLogEmailSchedules", () => {
     // lastSentAt was stamped on project_log_email_schedules. Task #1622
     // also stamps the per-attempt outcome (status=SUCCESS, no error,
     // recipient count) so the project settings UI can report it.
+    // Task #1637 — SUCCESS path also clears `lastFailureNotifiedStatus`
+    // so the next failure starts a brand-new notification cycle
+    // instead of being silently swallowed.
     expect(updates).toHaveLength(1);
     expect(updates[0].table).toBe("project_log_email_schedules");
     const successValues = updates[0].values as Row;
@@ -198,6 +234,9 @@ describe("processProjectLogEmailSchedules", () => {
     expect(successValues.lastAttemptStatus).toBe("SUCCESS");
     expect(successValues.lastAttemptError).toBeNull();
     expect(successValues.lastAttemptRecipientCount).toBe(2);
+    expect(successValues.lastFailureNotifiedStatus).toBeNull();
+    // No fan-out on success.
+    expect(inserts.filter((i) => i.table === "notifications")).toHaveLength(0);
   });
 
   it("does not fire when the local hour does not match the configured hour", async () => {
@@ -278,7 +317,7 @@ describe("processProjectLogEmailSchedules", () => {
     expect(sendEmailCalls).toHaveLength(0);
   });
 
-  it("skips silently when no recipients resolve from the distribution lists", async () => {
+  it("stamps NO_RECIPIENTS and notifies the editor + PM when no recipients resolve", async () => {
     const now = new Date("2026-04-20T08:00:00Z");
     queueSchedules([{
       id: "sched-1",
@@ -290,8 +329,19 @@ describe("processProjectLogEmailSchedules", () => {
       hour: 8,
       timezone: "UTC",
       lastSentAt: null,
+      // Task #1637 — exercise the failure fan-out: editor + PM both
+      // present, no prior failure has been notified about, so the
+      // worker should record a fresh notification per recipient.
+      lastEditedById: "user-editor",
+      lastFailureNotifiedStatus: null,
     }]);
-    queueProject([{ id: "proj-1", name: "Levee 3", gcOrganizationId: "org-1" }]);
+    queueProject([{
+      id: "proj-1",
+      code: "PRJ-3",
+      name: "Levee 3",
+      gcOrganizationId: "org-1",
+      projectManagerId: "user-pm",
+    }]);
     queueDistLists([{ contactEmails: [], extraEmails: [] }]);
 
     await processProjectLogEmailSchedules({ now });
@@ -302,16 +352,39 @@ describe("processProjectLogEmailSchedules", () => {
     // distribution lists are empty. `lastSentAt` is intentionally left
     // alone so cadence dedupe windows still treat the row as never-sent
     // and retry on the next firing.
-    expect(updates).toHaveLength(1);
+    // Task #1637 — followed by a second update that stamps the
+    // dedupe marker (lastFailureNotifiedStatus = NO_RECIPIENTS) so
+    // the next tick won't re-fan the same notification.
+    expect(updates).toHaveLength(2);
     expect(updates[0].table).toBe("project_log_email_schedules");
     const noRecipValues = updates[0].values as Row;
     expect(noRecipValues.lastSentAt).toBeUndefined();
     expect(noRecipValues.lastAttemptStatus).toBe("NO_RECIPIENTS");
     expect(noRecipValues.lastAttemptRecipientCount).toBe(0);
     expect(typeof noRecipValues.lastAttemptError).toBe("string");
+
+    const dedupeValues = updates[1].values as Row;
+    expect(dedupeValues.lastFailureNotifiedStatus).toBe("NO_RECIPIENTS");
+    expect(dedupeValues.lastFailureNotifiedAt).toBeInstanceOf(Date);
+
+    // One notification per deduped recipient, deep-linked to the
+    // project's human-readable code.
+    const notifInserts = inserts.filter((i) => i.table === "notifications");
+    expect(notifInserts).toHaveLength(1);
+    const rows = notifInserts[0].values;
+    expect(rows).toHaveLength(2);
+    const userIds = new Set(rows.map((r) => r.userId));
+    expect(userIds).toEqual(new Set(["user-editor", "user-pm"]));
+    for (const r of rows) {
+      expect(r.type).toBe("PROJECT_LOG_EMAIL_FAILED");
+      expect(r.relatedEntityType).toBe("PROJECT_LOG_EMAIL_SCHEDULE");
+      expect(r.relatedEntityId).toBe("PRJ-3");
+      expect(String(r.title)).toContain("Levee 3");
+      expect(String(r.message)).toContain("Levee 3");
+    }
   });
 
-  it("records FAILURE with the provider error when the email transport returns ok=false", async () => {
+  it("records FAILURE with the provider error and fans out a notification when the email transport returns ok=false", async () => {
     const now = new Date("2026-04-20T08:00:00Z");
     queueSchedules([{
       id: "sched-1",
@@ -323,8 +396,16 @@ describe("processProjectLogEmailSchedules", () => {
       hour: 8,
       timezone: "UTC",
       lastSentAt: null,
+      lastEditedById: "user-editor",
+      lastFailureNotifiedStatus: null,
     }]);
-    queueProject([{ id: "proj-1", name: "Bridge 7", gcOrganizationId: "org-1" }]);
+    queueProject([{
+      id: "proj-1",
+      code: "PRJ-7",
+      name: "Bridge 7",
+      gcOrganizationId: "org-1",
+      projectManagerId: "user-editor", // PM and editor are the same person; should still get only one notification
+    }]);
     queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
     sendEmailNextResults.push({ ok: false, error: "All recipients suppressed by SendGrid" });
 
@@ -333,13 +414,138 @@ describe("processProjectLogEmailSchedules", () => {
     expect(sendEmailCalls).toHaveLength(1);
     // lastSentAt is NOT stamped — we want the next cadence tick to try
     // again rather than believe today's send already happened.
-    expect(updates).toHaveLength(1);
+    // Two updates: per-attempt FAILURE stamp + dedupe marker stamp.
+    expect(updates).toHaveLength(2);
     const failValues = updates[0].values as Row;
     expect(failValues.lastSentAt).toBeUndefined();
     expect(failValues.lastAttemptStatus).toBe("FAILURE");
     expect(failValues.lastAttemptError).toBe("All recipients suppressed by SendGrid");
     expect(failValues.lastAttemptRecipientCount).toBe(1);
     expect(failValues.lastAttemptAt).toBeInstanceOf(Date);
+
+    const dedupeValues = updates[1].values as Row;
+    expect(dedupeValues.lastFailureNotifiedStatus).toBe("FAILURE");
+
+    // Editor and PM are the same user — should only receive one
+    // notification, not two.
+    const notifInserts = inserts.filter((i) => i.table === "notifications");
+    expect(notifInserts).toHaveLength(1);
+    expect(notifInserts[0].values).toHaveLength(1);
+    expect(notifInserts[0].values[0].userId).toBe("user-editor");
+    expect(notifInserts[0].values[0].type).toBe("PROJECT_LOG_EMAIL_FAILED");
+    expect(String(notifInserts[0].values[0].message)).toContain("All recipients suppressed by SendGrid");
+  });
+
+  it("dedupes the failure notification when the prior attempt already had the same status", async () => {
+    // Task #1637 — same FAILURE status that was previously notified
+    // about: the worker still stamps the per-attempt FAILURE marker
+    // (so the project settings panel keeps showing "Last send
+    // failed") but does NOT re-emit a notification for what is the
+    // same persistent failure mode.
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueSchedules([{
+      id: "sched-1",
+      organizationId: "org-1",
+      projectId: "proj-1",
+      logType: "RFI",
+      cadence: "WEEKLY",
+      weekday: 1,
+      hour: 8,
+      timezone: "UTC",
+      lastSentAt: null,
+      lastEditedById: "user-editor",
+      lastFailureNotifiedStatus: "FAILURE",
+    }]);
+    queueProject([{
+      id: "proj-1",
+      code: "PRJ-7",
+      name: "Bridge 7",
+      gcOrganizationId: "org-1",
+      projectManagerId: "user-pm",
+    }]);
+    queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+    sendEmailNextResults.push({ ok: false, error: "Bounce again" });
+
+    await processProjectLogEmailSchedules({ now });
+
+    expect(updates).toHaveLength(1);
+    expect((updates[0].values as Row).lastAttemptStatus).toBe("FAILURE");
+    expect(inserts.filter((i) => i.table === "notifications")).toHaveLength(0);
+  });
+
+  it("re-notifies when the failure status transitions (e.g. NO_RECIPIENTS -> FAILURE)", async () => {
+    // Task #1637 — even though the schedule was already in a notified
+    // failure state, the new attempt represents a different failure
+    // mode and is worth surfacing on its own.
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueSchedules([{
+      id: "sched-1",
+      organizationId: "org-1",
+      projectId: "proj-1",
+      logType: "RFI",
+      cadence: "WEEKLY",
+      weekday: 1,
+      hour: 8,
+      timezone: "UTC",
+      lastSentAt: null,
+      lastEditedById: "user-editor",
+      lastFailureNotifiedStatus: "NO_RECIPIENTS",
+    }]);
+    queueProject([{
+      id: "proj-1",
+      code: "PRJ-7",
+      name: "Bridge 7",
+      gcOrganizationId: "org-1",
+      projectManagerId: "user-pm",
+    }]);
+    queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+    sendEmailNextResults.push({ ok: false, error: "Bounce" });
+
+    await processProjectLogEmailSchedules({ now });
+
+    expect(updates).toHaveLength(2);
+    const dedupeValues = updates[1].values as Row;
+    expect(dedupeValues.lastFailureNotifiedStatus).toBe("FAILURE");
+    const notifInserts = inserts.filter((i) => i.table === "notifications");
+    expect(notifInserts).toHaveLength(1);
+    expect(notifInserts[0].values).toHaveLength(2);
+  });
+
+  it("stamps the dedupe marker even when there are no recipients to notify", async () => {
+    // Task #1637 — schedule has neither editor nor PM (e.g. row
+    // pre-dates the column or both users were deleted). We still
+    // stamp the dedupe marker so subsequent ticks don't keep
+    // re-evaluating an unactionable row; the project settings panel
+    // remains the source of truth for unattended failures.
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueSchedules([{
+      id: "sched-1",
+      organizationId: "org-1",
+      projectId: "proj-1",
+      logType: "RFI",
+      cadence: "WEEKLY",
+      weekday: 1,
+      hour: 8,
+      timezone: "UTC",
+      lastSentAt: null,
+      lastEditedById: null,
+      lastFailureNotifiedStatus: null,
+    }]);
+    queueProject([{
+      id: "proj-1",
+      code: "PRJ-7",
+      name: "Bridge 7",
+      gcOrganizationId: "org-1",
+      projectManagerId: null,
+    }]);
+    queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+    sendEmailNextResults.push({ ok: false, error: "Boom" });
+
+    await processProjectLogEmailSchedules({ now });
+
+    expect(updates).toHaveLength(2);
+    expect((updates[1].values as Row).lastFailureNotifiedStatus).toBe("FAILURE");
+    expect(inserts.filter((i) => i.table === "notifications")).toHaveLength(0);
   });
 
   it("dedupes recipients across overlapping distribution lists (case-insensitive)", async () => {

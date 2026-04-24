@@ -826,6 +826,11 @@ export function composeEmailContent(
       bid: (id) => `${baseUrl}/bids/${id}`,
       project: (id) => `${baseUrl}/projects/${id}`,
       inspection: (id) => `${baseUrl}/inspections/${id}`,
+      // Task #1637 — failure notifications for per-project scheduled
+      // log emails. relatedEntityId is the project's human-readable
+      // `code` so the deep-link matches the GET /api/projects/:code
+      // route the project detail page already uses.
+      PROJECT_LOG_EMAIL_SCHEDULE: (id) => `${baseUrl}/projects/${id}`,
     };
 
     const urlBuilder = entityUrlMap[notification.relatedEntityType];

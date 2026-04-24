@@ -10451,6 +10451,22 @@ export const projectLogEmailSchedules = pgTable("project_log_email_schedules", {
   lastAttemptStatus: text("last_attempt_status"),
   lastAttemptError: text("last_attempt_error"),
   lastAttemptRecipientCount: integer("last_attempt_recipient_count"),
+  // Task #1637 — track who last edited the cadence so the worker can
+  // fan a one-shot in-app notification to that user (alongside the
+  // project manager) when a scheduled send transitions into FAILURE
+  // or NO_RECIPIENTS. Stamped by `PUT /api/projects/:projectId/log-email-schedules/:logType`
+  // on every upsert. Nullable + ON DELETE SET NULL so deleting the
+  // editing user doesn't block the row.
+  lastEditedById: varchar("last_edited_by_id").references(() => users.id, { onDelete: "set null" }),
+  // Task #1637 — dedupe marker for the failure fan-out. Stamped with
+  // the schedule's most recently NOTIFIED-about failure status (one of
+  // "FAILURE" | "NO_RECIPIENTS"). The cron only fans a fresh
+  // notification when the current attempt's status differs from this
+  // value, so the same persistent failure isn't re-notified every
+  // hourly tick. Cleared back to NULL on a successful send so the
+  // next failure starts a brand-new notification cycle.
+  lastFailureNotifiedAt: timestamp("last_failure_notified_at"),
+  lastFailureNotifiedStatus: text("last_failure_notified_status"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

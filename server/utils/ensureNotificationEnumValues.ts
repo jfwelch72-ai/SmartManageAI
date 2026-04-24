@@ -50,6 +50,10 @@ const REQUIRED_NOTIFICATION_TYPES = [
   // Task #1449: per-PM email triggered when persistRateChangeRecords
   // writes new panel-flag records.
   "WAGE_DECISION_RATES_CHANGED_FOR_PM",
+  // Task #1637: scheduled RFI / submittal log email transitioned into
+  // FAILURE / NO_RECIPIENTS — fan-out to the schedule's last editor +
+  // project manager.
+  "PROJECT_LOG_EMAIL_FAILED",
 ];
 
 export async function ensureNotificationEnumValues(): Promise<void> {

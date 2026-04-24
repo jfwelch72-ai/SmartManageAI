@@ -3809,6 +3809,12 @@ export async function processProjectLogEmailSchedules(opts: { now?: Date } = {})
       hour: projectLogEmailSchedules.hour,
       timezone: projectLogEmailSchedules.timezone,
       lastSentAt: projectLogEmailSchedules.lastSentAt,
+      // Task #1637 — pulled so the failure fan-out can target the
+      // last editor of the cadence, and so the dedupe gate can skip
+      // sending a fresh notification when the most recent failure
+      // has already been notified about.
+      lastEditedById: projectLogEmailSchedules.lastEditedById,
+      lastFailureNotifiedStatus: projectLogEmailSchedules.lastFailureNotifiedStatus,
     })
     .from(projectLogEmailSchedules)
     .where(ne(projectLogEmailSchedules.cadence, "OFF"));
@@ -3847,7 +3853,78 @@ export async function processProjectLogEmailSchedules(opts: { now?: Date } = {})
       },
       { now },
     );
-    if (result.status === "SUCCESS") totalSent += 1;
+
+    if (result.status === "SUCCESS") {
+      totalSent += 1;
+      // Task #1637 — clear the failure-notification dedupe marker on
+      // success so the *next* failure starts a brand-new notification
+      // cycle instead of being silently swallowed because it happens
+      // to match the previously-notified status. The shared helper
+      // (Task #1638) doesn't know about this column since the manual
+      // send-now path also clears it on success via the same logic
+      // applied here for the cron path. lastFailureNotifiedAt is
+      // left as-is for forensic history.
+      if (sched.lastFailureNotifiedStatus !== null) {
+        await db
+          .update(projectLogEmailSchedules)
+          .set({
+            lastFailureNotifiedStatus: null,
+            updatedAt: new Date(),
+          })
+          .where(eq(projectLogEmailSchedules.id, sched.id));
+      }
+      continue;
+    }
+
+    if (result.status === "PROJECT_NOT_FOUND") {
+      // No project means no actionable deep-link to surface — skip
+      // the notification rather than emit one that goes nowhere.
+      continue;
+    }
+
+    if (result.status === "FAILURE" || result.status === "NO_RECIPIENTS") {
+      // Task #1637 — fan a one-shot in-app notification to the
+      // schedule's last editor + the project manager. The dedupe
+      // gate inside the helper compares `previousStatus` against the
+      // new status so a persistent failure isn't re-notified every
+      // cron tick, while a transition (e.g. NO_RECIPIENTS -> FAILURE)
+      // does send a fresh notification. We re-query the project here
+      // to pick up `code` (used as the deep-link relatedEntityId) and
+      // the project manager id (second recipient). If the project
+      // was deleted between the helper's lookup and now, skip the
+      // notification rather than emit one with no actionable URL.
+      try {
+        const [projInfo] = await db
+          .select({
+            code: projects.code,
+            name: projects.name,
+            projectManagerId: projects.projectManagerId,
+          })
+          .from(projects)
+          .where(eq(projects.id, sched.projectId))
+          .limit(1);
+        if (projInfo) {
+          await maybeNotifyProjectLogEmailFailure({
+            scheduleId: sched.id,
+            organizationId: sched.organizationId,
+            logType: sched.logType === "SUBMITTAL" ? "SUBMITTAL" : "RFI",
+            status: result.status,
+            previousStatus: sched.lastFailureNotifiedStatus,
+            lastEditedById: sched.lastEditedById,
+            projectManagerId: projInfo.projectManagerId,
+            projectCode: projInfo.code,
+            projectName: projInfo.name,
+            reason: result.error ?? "Unknown error",
+            now,
+          });
+        }
+      } catch (notifyErr) {
+        logError("Failed to fan out project log email failure notification", {
+          scheduleId: sched.id,
+          error: String(notifyErr),
+        });
+      }
+    }
   }
 
   if (totalSent > 0) {
@@ -4071,6 +4148,109 @@ export async function executeProjectLogEmailScheduleSend(
     }
     return { status: "FAILURE", error: errMsg, recipientCount: 0 };
   }
+}
+
+// ============================================================
+// Task #1637 — failure-notification fan-out helper
+// ============================================================
+//
+// Called from `processProjectLogEmailSchedules` whenever an attempt
+// transitions into FAILURE or NO_RECIPIENTS. Two behaviours combined
+// in one place so the FAILURE path, the NO_RECIPIENTS path, and the
+// catch path all stay consistent:
+//
+//   1. **Dedupe.** We compare the new attempt's status against
+//      `previousStatus` (= the schedule's `lastFailureNotifiedStatus`
+//      column we read into memory at the top of the sweep). If they
+//      match, the same persistent failure has already been notified
+//      about and we silently skip — this prevents the hourly cron
+//      from re-pinging the editor every tick while the cadence stays
+//      broken. A transition (e.g. NO_RECIPIENTS -> FAILURE) does
+//      send a fresh notification because it represents a new failure
+//      mode worth surfacing. The dedupe marker is cleared back to
+//      NULL on a successful send so the *next* failure starts a
+//      brand-new cycle.
+//
+//   2. **Fan-out.** We deliver to a deduped Set of {lastEditedById,
+//      projectManagerId} so the schedule's last editor and the
+//      project manager each get exactly one notification per
+//      transition (and the same person filling both roles only gets
+//      one). If neither id is set we still stamp the dedupe marker
+//      so subsequent ticks won't keep re-evaluating an unactionable
+//      row.
+//
+// The notification is typed `PROJECT_LOG_EMAIL_FAILED` and uses
+// relatedEntityType `PROJECT_LOG_EMAIL_SCHEDULE` with the project's
+// human-readable `code` as relatedEntityId. The client-side
+// destination map (notificationDestination.ts) and the email
+// composer's entityUrlMap (notificationDelivery.ts) both turn that
+// into a `/projects/<code>` deep link, which lands on the project
+// detail page where the "Scheduled log emails" card surfaces the
+// "Last send failed" badge that the editor needs to act on.
+async function maybeNotifyProjectLogEmailFailure(args: {
+  scheduleId: string;
+  organizationId: string;
+  logType: "RFI" | "SUBMITTAL";
+  status: "FAILURE" | "NO_RECIPIENTS";
+  previousStatus: string | null;
+  lastEditedById: string | null;
+  projectManagerId: string | null;
+  projectCode: string | null;
+  projectName: string;
+  reason: string;
+  now: Date;
+}): Promise<void> {
+  // Dedupe: same failure mode already notified about? Skip the
+  // fan-out but DON'T re-stamp — there's nothing new to record.
+  if (args.previousStatus === args.status) return;
+
+  const recipientIds = new Set<string>();
+  if (args.lastEditedById) recipientIds.add(args.lastEditedById);
+  if (args.projectManagerId) recipientIds.add(args.projectManagerId);
+
+  // Stamp the dedupe marker even when there's nobody to notify so a
+  // schedule with no editor + no PM doesn't get re-evaluated every
+  // tick. The "Last send failed" badge in the project settings panel
+  // is still the source of truth for unattended failures.
+  if (recipientIds.size > 0) {
+    const logLabel = args.logType === "SUBMITTAL" ? "submittal" : "RFI";
+    const reasonLabel = args.status === "NO_RECIPIENTS"
+      ? "no recipients resolved from the project's distribution lists"
+      : args.reason;
+    const title = args.status === "NO_RECIPIENTS"
+      ? `Scheduled ${logLabel} log email skipped: ${args.projectName}`
+      : `Scheduled ${logLabel} log email failed: ${args.projectName}`;
+    const message = `The scheduled ${logLabel} log email for ${args.projectName} did not send — ${reasonLabel}.`;
+
+    const notifs: InsertNotification[] = Array.from(recipientIds).map((userId) => ({
+      userId,
+      organizationId: args.organizationId,
+      type: "PROJECT_LOG_EMAIL_FAILED" as const,
+      title,
+      message,
+      relatedEntityType: "PROJECT_LOG_EMAIL_SCHEDULE",
+      // Fall back to the schedule id when the project has no `code`
+      // — keeps the notification record valid even if the deep-link
+      // can't fully resolve.
+      relatedEntityId: args.projectCode ?? args.scheduleId,
+    }));
+    await insertNotifications(notifs);
+  }
+
+  await db
+    .update(projectLogEmailSchedules)
+    .set({
+      lastFailureNotifiedAt: args.now,
+      lastFailureNotifiedStatus: args.status,
+      updatedAt: new Date(),
+    })
+    .where(eq(projectLogEmailSchedules.id, args.scheduleId));
+
+  logInfo("Project log email failure notification fanned out", {
+    scheduleId: args.scheduleId,
+    status: args.status,
+    recipients: recipientIds.size,
+  });
 }
 
 // ============================================================

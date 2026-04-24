@@ -107,6 +107,12 @@ router.get(
           lastAttemptStatus: null,
           lastAttemptError: null,
           lastAttemptRecipientCount: null,
+          // Task #1637 — surface the failure-notification dedupe
+          // fields as nulls on the default OFF row so the client
+          // doesn't have to defensively probe.
+          lastEditedById: null,
+          lastFailureNotifiedAt: null,
+          lastFailureNotifiedStatus: null,
           createdAt: null,
           updatedAt: null,
         };
@@ -188,10 +194,18 @@ router.put(
         ))
         .limit(1);
 
+      // Task #1637 — stamp the editing user on every upsert so the
+      // worker can fan a failure notification to whoever most
+      // recently touched the cadence (alongside the project manager).
+      // requireAuth has already populated req.user; fall back to null
+      // defensively so the route can never crash on a missing user
+      // even if the auth middleware shape changes.
+      const lastEditedById = req.user?.id ?? null;
+
       if (existing) {
         const [updated] = await db
           .update(projectLogEmailSchedules)
-          .set({ cadence, weekday, hour, timezone, updatedAt: new Date() })
+          .set({ cadence, weekday, hour, timezone, lastEditedById, updatedAt: new Date() })
           .where(eq(projectLogEmailSchedules.id, existing.id))
           .returning();
         return res.json({ schedule: updated });
@@ -207,6 +221,7 @@ router.put(
           weekday,
           hour,
           timezone,
+          lastEditedById,
         })
         .returning();
       return res.status(201).json({ schedule: inserted });

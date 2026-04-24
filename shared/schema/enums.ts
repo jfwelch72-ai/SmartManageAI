@@ -141,6 +141,14 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // can deep-link to the project payroll tab with a full per-classification
   // base/fringe/total breakdown.
   "WAGE_DECISION_RATES_CHANGED_FOR_PM",
+  // Task #1637 — fired when a per-project scheduled RFI / submittal log
+  // email transitions into FAILURE (transport bounce, etc.) or
+  // NO_RECIPIENTS (the resolved distribution list yielded zero
+  // addresses). Fan-out targets the schedule's last editor and the
+  // project manager so the team learns about a broken cadence in the
+  // notifications inbox without having to refresh the project settings
+  // panel. Dedupe lives on `project_log_email_schedules.last_failure_notified_status`.
+  "PROJECT_LOG_EMAIL_FAILED",
 ]);
 
 export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["PENDING", "APPROVED", "DENIED"]);

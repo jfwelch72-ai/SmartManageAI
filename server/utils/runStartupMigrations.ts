@@ -67,6 +67,8 @@ import { ensurePlanPinsTable } from "./ensurePlanPinsTable";
 import { ensurePlanDocumentMarkupsTable } from "./ensurePlanDocumentMarkupsTable";
 import { ensureProjectEmailDistributionLists } from "./ensureProjectEmailDistributionLists";
 import { ensureProjectLogEmailSchedules } from "./ensureProjectLogEmailSchedules";
+import { ensureProjectLogEmailAttemptTracking } from "./ensureProjectLogEmailAttemptTracking";
+import { ensureProjectLogEmailFailureNotifications } from "./ensureProjectLogEmailFailureNotifications";
 import { ensureGanttPdfRenderSamplesTable } from "./ensureGanttPdfRenderSamplesTable";
 import { ensurePortfolioPdfRenderSamplesTable } from "./ensurePortfolioPdfRenderSamplesTable";
 import { ensureCrmCsvImportPayloadColumn } from "./ensureCrmCsvImportPayloadColumn";
@@ -233,6 +235,16 @@ const migrations: MigrationStep[] = [
   { name: "plan_document_markups_table", category: "CREATE_TABLE", fn: ensurePlanDocumentMarkupsTable },
   { name: "project_email_distribution_lists", category: "CREATE_TABLE", fn: ensureProjectEmailDistributionLists },
   { name: "project_log_email_schedules", category: "CREATE_TABLE", fn: ensureProjectLogEmailSchedules },
+  // Task #1622 — per-attempt outcome tracking columns on
+  // project_log_email_schedules so the project settings panel can
+  // surface "Last send failed: <reason>" without forcing admins to
+  // dig through server logs.
+  { name: "project_log_email_attempt_tracking", category: "ADD_COLUMN", fn: ensureProjectLogEmailAttemptTracking },
+  // Task #1637 — last_edited_by_id + failure-notification dedupe
+  // columns so the cron can fan a one-shot in-app notification to the
+  // schedule's last editor + project manager when a send transitions
+  // into FAILURE / NO_RECIPIENTS, without re-notifying every tick.
+  { name: "project_log_email_failure_notifications", category: "ADD_COLUMN", fn: ensureProjectLogEmailFailureNotifications },
   { name: "geocode_status_columns", category: "ADD_COLUMN", fn: ensureGeocodeStatusColumns },
   { name: "gantt_pdf_render_samples_table", category: "CREATE_TABLE", fn: ensureGanttPdfRenderSamplesTable },
   { name: "portfolio_pdf_render_samples_table", category: "CREATE_TABLE", fn: ensurePortfolioPdfRenderSamplesTable },

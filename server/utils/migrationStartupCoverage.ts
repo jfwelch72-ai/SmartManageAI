@@ -276,4 +276,21 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   // candidate row instead of bcrypt-scanning every active token.
   // Mirrored at boot by ensurePortalTokenLookupHashColumn.
   "0058_portal_token_lookup_hash.sql": { helper: "ensurePortalTokenLookupHashColumn" },
+  // Task #1622 — per-attempt outcome tracking columns
+  // (last_attempt_at / last_attempt_status / last_attempt_error /
+  // last_attempt_recipient_count) on project_log_email_schedules so
+  // the project settings panel can render a "Last send failed" badge
+  // without admins having to grep server logs. Mirrored at boot by
+  // ensureProjectLogEmailAttemptTracking.
+  "0058_project_log_email_attempt_tracking.sql": { helper: "ensureProjectLogEmailAttemptTracking" },
+  // Task #1637 — last_edited_by_id + failure-notification dedupe
+  // columns on project_log_email_schedules. The cron fans a one-shot
+  // in-app notification (PROJECT_LOG_EMAIL_FAILED) to the schedule's
+  // last editor + project manager on transition into FAILURE /
+  // NO_RECIPIENTS, dedupe-keyed on last_failure_notified_status.
+  // Mirrored at boot by ensureProjectLogEmailFailureNotifications.
+  "0059_project_log_email_failure_notifications.sql": {
+    helper: "ensureProjectLogEmailFailureNotifications",
+    note: "Companion ALTER TYPE ADD VALUE for PROJECT_LOG_EMAIL_FAILED is handled by ensureNotificationEnumValues",
+  },
 };
