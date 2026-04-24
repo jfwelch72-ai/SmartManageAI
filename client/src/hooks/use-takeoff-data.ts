@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { useTakeoffHistory } from "@/hooks/use-takeoff-history";
+import { useTakeoffHistory, type MeasurementSnapshot } from "@/hooks/use-takeoff-history";
 import type { TakeoffSheet, TakeoffMeasurement, TakeoffMeasurementGroup, QuantityCategory, TakeoffMarkup, TakeoffSheetLink, TakeoffCondition } from "@shared/schema";
 import type { PlanDocument, AddendumOverlayData, MeasurementType } from "@/components/takeoff/types";
 import { buildMarkupFailureSummary } from "@/components/markups/markup-failure-helpers";
@@ -329,7 +329,16 @@ export function useTakeoffData({
     // out N per-id PATCHes that pass `skipHistory: true` so the per-call
     // path never adds its own entry. The flag is stripped before the
     // PATCH body is sent so the API surface is unchanged.
-    mutationFn: async ({ id, skipHistory: _skipHistory, ...data }: { id: string; costCodeId?: string; unitCost?: number; label?: string; categoryId?: string | null; groupId?: string | null; lineStyle?: string; lineWidth?: number; metadata?: string; points?: string; computedLengthFt?: number; skipHistory?: boolean }) => {
+    //
+    // Task #1843 — `previous` mirrors `updateMarkupMutation`'s shape
+    // (#1758): a single rename / category / cost edit through the
+    // properties panel forwards a before-state snapshot so onSuccess
+    // can push exactly one MEASUREMENT_UPDATE history entry. Without
+    // this, single-measurement edits produced zero history entries
+    // (only batch / CREATE / DELETE were tracked) and the user could
+    // not Undo a rename. Stripped from the PATCH body alongside
+    // `skipHistory` so the API surface is unchanged.
+    mutationFn: async ({ id, skipHistory: _skipHistory, previous: _previous, ...data }: { id: string; costCodeId?: string; unitCost?: number; label?: string; categoryId?: string | null; groupId?: string | null; lineStyle?: string; lineWidth?: number; metadata?: string; points?: string; computedLengthFt?: number; skipHistory?: boolean; previous?: { label?: string | null; costCodeId?: string | null; unitCost?: number | string | null; categoryId?: string | null; groupId?: string | null; lineStyle?: string | null; lineWidth?: number | null; metadata?: string | null; points?: string } }) => {
       if (selectedVersionId && (!selectedVersionData || selectedVersionData.status === "LOCKED")) {
         throw new Error("Cannot edit measurements while viewing a locked version");
       }
@@ -340,6 +349,49 @@ export function useTakeoffData({
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
       if (selectedSheet) {
         onCollabBroadcast?.("MEASUREMENT_UPDATED", { sheetId: selectedSheet, measurementId: variables.id });
+      }
+      // Task #1843 — single-edit history push. Mirrors the per-field
+      // diff in `updateMarkupMutation.onSuccess` (#1758): only fields
+      // present on BOTH `variables` (the new value) and `previous` (the
+      // pre-edit value) are recorded so undo/redo replay only the
+      // fields the user actually changed. Bulk callers pass
+      // `skipHistory: true` and pre-push their own MEASUREMENT_UPDATE_BATCH
+      // entry so we must skip here in that case.
+      if (selectedSheet && variables.previous && !variables.skipHistory) {
+        const previous = variables.previous;
+        const before: MeasurementSnapshot = { id: variables.id };
+        const after: MeasurementSnapshot = { id: variables.id };
+        let hasChange = false;
+        if (variables.label !== undefined && previous.label !== undefined) {
+          before.label = previous.label; after.label = variables.label; hasChange = true;
+        }
+        if (variables.costCodeId !== undefined && previous.costCodeId !== undefined) {
+          before.costCodeId = previous.costCodeId; after.costCodeId = variables.costCodeId; hasChange = true;
+        }
+        if (variables.unitCost !== undefined && previous.unitCost !== undefined) {
+          before.unitCost = previous.unitCost; after.unitCost = variables.unitCost; hasChange = true;
+        }
+        if (variables.categoryId !== undefined && previous.categoryId !== undefined) {
+          before.categoryId = previous.categoryId; after.categoryId = variables.categoryId; hasChange = true;
+        }
+        if (variables.groupId !== undefined && previous.groupId !== undefined) {
+          before.groupId = previous.groupId; after.groupId = variables.groupId; hasChange = true;
+        }
+        if (variables.lineStyle !== undefined && previous.lineStyle !== undefined) {
+          before.lineStyle = previous.lineStyle; after.lineStyle = variables.lineStyle; hasChange = true;
+        }
+        if (variables.lineWidth !== undefined && previous.lineWidth !== undefined) {
+          before.lineWidth = previous.lineWidth; after.lineWidth = variables.lineWidth; hasChange = true;
+        }
+        if (variables.metadata !== undefined && previous.metadata !== undefined) {
+          before.metadata = previous.metadata; after.metadata = variables.metadata; hasChange = true;
+        }
+        if (variables.points !== undefined && previous.points !== undefined) {
+          before.points = previous.points; after.points = variables.points; hasChange = true;
+        }
+        if (hasChange) {
+          takeoffHistory.pushMeasurementUpdateAction(before, after, selectedSheet);
+        }
       }
     },
     onError: () => {

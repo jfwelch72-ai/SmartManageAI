@@ -65,6 +65,7 @@ function makeHistoryMock(): HistoryMock {
     pushMarkupAction: vi.fn(),
     pushMarkupUpdateAction: vi.fn(),
     pushMarkupUpdateBatchAction: vi.fn(),
+    pushMeasurementUpdateAction: vi.fn(),
     pushMeasurementUpdateBatchAction: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),
@@ -183,12 +184,13 @@ describe("updateMeasurementMutation `skipHistory` flag (Task #1770)", () => {
     );
   });
 
-  // The single-edit measurement path doesn't push UPDATE history today
-  // (no caller forwards a `previous` snapshot). The `skipHistory` flag
-  // must NOT change that — its only job is to suppress a future per-
-  // call history push if one is added later. Asserting zero pushes
-  // here pins down the "no regression" guarantee from the task spec.
-  it("does NOT push any history entry on a successful per-id PATCH (no regression)", async () => {
+  // When no `previous` payload is forwarded (legacy callers, e.g. a
+  // drag-and-drop group reassign that doesn't snapshot), the per-id
+  // PATCH must NOT push a MEASUREMENT_UPDATE entry — otherwise undo
+  // would PATCH `undefined` back over the field. Pins the "no
+  // regression" guarantee from #1770: callers opt IN to undo by
+  // passing `previous`.
+  it("does NOT push any history entry on a successful per-id PATCH without `previous`", async () => {
     const history = makeHistoryMock();
     const { result } = renderTakeoffData(history);
 
@@ -201,6 +203,165 @@ describe("updateMeasurementMutation `skipHistory` flag (Task #1770)", () => {
     });
 
     expect(history.pushAction).not.toHaveBeenCalled();
+    expect(history.pushMeasurementUpdateAction).not.toHaveBeenCalled();
     expect(history.pushMeasurementUpdateBatchAction).not.toHaveBeenCalled();
+  });
+});
+
+// Task #1843 — single-edit history push. Mirrors the markup-side
+// contract from #1758 (see `use-takeoff-data.update-markup-mutation.test.tsx`):
+// when the properties panel forwards a `previous` snapshot, onSuccess
+// must push exactly one MEASUREMENT_UPDATE entry so a single Undo press
+// reverses one rename. Without these tests, a future refactor that
+// drops the `previous` field at the call site or the diff branch in
+// onSuccess would silently break sidebar Undo / Cmd+Z for renames —
+// there's no e2e signal until a user reports it.
+describe("updateMeasurementMutation onSuccess history routing (Task #1843)", () => {
+  it("pushes a MEASUREMENT_UPDATE history entry when `previous` is provided (label rename)", async () => {
+    const history = makeHistoryMock();
+    const { result } = renderTakeoffData(history);
+
+    await act(async () => {
+      await result.current.updateMeasurementMutation.mutateAsync({
+        id: "m1",
+        label: "Renamed",
+        previous: { label: "Old name" },
+      });
+    });
+
+    expect(mockApiRequest).toHaveBeenCalledTimes(1);
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "PATCH",
+      "/api/takeoff/measurements/m1",
+      { label: "Renamed" },
+    );
+    expect(history.pushMeasurementUpdateAction).toHaveBeenCalledTimes(1);
+    expect(history.pushMeasurementUpdateAction).toHaveBeenCalledWith(
+      { id: "m1", label: "Old name" },
+      { id: "m1", label: "Renamed" },
+      "sheet-1",
+    );
+  });
+
+  it("captures multiple changed fields in a single history entry", async () => {
+    const history = makeHistoryMock();
+    const { result } = renderTakeoffData(history);
+
+    await act(async () => {
+      await result.current.updateMeasurementMutation.mutateAsync({
+        id: "m1",
+        label: "New",
+        costCodeId: "03-100",
+        unitCost: 25,
+        categoryId: "cat-new",
+        previous: { label: "Old", costCodeId: null, unitCost: 10, categoryId: "cat-old" },
+      });
+    });
+
+    expect(history.pushMeasurementUpdateAction).toHaveBeenCalledTimes(1);
+    expect(history.pushMeasurementUpdateAction).toHaveBeenCalledWith(
+      { id: "m1", label: "Old", costCodeId: null, unitCost: 10, categoryId: "cat-old" },
+      { id: "m1", label: "New", costCodeId: "03-100", unitCost: 25, categoryId: "cat-new" },
+      "sheet-1",
+    );
+  });
+
+  // The `previous` field is a hint to the history layer, not a column
+  // on the API. It must be stripped from the PATCH body alongside
+  // `skipHistory` so a future server-side schema with `additionalProperties: false`
+  // doesn't reject every rename.
+  it("strips `previous` from the PATCH body", async () => {
+    const history = makeHistoryMock();
+    const { result } = renderTakeoffData(history);
+
+    await act(async () => {
+      await result.current.updateMeasurementMutation.mutateAsync({
+        id: "m1",
+        label: "Renamed",
+        previous: { label: "Old name" },
+      });
+    });
+
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "PATCH",
+      "/api/takeoff/measurements/m1",
+      { label: "Renamed" },
+    );
+  });
+
+  it("does NOT push history when `previous` is omitted (regression guard for legacy callers)", async () => {
+    const history = makeHistoryMock();
+    const { result } = renderTakeoffData(history);
+
+    await act(async () => {
+      await result.current.updateMeasurementMutation.mutateAsync({
+        id: "m1",
+        label: "Renamed",
+      });
+    });
+
+    expect(history.pushMeasurementUpdateAction).not.toHaveBeenCalled();
+  });
+
+  // Bulk callers (e.g. `handleBulkCategoryAssign` in TakeoffSidebar)
+  // pre-push a single MEASUREMENT_UPDATE_BATCH entry up front and then
+  // fan out N per-id PATCHes that pass `skipHistory: true`. Even if
+  // those calls also forward `previous` (so a future contract change
+  // doesn't drop the snapshot), the per-call onSuccess must NOT push
+  // — otherwise the user is back to N+1 Undo presses to reverse one
+  // gesture.
+  it("does NOT push history when `skipHistory: true` is set, even with `previous`", async () => {
+    const history = makeHistoryMock();
+    const { result } = renderTakeoffData(history);
+
+    await act(async () => {
+      await result.current.updateMeasurementMutation.mutateAsync({
+        id: "m1",
+        categoryId: "cat-new",
+        previous: { categoryId: "cat-old" },
+        skipHistory: true,
+      });
+    });
+
+    expect(history.pushMeasurementUpdateAction).not.toHaveBeenCalled();
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "PATCH",
+      "/api/takeoff/measurements/m1",
+      { categoryId: "cat-new" },
+    );
+  });
+
+  it("does NOT push history when there is no overlapping changed field", async () => {
+    // `updates` carries a categoryId change but `previous` only
+    // carries a label — there's no before/after pair for the same
+    // field, so onSuccess must skip the history push (otherwise undo
+    // would PATCH a stale snapshot).
+    const history = makeHistoryMock();
+    const { result } = renderTakeoffData(history);
+
+    await act(async () => {
+      await result.current.updateMeasurementMutation.mutateAsync({
+        id: "m1",
+        categoryId: "cat-new",
+        previous: { label: "Old" },
+      });
+    });
+
+    expect(history.pushMeasurementUpdateAction).not.toHaveBeenCalled();
+  });
+
+  it("does NOT push history when there is no selectedSheet", async () => {
+    const history = makeHistoryMock();
+    const { result } = renderTakeoffData(history, null);
+
+    await act(async () => {
+      await result.current.updateMeasurementMutation.mutateAsync({
+        id: "m1",
+        label: "Renamed",
+        previous: { label: "Old name" },
+      });
+    });
+
+    expect(history.pushMeasurementUpdateAction).not.toHaveBeenCalled();
   });
 });

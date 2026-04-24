@@ -92,6 +92,8 @@ function makeMockTakeoffHistory(): TakeoffHistory {
     pushMarkupAction: vi.fn(),
     pushMarkupUpdateAction: vi.fn(),
     pushMarkupUpdateBatchAction: vi.fn(),
+    pushMeasurementUpdateAction: vi.fn(),
+    pushMeasurementUpdateBatchAction: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),
     canUndo: false,

@@ -2,7 +2,7 @@ import { useRef, useCallback, useState } from "react";
 import type { TakeoffMeasurement, TakeoffMarkup } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
-type ActionType = "CREATE" | "DELETE" | "UPDATE" | "MEASUREMENT_UPDATE_BATCH" | "MARKUP_CREATE" | "MARKUP_DELETE" | "MARKUP_UPDATE" | "MARKUP_UPDATE_BATCH";
+type ActionType = "CREATE" | "DELETE" | "UPDATE" | "MEASUREMENT_UPDATE" | "MEASUREMENT_UPDATE_BATCH" | "MARKUP_CREATE" | "MARKUP_DELETE" | "MARKUP_UPDATE" | "MARKUP_UPDATE_BATCH";
 
 export interface MarkupSnapshot {
   id: string;
@@ -30,6 +30,8 @@ interface HistoryEntry {
   type: ActionType;
   measurement?: TakeoffMeasurement;
   previousMeasurement?: TakeoffMeasurement;
+  measurementBefore?: MeasurementSnapshot;
+  measurementAfter?: MeasurementSnapshot;
   measurementBatchBefore?: MeasurementSnapshot[];
   measurementBatchAfter?: MeasurementSnapshot[];
   markup?: TakeoffMarkup & { points: { x: number; y: number }[] };
@@ -114,6 +116,20 @@ export function useTakeoffHistory(selectedSheet: string | null) {
   const pushMarkupUpdateBatchAction = useCallback((before: MarkupSnapshot[], after: MarkupSnapshot[], sheetId: string) => {
     if (before.length === 0 || after.length === 0) return;
     undoStack.current.push({ type: "MARKUP_UPDATE_BATCH", markupBatchBefore: before, markupBatchAfter: after, sheetId });
+    redoStack.current = [];
+    updateFlags();
+  }, [updateFlags]);
+
+  // Task #1843 — mirror MARKUP_UPDATE (#1758) for measurements: a single
+  // label/category/cost rename via the properties panel pushes one
+  // MEASUREMENT_UPDATE entry so a single Undo press reverses it. Without
+  // this the per-id PATCH for a single edit produced zero history entries
+  // (only batch and CREATE/DELETE were tracked) and rename gestures were
+  // un-undoable. Empty / no-op snapshots are filtered out by the caller
+  // (use-takeoff-data's `onSuccess` only pushes when `previous` carries a
+  // before value for at least one changed field).
+  const pushMeasurementUpdateAction = useCallback((before: MeasurementSnapshot, after: MeasurementSnapshot, sheetId: string) => {
+    undoStack.current.push({ type: "MEASUREMENT_UPDATE", measurementBefore: before, measurementAfter: after, sheetId });
     redoStack.current = [];
     updateFlags();
   }, [updateFlags]);
@@ -244,6 +260,8 @@ export function useTakeoffHistory(selectedSheet: string | null) {
         await applyMarkupSnapshot(entry.markupBefore);
       } else if (entry.type === "MARKUP_UPDATE_BATCH" && entry.markupBatchBefore) {
         await applyMarkupBatchSnapshots(entry.markupBatchBefore);
+      } else if (entry.type === "MEASUREMENT_UPDATE" && entry.measurementBefore) {
+        await applyMeasurementSnapshot(entry.measurementBefore);
       } else if (entry.type === "MEASUREMENT_UPDATE_BATCH" && entry.measurementBatchBefore) {
         await applyMeasurementBatchSnapshots(entry.measurementBatchBefore);
       }
@@ -295,6 +313,8 @@ export function useTakeoffHistory(selectedSheet: string | null) {
         await applyMarkupSnapshot(entry.markupAfter);
       } else if (entry.type === "MARKUP_UPDATE_BATCH" && entry.markupBatchAfter) {
         await applyMarkupBatchSnapshots(entry.markupBatchAfter);
+      } else if (entry.type === "MEASUREMENT_UPDATE" && entry.measurementAfter) {
+        await applyMeasurementSnapshot(entry.measurementAfter);
       } else if (entry.type === "MEASUREMENT_UPDATE_BATCH" && entry.measurementBatchAfter) {
         await applyMeasurementBatchSnapshots(entry.measurementBatchAfter);
       }
@@ -314,5 +334,5 @@ export function useTakeoffHistory(selectedSheet: string | null) {
     updateFlags();
   }, [updateFlags]);
 
-  return { pushAction, pushMarkupAction, pushMarkupUpdateAction, pushMarkupUpdateBatchAction, pushMeasurementUpdateBatchAction, undo, redo, canUndo, canRedo, isPending, clear };
+  return { pushAction, pushMarkupAction, pushMarkupUpdateAction, pushMarkupUpdateBatchAction, pushMeasurementUpdateAction, pushMeasurementUpdateBatchAction, undo, redo, canUndo, canRedo, isPending, clear };
 }

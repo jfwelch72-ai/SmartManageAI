@@ -485,7 +485,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
   };
 
   const handleInlineEditSave = (mId: string) => {
-    const updates: { id: string; label?: string; count?: number; metadata?: string } = { id: mId };
+    const updates: { id: string; label?: string; count?: number; metadata?: string; previous?: { label?: string | null; metadata?: string | null } } = { id: mId };
     if (inlineEditLabel.trim()) updates.label = inlineEditLabel.trim();
     if (inlineEditQty) updates.count = parseInt(inlineEditQty) || undefined;
 
@@ -506,6 +506,17 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     }
 
     updates.metadata = JSON.stringify(metaUpdates);
+    // Task #1843 — capture before-state so the inline label rename is
+    // undoable in a single Cmd+Z press. `count` is intentionally not
+    // restored here because the mutation type doesn't expose it on the
+    // `previous` payload; the rename + metadata pair covers the common
+    // case (label and unit/cost edits).
+    if (m) {
+      updates.previous = {
+        label: m.label ?? null,
+        metadata: typeof m.metadata === "string" ? m.metadata : (m.metadata == null ? null : JSON.stringify(m.metadata)),
+      };
+    }
     updateMeasurementMutation.mutate(updates);
     setInlineEditId(null);
   };
@@ -2157,7 +2168,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                     <Label className="text-xs">Line Style</Label>
                     <Select
                       value={selM.lineStyle || "solid"}
-                      onValueChange={(val) => updateMeasurementMutation.mutate({ id: selM.id, lineStyle: val })}
+                      onValueChange={(val) => updateMeasurementMutation.mutate({ id: selM.id, lineStyle: val, previous: { lineStyle: selM.lineStyle ?? null } })}
                       data-testid="select-line-style"
                     >
                       <SelectTrigger className="h-8 text-sm" data-testid="select-trigger-line-style">
@@ -2201,7 +2212,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                     <Label className="text-xs">Line Width</Label>
                     <Select
                       value={String(selM.lineWidth || 3)}
-                      onValueChange={(val) => updateMeasurementMutation.mutate({ id: selM.id, lineWidth: parseInt(val) })}
+                      onValueChange={(val) => updateMeasurementMutation.mutate({ id: selM.id, lineWidth: parseInt(val), previous: { lineWidth: selM.lineWidth ?? null } })}
                       data-testid="select-line-width"
                     >
                       <SelectTrigger className="h-8 text-sm" data-testid="select-trigger-line-width">
@@ -2224,7 +2235,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                       <Label className="text-xs">Group</Label>
                       <Select
                         value={selM.groupId || "__none__"}
-                        onValueChange={(val) => updateMeasurementMutation.mutate({ id: selM.id, groupId: val === "__none__" ? null : val })}
+                        onValueChange={(val) => updateMeasurementMutation.mutate({ id: selM.id, groupId: val === "__none__" ? null : val, previous: { groupId: selM.groupId ?? null } })}
                         data-testid="select-measurement-group"
                       >
                         <SelectTrigger className="h-8 text-sm" data-testid="select-trigger-measurement-group">
@@ -2251,10 +2262,10 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                     workspaceRef={workspaceRef}
                   />
                   <Separator />
-                  <CostCodeField measurementId={selM.id} currentValue={(selM as any).costCodeId || ""} onCommit={(val) => { updateMeasurementMutation.mutate({ id: selM.id, costCodeId: val || undefined }); }} />
+                  <CostCodeField measurementId={selM.id} currentValue={(selM as any).costCodeId || ""} onCommit={(val) => { updateMeasurementMutation.mutate({ id: selM.id, costCodeId: val || undefined, previous: { costCodeId: (selM as any).costCodeId ?? null } }); }} />
                   <div className="space-y-2">
                     <Label className="text-xs">Unit Cost ($)</Label>
-                    <Input type="number" placeholder="0.00" defaultValue={(selM as any).unitCost || ""} onBlur={(e) => { const val = parseFloat(e.target.value) || undefined; if (val !== (selM as any).unitCost) { updateMeasurementMutation.mutate({ id: selM.id, unitCost: val }); } }} className="h-8 text-sm" data-testid="input-unit-cost" />
+                    <Input type="number" placeholder="0.00" defaultValue={(selM as any).unitCost || ""} onBlur={(e) => { const val = parseFloat(e.target.value) || undefined; if (val !== (selM as any).unitCost) { updateMeasurementMutation.mutate({ id: selM.id, unitCost: val, previous: { unitCost: (selM as any).unitCost ?? null } }); } }} className="h-8 text-sm" data-testid="input-unit-cost" />
                   </div>
                   {(selM as any).unitCost && (selM.computedLengthFt || selM.computedAreaFt2 || (selM as any).computedSurfaceAreaFt2) && (
                     <div className="p-2 bg-green-50 dark:bg-green-950/30 rounded text-sm">

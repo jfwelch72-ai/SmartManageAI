@@ -37,7 +37,8 @@ import { type Tool, validateHexColor, hexToRgba, TOOL_CONFIG } from "./takeoff/t
 import { detectScaleFromText, type DetectedScale } from "@/lib/scaleDetection";
 import { useTakeoffData } from "@/hooks/use-takeoff-data";
 import { useTakeoffInteractions } from "@/hooks/use-takeoff-interactions";
-import type { TakeoffCondition } from "@shared/schema";
+import type { TakeoffCondition, TakeoffMeasurement } from "@shared/schema";
+import type { MeasurementSnapshot } from "@/hooks/use-takeoff-history";
 import { computeAssemblyResults, type FormulaContext } from "@shared/utils/assemblyFormula";
 import { commitMarkupBodyDrag, commitMarkupResize } from "./markups/markup-drag-commit";
 import { TakeoffToolbar } from "./takeoff/TakeoffToolbar";
@@ -4884,7 +4885,26 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 const m = measurements.find((m: any) => m.id === id);
                 if (m) deleteMeasurementMutation.mutate(m);
               }}
-              onUpdate={(id, data) => updateMeasurementMutation.mutate({ id, ...data })}
+              onUpdate={(id, data) => {
+                // Task #1843 — forward a `previous` snapshot so the
+                // inline rename in MeasurementTable produces one
+                // MEASUREMENT_UPDATE history entry (one Undo press).
+                const prev: TakeoffMeasurement | undefined = measurements.find(
+                  (mm: TakeoffMeasurement) => mm.id === id,
+                );
+                const previous: Omit<MeasurementSnapshot, "id"> = {};
+                if (prev) {
+                  if (data.label !== undefined) previous.label = prev.label ?? null;
+                  if (data.costCodeId !== undefined) previous.costCodeId = prev.costCodeId ?? null;
+                  if (data.unitCost !== undefined) previous.unitCost = prev.unitCost ?? null;
+                  if (data.categoryId !== undefined) previous.categoryId = prev.categoryId ?? null;
+                  if (data.groupId !== undefined) previous.groupId = prev.groupId ?? null;
+                  if (data.lineStyle !== undefined) previous.lineStyle = prev.lineStyle ?? null;
+                  if (data.lineWidth !== undefined) previous.lineWidth = prev.lineWidth ?? null;
+                  if (data.metadata !== undefined) previous.metadata = prev.metadata ?? null;
+                }
+                updateMeasurementMutation.mutate({ id, ...data, previous });
+              }}
               scalePxPerFoot={currentSheet?.scalePxPerFoot}
             />
           </div>
