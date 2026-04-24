@@ -21,13 +21,14 @@
  */
 import { Router } from "express";
 import { z } from "zod";
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "./db";
 import {
   PROJECT_LOG_EMAIL_CADENCES,
   PROJECT_LOG_EMAIL_LOG_TYPES,
   projectEmailDistributionLists,
   projectLogEmailSchedules,
+  projectLogEmailScheduleAttempts,
   projects,
   users,
 } from "@shared/schema";
@@ -370,17 +371,23 @@ router.post(
         });
       }
 
-      const result = await executeProjectLogEmailScheduleSend({
-        scheduleId: existing.id,
-        organizationId,
-        projectId: project.id,
-        logType,
-        // Task #1651 — pass the pre-attempt streak through so a
-        // manual send-now can reset the counter on success or fan
-        // out the threshold backstop notification on the crossing
-        // failure, exactly the same way the cron does.
-        previousConsecutiveFailureCount: existing.consecutiveFailureCount ?? 0,
-      });
+      const result = await executeProjectLogEmailScheduleSend(
+        {
+          scheduleId: existing.id,
+          organizationId,
+          projectId: project.id,
+          logType,
+          // Task #1651 — pass the pre-attempt streak through so a
+          // manual send-now can reset the counter on success or fan
+          // out the threshold backstop notification on the crossing
+          // failure, exactly the same way the cron does.
+          previousConsecutiveFailureCount: existing.consecutiveFailureCount ?? 0,
+        },
+        // Task #1652 — tag the per-attempt history row as a manual
+        // retry triggered by this user so the audit trail shows
+        // who clicked "Send now".
+        { triggeredBy: { kind: "MANUAL", userId: req.user?.id ?? null } },
+      );
 
       // Re-read the schedule row so the client gets the same shape
       // the GET endpoint returns (lastAttemptAt/Status/Error/etc.
@@ -514,6 +521,107 @@ router.post(
       });
 
       return res.json({ ok: true, recipientCount: recipients.length });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// Task #1652 — per-schedule send history. The cron + manual "Send now"
+// button each write an immutable row into
+// `project_log_email_schedule_attempts` for every attempt; this
+// endpoint surfaces the most recent N attempts so admins can audit
+// "this failed 5 times this week, then succeeded once after I edited
+// the list" without grepping server logs. Capped at 50 to keep the
+// payload bounded; the UI defaults to showing the last 10.
+const ATTEMPTS_DEFAULT_LIMIT = 10;
+const ATTEMPTS_MAX_LIMIT = 50;
+router.get(
+  "/projects/:projectId/log-email-schedules/:logType/attempts",
+  requireAuth,
+  // Same role gate as the GET schedules endpoint above — anyone who
+  // can see the cadence editor can audit its history.
+  requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
+      const project = await loadProject(req.params.projectId, organizationId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const logTypeParse = logTypeParam.safeParse(req.params.logType);
+      if (!logTypeParse.success) return res.status(400).json({ error: "Invalid logType" });
+      const logType = logTypeParse.data;
+
+      const limitRaw = Number.parseInt(String(req.query.limit ?? ""), 10);
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0
+        ? Math.min(limitRaw, ATTEMPTS_MAX_LIMIT)
+        : ATTEMPTS_DEFAULT_LIMIT;
+
+      // Resolve the schedule row id first so the org-scoped where
+      // clause on the attempts query is safe even if the table is
+      // queried by id-only elsewhere later.
+      const [schedule] = await db
+        .select({ id: projectLogEmailSchedules.id })
+        .from(projectLogEmailSchedules)
+        .where(and(
+          eq(projectLogEmailSchedules.projectId, project.id),
+          eq(projectLogEmailSchedules.logType, logType),
+        ))
+        .limit(1);
+
+      if (!schedule) {
+        // No row means no history yet — return an empty list
+        // (consistent with the GET /log-email-schedules endpoint
+        // that materialises a default-OFF row for missing schedules).
+        return res.json({ attempts: [] });
+      }
+
+      // Left-join users so the audit trail can show the actor's
+      // display name on MANUAL rows. CRON rows resolve to a null
+      // user and the UI renders "Scheduled run" for them.
+      const rows = await db
+        .select({
+          id: projectLogEmailScheduleAttempts.id,
+          status: projectLogEmailScheduleAttempts.status,
+          error: projectLogEmailScheduleAttempts.error,
+          recipientCount: projectLogEmailScheduleAttempts.recipientCount,
+          triggerType: projectLogEmailScheduleAttempts.triggerType,
+          triggeredById: projectLogEmailScheduleAttempts.triggeredById,
+          createdAt: projectLogEmailScheduleAttempts.createdAt,
+          triggeredByFirstName: users.firstName,
+          triggeredByLastName: users.lastName,
+          triggeredByEmail: users.email,
+        })
+        .from(projectLogEmailScheduleAttempts)
+        .leftJoin(users, eq(users.id, projectLogEmailScheduleAttempts.triggeredById))
+        .where(and(
+          eq(projectLogEmailScheduleAttempts.scheduleId, schedule.id),
+          // Defense-in-depth tenant scope so a schedule id leak from
+          // another org couldn't pull cross-tenant history.
+          eq(projectLogEmailScheduleAttempts.organizationId, organizationId),
+        ))
+        .orderBy(desc(projectLogEmailScheduleAttempts.createdAt))
+        .limit(limit);
+
+      const attempts = rows.map((r) => {
+        const name = [r.triggeredByFirstName, r.triggeredByLastName].filter(Boolean).join(" ").trim();
+        const triggeredByLabel = r.triggerType === "CRON"
+          ? "Scheduled run"
+          : (name || r.triggeredByEmail || "Unknown user");
+        return {
+          id: r.id,
+          status: r.status,
+          error: r.error,
+          recipientCount: r.recipientCount,
+          triggerType: r.triggerType,
+          triggeredById: r.triggeredById,
+          triggeredByLabel,
+          createdAt: r.createdAt,
+        };
+      });
+
+      res.json({ attempts });
     } catch (err) {
       next(err);
     }

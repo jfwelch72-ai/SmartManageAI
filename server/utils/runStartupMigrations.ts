@@ -70,6 +70,7 @@ import { ensureProjectLogEmailSchedules } from "./ensureProjectLogEmailSchedules
 import { ensureProjectLogEmailAttemptTracking } from "./ensureProjectLogEmailAttemptTracking";
 import { ensureProjectLogEmailFailureNotifications } from "./ensureProjectLogEmailFailureNotifications";
 import { ensureProjectLogEmailConsecutiveFailures } from "./ensureProjectLogEmailConsecutiveFailures";
+import { ensureProjectLogEmailScheduleAttemptsTable } from "./ensureProjectLogEmailScheduleAttemptsTable";
 import { ensureGanttPdfRenderSamplesTable } from "./ensureGanttPdfRenderSamplesTable";
 import { ensurePortfolioPdfRenderSamplesTable } from "./ensurePortfolioPdfRenderSamplesTable";
 import { ensureCrmCsvImportPayloadColumn } from "./ensureCrmCsvImportPayloadColumn";
@@ -253,6 +254,11 @@ const migrations: MigrationStep[] = [
   // 3) times in a row, so a quietly-broken distribution list can't go
   // un-noticed for weeks just because nobody opens project settings.
   { name: "project_log_email_consecutive_failures", category: "ADD_COLUMN", fn: ensureProjectLogEmailConsecutiveFailures },
+  // Task #1652 — append-only per-schedule send history so admins can
+  // audit every cron tick + manual send (status, error, recipient
+  // count, triggered-by) instead of only seeing the most recent
+  // attempt on the schedule row.
+  { name: "project_log_email_schedule_attempts_table", category: "CREATE_TABLE", fn: ensureProjectLogEmailScheduleAttemptsTable },
   { name: "geocode_status_columns", category: "ADD_COLUMN", fn: ensureGeocodeStatusColumns },
   { name: "gantt_pdf_render_samples_table", category: "CREATE_TABLE", fn: ensureGanttPdfRenderSamplesTable },
   { name: "portfolio_pdf_render_samples_table", category: "CREATE_TABLE", fn: ensurePortfolioPdfRenderSamplesTable },

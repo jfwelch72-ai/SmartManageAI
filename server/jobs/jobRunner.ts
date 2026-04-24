@@ -8,7 +8,7 @@ import { recordJobMetrics, loadJobMetricsFromDb, pruneJobMetricsDb } from "../ut
 import { evaluateJobMetricAlerts, sendJobMetricAlertQuietHoursDigests, setRetentionPolicyUnsupportedPairsForAlerts } from "../utils/jobMetricAlerts";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
-import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, DOC_OVERDUE_REMINDER_DEFAULT_CAP, DOC_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, rfis, submittals, submittalReviews, messages, timeEntries, media, aiActionAudit, planDocuments, conversations, projectEmailDistributionLists, projectLogEmailSchedules, type InsertNotification } from "@shared/schema";
+import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, DOC_OVERDUE_REMINDER_DEFAULT_CAP, DOC_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, rfis, submittals, submittalReviews, messages, timeEntries, media, aiActionAudit, planDocuments, conversations, projectEmailDistributionLists, projectLogEmailSchedules, projectLogEmailScheduleAttempts, type InsertNotification } from "@shared/schema";
 import { getEffectivePermissions } from "../auth";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull, ne } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
@@ -3860,7 +3860,10 @@ export async function processProjectLogEmailSchedules(opts: { now?: Date } = {})
         // needing its own SELECT.
         previousConsecutiveFailureCount: sched.consecutiveFailureCount ?? 0,
       },
-      { now },
+      // Task #1652 — tag the per-attempt history row as a CRON tick
+      // so the project settings panel can distinguish scheduled runs
+      // from admin-triggered "Send now" retries.
+      { now, triggeredBy: { kind: "CRON" } },
     );
 
     if (result.status === "SUCCESS") {
@@ -3995,9 +3998,19 @@ export interface ExecuteProjectLogEmailScheduleSendResult {
   consecutiveFailureCount: number;
 }
 
+// Task #1652 — every call to the helper records who/what triggered
+// the send so the new per-schedule history table can show admins
+// "this was a cron tick at 8:00am" vs "this was Jane manually
+// retrying at 8:42am after fixing the address book". The cron path
+// passes { kind: "CRON" }; the manual `POST .../send-now` route
+// passes { kind: "MANUAL", userId } from the authenticated request.
+export type ProjectLogEmailScheduleSendTrigger =
+  | { kind: "CRON" }
+  | { kind: "MANUAL"; userId: string | null };
+
 export async function executeProjectLogEmailScheduleSend(
   input: ExecuteProjectLogEmailScheduleSendInput,
-  opts: { now?: Date } = {},
+  opts: { now?: Date; triggeredBy?: ProjectLogEmailScheduleSendTrigger } = {},
 ): Promise<ExecuteProjectLogEmailScheduleSendResult> {
   const now = opts.now ?? new Date();
   const logType = input.logType === "SUBMITTAL" ? "SUBMITTAL" : "RFI";
@@ -4010,6 +4023,42 @@ export async function executeProjectLogEmailScheduleSend(
   // check after the update can use the same value the row was just
   // stamped with.
   const nextFailureCount = previousConsecutiveFailureCount + 1;
+  // Task #1652 — default to CRON so existing callers (and tests) that
+  // haven't been updated still produce a valid history row. The cron
+  // path always passes the trigger explicitly below.
+  const trigger: ProjectLogEmailScheduleSendTrigger = opts.triggeredBy ?? { kind: "CRON" };
+
+  // Task #1652 — small helper so each of the four exit paths
+  // (NO_RECIPIENTS, transport FAILURE, SUCCESS, catch FAILURE)
+  // writes exactly one immutable history row with the same shape.
+  // Wrapped in its own try/catch so a history-write failure can
+  // never mask the real per-attempt outcome we want to return.
+  async function recordAttempt(args: {
+    status: "SUCCESS" | "FAILURE" | "NO_RECIPIENTS";
+    error: string | null;
+    recipientCount: number;
+  }): Promise<void> {
+    try {
+      await db.insert(projectLogEmailScheduleAttempts).values({
+        scheduleId: input.scheduleId,
+        organizationId: input.organizationId,
+        projectId: input.projectId,
+        logType,
+        status: args.status,
+        error: args.error,
+        recipientCount: args.recipientCount,
+        triggerType: trigger.kind,
+        triggeredById: trigger.kind === "MANUAL" ? trigger.userId : null,
+        createdAt: now,
+      });
+    } catch (histErr) {
+      logError("Failed to record project log email schedule attempt history", {
+        scheduleId: input.scheduleId,
+        status: args.status,
+        error: String(histErr),
+      });
+    }
+  }
 
   try {
     const [project] = await db
@@ -4101,6 +4150,9 @@ export async function executeProjectLogEmailScheduleSend(
         projectName: project.name,
         projectCode: project.code,
       });
+      // Task #1652 — append the per-attempt audit row alongside the
+      // schedule-row stamp + threshold-backstop fan-out.
+      await recordAttempt({ status: "NO_RECIPIENTS", error: noRecipientsError, recipientCount: 0 });
       return {
         status: "NO_RECIPIENTS",
         error: noRecipientsError,
@@ -4169,6 +4221,9 @@ export async function executeProjectLogEmailScheduleSend(
         projectName: project.name,
         projectCode: project.code,
       });
+      // Task #1652 — append the per-attempt audit row for this
+      // transport-FAILURE branch.
+      await recordAttempt({ status: "FAILURE", error: errMsg, recipientCount: recipients.length });
       return {
         status: "FAILURE",
         error: errMsg,
@@ -4199,6 +4254,9 @@ export async function executeProjectLogEmailScheduleSend(
       })
       .where(eq(projectLogEmailSchedules.id, input.scheduleId));
 
+    // Task #1652 — append the per-attempt audit row for the
+    // SUCCESS branch.
+    await recordAttempt({ status: "SUCCESS", error: null, recipientCount: recipients.length });
     return {
       status: "SUCCESS",
       error: null,
@@ -4262,6 +4320,12 @@ export async function executeProjectLogEmailScheduleSend(
         error: String(notifyErr),
       });
     }
+    // Task #1652 — record a history row for the catch-path FAILURE so
+    // the audit trail covers unexpected exceptions (PDF builder threw,
+    // db lookup blew up, etc.) the same way it covers the transport
+    // FAILURE path above. `recordAttempt` is itself try/catch-wrapped
+    // so it can never mask the original iteration error.
+    await recordAttempt({ status: "FAILURE", error: errMsg.slice(0, 500), recipientCount: 0 });
     return {
       status: "FAILURE",
       error: errMsg,

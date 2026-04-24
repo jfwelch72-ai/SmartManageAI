@@ -303,4 +303,13 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   "0060_project_log_email_consecutive_failures.sql": {
     helper: "ensureProjectLogEmailConsecutiveFailures",
   },
+  // Task #1652 — append-only per-schedule send history table that
+  // backs the new "Recent attempts" collapsible on the project
+  // settings panel. Mirrored at boot by
+  // ensureProjectLogEmailScheduleAttemptsTable. Renumbered from 0060
+  // to 0061 during rebase to avoid filename collision with the
+  // Task #1651 migration that landed concurrently.
+  "0061_project_log_email_schedule_attempts.sql": {
+    helper: "ensureProjectLogEmailScheduleAttemptsTable",
+  },
 };

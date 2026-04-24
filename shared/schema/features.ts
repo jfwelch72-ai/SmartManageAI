@@ -10508,6 +10508,56 @@ export const PROJECT_LOG_EMAIL_ATTEMPT_STATUSES = ["SUCCESS", "FAILURE", "NO_REC
 export type ProjectLogEmailAttemptStatus = typeof PROJECT_LOG_EMAIL_ATTEMPT_STATUSES[number];
 
 // ============================================
+// Task #1652 — per-schedule send history
+// ============================================
+// Append-only history of every attempt the cron + manual "Send now"
+// button make against a `project_log_email_schedules` row. The
+// schedule row keeps its `last_attempt_*` columns (Task #1622) so
+// the existing badge UI doesn't have to change, but trend-debugging
+// "this failed 5 times this week, then succeeded after I edited the
+// list" needs more than the most-recent attempt — that's what this
+// table is for.
+//
+// Each row is immutable once written. ON DELETE CASCADE on the
+// schedule + project + organization so the history follows the
+// schedule's lifecycle. `triggeredById` is ON DELETE SET NULL so
+// removing a user keeps the audit trail intact even if the actor
+// is gone.
+export const projectLogEmailScheduleAttempts = pgTable("project_log_email_schedule_attempts", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  scheduleId: varchar("schedule_id").notNull().references(() => projectLogEmailSchedules.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  // 'RFI' | 'SUBMITTAL' — mirrored from the schedule so reads don't
+  // need a join to render the attempt row.
+  logType: text("log_type").notNull(),
+  // 'SUCCESS' | 'FAILURE' | 'NO_RECIPIENTS', same vocabulary as the
+  // last_attempt_status column on the schedule.
+  status: text("status").notNull(),
+  // Human-readable reason on FAILURE / NO_RECIPIENTS, NULL on SUCCESS.
+  error: text("error"),
+  // How many addresses we tried so admins can distinguish
+  // "12 sent" from "0 sent because the list was empty".
+  recipientCount: integer("recipient_count").notNull().default(0),
+  // 'CRON' | 'MANUAL'. Lets the UI distinguish scheduled runs from
+  // admin-triggered retries at a glance.
+  triggerType: text("trigger_type").notNull(),
+  // Set when triggerType = MANUAL so the audit trail shows who
+  // clicked "Send now". NULL on CRON ticks.
+  triggeredById: varchar("triggered_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  scheduleIdx: index("project_log_email_schedule_attempts_schedule_idx").on(table.scheduleId, table.createdAt),
+  orgIdx: index("project_log_email_schedule_attempts_org_idx").on(table.organizationId),
+}));
+export const insertProjectLogEmailScheduleAttemptSchema = createInsertSchema(projectLogEmailScheduleAttempts).omit({ id: true, createdAt: true });
+export type InsertProjectLogEmailScheduleAttempt = z.infer<typeof insertProjectLogEmailScheduleAttemptSchema>;
+export type ProjectLogEmailScheduleAttempt = typeof projectLogEmailScheduleAttempts.$inferSelect;
+
+export const PROJECT_LOG_EMAIL_TRIGGER_TYPES = ["CRON", "MANUAL"] as const;
+export type ProjectLogEmailTriggerType = typeof PROJECT_LOG_EMAIL_TRIGGER_TYPES[number];
+
+// ============================================
 // GANTT PDF ALERT RECIPIENTS
 // Operator-managed list of email recipients for Gantt PDF queue/disconnect
 // outage alerts. When at least one row exists here, it overrides both the

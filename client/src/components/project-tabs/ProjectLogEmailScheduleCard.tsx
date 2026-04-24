@@ -17,7 +17,9 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, CheckCircle2, Loader2, Mail, MailWarning, Send } from "lucide-react";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, History, Loader2, Mail, MailWarning, Send } from "lucide-react";
 import { format } from "date-fns";
 import {
   COMMON_TIMEZONES,
@@ -213,6 +215,14 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast }: ScheduleRow
         });
       }
       queryClient.invalidateQueries({ queryKey });
+      // Task #1652 — refresh the per-schedule send history table so the
+      // attempt row this send just wrote shows up immediately. Without
+      // this, the global `staleTime: Infinity` in queryClient means the
+      // collapsible would keep displaying yesterday's data until the
+      // user closed and re-opened the panel.
+      queryClient.invalidateQueries({
+        queryKey: ["/api/projects", projectId, "log-email-schedules", schedule.logType, "attempts"],
+      });
     },
     onError: (err) => {
       toast({
@@ -261,6 +271,14 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast }: ScheduleRow
       </div>
 
       <AttemptFailureDetail schedule={schedule} testIdSuffix={testIdSuffix} />
+
+      {/* Task #1652 — collapsible audit trail of the most recent
+          attempts (cron + manual). Only mounted when the schedule
+          has been persisted; default-OFF rows have no scheduleId
+          and no history to show. */}
+      {schedule.id !== null && (
+        <RecentAttempts projectId={projectId} logType={schedule.logType} testIdSuffix={testIdSuffix} />
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="space-y-1">
@@ -451,5 +469,154 @@ function AttemptFailureDetail({ schedule, testIdSuffix }: { schedule: ScheduleRo
         </p>
       )}
     </div>
+  );
+}
+
+// ============================================================
+// Task #1652 — per-schedule send history
+// ============================================================
+//
+// Lazy-loaded collapsible that fetches and renders the most recent
+// 10 attempts (cron + manual) so admins debugging a flaky
+// distribution list can see trend data instead of just the most
+// recent attempt that's already on the schedule row. Open-state
+// triggers the fetch (`enabled: open`) so an admin who never
+// expands the section doesn't pay for the query.
+interface AttemptRow {
+  id: string;
+  status: AttemptStatus;
+  error: string | null;
+  recipientCount: number;
+  triggerType: "CRON" | "MANUAL";
+  triggeredById: string | null;
+  triggeredByLabel: string;
+  createdAt: string;
+}
+
+function RecentAttempts({
+  projectId,
+  logType,
+  testIdSuffix,
+}: {
+  projectId: string;
+  logType: LogType;
+  testIdSuffix: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const queryKey = useMemo(
+    () => ["/api/projects", projectId, "log-email-schedules", logType, "attempts"] as const,
+    [projectId, logType],
+  );
+  const { data, isLoading, isError } = useQuery<{ attempts: AttemptRow[] }>({
+    queryKey,
+    enabled: open,
+  });
+
+  const attempts = data?.attempts ?? [];
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className="flex items-center gap-1 text-xs text-muted-foreground hover-elevate active-elevate-2 rounded px-2 py-1 -ml-2"
+          data-testid={`button-toggle-attempt-history-${testIdSuffix}`}
+        >
+          {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          <History className="w-3 h-3" />
+          <span>Recent attempts</span>
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent className="pt-2">
+        {isLoading ? (
+          <div className="space-y-2" data-testid={`loading-attempt-history-${testIdSuffix}`}>
+            <Skeleton className="h-6 w-full" />
+            <Skeleton className="h-6 w-full" />
+            <Skeleton className="h-6 w-full" />
+          </div>
+        ) : isError ? (
+          <p className="text-xs text-muted-foreground" data-testid={`error-attempt-history-${testIdSuffix}`}>
+            Couldn't load the send history. Try collapsing and re-opening this section.
+          </p>
+        ) : attempts.length === 0 ? (
+          <p className="text-xs text-muted-foreground" data-testid={`empty-attempt-history-${testIdSuffix}`}>
+            No attempts recorded yet. The next scheduled cron tick (or a manual "Send now" click) will appear here.
+          </p>
+        ) : (
+          <div className="rounded-md border overflow-hidden" data-testid={`table-attempt-history-${testIdSuffix}`}>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="text-xs">When</TableHead>
+                  <TableHead className="text-xs">Status</TableHead>
+                  <TableHead className="text-xs">Triggered by</TableHead>
+                  <TableHead className="text-xs text-right">Recipients</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {attempts.map((a) => (
+                  <TableRow key={a.id} data-testid={`row-attempt-${testIdSuffix}-${a.id}`}>
+                    <TableCell className="text-xs whitespace-nowrap" data-testid={`text-attempt-when-${a.id}`}>
+                      {formatAttemptTime(a.createdAt)}
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      <AttemptHistoryBadge status={a.status} attemptId={a.id} />
+                      {a.error && (a.status === "FAILURE" || a.status === "NO_RECIPIENTS") && (
+                        <p
+                          className="text-xs text-muted-foreground break-words mt-1"
+                          data-testid={`text-attempt-error-${a.id}`}
+                        >
+                          {a.error}
+                        </p>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs" data-testid={`text-attempt-trigger-${a.id}`}>
+                      {a.triggerType === "CRON" ? (
+                        <span title="Automatic scheduled send">Scheduled run</span>
+                      ) : (
+                        <span title="Manual 'Send now' click">{a.triggeredByLabel}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-xs text-right tabular-nums" data-testid={`text-attempt-recipients-${a.id}`}>
+                      {a.recipientCount}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function AttemptHistoryBadge({ status, attemptId }: { status: AttemptStatus; attemptId: string }) {
+  if (status === "SUCCESS") {
+    return (
+      <Badge
+        variant="outline"
+        className="border-emerald-500 text-emerald-700 dark:text-emerald-400"
+        data-testid={`badge-attempt-status-${attemptId}`}
+      >
+        <CheckCircle2 className="w-3 h-3 mr-1" /> Sent
+      </Badge>
+    );
+  }
+  if (status === "NO_RECIPIENTS") {
+    return (
+      <Badge
+        variant="outline"
+        className="border-amber-500 text-amber-700 dark:text-amber-400"
+        data-testid={`badge-attempt-status-${attemptId}`}
+      >
+        <MailWarning className="w-3 h-3 mr-1" /> No recipients
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="destructive" data-testid={`badge-attempt-status-${attemptId}`}>
+      <AlertCircle className="w-3 h-3 mr-1" /> Failed
+    </Badge>
   );
 }
