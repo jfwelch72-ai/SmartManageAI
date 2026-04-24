@@ -216,9 +216,10 @@ test.describe("Task #1683 — Drawing-set pin/unpin and bulk modal (UI)", () => 
       .toBe(2);
 
     // Close modal, return to plans — both rows now show the pinned badge.
-    // `force: true` bypasses the actionability wait that hangs on the dev
-    // server's constant re-renders.
-    await page.getByTestId("button-close-manage-set").click({ force: true });
+    // Task #1813 — modal subtree is now isolated/memoized, so background
+    // refetches no longer destabilize the close button. A normal click is
+    // sufficient (no `force: true` needed).
+    await page.getByTestId("button-close-manage-set").click();
     await expect(dialog).toHaveCount(0, { timeout: 10_000 });
     await page.getByTestId("tab-plans").dispatchEvent("click");
     await expect(page.getByTestId(`badge-pinned-${sheet1.id}`)).toBeVisible({
@@ -248,7 +249,7 @@ test.describe("Task #1683 — Drawing-set pin/unpin and bulk modal (UI)", () => 
       .toBe(0);
 
     // Close modal, badges gone in plans list too.
-    await page.getByTestId("button-close-manage-set").click({ force: true });
+    await page.getByTestId("button-close-manage-set").click();
     await expect(dialog).toHaveCount(0, { timeout: 10_000 });
     await page.getByTestId("tab-plans").dispatchEvent("click");
     await expect(page.getByTestId(`badge-pinned-${sheet1.id}`)).toHaveCount(0, {

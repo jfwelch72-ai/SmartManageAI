@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useCallback, useMemo, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { bulkPinErrorDescription } from "@/lib/drawingSetErrors";
@@ -71,6 +71,236 @@ interface DrawingSetsPanelProps {
   activeSetId?: string | null;
 }
 
+// Task #1813 — The pinned-row sub-component is memoized so React Query
+// refetches/parent re-renders don't reconcile the entire pinned list. This
+// keeps the bulk-manage modal's layout stable, which in turn keeps the
+// modal's footer buttons clickable under Playwright's actionability heuristic
+// (and avoids the equivalent "click did nothing" feel for human users on
+// slow networks).
+interface PinnedRowProps {
+  itemId: string;
+  sheetName: string;
+  revisionLabel: string | null;
+}
+
+const PinnedRow = memo(function PinnedRow({ itemId, sheetName, revisionLabel }: PinnedRowProps) {
+  return (
+    <div
+      className="flex items-center justify-between p-2 rounded border text-sm"
+      data-testid={`pinned-sheet-${itemId}`}
+    >
+      <div className="min-w-0 flex-1 flex items-center gap-2">
+        <Pin className="w-3 h-3 text-green-600 shrink-0" />
+        <span className="truncate">{sheetName}</span>
+        {revisionLabel && (
+          <Badge variant="outline" className="text-xs shrink-0">Rev: {revisionLabel}</Badge>
+        )}
+      </div>
+    </div>
+  );
+});
+
+// Task #1813 — Bulk-manage dialog extracted into its own component so that:
+//   1. its queries (items) and mutation (bulk-replace) only mount when the
+//      dialog is actually open, eliminating background work while it's closed;
+//   2. updates to the parent panel (drawingSets refetch, sheets array prop
+//      identity changing on every PlansTab render, etc.) no longer cascade a
+//      re-render through the entire dialog tree, which was making the close
+//      button feel laggy/unclickable on slow networks.
+// Sheets are looked up by id via a memoized Map so an unstable `sheets`
+// array reference doesn't bust memoization of the row list.
+interface ManageSetDialogProps {
+  setId: string;
+  setName: string | null;
+  projectId: string;
+  sheets: TakeoffSheet[];
+  onClose: () => void;
+}
+
+const ManageSetDialog = memo(function ManageSetDialog({
+  setId,
+  setName,
+  projectId,
+  sheets,
+  onClose,
+}: ManageSetDialogProps) {
+  const { toast } = useToast();
+
+  const { data: manageItems = [] } = useQuery<DrawingSetItem[]>({
+    queryKey: ["/api/projects", "drawing-sets", setId, "items"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/drawing-sets/${setId}/items`);
+      if (!res.ok) throw new Error("Failed to load items");
+      return res.json();
+    },
+  });
+
+  // Stable lookup so the row list doesn't recompute on every parent render
+  // (sheets is a fresh array reference each PlansTab render).
+  const sheetsById = useMemo(() => {
+    const m = new Map<string, TakeoffSheet>();
+    for (const s of sheets) m.set(s.id, s);
+    return m;
+  }, [sheets]);
+
+  const activeProjectSheets = useMemo(
+    () => sheets.filter((s) => s.isActive),
+    [sheets],
+  );
+
+  // Task #1661 — bulk-replace mutation: rewrites the entire pinned-sheet
+  // list in one call. Used by the "Pin all active sheets" and "Clear all
+  // pinned sheets" bulk actions in the slimmed-down Manage modal. Routine
+  // per-sheet pin/unpin happens inline on the sheet row, not in this modal.
+  const bulkReplaceMutation = useMutation({
+    mutationFn: async ({ items }: { items: Array<{ sheetId: string }> }) => {
+      if (items.length === 0) {
+        // Backend rejects empty arrays; clear by deleting each existing item.
+        await Promise.all(
+          manageItems.map((i) =>
+            apiRequest("DELETE", `/api/projects/drawing-sets/${setId}/items/${i.id}`),
+          ),
+        );
+        return [];
+      }
+      const res = await apiRequest(
+        "POST",
+        `/api/projects/drawing-sets/${setId}/items/bulk`,
+        { items },
+      );
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "sheet-status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "compare"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "drawing-sets"] });
+      toast({ title: "Pinned sheets updated" });
+    },
+    // Task #1812 — surface duplicate-pin (409) responses with a friendly,
+    // set-named toast so users understand why a bulk pin attempt didn't
+    // appear to do anything. Other failures keep the generic message.
+    onError: (err: unknown) => {
+      toast({
+        title: "Error",
+        description: bulkPinErrorDescription(err, { setName }),
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handlePinAllActive = useCallback(() => {
+    bulkReplaceMutation.mutate({
+      items: activeProjectSheets.map((s) => ({ sheetId: s.id })),
+    });
+  }, [bulkReplaceMutation, activeProjectSheets]);
+
+  const handleClearAll = useCallback(() => {
+    bulkReplaceMutation.mutate({ items: [] });
+  }, [bulkReplaceMutation]);
+
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open) onClose();
+    },
+    [onClose],
+  );
+
+  return (
+    <Dialog open onOpenChange={handleOpenChange}>
+      <DialogContent
+        className="sm:max-w-lg max-h-[80vh] overflow-y-auto"
+        data-testid="dialog-manage-set-items"
+      >
+        <DialogHeader>
+          <DialogTitle>Bulk Manage Drawing Set</DialogTitle>
+        </DialogHeader>
+        {/* Task #1661 — slimmed-down modal: routine per-sheet pin/unpin
+            now happens inline on each sheet row when this set is active.
+            This dialog is kept for bulk operations (replace all, clear all)
+            and a read-only summary of what is currently pinned. */}
+        <div className="space-y-4">
+          <div
+            className="flex items-start gap-2 p-2 rounded border bg-muted/30 text-xs text-muted-foreground"
+            data-testid="manage-set-inline-hint"
+          >
+            <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span>
+              Tip: pin and unpin individual sheets directly from the sheet
+              list while this set is active. Use the actions below for bulk
+              changes.
+            </span>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-medium mb-2">Bulk Actions</h4>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handlePinAllActive}
+                disabled={bulkReplaceMutation.isPending || activeProjectSheets.length === 0}
+                data-testid="button-pin-all-active"
+              >
+                {bulkReplaceMutation.isPending && (
+                  <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                )}
+                <Pin className="w-3.5 h-3.5 mr-1" />
+                Pin all active sheets ({activeProjectSheets.length})
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleClearAll}
+                disabled={bulkReplaceMutation.isPending || manageItems.length === 0}
+                data-testid="button-clear-all-pinned"
+              >
+                <X className="w-3.5 h-3.5 mr-1" />
+                Clear all pinned
+              </Button>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-medium mb-2" data-testid="text-pinned-count">
+              Currently Pinned ({manageItems.length})
+            </h4>
+            {manageItems.length === 0 ? (
+              <p className="text-xs text-muted-foreground italic" data-testid="text-no-pinned-sheets">
+                No sheets pinned yet. Pin from the sheet list or use a bulk action above.
+              </p>
+            ) : (
+              <div className="space-y-1 max-h-60 overflow-y-auto">
+                {manageItems.map((item) => {
+                  const sheet = sheetsById.get(item.sheetId);
+                  const revisionLabel = sheet?.revisionLabel || item.revisionId;
+                  return (
+                    <PinnedRow
+                      key={item.id}
+                      itemId={item.id}
+                      sheetName={sheet?.sheetName || item.sheetId}
+                      revisionLabel={revisionLabel ?? null}
+                    />
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={onClose}
+            data-testid="button-close-manage-set"
+          >
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+});
+
 export default function DrawingSetsPanel({
   projectId,
   sheets,
@@ -91,16 +321,6 @@ export default function DrawingSetsPanel({
   const { data: drawingSets = [], isLoading } = useQuery<DrawingSet[]>({
     queryKey: ["/api/projects", projectId, "drawing-sets"],
     enabled: !!projectId,
-  });
-
-  const { data: manageItems = [] } = useQuery<DrawingSetItem[]>({
-    queryKey: ["/api/projects", "drawing-sets", manageSetId, "items"],
-    queryFn: async () => {
-      const res = await fetch(`/api/projects/drawing-sets/${manageSetId}/items`);
-      if (!res.ok) throw new Error("Failed to load items");
-      return res.json();
-    },
-    enabled: !!manageSetId,
   });
 
   const { data: compareData } = useQuery<ComparisonResult>({
@@ -172,49 +392,14 @@ export default function DrawingSetsPanel({
     },
   });
 
-  // Task #1661 — bulk-replace mutation: rewrites the entire pinned-sheet
-  // list in one call. Used by the "Pin all active sheets" and "Clear all
-  // pinned sheets" bulk actions in the slimmed-down Manage modal. Routine
-  // per-sheet pin/unpin happens inline on the sheet row, not in this modal.
-  const bulkReplaceMutation = useMutation({
-    mutationFn: async ({ setId, items }: { setId: string; items: Array<{ sheetId: string }> }) => {
-      if (items.length === 0) {
-        // Backend rejects empty arrays; clear by deleting each existing item.
-        await Promise.all(
-          manageItems.map(i =>
-            apiRequest("DELETE", `/api/projects/drawing-sets/${setId}/items/${i.id}`),
-          ),
-        );
-        return [];
-      }
-      const res = await apiRequest("POST", `/api/projects/drawing-sets/${setId}/items/bulk`, { items });
-      return res.json();
-    },
-    onSuccess: (_data, vars) => {
-      // Use vars.setId rather than the closure-bound manageSetId so a
-      // late-arriving response cannot invalidate the wrong set's caches
-      // if the user closes the modal or switches sets mid-flight.
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", vars.setId, "items"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", vars.setId, "sheet-status"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", vars.setId, "compare"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "drawing-sets"] });
-      toast({ title: "Pinned sheets updated" });
-    },
-    // Task #1812 — surface duplicate-pin (409) responses with a friendly,
-    // set-named toast so users understand why a bulk pin attempt didn't
-    // appear to do anything. Other failures keep the generic message.
-    onError: (err: unknown, vars) => {
-      const setName = drawingSets.find(s => s.id === vars.setId)?.name || null;
-      toast({
-        title: "Error",
-        description: bulkPinErrorDescription(err, { setName }),
-        variant: "destructive",
-      });
-    },
-  });
-
-  const managedItemSheetIds = new Set(manageItems.map(i => i.sheetId));
-  const activeProjectSheets = sheets.filter(s => s.isActive);
+  const handleCloseManage = useCallback(() => setManageSetId(null), []);
+  // Task #1812 — pass the set name to the dialog so its bulk-replace error
+  // toast can name the offending set (via bulkPinErrorDescription) when the
+  // backend rejects a duplicate pin with HTTP 409.
+  const manageSetName = useMemo(
+    () => (manageSetId ? drawingSets.find(s => s.id === manageSetId)?.name ?? null : null),
+    [manageSetId, drawingSets],
+  );
 
   return (
     <div className="space-y-3" data-testid="drawing-sets-panel">
@@ -428,93 +613,15 @@ export default function DrawingSetsPanel({
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!manageSetId} onOpenChange={(open) => { if (!open) setManageSetId(null); }}>
-        <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto" data-testid="dialog-manage-set-items">
-          <DialogHeader>
-            <DialogTitle>Bulk Manage Drawing Set</DialogTitle>
-          </DialogHeader>
-          {/* Task #1661 — slimmed-down modal: routine per-sheet pin/unpin
-              now happens inline on each sheet row when this set is active.
-              This dialog is kept for bulk operations (replace all, clear all)
-              and a read-only summary of what is currently pinned. */}
-          <div className="space-y-4">
-            <div className="flex items-start gap-2 p-2 rounded border bg-muted/30 text-xs text-muted-foreground" data-testid="manage-set-inline-hint">
-              <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-              <span>
-                Tip: pin and unpin individual sheets directly from the sheet
-                list while this set is active. Use the actions below for
-                bulk changes.
-              </span>
-            </div>
-
-            <div>
-              <h4 className="text-sm font-medium mb-2">Bulk Actions</h4>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => bulkReplaceMutation.mutate({
-                    setId: manageSetId!,
-                    items: activeProjectSheets.map(s => ({ sheetId: s.id })),
-                  })}
-                  disabled={bulkReplaceMutation.isPending || activeProjectSheets.length === 0}
-                  data-testid="button-pin-all-active"
-                >
-                  {bulkReplaceMutation.isPending && <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />}
-                  <Pin className="w-3.5 h-3.5 mr-1" />
-                  Pin all active sheets ({activeProjectSheets.length})
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => bulkReplaceMutation.mutate({ setId: manageSetId!, items: [] })}
-                  disabled={bulkReplaceMutation.isPending || manageItems.length === 0}
-                  data-testid="button-clear-all-pinned"
-                >
-                  <X className="w-3.5 h-3.5 mr-1" />
-                  Clear all pinned
-                </Button>
-              </div>
-            </div>
-
-            <div>
-              <h4 className="text-sm font-medium mb-2" data-testid="text-pinned-count">Currently Pinned ({manageItems.length})</h4>
-              {manageItems.length === 0 ? (
-                <p className="text-xs text-muted-foreground italic" data-testid="text-no-pinned-sheets">
-                  No sheets pinned yet. Pin from the sheet list or use a bulk action above.
-                </p>
-              ) : (
-                <div className="space-y-1 max-h-60 overflow-y-auto">
-                  {manageItems.map((item) => {
-                    const sheet = sheets.find(s => s.id === item.sheetId);
-                    const revLabel = sheet?.revisionLabel || item.revisionId;
-                    return (
-                      <div
-                        key={item.id}
-                        className="flex items-center justify-between p-2 rounded border text-sm"
-                        data-testid={`pinned-sheet-${item.id}`}
-                      >
-                        <div className="min-w-0 flex-1 flex items-center gap-2">
-                          <Pin className="w-3 h-3 text-green-600 shrink-0" />
-                          <span className="truncate">{sheet?.sheetName || item.sheetId}</span>
-                          {revLabel && (
-                            <Badge variant="outline" className="text-xs shrink-0">Rev: {revLabel}</Badge>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setManageSetId(null)} data-testid="button-close-manage-set">
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {manageSetId && (
+        <ManageSetDialog
+          setId={manageSetId}
+          setName={manageSetName}
+          projectId={projectId}
+          sheets={sheets}
+          onClose={handleCloseManage}
+        />
+      )}
 
       <Dialog open={!!compareSetId} onOpenChange={(open) => { if (!open) setCompareSetId(null); }}>
         <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto" data-testid="dialog-compare-set">
