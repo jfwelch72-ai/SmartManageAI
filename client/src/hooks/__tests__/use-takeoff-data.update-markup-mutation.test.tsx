@@ -64,6 +64,7 @@ function makeHistoryMock(): HistoryMock {
     pushMarkupAction: vi.fn(),
     pushMarkupUpdateAction: vi.fn(),
     pushMarkupUpdateBatchAction: vi.fn(),
+    pushMeasurementUpdateBatchAction: vi.fn(),
     undo: vi.fn(),
     redo: vi.fn(),
     canUndo: false,

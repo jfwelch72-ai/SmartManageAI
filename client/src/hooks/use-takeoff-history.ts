@@ -2,7 +2,7 @@ import { useRef, useCallback, useState } from "react";
 import type { TakeoffMeasurement, TakeoffMarkup } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
-type ActionType = "CREATE" | "DELETE" | "UPDATE" | "MARKUP_CREATE" | "MARKUP_DELETE" | "MARKUP_UPDATE" | "MARKUP_UPDATE_BATCH";
+type ActionType = "CREATE" | "DELETE" | "UPDATE" | "MEASUREMENT_UPDATE_BATCH" | "MARKUP_CREATE" | "MARKUP_DELETE" | "MARKUP_UPDATE" | "MARKUP_UPDATE_BATCH";
 
 export interface MarkupSnapshot {
   id: string;
@@ -12,10 +12,26 @@ export interface MarkupSnapshot {
   points?: { x: number; y: number }[];
 }
 
+export interface MeasurementSnapshot {
+  id: string;
+  color?: string | null;
+  label?: string | null;
+  costCodeId?: string | null;
+  unitCost?: number | string | null;
+  categoryId?: string | null;
+  groupId?: string | null;
+  lineStyle?: string | null;
+  lineWidth?: number | null;
+  metadata?: string | null;
+  points?: string;
+}
+
 interface HistoryEntry {
   type: ActionType;
   measurement?: TakeoffMeasurement;
   previousMeasurement?: TakeoffMeasurement;
+  measurementBatchBefore?: MeasurementSnapshot[];
+  measurementBatchAfter?: MeasurementSnapshot[];
   markup?: TakeoffMarkup & { points: { x: number; y: number }[] };
   markupBefore?: MarkupSnapshot;
   markupAfter?: MarkupSnapshot;
@@ -102,6 +118,19 @@ export function useTakeoffHistory(selectedSheet: string | null) {
     updateFlags();
   }, [updateFlags]);
 
+  // Task #1770 — mirror MARKUP_UPDATE_BATCH (#1755/#1758) for measurements:
+  // bulk property edits or group drags across a multi-selection collapse
+  // into a single MEASUREMENT_UPDATE_BATCH entry, undoable/redoable in one
+  // press. The measurements API has no `/bulk` PATCH endpoint, so undo/
+  // redo fans out per-id PATCHes via Promise.all. Empty arrays are no-ops
+  // so callers can pre-screen their snapshots without guarding the call.
+  const pushMeasurementUpdateBatchAction = useCallback((before: MeasurementSnapshot[], after: MeasurementSnapshot[], sheetId: string) => {
+    if (before.length === 0 || after.length === 0) return;
+    undoStack.current.push({ type: "MEASUREMENT_UPDATE_BATCH", measurementBatchBefore: before, measurementBatchAfter: after, sheetId });
+    redoStack.current = [];
+    updateFlags();
+  }, [updateFlags]);
+
   const applyMarkupSnapshot = async (snapshot: MarkupSnapshot) => {
     const payload: Record<string, unknown> = {};
     if (snapshot.color !== undefined) payload.color = snapshot.color;
@@ -144,6 +173,32 @@ export function useTakeoffHistory(selectedSheet: string | null) {
       return;
     }
     await Promise.all(snaps.map(applyMarkupSnapshot));
+  };
+
+  // Task #1770 — apply a single MeasurementSnapshot during undo/redo.
+  // Only fields explicitly present on the snapshot are PATCHed so that
+  // bulk operations targeting one property (e.g. `categoryId` on the
+  // sidebar's Assign Category dropdown) don't accidentally clobber
+  // unrelated fields. Mirrors `applyMarkupSnapshot` field-by-field.
+  const applyMeasurementSnapshot = async (snapshot: MeasurementSnapshot) => {
+    const payload: Record<string, unknown> = {};
+    if (snapshot.color !== undefined) payload.color = snapshot.color;
+    if (snapshot.label !== undefined) payload.label = snapshot.label;
+    if (snapshot.costCodeId !== undefined) payload.costCodeId = snapshot.costCodeId;
+    if (snapshot.unitCost !== undefined) {
+      payload.unitCost = snapshot.unitCost === null ? null : String(snapshot.unitCost);
+    }
+    if (snapshot.categoryId !== undefined) payload.categoryId = snapshot.categoryId;
+    if (snapshot.groupId !== undefined) payload.groupId = snapshot.groupId;
+    if (snapshot.lineStyle !== undefined) payload.lineStyle = snapshot.lineStyle;
+    if (snapshot.lineWidth !== undefined) payload.lineWidth = snapshot.lineWidth;
+    if (snapshot.metadata !== undefined) payload.metadata = snapshot.metadata;
+    if (snapshot.points !== undefined) payload.points = snapshot.points;
+    await apiRequest("PATCH", `/api/takeoff/measurements/${snapshot.id}`, payload);
+  };
+
+  const applyMeasurementBatchSnapshots = async (snaps: MeasurementSnapshot[]) => {
+    await Promise.all(snaps.map(applyMeasurementSnapshot));
   };
 
   const invalidate = useCallback((sheetId: string, isMarkup = false) => {
@@ -189,6 +244,8 @@ export function useTakeoffHistory(selectedSheet: string | null) {
         await applyMarkupSnapshot(entry.markupBefore);
       } else if (entry.type === "MARKUP_UPDATE_BATCH" && entry.markupBatchBefore) {
         await applyMarkupBatchSnapshots(entry.markupBatchBefore);
+      } else if (entry.type === "MEASUREMENT_UPDATE_BATCH" && entry.measurementBatchBefore) {
+        await applyMeasurementBatchSnapshots(entry.measurementBatchBefore);
       }
       redoStack.current.push(entry);
       invalidate(entry.sheetId, entry.type.startsWith("MARKUP"));
@@ -238,6 +295,8 @@ export function useTakeoffHistory(selectedSheet: string | null) {
         await applyMarkupSnapshot(entry.markupAfter);
       } else if (entry.type === "MARKUP_UPDATE_BATCH" && entry.markupBatchAfter) {
         await applyMarkupBatchSnapshots(entry.markupBatchAfter);
+      } else if (entry.type === "MEASUREMENT_UPDATE_BATCH" && entry.measurementBatchAfter) {
+        await applyMeasurementBatchSnapshots(entry.measurementBatchAfter);
       }
       undoStack.current.push(entry);
       invalidate(entry.sheetId, entry.type.startsWith("MARKUP"));
@@ -255,5 +314,5 @@ export function useTakeoffHistory(selectedSheet: string | null) {
     updateFlags();
   }, [updateFlags]);
 
-  return { pushAction, pushMarkupAction, pushMarkupUpdateAction, pushMarkupUpdateBatchAction, undo, redo, canUndo, canRedo, isPending, clear };
+  return { pushAction, pushMarkupAction, pushMarkupUpdateAction, pushMarkupUpdateBatchAction, pushMeasurementUpdateBatchAction, undo, redo, canUndo, canRedo, isPending, clear };
 }

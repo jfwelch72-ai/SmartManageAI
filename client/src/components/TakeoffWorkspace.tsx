@@ -5355,6 +5355,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         setSelectedSegmentIndex={setSelectedSegmentIndex}
         deleteMeasurementMutation={deleteMeasurementMutation}
         updateMeasurementMutation={updateMeasurementMutation}
+        pushMeasurementUpdateBatch={takeoffHistory.pushMeasurementUpdateBatchAction}
         aggregatedMeasurements={aggregatedMeasurements}
         projectAddenda={projectAddenda}
         addendaOverlays={addendaOverlays}

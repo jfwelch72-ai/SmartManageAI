@@ -291,14 +291,20 @@ export function useTakeoffData({
   });
 
   const updateMeasurementMutation = useMutation({
-    mutationFn: async ({ id, ...data }: { id: string; costCodeId?: string; unitCost?: number; label?: string; categoryId?: string | null; groupId?: string | null; lineStyle?: string; lineWidth?: number; metadata?: string; points?: string; computedLengthFt?: number }) => {
+    // Task #1770 — `skipHistory` is the same opt-out the markup mutation
+    // (#1755) uses: bulk callers (e.g. `handleBulkCategoryAssign` in the
+    // sidebar) push one MEASUREMENT_UPDATE_BATCH up front and then fan
+    // out N per-id PATCHes that pass `skipHistory: true` so the per-call
+    // path never adds its own entry. The flag is stripped before the
+    // PATCH body is sent so the API surface is unchanged.
+    mutationFn: async ({ id, skipHistory: _skipHistory, ...data }: { id: string; costCodeId?: string; unitCost?: number; label?: string; categoryId?: string | null; groupId?: string | null; lineStyle?: string; lineWidth?: number; metadata?: string; points?: string; computedLengthFt?: number; skipHistory?: boolean }) => {
       if (selectedVersionId && (!selectedVersionData || selectedVersionData.status === "LOCKED")) {
         throw new Error("Cannot edit measurements while viewing a locked version");
       }
       const res = await apiRequest("PATCH", `/api/takeoff/measurements/${id}`, data);
       return res.json();
     },
-    onSuccess: (_data: TakeoffMeasurement, variables: { id: string }) => {
+    onSuccess: (_data: TakeoffMeasurement, variables) => {
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
       if (selectedSheet) {
         onCollabBroadcast?.("MEASUREMENT_UPDATED", { sheetId: selectedSheet, measurementId: variables.id });

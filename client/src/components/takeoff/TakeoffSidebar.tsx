@@ -144,6 +144,17 @@ interface TakeoffSidebarProps {
   setSelectedSegmentIndex: (v: number | null) => void;
   deleteMeasurementMutation: any;
   updateMeasurementMutation: any;
+  // Task #1770 — wires the bulk category assignment in this sidebar
+  // (and any future bulk measurement edit) into the same Undo/Redo
+  // batch entry the workspace uses for markups (#1755/#1758). Optional
+  // so existing test mounts continue to compile; without it, the bulk
+  // path simply skips the history push (preserving today's "no entry"
+  // behavior instead of regressing to N entries).
+  pushMeasurementUpdateBatch?: (
+    before: { id: string; categoryId?: string | null }[],
+    after: { id: string; categoryId?: string | null }[],
+    sheetId: string,
+  ) => void;
   aggregatedMeasurements: any;
   projectAddenda: AddendumOverlayData[];
   addendaOverlays: Record<string, { visible: boolean; opacity: number; imageUrl?: string }>;
@@ -250,7 +261,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     pitchRatio, setPitchRatio, dropDistance, setDropDistance,
     measurements, selectedMeasurementId, setSelectedMeasurementId,
     selectedSegmentIndex, setSelectedSegmentIndex,
-    deleteMeasurementMutation, updateMeasurementMutation, aggregatedMeasurements,
+    deleteMeasurementMutation, updateMeasurementMutation, pushMeasurementUpdateBatch, aggregatedMeasurements,
     projectAddenda, addendaOverlays, setAddendaOverlays,
     verifyMode, setVerifyMode, verifyPoints, setVerifyPoints,
     verifyExpectedDistance, setVerifyExpectedDistance, verifyResult, setVerifyResult,
@@ -432,13 +443,45 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     setBulkSelectMode(false);
   };
 
+  // Task #1770 — collapse a multi-select category assignment into a
+  // single MEASUREMENT_UPDATE_BATCH history entry so one Undo press
+  // restores every member's prior categoryId (mirrors #1755/#1758 for
+  // markups). Capture the per-id `before` snapshot from the cached
+  // `measurements` prop BEFORE firing any mutation, skip no-op members
+  // (already in the target category), then fan out per-id PATCHes with
+  // `skipHistory: true` so the per-call path doesn't add its own entry.
+  // Using `mutateAsync` + `Promise.all` ensures the batch entry is only
+  // pushed after every PATCH lands, matching the markup pattern.
   const handleBulkCategoryAssign = async (categoryId: string) => {
     if (bulkSelectedIds.size === 0) return;
-    for (const id of bulkSelectedIds) {
-      updateMeasurementMutation.mutate({ id, categoryId });
+    const ids = Array.from(bulkSelectedIds);
+    const beforeSnaps: { id: string; categoryId: string | null }[] = [];
+    const afterSnaps: { id: string; categoryId: string | null }[] = [];
+    for (const id of ids) {
+      const m = measurements.find(mm => mm.id === id);
+      if (!m) continue;
+      if ((m.categoryId ?? null) === categoryId) continue;
+      beforeSnaps.push({ id, categoryId: m.categoryId ?? null });
+      afterSnaps.push({ id, categoryId });
     }
-    setBulkSelectedIds(new Set());
-    toast({ title: "Category assigned", description: `Updated ${bulkSelectedIds.size} items` });
+    if (afterSnaps.length === 0) {
+      setBulkSelectedIds(new Set());
+      return;
+    }
+    try {
+      await Promise.all(
+        afterSnaps.map(s =>
+          updateMeasurementMutation.mutateAsync({ id: s.id, categoryId, skipHistory: true }),
+        ),
+      );
+      if (selectedSheet && pushMeasurementUpdateBatch) {
+        pushMeasurementUpdateBatch(beforeSnaps, afterSnaps, selectedSheet);
+      }
+      setBulkSelectedIds(new Set());
+      toast({ title: "Category assigned", description: `Updated ${afterSnaps.length} items` });
+    } catch {
+      // updateMeasurementMutation.onError already shows a toast.
+    }
   };
 
   const handleInlineEditSave = (mId: string) => {

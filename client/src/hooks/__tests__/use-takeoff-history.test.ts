@@ -345,6 +345,176 @@ describe("useTakeoffHistory MARKUP_UPDATE", () => {
     expect(result.current.canUndo).toBe(false);
   });
 
+  // Task #1770 — mirror image of MARKUP_UPDATE_BATCH (#1755/#1758) for
+  // measurements. A bulk category-assign across N selected measurements
+  // must collapse into a single MEASUREMENT_UPDATE_BATCH entry so one
+  // Undo press restores every member's prior categoryId and one Redo
+  // press reapplies the new categoryId. The measurement API has no
+  // `/bulk` PATCH endpoint, so undo/redo fans out per-id PATCHes via
+  // Promise.all — the test asserts each PATCH lands on its own member's
+  // URL so a future "optimization" that mis-routes them is caught.
+  it("MEASUREMENT_UPDATE_BATCH undo/redo restores per-member categoryId via per-id PATCHes", async () => {
+    const { result } = renderHook(() => useTakeoffHistory("sheet-1"));
+
+    act(() => {
+      result.current.pushMeasurementUpdateBatchAction(
+        [
+          { id: "m1", categoryId: "cat-old-1" },
+          { id: "m2", categoryId: null },
+          { id: "m3", categoryId: "cat-old-3" },
+        ],
+        [
+          { id: "m1", categoryId: "cat-new" },
+          { id: "m2", categoryId: "cat-new" },
+          { id: "m3", categoryId: "cat-new" },
+        ],
+        "sheet-1",
+      );
+    });
+
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(false);
+
+    await act(async () => { await result.current.undo(); });
+
+    expect(apiRequestMock).toHaveBeenCalledTimes(3);
+    expect(apiRequestMock.mock.calls).toEqual(
+      expect.arrayContaining([
+        ["PATCH", "/api/takeoff/measurements/m1", { categoryId: "cat-old-1" }],
+        ["PATCH", "/api/takeoff/measurements/m2", { categoryId: null }],
+        ["PATCH", "/api/takeoff/measurements/m3", { categoryId: "cat-old-3" }],
+      ]),
+    );
+    // Measurements (not markups) — invalidate the measurements cache key.
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: ["/api/takeoff/sheets", "sheet-1", "measurements"],
+    });
+    expect(result.current.canUndo).toBe(false);
+    expect(result.current.canRedo).toBe(true);
+
+    apiRequestMock.mockClear();
+    invalidateQueriesMock.mockClear();
+    await act(async () => { await result.current.redo(); });
+
+    expect(apiRequestMock).toHaveBeenCalledTimes(3);
+    expect(apiRequestMock.mock.calls).toEqual(
+      expect.arrayContaining([
+        ["PATCH", "/api/takeoff/measurements/m1", { categoryId: "cat-new" }],
+        ["PATCH", "/api/takeoff/measurements/m2", { categoryId: "cat-new" }],
+        ["PATCH", "/api/takeoff/measurements/m3", { categoryId: "cat-new" }],
+      ]),
+    );
+    expect(invalidateQueriesMock).toHaveBeenCalledTimes(1);
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: ["/api/takeoff/sheets", "sheet-1", "measurements"],
+    });
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(false);
+  });
+
+  // Task #1770 — only fields explicitly present on the snapshot are
+  // PATCHed. A bulk categoryId edit must NOT touch label, color,
+  // costCodeId, etc. on its members; otherwise undo would silently
+  // null out unrelated fields. Mirrors the markup snapshot semantics.
+  it("MEASUREMENT_UPDATE_BATCH apply only PATCHes fields explicitly on the snapshot", async () => {
+    const { result } = renderHook(() => useTakeoffHistory("sheet-1"));
+
+    act(() => {
+      result.current.pushMeasurementUpdateBatchAction(
+        [{ id: "m1", categoryId: "cat-old" }],
+        [{ id: "m1", categoryId: "cat-new" }],
+        "sheet-1",
+      );
+    });
+
+    await act(async () => { await result.current.undo(); });
+    expect(apiRequestMock).toHaveBeenCalledTimes(1);
+    // Strict equality — no `label`, `color`, `unitCost`, etc. leak
+    // into the PATCH body.
+    expect(apiRequestMock).toHaveBeenCalledWith(
+      "PATCH",
+      "/api/takeoff/measurements/m1",
+      { categoryId: "cat-old" },
+    );
+  });
+
+  // Task #1770 — supports multi-field per-member snapshots (e.g. a
+  // future bulk edit that changes both label and color in one gesture).
+  // Each member's prior label and color are restored independently on
+  // undo, then reapplied on redo.
+  it("MEASUREMENT_UPDATE_BATCH undo/redo restores per-member label and color", async () => {
+    const { result } = renderHook(() => useTakeoffHistory("sheet-1"));
+
+    act(() => {
+      result.current.pushMeasurementUpdateBatchAction(
+        [
+          { id: "a", label: "Slab A", color: "#000000" },
+          { id: "b", label: "Slab B", color: "#111111" },
+        ],
+        [
+          { id: "a", label: "Renamed", color: "#ff0000" },
+          { id: "b", label: "Renamed", color: "#ff0000" },
+        ],
+        "sheet-1",
+      );
+    });
+
+    await act(async () => { await result.current.undo(); });
+    expect(apiRequestMock.mock.calls).toEqual(
+      expect.arrayContaining([
+        ["PATCH", "/api/takeoff/measurements/a", { label: "Slab A", color: "#000000" }],
+        ["PATCH", "/api/takeoff/measurements/b", { label: "Slab B", color: "#111111" }],
+      ]),
+    );
+
+    apiRequestMock.mockClear();
+    await act(async () => { await result.current.redo(); });
+    expect(apiRequestMock.mock.calls).toEqual(
+      expect.arrayContaining([
+        ["PATCH", "/api/takeoff/measurements/a", { label: "Renamed", color: "#ff0000" }],
+        ["PATCH", "/api/takeoff/measurements/b", { label: "Renamed", color: "#ff0000" }],
+      ]),
+    );
+  });
+
+  it("MEASUREMENT_UPDATE_BATCH ignores empty snapshot arrays", () => {
+    const { result } = renderHook(() => useTakeoffHistory("sheet-1"));
+    act(() => {
+      result.current.pushMeasurementUpdateBatchAction([], [], "sheet-1");
+    });
+    expect(result.current.canUndo).toBe(false);
+  });
+
+  // Task #1770 — a 50-member bulk categoryId edit (e.g. assigning every
+  // measurement on a sheet to a new category) must still collapse into
+  // ONE history entry, not 50, and one Undo must restore every prior
+  // categoryId. We don't have a `/bulk` measurement endpoint so the
+  // undo cost is N PATCHes — but the user-visible cost is one press.
+  it("MEASUREMENT_UPDATE_BATCH coalesces a 50-member bulk edit into one Undo press", async () => {
+    const { result } = renderHook(() => useTakeoffHistory("sheet-1"));
+    const before = Array.from({ length: 50 }, (_, i) => ({
+      id: `m${i}`,
+      categoryId: `cat-old-${i}`,
+    }));
+    const after = Array.from({ length: 50 }, (_, i) => ({
+      id: `m${i}`,
+      categoryId: "cat-new",
+    }));
+
+    act(() => {
+      result.current.pushMeasurementUpdateBatchAction(before, after, "sheet-1");
+    });
+
+    // Single history entry — one Undo press is enough to revert.
+    expect(result.current.canUndo).toBe(true);
+
+    await act(async () => { await result.current.undo(); });
+    expect(apiRequestMock).toHaveBeenCalledTimes(50);
+    expect(invalidateQueriesMock).toHaveBeenCalledTimes(1);
+    expect(result.current.canUndo).toBe(false);
+    expect(result.current.canRedo).toBe(true);
+  });
+
   it("clears the redo stack when a new edit is pushed", async () => {
     const { result } = renderHook(() => useTakeoffHistory("sheet-1"));
 
