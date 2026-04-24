@@ -307,7 +307,24 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       Math.abs(preset - value) < Math.abs(best - value) ? preset : best,
     );
   }, []);
-  const [markupBodyDragId, setMarkupBodyDragId] = useState<string | null>(null);
+  // Task #1718 — body drag is intentionally NOT React state. The
+  // previous implementation called `setMarkupBodyDragId(id)` on
+  // dragStart and `setMarkupBodyDragId(null)` on dragEnd, which
+  // re-rendered every markup on the sheet at both ends of the gesture.
+  // On takeoff sheets with many overlapping markups that re-render
+  // dropped frames the same way the plan-side group drag did before
+  // Task #1706. We now mirror the plan-side imperative pattern:
+  // capture origin coords + the markup's resize handles in a ref on
+  // dragStart, hide the handles via `node.visible(false)` so they
+  // don't lag behind the moving body, and restore + commit a single
+  // PATCH on dragEnd. Konva translates the dragged Group internally,
+  // so no per-frame work runs in React for the duration of the drag.
+  const markupBodyDragRef = useRef<{
+    id: string;
+    origX: number;
+    origY: number;
+    hiddenHandles: Array<{ visible: boolean; listening: boolean; node: any }>;
+  } | null>(null);
   const [markupResizePreview, setMarkupResizePreview] = useState<{ id: string; points: { x: number; y: number }[] } | null>(null);
   const markupResizeRef = useRef<{
     id: string;
@@ -3738,19 +3755,61 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                     ? markupResizePreview.points
                     : rawPts;
                   const isDraggable = isSelected;
+                  // Task #1718 — imperative drag pattern (mirrors
+                  // plan-side `getGroupProps` in PlanMarkupLayer). On
+                  // dragStart we cache origin + this markup's resize
+                  // handles in `markupBodyDragRef` and hide the handles
+                  // via Konva so they don't lag behind the moving body.
+                  // No setState fires for the entire gesture; Konva
+                  // translates the dragged Group internally so live
+                  // position updates happen at native frame rate. On
+                  // dragEnd we restore the handles, reset the Konva
+                  // position (the points re-render owns the new
+                  // location), and fire the existing PATCH exactly once.
                   const onBodyDragStart = (e: any) => {
                     e.cancelBubble = true;
-                    setMarkupBodyDragId(markup.id);
-                    e.target.setAttr("_origX", e.target.x());
-                    e.target.setAttr("_origY", e.target.y());
+                    const origX = e.target.x();
+                    const origY = e.target.y();
+                    const layer = e.target.getLayer();
+                    const hiddenHandles: Array<{ visible: boolean; listening: boolean; node: any }> = [];
+                    if (layer) {
+                      const handles = layer.find(`.markup-handle-${markup.id}`);
+                      handles.forEach((node: any) => {
+                        hiddenHandles.push({
+                          visible: node.visible(),
+                          listening: node.listening(),
+                          node,
+                        });
+                        node.visible(false);
+                        node.listening(false);
+                      });
+                      if (hiddenHandles.length > 0) layer.batchDraw();
+                    }
+                    markupBodyDragRef.current = {
+                      id: markup.id,
+                      origX,
+                      origY,
+                      hiddenHandles,
+                    };
                   };
                   const onBodyDragEnd = (e: any) => {
-                    const origX = e.target.getAttr("_origX") ?? 0;
-                    const origY = e.target.getAttr("_origY") ?? 0;
-                    const dx = e.target.x() - origX;
-                    const dy = e.target.y() - origY;
-                    e.target.position({ x: origX, y: origY });
-                    setMarkupBodyDragId(null);
+                    const drag = markupBodyDragRef.current;
+                    // Defensive early return — matches the plan-side
+                    // `getGroupProps` pattern. If the ref is missing
+                    // (e.g. the drag was synthesized or the ref was
+                    // cleared mid-gesture by an unmount) there's no
+                    // origin to translate against, so do nothing rather
+                    // than collapsing to a (0,0)-anchored move.
+                    if (!drag) return;
+                    const dx = e.target.x() - drag.origX;
+                    const dy = e.target.y() - drag.origY;
+                    e.target.position({ x: drag.origX, y: drag.origY });
+                    for (const h of drag.hiddenHandles) {
+                      h.node.visible(h.visible);
+                      h.node.listening(h.listening);
+                    }
+                    e.target.getLayer()?.batchDraw();
+                    markupBodyDragRef.current = null;
                     if (dx !== 0 || dy !== 0) {
                       const newPts = rawPts.map(p => ({ x: p.x + dx, y: p.y + dy }));
                       updateMarkupMutation.mutate({ id: markup.id, points: newPts });
@@ -3796,7 +3855,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   );
 
                   const handles: any[] = [];
-                  if (isSelected && markupBodyDragId !== markup.id && tool !== "TEXT") {
+                  // Task #1718 — handles are always rendered when the
+                  // markup is selected. During a body drag we hide them
+                  // imperatively via Konva (`node.visible(false)`) in
+                  // `onBodyDragStart`, which avoids the previous
+                  // setState-on-dragStart that re-rendered every markup.
+                  if (isSelected && tool !== "TEXT") {
                     const handleHalf = 6 / stageScale;
                     const handleStroke = 1.5 / stageScale;
                     const commitResize = (newPts: { x: number; y: number }[]) => {
@@ -3807,6 +3871,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         handles.push(
                           <Rect
                             key={`handle-${markup.id}-${i}`}
+                            // Task #1718 — `name` lets the body drag
+                            // find this handle via `layer.find('.markup-handle-...')`
+                            // and hide it imperatively for the duration
+                            // of the drag.
+                            name={`markup-handle-${markup.id}`}
                             x={rawPts[idx].x - handleHalf}
                             y={rawPts[idx].y - handleHalf}
                             width={handleHalf * 2}
@@ -3897,6 +3966,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         handles.push(
                           <Rect
                             key={`handle-${markup.id}-${c.name}`}
+                            // Task #1718 — `name` lets the body drag
+                            // find this handle via `layer.find('.markup-handle-...')`
+                            // and hide it imperatively for the duration
+                            // of the drag.
+                            name={`markup-handle-${markup.id}`}
                             x={c.x - handleHalf}
                             y={c.y - handleHalf}
                             width={handleHalf * 2}
