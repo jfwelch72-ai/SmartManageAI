@@ -261,6 +261,11 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
               teamsEnabled: teamsVal,
               slackEnabled: slackVal,
               inAppEnabled: inAppVal,
+              // Task #1747 — An explicit choice through the standard
+              // settings page always wins over a stale snooze the user
+              // may have set via the failures dashboard, so clear
+              // `mutedUntil` on every write here.
+              mutedUntil: null,
               updatedAt: now,
             })
             .onConflictDoUpdate({
@@ -272,6 +277,7 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
                 teamsEnabled: teamsVal,
                 slackEnabled: slackVal,
                 inAppEnabled: inAppVal,
+                mutedUntil: null,
                 updatedAt: now,
               },
             });
@@ -287,6 +293,7 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
               teamsEnabled: false,
               slackEnabled: false,
               inAppEnabled: inAppVal,
+              mutedUntil: null,
               updatedAt: now,
             })
             .onConflictDoUpdate({
@@ -295,6 +302,7 @@ router.put("/api/notifications/preferences", requireAuth, async (req: AuthReques
                 emailEnabled: prefs.emailEnabled ?? channel.emailEnabled,
                 pushEnabled: prefs.pushEnabled ?? channel.pushEnabled,
                 inAppEnabled: inAppVal,
+                mutedUntil: null,
                 updatedAt: now,
               },
             });
@@ -608,10 +616,27 @@ router.get("/api/notifications/mute/davis-bacon-auto-sync-failed", async (req, r
  */
 const FAILURES_DIGEST_TYPE = "PROJECT_LOG_EMAIL_FAILURES_DIGEST" as const;
 
+// Task #1747 — Snooze ceilings prevent a typo (or a malicious script)
+// from setting a mute that effectively never auto-clears. 365 days is
+// already an order of magnitude larger than the longest snooze the UI
+// surfaces (30 days), so it's a generous-but-finite cap.
+const MAX_SNOOZE_DAYS = 365;
+
 const failuresDigestSubscriptionBodySchema = z
   .object({
     emailEnabled: z.boolean().optional(),
     inAppEnabled: z.boolean().optional(),
+    // Task #1747 — Optional snooze duration for either channel mute.
+    // `null` (or omitted) keeps the historical "indefinite" semantics.
+    // Only honored when the request is actually muting at least one
+    // channel — re-enabling clears `mutedUntil` regardless.
+    mutedUntilDays: z
+      .number()
+      .int()
+      .positive()
+      .max(MAX_SNOOZE_DAYS)
+      .nullable()
+      .optional(),
   })
   .refine(
     (v) => v.emailEnabled !== undefined || v.inAppEnabled !== undefined,
@@ -648,14 +673,22 @@ router.get(
       // in `notificationDelivery.ts`.
       const channelEmailEnabled = channelRow?.emailEnabled ?? false;
 
+      // Task #1747 — Treat an expired snooze as "no override" so the
+      // dashboard reflects the auto-cleared state immediately. The
+      // delivery / feed-filter paths apply the same rule, so the row
+      // is effectively defunct until the user mutes again.
+      const mutedUntil = typeRow?.mutedUntil ? new Date(typeRow.mutedUntil) : null;
+      const snoozeExpired = mutedUntil !== null && mutedUntil.getTime() <= Date.now();
+      const effectiveTypeRow = snoozeExpired ? null : typeRow;
+
       // Effective email = override (if set) ELSE channel email. The
       // override row's `emailEnabled` is a non-nullable column so we
       // can read it directly when the row exists.
-      const emailEnabled = typeRow ? typeRow.emailEnabled : channelEmailEnabled;
+      const emailEnabled = effectiveTypeRow ? effectiveTypeRow.emailEnabled : channelEmailEnabled;
 
       // Effective in-app: NULL means "not configured" → defaults to
       // delivered (Task #1260). Only an explicit `false` mutes the row.
-      const inAppEnabled = typeRow?.inAppEnabled === false ? false : true;
+      const inAppEnabled = effectiveTypeRow?.inAppEnabled === false ? false : true;
 
       res.json({
         notificationType: FAILURES_DIGEST_TYPE,
@@ -665,8 +698,22 @@ router.get(
         // Surface the raw stored values so the UI can distinguish
         // "muted because channel email is off" from "muted because the
         // user explicitly disabled this type".
-        emailOverride: typeRow ? typeRow.emailEnabled : null,
-        inAppOverride: typeRow ? typeRow.inAppEnabled : null,
+        emailOverride: effectiveTypeRow ? effectiveTypeRow.emailEnabled : null,
+        inAppOverride: effectiveTypeRow ? effectiveTypeRow.inAppEnabled : null,
+        // Task #1747 — Surface mute timing so the dashboard card can
+        // render "muted N days ago" + the auto-clear deadline. We
+        // return `mutedAt` only when an override is in effect (i.e.
+        // not expired); for an expired snooze the row is logically
+        // gone, so reporting its old timestamp would be misleading.
+        // `mutedUntil` is always the raw stored value when present —
+        // a UI can use a past timestamp to label the row "expired".
+        mutedAt: effectiveTypeRow?.updatedAt
+          ? new Date(effectiveTypeRow.updatedAt).toISOString()
+          : null,
+        mutedUntil: typeRow?.mutedUntil
+          ? new Date(typeRow.mutedUntil).toISOString()
+          : null,
+        snoozeExpired,
       });
     } catch (error) {
       next(error);
@@ -690,7 +737,7 @@ router.put(
         });
       }
 
-      const { emailEnabled, inAppEnabled } = parsed.data;
+      const { emailEnabled, inAppEnabled, mutedUntilDays } = parsed.data;
       const now = new Date();
 
       // Seed the insert row from the user's channel-level settings so
@@ -710,6 +757,64 @@ router.put(
       const insertEmail = emailEnabled ?? channelRow?.emailEnabled ?? false;
       const insertInApp = inAppEnabled ?? null;
 
+      // Task #1747 — Resolve the snooze deadline against the *merged*
+      // post-update state (existing override row + this patch), not
+      // just the patch. Otherwise a partial-unmute (e.g. flipping
+      // email back on while in-app stays muted) would clear
+      // `muted_until` and silently promote the surviving channel mute
+      // to an indefinite one. We want the snooze to keep ticking on
+      // the surviving channel.
+      //
+      // - When the caller provides `mutedUntilDays` and is muting at
+      //   least one channel in this patch, that's the new deadline.
+      // - When the caller doesn't provide `mutedUntilDays` but the
+      //   merged state still has at least one channel muted AND a
+      //   future snooze deadline already exists, preserve it.
+      // - Otherwise (no surviving mute, or an unmute that flips
+      //   everything back on) clear `muted_until`.
+      const [existingTypeRow] = await db
+        .select()
+        .from(notificationTypePrefs)
+        .where(
+          and(
+            eq(notificationTypePrefs.userId, userId),
+            eq(notificationTypePrefs.notificationType, FAILURES_DIGEST_TYPE),
+          ),
+        )
+        .limit(1);
+
+      // Merge: explicit patch fields win, otherwise fall back to the
+      // existing row, then the channel default. NULL inAppEnabled means
+      // "follow channel default" — for the purpose of "is anything
+      // muted", we treat it as not-muted (matches the GET handler's
+      // effective-pref logic).
+      const mergedEmailMuted =
+        (emailEnabled ?? existingTypeRow?.emailEnabled ?? channelRow?.emailEnabled ?? true) === false;
+      const mergedInAppMuted =
+        (inAppEnabled ?? existingTypeRow?.inAppEnabled ?? null) === false;
+      const stillMutedAfterUpdate = mergedEmailMuted || mergedInAppMuted;
+
+      let mutedUntil: Date | null;
+      if (stillMutedAfterUpdate && typeof mutedUntilDays === "number") {
+        // New snooze on a (still) muted channel — start the clock now.
+        mutedUntil = new Date(now.getTime() + mutedUntilDays * 24 * 60 * 60 * 1000);
+      } else if (
+        stillMutedAfterUpdate &&
+        mutedUntilDays === undefined &&
+        existingTypeRow?.mutedUntil &&
+        existingTypeRow.mutedUntil.getTime() > now.getTime()
+      ) {
+        // Caller didn't touch the snooze and at least one channel is
+        // still muted — preserve the existing future deadline so the
+        // surviving mute keeps auto-clearing on schedule.
+        mutedUntil = existingTypeRow.mutedUntil;
+      } else {
+        // Either nothing is muted anymore (full unmute), or the caller
+        // explicitly passed `mutedUntilDays: null` (indefinite), or no
+        // active snooze existed to preserve. Clear it.
+        mutedUntil = null;
+      }
+
       // Build the ON CONFLICT update set lazily so we only touch the
       // columns the caller explicitly toggled — that way a user who
       // mutes just the email channel here doesn't accidentally clobber
@@ -717,6 +822,9 @@ router.put(
       const updateSet: Record<string, unknown> = { updatedAt: now };
       if (emailEnabled !== undefined) updateSet.emailEnabled = emailEnabled;
       if (inAppEnabled !== undefined) updateSet.inAppEnabled = inAppEnabled;
+      // Always rewrite `mutedUntil` (resolved above) so the row remains
+      // a faithful snapshot of the snooze state.
+      updateSet.mutedUntil = mutedUntil;
 
       await db
         .insert(notificationTypePrefs)
@@ -729,6 +837,7 @@ router.put(
           teamsEnabled: channelRow?.teamsEnabled ?? false,
           slackEnabled: channelRow?.slackEnabled ?? false,
           inAppEnabled: insertInApp,
+          mutedUntil,
           updatedAt: now,
         })
         .onConflictDoUpdate({
@@ -740,6 +849,8 @@ router.put(
         userId,
         emailEnabled: emailEnabled ?? null,
         inAppEnabled: inAppEnabled ?? null,
+        mutedUntilDays: mutedUntilDays ?? null,
+        mutedUntil: mutedUntil ? mutedUntil.toISOString() : null,
         source: "failures_dashboard",
       });
 

@@ -7,6 +7,7 @@ import { ensureLineItemPhotoUrls } from "./ensureLineItemPhotoUrls";
 import { ensureEquipmentColumns } from "./ensureEquipmentColumns";
 import { ensureMessageColumns } from "./ensureMessageColumns";
 import { ensureNotificationEnumValues } from "./ensureNotificationEnumValues";
+import { ensureNotificationTypePrefsMutedUntil } from "./ensureNotificationTypePrefsMutedUntil";
 import { ensureIntegrationSyncStateFailureColumns } from "./ensureIntegrationSyncStateFailureColumns";
 import { ensureIntegrationSyncStateExhaustedNotifiedColumn } from "./ensureIntegrationSyncStateExhaustedNotifiedColumn";
 import { ensureIntegrationSyncAlertMutes } from "./ensureIntegrationSyncAlertMutes";
@@ -158,6 +159,10 @@ const migrations: MigrationStep[] = [
   { name: "equipment_columns", category: "ADD_COLUMN", fn: ensureEquipmentColumns },
   { name: "message_columns", category: "ADD_COLUMN", fn: ensureMessageColumns },
   { name: "notification_enum_values", category: "ADD_ENUM", fn: ensureNotificationEnumValues },
+  // Task #1747 — adds `muted_until` to `notification_type_prefs` so per-type
+  // mutes can carry an auto-clear deadline (snooze). Read paths treat past
+  // deadlines as if the override row didn't exist.
+  { name: "notification_type_prefs_muted_until", category: "ADD_COLUMN", fn: ensureNotificationTypePrefsMutedUntil },
   // Task #1332 — adds last_attempt_at + last_error to integration_sync_state
   // so the Davis-Bacon background sync can persist failure state per
   // wage decision and surface it in the Project payroll banner.

@@ -2944,6 +2944,17 @@ export const notificationTypePrefs = pgTable("notification_type_prefs", {
   // delivered independently per their own per-type prefs; the in-app
   // feed and unread-count endpoints filter the row out at read time.
   inAppEnabled: boolean("in_app_enabled"),
+  // Task #1747 — Optional snooze expiry for per-type mutes. When set,
+  // the row's email/in-app overrides are treated as if the row didn't
+  // exist once `mutedUntil <= now` (i.e. the mute auto-clears and
+  // delivery falls back to channel defaults). NULL means "indefinite"
+  // — the historical behavior — so existing rows don't change semantics.
+  // Only the digest-dashboard mute card writes a non-NULL value today
+  // (it surfaces snooze affordances "mute for 7 days" etc.); the
+  // standard notification preferences page clears this column on every
+  // update so an explicit choice from the standard settings UI always
+  // wins over a stale snooze.
+  mutedUntil: timestamp("muted_until"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

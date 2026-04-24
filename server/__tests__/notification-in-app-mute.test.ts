@@ -238,6 +238,56 @@ describe("GET /api/notifications hides in-app-muted types", () => {
     const where = lastWhereByTable["notifications"];
     expect(describeWhere(where)).not.toContain("not in");
   });
+
+  // Task #1747 — Rows with an expired `mutedUntil` snooze are treated
+  // as if the override didn't exist, so the in-app feed starts
+  // surfacing notifications for that type again on its own (no UI
+  // toggle needed). When EVERY override row has expired, the handler
+  // must omit the `NOT IN(...)` clause entirely (no spurious filter).
+  it("omits the mute filter when every override row's snooze has expired", async () => {
+    const expiredAt = new Date(Date.now() - 24 * 60 * 60 * 1000); // yesterday
+    selectQueue.push({
+      table: "notification_type_prefs",
+      rows: [
+        {
+          notificationType: "SWPPP_OVERDUE_CORRECTIVE_ACTION",
+          inAppEnabled: false,
+          mutedUntil: expiredAt,
+        },
+        {
+          notificationType: "REMINDER",
+          inAppEnabled: false,
+          mutedUntil: expiredAt,
+        },
+      ],
+    });
+    selectQueue.push({ table: "notifications", rows: [] });
+
+    await callRoute("get", "/api/notifications", { id: "u-expired-only", organizationId: "org-1" });
+    // No active mutes ⇒ no NOT IN filter, just like a clean account.
+    expect(describeWhere(lastWhereByTable["notifications"])).not.toContain("not in");
+  });
+
+  // Future-dated and indefinite mutes still suppress the feed: an
+  // active snooze (deadline > now) should add the NOT IN filter so
+  // the muted type stays hidden until the deadline passes.
+  it("keeps the mute filter when a row's snooze is still in the future", async () => {
+    const futureAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // tomorrow
+    selectQueue.push({
+      table: "notification_type_prefs",
+      rows: [
+        {
+          notificationType: "REMINDER",
+          inAppEnabled: false,
+          mutedUntil: futureAt,
+        },
+      ],
+    });
+    selectQueue.push({ table: "notifications", rows: [] });
+
+    await callRoute("get", "/api/notifications", { id: "u-future", organizationId: "org-1" });
+    expect(describeWhere(lastWhereByTable["notifications"])).toContain("not in");
+  });
 });
 
 describe("Task #1288 — mute plumbing covers the extended reminder family", () => {

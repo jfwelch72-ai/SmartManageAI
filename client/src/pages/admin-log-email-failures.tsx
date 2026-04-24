@@ -269,6 +269,64 @@ interface DigestSubscriptionResponse {
   channelEmailEnabled: boolean;
   emailOverride: boolean | null;
   inAppOverride: boolean | null;
+  // Task #1747 — Mute timing surfaced so the dashboard can show
+  // "muted N days ago" + the auto-clear deadline (or "indefinitely").
+  // `mutedAt` is the override row's `updated_at` and is null when no
+  // override is in effect. `mutedUntil` is null for indefinite mutes
+  // and otherwise an ISO timestamp.
+  mutedAt: string | null;
+  mutedUntil: string | null;
+  snoozeExpired: boolean;
+}
+
+// Task #1747 — Snooze affordances offered by the mute card. `null`
+// keeps the historical "indefinite" semantics. Numbers are days the
+// server expands into a `muted_until` deadline. Keep this list in
+// sync with `MAX_SNOOZE_DAYS` in `notificationPreferencesRoutes.ts`.
+const SNOOZE_OPTIONS: Array<{ value: number | null; label: string; description: string }> = [
+  { value: 7, label: "7 days", description: "Auto-unmutes in a week — good for clearing this week's noise." },
+  { value: 30, label: "30 days", description: "Auto-unmutes next month — good for ongoing remediation." },
+  { value: null, label: "Indefinitely", description: "Stays muted until you toggle it back on." },
+];
+
+function formatRelativePast(isoTs: string | null): string | null {
+  if (!isoTs) return null;
+  const ms = Date.now() - new Date(isoTs).getTime();
+  if (Number.isNaN(ms) || ms < 0) return null;
+  const minutes = Math.floor(ms / (60 * 1000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days} day${days === 1 ? "" : "s"} ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months} month${months === 1 ? "" : "s"} ago`;
+  const years = Math.floor(days / 365);
+  return `${years} year${years === 1 ? "" : "s"} ago`;
+}
+
+function formatRelativeFuture(isoTs: string | null): string | null {
+  if (!isoTs) return null;
+  const ms = new Date(isoTs).getTime() - Date.now();
+  if (Number.isNaN(ms) || ms <= 0) return null;
+  const minutes = Math.ceil(ms / (60 * 1000));
+  if (minutes < 60) return `in ${minutes} minute${minutes === 1 ? "" : "s"}`;
+  const hours = Math.ceil(minutes / 60);
+  if (hours < 24) return `in ${hours} hour${hours === 1 ? "" : "s"}`;
+  const days = Math.ceil(hours / 24);
+  if (days < 60) return `in ${days} day${days === 1 ? "" : "s"}`;
+  const months = Math.ceil(days / 30);
+  return `in ${months} month${months === 1 ? "" : "s"}`;
+}
+
+function formatAbsolute(isoTs: string | null): string | null {
+  if (!isoTs) return null;
+  try {
+    return new Date(isoTs).toLocaleString();
+  } catch {
+    return null;
+  }
 }
 
 function DigestSubscriptionCard() {
@@ -277,8 +335,18 @@ function DigestSubscriptionCard() {
     queryKey: ["/api/notifications/preferences/log-email-failures-digest"],
   });
 
+  // Track which snooze duration the admin most recently picked so the
+  // *next* mute click on either channel uses it. `null` = indefinite.
+  // Defaults to indefinite because that's the historical behavior and
+  // the right pick when an admin really wants to mute permanently.
+  const [pendingSnoozeDays, setPendingSnoozeDays] = useState<number | null>(null);
+
   const mutation = useMutation({
-    mutationFn: async (patch: { emailEnabled?: boolean; inAppEnabled?: boolean }) => {
+    mutationFn: async (patch: {
+      emailEnabled?: boolean;
+      inAppEnabled?: boolean;
+      mutedUntilDays?: number | null;
+    }) => {
       const res = await apiRequest(
         "PUT",
         "/api/notifications/preferences/log-email-failures-digest",
@@ -300,11 +368,20 @@ function DigestSubscriptionCard() {
       const label = patch.emailEnabled !== undefined ? "Email" : "In-app";
       const enabled =
         patch.emailEnabled !== undefined ? patch.emailEnabled : patch.inAppEnabled;
+      // Task #1747 — Mute toasts now name the snooze window so the
+      // admin gets immediate confirmation of how long the digest will
+      // be silent (and that "indefinitely" really means forever).
+      let description: string;
+      if (enabled) {
+        description = `You'll receive the daily failures digest ${label.toLowerCase()}.`;
+      } else if (patch.mutedUntilDays && patch.mutedUntilDays > 0) {
+        description = `The daily failures digest will be silenced ${label.toLowerCase()} for ${patch.mutedUntilDays} day${patch.mutedUntilDays === 1 ? "" : "s"}, then auto-clear.`;
+      } else {
+        description = `The daily failures digest will no longer be delivered ${label.toLowerCase()} until you toggle it back on.`;
+      }
       toast({
         title: enabled ? `${label} digest re-enabled` : `${label} digest muted`,
-        description: enabled
-          ? `You'll receive the daily failures digest ${label.toLowerCase()}.`
-          : `The daily failures digest will no longer be delivered ${label.toLowerCase()}.`,
+        description,
       });
     },
     onError: (err) => {
@@ -358,9 +435,20 @@ function DigestSubscriptionCard() {
     );
   }
 
-  const { emailEnabled, inAppEnabled, channelEmailEnabled } = data;
+  const { emailEnabled, inAppEnabled, channelEmailEnabled, mutedAt, mutedUntil } = data;
+  const anyChannelMuted = !emailEnabled || !inAppEnabled;
   const bothMuted = !emailEnabled && !inAppEnabled;
   const StatusIcon = bothMuted ? BellOff : Bell;
+
+  // Task #1747 — Build the mute-timing summary line. Only meaningful
+  // when at least one channel is muted (otherwise there's nothing
+  // counting down). `mutedAt` is null when no override row is in
+  // effect (server already accounts for an expired snooze), so the
+  // copy never claims a stale duration.
+  const mutedAgo = anyChannelMuted ? formatRelativePast(mutedAt) : null;
+  const autoClearsIn = anyChannelMuted ? formatRelativeFuture(mutedUntil) : null;
+  const mutedAtAbs = formatAbsolute(mutedAt);
+  const mutedUntilAbs = formatAbsolute(mutedUntil);
 
   return (
     <Card data-testid="card-digest-subscription">
@@ -395,7 +483,16 @@ function DigestSubscriptionCard() {
             <Switch
               checked={emailEnabled}
               disabled={mutation.isPending}
-              onCheckedChange={(checked) => mutation.mutate({ emailEnabled: checked })}
+              onCheckedChange={(checked) =>
+                // Task #1747 — Mute requests carry the currently
+                // selected snooze window; unmute requests don't bother
+                // sending one (server clears `muted_until` either way).
+                mutation.mutate(
+                  checked
+                    ? { emailEnabled: true }
+                    : { emailEnabled: false, mutedUntilDays: pendingSnoozeDays },
+                )
+              }
               data-testid="switch-digest-email"
               aria-label="Email me the daily failures digest"
             />
@@ -408,7 +505,13 @@ function DigestSubscriptionCard() {
             <Switch
               checked={inAppEnabled}
               disabled={mutation.isPending}
-              onCheckedChange={(checked) => mutation.mutate({ inAppEnabled: checked })}
+              onCheckedChange={(checked) =>
+                mutation.mutate(
+                  checked
+                    ? { inAppEnabled: true }
+                    : { inAppEnabled: false, mutedUntilDays: pendingSnoozeDays },
+                )
+              }
               data-testid="switch-digest-in-app"
               aria-label="Show the daily failures digest in my in-app feed"
             />
@@ -421,6 +524,69 @@ function DigestSubscriptionCard() {
             Manage notification settings
           </Link>
         </div>
+
+        {/*
+          Task #1747 — Snooze affordance. Always rendered so an admin
+          can pre-pick "7 days" *before* flipping a switch, and so the
+          card visibly answers the "how long does muting actually
+          last?" question even when nothing is currently muted. The
+          buttons restate the chosen window for the next mute action;
+          they do NOT mutate state on their own.
+        */}
+        <div
+          className="mt-4 flex flex-wrap items-center gap-2"
+          data-testid="group-digest-snooze-options"
+        >
+          <span className="text-xs text-muted-foreground mr-1">
+            Next mute lasts:
+          </span>
+          {SNOOZE_OPTIONS.map((opt) => {
+            const isSelected = pendingSnoozeDays === opt.value;
+            const testValue = opt.value === null ? "indefinite" : `${opt.value}d`;
+            return (
+              <Button
+                key={testValue}
+                type="button"
+                size="sm"
+                variant={isSelected ? "default" : "outline"}
+                className="h-7 px-2 text-xs"
+                onClick={() => setPendingSnoozeDays(opt.value)}
+                title={opt.description}
+                data-testid={`button-digest-snooze-${testValue}`}
+                aria-pressed={isSelected}
+              >
+                {opt.label}
+              </Button>
+            );
+          })}
+        </div>
+
+        {anyChannelMuted && mutedAgo && (
+          // Task #1747 — Surface when the mute was set + when it
+          // auto-clears (or that it never will). This is the
+          // headline benefit of the task: an admin browsing the
+          // dashboard months later sees the duration at a glance and
+          // can decide whether the silence has gone on too long.
+          <p
+            className="text-xs text-muted-foreground mt-3"
+            data-testid="text-digest-mute-timing"
+          >
+            <span title={mutedAtAbs ?? undefined}>Muted {mutedAgo}.</span>{" "}
+            {autoClearsIn ? (
+              <span
+                title={mutedUntilAbs ?? undefined}
+                data-testid="text-digest-mute-auto-clears"
+              >
+                Auto-clears {autoClearsIn}.
+              </span>
+            ) : (
+              <span data-testid="text-digest-mute-indefinite">
+                This mute is indefinite — it will not auto-clear.
+              </span>
+            )}
+          </p>
+        )}
+
         {emailEnabled && !channelEmailEnabled && (
           // The override forces email on for the digest type, but the
           // channel-level master switch is off. The notification

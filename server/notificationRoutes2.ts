@@ -66,17 +66,26 @@ const router = Router();
  *
  * NULL `inAppEnabled` is treated as "not configured", which preserves
  * the historical always-show-in-feed behavior.
+ *
+ * Task #1747 — Rows whose snooze (`mutedUntil`) has elapsed are
+ * skipped, so an "auto-clear in 7 days" mute starts surfacing
+ * notifications again on its own without the user having to revisit
+ * the dashboard to flip the switch back. NULL `mutedUntil` keeps the
+ * historical "indefinite" semantics.
  */
 async function loadInAppMutedTypes(userId: string): Promise<NotificationType[]> {
   const rows = await db
     .select({
       notificationType: notificationTypePrefs.notificationType,
       inAppEnabled: notificationTypePrefs.inAppEnabled,
+      mutedUntil: notificationTypePrefs.mutedUntil,
     })
     .from(notificationTypePrefs)
     .where(eq(notificationTypePrefs.userId, userId));
+  const nowMs = Date.now();
   return rows
     .filter((r) => r.inAppEnabled === false)
+    .filter((r) => !r.mutedUntil || new Date(r.mutedUntil).getTime() > nowMs)
     .map((r) => r.notificationType as NotificationType);
 }
 

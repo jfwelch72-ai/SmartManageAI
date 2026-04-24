@@ -87,6 +87,17 @@ async function loadEffectivePrefs(userId: string, notifType: NotificationType | 
 
   if (!typeRow) return base;
 
+  // Task #1747 — A type-level override row whose snooze has elapsed
+  // (`muted_until <= now`) is treated as if it didn't exist. This keeps
+  // outbound delivery (email/SMS/push/Teams/Slack) consistent with the
+  // dashboard mute card and the in-app feed mute set, both of which
+  // already ignore expired rows. Without this filter the user could
+  // see "auto-clears in 0 days" in the UI yet still have email
+  // delivery suppressed by the stale override.
+  if (typeRow.mutedUntil && typeRow.mutedUntil.getTime() <= Date.now()) {
+    return base;
+  }
+
   // Merge type-level overrides onto base channel prefs field-by-field.
   // This ensures a per-type row only overrides the channels explicitly stored in it,
   // and future partial-row scenarios are handled gracefully.
