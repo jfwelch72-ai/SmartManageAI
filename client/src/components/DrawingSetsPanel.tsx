@@ -301,6 +301,112 @@ const ManageSetDialog = memo(function ManageSetDialog({
   );
 });
 
+// Task #1857 — Compare dialog extracted into its own memoized component so:
+//   1. its compare query only mounts when the dialog is actually open,
+//      eliminating background work while it's closed and avoiding stale
+//      data flashing in when the user reopens it later;
+//   2. updates to the parent panel (drawingSets refetch, sheets prop
+//      identity changing on every PlansTab render) no longer cascade a
+//      re-render through every compare row, which was making future
+//      close/accept actions feel laggy on slow networks.
+interface CompareRowData {
+  itemId: string;
+  sheetName: string | null;
+  sheetId: string;
+  currentRevisionLabel: string | null;
+  latestRevisionLabel: string | null;
+  hasNewerRevision: boolean;
+}
+
+interface CompareRowProps {
+  item: CompareRowData;
+}
+
+const CompareRow = memo(function CompareRow({ item }: CompareRowProps) {
+  return (
+    <div
+      className={`flex items-center justify-between p-2 rounded border text-sm ${item.hasNewerRevision ? "border-amber-400 bg-amber-50/50 dark:bg-amber-900/10" : ""}`}
+      data-testid={`compare-item-${item.itemId}`}
+    >
+      <div className="min-w-0 flex-1">
+        <span className="truncate font-medium">{item.sheetName || item.sheetId}</span>
+        <div className="flex gap-2 mt-0.5">
+          <span className="text-xs text-muted-foreground">
+            Pinned: {item.currentRevisionLabel || "—"}
+          </span>
+          <span className="text-xs text-muted-foreground">
+            Latest: {item.latestRevisionLabel || "—"}
+          </span>
+        </div>
+      </div>
+      {item.hasNewerRevision ? (
+        <Badge variant="outline" className="text-xs border-amber-400 text-amber-700 dark:text-amber-400 shrink-0">
+          <AlertTriangle className="w-3 h-3 mr-0.5" />
+          Newer Available
+        </Badge>
+      ) : (
+        <Badge variant="outline" className="text-xs text-green-600 dark:text-green-400 shrink-0">
+          <Check className="w-3 h-3 mr-0.5" />
+          Up to Date
+        </Badge>
+      )}
+    </div>
+  );
+});
+
+interface CompareSetDialogProps {
+  setId: string;
+  onClose: () => void;
+}
+
+const CompareSetDialog = memo(function CompareSetDialog({
+  setId,
+  onClose,
+}: CompareSetDialogProps) {
+  const { data: compareData } = useQuery<ComparisonResult>({
+    queryKey: ["/api/projects", "drawing-sets", setId, "compare"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/drawing-sets/${setId}/compare`);
+      if (!res.ok) throw new Error("Failed to compare");
+      return res.json();
+    },
+  });
+
+  const handleOpenChange = useCallback(
+    (open: boolean) => {
+      if (!open) onClose();
+    },
+    [onClose],
+  );
+
+  return (
+    <Dialog open onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto" data-testid="dialog-compare-set">
+        <DialogHeader>
+          <DialogTitle>Compare Set vs Latest Revisions</DialogTitle>
+        </DialogHeader>
+        {compareData ? (
+          <div className="space-y-2">
+            {compareData.comparison.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-3">
+                No sheets pinned in this set yet.
+              </p>
+            ) : (
+              compareData.comparison.map((item) => (
+                <CompareRow key={item.itemId} item={item} />
+              ))
+            )}
+          </div>
+        ) : (
+          <div className="flex justify-center py-4">
+            <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+});
+
 export default function DrawingSetsPanel({
   projectId,
   sheets,
@@ -321,16 +427,6 @@ export default function DrawingSetsPanel({
   const { data: drawingSets = [], isLoading } = useQuery<DrawingSet[]>({
     queryKey: ["/api/projects", projectId, "drawing-sets"],
     enabled: !!projectId,
-  });
-
-  const { data: compareData } = useQuery<ComparisonResult>({
-    queryKey: ["/api/projects", "drawing-sets", compareSetId, "compare"],
-    queryFn: async () => {
-      const res = await fetch(`/api/projects/drawing-sets/${compareSetId}/compare`);
-      if (!res.ok) throw new Error("Failed to compare");
-      return res.json();
-    },
-    enabled: !!compareSetId,
   });
 
   const createMutation = useMutation({
@@ -393,6 +489,7 @@ export default function DrawingSetsPanel({
   });
 
   const handleCloseManage = useCallback(() => setManageSetId(null), []);
+  const handleCloseCompare = useCallback(() => setCompareSetId(null), []);
   // Task #1812 — pass the set name to the dialog so its bulk-replace error
   // toast can name the offending set (via bulkPinErrorDescription) when the
   // backend rejects a duplicate pin with HTTP 409.
@@ -623,57 +720,12 @@ export default function DrawingSetsPanel({
         />
       )}
 
-      <Dialog open={!!compareSetId} onOpenChange={(open) => { if (!open) setCompareSetId(null); }}>
-        <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto" data-testid="dialog-compare-set">
-          <DialogHeader>
-            <DialogTitle>Compare Set vs Latest Revisions</DialogTitle>
-          </DialogHeader>
-          {compareData ? (
-            <div className="space-y-2">
-              {compareData.comparison.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-3">
-                  No sheets pinned in this set yet.
-                </p>
-              ) : (
-                compareData.comparison.map((item) => (
-                  <div
-                    key={item.itemId}
-                    className={`flex items-center justify-between p-2 rounded border text-sm ${item.hasNewerRevision ? "border-amber-400 bg-amber-50/50 dark:bg-amber-900/10" : ""}`}
-                    data-testid={`compare-item-${item.itemId}`}
-                  >
-                    <div className="min-w-0 flex-1">
-                      <span className="truncate font-medium">{item.sheetName || item.sheetId}</span>
-                      <div className="flex gap-2 mt-0.5">
-                        <span className="text-xs text-muted-foreground">
-                          Pinned: {item.currentRevisionLabel || "—"}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          Latest: {item.latestRevisionLabel || "—"}
-                        </span>
-                      </div>
-                    </div>
-                    {item.hasNewerRevision ? (
-                      <Badge variant="outline" className="text-xs border-amber-400 text-amber-700 dark:text-amber-400 shrink-0">
-                        <AlertTriangle className="w-3 h-3 mr-0.5" />
-                        Newer Available
-                      </Badge>
-                    ) : (
-                      <Badge variant="outline" className="text-xs text-green-600 dark:text-green-400 shrink-0">
-                        <Check className="w-3 h-3 mr-0.5" />
-                        Up to Date
-                      </Badge>
-                    )}
-                  </div>
-                ))
-              )}
-            </div>
-          ) : (
-            <div className="flex justify-center py-4">
-              <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+      {compareSetId && (
+        <CompareSetDialog
+          setId={compareSetId}
+          onClose={handleCloseCompare}
+        />
+      )}
     </div>
   );
 }
