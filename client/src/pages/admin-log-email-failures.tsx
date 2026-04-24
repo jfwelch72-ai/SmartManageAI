@@ -22,7 +22,7 @@
  */
 import { useMemo } from "react";
 import { Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Card,
   CardContent,
@@ -50,14 +50,19 @@ import {
   AlertCircle,
   ExternalLink,
   History,
+  Loader2,
   MailWarning,
+  Send,
 } from "lucide-react";
 import {
   RecentAttemptsBody,
+  buildAttemptsQueryKey,
   formatLogEmailAttemptTime,
   type LogEmailAttemptStatus,
   type LogEmailLogType,
 } from "@/components/log-email/RecentAttempts";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 // Mirrors the row shape returned by `GET /api/log-email-schedule-failures`.
 // The endpoint already filters to FAILURE/NO_RECIPIENTS, so we don't need
@@ -74,6 +79,108 @@ interface FailureRow {
   lastAttemptError: string | null;
   lastAttemptRecipientCount: number | null;
   consecutiveFailureCount: number;
+}
+
+/**
+ * Task #1691 — per-row "Resend now" action.
+ *
+ * Reuses the existing
+ * `POST /api/projects/:projectId/log-email-schedules/:logType/send-now`
+ * endpoint that the project settings card already calls (Task #1638), so
+ * the same flatten → build PDF → send → stamp-outcome pipeline runs and
+ * the same 30s server-side debounce protects against accidental
+ * double-clicks. No backend change is required.
+ *
+ * On a SUCCESS outcome we invalidate the failures-list query — the row
+ * will drop off on the next refresh because the schedule's last attempt
+ * is no longer FAILURE/NO_RECIPIENTS. On NO_RECIPIENTS or FAILURE we
+ * still invalidate (the lastAttemptAt/error text just changed), and we
+ * surface the reason inline via toast so the admin knows what to fix
+ * before retrying. The per-schedule attempts cache is also invalidated
+ * so any open "View history" popover refreshes to include the attempt
+ * row this send just wrote.
+ */
+function ResendNowButton({
+  projectId,
+  logType,
+  projectName,
+  rowKey,
+}: {
+  projectId: string;
+  logType: LogEmailLogType;
+  projectName: string;
+  rowKey: string;
+}) {
+  const { toast } = useToast();
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(
+        "POST",
+        `/api/projects/${projectId}/log-email-schedules/${logType}/send-now`,
+      );
+      return res.json() as Promise<{
+        result: {
+          status: LogEmailAttemptStatus | "PROJECT_NOT_FOUND";
+          error: string | null;
+          recipientCount: number;
+        };
+      }>;
+    },
+    onSuccess: (data) => {
+      const { status, error, recipientCount } = data.result;
+      if (status === "SUCCESS") {
+        toast({
+          title: "Log emailed",
+          description: `${projectName} (${logType}) sent to ${recipientCount} recipient${recipientCount === 1 ? "" : "s"}.`,
+        });
+      } else if (status === "NO_RECIPIENTS") {
+        toast({
+          title: "No recipients to email",
+          description: `${projectName} (${logType}) still has no valid recipients. Add at least one before retrying.`,
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: "Couldn't resend the log",
+          description: error ?? "The email transport rejected the message.",
+          variant: "destructive",
+        });
+      }
+      // Refresh the failures list (so SUCCESS rows drop off) and the
+      // per-schedule attempts cache (so the history popover shows the
+      // newly-written attempt row).
+      queryClient.invalidateQueries({ queryKey: ["/api/log-email-schedule-failures"] });
+      queryClient.invalidateQueries({ queryKey: buildAttemptsQueryKey(projectId, logType) });
+    },
+    onError: (err) => {
+      // The 30s debounce returns 429 with the wait-time message — the
+      // shared apiRequest helper surfaces it as `err.message`, so the
+      // admin sees the exact "Please wait N seconds" copy.
+      toast({
+        title: "Couldn't resend the log",
+        description: err instanceof Error ? err.message : "Please try again in a moment.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      disabled={mutation.isPending}
+      onClick={() => mutation.mutate()}
+      data-testid={`button-resend-now-${rowKey}`}
+      title={`Re-run the scheduled send for ${projectName} (${logType}) now.`}
+    >
+      {mutation.isPending ? (
+        <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+      ) : (
+        <Send className="w-3.5 h-3.5 mr-1" />
+      )}
+      Resend now
+    </Button>
+  );
 }
 
 function FailureStatusBadge({ status, rowKey }: { status: LogEmailAttemptStatus; rowKey: string }) {
@@ -216,6 +323,12 @@ export default function AdminLogEmailFailuresPage() {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
+                            <ResendNowButton
+                              projectId={row.projectId}
+                              logType={row.logType}
+                              projectName={row.projectName}
+                              rowKey={rowKey}
+                            />
                             <Popover>
                               <PopoverTrigger asChild>
                                 <Button
