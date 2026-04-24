@@ -5277,7 +5277,7 @@ function failuresDigestPath(windowHours: number) {
   return `/api/crm/calls/transcripts/backfill/alert-failures-digest?windowHours=${windowHours}`;
 }
 
-function BackfillAlertFailuresDigestCard({
+export function BackfillAlertFailuresDigestCard({
   onJumpToJob,
   isJumping,
 }: {
