@@ -557,6 +557,51 @@ export function useTakeoffData({
     },
   });
 
+  // Task #1752 — bulk PATCH for group-drag commits. The legacy
+  // `onBodyDragEnd` path fanned out N parallel `updateMarkupMutation`
+  // calls per multi-select drag, each one a separate HTTP round-trip
+  // and each one triggering its own
+  // `queryClient.invalidateQueries` refetch of the markups list.
+  // This mutation collapses every member of the gesture into a single
+  // server request and a single cache invalidation. Optimistic update
+  // mirrors `updateMarkupMutation.onMutate` so the dragged markups do
+  // not snap back to their pre-drag location while the PATCH is in
+  // flight.
+  const bulkUpdateMarkupsMutation = useMutation({
+    mutationFn: async (data: {
+      updates: { id: string; points: { x: number; y: number }[] }[];
+    }) => {
+      const res = await apiRequest("PATCH", "/api/takeoff/markups/bulk", { updates: data.updates });
+      return res.json();
+    },
+    onMutate: async ({ updates }) => {
+      const queryKey = ["/api/takeoff/sheets", selectedSheet, "markups"];
+      await queryClient.cancelQueries({ queryKey });
+      const previousMarkups = queryClient.getQueryData<TakeoffMarkupWithAuthor[]>(queryKey);
+      if (previousMarkups) {
+        const byId = new Map(updates.map(u => [u.id, u.points]));
+        queryClient.setQueryData<TakeoffMarkupWithAuthor[]>(queryKey, (old) => {
+          if (!old) return old;
+          return old.map((m) => {
+            const pts = byId.get(m.id);
+            if (!pts) return m;
+            return { ...m, points: pts };
+          });
+        });
+      }
+      return { previousMarkups, queryKey };
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "markups"] });
+    },
+    onError: (_error, _vars, ctx) => {
+      if (ctx?.previousMarkups) {
+        queryClient.setQueryData(ctx.queryKey, ctx.previousMarkups);
+      }
+      toast({ title: "Error", description: "Failed to update markups", variant: "destructive" });
+    },
+  });
+
   const deleteMarkupMutation = useMutation({
     mutationFn: async (markup: TakeoffMarkupWithAuthor | string) => {
       const markupId = typeof markup === "string" ? markup : markup.id;
@@ -829,6 +874,7 @@ export function useTakeoffData({
     deleteMeasurementMutation,
     createMarkupMutation,
     updateMarkupMutation,
+    bulkUpdateMarkupsMutation,
     deleteMarkupMutation,
     createSheetLinkMutation,
     deleteSheetLinkMutation,

@@ -545,6 +545,113 @@ router.post("/api/takeoff/markups", requireAuth, requireRole("ADMIN", "MANAGER",
   }
 });
 
+// Task #1752 — Bulk PATCH for moving N takeoff markups in a single
+// round-trip. Mirrors `/api/plan-documents/:docId/markups/bulk` and
+// replaces the N parallel per-id PATCHes that fanned out from
+// `TakeoffWorkspace.onBodyDragEnd` (each of which triggered its own
+// `queryClient.invalidateQueries` refetch). All updates run inside a
+// single transaction so a partial failure either commits everything
+// or nothing.
+//
+// Auth mirrors the per-id PATCH below — `requireAuth` only (no
+// `requireRole`), with per-row owner-or-admin/manager checks so a
+// FIELD_WORKER can still bulk-move groups composed of their own
+// markups. Same-sheet enforcement is added on top because the only
+// caller is the multi-select group-drag commit, which by definition
+// operates inside one sheet; refusing cross-sheet payloads guards
+// against a malformed request silently relocating markups on
+// unrelated sheets.
+//
+// Route MUST be registered before `/api/takeoff/markups/:markupId`
+// or Express will route "bulk" into `:markupId` and 404.
+router.patch("/api/takeoff/markups/bulk", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { takeoffMarkups } = await import("@shared/schema");
+    const { z } = await import("zod");
+    const { inArray } = await import("drizzle-orm");
+
+    const bulkSchema = z.object({
+      updates: z
+        .array(
+          z.object({
+            id: z.string().min(1),
+            points: z
+              .array(z.object({ x: z.number(), y: z.number() }))
+              .min(1)
+              .max(4096),
+          }),
+        )
+        .min(1)
+        .max(500),
+    });
+
+    const validated = bulkSchema.parse(req.body);
+    const ids = validated.updates.map((u) => u.id);
+
+    const rows = await db
+      .select()
+      .from(takeoffMarkups)
+      .where(inArray(takeoffMarkups.id, ids));
+
+    if (rows.length !== ids.length) {
+      res.status(404).json({ error: "One or more markups were not found" });
+      return;
+    }
+
+    const userRole = req.user!.role;
+    const userId = req.user!.id;
+    const orgId = req.user!.organizationId;
+    const isSuperAdmin = userRole === "SUPER_ADMIN";
+    const isAdminOrManager = isSuperAdmin || userRole === "ADMIN" || userRole === "MANAGER";
+
+    const firstSheetId = rows[0].sheetId;
+    for (const r of rows) {
+      if (r.sheetId !== firstSheetId) {
+        res.status(400).json({ error: "All markups must belong to the same sheet" });
+        return;
+      }
+      if (!isSuperAdmin && r.organizationId !== orgId) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
+      if (!isAdminOrManager && r.createdBy !== userId) {
+        res.status(403).json({ error: "You can only edit your own markups" });
+        return;
+      }
+    }
+
+    const updated = await db.transaction(async (tx) => {
+      const out: typeof rows = [];
+      for (const u of validated.updates) {
+        const whereClause = isSuperAdmin
+          ? eq(takeoffMarkups.id, u.id)
+          : and(eq(takeoffMarkups.id, u.id), eq(takeoffMarkups.organizationId, orgId!));
+        const [row] = await tx
+          .update(takeoffMarkups)
+          .set({ points: JSON.stringify(u.points) })
+          .where(whereClause)
+          .returning();
+        if (row) out.push(row);
+      }
+      return out;
+    });
+
+    res.json(
+      updated.map((r) => ({
+        ...r,
+        points: safeParsePoints(r.points) || [],
+      })),
+    );
+  } catch (error: any) {
+    logError("Error bulk-updating markups:", {}, error instanceof Error ? error : new Error(String(error)));
+    if (error?.name === "ZodError") {
+      res.status(400).json({ error: "Invalid bulk patch", details: error.errors });
+      return;
+    }
+    next(error);
+  }
+});
+
 // Update a markup (label, color, thickness, points)
 router.patch("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthRequest, res, next) => {
   try {

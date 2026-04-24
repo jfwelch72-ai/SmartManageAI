@@ -484,7 +484,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     sheetsQueryKey,
     importPlanMutation, supersedeSheetMutation, createMeasurementMutation,
     updateMeasurementMutation, deleteMeasurementMutation,
-    createMarkupMutation, updateMarkupMutation, deleteMarkupMutation,
+    createMarkupMutation, updateMarkupMutation, bulkUpdateMarkupsMutation, deleteMarkupMutation,
     createSheetLinkMutation, deleteSheetLinkMutation, detectLinksMutation,
     saveCategoryMutation, deleteCategoryMutation,
     renameSheetMutation, duplicateSheetMutation,
@@ -3887,25 +3887,32 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                     const siblingIds = drag.siblings.map(s => s.id);
                     markupBodyDragRef.current = null;
                     if (dx === 0 && dy === 0) return;
-                    // Task #1742 — fire N parallel PATCHes for every
-                    // selected member, each with a `previous: { points }`
-                    // payload so the unified takeoff history can restore
-                    // the gesture. The sidebar Undo/Redo buttons and the
+                    // Task #1742 — fire a PATCH per selected member,
+                    // each with a `previous: { points }` payload so the
+                    // unified takeoff history can restore the gesture.
+                    // The sidebar Undo/Redo buttons and the
                     // bubble-phase Cmd/Ctrl+Z handler in
                     // `useTakeoffInteractions` then walk the same stack
                     // alongside measurement edits in the correct order.
                     //
                     // Task #1755 — for a multi-select drag, push a
                     // single MARKUP_UPDATE_BATCH entry up front
-                    // describing every member's before/after points and
-                    // tell each per-markup mutation to skip its own
-                    // history push (`skipHistory: true`). One Undo press
-                    // PATCHes every member back in parallel; one Redo
-                    // press reapplies the whole group. Single-markup
-                    // body drags still take the original
-                    // `pushMarkupUpdateAction` path through the
-                    // mutation's onSuccess — exactly one entry per drag,
-                    // no regression for the common case.
+                    // describing every member's before/after points so
+                    // one Undo press reverses the whole gesture and one
+                    // Redo press reapplies it.
+                    //
+                    // Task #1752 — multi-select drags now commit
+                    // through `bulkUpdateMarkupsMutation`, which fires
+                    // ONE PATCH for every member of the gesture and
+                    // invalidates the markups query exactly once. The
+                    // legacy fan-out path issued N parallel PATCHes
+                    // (each with its own invalidation refetch), which
+                    // scaled poorly with selection size. Single-markup
+                    // body drags (`siblingIds.length === 0`) still take
+                    // the per-id `updateMarkupMutation` so the
+                    // mutation's onSuccess can push exactly one
+                    // MARKUP_UPDATE history entry — no regression for
+                    // the common case.
                     const newPts = rawPts.map(p => ({ x: p.x + dx, y: p.y + dy }));
                     if (siblingIds.length === 0) {
                       updateMarkupMutation.mutate({
@@ -3920,7 +3927,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       const afterSnaps: { id: string; points: { x: number; y: number }[] }[] = [
                         { id: markup.id, points: newPts },
                       ];
-                      const siblingPayloads: { id: string; before: { x: number; y: number }[]; after: { x: number; y: number }[] }[] = [];
+                      const bulkUpdates: { id: string; points: { x: number; y: number }[] }[] = [
+                        { id: markup.id, points: newPts },
+                      ];
                       for (const id of siblingIds) {
                         const m = markups.find((x: any) => x.id === id);
                         if (!m) continue;
@@ -3931,25 +3940,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         const sNewPts = sPts.map(p => ({ x: p.x + dx, y: p.y + dy }));
                         beforeSnaps.push({ id, points: sPts });
                         afterSnaps.push({ id, points: sNewPts });
-                        siblingPayloads.push({ id, before: sPts, after: sNewPts });
+                        bulkUpdates.push({ id, points: sNewPts });
                       }
                       if (selectedSheet) {
                         takeoffHistory.pushMarkupUpdateBatchAction(beforeSnaps, afterSnaps, selectedSheet);
                       }
-                      updateMarkupMutation.mutate({
-                        id: markup.id,
-                        points: newPts,
-                        previous: { points: rawPts },
-                        skipHistory: true,
-                      });
-                      for (const sp of siblingPayloads) {
-                        updateMarkupMutation.mutate({
-                          id: sp.id,
-                          points: sp.after,
-                          previous: { points: sp.before },
-                          skipHistory: true,
-                        });
-                      }
+                      bulkUpdateMarkupsMutation.mutate({ updates: bulkUpdates });
                     }
                   };
                   const groupProps = isDraggable
