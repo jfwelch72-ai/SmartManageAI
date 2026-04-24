@@ -528,6 +528,12 @@ export default function PlanMarkupLayer({
   // restore endpoint, optimistically removes them from the cache, and
   // pushes a single history entry covering the whole selection so the
   // user undoes a multi-delete in one Ctrl+Z.
+  //
+  // Task #1776 — The per-row DELETE is still used for `undo create` (a
+  // single forward POST has only one row to walk back) and for
+  // intentional one-off deletions where there's no benefit to the bulk
+  // route. Multi-row deletes now go through `bulkDeleteMutation` so the
+  // group-delete gesture is one round-trip + atomic.
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => apiRequest("DELETE", `/api/plan-document-markups/${id}`),
     onSuccess: () => {
@@ -535,6 +541,23 @@ export default function PlanMarkupLayer({
     },
     onError: (e: Error) =>
       toast({ title: "Could not delete markup", description: e.message, variant: "destructive" }),
+  });
+
+  // Task #1776 — Bulk delete: removes every selected markup in a single
+  // server-side transaction. Used by the toolbar's group-delete gesture
+  // so the operation is all-or-nothing; a network blip mid-flight can
+  // no longer leave a group half-deleted the way the per-id fan-out
+  // could. Cache invalidation is handled by `deleteSelection` after the
+  // history entry is pushed.
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) =>
+      apiRequest(
+        "DELETE",
+        `/api/plan-documents/${encodeURIComponent(documentId)}/markups/bulk`,
+        { ids },
+      ),
+    onError: (e: Error) =>
+      toast({ title: "Could not delete markups", description: e.message, variant: "destructive" }),
   });
 
   // Task #1737 — Bulk delete + history capture. Returns whether the
@@ -562,25 +585,30 @@ export default function PlanMarkupLayer({
       }
       if (snapshots.length === 0) return;
       // Optimistically pull the rows out of the cache so the canvas
-      // updates immediately. Rolled back below if every delete fails.
+      // updates immediately. Rolled back below if the request fails.
       const queryKey = ["/api/plan-documents", documentId, "markups", pageNumber];
       const previous = queryClient.getQueryData<ServerMarkup[]>(queryKey);
       queryClient.setQueryData<ServerMarkup[]>(queryKey, (old) =>
         old ? old.filter((m) => !snapshots.some((s) => s.id === m.id)) : old,
       );
       try {
-        await Promise.all(snapshots.map((s) => deleteMutation.mutateAsync(s.id)));
+        // Task #1776 — One atomic round-trip instead of N per-id
+        // DELETEs. The server runs the removal in a transaction so a
+        // mid-flight network blip can no longer leave a group
+        // half-deleted; either every member is gone or none are.
+        await bulkDeleteMutation.mutateAsync(snapshots.map((s) => s.id));
         pushHistory({
           type: "delete",
           markups: snapshots,
           count: snapshots.length,
         });
+        invalidate();
       } catch {
         if (previous) queryClient.setQueryData(queryKey, previous);
         invalidate();
       }
     },
-    [markups, documentId, pageNumber, deleteMutation, pushHistory, invalidate],
+    [markups, documentId, pageNumber, bulkDeleteMutation, pushHistory, invalidate],
   );
 
   // Task #1662 — group / ungroup mutations. Group expands the user's
@@ -851,19 +879,19 @@ export default function PlanMarkupLayer({
           restoreMutation.mutate([entry.markup], { onError });
           return;
         case "delete":
-          // Redo a delete == fan-out individual DELETEs for every
-          // snapshot. We optimistically pull them from the cache here
-          // so the canvas updates immediately; on failure we invalidate
-          // to resync. The DELETE endpoint is per-row, so we Promise.all.
+          // Redo a delete == re-issue the same atomic bulk DELETE the
+          // forward action used (Task #1776). We optimistically pull
+          // the rows from the cache here so the canvas updates
+          // immediately; on failure we invalidate to resync.
           {
             const queryKey = ["/api/plan-documents", documentId, "markups", pageNumber];
             const previous = queryClient.getQueryData<ServerMarkup[]>(queryKey);
             queryClient.setQueryData<ServerMarkup[]>(queryKey, (old) =>
               old ? old.filter((m) => !entry.markups.some((s) => s.id === m.id)) : old,
             );
-            Promise.all(
-              entry.markups.map((s) => deleteMutation.mutateAsync(s.id)),
-            )
+            bulkDeleteMutation
+              .mutateAsync(entry.markups.map((s) => s.id))
+              .then(() => invalidate())
               .catch(() => {
                 if (previous) queryClient.setQueryData(queryKey, previous);
                 invalidate();
@@ -891,6 +919,7 @@ export default function PlanMarkupLayer({
       bulkMoveMutation,
       restoreMutation,
       deleteMutation,
+      bulkDeleteMutation,
       groupAssignMutation,
       documentId,
       pageNumber,
@@ -1548,7 +1577,7 @@ export default function PlanMarkupLayer({
               setSelectedIds(new Set());
               await deleteSelection(ids);
             }}
-            disabled={deleteMutation.isPending}
+            disabled={deleteMutation.isPending || bulkDeleteMutation.isPending}
             aria-label="Delete markup"
             data-testid={`button-delete-markup-${lastSelected.id}`}
           >

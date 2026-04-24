@@ -566,6 +566,127 @@ router.patch(
 );
 
 // ============================================================================
+// Task #1776 — Bulk DELETE: remove multiple markups in one request.
+// Symmetric with the bulk PATCH above and used by the toolbar's
+// "delete selected group" gesture. Issuing one DELETE per group member
+// is N round-trips through auth + per-row checks and a network blip
+// mid-flight can leave a group half-deleted; this route applies the
+// same per-row org + RBAC checks the single DELETE applies, then
+// removes every row in a single transaction so the operation is
+// all-or-nothing.
+//
+// Per-row authorization mirrors the single DELETE handler exactly:
+// SUPER_ADMIN bypasses org checks, ADMIN/MANAGER may delete any row
+// in their org, FIELD_WORKER/SUPERINTENDENT may only delete rows they
+// authored. Cross-doc and cross-org rows are rejected up-front (400 /
+// 403) before the transaction opens, so a bad payload can never
+// partially apply.
+// ============================================================================
+const bulkDeleteBody = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(500),
+});
+
+router.delete(
+  "/api/plan-documents/:docId/markups/bulk",
+  requireAuth,
+  requireRole(...MARKUP_AUTHOR_ROLES),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const startedAt = Date.now();
+    try {
+      const access = await loadDocAndAssertOrg(req.params.docId, req);
+      if (!access.ok) {
+        res.status(access.status).json({ error: access.error });
+        return;
+      }
+      const body = bulkDeleteBody.parse(req.body || {});
+      // De-duplicate caller-supplied ids so a payload that lists the
+      // same row twice doesn't trip the "rows.length !== ids.length"
+      // not-found check below.
+      const ids = Array.from(new Set(body.ids));
+      const rows = await db
+        .select()
+        .from(planDocumentMarkups)
+        .where(inArray(planDocumentMarkups.id, ids));
+      if (rows.length !== ids.length) {
+        res.status(404).json({ error: "One or more markups were not found" });
+        return;
+      }
+      const user = req.user!;
+      const isSuperAdmin = user.role === "SUPER_ADMIN";
+      const isAdminOrManager =
+        isSuperAdmin || user.role === "ADMIN" || user.role === "MANAGER";
+      for (const r of rows) {
+        if (r.planDocumentId !== access.doc.id) {
+          res
+            .status(400)
+            .json({ error: "All markups must belong to the same plan document" });
+          return;
+        }
+        if (!isSuperAdmin && r.organizationId !== user.organizationId) {
+          res.status(403).json({ error: "Access denied" });
+          return;
+        }
+        if (!isAdminOrManager && r.createdBy !== user.id) {
+          res
+            .status(403)
+            .json({ error: "You can only delete your own markups" });
+          return;
+        }
+      }
+      await db.transaction(async (tx) => {
+        const deleted = await tx
+          .delete(planDocumentMarkups)
+          .where(inArray(planDocumentMarkups.id, ids))
+          .returning({ id: planDocumentMarkups.id });
+        // Defensive: if a concurrent writer removed any of the rows
+        // between the SELECT above and the DELETE here, the row count
+        // will diverge. Throw to roll back the transaction so the
+        // caller never sees a "partially succeeded" delete (which is
+        // the whole point of this route over fan-out per-id DELETEs).
+        if (deleted.length !== ids.length) {
+          throw new Error("Bulk delete affected fewer rows than expected");
+        }
+      });
+      await logAudit(
+        {
+          userId: user.id,
+          action: "DELETE",
+          entityType: "planDocumentMarkup",
+          entityId: access.doc.id,
+          newValue: JSON.stringify({
+            op: "bulkDelete",
+            count: ids.length,
+            ids,
+          }),
+        },
+        req,
+      );
+      recordJobMetrics("plan_document_markups_bulk_delete", {
+        ok: 1,
+        count: ids.length,
+        ms: Date.now() - startedAt,
+      });
+      res.json({ ok: true, count: ids.length });
+    } catch (err: any) {
+      recordJobMetrics("plan_document_markups_bulk_delete", {
+        error: 1,
+        ms: Date.now() - startedAt,
+      });
+      if (err?.name === "ZodError") {
+        res.status(400).json({ error: "Invalid bulk delete", details: err.errors });
+        return;
+      }
+      logError(
+        "Error bulk-deleting plan document markups",
+        {},
+        err instanceof Error ? err : new Error(String(err)),
+      );
+      next(err);
+    }
+  },
+);
+
+// ============================================================================
 // Task #1662 — Group / Ungroup multiple markups. Group assigns the same
 // new uuid to every markup id in the request body so they move + delete
 // as one unit. Ungroup clears it. Both operations are scoped to a single
