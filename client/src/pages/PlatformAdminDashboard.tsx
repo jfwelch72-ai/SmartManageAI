@@ -460,7 +460,7 @@ export default function PlatformAdminDashboard() {
                     </Badge>
                   )}
                 </CardTitle>
-                <CardDescription>Cross-org alert-failure CSVs and silent-pipeline digest for tenants whose alerts have stopped</CardDescription>
+                <CardDescription>Cross-org alert-failure CSVs and silent-pipeline digest for quiet tenants</CardDescription>
               </CardHeader>
             </Card>
           </Link>
