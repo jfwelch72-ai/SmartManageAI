@@ -161,16 +161,16 @@ describe("GET /api/projects/:projectId/log-email-schedules — failure notificat
       },
     ]);
     queueUsers([
-      { id: PM_ID, firstName: "Pat", lastName: "Manager", email: "pm@example.com" },
-      { id: EDITOR_ID, firstName: "Ed", lastName: "Editor", email: "editor@example.com" },
+      { id: PM_ID, firstName: "Pat", lastName: "Manager", email: "pm@example.com", isActive: true },
+      { id: EDITOR_ID, firstName: "Ed", lastName: "Editor", email: "editor@example.com", isActive: true },
     ]);
 
     const res = await authedGet();
     expect(res.status).toBe(200);
     const rfi = res.body.schedules.find((s: any) => s.logType === "RFI");
     expect(rfi.failureNotificationRecipients).toEqual([
-      { id: PM_ID, firstName: "Pat", lastName: "Manager", email: "pm@example.com" },
-      { id: EDITOR_ID, firstName: "Ed", lastName: "Editor", email: "editor@example.com" },
+      { id: PM_ID, firstName: "Pat", lastName: "Manager", email: "pm@example.com", isActive: true },
+      { id: EDITOR_ID, firstName: "Ed", lastName: "Editor", email: "editor@example.com", isActive: true },
     ]);
 
     // The default-OFF SUBMITTAL row (no schedule persisted) should
@@ -178,7 +178,7 @@ describe("GET /api/projects/:projectId/log-email-schedules — failure notificat
     // if a future schedule failed.
     const submittal = res.body.schedules.find((s: any) => s.logType === "SUBMITTAL");
     expect(submittal.failureNotificationRecipients).toEqual([
-      { id: PM_ID, firstName: "Pat", lastName: "Manager", email: "pm@example.com" },
+      { id: PM_ID, firstName: "Pat", lastName: "Manager", email: "pm@example.com", isActive: true },
     ]);
   });
 
@@ -200,13 +200,80 @@ describe("GET /api/projects/:projectId/log-email-schedules — failure notificat
       },
     ]);
     queueUsers([
-      { id: PM_ID, firstName: "Pat", lastName: "Manager", email: "pm@example.com" },
+      { id: PM_ID, firstName: "Pat", lastName: "Manager", email: "pm@example.com", isActive: true },
     ]);
 
     const res = await authedGet();
     const rfi = res.body.schedules.find((s: any) => s.logType === "RFI");
     expect(rfi.failureNotificationRecipients).toHaveLength(1);
     expect(rfi.failureNotificationRecipients[0].id).toBe(PM_ID);
+    expect(rfi.failureNotificationRecipients[0].isActive).toBe(true);
+  });
+
+  // Task #1655 — `isActive` is mirrored straight from `users.is_active`
+  // so the card can flag deactivated recipients without re-querying.
+  // Mixed and all-inactive cases share the same server payload shape;
+  // the empty-state decision is handled client-side so the worker's
+  // own dedupe (which still creates notification rows for inactive
+  // users) stays the source of truth.
+  it("surfaces isActive on each recipient (mixed active/inactive)", async () => {
+    queueProject([{
+      id: PROJECT_ID,
+      name: "Bridge 7",
+      gcOrganizationId: ORG_ID,
+      projectManagerId: PM_ID,
+    }]);
+    queueSchedules([
+      {
+        id: "s-rfi",
+        organizationId: ORG_ID,
+        projectId: PROJECT_ID,
+        logType: "RFI",
+        cadence: "WEEKLY",
+        lastEditedById: EDITOR_ID,
+      },
+    ]);
+    queueUsers([
+      { id: PM_ID, firstName: "Pat", lastName: "Manager", email: "pm@example.com", isActive: true },
+      { id: EDITOR_ID, firstName: "Ed", lastName: "Editor", email: "editor@example.com", isActive: false },
+    ]);
+
+    const res = await authedGet();
+    const rfi = res.body.schedules.find((s: any) => s.logType === "RFI");
+    expect(rfi.failureNotificationRecipients).toEqual([
+      { id: PM_ID, firstName: "Pat", lastName: "Manager", email: "pm@example.com", isActive: true },
+      { id: EDITOR_ID, firstName: "Ed", lastName: "Editor", email: "editor@example.com", isActive: false },
+    ]);
+  });
+
+  it("surfaces isActive=false when every resolved recipient is inactive", async () => {
+    queueProject([{
+      id: PROJECT_ID,
+      name: "Bridge 7",
+      gcOrganizationId: ORG_ID,
+      projectManagerId: PM_ID,
+    }]);
+    queueSchedules([
+      {
+        id: "s-rfi",
+        organizationId: ORG_ID,
+        projectId: PROJECT_ID,
+        logType: "RFI",
+        cadence: "WEEKLY",
+        lastEditedById: EDITOR_ID,
+      },
+    ]);
+    queueUsers([
+      { id: PM_ID, firstName: "Pat", lastName: "Manager", email: "pm@example.com", isActive: false },
+      { id: EDITOR_ID, firstName: "Ed", lastName: "Editor", email: "editor@example.com", isActive: false },
+    ]);
+
+    const res = await authedGet();
+    const rfi = res.body.schedules.find((s: any) => s.logType === "RFI");
+    expect(rfi.failureNotificationRecipients.every((r: any) => r.isActive === false)).toBe(true);
+    expect(rfi.failureNotificationRecipients.map((r: any) => r.id).sort()).toEqual(
+      [PM_ID, EDITOR_ID].sort(),
+    );
   });
 
   it("returns the empty state when the project has no PM and no schedule editor", async () => {

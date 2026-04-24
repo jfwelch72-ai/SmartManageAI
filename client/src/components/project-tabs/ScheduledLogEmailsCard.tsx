@@ -18,6 +18,7 @@ import {
   HoverCardContent,
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
+import { Badge } from "@/components/ui/badge";
 import { Mail, Loader2, Send, BellRing } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { COMMON_TIMEZONES } from "@shared/timezones";
@@ -36,11 +37,19 @@ interface ScheduledLogEmailsCardProps {
 // user the worker would notify on a failed send. PM is listed first,
 // followed by the schedule's last editor (deduped). Email is included
 // so the hover-card can disambiguate two users with the same name.
+//
+// Task #1655 — `isActive` mirrors `users.is_active` so the card can
+// flag deactivated recipients with an "(inactive)" badge and trigger
+// the empty-state copy when every resolved recipient is inactive.
+// Optional with a default of `true` so older cached payloads (or any
+// future code path that forgets to populate the field) degrade
+// gracefully to "treat as active" rather than throw a false alarm.
 interface FailureNotificationRecipient {
   id: string;
   firstName: string;
   lastName: string;
   email: string;
+  isActive?: boolean;
 }
 
 interface ScheduleRow {
@@ -441,8 +450,28 @@ function fullName(user: FailureNotificationRecipient): string {
   return name.length > 0 ? name : user.email;
 }
 
+function isRecipientActive(user: FailureNotificationRecipient): boolean {
+  // Defensive default: treat missing `isActive` as active so a stale
+  // cache or older payload can't accidentally hide every recipient
+  // behind the empty-state copy. The server populates the field on
+  // every fresh response (Task #1655).
+  return user.isActive !== false;
+}
+
 function FailureNotificationRecipients({ logType, recipients }: FailureNotificationRecipientsProps) {
   const lowerType = logType.toLowerCase();
+
+  // Task #1655 — when every resolved recipient is inactive the worker
+  // would still create notification rows, but nobody who can act on
+  // the alert would actually see them. Surface the same "Nobody —
+  // set a project manager…" copy used for the truly-empty case so
+  // admins editing the cadence are never lulled by a name they
+  // can't escalate to. We keep the truly-empty branch and the
+  // all-inactive branch under the same testid so existing tests /
+  // selectors don't have to special-case the cause.
+  const hasAnyActive = recipients.some(isRecipientActive);
+  const showEmptyState = recipients.length === 0 || !hasAnyActive;
+
   return (
     <div
       className="flex items-start gap-2 rounded-md bg-muted/40 px-3 py-2 text-xs"
@@ -451,7 +480,7 @@ function FailureNotificationRecipients({ logType, recipients }: FailureNotificat
       <BellRing className="mt-0.5 h-3.5 w-3.5 text-muted-foreground" aria-hidden="true" />
       <div className="space-y-0.5">
         <div className="font-medium text-muted-foreground">Failure alerts go to:</div>
-        {recipients.length === 0 ? (
+        {showEmptyState ? (
           <div
             className="text-muted-foreground"
             data-testid={`failure-recipients-empty-${lowerType}`}
@@ -460,36 +489,61 @@ function FailureNotificationRecipients({ logType, recipients }: FailureNotificat
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-            {recipients.map((user, idx) => (
-              <span
-                key={user.id}
-                className="inline-flex items-center"
-                data-testid={`failure-recipient-${lowerType}-${user.id}`}
-              >
-                <HoverCard openDelay={150}>
-                  <HoverCardTrigger asChild>
-                    <button
-                      type="button"
-                      className="underline decoration-dotted underline-offset-2 hover:text-foreground focus:outline-none focus:ring-1 focus:ring-ring rounded-sm"
-                      data-testid={`failure-recipient-name-${lowerType}-${user.id}`}
+            {recipients.map((user, idx) => {
+              const active = isRecipientActive(user);
+              return (
+                <span
+                  key={user.id}
+                  className="inline-flex items-center gap-1"
+                  data-testid={`failure-recipient-${lowerType}-${user.id}`}
+                >
+                  <HoverCard openDelay={150}>
+                    <HoverCardTrigger asChild>
+                      <button
+                        type="button"
+                        className={
+                          "underline decoration-dotted underline-offset-2 hover:text-foreground focus:outline-none focus:ring-1 focus:ring-ring rounded-sm" +
+                          (active ? "" : " text-muted-foreground/70 line-through")
+                        }
+                        data-testid={`failure-recipient-name-${lowerType}-${user.id}`}
+                      >
+                        {fullName(user)}
+                      </button>
+                    </HoverCardTrigger>
+                    <HoverCardContent className="w-64 text-xs" align="start">
+                      <div className="font-medium">{fullName(user)}</div>
+                      <a
+                        href={`mailto:${user.email}`}
+                        className="mt-1 block text-muted-foreground hover:text-foreground break-all"
+                        data-testid={`failure-recipient-email-${lowerType}-${user.id}`}
+                      >
+                        {user.email}
+                      </a>
+                      {!active ? (
+                        <div
+                          className="mt-2 text-muted-foreground"
+                          data-testid={`failure-recipient-inactive-explainer-${lowerType}-${user.id}`}
+                        >
+                          This account is deactivated. The alert will still
+                          be queued for them, but it will go unread until
+                          their account is reactivated.
+                        </div>
+                      ) : null}
+                    </HoverCardContent>
+                  </HoverCard>
+                  {!active ? (
+                    <Badge
+                      variant="outline"
+                      className="px-1.5 py-0 text-[10px] font-normal text-muted-foreground border-muted-foreground/30"
+                      data-testid={`failure-recipient-inactive-badge-${lowerType}-${user.id}`}
                     >
-                      {fullName(user)}
-                    </button>
-                  </HoverCardTrigger>
-                  <HoverCardContent className="w-64 text-xs" align="start">
-                    <div className="font-medium">{fullName(user)}</div>
-                    <a
-                      href={`mailto:${user.email}`}
-                      className="mt-1 block text-muted-foreground hover:text-foreground break-all"
-                      data-testid={`failure-recipient-email-${lowerType}-${user.id}`}
-                    >
-                      {user.email}
-                    </a>
-                  </HoverCardContent>
-                </HoverCard>
-                {idx < recipients.length - 1 ? <span aria-hidden="true">,</span> : null}
-              </span>
-            ))}
+                      inactive
+                    </Badge>
+                  ) : null}
+                  {idx < recipients.length - 1 ? <span aria-hidden="true">,</span> : null}
+                </span>
+              );
+            })}
           </div>
         )}
       </div>

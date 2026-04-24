@@ -74,11 +74,22 @@ async function loadProject(projectId: string, organizationId: string) {
 // would notify if the next send fails. The shape is intentionally
 // narrow — the card only needs a display name + a way to disambiguate
 // two people with the same first/last name.
+//
+// Task #1655 — adds `isActive` so the card can flag deactivated
+// recipients. The worker still creates a notification record for
+// inactive users (it just goes unread), so admins editing the
+// cadence need to see at a glance that a named recipient can no
+// longer act on the alert. We mirror `users.is_active` directly
+// rather than filter the list server-side: the UI also needs the
+// inactive names so it can render the "all-inactive" empty state
+// with full context if we ever want to surface who used to be
+// notified.
 type FailureNotificationRecipient = {
   id: string;
   firstName: string;
   lastName: string;
   email: string;
+  isActive: boolean;
 };
 
 router.get(
@@ -111,8 +122,8 @@ router.get(
       // surfacing a user from a different org would be both confusing
       // and a privacy leak. Inactive users are intentionally still
       // included since the worker would still attempt to notify them
-      // (their notification record would simply go unread); the UI can
-      // decide whether to flag them later.
+      // (their notification record would simply go unread); Task #1655
+      // surfaces `isActive` so the card can flag them inline.
       const userIdsToResolve = new Set<string>();
       if (project.projectManagerId) userIdsToResolve.add(project.projectManagerId);
       for (const r of rows) {
@@ -126,6 +137,7 @@ router.get(
             firstName: users.firstName,
             lastName: users.lastName,
             email: users.email,
+            isActive: users.isActive,
           })
           .from(users)
           .where(and(
