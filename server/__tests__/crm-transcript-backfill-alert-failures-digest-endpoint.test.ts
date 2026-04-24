@@ -51,9 +51,11 @@ let orgBId: string;
 let adminAId: string;
 let adminBId: string;
 let fieldAId: string;
+let superAdminId: string;
 let adminACookie: string;
 let adminBCookie: string;
 let fieldACookie: string;
+let superAdminCookie: string;
 
 // Track inserted delivery ids so the afterAll cleanup is precise even if
 // other suites share the table name.
@@ -144,6 +146,26 @@ beforeAll(async () => {
   fieldAId = field.id;
   fieldACookie = `auth_token=${generateToken(field.id, field.tokenVersion)}`;
 
+  // Task #1519 — a SUPER_ADMIN with no organizationId so we can exercise
+  // the `?crossOrg=true` branch added in Task #1482. Org-scoped admins
+  // pinned to a single org cannot opt into the cross-org view.
+  const [superAdmin] = await db
+    .insert(users)
+    .values({
+      email: `superadmin-${SUFFIX}@${TEST_EMAIL_DOMAIN}`,
+      passwordHash: "x",
+      firstName: "Super",
+      lastName: "Admin",
+      organizationId: null,
+      role: "SUPER_ADMIN",
+    })
+    .returning();
+  superAdminId = superAdmin.id;
+  superAdminCookie = `auth_token=${generateToken(
+    superAdmin.id,
+    superAdmin.tokenVersion,
+  )}`;
+
   // ---- Seed failures inside the default 24h window for org A.
   // Spread attemptedAt values close to "now" so they all fall inside
   // the default 24h window. Use real, varied timestamps so the recent-
@@ -231,7 +253,7 @@ afterAll(async () => {
     }
     await db
       .delete(users)
-      .where(inArray(users.id, [adminAId, adminBId, fieldAId]))
+      .where(inArray(users.id, [adminAId, adminBId, fieldAId, superAdminId]))
       .catch(() => {});
     await db
       .delete(organizations)
@@ -245,18 +267,39 @@ afterAll(async () => {
   }
 }, 30_000);
 
+type DigestRecentFailure = {
+  jobId: string | null;
+  channel: "slack" | "email";
+  recipientSummary: string;
+  errorMessage: string | null;
+  attemptedAt: string;
+};
+
 type DigestResponse = {
+  crossOrg?: boolean;
   windowHours: number;
   since: string;
   total: number;
   slackCount: number;
   emailCount: number;
-  recentFailures: Array<{
-    jobId: string | null;
-    channel: "slack" | "email";
-    recipientSummary: string;
-    errorMessage: string | null;
-    attemptedAt: string;
+  recentFailures: DigestRecentFailure[];
+};
+
+type CrossOrgDigestResponse = {
+  crossOrg: true;
+  windowHours: number;
+  since: string;
+  total: number;
+  slackCount: number;
+  emailCount: number;
+  orgs: Array<{
+    organizationId: string;
+    organizationName: string | null;
+    organizationSlug: string | null;
+    total: number;
+    slackCount: number;
+    emailCount: number;
+    recentFailures: DigestRecentFailure[];
   }>;
 };
 
@@ -478,6 +521,150 @@ describe("GET /api/crm/calls/transcripts/backfill/alert-failures-digest", () => 
     it("rejects non-ADMIN callers with 403", async () => {
       const res = await request(app).get(ENDPOINT).set("Cookie", fieldACookie);
       expect(res.status).toBe(403);
+    });
+  });
+
+  // Task #1519 — cross-org SUPER_ADMIN view added in Task #1482. Pinning
+  // the contract here so a refactor of either the route serializer or the
+  // org-enrichment join is caught instead of silently regressing what
+  // platform support sees.
+  describe("?crossOrg=true SUPER_ADMIN breakdown", () => {
+    it("ignores ?crossOrg=true for org-scoped admins and returns the single-org shape", async () => {
+      const res = await request(app)
+        .get(ENDPOINT)
+        .query({ crossOrg: "true" })
+        .set("Cookie", adminACookie);
+      expect(res.status).toBe(200);
+      const body = res.body as DigestResponse;
+      // The flag is hard-locked off for non-super-admins. The response is
+      // the same single-org shape adminA gets without any query param:
+      // crossOrg=false, recentFailures present, no `orgs` array.
+      expect(body.crossOrg).toBe(false);
+      expect(Array.isArray(body.recentFailures)).toBe(true);
+      expect((body as unknown as { orgs?: unknown }).orgs).toBeUndefined();
+      // Counts still match org A's seeded 24h failures (2 slack + 1 email).
+      expect(body.total).toBe(3);
+      expect(body.slackCount).toBe(2);
+      expect(body.emailCount).toBe(1);
+      const jobIds = body.recentFailures.map((f) => f.jobId);
+      for (const jobId of jobIds) {
+        expect(jobId).not.toMatch(/^job-B-/);
+      }
+    });
+
+    it("returns one entry per org with at least one failure, enriched with name/slug and sorted by total desc", async () => {
+      const res = await request(app)
+        .get(ENDPOINT)
+        .query({ crossOrg: "true" })
+        .set("Cookie", superAdminCookie);
+      expect(res.status).toBe(200);
+      const body = res.body as CrossOrgDigestResponse;
+      expect(body.crossOrg).toBe(true);
+      expect(body.windowHours).toBe(24);
+      expect(Array.isArray(body.orgs)).toBe(true);
+
+      // The platform may have other orgs with failures from sibling test
+      // suites; restrict the precise assertions to the two we seeded so
+      // this test stays deterministic.
+      const ours = body.orgs.filter(
+        (o) => o.organizationId === orgAId || o.organizationId === orgBId,
+      );
+      expect(ours.length).toBe(2);
+
+      const orgAEntry = ours.find((o) => o.organizationId === orgAId)!;
+      const orgBEntry = ours.find((o) => o.organizationId === orgBId)!;
+
+      // Org-enrichment join: name/slug are populated from the seeded org rows.
+      expect(orgAEntry.organizationName).toBe(`${TEST_ORG_PREFIX}orga`);
+      expect(orgAEntry.organizationSlug).toBe(
+        `${TEST_ORG_PREFIX}orga`.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+      );
+      expect(orgBEntry.organizationName).toBe(`${TEST_ORG_PREFIX}orgb`);
+      expect(orgBEntry.organizationSlug).toBe(
+        `${TEST_ORG_PREFIX}orgb`.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+      );
+
+      // Each entry has the same per-channel rollup the single-org view
+      // would return for that org (org A: 2 slack + 1 email; org B: 2 email).
+      expect(orgAEntry.total).toBe(3);
+      expect(orgAEntry.slackCount).toBe(2);
+      expect(orgAEntry.emailCount).toBe(1);
+      expect(orgBEntry.total).toBe(2);
+      expect(orgBEntry.slackCount).toBe(0);
+      expect(orgBEntry.emailCount).toBe(2);
+
+      // Cross-org leakage: org A's `recentFailures` only contain its own
+      // seeded job ids and vice-versa.
+      for (const f of orgAEntry.recentFailures) {
+        expect(f.jobId).toMatch(/^job-A-/);
+      }
+      for (const f of orgBEntry.recentFailures) {
+        expect(f.jobId).toMatch(/^job-B-/);
+      }
+
+      // Sort: by total desc. Org A (3) must appear before Org B (2) in the
+      // overall response, irrespective of any other unrelated orgs.
+      const idxA = body.orgs.findIndex((o) => o.organizationId === orgAId);
+      const idxB = body.orgs.findIndex((o) => o.organizationId === orgBId);
+      expect(idxA).toBeLessThan(idxB);
+      // And the global response itself is monotonically non-increasing by
+      // `total`, which is the contract the UI relies on.
+      const totals = body.orgs.map((o) => o.total);
+      const sorted = [...totals].sort((a, b) => b - a);
+      expect(totals).toEqual(sorted);
+
+      // Every entry has at least one failure (i.e. orgs with zero failures
+      // are not included). This is what makes the breakdown actionable.
+      for (const o of body.orgs) {
+        expect(o.total).toBeGreaterThan(0);
+      }
+    });
+
+    it("platform-wide totals match the sum across the per-org entries", async () => {
+      const res = await request(app)
+        .get(ENDPOINT)
+        .query({ crossOrg: "true" })
+        .set("Cookie", superAdminCookie);
+      expect(res.status).toBe(200);
+      const body = res.body as CrossOrgDigestResponse;
+
+      const summed = body.orgs.reduce(
+        (acc, o) => {
+          acc.total += o.total;
+          acc.slackCount += o.slackCount;
+          acc.emailCount += o.emailCount;
+          return acc;
+        },
+        { total: 0, slackCount: 0, emailCount: 0 },
+      );
+      expect(body.total).toBe(summed.total);
+      expect(body.slackCount).toBe(summed.slackCount);
+      expect(body.emailCount).toBe(summed.emailCount);
+      // And the per-channel counts add up to the overall total — i.e. every
+      // counted failure is exactly one of slack/email.
+      expect(body.total).toBe(body.slackCount + body.emailCount);
+    });
+
+    it("treats anything other than the literal string 'true' as opt-out (e.g. 'TRUE', '1') so super-admins get the single-org shape", async () => {
+      // The route checks `String(req.query.crossOrg ?? "") === "true"`,
+      // which is intentionally strict. Pin that contract: only the exact
+      // lowercase string "true" enables the cross-org breakdown — typos
+      // and uppercase variants fall through to single-org and never leak
+      // the platform-wide shape to a caller that didn't ask for it.
+      // adminACookie is used here (not the super admin) so the route
+      // also has a concrete org to scope to and won't hang.
+      for (const variant of ["TRUE", "1", "yes", ""]) {
+        const res = await request(app)
+          .get(ENDPOINT)
+          .query({ crossOrg: variant })
+          .set("Cookie", adminACookie);
+        expect(res.status).toBe(200);
+        const body = res.body as Partial<CrossOrgDigestResponse> &
+          Partial<DigestResponse>;
+        expect(body.crossOrg).toBe(false);
+        expect(body.orgs).toBeUndefined();
+        expect(Array.isArray(body.recentFailures)).toBe(true);
+      }
     });
   });
 });
