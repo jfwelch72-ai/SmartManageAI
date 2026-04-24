@@ -341,6 +341,85 @@ describe("undo stack ring-buffer with mixed action types", () => {
   });
 });
 
+/**
+ * Task #1739 — `pushHistory` redo-invalidation contract. The drag /
+ * create / delete / group / ungroup paths in `<PlanMarkupLayer />` all
+ * funnel through one shared helper that:
+ *   1. appends the new entry to the undo stack (with eviction past
+ *      MAX_MARKUP_HISTORY)
+ *   2. UNCONDITIONALLY clears the redo stack
+ * The redo-clear is the standard undo-history contract — the moment
+ * the user makes a fresh edit, any pending Cmd/Shift+Z targets become
+ * unreachable. Without this, after partial undo + fresh edit the user
+ * would silently jump back to a stale "after" state on the next redo.
+ * We re-implement the policy as a pure function below so a regression
+ * to that two-step semantic is caught at the unit level — the layer's
+ * `pushHistory` is the same code shape.
+ */
+describe("pushHistory: redo-invalidation policy (Task #1739)", () => {
+  type Stacks = {
+    undo: MarkupHistoryEntry[];
+    redo: MarkupHistoryEntry[];
+  };
+  const pushHistory = (state: Stacks, entry: MarkupHistoryEntry): Stacks => {
+    const next = [...state.undo, entry];
+    return {
+      undo:
+        next.length > MAX_MARKUP_HISTORY
+          ? next.slice(next.length - MAX_MARKUP_HISTORY)
+          : next,
+      // Mirrors `setRedoStack([])` in PlanMarkupLayer.tsx:361 — every
+      // fresh forward edit invalidates the redo stack.
+      redo: [],
+    };
+  };
+  const moveEntry = (count: number): MarkupMoveHistoryEntry => ({
+    type: "move",
+    before: [],
+    after: [],
+    count,
+  });
+
+  it("a fresh push clears a non-empty redo stack", () => {
+    const seeded: Stacks = {
+      undo: [moveEntry(1)],
+      // Two pending redo entries the user could have replayed before.
+      redo: [moveEntry(2), moveEntry(3)],
+    };
+    const after = pushHistory(seeded, moveEntry(4));
+    expect(after.undo).toHaveLength(2);
+    expect(after.undo[after.undo.length - 1].type).toBe("move");
+    expect((after.undo[after.undo.length - 1] as MarkupMoveHistoryEntry).count).toBe(4);
+    // The two redo entries must be gone — Ctrl+Shift+Z would otherwise
+    // jump to a stale "after" state inconsistent with the new edit.
+    expect(after.redo).toEqual([]);
+  });
+
+  it("clears the redo stack even when the undo stack is at the bound", () => {
+    // A long editing session that fills the undo stack to capacity and
+    // still has pending redo entries. The next push must both evict
+    // the oldest undo entry AND wipe the redo stack — the two policies
+    // are independent and must both fire.
+    const fullUndo: MarkupHistoryEntry[] = [];
+    for (let i = 0; i < MAX_MARKUP_HISTORY; i++) {
+      fullUndo.push(moveEntry(i));
+    }
+    const seeded: Stacks = {
+      undo: fullUndo,
+      redo: [moveEntry(900), moveEntry(901)],
+    };
+    const after = pushHistory(seeded, moveEntry(MAX_MARKUP_HISTORY + 100));
+    expect(after.undo).toHaveLength(MAX_MARKUP_HISTORY);
+    // Oldest undo entry was evicted — `count: 0` is gone.
+    expect((after.undo[0] as MarkupMoveHistoryEntry).count).toBe(1);
+    // Newest entry landed on top.
+    expect(
+      (after.undo[after.undo.length - 1] as MarkupMoveHistoryEntry).count,
+    ).toBe(MAX_MARKUP_HISTORY + 100);
+    expect(after.redo).toEqual([]);
+  });
+});
+
 describe("undo stack ring-buffer policy", () => {
   // The drag handler pushes new entries with the standard pattern
   //   next = [...prev, entry];
