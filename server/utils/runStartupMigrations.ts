@@ -12,6 +12,7 @@ import { ensureIntegrationSyncStateExhaustedNotifiedColumn } from "./ensureInteg
 import { ensureIntegrationSyncAlertMutes } from "./ensureIntegrationSyncAlertMutes";
 import { ensureWageDecisionRateChanges } from "./ensureWageDecisionRateChanges";
 import { ensureWageDecisionRateChangeAcknowledgements } from "./ensureWageDecisionRateChangeAcknowledgements";
+import { ensureOneShotJobRuns } from "./ensureOneShotJobRuns";
 import { ensureEstimateCategoryEnumValues } from "./ensureEstimateCategoryEnumValues";
 import { ensureTakeoffEnhancements } from "./ensureTakeoffEnhancements";
 import { ensureFieldWorkerPermColumns } from "./ensureFieldWorkerPermColumns";
@@ -149,6 +150,10 @@ const migrations: MigrationStep[] = [
   // surface a chronological trail per classification even after the
   // live row was re-armed or auto-cleared.
   { name: "wage_decision_rate_change_acknowledgements", category: "CREATE_TABLE", fn: ensureWageDecisionRateChangeAcknowledgements },
+  // Task #1528 — structured history of admin one-shot job re-runs.
+  // Replaces the previous practice of regex-parsing the audit_log
+  // newValue string in the admin "One-shot jobs" panel.
+  { name: "one_shot_job_runs", category: "CREATE_TABLE", fn: ensureOneShotJobRuns },
   { name: "estimate_category_enum_values", category: "ADD_ENUM", fn: ensureEstimateCategoryEnumValues },
   // Task #1144 — close baseline-migration gaps for ALTER TYPE ADD VALUE
   // operations that `reconcileSchemaDrift` cannot replay (it creates missing

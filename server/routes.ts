@@ -11,7 +11,7 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB limit
 });
-import { users, insertUserSchema, type InsertUser, type SelectUser, auditLog, billingEvents, timeClockShifts, passwordResetTokens, tradeTypeEnum } from "@shared/schema";
+import { users, insertUserSchema, type InsertUser, type SelectUser, auditLog, billingEvents, timeClockShifts, passwordResetTokens, tradeTypeEnum, oneShotJobRuns } from "@shared/schema";
 import { sendEmail, getPasswordResetEmailHtml, getPasswordResetEmailText } from "./email";
 import { 
   projects, bids, estimates, estimateLineItems, procurementItems, planDocuments,
@@ -1205,74 +1205,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
 
-        // Task #1488 — surface recent manual re-run audit entries inline so
-        // admins can see who re-ran what and when without spelunking through
-        // the audit log. We pull the last ~5 entries per job (capped overall)
-        // by entityType=background_job + entityId=<job name>.
+        // Task #1488 / Task #1528 — surface recent manual re-run history
+        // inline so admins can see who re-ran what and when without
+        // spelunking through the audit log. We read directly from the
+        // dedicated `one_shot_job_runs` structured table (Task #1528),
+        // which replaced the previous fragile regex-parse of
+        // `audit_log.new_value`. We pull the last ~5 entries per job.
         const RECENT_PER_JOB = 5;
         const jobNames = jobs.map((j) => j.name);
         if (jobNames.length > 0) {
-          const auditRows = await db
+          const runRows = await db
             .select({
-              id: auditLog.id,
-              entityId: auditLog.entityId,
-              userId: auditLog.userId,
+              id: oneShotJobRuns.id,
+              jobName: oneShotJobRuns.jobName,
+              userId: oneShotJobRuns.runByUserId,
               userEmail: users.email,
-              newValue: auditLog.newValue,
-              createdAt: auditLog.createdAt,
+              status: oneShotJobRuns.status,
+              ledgerCleared: oneShotJobRuns.ledgerCleared,
+              durationMs: oneShotJobRuns.durationMs,
+              errorText: oneShotJobRuns.errorText,
+              startedAt: oneShotJobRuns.startedAt,
+              finishedAt: oneShotJobRuns.finishedAt,
             })
-            .from(auditLog)
-            .leftJoin(users, eq(auditLog.userId, users.id))
-            .where(
-              and(
-                eq(auditLog.entityType, "background_job"),
-                eq(auditLog.action, "EXECUTE"),
-                inArray(auditLog.entityId, jobNames),
-              ),
-            )
-            .orderBy(desc(auditLog.createdAt))
+            .from(oneShotJobRuns)
+            .leftJoin(users, eq(oneShotJobRuns.runByUserId, users.id))
+            .where(inArray(oneShotJobRuns.jobName, jobNames))
+            .orderBy(desc(oneShotJobRuns.startedAt))
             .limit(jobNames.length * RECENT_PER_JOB * 4);
 
-          const parseRunSummary = (raw: string | null) => {
-            if (!raw) {
-              return {
-                status: null as string | null,
-                ledgerCleared: null as boolean | null,
-                durationMs: null as number | null,
-                error: null as string | null,
-              };
-            }
-            const status = raw.match(/status=([^,)\s]+)/)?.[1] ?? null;
-            const ledgerRaw = raw.match(/ledgerCleared=(true|false)/)?.[1];
-            const ledgerCleared =
-              ledgerRaw === "true"
-                ? true
-                : ledgerRaw === "false"
-                  ? false
-                  : null;
-            const durStr = raw.match(/durationMs=(\d+)/)?.[1];
-            const durationMs = durStr ? Number.parseInt(durStr, 10) : null;
-            const error = raw.match(/error=([^)]+)\)?$/)?.[1]?.trim() ?? null;
-            return { status, ledgerCleared, durationMs, error };
-          };
-
           const runsByJob = new Map<string, (typeof jobs)[number]["recentRuns"]>();
-          for (const row of auditRows) {
-            const list = runsByJob.get(row.entityId) ?? [];
+          for (const row of runRows) {
+            const list = runsByJob.get(row.jobName) ?? [];
             if (list.length >= RECENT_PER_JOB) continue;
-            const parsed = parseRunSummary(row.newValue);
             list.push({
               id: row.id,
-              at: row.createdAt.toISOString(),
+              at: row.startedAt.toISOString(),
               actorId: row.userId,
               actorEmail: row.userEmail ?? null,
-              status: parsed.status,
-              ledgerCleared: parsed.ledgerCleared,
-              durationMs: parsed.durationMs,
-              error: parsed.error,
-              raw: row.newValue,
+              status: row.status,
+              ledgerCleared: row.ledgerCleared,
+              durationMs: row.durationMs,
+              error: row.errorText,
+              raw: null,
             });
-            runsByJob.set(row.entityId, list);
+            runsByJob.set(row.jobName, list);
           }
           for (const job of jobs) {
             job.recentRuns = runsByJob.get(job.name) ?? [];
@@ -1305,8 +1281,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
             .json({ error: `Unknown one-shot job: ${name}` });
         }
 
+        const startedAt = new Date();
         const outcome = await runOneShotJob(name);
+        // Capture a real wall-clock finish timestamp rather than
+        // deriving startedAt + outcome.durationMs, since registry
+        // implementations measure durationMs themselves and the two
+        // can drift if a runner adjusts its own timing.
+        const finishedAt = new Date();
 
+        // Task #1528 — persist the structured outcome so the admin
+        // panel can read fields directly instead of regex-parsing the
+        // audit_log message. Wrapped in try/catch so a logging failure
+        // never masks the actual job outcome from the caller.
+        try {
+          await db.insert(oneShotJobRuns).values({
+            jobName: name,
+            runByUserId: req.user!.id,
+            status: outcome.status,
+            ledgerCleared: outcome.ledgerCleared,
+            durationMs: outcome.durationMs,
+            errorText: outcome.error,
+            startedAt,
+            finishedAt,
+          });
+        } catch (logErr) {
+          logError(
+            `[admin] Failed to record one_shot_job_runs row for ${name}`,
+            {},
+            logErr instanceof Error ? logErr : new Error(String(logErr)),
+          );
+        }
+
+        // Keep the generic audit_log entry (compliance trail) but the
+        // admin UI no longer parses `newValue` — that's served from
+        // `one_shot_job_runs` above (Task #1528).
         const { logAudit } = await import("./auditLogger");
         await logAudit(
           {

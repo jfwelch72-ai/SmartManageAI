@@ -1456,6 +1456,29 @@ export const auditLog = pgTable("audit_log", {
   createdAtIdx: index("audit_log_created_at_idx").on(table.createdAt),
 }));
 
+// Task #1528 — structured history of admin one-shot job re-runs.
+// Replaces the previous practice of stuffing status / duration /
+// ledgerCleared / error into the free-form `audit_log.new_value`
+// string and parsing it back out. The audit_log row is still written
+// (for the generic compliance trail) but the admin one-shot panel
+// reads from this table so the UI never has to regex-parse a log
+// message and we can filter / sort on these fields server-side.
+export const oneShotJobRuns = pgTable("one_shot_job_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  jobName: text("job_name").notNull(),
+  runByUserId: varchar("run_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  status: text("status").notNull(),
+  ledgerCleared: boolean("ledger_cleared").notNull(),
+  durationMs: integer("duration_ms").notNull(),
+  errorText: text("error_text"),
+  startedAt: timestamp("started_at").notNull(),
+  finishedAt: timestamp("finished_at").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  jobNameStartedAtIdx: index("one_shot_job_runs_job_started_idx").on(table.jobName, table.startedAt),
+  startedAtIdx: index("one_shot_job_runs_started_at_idx").on(table.startedAt),
+}));
+
 // Billing Events table
 export const billingEvents = pgTable("billing_events", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -2335,6 +2358,13 @@ export const insertAuditLogSchema = createInsertSchema(auditLog).omit({
   id: true,
   createdAt: true,
 });
+
+export const insertOneShotJobRunSchema = createInsertSchema(oneShotJobRuns).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertOneShotJobRun = z.infer<typeof insertOneShotJobRunSchema>;
+export type OneShotJobRun = typeof oneShotJobRuns.$inferSelect;
 
 export const insertBillingEventSchema = createInsertSchema(billingEvents).omit({
   id: true,

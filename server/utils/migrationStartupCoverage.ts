@@ -251,4 +251,9 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   // of a Davis-Bacon rate-change flag, surfaced via the prevailing-wage
   // panel's "View history" affordance for compliance reviews.
   "0055_wage_decision_rate_change_acknowledgements.sql": { helper: "ensureWageDecisionRateChangeAcknowledgements" },
+  // Task #1528 — structured history of admin one-shot job re-runs.
+  // Replaces the previous regex-parse of `audit_log.new_value` in the
+  // admin one-shot jobs panel. New CREATE TABLE + indexes mirrored by
+  // ensureOneShotJobRuns.
+  "0056_one_shot_job_runs.sql": { helper: "ensureOneShotJobRuns" },
 };
