@@ -25,7 +25,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Trash2, Group as GroupIcon, Ungroup } from "lucide-react";
-import type { KonvaEventObject } from "konva/lib/Node";
+import type { KonvaEventObject, Node as KonvaNode } from "konva/lib/Node";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import MarkupRenderer, { type MarkupShape, type MarkupTool } from "./MarkupRenderer";
@@ -122,14 +122,24 @@ export default function PlanMarkupLayer({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [draft, setDraft] = useState<MarkupShape | null>(null);
   const drawingRef = useRef(false);
-  // Task #1676 — when the user drags a selected (or grouped) markup,
-  // we mirror the live pixel delta here so the OTHER members of the
-  // expanded selection can be visually translated in lockstep via Konva
-  // Group x/y. The dragged markup itself is moved by Konva's native
-  // drag so its `groupProps.x/y` is intentionally NOT bound here.
-  const [groupDrag, setGroupDrag] = useState<
-    { id: string; dx: number; dy: number } | null
-  >(null);
+  // Task #1706 — group drag is intentionally NOT React state. With 50+
+  // markups in one selection, calling setState on every `onDragMove`
+  // re-rendered the whole layer on every frame and dropped frames on
+  // mid-range laptops. We now translate sibling Konva nodes directly
+  // via `node.position()` and only flush back to React on `onDragEnd`
+  // (the single optimistic-cache + bulk PATCH step). The ref tracks
+  // the active drag so dragMove/dragEnd can find the cached sibling
+  // nodes without traversing the Konva tree on every frame.
+  //
+  // Task #1676 (original behavior preserved): siblings of the dragged
+  // markup are translated by the same pixel delta during the drag and
+  // their new normalized points are persisted atomically on drag end.
+  const groupDragRef = useRef<{
+    id: string;
+    origX: number;
+    origY: number;
+    siblings: KonvaNode[];
+  } | null>(null);
   // Task #1653 — anchor for the in-canvas text input that replaces the
   // legacy `window.prompt()` flow. Coordinates are normalized 0-1 to
   // match `MarkupShape.points`; we denormalize when positioning the
@@ -469,18 +479,12 @@ export default function PlanMarkupLayer({
   const getGroupProps = useCallback(
     (shape: MarkupShape) => {
       if (!expandedSelection.has(shape.id)) return undefined;
-      const isBeingDragged = groupDrag?.id === shape.id;
-      // Non-dragged group members during an active drag: visually
-      // translate by the dragged delta and stop intercepting pointer
-      // events so the user keeps holding the original shape.
-      if (groupDrag && !isBeingDragged) {
-        return {
-          x: groupDrag.dx,
-          y: groupDrag.dy,
-          listening: false,
-        };
-      }
+      // Task #1706 — every selectable group member gets a Konva `name`
+      // so onDragStart can locate its siblings via a single `find()`
+      // pass on the layer (no React refs to plumb through the shared
+      // renderer). The name is namespaced per markup id.
       return {
+        name: `markup-drag-member-${shape.id}`,
         draggable: true,
         onMouseEnter: (e: KonvaEventObject<MouseEvent>) => {
           const c = e.target.getStage()?.container();
@@ -492,29 +496,64 @@ export default function PlanMarkupLayer({
         },
         onDragStart: (e: KonvaEventObject<DragEvent>) => {
           e.cancelBubble = true;
-          e.target.setAttr("_origX", e.target.x());
-          e.target.setAttr("_origY", e.target.y());
-          setGroupDrag({ id: shape.id, dx: 0, dy: 0 });
+          const origX = e.target.x();
+          const origY = e.target.y();
+          // Cache sibling Konva nodes once at the start of the drag so
+          // onDragMove (which fires per pointer frame) doesn't have to
+          // walk the layer tree. Disable hit-testing AND draggable on
+          // siblings so they don't intercept the gesture mid-drag.
+          const layer = e.target.getLayer();
+          const siblings: KonvaNode[] = [];
+          if (layer) {
+            for (const id of expandedSelection) {
+              if (id === shape.id) continue;
+              const node = layer.findOne(`.markup-drag-member-${id}`);
+              if (node) {
+                node.draggable(false);
+                node.listening(false);
+                siblings.push(node);
+              }
+            }
+          }
+          groupDragRef.current = {
+            id: shape.id,
+            origX,
+            origY,
+            siblings,
+          };
         },
         onDragMove: (e: KonvaEventObject<DragEvent>) => {
-          const origX = (e.target.getAttr("_origX") as number | undefined) ?? 0;
-          const origY = (e.target.getAttr("_origY") as number | undefined) ?? 0;
-          setGroupDrag({
-            id: shape.id,
-            dx: e.target.x() - origX,
-            dy: e.target.y() - origY,
-          });
+          const drag = groupDragRef.current;
+          if (!drag) return;
+          const dx = e.target.x() - drag.origX;
+          const dy = e.target.y() - drag.origY;
+          // Imperatively translate every sibling by the same pixel
+          // delta. No setState / no React reconciliation runs for the
+          // duration of the drag — that's what keeps a 50+ selection
+          // at 60fps on lower-end laptops.
+          for (const node of drag.siblings) {
+            node.position({ x: dx, y: dy });
+          }
+          e.target.getLayer()?.batchDraw();
         },
         onDragEnd: (e: KonvaEventObject<DragEvent>) => {
-          const origX = (e.target.getAttr("_origX") as number | undefined) ?? 0;
-          const origY = (e.target.getAttr("_origY") as number | undefined) ?? 0;
-          const dx = e.target.x() - origX;
-          const dy = e.target.y() - origY;
-          // Reset Konva-managed Group position before the optimistic
-          // update lands so the dragged shape doesn't "double-shift"
-          // when the cache is rewritten with the new normalized points.
-          e.target.position({ x: origX, y: origY });
-          setGroupDrag(null);
+          const drag = groupDragRef.current;
+          if (!drag) return;
+          const dx = e.target.x() - drag.origX;
+          const dy = e.target.y() - drag.origY;
+          // Reset every Konva-managed position before the optimistic
+          // cache update lands so no shape "double-shifts" when the
+          // re-render rewrites the points with the new normalized
+          // coordinates. Restore listening + draggable on siblings so
+          // the user can immediately start a new drag from any member.
+          e.target.position({ x: drag.origX, y: drag.origY });
+          for (const node of drag.siblings) {
+            node.position({ x: 0, y: 0 });
+            node.listening(true);
+            node.draggable(true);
+          }
+          e.target.getLayer()?.batchDraw();
+          groupDragRef.current = null;
           if (dx === 0 && dy === 0) return;
           if (canvasWidth <= 0 || canvasHeight <= 0) return;
           const updates = buildBulkMoveUpdates(
@@ -530,7 +569,6 @@ export default function PlanMarkupLayer({
     },
     [
       expandedSelection,
-      groupDrag,
       markups,
       canvasWidth,
       canvasHeight,
