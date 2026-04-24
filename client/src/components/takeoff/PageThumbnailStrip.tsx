@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback } from "react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ImageOff, UserCircle, CheckCircle2, Pin, AlertTriangle } from "lucide-react";
+import { Loader2, ImageOff, UserCircle, CheckCircle2, Pin, PinOff, ArrowUpCircle, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePdfThumbnails } from "@/hooks/use-pdf-thumbnails";
 import type { TakeoffSheet } from "@shared/schema";
@@ -18,6 +18,17 @@ interface PageThumbnailStripProps {
   // shown in the sheet list.
   pinnedSheetIds?: Set<string>;
   newerSheetIds?: Set<string>;
+  // Task #1682 — when supplied alongside the maps above, each
+  // thumbnail renders small hover-only Pin / Unpin / Use-latest-
+  // revision buttons so users can manage active-set membership
+  // without leaving the takeoff canvas. Callbacks are wired to the
+  // same mutations as the Plans-tab inline controls.
+  canManagePins?: boolean;
+  onPinSheet?: (sheetId: string) => void;
+  onUnpinSheet?: (sheetId: string) => void;
+  onSwapToLatestRevision?: (sheetId: string) => void;
+  pinActionsDisabled?: boolean;
+  activeSetName?: string | null;
 }
 
 export function PageThumbnailStrip({
@@ -28,6 +39,12 @@ export function PageThumbnailStrip({
   measurementCounts,
   pinnedSheetIds,
   newerSheetIds,
+  canManagePins = false,
+  onPinSheet,
+  onUnpinSheet,
+  onSwapToLatestRevision,
+  pinActionsDisabled = false,
+  activeSetName,
 }: PageThumbnailStripProps) {
   const { thumbnails, failedSheets, isLoading, progress, observeRef } = usePdfThumbnails(sheets);
   const activeRef = useRef<HTMLButtonElement | null>(null);
@@ -130,6 +147,105 @@ export function PageThumbnailStrip({
                 >
                   <AlertTriangle className="w-2.5 h-2.5" />
                 </div>
+              )}
+              {/* Task #1682 — hover-only Pin / Unpin / Use-latest controls
+                  mirror the Plans-tab inline buttons so users can manage
+                  active-set membership directly from the takeoff canvas.
+                  Wrapped in <span>s (parent is a <button>) and stop
+                  propagation so clicking them never selects the sheet. */}
+              {canManagePins && (onPinSheet || onUnpinSheet || onSwapToLatestRevision) && (
+                <span
+                  className="absolute bottom-0.5 right-0.5 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {isPinnedToActiveSet && hasNewerInActiveSet && onSwapToLatestRevision && (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      aria-disabled={pinActionsDisabled}
+                      title="Use latest revision"
+                      data-testid={`thumb-swap-revision-${sheet.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (pinActionsDisabled) return;
+                        onSwapToLatestRevision(sheet.id);
+                      }}
+                      onKeyDown={(e) => {
+                        if (pinActionsDisabled) return;
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          onSwapToLatestRevision(sheet.id);
+                        }
+                      }}
+                      className={cn(
+                        "flex items-center justify-center w-5 h-5 rounded-full bg-amber-500 text-white shadow hover:bg-amber-600",
+                        pinActionsDisabled && "opacity-50 cursor-not-allowed",
+                      )}
+                    >
+                      <ArrowUpCircle className="w-3 h-3" />
+                    </span>
+                  )}
+                  {isPinnedToActiveSet ? (
+                    onUnpinSheet && (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        aria-disabled={pinActionsDisabled}
+                        title={activeSetName ? `Remove from ${activeSetName}` : "Unpin from active set"}
+                        data-testid={`thumb-unpin-${sheet.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (pinActionsDisabled) return;
+                          onUnpinSheet(sheet.id);
+                        }}
+                        onKeyDown={(e) => {
+                          if (pinActionsDisabled) return;
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onUnpinSheet(sheet.id);
+                          }
+                        }}
+                        className={cn(
+                          "flex items-center justify-center w-5 h-5 rounded-full bg-card text-foreground border shadow hover:bg-accent",
+                          pinActionsDisabled && "opacity-50 cursor-not-allowed",
+                        )}
+                      >
+                        <PinOff className="w-3 h-3" />
+                      </span>
+                    )
+                  ) : (
+                    onPinSheet && (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        aria-disabled={pinActionsDisabled}
+                        title={activeSetName ? `Pin to ${activeSetName}` : "Pin to active set"}
+                        data-testid={`thumb-pin-${sheet.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (pinActionsDisabled) return;
+                          onPinSheet(sheet.id);
+                        }}
+                        onKeyDown={(e) => {
+                          if (pinActionsDisabled) return;
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onPinSheet(sheet.id);
+                          }
+                        }}
+                        className={cn(
+                          "flex items-center justify-center w-5 h-5 rounded-full bg-card text-foreground border shadow hover:bg-accent",
+                          pinActionsDisabled && "opacity-50 cursor-not-allowed",
+                        )}
+                      >
+                        <Pin className="w-3 h-3" />
+                      </span>
+                    )
+                  )}
+                </span>
               )}
             </div>
             <div className="w-full px-1.5 py-1 text-center min-w-0">

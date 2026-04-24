@@ -24,8 +24,9 @@ import {
   Maximize, Minimize, Trash2, Plus, AlertTriangle, GitCompare, Ruler,
   CheckCircle2, AlertCircle, GalleryHorizontal, List,
   Link2, ArrowLeft, Search, X, Tag, History, PanelRight, ArrowRight,
-  ChevronLeft, ChevronRight
+  ChevronLeft, ChevronRight, Pin, PinOff, ArrowUpCircle
 } from "lucide-react";
+import { useAuth } from "@/hooks/use-auth";
 import * as pdfjsLib from 'pdfjs-dist';
 import {
   createArcSegment,
@@ -593,6 +594,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     const primary = drawingSetsForCanvas.find(s => s.isPrimary);
     return primary?.id ?? drawingSetsForCanvas[0]?.id ?? null;
   }, [drawingSetsForCanvas]);
+  const activeCanvasSetName = useMemo(() => {
+    if (!activeCanvasSetId) return null;
+    return drawingSetsForCanvas.find(s => s.id === activeCanvasSetId)?.name ?? null;
+  }, [activeCanvasSetId, drawingSetsForCanvas]);
   // Sheet-status payload contract matches PlansTab: the server returns
   // pinnedSheetIds + newerSheetIds + pinnedToLatestMap (see
   // server/drawingSetRoutes.ts GET /drawing-sets/:setId/sheet-status).
@@ -614,6 +619,126 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     () => new Set<string>(activeSetStatus?.newerSheetIds ?? []),
     [activeSetStatus],
   );
+
+  // Task #1682 — Pin/unpin/swap controls on the canvas need the actual
+  // drawing-set item ids (for DELETE) so we additionally fetch the
+  // active set's items here. Mirrors PlansTab's `activeSetItems` query
+  // and the resulting `activeSetItemMap`.
+  const { user: authUser } = useAuth();
+  const canManageDrawingSetsOnCanvas = ["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(authUser?.role || "");
+  const { data: activeCanvasSetItems = [] } = useQuery<Array<{ id: string; drawingSetId: string; sheetId: string; revisionId: string | null; pinnedAt: string }>>({
+    queryKey: ["/api/projects", "drawing-sets", activeCanvasSetId, "items"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/drawing-sets/${activeCanvasSetId}/items`, { credentials: "include" });
+      if (!res.ok) return [];
+      return res.json();
+    },
+    enabled: !!activeCanvasSetId && canManageDrawingSetsOnCanvas,
+    staleTime: 30000,
+  });
+  const activeCanvasSetItemMap = useMemo(() => {
+    const map = new Map<string, { id: string; sheetId: string; revisionId: string | null }>();
+    for (const item of activeCanvasSetItems) {
+      map.set(item.sheetId, item);
+    }
+    return map;
+  }, [activeCanvasSetItems]);
+  const getLatestRevisionForCanvasSheet = useCallback((sheetId: string): string | null => {
+    if (!activeCanvasSetId || !activeSetStatus) return null;
+    const latest = activeSetStatus.pinnedToLatestMap?.[sheetId];
+    if (!latest || latest === sheetId) return null;
+    return latest;
+  }, [activeCanvasSetId, activeSetStatus]);
+
+  // Task #1682 — invalidate the same set of caches PlansTab does after
+  // a pin/unpin/swap so the right-side Drawing Sets panel and Plans-tab
+  // badges stay in sync with the canvas thumbnail strip.
+  const invalidateDrawingSetCanvasCaches = useCallback((setId: string | null | undefined) => {
+    if (!setId) return;
+    queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "items"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "sheet-status"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "compare"] });
+    if (projectId) {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "drawing-sets"] });
+    }
+  }, [projectId]);
+
+  // Task #1682 — three mutations mirror PlansTab's pinSheetToActiveSet /
+  // unpinSheetFromActiveSet / swapPinnedRevision so the canvas controls
+  // hit the same endpoints with the same semantics.
+  const canvasPinSheetMutation = useMutation({
+    mutationFn: async ({ setId, sheetId }: { setId: string; sheetId: string }) => {
+      const res = await apiRequest("POST", `/api/projects/drawing-sets/${setId}/items`, { sheetId });
+      return res.json();
+    },
+    onSuccess: (_data, vars) => {
+      invalidateDrawingSetCanvasCaches(vars.setId);
+      toast({ title: "Pinned to set" });
+    },
+    onError: (err: unknown) => {
+      const message = err instanceof Error ? err.message : "";
+      toast({
+        title: "Error",
+        description: message.includes("409") ? "Sheet already pinned." : "Failed to pin sheet.",
+        variant: "destructive",
+      });
+    },
+  });
+  const canvasUnpinSheetMutation = useMutation({
+    mutationFn: async ({ setId, itemId }: { setId: string; itemId: string }) => {
+      await apiRequest("DELETE", `/api/projects/drawing-sets/${setId}/items/${itemId}`);
+    },
+    onSuccess: (_data, vars) => {
+      invalidateDrawingSetCanvasCaches(vars.setId);
+      toast({ title: "Removed from set" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to unpin sheet.", variant: "destructive" });
+    },
+  });
+  const canvasSwapPinnedRevisionMutation = useMutation({
+    mutationFn: async ({ setId, oldItemId, newSheetId }: { setId: string; oldItemId: string; newSheetId: string }) => {
+      await apiRequest("DELETE", `/api/projects/drawing-sets/${setId}/items/${oldItemId}`);
+      const res = await apiRequest("POST", `/api/projects/drawing-sets/${setId}/items`, { sheetId: newSheetId });
+      return res.json();
+    },
+    onSuccess: (_data, vars) => {
+      invalidateDrawingSetCanvasCaches(vars.setId);
+      toast({ title: "Pinned to latest revision" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to swap pinned revision.", variant: "destructive" });
+    },
+  });
+  const canvasPinMutationPending =
+    canvasPinSheetMutation.isPending ||
+    canvasUnpinSheetMutation.isPending ||
+    canvasSwapPinnedRevisionMutation.isPending;
+
+  // Task #1682 — callbacks fed to <PageThumbnailStrip /> overlay buttons.
+  // We resolve setId / itemId / latest revision id at click time so the
+  // strip itself stays presentation-only.
+  const handleCanvasPinSheet = useCallback((sheetId: string) => {
+    if (!activeCanvasSetId) return;
+    canvasPinSheetMutation.mutate({ setId: activeCanvasSetId, sheetId });
+  }, [activeCanvasSetId, canvasPinSheetMutation]);
+  const handleCanvasUnpinSheet = useCallback((sheetId: string) => {
+    if (!activeCanvasSetId) return;
+    const item = activeCanvasSetItemMap.get(sheetId);
+    if (!item) return;
+    canvasUnpinSheetMutation.mutate({ setId: activeCanvasSetId, itemId: item.id });
+  }, [activeCanvasSetId, activeCanvasSetItemMap, canvasUnpinSheetMutation]);
+  const handleCanvasSwapRevision = useCallback((sheetId: string) => {
+    if (!activeCanvasSetId) return;
+    const item = activeCanvasSetItemMap.get(sheetId);
+    const latestId = getLatestRevisionForCanvasSheet(sheetId);
+    if (!item || !latestId) return;
+    canvasSwapPinnedRevisionMutation.mutate({
+      setId: activeCanvasSetId,
+      oldItemId: item.id,
+      newSheetId: latestId,
+    });
+  }, [activeCanvasSetId, activeCanvasSetItemMap, canvasSwapPinnedRevisionMutation, getLatestRevisionForCanvasSheet]);
 
   const { data: orgUsersData = [] } = useQuery({ queryKey: ["/api/messaging/users"] });
   const orgUsers: any[] = (orgUsersData as any[]).map((u: any) => ({
@@ -1881,6 +2006,65 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   >
                     <ArrowDown className="h-4 w-4 mr-2" /> Move Down
                   </DropdownMenuItem>
+                  {/* Task #1682 — admin-gated Pin / Unpin / Use-latest
+                      revision controls for the currently-selected sheet
+                      so users don't have to leave the takeoff canvas to
+                      change active-set membership. Wired to the same
+                      mutations + cache-invalidations as PlansTab. */}
+                  {canManageDrawingSetsOnCanvas && activeCanvasSetId && currentSheet && (() => {
+                    const pinnedItem = activeCanvasSetItemMap.get(currentSheet.id);
+                    const isPinned = pinnedSheetIdsForStrip.has(currentSheet.id);
+                    const latestId = getLatestRevisionForCanvasSheet(currentSheet.id);
+                    const setLabel = activeCanvasSetName || "active set";
+                    return (
+                      <>
+                        <DropdownMenuSeparator />
+                        {isPinned ? (
+                          <DropdownMenuItem
+                            onClick={() => {
+                              if (!pinnedItem) return;
+                              canvasUnpinSheetMutation.mutate({
+                                setId: activeCanvasSetId,
+                                itemId: pinnedItem.id,
+                              });
+                            }}
+                            disabled={canvasUnpinSheetMutation.isPending || !pinnedItem}
+                            data-testid="menu-unpin-sheet-from-set"
+                          >
+                            <PinOff className="h-4 w-4 mr-2" /> Unpin from {setLabel}
+                          </DropdownMenuItem>
+                        ) : (
+                          <DropdownMenuItem
+                            onClick={() => {
+                              canvasPinSheetMutation.mutate({
+                                setId: activeCanvasSetId,
+                                sheetId: currentSheet.id,
+                              });
+                            }}
+                            disabled={canvasPinSheetMutation.isPending}
+                            data-testid="menu-pin-sheet-to-set"
+                          >
+                            <Pin className="h-4 w-4 mr-2" /> Pin to {setLabel}
+                          </DropdownMenuItem>
+                        )}
+                        {isPinned && latestId && pinnedItem && (
+                          <DropdownMenuItem
+                            onClick={() => {
+                              canvasSwapPinnedRevisionMutation.mutate({
+                                setId: activeCanvasSetId,
+                                oldItemId: pinnedItem.id,
+                                newSheetId: latestId,
+                              });
+                            }}
+                            disabled={canvasSwapPinnedRevisionMutation.isPending}
+                            data-testid="menu-use-latest-revision"
+                          >
+                            <ArrowUpCircle className="h-4 w-4 mr-2" /> Use latest revision
+                          </DropdownMenuItem>
+                        )}
+                      </>
+                    );
+                  })()}
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={() => selectedSheet && detectLinksMutation.mutate(selectedSheet)}
@@ -2161,6 +2345,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               measurementCounts={measurementCountsPerSheet}
               pinnedSheetIds={pinnedSheetIdsForStrip}
               newerSheetIds={newerSheetIdsForStrip}
+              canManagePins={canManageDrawingSetsOnCanvas && !!activeCanvasSetId}
+              onPinSheet={handleCanvasPinSheet}
+              onUnpinSheet={handleCanvasUnpinSheet}
+              onSwapToLatestRevision={handleCanvasSwapRevision}
+              pinActionsDisabled={canvasPinMutationPending}
+              activeSetName={activeCanvasSetName}
             />
           </div>
         )}
