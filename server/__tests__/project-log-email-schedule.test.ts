@@ -204,7 +204,10 @@ describe("processProjectLogEmailSchedules", () => {
       timezone: "UTC",
       lastSentAt: null,
       lastEditedById: null,
-      lastFailureNotifiedStatus: null,
+      // Task #1637 — pretend a previous failure was already notified
+      // about so the SUCCESS path also exercises the cron's
+      // post-helper UPDATE that clears `lastFailureNotifiedStatus`.
+      lastFailureNotifiedStatus: "FAILURE",
     }]);
     queueProject([{ id: "proj-1", code: "PRJ-7", name: "Bridge 7", gcOrganizationId: "org-1", projectManagerId: null }]);
     queueDistLists([
@@ -231,9 +234,10 @@ describe("processProjectLogEmailSchedules", () => {
     // also stamps the per-attempt outcome (status=SUCCESS, no error,
     // recipient count) so the project settings UI can report it.
     // Task #1637 — SUCCESS path also clears `lastFailureNotifiedStatus`
-    // so the next failure starts a brand-new notification cycle
-    // instead of being silently swallowed.
-    expect(updates).toHaveLength(1);
+    // (via a follow-up UPDATE in the cron loop) so the next failure
+    // starts a brand-new notification cycle instead of being silently
+    // swallowed because it matched the previously-notified status.
+    expect(updates).toHaveLength(2);
     expect(updates[0].table).toBe("project_log_email_schedules");
     const successValues = updates[0].values as Row;
     expect(successValues.lastSentAt).toBeInstanceOf(Date);
@@ -241,7 +245,8 @@ describe("processProjectLogEmailSchedules", () => {
     expect(successValues.lastAttemptStatus).toBe("SUCCESS");
     expect(successValues.lastAttemptError).toBeNull();
     expect(successValues.lastAttemptRecipientCount).toBe(2);
-    expect(successValues.lastFailureNotifiedStatus).toBeNull();
+    expect(updates[1].table).toBe("project_log_email_schedules");
+    expect((updates[1].values as Row).lastFailureNotifiedStatus).toBeNull();
     // No fan-out on success.
     expect(inserts.filter((i) => i.table === "notifications")).toHaveLength(0);
   });
@@ -342,13 +347,19 @@ describe("processProjectLogEmailSchedules", () => {
       lastEditedById: "user-editor",
       lastFailureNotifiedStatus: null,
     }]);
-    queueProject([{
+    // Two project rows queued: the helper SELECTs the project once
+    // for the send pipeline, and the cron's failure-notification
+    // branch SELECTs it a second time to load `code` /
+    // `projectManagerId` for the deep-link + recipient.
+    const proj = {
       id: "proj-1",
       code: "PRJ-3",
       name: "Levee 3",
       gcOrganizationId: "org-1",
       projectManagerId: "user-pm",
-    }]);
+    };
+    queueProject([proj]);
+    queueProject([proj]);
     queueDistLists([{ contactEmails: [], extraEmails: [] }]);
 
     await processProjectLogEmailSchedules({ now });
@@ -406,13 +417,19 @@ describe("processProjectLogEmailSchedules", () => {
       lastEditedById: "user-editor",
       lastFailureNotifiedStatus: null,
     }]);
-    queueProject([{
-      id: "proj-1",
-      code: "PRJ-7",
-      name: "Bridge 7",
-      gcOrganizationId: "org-1",
-      projectManagerId: "user-editor", // PM and editor are the same person; should still get only one notification
-    }]);
+    {
+      // Two project rows queued: helper SELECT + cron's failure
+      // fan-out SELECT (loads `code` / `projectManagerId`).
+      const proj = {
+        id: "proj-1",
+        code: "PRJ-7",
+        name: "Bridge 7",
+        gcOrganizationId: "org-1",
+        projectManagerId: "user-editor", // PM and editor are the same person; should still get only one notification
+      };
+      queueProject([proj]);
+      queueProject([proj]);
+    }
     queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
     sendEmailNextResults.push({ ok: false, error: "All recipients suppressed by SendGrid" });
 
@@ -498,13 +515,18 @@ describe("processProjectLogEmailSchedules", () => {
       lastEditedById: "user-editor",
       lastFailureNotifiedStatus: "NO_RECIPIENTS",
     }]);
-    queueProject([{
-      id: "proj-1",
-      code: "PRJ-7",
-      name: "Bridge 7",
-      gcOrganizationId: "org-1",
-      projectManagerId: "user-pm",
-    }]);
+    {
+      // Helper + cron both SELECT the project — queue twice.
+      const proj = {
+        id: "proj-1",
+        code: "PRJ-7",
+        name: "Bridge 7",
+        gcOrganizationId: "org-1",
+        projectManagerId: "user-pm",
+      };
+      queueProject([proj]);
+      queueProject([proj]);
+    }
     queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
     sendEmailNextResults.push({ ok: false, error: "Bounce" });
 
@@ -538,13 +560,18 @@ describe("processProjectLogEmailSchedules", () => {
       lastEditedById: null,
       lastFailureNotifiedStatus: null,
     }]);
-    queueProject([{
-      id: "proj-1",
-      code: "PRJ-7",
-      name: "Bridge 7",
-      gcOrganizationId: "org-1",
-      projectManagerId: null,
-    }]);
+    {
+      // Helper + cron both SELECT the project — queue twice.
+      const proj = {
+        id: "proj-1",
+        code: "PRJ-7",
+        name: "Bridge 7",
+        gcOrganizationId: "org-1",
+        projectManagerId: null,
+      };
+      queueProject([proj]);
+      queueProject([proj]);
+    }
     queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
     sendEmailNextResults.push({ ok: false, error: "Boom" });
 

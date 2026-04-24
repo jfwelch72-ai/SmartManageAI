@@ -56,11 +56,31 @@ function makeSelectChain() {
 }
 
 const updates: Array<{ table: string; values?: Row }> = [];
+// Task #1669 — capture `db.insert(...).values(...)` calls so the new
+// repeated-failure tests can observe the threshold-backstop fan-out's
+// notification rows (the helper writes them via `insertNotifications`,
+// which calls `db.insert(notifications).values(rows).returning()`).
+// Also supports per-attempt history inserts the helper records.
+const inserts: Array<{ table: string; values: Row[] }> = [];
 
 const dbMock = {
   execute: async () => ({ rows: [] }),
   select: () => makeSelectChain(),
-  insert: () => ({ values: async () => undefined, returning: async () => [] }),
+  insert: (t: unknown) => {
+    const table = tableName(t);
+    return {
+      values: (vals: Row | Row[]) => {
+        const arr = Array.isArray(vals) ? vals : [vals];
+        inserts.push({ table, values: arr });
+        const stamped = arr.map((v, i) => ({ id: `${table}-insert-${i}`, ...v }));
+        const thenable: PromiseLike<unknown> & { returning: () => Promise<Row[]> } = {
+          returning: async () => stamped,
+          then: (resolve, reject) => Promise.resolve(undefined).then(resolve, reject),
+        };
+        return thenable;
+      },
+    };
+  },
   update: (t: unknown) => {
     const table = tableName(t);
     return {
@@ -81,6 +101,15 @@ vi.mock("../utils/logger", () => ({
   logError: vi.fn(),
   logWarn: vi.fn(),
   logDebug: vi.fn(),
+}));
+
+// Task #1669 — `insertNotifications` schedules `deliverNotification`
+// via `setImmediate`; mock the delivery side to a no-op so the
+// in-flight delivery doesn't try to touch the real SendGrid transport
+// or DB during the test (the inserts themselves are still observed
+// via the `inserts` array on dbMock).
+vi.mock("../services/notificationDelivery", () => ({
+  deliverNotification: vi.fn(async () => undefined),
 }));
 
 // Email + PDF mocks: same shape as the cron test.
@@ -131,6 +160,7 @@ let resetDebounce: () => void;
 beforeEach(async () => {
   for (const k of Object.keys(selectByTable)) delete selectByTable[k];
   updates.length = 0;
+  inserts.length = 0;
   sendEmailCalls.length = 0;
   sendEmailNextResults.length = 0;
 
@@ -152,6 +182,13 @@ function queueSchedules(rows: Row[]) {
 }
 function queueDistLists(rows: Row[]) {
   (selectByTable["project_email_distribution_lists"] ??= []).push(rows);
+}
+// Task #1669 — repeated-failure backstop notification fans out to
+// every ADMIN / MANAGER / SUPER_ADMIN in the org. The helper does a
+// single SELECT against `users` filtered by org + role, so we queue
+// the resulting rows here.
+function queueUsers(rows: Row[]) {
+  (selectByTable["users"] ??= []).push(rows);
 }
 
 const PROJECT_ID = "11111111-1111-1111-1111-111111111111";
@@ -354,5 +391,271 @@ describe("POST /api/projects/:projectId/log-email-schedules/:logType/send-now", 
 
     // Only the first call should have triggered the email transport.
     expect(sendEmailCalls).toHaveLength(1);
+  });
+
+  // ----------------------------------------------------------
+  // Task #1669 — repeated-failure backstop notification
+  // ----------------------------------------------------------
+  // The send-now route now passes `previousConsecutiveFailureCount`
+  // from the existing schedule row through to
+  // `executeProjectLogEmailScheduleSend`, which in turn drives the
+  // edge-triggered backstop fan-out (already covered for the cron
+  // path in `project-log-email-schedule.test.ts`). These tests verify
+  // the same column read + threshold backstop fires from the manual
+  // path, and that a successful manual send resets the streak the
+  // same way a successful cron tick does.
+
+  it("crosses the threshold from a manual send and fans out the backstop notification", async () => {
+    // Schedule sits one short of the default threshold (3 — see
+    // `getProjectLogEmailFailureThreshold` in jobRunner). The manual
+    // retry fails again, the helper bumps the streak to 3, and the
+    // backstop fires for every ADMIN / MANAGER / SUPER_ADMIN in the
+    // org so a chronically broken distribution list can't go
+    // unnoticed for weeks.
+    queueProject([{ id: PROJECT_ID, gcOrganizationId: ORG_ID }]);
+    queueSchedules([{
+      id: SCHEDULE_ID,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      logType: "RFI",
+      cadence: "WEEKLY",
+      lastSentAt: null,
+      // 2 prior failures + this one = 3 → crosses default threshold.
+      consecutiveFailureCount: 2,
+    }]);
+    queueProject([{
+      id: PROJECT_ID,
+      code: "PRJ-99",
+      name: "Tunnel 99",
+      gcOrganizationId: ORG_ID,
+    }]);
+    queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+    sendEmailNextResults.push({ ok: false, error: "SMTP 550 — recipient rejected" });
+    queueUsers([
+      { id: "user-admin-1" },
+      { id: "user-admin-2" },
+      { id: "user-manager-1" },
+    ]);
+    queueSchedules([{
+      id: SCHEDULE_ID,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      logType: "RFI",
+      cadence: "WEEKLY",
+      lastAttemptStatus: "FAILURE",
+      consecutiveFailureCount: 3,
+    }]);
+
+    const res = await authedRequest().send({});
+    expect(res.status).toBe(200);
+    expect(res.body.result.status).toBe("FAILURE");
+    expect(res.body.result.error).toBe("SMTP 550 — recipient rejected");
+
+    // The schedule UPDATE bumps the streak to 3 (= threshold).
+    const failUpdates = updates.filter((u) =>
+      u.table === "project_log_email_schedules"
+      && (u.values as Row).lastAttemptStatus === "FAILURE",
+    );
+    expect(failUpdates).toHaveLength(1);
+    expect((failUpdates[0].values as Row).consecutiveFailureCount).toBe(3);
+
+    // Backstop fan-out fires once and targets every admin/manager/
+    // super-admin returned from the queued users SELECT.
+    const notifInserts = inserts.filter((i) => i.table === "notifications");
+    expect(notifInserts).toHaveLength(1);
+    const rows = notifInserts[0].values;
+    expect(rows).toHaveLength(3);
+    expect(new Set(rows.map((r) => r.userId))).toEqual(
+      new Set(["user-admin-1", "user-admin-2", "user-manager-1"]),
+    );
+    for (const r of rows) {
+      expect(r.type).toBe("PROJECT_LOG_EMAIL_FAILED");
+      expect(r.relatedEntityType).toBe("PROJECT_LOG_EMAIL_SCHEDULE");
+      // Deep link uses the project code so the destination map can
+      // resolve it to /projects/<code>/settings.
+      expect(r.relatedEntityId).toBe("PRJ-99");
+      expect(String(r.title)).toContain("Tunnel 99");
+      expect(String(r.message)).toContain("3 times in a row");
+      expect(String(r.message)).toContain("SMTP 550");
+    }
+  });
+
+  it("does not re-fire the backstop when the streak is already past the threshold", async () => {
+    // Edge-trigger guard: both `previousCount` and `newCount` are
+    // already past the default threshold of 3, so the helper must
+    // skip the fan-out entirely. The streak still increments and the
+    // schedule still records a FAILURE — the only thing that's
+    // suppressed is the fresh admin notification.
+    queueProject([{ id: PROJECT_ID, gcOrganizationId: ORG_ID }]);
+    queueSchedules([{
+      id: SCHEDULE_ID,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      logType: "RFI",
+      cadence: "WEEKLY",
+      lastSentAt: null,
+      // 5 prior failures, this one makes 6 — both sides are past
+      // threshold, so backstop is skipped.
+      consecutiveFailureCount: 5,
+    }]);
+    queueProject([{
+      id: PROJECT_ID,
+      code: "PRJ-99",
+      name: "Tunnel 99",
+      gcOrganizationId: ORG_ID,
+    }]);
+    queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+    sendEmailNextResults.push({ ok: false, error: "Still bouncing" });
+    queueSchedules([{ id: SCHEDULE_ID, lastAttemptStatus: "FAILURE", consecutiveFailureCount: 6 }]);
+
+    const res = await authedRequest().send({});
+    expect(res.status).toBe(200);
+    expect(res.body.result.status).toBe("FAILURE");
+
+    const failUpdates = updates.filter((u) =>
+      u.table === "project_log_email_schedules"
+      && (u.values as Row).lastAttemptStatus === "FAILURE",
+    );
+    expect(failUpdates).toHaveLength(1);
+    expect((failUpdates[0].values as Row).consecutiveFailureCount).toBe(6);
+
+    expect(inserts.filter((i) => i.table === "notifications")).toHaveLength(0);
+  });
+
+  it("triggers the backstop on NO_RECIPIENTS as well as FAILURE", async () => {
+    // Empty distribution lists also count toward the streak and can
+    // trip the same backstop notification — surfaces "schedule was
+    // never going anywhere" alongside transport bounces.
+    queueProject([{ id: PROJECT_ID, gcOrganizationId: ORG_ID }]);
+    queueSchedules([{
+      id: SCHEDULE_ID,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      logType: "SUBMITTAL",
+      cadence: "WEEKLY",
+      lastSentAt: null,
+      consecutiveFailureCount: 2,
+    }]);
+    queueProject([{
+      id: PROJECT_ID,
+      code: "PRJ-7",
+      name: "Bridge 7",
+      gcOrganizationId: ORG_ID,
+    }]);
+    queueDistLists([{ contactEmails: [], extraEmails: [] }]);
+    queueUsers([{ id: "user-admin-1" }, { id: "user-admin-2" }]);
+    queueSchedules([{
+      id: SCHEDULE_ID,
+      lastAttemptStatus: "NO_RECIPIENTS",
+      consecutiveFailureCount: 3,
+    }]);
+
+    const res = await authedRequest().send({});
+    expect(res.status).toBe(200);
+    expect(res.body.result.status).toBe("NO_RECIPIENTS");
+
+    const noRecipUpdates = updates.filter((u) =>
+      u.table === "project_log_email_schedules"
+      && (u.values as Row).lastAttemptStatus === "NO_RECIPIENTS",
+    );
+    expect(noRecipUpdates).toHaveLength(1);
+    expect((noRecipUpdates[0].values as Row).consecutiveFailureCount).toBe(3);
+
+    const notifInserts = inserts.filter((i) => i.table === "notifications");
+    expect(notifInserts).toHaveLength(1);
+    expect(notifInserts[0].values).toHaveLength(2);
+    expect(String(notifInserts[0].values[0].message)).toContain("3 times in a row");
+  });
+
+  it("resets consecutive_failure_count to 0 after a successful manual send", async () => {
+    // Mid-streak schedule recovers via the manual retry. The next
+    // failure should start a brand-new streak instead of immediately
+    // re-tripping the backstop, so SUCCESS must clear the counter.
+    queueProject([{ id: PROJECT_ID, gcOrganizationId: ORG_ID }]);
+    queueSchedules([{
+      id: SCHEDULE_ID,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      logType: "RFI",
+      cadence: "WEEKLY",
+      lastSentAt: null,
+      // Mid-streak: schedule has failed twice already and is about
+      // to recover under an admin's "Send now" click.
+      consecutiveFailureCount: 2,
+    }]);
+    queueProject([{
+      id: PROJECT_ID,
+      code: "PRJ-7",
+      name: "Bridge 7",
+      gcOrganizationId: ORG_ID,
+    }]);
+    queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+    queueSchedules([{
+      id: SCHEDULE_ID,
+      lastAttemptStatus: "SUCCESS",
+      consecutiveFailureCount: 0,
+    }]);
+
+    const res = await authedRequest().send({});
+    expect(res.status).toBe(200);
+    expect(res.body.result.status).toBe("SUCCESS");
+
+    const successUpdates = updates.filter((u) =>
+      u.table === "project_log_email_schedules"
+      && (u.values as Row).lastAttemptStatus === "SUCCESS",
+    );
+    expect(successUpdates).toHaveLength(1);
+    expect((successUpdates[0].values as Row).consecutiveFailureCount).toBe(0);
+    expect((successUpdates[0].values as Row).lastSentAt).toBeInstanceOf(Date);
+
+    // No backstop fan-out on success, regardless of where the
+    // streak was sitting before.
+    expect(inserts.filter((i) => i.table === "notifications")).toHaveLength(0);
+  });
+
+  it("treats a missing consecutiveFailureCount column as 0 so older rows don't spuriously trip the backstop", async () => {
+    // Defense-in-depth: a schedule row that pre-dates the
+    // consecutive_failure_count column (or got nulled out somehow)
+    // must not be treated as "infinitely failing" by the manual
+    // path. The route reads `existing.consecutiveFailureCount ?? 0`
+    // and the helper coerces it to >= 0, so a single failure on
+    // such a row should bump the streak to 1, not the threshold.
+    queueProject([{ id: PROJECT_ID, gcOrganizationId: ORG_ID }]);
+    queueSchedules([{
+      id: SCHEDULE_ID,
+      organizationId: ORG_ID,
+      projectId: PROJECT_ID,
+      logType: "RFI",
+      cadence: "WEEKLY",
+      lastSentAt: null,
+      consecutiveFailureCount: null,
+    }]);
+    queueProject([{
+      id: PROJECT_ID,
+      code: "PRJ-7",
+      name: "Bridge 7",
+      gcOrganizationId: ORG_ID,
+    }]);
+    queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+    sendEmailNextResults.push({ ok: false, error: "Bounce" });
+    queueSchedules([{
+      id: SCHEDULE_ID,
+      lastAttemptStatus: "FAILURE",
+      consecutiveFailureCount: 1,
+    }]);
+
+    const res = await authedRequest().send({});
+    expect(res.status).toBe(200);
+    expect(res.body.result.status).toBe("FAILURE");
+
+    const failUpdates = updates.filter((u) =>
+      u.table === "project_log_email_schedules"
+      && (u.values as Row).lastAttemptStatus === "FAILURE",
+    );
+    expect(failUpdates).toHaveLength(1);
+    expect((failUpdates[0].values as Row).consecutiveFailureCount).toBe(1);
+
+    // Below the default threshold of 3 — no admin fan-out yet.
+    expect(inserts.filter((i) => i.table === "notifications")).toHaveLength(0);
   });
 });
