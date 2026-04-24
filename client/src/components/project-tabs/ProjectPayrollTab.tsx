@@ -1455,12 +1455,22 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
                   <Sparkles className="w-3 h-3 mt-0.5 shrink-0" />
                   <span>
                     Pre-selected from your earlier mapping on{" "}
-                    <span
-                      className="font-medium"
-                      data-testid="text-override-mapping-remembered-project"
-                    >
-                      {overrideRow.rememberedFromProjectName}
-                    </span>
+                    {overrideRow.rememberedFromProjectId ? (
+                      <a
+                        href={`/projects/${overrideRow.rememberedFromProjectId}?tab=payroll`}
+                        className="font-medium underline hover:no-underline"
+                        data-testid="text-override-mapping-remembered-project"
+                      >
+                        {overrideRow.rememberedFromProjectName}
+                      </a>
+                    ) : (
+                      <span
+                        className="font-medium"
+                        data-testid="text-override-mapping-remembered-project"
+                      >
+                        {overrideRow.rememberedFromProjectName}
+                      </span>
+                    )}
                     .
                   </span>
                 </p>

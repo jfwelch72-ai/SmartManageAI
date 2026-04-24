@@ -359,10 +359,42 @@ describe("ProjectPayrollTab — DOL override confirmation flow", () => {
     // because the pre-selection was driven by a remembered mapping.
     const hint = screen.getByTestId("text-override-mapping-remembered");
     expect(hint).toBeTruthy();
-    expect(
-      screen.getByTestId("text-override-mapping-remembered-project").textContent,
-    ).toBe("I-95 Phase 2");
+    const projectLink = screen.getByTestId("text-override-mapping-remembered-project");
+    expect(projectLink.textContent).toBe("I-95 Phase 2");
+    // Task #1508 — the project name should link to the source project's
+    // payroll tab so users can jump over and inspect/fix the original mapping.
+    expect(projectLink.tagName).toBe("A");
+    expect(projectLink.getAttribute("href")).toBe(
+      "/projects/proj-sibling?tab=payroll",
+    );
     expect(screen.queryByTestId("text-override-mapping-similar")).toBeNull();
+  });
+
+  it("Task #1508 — remembered-attribution hint falls back to plain text when rememberedFromProjectId is missing", async () => {
+    renderTab({
+      classifications: [
+        makeRow({
+          classificationId: "dol-feed:carpenter (group 1)",
+          classificationName: "Carpenter (Group 1)",
+          dolFeedName: "Carpenter (Group 1)",
+          rememberedClassificationId: "cls-carpenter-form",
+          // Older payloads / fixtures may have the project name without an id.
+          rememberedFromProjectName: "I-95 Phase 2",
+        }),
+      ],
+      orgClassifications: [
+        { id: "cls-carpenter", name: "Carpenter" },
+        { id: "cls-carpenter-form", name: "Carpenter — Form Specialist" },
+      ],
+    });
+
+    fireEvent.click(
+      screen.getByTestId("button-promote-override-dol-feed:carpenter (group 1)"),
+    );
+    const projectEl = screen.getByTestId("text-override-mapping-remembered-project");
+    expect(projectEl.textContent).toBe("I-95 Phase 2");
+    expect(projectEl.tagName).toBe("SPAN");
+    expect(projectEl.getAttribute("href")).toBeNull();
   });
 
   it("Task #1466 — fuzzy-only pre-selection does NOT render the remembered-attribution hint", async () => {
