@@ -18,6 +18,12 @@
  *       distribution-list addresses and immediately re-attempt
  *       instead of waiting up to a week for the next WEEKLY tick.
  *       Per-schedule rate-limited to once every 30 seconds.
+ *   - POST /api/projects/:projectId/log-email-schedules/:logType/reset-failure-streak
+ *       Task #1679 — admin acknowledgement of a stuck failure
+ *       streak. Zeros `consecutive_failure_count` and clears
+ *       `last_failure_notified_*` so the red streak badge drops
+ *       and the next failure (if any) starts a fresh notification
+ *       cycle, without firing a real email. Same role gate as PUT.
  */
 import { Router } from "express";
 import { z } from "zod";
@@ -569,6 +575,88 @@ router.post(
         },
         schedule: refreshed ?? existing,
       });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// Task #1679 — admin "Reset streak" button on the project settings
+// card. Once a schedule's `consecutive_failure_count` has crossed the
+// configured threshold the worker fans a backstop notification, and
+// the card paints a red "Failed N times in a row" badge. After the
+// admin fixes the underlying distribution list the streak only resets
+// on the next *successful* attempt — which can be days away if the
+// cadence is WEEKLY/BIWEEKLY, and which the admin can't even verify
+// without firing a real email at recipients. This endpoint is the
+// "I fixed it — silence the badge" escape hatch: it zeroes the
+// streak and clears the per-row dedupe marker so the *next* failure
+// (if any) starts a fresh notification cycle, all without sending
+// any email or touching `last_attempt_*` (which would lie about
+// whether a send actually went out).
+//
+// Same role gate as the PUT — anyone who can edit the cadence can
+// also acknowledge a stuck streak. We deliberately do NOT debounce
+// this the way we debounce send-now: the operation is idempotent
+// (resetting a 0 streak to 0 is a no-op) and doesn't fan out any
+// real-world side effect, so a hammered button is harmless.
+router.post(
+  "/projects/:projectId/log-email-schedules/:logType/reset-failure-streak",
+  requireAuth,
+  requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
+
+      const project = await loadProject(req.params.projectId, organizationId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const logTypeParse = logTypeParam.safeParse(req.params.logType);
+      if (!logTypeParse.success) return res.status(400).json({ error: "Invalid logType" });
+      const logType = logTypeParse.data;
+
+      const [existing] = await db
+        .select()
+        .from(projectLogEmailSchedules)
+        .where(and(
+          eq(projectLogEmailSchedules.projectId, project.id),
+          eq(projectLogEmailSchedules.logType, logType),
+        ))
+        .limit(1);
+
+      if (!existing) {
+        // No persisted row means the schedule has never been
+        // configured — there's no streak to reset. Mirror the
+        // send-now endpoint's 400 so direct callers get a clear
+        // signal instead of a silent 200 that pretended to do
+        // something.
+        return res.status(400).json({
+          error: "No schedule configured for this log type. There is no failure streak to reset.",
+        });
+      }
+
+      const [updated] = await db
+        .update(projectLogEmailSchedules)
+        .set({
+          consecutiveFailureCount: 0,
+          lastFailureNotifiedAt: null,
+          lastFailureNotifiedStatus: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(projectLogEmailSchedules.id, existing.id))
+        .returning();
+
+      logInfo("Project log email schedule failure streak reset", {
+        scheduleId: existing.id,
+        organizationId,
+        projectId: project.id,
+        logType,
+        actorId: req.user?.id ?? null,
+        previousStreak: existing.consecutiveFailureCount ?? 0,
+      });
+
+      return res.json({ schedule: updated ?? existing });
     } catch (err) {
       next(err);
     }

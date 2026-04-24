@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { AlertCircle, CheckCircle2, Loader2, Mail, MailWarning, Send } from "lucide-react";
+import { AlertCircle, CheckCircle2, Eraser, Loader2, Mail, MailWarning, Send } from "lucide-react";
 import { format } from "date-fns";
 import {
   COMMON_TIMEZONES,
@@ -258,6 +258,39 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast, failureThresh
     },
   });
 
+  // Task #1679 — admin-acknowledged "I fixed it, drop the streak
+  // badge" mutation. Hits the new reset-failure-streak endpoint
+  // which zeroes `consecutive_failure_count` and clears the
+  // last-notified dedupe markers. We invalidate the same query
+  // key the schedule card already uses so the streak badge falls
+  // off the row immediately on success — no real email goes out
+  // and nothing in the per-attempt history table needs to change
+  // (the row's last *attempt* status is unrelated to the running
+  // streak, so we don't refresh the attempts list either).
+  const resetStreakMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(
+        "POST",
+        `/api/projects/${projectId}/log-email-schedules/${schedule.logType}/reset-failure-streak`,
+      );
+      return res.json() as Promise<{ schedule: ScheduleRow }>;
+    },
+    onSuccess: () => {
+      toast({
+        title: "Failure streak cleared",
+        description: `${LOG_TYPE_LABELS[schedule.logType]} streak reset. The next failure (if any) will alert again.`,
+      });
+      queryClient.invalidateQueries({ queryKey });
+    },
+    onError: (err) => {
+      toast({
+        title: "Couldn't reset the streak",
+        description: err instanceof Error ? err.message : "Please try again in a moment.",
+        variant: "destructive",
+      });
+    },
+  });
+
   const dirty =
     cadence !== schedule.cadence ||
     weekday !== schedule.weekday ||
@@ -275,6 +308,16 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast, failureThresh
   // edits — sending the *current saved* configuration after the user
   // has just changed it would be misleading.
   const sendNowDisabled = !canSendNow || dirty || sendNowMutation.isPending || saveMutation.isPending;
+
+  // Task #1679 — the "Reset streak" button only makes sense when
+  // there's actually a streak on the row. We also require a
+  // persisted schedule id so the server has something to update —
+  // a default-OFF row that's never been saved has no streak by
+  // construction, but defending here keeps the button from
+  // spuriously rendering if the GET endpoint shape ever changes.
+  const hasFailureStreak = (schedule.consecutiveFailureCount ?? 0) > 0 && schedule.id !== null;
+  const resetStreakDisabled =
+    resetStreakMutation.isPending || saveMutation.isPending || sendNowMutation.isPending;
 
   return (
     <div
@@ -415,6 +458,24 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast, failureThresh
       </div>
 
       <div className="flex justify-end gap-2">
+        {hasFailureStreak && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={resetStreakDisabled}
+            onClick={() => resetStreakMutation.mutate()}
+            data-testid={`button-reset-streak-${testIdSuffix}`}
+            title={`I've fixed the underlying issue — clear the "Failed ${schedule.consecutiveFailureCount} times in a row" badge without sending an email.`}
+          >
+            {resetStreakMutation.isPending ? (
+              <Loader2 className="w-3 h-3 mr-2 animate-spin" />
+            ) : (
+              <Eraser className="w-3 h-3 mr-2" />
+            )}
+            Reset streak
+          </Button>
+        )}
         {canSendNow && (
           <Button
             type="button"
