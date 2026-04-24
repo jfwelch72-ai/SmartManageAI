@@ -70,6 +70,7 @@ import { sanitizeShortText, sanitizeText, sanitizeEmail, sanitizePhone } from ".
 import timeClockRoutes from "./timeClockRoutes";
 import overtimeRoutes from "./overtimeRoutes";
 import jobMetricAlertRulesRoutes from "./jobMetricAlertRulesRoutes";
+import jobMetricAlertEventsRoutes from "./jobMetricAlertEventsRoutes";
 import timeEntryRoutes from "./timeEntryRoutes";
 import payrollRoutes from "./payrollRoutes";
 import searchRoutes from "./searchRoutes";
@@ -854,163 +855,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // imported directly by tests instead of being copy/pasted.
   app.use("/api", jobMetricAlertRulesRoutes);
 
-  // Task #729 — acknowledge / snooze noisy alert events
-  app.post("/api/admin/metrics/jobs/alerts/events/:id/acknowledge", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
-    try {
-      const mod = await import("./utils/jobMetricAlerts");
-      const updated = await mod.acknowledgeJobMetricAlertEvent(req.params.id, req.user!.id);
-      if (!updated) {
-        res.status(404).json({ error: "Alert event not found" });
-        return;
-      }
-      const { logAudit } = await import("./auditLogger");
-      await logAudit({
-        userId: req.user!.id,
-        action: "UPDATE",
-        entityType: "job_metric_alert_event",
-        entityId: updated.id,
-        newValue: `Acknowledged alert ${updated.job}/${updated.counter ?? "_"}/${updated.kind}`,
-      }, req);
-      res.json(updated);
-    } catch (err: any) {
-      next(err);
-    }
-  });
-
-  app.post("/api/admin/metrics/jobs/alerts/events/:id/snooze", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
-    try {
-      const schema = z.object({ hours: z.number().positive().max(7 * 24) });
-      const { hours } = schema.parse(req.body);
-      const mod = await import("./utils/jobMetricAlerts");
-      const updated = await mod.snoozeJobMetricAlertEvent(req.params.id, req.user!.id, hours);
-      if (!updated) {
-        res.status(404).json({ error: "Alert event not found" });
-        return;
-      }
-      const { logAudit } = await import("./auditLogger");
-      await logAudit({
-        userId: req.user!.id,
-        action: "UPDATE",
-        entityType: "job_metric_alert_event",
-        entityId: updated.id,
-        newValue: `Snoozed ${updated.job}/${updated.counter ?? "_"}/${updated.kind} for ${hours}h until ${updated.snoozedUntil ? new Date(updated.snoozedUntil).toISOString() : "n/a"}`,
-      }, req);
-      res.json(updated);
-    } catch (err: any) {
-      if (err instanceof z.ZodError) {
-        res.status(400).json({ error: "Invalid snooze request", details: err.errors });
-        return;
-      }
-      next(err);
-    }
-  });
-
-  // Task #734 — clear an active snooze early
-  app.post("/api/admin/metrics/jobs/alerts/events/:id/unsnooze", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
-    try {
-      const mod = await import("./utils/jobMetricAlerts");
-      const updated = await mod.unsnoozeJobMetricAlertEvent(req.params.id);
-      if (!updated) {
-        res.status(404).json({ error: "Alert event not found" });
-        return;
-      }
-      const { logAudit } = await import("./auditLogger");
-      await logAudit({
-        userId: req.user!.id,
-        action: "UPDATE",
-        entityType: "job_metric_alert_event",
-        entityId: updated.id,
-        newValue: `Cleared snooze on ${updated.job}/${updated.counter ?? "_"}/${updated.kind}`,
-      }, req);
-      res.json(updated);
-    } catch (err: any) {
-      next(err);
-    }
-  });
-
-  // Task #760 — Quiet-hours digest visibility
-  app.get("/api/admin/metrics/jobs/alerts/digests", requireAuth, requireRole("SUPER_ADMIN"), async (_req: AuthRequest, res: Response, next: NextFunction) => {
-    try {
-      const mod = await import("./utils/jobMetricAlerts");
-      const sends = await mod.listRecentQuietHoursDigestSends(50);
-      res.json({ sends });
-    } catch (err: any) {
-      next(err);
-    }
-  });
-
-  app.get("/api/admin/metrics/jobs/alerts/digests/:id/events", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
-    try {
-      const mod = await import("./utils/jobMetricAlerts");
-      const result = await mod.listEventsForQuietHoursDigestSend(req.params.id);
-      if (!result) {
-        res.status(404).json({ error: "Digest send not found" });
-        return;
-      }
-      res.json(result);
-    } catch (err: any) {
-      next(err);
-    }
-  });
-
-  // Task #770 — Download a CSV of alert events for an arbitrary range so
-  // recipients can re-pull a past quiet-hours digest export without
-  // hunting through their inbox. Columns mirror `buildDigestCsv` exactly.
-  app.get("/api/admin/metrics/jobs/alerts/events.csv", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
-    try {
-      const mod = await import("./utils/jobMetricAlerts");
-      const result = await mod.buildAlertEventsCsvResponse({
-        query: {
-          from: typeof req.query.from === "string" ? req.query.from : undefined,
-          to: typeof req.query.to === "string" ? req.query.to : undefined,
-          range: typeof req.query.range === "string" ? req.query.range : undefined,
-          job: typeof req.query.job === "string" ? req.query.job : undefined,
-          counter: typeof req.query.counter === "string" ? req.query.counter : undefined,
-        },
-      });
-      if (!result.ok) {
-        const body: Record<string, unknown> = { error: result.error };
-        if (result.details !== undefined) body.details = result.details;
-        res.status(result.status).json(body);
-        return;
-      }
-      res.setHeader("Content-Type", result.contentType);
-      res.setHeader("Content-Disposition", `attachment; filename="${result.filename}"`);
-      res.send(result.csv);
-    } catch (err: any) {
-      next(err);
-    }
-  });
-
-  app.post("/api/admin/metrics/jobs/alerts/digests/test", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
-    try {
-      const mod = await import("./utils/jobMetricAlerts");
-      const summary = await mod.sendTestQuietHoursDigestToUser(req.user!.id);
-      const { logAudit } = await import("./auditLogger");
-      await logAudit({
-        userId: req.user!.id,
-        action: "EXECUTE",
-        entityType: "job_metric_alert_quiet_hours_digest",
-        entityId: req.user!.id,
-        newValue: `Test digest: sent=${summary.digestsSent}, noEvents=${summary.digestsSkippedNoEvents}, disabled=${summary.digestsSkippedDisabled}`,
-      }, req);
-      res.json(summary);
-    } catch (err: any) {
-      next(err);
-    }
-  });
-
-  app.post("/api/admin/metrics/jobs/alerts/run", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
-    try {
-      const mod = await import("./utils/jobMetricAlerts");
-      const result = await mod.evaluateJobMetricAlerts();
-      const { logAudit } = await import("./auditLogger");
-      await logAudit({ userId: req.user!.id, action: "EXECUTE", entityType: "background_job", entityId: "job_metric_alerts", newValue: `Manual evaluation: ${result.alertsFired.length} fired, ${result.alertsSuppressed} suppressed` }, req);
-      res.json(result);
-    } catch (err: any) {
-      next(err);
-    }
-  });
+  // Task #1557 — acknowledge / snooze / unsnooze / digests / events.csv /
+  // digests/test / run for job metric alerts now live in
+  // `jobMetricAlertEventsRoutes.ts` so they sit alongside the rule routes
+  // already extracted in Task #1540.
+  app.use("/api", jobMetricAlertEventsRoutes);
 
   // Task #1176's bespoke `POST /api/admin/jobs/certified-payroll-backfill/run`
   // endpoint was retired in Task #1531 once the generic one-shot jobs
