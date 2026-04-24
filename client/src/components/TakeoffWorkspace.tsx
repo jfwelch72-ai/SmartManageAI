@@ -79,9 +79,15 @@ interface TakeoffWorkspaceProps {
   context?: TakeoffContext;
   selectedSheetId?: string | null;
   onSelectSheet?: (sheetId: string | null) => void;
+  /** Task #1696 — Forwarded to `<TakeoffToolbar>` so the embedded
+   *  `<PlanMarkupToolbar>` markup popover renders icon+label instead
+   *  of icon-only when the user has the "Labeled toolbar" preference
+   *  on. Wired from the bid Plans tab; project Plans tab opts out
+   *  (default false) for now to preserve existing behavior. */
+  labeled?: boolean;
 }
 
-export default function TakeoffWorkspace({ projectId = "", projectCode = "", context, selectedSheetId: controlledSheetId, onSelectSheet }: TakeoffWorkspaceProps) {
+export default function TakeoffWorkspace({ projectId = "", projectCode = "", context, selectedSheetId: controlledSheetId, onSelectSheet, labeled = false }: TakeoffWorkspaceProps) {
   const isMobile = useIsMobile();
   const [activeTool, setActiveTool] = useState<Tool>("select");
   const [currentDrawingTool, setCurrentDrawingTool] = useState<Tool | null>(null);
@@ -1649,6 +1655,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         onToggleMeasurementLabels={(v) => { setShowMeasurementLabels(v); localStorage.setItem("takeoff-show-labels", String(v)); }}
         showStructuralGridlines={showStructuralGridlines}
         onToggleStructuralGridlines={setShowStructuralGridlines}
+        labeled={labeled}
         onFitToPage={() => {
           if (pdfImage && containerRef.current) {
             const cw = containerRef.current.clientWidth;

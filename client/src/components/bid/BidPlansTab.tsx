@@ -10,7 +10,7 @@ import {
   Upload, Download, Eye, FileText, Trash2, FolderOpen, Folder, ChevronRight, ChevronDown,
   Search, MoreVertical, File, Plus, Pencil, GripVertical, ArrowRight, Copy, Loader2,
   ExternalLink, X, FolderPlus, Printer, RotateCw, EyeOff, RefreshCw, Box, BookOpen, Columns2, Link2,
-  Building2
+  Building2, Settings2, Type
 } from "lucide-react";
 
 const BimViewer = lazy(() => import("@/components/bid/BimViewer"));
@@ -20,7 +20,10 @@ import type { QuantityCategory } from "@shared/schema";
 import type { BimElementSummary, BimSelectedElement } from "@/components/bid/BimViewer";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubTrigger, DropdownMenuSubContent, DropdownMenuCheckboxItem, DropdownMenuLabel } from "@/components/ui/dropdown-menu";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { useAuth } from "@/hooks/use-auth";
+import { useTour } from "@/components/TourProvider";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -75,6 +78,74 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
   const { isEnabled: isFeatureFlagEnabled } = useFeatureFlags();
   const bimEnabled = isFeatureFlagEnabled("BIM_VIEWER");
 
+  // Task #1696 — Mirror the Task #1663 pattern from `<PlansTab>`:
+  // a per-user "Labeled toolbar" preference stored in localStorage
+  // (re-hydrated on user.id resolve/switch so preferences never leak
+  // across users), wired into `<TakeoffWorkspace labeled={…}>` so the
+  // markup popover renders icon+label rows when enabled. The bid tour
+  // uses its own context API (`startBidPlansTour` / `isBidPlansTourCompleted`)
+  // and a separate localStorage key, kept independent from the project
+  // plans tour so users get the bid walkthrough on first visit even if
+  // they previously dismissed the project one.
+  const { user } = useAuth();
+  const { startBidPlansTour, isBidPlansTourCompleted } = useTour();
+  const labeledStorageKey = (uid: string | undefined | null) =>
+    uid ? `bid-plan-toolbar-labeled-${uid}` : null;
+  const readLabeledPref = (uid: string | undefined | null): boolean => {
+    if (typeof window === "undefined") return false;
+    const key = labeledStorageKey(uid);
+    if (!key) return false;
+    try {
+      return window.localStorage.getItem(key) === "1";
+    } catch {
+      return false;
+    }
+  };
+  const [labeledToolbar, setLabeledToolbar] = useState<boolean>(() =>
+    readLabeledPref(user?.id),
+  );
+  // Re-hydrate when the active user changes (initial resolve or switch).
+  useEffect(() => {
+    setLabeledToolbar(readLabeledPref(user?.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
+  // Save the preference inline at toggle time (not in a state-sync
+  // effect) so re-hydrating one user's value never overwrites
+  // another user's localStorage entry.
+  const toggleLabeledToolbar = useCallback(() => {
+    setLabeledToolbar((prev) => {
+      const next = !prev;
+      const key = labeledStorageKey(user?.id);
+      if (key && typeof window !== "undefined") {
+        try {
+          if (next) window.localStorage.setItem(key, "1");
+          else window.localStorage.removeItem(key);
+        } catch {}
+      }
+      return next;
+    });
+  }, [user?.id]);
+
+  // Auto-trigger the bid plans tour the first time a user opens the
+  // bid Plans tab. 800ms delay gives `<TakeoffWorkspace>` time to
+  // mount its toolbar so Joyride can anchor to the first step
+  // (`button-tool-pan`). Ref-guarded so it never fires twice in the
+  // same session, but the flag is only set inside the timer so a
+  // user who tabs away before 800ms still sees it next visit.
+  const tourTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (tourTriggeredRef.current) return;
+    if (!user?.id) return;
+    if (isBidPlansTourCompleted) return;
+    const timer = window.setTimeout(() => {
+      tourTriggeredRef.current = true;
+      startBidPlansTour();
+    }, 800);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, isBidPlansTourCompleted]);
+
+
   const { data: documents = [], isLoading: documentsLoading } = useQuery<BidDocument[]>({
     queryKey: ["/api/bids", bidCode, "documents"],
     queryFn: async () => {
@@ -103,6 +174,17 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
   const [renameSheetValue, setRenameSheetValue] = useState("");
   const [deleteSheetId, setDeleteSheetId] = useState<string | null>(null);
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
+
+  // Task #1696 — Replay handler used by the gear menus on both the
+  // takeoff pane and the PDF preview pane. The bid tour anchors live
+  // inside `<TakeoffWorkspace>`, so we close the preview first and
+  // wait a tick for the takeoff toolbar to remount before Joyride
+  // starts — otherwise the first step's `[data-testid="button-tool-pan"]`
+  // target won't exist in the DOM and Joyride would silently skip it.
+  const handleReplayTour = useCallback(() => {
+    setPreviewDocId(null);
+    window.setTimeout(() => startBidPlansTour(), 250);
+  }, [startBidPlansTour]);
   const bidSheetStorageKey = bidId ? `takeoff-sheet-${bidId}` : null;
   const [selectedSheetId, setSelectedSheetId] = useState<string | null>(() => {
     if (!bidSheetStorageKey) return null;
@@ -1363,7 +1445,12 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                 </div>
                 <div className="flex-1 min-h-0 overflow-hidden">
                   <WidgetErrorBoundary fallbackTitle="Takeoff Workspace">
-                    <TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} selectedSheetId={selectedSheetId} onSelectSheet={setSelectedSheetId} />
+                    <TakeoffWorkspace
+                      context={{ type: "bid", bidId, bidCode }}
+                      selectedSheetId={selectedSheetId}
+                      onSelectSheet={setSelectedSheetId}
+                      labeled={labeledToolbar}
+                    />
                   </WidgetErrorBoundary>
                 </div>
               </div>
@@ -1437,7 +1524,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
           ) : previewDocId ? (
             (() => {
               const doc = documents.find((d) => d.id === previewDocId);
-              if (!doc) return <WidgetErrorBoundary fallbackTitle="Takeoff Workspace"><TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} selectedSheetId={selectedSheetId} onSelectSheet={setSelectedSheetId} /></WidgetErrorBoundary>;
+              if (!doc) return <WidgetErrorBoundary fallbackTitle="Takeoff Workspace"><TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} selectedSheetId={selectedSheetId} onSelectSheet={setSelectedSheetId} labeled={labeledToolbar} /></WidgetErrorBoundary>;
               const isPdf = doc.mimeType?.includes("pdf") || doc.fileName?.toLowerCase().endsWith(".pdf");
               const isImage = doc.mimeType?.startsWith("image/") || /\.(png|jpg|jpeg|gif|webp)$/i.test(doc.fileName || "");
               const isBim = bimEnabled && (doc.type === "BIM" || doc.fileName?.toLowerCase().endsWith(".ifc"));
@@ -1535,6 +1622,16 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
                     </Button>
+                    {/* Task #1696 — Same view-settings menu as the takeoff
+                        pane so users can replay the tour or flip the
+                        labeled-toolbar pref while previewing a doc. The
+                        replay handler closes the preview first so the
+                        Joyride targets in `<TakeoffWorkspace>` exist. */}
+                    <BidPlansViewSettingsMenu
+                      labeled={labeledToolbar}
+                      onToggleLabeled={toggleLabeledToolbar}
+                      onReplayTour={handleReplayTour}
+                    />
                   </div>
                   <div className="flex-1 min-h-0 overflow-hidden">
                     {isPdf ? (
@@ -1583,8 +1680,12 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
             })()
           ) : (
             <div className="flex flex-col h-full">
-              {bimEnabled && bimDocuments.length > 0 && (
-                <div className="flex items-center justify-end px-2 py-1 border-b bg-muted/20 shrink-0">
+              {/* Task #1696 — Top bar always renders so the bid Plans
+                  view-settings menu (Labeled toolbar / Show me the tour
+                  again) is reachable even when no BIM document is
+                  present. The Split View button is conditional on BIM. */}
+              <div className="flex items-center justify-end gap-2 px-2 py-1 border-b bg-muted/20 shrink-0">
+                {bimEnabled && bimDocuments.length > 0 && (
                   <Button
                     size="sm"
                     variant="outline"
@@ -1595,11 +1696,21 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                     <Columns2 className="w-3 h-3" />
                     Split View (3D + 2D)
                   </Button>
-                </div>
-              )}
+                )}
+                <BidPlansViewSettingsMenu
+                  labeled={labeledToolbar}
+                  onToggleLabeled={toggleLabeledToolbar}
+                  onReplayTour={handleReplayTour}
+                />
+              </div>
               <div className="flex-1 min-h-0">
                 <WidgetErrorBoundary fallbackTitle="Takeoff Workspace">
-                  <TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} selectedSheetId={selectedSheetId} onSelectSheet={setSelectedSheetId} />
+                  <TakeoffWorkspace
+                    context={{ type: "bid", bidId, bidCode }}
+                    selectedSheetId={selectedSheetId}
+                    onSelectSheet={setSelectedSheetId}
+                    labeled={labeledToolbar}
+                  />
                 </WidgetErrorBoundary>
               </div>
             </div>
@@ -1776,5 +1887,66 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+/**
+ * Task #1696 — Bid Plans view-settings menu.
+ *
+ * Mirrors the Settings dropdown that `<UnifiedPlanToolbar>` exposes on
+ * the project Plans tab (Task #1663): a gear button with a tooltip
+ * that opens a labeled-toolbar checkbox plus a "Show me the tour
+ * again" item. Kept inline (rather than reusing `<UnifiedPlanToolbar>`
+ * directly) because the bid surface has no pin filter / pin count
+ * mode / clustering controls — it would be a lot of unrelated UI for
+ * a single dropdown.
+ */
+function BidPlansViewSettingsMenu({
+  labeled,
+  onToggleLabeled,
+  onReplayTour,
+}: {
+  labeled: boolean;
+  onToggleLabeled: () => void;
+  onReplayTour: () => void;
+}) {
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7 shrink-0"
+              data-testid="bid-plans-view-settings"
+              aria-label="Plans view settings"
+            >
+              <Settings2 className="w-3.5 h-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom"><span>Plans view settings</span></TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuLabel>Plans view</DropdownMenuLabel>
+        <DropdownMenuCheckboxItem
+          checked={!!labeled}
+          onCheckedChange={() => onToggleLabeled()}
+          data-testid="menu-item-bid-labeled-toolbar"
+        >
+          <Type className="w-3.5 h-3.5 mr-2" />
+          Labeled toolbar
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          onClick={() => onReplayTour()}
+          data-testid="menu-item-replay-bid-plans-tour"
+        >
+          <BookOpen className="w-3.5 h-3.5 mr-2" />
+          Show me the tour again
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

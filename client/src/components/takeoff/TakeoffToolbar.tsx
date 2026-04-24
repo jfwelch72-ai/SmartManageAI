@@ -84,6 +84,10 @@ interface TakeoffToolbarProps {
   onToggleMeasurementLabels?: (v: boolean) => void;
   showStructuralGridlines?: boolean;
   onToggleStructuralGridlines?: (v: boolean) => void;
+  /** Task #1696 — When true, the embedded markup popover renders
+   *  icon+label rows instead of icon-only chips, matching the
+   *  bid Plans tab "Labeled toolbar" preference. */
+  labeled?: boolean;
 }
 
 export function TakeoffToolbar({
@@ -104,6 +108,7 @@ export function TakeoffToolbar({
   onFitToPage,
   showMeasurementLabels, onToggleMeasurementLabels,
   showStructuralGridlines, onToggleStructuralGridlines,
+  labeled = false,
 }: TakeoffToolbarProps) {
   const isMarkupTool = MARKUP_TOOL_IDS.includes(activeTool as any);
   const zoomPercent = Math.round(stageScale * 100);
@@ -288,6 +293,7 @@ export function TakeoffToolbar({
                 onChangeThickness={setMarkupThickness}
                 showLabel={false}
                 showSelect={false}
+                labeled={labeled}
                 className="border-0 bg-transparent px-1 py-1"
               />
             </div>

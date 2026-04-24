@@ -27,6 +27,14 @@ interface TourContextType {
   skipPlansTour: () => void;
   isPlansTourActive: boolean;
   isPlansTourCompleted: boolean;
+  // Task #1696 — Same pattern but for the bid Plans tab. Reuses most
+  // of the project plans tour copy with bid-flavored wording on the
+  // last step (bids do not host RFI/punch/submittal pin layers, so
+  // the pin step is replaced with a takeoff/measurement-import note).
+  startBidPlansTour: () => void;
+  skipBidPlansTour: () => void;
+  isBidPlansTourActive: boolean;
+  isBidPlansTourCompleted: boolean;
 }
 
 const TourContext = createContext<TourContextType | null>(null);
@@ -636,6 +644,99 @@ async function persistPlansTourCompleted(completed: boolean): Promise<void> {
   await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
 }
 
+// Task #1696 — Bid Plans tour. The first four steps mirror the
+// project plans tour (Pan/Select, Calibrate, Measure, Mark Up) since
+// the bid surface uses the same `<TakeoffWorkspace>` toolbar. The
+// final step swaps the "drop pins for RFIs/punches/submittals" copy
+// (bids have no plan-pin layer) for a callout about importing the
+// finished takeoff measurements into the bid estimate, which is the
+// natural next step on the bid surface.
+//
+// Note (rebase #1695 → #1696): the project plans-tour completion
+// flag was moved server-side under `users.plansTourCompleted` in
+// Task #1695. The bid plans-tour completion flag intentionally stays
+// in localStorage for now to avoid an out-of-scope schema change —
+// see the follow-up task to mirror it server-side once a column
+// exists. Cross-device sync is a known gap but the auto-tour and
+// replay UX work correctly per device.
+const bidPlansTourSteps: Step[] = [
+  {
+    target: '[data-testid="button-tool-pan"]',
+    title: "Navigate the plan",
+    content: (
+      <div className="space-y-2">
+        <p>Use <strong>Pan</strong> and <strong>Select</strong> to move around your sheet without drawing anything.</p>
+        <p className="text-sm text-muted-foreground">Tip: hold <kbd className="px-1 py-0.5 rounded border bg-muted text-xs">Space</kbd> from any tool to pan temporarily — release Space to restore your tool.</p>
+      </div>
+    ),
+    placement: "right" as const,
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="button-tool-calibrate"]',
+    title: "Calibrate first",
+    content: (
+      <p>Before measuring, click <strong>Calibrate</strong> and pick two points of a known distance on the sheet. Every measurement after that comes out in real-world units.</p>
+    ),
+    placement: "right" as const,
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="button-measure-group"]',
+    title: "Measure",
+    content: (
+      <p>Linear, area, volume, count and more — all the takeoff measurement tools live here. Pick one, click on the sheet, and the quantities flow straight into your bid.</p>
+    ),
+    placement: "right" as const,
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="button-markup-group"]',
+    title: "Mark Up",
+    content: (
+      <p>Draw arrows, clouds, highlights, or freehand notes on top of the sheet to communicate intent. Markups don't affect quantities — they're just for collaboration.</p>
+    ),
+    placement: "right" as const,
+    disableBeacon: true,
+  },
+  {
+    target: '[data-testid="bid-plans-view-settings"], [data-testid="button-upload-plan"]',
+    title: "Push quantities into your estimate",
+    content: (
+      <div className="space-y-2">
+        <p>Once your takeoff measurements look right, send them straight into the bid estimate from the sidebar's <strong>Import Measurements</strong> button — no copy/paste required.</p>
+        <p className="text-sm text-muted-foreground">You can replay this tour anytime from the gear menu in the top right.</p>
+      </div>
+    ),
+    placement: "left" as const,
+    disableBeacon: true,
+  },
+];
+
+const BID_PLANS_TOUR_KEY_PREFIX = "bid-plans-tour-completed-";
+
+function getBidPlansTourCompleted(userId: string | undefined | null): boolean {
+  if (!userId || typeof window === "undefined") return false;
+  try {
+    return window.localStorage.getItem(`${BID_PLANS_TOUR_KEY_PREFIX}${userId}`) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function setBidPlansTourCompleted(userId: string | undefined | null, completed: boolean) {
+  if (!userId || typeof window === "undefined") return;
+  try {
+    if (completed) {
+      window.localStorage.setItem(`${BID_PLANS_TOUR_KEY_PREFIX}${userId}`, "1");
+    } else {
+      window.localStorage.removeItem(`${BID_PLANS_TOUR_KEY_PREFIX}${userId}`);
+    }
+  } catch {
+    // localStorage unavailable (private browsing, quota) — silently ignore
+  }
+}
+
 export function TourProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [location, setLocation] = useLocation();
@@ -679,6 +780,18 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       }
     })();
   }, [user?.id, user?.plansTourCompleted]);
+
+  // Task #1696 — Bid Plans tour state. Tracked separately from the
+  // project plans tour so users get the bid-context walkthrough the
+  // first time they open the bid Plans tab even if they already saw
+  // (and dismissed) the project plans tour. Stored in localStorage
+  // (per-user-id) until a server-side `bidPlansTourCompleted` column
+  // is added; see the rebase note above the bid tour steps.
+  const [isBidPlansTourActive, setIsBidPlansTourActive] = useState(false);
+  const [bidPlansTourCompleted, setBidPlansTourCompletedState] = useState<boolean>(false);
+  useEffect(() => {
+    setBidPlansTourCompletedState(getBidPlansTourCompleted(user?.id));
+  }, [user?.id]);
   
   const role = user?.effectiveRole || user?.role || "FIELD_WORKER";
   
@@ -971,6 +1084,35 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     [finishPlansTour],
   );
 
+  // ── Task #1696 — Bid Plans tour controls ─────────────────────────────
+  const startBidPlansTour = useCallback(() => {
+    setIsBidPlansTourActive(true);
+  }, []);
+
+  const skipBidPlansTour = useCallback(() => {
+    setIsBidPlansTourActive(false);
+    setBidPlansTourCompleted(user?.id, true);
+    setBidPlansTourCompletedState(true);
+  }, [user?.id]);
+
+  const handleBidPlansTourCallback = useCallback(
+    (data: CallBackProps) => {
+      const { status, action } = data;
+      if (status === STATUS.FINISHED) {
+        setIsBidPlansTourActive(false);
+        setBidPlansTourCompleted(user?.id, true);
+        setBidPlansTourCompletedState(true);
+        return;
+      }
+      if (status === STATUS.SKIPPED || action === ACTIONS.CLOSE) {
+        setIsBidPlansTourActive(false);
+        setBidPlansTourCompleted(user?.id, true);
+        setBidPlansTourCompletedState(true);
+      }
+    },
+    [user?.id],
+  );
+
   return (
     <TourContext.Provider value={{
       startTour,
@@ -982,6 +1124,10 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
       skipPlansTour,
       isPlansTourActive,
       isPlansTourCompleted: plansTourCompleted,
+      startBidPlansTour,
+      skipBidPlansTour,
+      isBidPlansTourActive,
+      isBidPlansTourCompleted: bidPlansTourCompleted,
     }}>
       {children}
       
@@ -1065,6 +1211,49 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
           disableOverlayClose
           spotlightClicks={false}
           callback={handlePlansTourCallback}
+          styles={{
+            options: {
+              primaryColor: "hsl(var(--primary))",
+              textColor: "hsl(var(--foreground))",
+              backgroundColor: "hsl(var(--card))",
+              arrowColor: "hsl(var(--card))",
+              overlayColor: "rgba(0, 0, 0, 0.5)",
+              zIndex: 10000,
+            },
+            tooltip: { borderRadius: "8px", padding: "16px" },
+            tooltipContainer: { textAlign: "left" },
+            tooltipTitle: { fontSize: "16px", fontWeight: 600, marginBottom: "8px" },
+            tooltipContent: { fontSize: "13px" },
+            buttonNext: {
+              backgroundColor: "hsl(var(--primary))",
+              color: "hsl(var(--primary-foreground))",
+              borderRadius: "6px",
+              padding: "8px 16px",
+            },
+            buttonBack: { color: "hsl(var(--muted-foreground))", marginRight: "8px" },
+            buttonSkip: { color: "hsl(var(--muted-foreground))" },
+            spotlight: { borderRadius: "8px" },
+          }}
+          locale={{ back: "Back", close: "Close", last: "Got it", next: "Next", skip: "Skip" }}
+        />
+      )}
+
+      {/* Task #1696 — Bid Plans tour. Mirrors the project plans tour
+          configuration (uncontrolled, single-page) with a separate
+          completion key so each surface gets its own first-run
+          walkthrough. */}
+      {isBidPlansTourActive && (
+        <Joyride
+          steps={bidPlansTourSteps}
+          run={isBidPlansTourActive}
+          continuous
+          showProgress
+          showSkipButton
+          hideCloseButton={false}
+          scrollToFirstStep
+          disableOverlayClose
+          spotlightClicks={false}
+          callback={handleBidPlansTourCallback}
           styles={{
             options: {
               primaryColor: "hsl(var(--primary))",
