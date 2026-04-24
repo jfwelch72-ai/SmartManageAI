@@ -294,10 +294,18 @@ function buildProjectHtml(pr: ProjectReport): string {
           </tr>
         </thead>
         <tbody>
-          ${pr.employees.map(emp => `
+          ${pr.employees.map(emp => {
+            // Task #1484: surface the unacknowledged Davis-Bacon rate-change
+            // signal in the printed view. Adds a "+" suffix on the worker
+            // classification cell plus an amber "Rate changed YYYY-MM-DD"
+            // caption underneath so a reviewer of the printed report sees
+            // the same flag as the on-screen badge.
+            const rc = emp.recentRateChange;
+            const rcDate = rc?.detectedAt ? rc.detectedAt.slice(0, 10) : null;
+            return `
             <tr${emp.belowPrevailingWage ? ' class="below-wage"' : ''}>
               <td class="left">${emp.name}${emp.belowPrevailingWage ? ' *' : ''}</td>
-              <td>${emp.workClassification}</td>
+              <td>${emp.workClassification}${rc ? ' +' : ''}${rc ? `<div style="font-size:9px;color:#b45309">Rate changed ${rcDate || 'recently'}</div>` : ''}</td>
               <td>${emp.regularHours.toFixed(1)}</td>
               <td>${emp.overtimeHours.toFixed(1)}</td>
               <td>${emp.totalHours.toFixed(1)}</td>
@@ -309,7 +317,8 @@ function buildProjectHtml(pr: ProjectReport): string {
               <td>$${emp.totalDeductions.toFixed(2)}</td>
               <td>$${emp.netWages.toFixed(2)}</td>
             </tr>
-          `).join("")}
+          `;
+          }).join("")}
           <tr class="totals-row">
             <td class="left" colspan="2">TOTALS</td>
             <td>${pr.employees.reduce((s, e) => s + e.regularHours, 0).toFixed(1)}</td>
@@ -326,6 +335,7 @@ function buildProjectHtml(pr: ProjectReport): string {
         </tbody>
       </table>
       ${pr.employees.some(e => e.belowPrevailingWage) ? '<p style="color:#dc2626">* Worker is paid below the prevailing wage rate for their classification</p>' : ''}
+      ${pr.employees.some(e => e.recentRateChange) ? '<p style="color:#b45309">+ Davis-Bacon rate for this classification changed recently — review and acknowledge on the project prevailing-wage panel before submitting.</p>' : ''}
     </div>
   `;
 }
@@ -519,13 +529,24 @@ export default function CertifiedPayrollReportView({ payRunId, payRunNumber }: {
       }
       return s;
     };
-    const headers = ["Project", "Name", "Classification", "ST Hours", "OT Hours", "Total Hours", "Rate", "Gross", "FICA", "W/H Tax", "Other Ded.", "Total Ded.", "Net Wages", "Below Prevailing Wage", "Prevailing Rate Source"];
-    const rows = allEmployees.map(e => [
-      e.projectName, e.name, e.workClassification, e.regularHours, e.overtimeHours, e.totalHours,
-      e.rateOfPay, e.grossEarned, e.fica, e.withholdingTax, e.otherDeductions,
-      e.totalDeductions, e.netWages, e.belowPrevailingWage ? "YES" : "NO",
-      sourceLabel(e.prevailingRateSource) ?? ""
-    ]);
+    // Task #1484: include a "Recent Rate Change" column flagging any worker
+    // whose Davis-Bacon classification has an unacknowledged rate-change
+    // record. Mirrors the on-screen "Rate changed recently" badge so a PM
+    // who exports/audits the CSV without scrolling the viewer still sees it.
+    const headers = ["Project", "Name", "Classification", "ST Hours", "OT Hours", "Total Hours", "Rate", "Gross", "FICA", "W/H Tax", "Other Ded.", "Total Ded.", "Net Wages", "Below Prevailing Wage", "Prevailing Rate Source", "Recent Rate Change"];
+    const rows = allEmployees.map(e => {
+      const rc = e.recentRateChange;
+      const rcLabel = rc
+        ? `Rate ${rc.changeKind} ${rc.detectedAt ? rc.detectedAt.slice(0, 10) : "recently"}`
+        : "";
+      return [
+        e.projectName, e.name, e.workClassification, e.regularHours, e.overtimeHours, e.totalHours,
+        e.rateOfPay, e.grossEarned, e.fica, e.withholdingTax, e.otherDeductions,
+        e.totalDeductions, e.netWages, e.belowPrevailingWage ? "YES" : "NO",
+        sourceLabel(e.prevailingRateSource) ?? "",
+        rcLabel,
+      ];
+    });
     const csv = [headers.map(csvEscape).join(","), ...rows.map(r => r.map(csvEscape).join(","))].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);

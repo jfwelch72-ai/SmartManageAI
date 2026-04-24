@@ -3354,6 +3354,52 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
       }
     }
 
+    // Task #1484: load unacknowledged Davis-Bacon rate-change records for
+    // every (project, wage decision) pair on this pay run so the WH-347 PDF
+    // can annotate any classification whose DOL rate has shifted since it
+    // was last acknowledged. Mirrors the certified-report JSON endpoint
+    // (Task #1450) so the printed/downloaded form matches the on-screen view.
+    const pdfRateChangeRowMap = new Map<string, { changeKind: string; detectedAt: string | null }>();
+    {
+      const pdfProjectClassKeys = new Map<string, Set<string>>();
+      for (const item of lineItems) {
+        const className = classNameMap.get(item.lineItem.userId);
+        if (!className) continue;
+        const set = pdfProjectClassKeys.get(item.projectId) ?? new Set<string>();
+        set.add(normalizeClassificationKey(className));
+        pdfProjectClassKeys.set(item.projectId, set);
+      }
+      const decisionToProjects = new Map<string, string[]>();
+      for (const [projectId, decision] of Array.from(projectDecisionMap.entries())) {
+        const list = decisionToProjects.get(decision) ?? [];
+        list.push(projectId);
+        decisionToProjects.set(decision, list);
+      }
+      for (const [decision, projIds] of Array.from(decisionToProjects.entries())) {
+        let map: Awaited<ReturnType<typeof loadUnacknowledgedRateChanges>>;
+        try {
+          map = await loadUnacknowledgedRateChanges(orgId, decision);
+        } catch (err) {
+          logWarn("Davis-Bacon rate-change flag lookup failed (pdf)", {
+            decision,
+            error: String(err),
+          });
+          continue;
+        }
+        if (map.size === 0) continue;
+        for (const projectId of projIds) {
+          const presentKeys = pdfProjectClassKeys.get(projectId) ?? new Set<string>();
+          for (const [normKey, change] of Array.from(map.entries())) {
+            if (!presentKeys.has(normKey)) continue;
+            pdfRateChangeRowMap.set(`${projectId}:${normKey}`, {
+              changeKind: change.changeKind,
+              detectedAt: change.detectedAt ? change.detectedAt.toISOString() : null,
+            });
+          }
+        }
+      }
+    }
+
     const employees = lineItems.map(item => {
       const userId = item.lineItem.userId;
       const classification = classNameMap.get(userId) || "Laborer";
@@ -3382,6 +3428,11 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
       const gross = parseFloat(item.lineItem.grossAmount || item.lineItem.totalAmount);
       const regH = parseFloat(item.lineItem.regularHours);
       const otH = parseFloat(item.lineItem.overtimeHours);
+      // Task #1484: per-row Davis-Bacon rate-change flag, keyed by
+      // `${projectId}:${normalizedClassification}` so each project on a
+      // multi-project pay run gets its own (potentially different) state.
+      const rateChangeKey = `${item.projectId}:${normalizeClassificationKey(classification)}`;
+      const recentRateChange = pdfRateChangeRowMap.get(rateChangeKey) ?? null;
       return {
         name: `${item.firstName} ${item.lastName}`,
         workClassification: classification,
@@ -3400,6 +3451,7 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
         prevailingRate,
         belowPrevailingWage,
         prevailingRateSource,
+        recentRateChange,
       };
     });
 

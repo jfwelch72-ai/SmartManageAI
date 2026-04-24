@@ -34,6 +34,15 @@ export interface WH347Employee {
   // small caption under the rate column on the WH-347 PDF so auditors can
   // tell at a glance whether a rate is a project override or a federal feed.
   prevailingRateSource?: WH347RateSource;
+  // Task #1484: when set, the Davis-Bacon rate for this row's classification
+  // has an unacknowledged rate-change record. Surfaced on the PDF as a small
+  // "Rate changed YYYY-MM-DD" caption under the work-classification cell plus
+  // a bottom-of-page footnote so a reviewer who only sees the printed/exported
+  // report still notices the change.
+  recentRateChange?: {
+    changeKind: "added" | "changed" | "removed" | string;
+    detectedAt: string | null;
+  } | null;
 }
 
 /**
@@ -324,7 +333,12 @@ function drawEmployeeRow(
         value = ellipsize(emp.name + (isWarn ? " *" : ""), font, 8.5, col.width);
         break;
       case "workClassification":
-        value = ellipsize(emp.workClassification, font, 8.5, col.width);
+        value = ellipsize(
+          emp.workClassification + (emp.recentRateChange ? " *" : ""),
+          font,
+          8.5,
+          col.width,
+        );
         break;
       case "regularHours":
         value = fmtH(emp.regularHours);
@@ -362,6 +376,22 @@ function drawEmployeeRow(
       width: col.width,
       color: isWarn ? rgb(0.6, 0.05, 0.05) : rgb(0, 0, 0),
     });
+    if (col.field === "workClassification" && emp.recentRateChange) {
+      // Task #1484: render a "Rate changed YYYY-MM-DD" caption directly under
+      // the classification cell so reviewers of the printed PDF see the same
+      // signal the on-screen viewer shows via the "Rate changed recently"
+      // badge. Amber so it stands out without competing with the red
+      // below-PW caption.
+      const dateStr = emp.recentRateChange.detectedAt
+        ? emp.recentRateChange.detectedAt.slice(0, 10)
+        : "recently";
+      const caption = ellipsize(`Rate changed ${dateStr}`, font, 6.5, col.width);
+      drawText(page, caption, x, y - 22, font, 6.5, {
+        align: "left",
+        width: col.width,
+        color: rgb(0.71, 0.45, 0.05),
+      });
+    }
     if (col.field === "rateOfPay") {
       // Show PW shortfall in red when the worker is paid below the prevailing
       // rate, otherwise show the rate source caption (e.g. "DOL feed" /
@@ -636,6 +666,22 @@ export async function generateWH347Pdf(
         font,
         7,
         { color: rgb(0.6, 0.05, 0.05) }
+      );
+    }
+
+    // Task #1484: page-level footnote whenever any worker on the printed page
+    // has an unacknowledged Davis-Bacon rate-change record. Mirrors the
+    // "Rate changed recently" badge shown on the on-screen certified payroll
+    // viewer so reviewers of the downloaded PDF still see the signal.
+    if (slice.some((e) => e.recentRateChange)) {
+      drawText(
+        page,
+        "* Davis-Bacon rate for this classification changed recently — review and acknowledge on the project prevailing-wage panel before submitting.",
+        MARGIN_X,
+        MARGIN_Y - 20,
+        font,
+        7,
+        { color: rgb(0.71, 0.45, 0.05) }
       );
     }
   }
