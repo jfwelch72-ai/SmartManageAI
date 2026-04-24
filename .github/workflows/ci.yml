@@ -308,6 +308,92 @@ jobs:
           path: test-results/
           retention-days: 14
 
+      # Task #1897 — Engine-specific Konva regressions on Firefox + WebKit
+      # only surface in this job, so a failure on `main` would otherwise sit
+      # silently in the Actions tab until somebody happened to look. Post a
+      # Slack alert pointing at the failed run and the uploaded Playwright
+      # report artifact so the team can triage immediately.
+      #
+      # Scoping rules (matches the task brief):
+      #   - `failure()` — only fire when the job itself failed (not on cancel
+      #     or success, and not on a previous step's failure that we already
+      #     handled).
+      #   - `github.event_name == 'push'` and `github.ref == 'refs/heads/main'`
+      #     — never notify on PR-branch failures, only on the `main` branch
+      #     after merge. PR authors already see the red check on their PR.
+      #
+      # The webhook URL lives in the repo's GitHub Actions secrets as
+      # `SLACK_WEBHOOK_URL` (a standard Slack Incoming Webhook). If the
+      # secret is missing — e.g. in a fork, or before a maintainer has wired
+      # it up — the step logs a notice and exits 0 instead of failing the
+      # job a second time on top of the test failure we're already alerting
+      # about.
+      - name: Notify Slack on canvas-heavy failure (main only)
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          REPO: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+          ACTOR: ${{ github.actor }}
+          WORKFLOW: ${{ github.workflow }}
+          JOB: E2E Canvas Specs (Firefox + WebKit)
+          ARTIFACT_NAME: playwright-report-canvas-firefox-webkit
+        run: |
+          set -euo pipefail
+          if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then
+            echo "::notice::SLACK_WEBHOOK_URL is not set; skipping Slack alert. Add it under Settings → Secrets and variables → Actions to enable canvas-heavy failure alerts on main."
+            exit 0
+          fi
+
+          short_sha="${COMMIT_SHA:0:7}"
+          # Block Kit payload — renders nicely in Slack incoming webhooks and
+          # also degrades to plain text in the notification preview via the
+          # top-level `text` field (required for accessibility / mobile).
+          payload=$(cat <<EOF
+          {
+            "text": ":rotating_light: Canvas-heavy E2E (Firefox + WebKit) failed on main — ${short_sha}",
+            "blocks": [
+              {
+                "type": "header",
+                "text": {
+                  "type": "plain_text",
+                  "text": ":rotating_light: Canvas-heavy E2E failed on main"
+                }
+              },
+              {
+                "type": "section",
+                "fields": [
+                  { "type": "mrkdwn", "text": "*Repo*\n${REPO}" },
+                  { "type": "mrkdwn", "text": "*Job*\n${JOB}" },
+                  { "type": "mrkdwn", "text": "*Commit*\n<${COMMIT_URL}|${short_sha}> by ${ACTOR}" },
+                  { "type": "mrkdwn", "text": "*Workflow*\n${WORKFLOW}" }
+                ]
+              },
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "<${RUN_URL}|Open the failed run> — the Playwright HTML report is attached as the *${ARTIFACT_NAME}* artifact at the bottom of that page."
+                }
+              }
+            ]
+          }
+          EOF
+          )
+
+          # `--fail-with-body` so a non-2xx from Slack still surfaces the
+          # response body in the job log, and the step exits non-zero — that
+          # way a misconfigured webhook is visible instead of silently
+          # swallowed. The test failure itself is already reflected by the
+          # earlier failed step.
+          curl --silent --show-error --fail-with-body \
+            -X POST \
+            -H 'Content-Type: application/json' \
+            --data "${payload}" \
+            "${SLACK_WEBHOOK_URL}"
+
   cloud-import-security:
     # Task #1507 — Run the cloud-import SSRF + size guard suites on every PR
     # so a regression to `safeDownload` or the `POST /api/documents/from-cloud`
