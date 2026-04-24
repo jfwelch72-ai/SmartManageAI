@@ -66,6 +66,7 @@ interface ComparisonResult {
     sheetName: string | null;
     currentRevisionLabel: string | null;
     latestRevisionLabel: string | null;
+    latestSheetId: string | null;
     hasNewerRevision: boolean;
   }>;
 }
@@ -322,17 +323,38 @@ interface CompareRowData {
   sheetId: string;
   currentRevisionLabel: string | null;
   latestRevisionLabel: string | null;
+  latestSheetId: string | null;
   hasNewerRevision: boolean;
 }
 
 interface CompareRowProps {
   item: CompareRowData;
+  onAcceptLatest: (item: CompareRowData) => void;
+  isAccepting: boolean;
+  canAccept: boolean;
 }
 
-const CompareRow = memo(function CompareRow({ item }: CompareRowProps) {
+const CompareRow = memo(function CompareRow({
+  item,
+  onAcceptLatest,
+  isAccepting,
+  canAccept,
+}: CompareRowProps) {
+  // Task #1880 — keep the badge and the per-row accept action driven by
+  // the same condition. The backend marks `hasNewerRevision=true` for two
+  // distinct cases:
+  //   1. an active sheet with the same name has replaced the pinned one
+  //      (`latestSheetId` is set) — actionable, show "Newer Available" +
+  //      "Accept latest";
+  //   2. the pinned sheet itself is inactive and no active replacement
+  //      exists (`latestSheetId === null`) — there is nothing to accept,
+  //      so show a distinct "Pinned sheet inactive" status without the
+  //      accept button rather than misleadingly offering an accept action.
+  const isActionableUpdate = item.hasNewerRevision && !!item.latestSheetId;
+  const isOrphanedPin = item.hasNewerRevision && !item.latestSheetId;
   return (
     <div
-      className={`flex items-center justify-between p-2 rounded border text-sm ${item.hasNewerRevision ? "border-amber-400 bg-amber-50/50 dark:bg-amber-900/10" : ""}`}
+      className={`flex items-center justify-between gap-2 p-2 rounded border text-sm ${item.hasNewerRevision ? "border-amber-400 bg-amber-50/50 dark:bg-amber-900/10" : ""}`}
       data-testid={`compare-item-${item.itemId}`}
     >
       <div className="min-w-0 flex-1">
@@ -346,17 +368,45 @@ const CompareRow = memo(function CompareRow({ item }: CompareRowProps) {
           </span>
         </div>
       </div>
-      {item.hasNewerRevision ? (
-        <Badge variant="outline" className="text-xs border-amber-400 text-amber-700 dark:text-amber-400 shrink-0">
-          <AlertTriangle className="w-3 h-3 mr-0.5" />
-          Newer Available
-        </Badge>
-      ) : (
-        <Badge variant="outline" className="text-xs text-green-600 dark:text-green-400 shrink-0">
-          <Check className="w-3 h-3 mr-0.5" />
-          Up to Date
-        </Badge>
-      )}
+      <div className="flex items-center gap-2 shrink-0">
+        {isActionableUpdate ? (
+          <>
+            <Badge variant="outline" className="text-xs border-amber-400 text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="w-3 h-3 mr-0.5" />
+              Newer Available
+            </Badge>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={() => onAcceptLatest(item)}
+              disabled={!canAccept}
+              data-testid={`button-accept-latest-${item.itemId}`}
+            >
+              {isAccepting ? (
+                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+              ) : (
+                <Check className="w-3 h-3 mr-1" />
+              )}
+              Accept latest
+            </Button>
+          </>
+        ) : isOrphanedPin ? (
+          <Badge
+            variant="outline"
+            className="text-xs border-amber-400 text-amber-700 dark:text-amber-400"
+            data-testid={`badge-pinned-inactive-${item.itemId}`}
+          >
+            <AlertTriangle className="w-3 h-3 mr-0.5" />
+            Pinned sheet inactive
+          </Badge>
+        ) : (
+          <Badge variant="outline" className="text-xs text-green-600 dark:text-green-400">
+            <Check className="w-3 h-3 mr-0.5" />
+            Up to Date
+          </Badge>
+        )}
+      </div>
     </div>
   );
 });
@@ -370,6 +420,10 @@ const CompareSetDialog = memo(function CompareSetDialog({
   setId,
   onClose,
 }: CompareSetDialogProps) {
+  const { toast } = useToast();
+  const [acceptingItemId, setAcceptingItemId] = useState<string | null>(null);
+  const [acceptingAll, setAcceptingAll] = useState(false);
+
   const { data: compareData } = useQuery<ComparisonResult>({
     queryKey: ["/api/projects", "drawing-sets", setId, "compare"],
     queryFn: async () => {
@@ -378,6 +432,80 @@ const CompareSetDialog = memo(function CompareSetDialog({
       return res.json();
     },
   });
+
+  // Task #1880 — accept-latest mutation re-pins one or more sheets in this
+  // set to their newer active revisions. We rebuild the full pinned-items
+  // list (swapping stale sheetIds for their latest counterparts) and send
+  // it through the existing bulk endpoint, mirroring the bulk-replace
+  // pattern in ManageSetDialog. After success we invalidate the compare,
+  // items, and sheet-status queries so the dialog and underlying sheet
+  // list immediately reflect the new pinned state.
+  const acceptLatestMutation = useMutation({
+    mutationFn: async ({ swaps }: { swaps: Map<string, string> }) => {
+      if (!compareData) throw new Error("No compare data loaded");
+      const items = compareData.comparison.map((row) => ({
+        sheetId: swaps.get(row.itemId) ?? row.sheetId,
+      }));
+      const res = await apiRequest(
+        "POST",
+        `/api/projects/drawing-sets/${setId}/items/bulk`,
+        { items },
+      );
+      return res.json();
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "compare"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "sheet-status"] });
+      const count = variables.swaps.size;
+      toast({
+        title: count === 1 ? "Accepted latest revision" : `Accepted ${count} latest revisions`,
+      });
+    },
+    onError: (err: unknown) => {
+      toast({
+        title: "Error",
+        description: bulkPinErrorDescription(err, {}),
+        variant: "destructive",
+      });
+    },
+    onSettled: () => {
+      setAcceptingItemId(null);
+      setAcceptingAll(false);
+    },
+  });
+
+  const handleAcceptLatest = useCallback(
+    (item: CompareRowData) => {
+      if (!item.latestSheetId) return;
+      setAcceptingItemId(item.itemId);
+      const swaps = new Map<string, string>();
+      swaps.set(item.itemId, item.latestSheetId);
+      acceptLatestMutation.mutate({ swaps });
+    },
+    [acceptLatestMutation],
+  );
+
+  const handleAcceptAllNewer = useCallback(() => {
+    if (!compareData) return;
+    const swaps = new Map<string, string>();
+    for (const row of compareData.comparison) {
+      if (row.hasNewerRevision && row.latestSheetId) {
+        swaps.set(row.itemId, row.latestSheetId);
+      }
+    }
+    if (swaps.size === 0) return;
+    setAcceptingAll(true);
+    acceptLatestMutation.mutate({ swaps });
+  }, [compareData, acceptLatestMutation]);
+
+  const newerCount = useMemo(
+    () =>
+      compareData?.comparison.filter(
+        (r) => r.hasNewerRevision && r.latestSheetId,
+      ).length ?? 0,
+    [compareData],
+  );
 
   const handleOpenChange = useCallback(
     (open: boolean) => {
@@ -393,15 +521,48 @@ const CompareSetDialog = memo(function CompareSetDialog({
           <DialogTitle>Compare Set vs Latest Revisions</DialogTitle>
         </DialogHeader>
         {compareData ? (
-          <div className="space-y-2">
+          <div className="space-y-3">
             {compareData.comparison.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center py-3">
                 No sheets pinned in this set yet.
               </p>
             ) : (
-              compareData.comparison.map((item) => (
-                <CompareRow key={item.itemId} item={item} />
-              ))
+              <>
+                {newerCount > 0 && (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-muted-foreground" data-testid="text-newer-count">
+                      {newerCount === 1
+                        ? "1 sheet has a newer revision available."
+                        : `${newerCount} sheets have newer revisions available.`}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="default"
+                      onClick={handleAcceptAllNewer}
+                      disabled={acceptLatestMutation.isPending}
+                      data-testid="button-accept-all-newer"
+                    >
+                      {acceptingAll ? (
+                        <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                      ) : (
+                        <Check className="w-3.5 h-3.5 mr-1" />
+                      )}
+                      Accept all newer ({newerCount})
+                    </Button>
+                  </div>
+                )}
+                <div className="space-y-2">
+                  {compareData.comparison.map((item) => (
+                    <CompareRow
+                      key={item.itemId}
+                      item={item}
+                      onAcceptLatest={handleAcceptLatest}
+                      isAccepting={acceptingItemId === item.itemId}
+                      canAccept={!acceptLatestMutation.isPending}
+                    />
+                  ))}
+                </div>
+              </>
             )}
           </div>
         ) : (
