@@ -10467,6 +10467,18 @@ export const projectLogEmailSchedules = pgTable("project_log_email_schedules", {
   // next failure starts a brand-new notification cycle.
   lastFailureNotifiedAt: timestamp("last_failure_notified_at"),
   lastFailureNotifiedStatus: text("last_failure_notified_status"),
+  // Task #1651 — running tally of consecutive FAILURE / NO_RECIPIENTS
+  // attempts since the last SUCCESS. Bumped on every failed attempt
+  // (cron or manual send-now) and reset to 0 on a successful send so
+  // a single recovery clears the streak. Once the count crosses the
+  // configured threshold (default 3, env-overridable via
+  // PROJECT_LOG_EMAIL_FAILURE_THRESHOLD) the worker fans out a
+  // backstop notification to every ADMIN/MANAGER/SUPER_ADMIN in the
+  // org so a project's distribution list can't quietly stay broken
+  // for weeks just because nobody opened the project settings page.
+  // Defaults to 0 so existing rows behave as if they had no prior
+  // failures the first time the new worker observes them.
+  consecutiveFailureCount: integer("consecutive_failure_count").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({

@@ -3815,6 +3815,11 @@ export async function processProjectLogEmailSchedules(opts: { now?: Date } = {})
       // has already been notified about.
       lastEditedById: projectLogEmailSchedules.lastEditedById,
       lastFailureNotifiedStatus: projectLogEmailSchedules.lastFailureNotifiedStatus,
+      // Task #1651 — pulled so the helper can compute the
+      // pre-attempt streak that drives the threshold backstop. Reads
+      // from a single sweep SELECT instead of a per-schedule lookup
+      // inside the helper to keep the cron's DB chatter linear.
+      consecutiveFailureCount: projectLogEmailSchedules.consecutiveFailureCount,
     })
     .from(projectLogEmailSchedules)
     .where(ne(projectLogEmailSchedules.cadence, "OFF"));
@@ -3850,6 +3855,10 @@ export async function processProjectLogEmailSchedules(opts: { now?: Date } = {})
         organizationId: sched.organizationId,
         projectId: sched.projectId,
         logType: sched.logType,
+        // Task #1651 — pass the pre-attempt streak through so the
+        // helper can edge-trigger the threshold backstop without
+        // needing its own SELECT.
+        previousConsecutiveFailureCount: sched.consecutiveFailureCount ?? 0,
       },
       { now },
     );
@@ -3956,6 +3965,15 @@ export interface ExecuteProjectLogEmailScheduleSendInput {
   organizationId: string;
   projectId: string;
   logType: string;
+  // Task #1651 — running tally of consecutive FAILURE / NO_RECIPIENTS
+  // attempts on this schedule before the current one, read from
+  // `project_log_email_schedules.consecutive_failure_count` by the
+  // caller. The cron loads it as part of its sweep SELECT and the
+  // send-now route reads it from the existing schedule row. Defaults
+  // to 0 when the caller doesn't pass it (older callers / tests),
+  // which keeps the threshold backstop quiet rather than firing a
+  // spurious alert on the very first observed failure.
+  previousConsecutiveFailureCount?: number;
 }
 
 export type ProjectLogEmailScheduleSendStatus =
@@ -3968,6 +3986,13 @@ export interface ExecuteProjectLogEmailScheduleSendResult {
   status: ProjectLogEmailScheduleSendStatus;
   error: string | null;
   recipientCount: number;
+  // Task #1651 — counter value persisted on the schedule row after
+  // this attempt: 0 on SUCCESS, previous + 1 on FAILURE /
+  // NO_RECIPIENTS, unchanged (= input previous) on PROJECT_NOT_FOUND
+  // since the helper bails before stamping the row in that branch.
+  // Callers can use it to drive their own UX (e.g. the send-now route
+  // can surface "this is the 3rd failure in a row").
+  consecutiveFailureCount: number;
 }
 
 export async function executeProjectLogEmailScheduleSend(
@@ -3976,12 +4001,22 @@ export async function executeProjectLogEmailScheduleSend(
 ): Promise<ExecuteProjectLogEmailScheduleSendResult> {
   const now = opts.now ?? new Date();
   const logType = input.logType === "SUBMITTAL" ? "SUBMITTAL" : "RFI";
+  const previousConsecutiveFailureCount = Math.max(
+    0,
+    input.previousConsecutiveFailureCount ?? 0,
+  );
+  // Task #1651 — every failed branch increments by 1; SUCCESS resets
+  // to 0. We compute it once per branch so the threshold-crossing
+  // check after the update can use the same value the row was just
+  // stamped with.
+  const nextFailureCount = previousConsecutiveFailureCount + 1;
 
   try {
     const [project] = await db
       .select({
         id: projects.id,
         name: projects.name,
+        code: projects.code,
         gcOrganizationId: projects.gcOrganizationId,
       })
       .from(projects)
@@ -3991,11 +4026,15 @@ export async function executeProjectLogEmailScheduleSend(
     if (!project) {
       // Defensive: the cron filters by schedule rows whose projectId
       // exists, but if the project was deleted between the schedule
-      // load and now, surface it cleanly instead of throwing.
+      // load and now, surface it cleanly instead of throwing. We
+      // deliberately leave the counter alone — there's nothing
+      // actionable for an admin to fix, and the schedule row will be
+      // GC'd by the FK cascade once the project deletion settles.
       return {
         status: "PROJECT_NOT_FOUND",
         error: "Project not found.",
         recipientCount: 0,
+        consecutiveFailureCount: previousConsecutiveFailureCount,
       };
     }
 
@@ -4045,10 +4084,29 @@ export async function executeProjectLogEmailScheduleSend(
           lastAttemptStatus: "NO_RECIPIENTS",
           lastAttemptError: noRecipientsError,
           lastAttemptRecipientCount: 0,
+          // Task #1651 — bump the streak so a quietly-empty
+          // distribution list can still trip the backstop notification
+          // once it crosses the threshold.
+          consecutiveFailureCount: nextFailureCount,
           updatedAt: new Date(),
         })
         .where(eq(projectLogEmailSchedules.id, input.scheduleId));
-      return { status: "NO_RECIPIENTS", error: noRecipientsError, recipientCount: 0 };
+      await maybeNotifyProjectLogEmailRepeatedFailure({
+        scheduleId: input.scheduleId,
+        organizationId: input.organizationId,
+        logType,
+        previousCount: previousConsecutiveFailureCount,
+        newCount: nextFailureCount,
+        reason: noRecipientsError,
+        projectName: project.name,
+        projectCode: project.code,
+      });
+      return {
+        status: "NO_RECIPIENTS",
+        error: noRecipientsError,
+        recipientCount: 0,
+        consecutiveFailureCount: nextFailureCount,
+      };
     }
 
     const pdfBuffer = await buildProjectLogPdfBuffer(logType, {
@@ -4093,10 +4151,30 @@ export async function executeProjectLogEmailScheduleSend(
           lastAttemptStatus: "FAILURE",
           lastAttemptError: errMsg,
           lastAttemptRecipientCount: recipients.length,
+          // Task #1651 — bump the streak so the threshold backstop
+          // notification can fire once enough consecutive failures
+          // accumulate without forcing admins to poll the project
+          // settings panel.
+          consecutiveFailureCount: nextFailureCount,
           updatedAt: new Date(),
         })
         .where(eq(projectLogEmailSchedules.id, input.scheduleId));
-      return { status: "FAILURE", error: errMsg, recipientCount: recipients.length };
+      await maybeNotifyProjectLogEmailRepeatedFailure({
+        scheduleId: input.scheduleId,
+        organizationId: input.organizationId,
+        logType,
+        previousCount: previousConsecutiveFailureCount,
+        newCount: nextFailureCount,
+        reason: errMsg,
+        projectName: project.name,
+        projectCode: project.code,
+      });
+      return {
+        status: "FAILURE",
+        error: errMsg,
+        recipientCount: recipients.length,
+        consecutiveFailureCount: nextFailureCount,
+      };
     }
 
     await db
@@ -4112,11 +4190,21 @@ export async function executeProjectLogEmailScheduleSend(
         lastAttemptStatus: "SUCCESS",
         lastAttemptError: null,
         lastAttemptRecipientCount: recipients.length,
+        // Task #1651 — a single successful send (manual or cron)
+        // resets the consecutive-failure streak so a recovered
+        // distribution list immediately clears the backstop counter
+        // and the *next* failure starts a brand-new cycle.
+        consecutiveFailureCount: 0,
         updatedAt: new Date(),
       })
       .where(eq(projectLogEmailSchedules.id, input.scheduleId));
 
-    return { status: "SUCCESS", error: null, recipientCount: recipients.length };
+    return {
+      status: "SUCCESS",
+      error: null,
+      recipientCount: recipients.length,
+      consecutiveFailureCount: 0,
+    };
   } catch (err) {
     // Task #1622 — record an unexpected failure (PDF builder threw,
     // db lookup blew up, etc.) so it's visible in-app rather than
@@ -4137,6 +4225,12 @@ export async function executeProjectLogEmailScheduleSend(
           lastAttemptAt: now,
           lastAttemptStatus: "FAILURE",
           lastAttemptError: errMsg.slice(0, 500),
+          // Task #1651 — even unexpected failures (PDF builder
+          // threw, lookup blew up) count toward the consecutive
+          // streak. From an admin's perspective the schedule is
+          // broken regardless of which layer faulted, and the
+          // backstop notification surface should react the same way.
+          consecutiveFailureCount: nextFailureCount,
           updatedAt: new Date(),
         })
         .where(eq(projectLogEmailSchedules.id, input.scheduleId));
@@ -4146,7 +4240,34 @@ export async function executeProjectLogEmailScheduleSend(
         error: String(stampErr),
       });
     }
-    return { status: "FAILURE", error: errMsg, recipientCount: 0 };
+    // Task #1651 — also try the threshold backstop on the catch path.
+    // We don't have project name/code (the failure may have happened
+    // mid-lookup) so we pass null and let the helper fall back to the
+    // schedule id for the deep link. Wrapped in its own try/catch so
+    // a failed fan-out can never mask the original iteration error.
+    try {
+      await maybeNotifyProjectLogEmailRepeatedFailure({
+        scheduleId: input.scheduleId,
+        organizationId: input.organizationId,
+        logType,
+        previousCount: previousConsecutiveFailureCount,
+        newCount: nextFailureCount,
+        reason: errMsg.slice(0, 500),
+        projectName: null,
+        projectCode: null,
+      });
+    } catch (notifyErr) {
+      logError("Failed to fan out project log email repeated-failure notification", {
+        scheduleId: input.scheduleId,
+        error: String(notifyErr),
+      });
+    }
+    return {
+      status: "FAILURE",
+      error: errMsg,
+      recipientCount: 0,
+      consecutiveFailureCount: nextFailureCount,
+    };
   }
 }
 
@@ -4250,6 +4371,117 @@ async function maybeNotifyProjectLogEmailFailure(args: {
     scheduleId: args.scheduleId,
     status: args.status,
     recipients: recipientIds.size,
+  });
+}
+
+// ============================================================
+// Task #1651 — repeated-failure backstop notification
+// ============================================================
+//
+// `maybeNotifyProjectLogEmailFailure` (Task #1637) only pings the
+// schedule's last editor + project manager once per failure-mode
+// transition. That's great for "the schedule just broke" but it
+// silently stops nagging anyone after the first ping, so a chronically
+// broken distribution list can keep failing every cron tick for weeks
+// while the only signal lives on a project settings card nobody opens.
+//
+// This helper is the louder backstop. Once the schedule's
+// `consecutive_failure_count` *crosses* a configurable threshold
+// (default 3, env `PROJECT_LOG_EMAIL_FAILURE_THRESHOLD`), it fans an
+// in-app notification to every ADMIN / MANAGER / SUPER_ADMIN in the
+// project's organization so somebody with the authority to fix the
+// distribution list actually sees it. We only fire on the *crossing*
+// (previous < threshold && new >= threshold) so a streak that keeps
+// climbing past the threshold doesn't spam the same admins on every
+// subsequent tick — they'll get re-notified when the streak resets and
+// re-crosses, which is exactly the "it broke again" signal we want.
+const PROJECT_LOG_EMAIL_FAILURE_DEFAULT_THRESHOLD = 3;
+
+function getProjectLogEmailFailureThreshold(): number {
+  const raw = process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
+  if (!raw) return PROJECT_LOG_EMAIL_FAILURE_DEFAULT_THRESHOLD;
+  // Guardrails: the env value must be a *whole positive integer* —
+  // not just something `parseInt` happens to consume a prefix of.
+  // `Number(raw)` is strict (returns NaN for "3abc" and 1.5 for
+  // "1.5"), then we additionally reject non-integer / non-positive
+  // values so a typo like "3.5" or "1abc" silently falls back to the
+  // default rather than masquerading as a working override.
+  const trimmed = raw.trim();
+  if (trimmed === "") return PROJECT_LOG_EMAIL_FAILURE_DEFAULT_THRESHOLD;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 1) {
+    return PROJECT_LOG_EMAIL_FAILURE_DEFAULT_THRESHOLD;
+  }
+  return parsed;
+}
+
+async function maybeNotifyProjectLogEmailRepeatedFailure(args: {
+  scheduleId: string;
+  organizationId: string;
+  logType: "RFI" | "SUBMITTAL";
+  previousCount: number;
+  newCount: number;
+  reason: string;
+  projectName: string | null;
+  projectCode: string | null;
+}): Promise<void> {
+  const threshold = getProjectLogEmailFailureThreshold();
+  // Edge-trigger only: we want one fan-out the moment the streak
+  // reaches the threshold, not a fresh fan-out on every subsequent
+  // failure. A SUCCESS resets the counter to 0 and the next streak
+  // can re-cross cleanly.
+  if (args.previousCount >= threshold) return;
+  if (args.newCount < threshold) return;
+
+  const admins = await db
+    .select({ id: users.id })
+    .from(users)
+    .where(and(
+      eq(users.organizationId, args.organizationId),
+      inArray(users.role, ["SUPER_ADMIN", "ADMIN", "MANAGER"]),
+    ));
+
+  if (admins.length === 0) {
+    // No admins in the org to notify (rare, but possible during
+    // setup or after a bulk role change). Log and bail — there's no
+    // value in writing a notification with no recipient, and we
+    // don't want to leave a "stuck" sentinel that prevents a
+    // re-cross from re-trying the fan-out.
+    logWarn("Project log email repeated-failure notification: no admins to notify", {
+      scheduleId: args.scheduleId,
+      organizationId: args.organizationId,
+      newCount: args.newCount,
+      threshold,
+    });
+    return;
+  }
+
+  const logLabel = args.logType === "SUBMITTAL" ? "submittal" : "RFI";
+  const projectLabel = args.projectName ?? "a project";
+  const title = `Scheduled ${logLabel} log email failing repeatedly: ${projectLabel}`;
+  const message = `The scheduled ${logLabel} log email for ${projectLabel} has failed ${args.newCount} times in a row — ${args.reason}. Update the project's distribution lists or schedule to resolve.`;
+
+  const notifs: InsertNotification[] = admins.map((u) => ({
+    userId: u.id,
+    organizationId: args.organizationId,
+    type: "PROJECT_LOG_EMAIL_FAILED" as const,
+    title,
+    message,
+    relatedEntityType: "PROJECT_LOG_EMAIL_SCHEDULE",
+    // The notification destination map keys off project code to deep
+    // link to /projects/<code>; fall back to the schedule id so the
+    // record is still valid when the catch-path couldn't load the
+    // project row.
+    relatedEntityId: args.projectCode ?? args.scheduleId,
+  }));
+  await insertNotifications(notifs);
+
+  logInfo("Project log email repeated-failure notification fanned out", {
+    scheduleId: args.scheduleId,
+    organizationId: args.organizationId,
+    threshold,
+    newCount: args.newCount,
+    recipients: admins.length,
   });
 }
 

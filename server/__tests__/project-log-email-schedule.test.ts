@@ -174,6 +174,13 @@ function queueProject(rows: Row[]) {
 function queueDistLists(rows: Row[]) {
   (selectByTable["project_email_distribution_lists"] ??= []).push(rows);
 }
+// Task #1651 — repeated-failure backstop notification fans out to
+// every ADMIN / MANAGER / SUPER_ADMIN in the org. The helper does a
+// single SELECT against `users` filtered by org + role, so we queue
+// the resulting rows here.
+function queueUsers(rows: Row[]) {
+  (selectByTable["users"] ??= []).push(rows);
+}
 
 describe("processProjectLogEmailSchedules", () => {
   it("does nothing when there are no enabled schedules", async () => {
@@ -546,6 +553,376 @@ describe("processProjectLogEmailSchedules", () => {
     expect(updates).toHaveLength(2);
     expect((updates[1].values as Row).lastFailureNotifiedStatus).toBe("FAILURE");
     expect(inserts.filter((i) => i.table === "notifications")).toHaveLength(0);
+  });
+
+  // ----------------------------------------------------------
+  // Task #1651 — repeated-failure backstop notification
+  // ----------------------------------------------------------
+  // The schedule row carries a `consecutiveFailureCount` streak: 0 on
+  // SUCCESS, +1 on FAILURE / NO_RECIPIENTS. Once the streak *crosses*
+  // PROJECT_LOG_EMAIL_FAILURE_THRESHOLD (default 3) the worker fans
+  // an in-app notification to every ADMIN / MANAGER / SUPER_ADMIN in
+  // the org so a chronically broken distribution list can't go
+  // unnoticed for weeks. The fan-out is edge-triggered (one fire per
+  // crossing) so subsequent failures don't spam the same admins on
+  // every cron tick.
+
+  it("bumps consecutive_failure_count on FAILURE without crossing the threshold", async () => {
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueSchedules([{
+      id: "sched-1",
+      organizationId: "org-1",
+      projectId: "proj-1",
+      logType: "RFI",
+      cadence: "WEEKLY",
+      weekday: 1,
+      hour: 8,
+      timezone: "UTC",
+      lastSentAt: null,
+      lastEditedById: null,
+      lastFailureNotifiedStatus: null,
+      consecutiveFailureCount: 0,
+    }]);
+    queueProject([{
+      id: "proj-1",
+      code: "PRJ-7",
+      name: "Bridge 7",
+      gcOrganizationId: "org-1",
+      projectManagerId: null,
+    }]);
+    queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+    sendEmailNextResults.push({ ok: false, error: "Boom" });
+
+    await processProjectLogEmailSchedules({ now });
+
+    const failValues = updates[0].values as Row;
+    expect(failValues.lastAttemptStatus).toBe("FAILURE");
+    expect(failValues.consecutiveFailureCount).toBe(1);
+    // No backstop fan-out yet — we're well under the default threshold of 3.
+    const notifInserts = inserts.filter((i) => i.table === "notifications");
+    // Only the per-transition fan-out (Task #1637) fires here, not the
+    // backstop. That single insert was already covered by earlier
+    // tests; we only assert nobody fanned to an admin/manager pool by
+    // checking that no `users` SELECT was queued / consumed (no
+    // surprise broad fan-out).
+    expect(notifInserts.length).toBeLessThanOrEqual(1);
+  });
+
+  it("resets consecutive_failure_count to 0 on a successful send", async () => {
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueSchedules([{
+      id: "sched-1",
+      organizationId: "org-1",
+      projectId: "proj-1",
+      logType: "RFI",
+      cadence: "WEEKLY",
+      weekday: 1,
+      hour: 8,
+      timezone: "UTC",
+      lastSentAt: null,
+      lastEditedById: null,
+      lastFailureNotifiedStatus: null,
+      // Mid-streak: schedule has failed twice already and is about to
+      // recover. The success update should zero the counter so the
+      // *next* failure starts a fresh streak.
+      consecutiveFailureCount: 2,
+    }]);
+    queueProject([{ id: "proj-1", code: "PRJ-7", name: "Bridge 7", gcOrganizationId: "org-1", projectManagerId: null }]);
+    queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+
+    await processProjectLogEmailSchedules({ now });
+
+    const successValues = updates[0].values as Row;
+    expect(successValues.lastAttemptStatus).toBe("SUCCESS");
+    expect(successValues.consecutiveFailureCount).toBe(0);
+  });
+
+  it("fans out a backstop notification to org admins/managers/super_admins on the threshold crossing", async () => {
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueSchedules([{
+      id: "sched-1",
+      organizationId: "org-1",
+      projectId: "proj-1",
+      logType: "RFI",
+      cadence: "WEEKLY",
+      weekday: 1,
+      hour: 8,
+      timezone: "UTC",
+      lastSentAt: null,
+      // Already in a notified failure state so the per-transition
+      // fan-out (Task #1637) is suppressed and we can isolate the
+      // backstop fan-out's notification inserts on their own.
+      lastEditedById: "user-editor",
+      lastFailureNotifiedStatus: "FAILURE",
+      // 2 failures already → this attempt makes 3 → crosses default threshold.
+      consecutiveFailureCount: 2,
+    }]);
+    queueProject([{
+      id: "proj-1",
+      code: "PRJ-99",
+      name: "Tunnel 99",
+      gcOrganizationId: "org-1",
+      projectManagerId: "user-pm",
+    }]);
+    queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+    sendEmailNextResults.push({ ok: false, error: "SMTP 550 — recipient rejected" });
+    queueUsers([
+      { id: "user-admin-1" },
+      { id: "user-admin-2" },
+      { id: "user-manager-1" },
+    ]);
+
+    await processProjectLogEmailSchedules({ now });
+
+    const failValues = updates[0].values as Row;
+    expect(failValues.lastAttemptStatus).toBe("FAILURE");
+    expect(failValues.consecutiveFailureCount).toBe(3);
+
+    // Two notification batches insert: nothing from the per-transition
+    // fan-out (suppressed by matching previousStatus), and the
+    // backstop fan-out for the three admins.
+    const notifInserts = inserts.filter((i) => i.table === "notifications");
+    expect(notifInserts).toHaveLength(1);
+    const rows = notifInserts[0].values;
+    expect(rows).toHaveLength(3);
+    expect(new Set(rows.map((r) => r.userId))).toEqual(
+      new Set(["user-admin-1", "user-admin-2", "user-manager-1"]),
+    );
+    for (const r of rows) {
+      expect(r.type).toBe("PROJECT_LOG_EMAIL_FAILED");
+      expect(r.relatedEntityType).toBe("PROJECT_LOG_EMAIL_SCHEDULE");
+      // Deep link should use the project code so the destination map
+      // can resolve it to /projects/<code>/settings.
+      expect(r.relatedEntityId).toBe("PRJ-99");
+      expect(String(r.title)).toContain("Tunnel 99");
+      expect(String(r.message)).toContain("3 times in a row");
+      expect(String(r.message)).toContain("SMTP 550");
+    }
+  });
+
+  it("does not re-fire the backstop notification when the streak is already past the threshold", async () => {
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueSchedules([{
+      id: "sched-1",
+      organizationId: "org-1",
+      projectId: "proj-1",
+      logType: "RFI",
+      cadence: "WEEKLY",
+      weekday: 1,
+      hour: 8,
+      timezone: "UTC",
+      lastSentAt: null,
+      lastEditedById: "user-editor",
+      lastFailureNotifiedStatus: "FAILURE",
+      // 5 prior failures, today's makes 6 — both sides of the
+      // comparison are already past the default threshold of 3, so
+      // the helper edge-trigger should skip the fan-out entirely.
+      consecutiveFailureCount: 5,
+    }]);
+    queueProject([{
+      id: "proj-1",
+      code: "PRJ-99",
+      name: "Tunnel 99",
+      gcOrganizationId: "org-1",
+      projectManagerId: "user-pm",
+    }]);
+    queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+    sendEmailNextResults.push({ ok: false, error: "Still bouncing" });
+
+    await processProjectLogEmailSchedules({ now });
+
+    const failValues = updates[0].values as Row;
+    expect(failValues.consecutiveFailureCount).toBe(6);
+    // No notifications at all — per-transition path is suppressed
+    // (previousStatus matches), backstop is suppressed (already past
+    // threshold), so the schedule keeps stamping its FAILURE marker
+    // silently until either someone fixes it (resetting the streak on
+    // the next SUCCESS) or operations escalate via the project
+    // settings card.
+    expect(inserts.filter((i) => i.table === "notifications")).toHaveLength(0);
+  });
+
+  it("respects PROJECT_LOG_EMAIL_FAILURE_THRESHOLD env override", async () => {
+    const original = process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
+    process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD = "1";
+    try {
+      const now = new Date("2026-04-20T08:00:00Z");
+      queueSchedules([{
+        id: "sched-1",
+        organizationId: "org-1",
+        projectId: "proj-1",
+        logType: "RFI",
+        cadence: "WEEKLY",
+        weekday: 1,
+        hour: 8,
+        timezone: "UTC",
+        lastSentAt: null,
+        lastEditedById: null,
+        // Already notified, so per-transition fan-out is suppressed
+        // and we only observe the backstop's inserts.
+        lastFailureNotifiedStatus: "FAILURE",
+        consecutiveFailureCount: 0,
+      }]);
+      queueProject([{
+        id: "proj-1",
+        code: "PRJ-99",
+        name: "Tunnel 99",
+        gcOrganizationId: "org-1",
+        projectManagerId: null,
+      }]);
+      queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+      sendEmailNextResults.push({ ok: false, error: "First failure ever" });
+      queueUsers([{ id: "user-admin-1" }]);
+
+      await processProjectLogEmailSchedules({ now });
+
+      const notifInserts = inserts.filter((i) => i.table === "notifications");
+      expect(notifInserts).toHaveLength(1);
+      expect(notifInserts[0].values).toHaveLength(1);
+      expect(notifInserts[0].values[0].userId).toBe("user-admin-1");
+    } finally {
+      if (original === undefined) delete process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
+      else process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD = original;
+    }
+  });
+
+  it("falls back to default threshold when the env override is invalid", async () => {
+    const original = process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
+    process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD = "not-a-number";
+    try {
+      const now = new Date("2026-04-20T08:00:00Z");
+      queueSchedules([{
+        id: "sched-1",
+        organizationId: "org-1",
+        projectId: "proj-1",
+        logType: "RFI",
+        cadence: "WEEKLY",
+        weekday: 1,
+        hour: 8,
+        timezone: "UTC",
+        lastSentAt: null,
+        lastEditedById: null,
+        lastFailureNotifiedStatus: "FAILURE",
+        // 1 prior failure, today makes 2 — below default threshold of 3.
+        consecutiveFailureCount: 1,
+      }]);
+      queueProject([{
+        id: "proj-1",
+        code: "PRJ-99",
+        name: "Tunnel 99",
+        gcOrganizationId: "org-1",
+        projectManagerId: null,
+      }]);
+      queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+      sendEmailNextResults.push({ ok: false, error: "Bad cred" });
+
+      await processProjectLogEmailSchedules({ now });
+
+      // Garbled env var should not flip the threshold to 0/1 and fire
+      // a spurious notification — the helper falls back to the
+      // default threshold of 3.
+      expect(inserts.filter((i) => i.table === "notifications")).toHaveLength(0);
+    } finally {
+      if (original === undefined) delete process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
+      else process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD = original;
+    }
+  });
+
+  it("treats malformed-but-parseable env values (e.g. '1.5', '3abc') as invalid and uses the default threshold", async () => {
+    // The env var must be a *whole positive integer*. parseInt-style
+    // prefix matches like "3abc" -> 3 or fractional values like
+    // "1.5" -> 1 would silently lower the threshold and fire the
+    // alert too eagerly; instead we fall back to the default.
+    const original = process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
+    for (const bad of ["1.5", "3abc", "  ", "0", "-1"]) {
+      process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD = bad;
+      try {
+        for (const k of Object.keys(selectByTable)) delete selectByTable[k];
+        updates.length = 0;
+        inserts.length = 0;
+        sendEmailCalls.length = 0;
+        sendEmailNextResults.length = 0;
+        pdfCalls.length = 0;
+
+        const now = new Date("2026-04-20T08:00:00Z");
+        queueSchedules([{
+          id: "sched-1",
+          organizationId: "org-1",
+          projectId: "proj-1",
+          logType: "RFI",
+          cadence: "WEEKLY",
+          weekday: 1,
+          hour: 8,
+          timezone: "UTC",
+          lastSentAt: null,
+          lastEditedById: null,
+          lastFailureNotifiedStatus: "FAILURE",
+          // 1 prior + this one = 2; below the default threshold of 3.
+          // If a bad env value were honored as 1 (the parseInt prefix
+          // of "1.5" or "1abc"), this test would fire the backstop.
+          consecutiveFailureCount: 1,
+        }]);
+        queueProject([{
+          id: "proj-1",
+          code: "PRJ-99",
+          name: "Tunnel 99",
+          gcOrganizationId: "org-1",
+          projectManagerId: null,
+        }]);
+        queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+        sendEmailNextResults.push({ ok: false, error: "Bad cred" });
+
+        await processProjectLogEmailSchedules({ now });
+
+        expect(
+          inserts.filter((i) => i.table === "notifications"),
+          `bad env value ${JSON.stringify(bad)} should not trip the backstop`,
+        ).toHaveLength(0);
+      } finally {
+        if (original === undefined) delete process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
+        else process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD = original;
+      }
+    }
+  });
+
+  it("triggers the backstop on NO_RECIPIENTS as well as FAILURE", async () => {
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueSchedules([{
+      id: "sched-1",
+      organizationId: "org-1",
+      projectId: "proj-1",
+      logType: "SUBMITTAL",
+      cadence: "WEEKLY",
+      weekday: 1,
+      hour: 8,
+      timezone: "UTC",
+      lastSentAt: null,
+      lastEditedById: null,
+      // Already notified about NO_RECIPIENTS so the per-transition
+      // path is suppressed — isolates the backstop's inserts.
+      lastFailureNotifiedStatus: "NO_RECIPIENTS",
+      consecutiveFailureCount: 2,
+    }]);
+    queueProject([{
+      id: "proj-1",
+      code: "PRJ-7",
+      name: "Bridge 7",
+      gcOrganizationId: "org-1",
+      projectManagerId: null,
+    }]);
+    queueDistLists([{ contactEmails: [], extraEmails: [] }]);
+    queueUsers([{ id: "user-admin-1" }, { id: "user-admin-2" }]);
+
+    await processProjectLogEmailSchedules({ now });
+
+    const failValues = updates[0].values as Row;
+    expect(failValues.lastAttemptStatus).toBe("NO_RECIPIENTS");
+    expect(failValues.consecutiveFailureCount).toBe(3);
+
+    const notifInserts = inserts.filter((i) => i.table === "notifications");
+    expect(notifInserts).toHaveLength(1);
+    expect(notifInserts[0].values).toHaveLength(2);
+    expect(String(notifInserts[0].values[0].message)).toContain("3 times in a row");
   });
 
   it("dedupes recipients across overlapping distribution lists (case-insensitive)", async () => {

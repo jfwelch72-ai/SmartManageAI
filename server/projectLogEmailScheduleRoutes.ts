@@ -375,6 +375,11 @@ router.post(
         organizationId,
         projectId: project.id,
         logType,
+        // Task #1651 — pass the pre-attempt streak through so a
+        // manual send-now can reset the counter on success or fan
+        // out the threshold backstop notification on the crossing
+        // failure, exactly the same way the cron does.
+        previousConsecutiveFailureCount: existing.consecutiveFailureCount ?? 0,
       });
 
       // Re-read the schedule row so the client gets the same shape

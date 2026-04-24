@@ -69,6 +69,7 @@ import { ensureProjectEmailDistributionLists } from "./ensureProjectEmailDistrib
 import { ensureProjectLogEmailSchedules } from "./ensureProjectLogEmailSchedules";
 import { ensureProjectLogEmailAttemptTracking } from "./ensureProjectLogEmailAttemptTracking";
 import { ensureProjectLogEmailFailureNotifications } from "./ensureProjectLogEmailFailureNotifications";
+import { ensureProjectLogEmailConsecutiveFailures } from "./ensureProjectLogEmailConsecutiveFailures";
 import { ensureGanttPdfRenderSamplesTable } from "./ensureGanttPdfRenderSamplesTable";
 import { ensurePortfolioPdfRenderSamplesTable } from "./ensurePortfolioPdfRenderSamplesTable";
 import { ensureCrmCsvImportPayloadColumn } from "./ensureCrmCsvImportPayloadColumn";
@@ -245,6 +246,13 @@ const migrations: MigrationStep[] = [
   // schedule's last editor + project manager when a send transitions
   // into FAILURE / NO_RECIPIENTS, without re-notifying every tick.
   { name: "project_log_email_failure_notifications", category: "ADD_COLUMN", fn: ensureProjectLogEmailFailureNotifications },
+  // Task #1651 — consecutive_failure_count column on
+  // project_log_email_schedules. Lets the worker fan a backstop
+  // notification to every ADMIN/MANAGER/SUPER_ADMIN in the org once a
+  // schedule has failed PROJECT_LOG_EMAIL_FAILURE_THRESHOLD (default
+  // 3) times in a row, so a quietly-broken distribution list can't go
+  // un-noticed for weeks just because nobody opens project settings.
+  { name: "project_log_email_consecutive_failures", category: "ADD_COLUMN", fn: ensureProjectLogEmailConsecutiveFailures },
   { name: "geocode_status_columns", category: "ADD_COLUMN", fn: ensureGeocodeStatusColumns },
   { name: "gantt_pdf_render_samples_table", category: "CREATE_TABLE", fn: ensureGanttPdfRenderSamplesTable },
   { name: "portfolio_pdf_render_samples_table", category: "CREATE_TABLE", fn: ensurePortfolioPdfRenderSamplesTable },

@@ -1,0 +1,27 @@
+-- Task #1651: backstop notification when a per-project scheduled RFI /
+-- submittal log email fails repeatedly.
+--
+-- Task #1622 already stamps the per-attempt outcome on each schedule
+-- row, and Task #1637 fans a one-shot in-app notification to the
+-- schedule's last editor + project manager on the *first* failure of
+-- a new failure mode. Both still required someone to actually look at
+-- the project — if a distribution list silently rotted for weeks the
+-- only signal was a "Last send failed" badge inside the project
+-- settings card. This migration adds the column the worker needs to
+-- track a failure *streak* so it can broadcast a backstop notification
+-- to every ADMIN / MANAGER / SUPER_ADMIN in the org once the count
+-- crosses the configured threshold (default 3, env-overridable via
+-- PROJECT_LOG_EMAIL_FAILURE_THRESHOLD).
+--
+--   * `consecutive_failure_count` - running tally of FAILURE /
+--                                   NO_RECIPIENTS attempts since the
+--                                   last SUCCESS. Reset to 0 on the
+--                                   next successful send (manual or
+--                                   cron) so a single recovery clears
+--                                   the streak. Defaults to 0 so
+--                                   existing rows behave as if they
+--                                   had no prior failures the first
+--                                   time the new worker observes
+--                                   them.
+ALTER TABLE project_log_email_schedules
+  ADD COLUMN IF NOT EXISTS consecutive_failure_count integer NOT NULL DEFAULT 0;

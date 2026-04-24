@@ -293,4 +293,14 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
     helper: "ensureProjectLogEmailFailureNotifications",
     note: "Companion ALTER TYPE ADD VALUE for PROJECT_LOG_EMAIL_FAILED is handled by ensureNotificationEnumValues",
   },
+  // Task #1651 — consecutive_failure_count column on
+  // project_log_email_schedules. The worker uses it to fan a backstop
+  // notification to every ADMIN/MANAGER/SUPER_ADMIN in the org once a
+  // schedule has failed PROJECT_LOG_EMAIL_FAILURE_THRESHOLD (default
+  // 3) times in a row, so a quietly-broken distribution list can't go
+  // un-noticed for weeks just because nobody opens project settings.
+  // Mirrored at boot by ensureProjectLogEmailConsecutiveFailures.
+  "0060_project_log_email_consecutive_failures.sql": {
+    helper: "ensureProjectLogEmailConsecutiveFailures",
+  },
 };
