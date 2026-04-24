@@ -12,7 +12,7 @@
  */
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Eye, EyeOff, Plus, Trash2, Pencil, Check, X } from "lucide-react";
+import { Eye, EyeOff, Plus, Trash2, Pencil, Check, X, GripVertical } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,6 +51,11 @@ export default function MarkupLayersPanel({
   const [newName, setNewName] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  // Drag-and-drop reorder state. `draggingId` is the row being dragged
+  // and `dragOverId` is the row currently hovered (used purely as a
+  // visual affordance — the drop target is computed at drop time).
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   const layersQueryKey = ["/api/plan-documents", documentId, "markup-layers"] as const;
 
@@ -118,6 +123,56 @@ export default function MarkupLayersPanel({
       toast({ title: "Could not toggle visibility", description: e.message, variant: "destructive" }),
   });
 
+  // Persist a new layer order. The caller computes the minimal set of
+  // (id, sortOrder) updates *before* the optimistic cache write so we
+  // can PATCH only the rows whose value actually changed.
+  const reorderMutation = useMutation({
+    mutationFn: async (updates: { id: string; sortOrder: number }[]) => {
+      // Run PATCHes in parallel; the server orders rows by
+      // (sortOrder, createdAt) so partial failures still leave a
+      // sensible ordering and the subsequent invalidate() will
+      // reconcile to the server's truth.
+      await Promise.all(
+        updates.map((u) =>
+          apiRequest("PATCH", `/api/plan-markup-layers/${u.id}`, { sortOrder: u.sortOrder }),
+        ),
+      );
+    },
+    onError: (e: Error) => {
+      toast({ title: "Could not reorder layers", description: e.message, variant: "destructive" });
+      invalidate();
+    },
+    onSettled: () => invalidate(),
+  });
+
+  // Optimistically reorder the cached list and kick off the PATCHes.
+  // `targetId` may be null to mean "drop at end".
+  const reorder = (sourceId: string, targetId: string | null) => {
+    if (sourceId === targetId) return;
+    const current = queryClient.getQueryData<MarkupLayer[]>(layersQueryKey) || [];
+    const fromIdx = current.findIndex((l) => l.id === sourceId);
+    if (fromIdx === -1) return;
+    const without = current.slice();
+    const [moved] = without.splice(fromIdx, 1);
+    let toIdx = targetId == null ? without.length : without.findIndex((l) => l.id === targetId);
+    if (toIdx === -1) toIdx = without.length;
+    without.splice(toIdx, 0, moved);
+    if (without.every((l, i) => l.id === current[i]?.id)) return;
+    // Compute the minimal diff *before* writing the optimistic cache,
+    // otherwise the new sortOrders would already be in place and we'd
+    // PATCH nothing.
+    const updates: { id: string; sortOrder: number }[] = [];
+    const renumbered = without.map((l, i) => {
+      const nextSort = (i + 1) * 1000;
+      if (l.sortOrder !== nextSort) {
+        updates.push({ id: l.id, sortOrder: nextSort });
+      }
+      return { ...l, sortOrder: nextSort };
+    });
+    queryClient.setQueryData<MarkupLayer[]>(layersQueryKey, renumbered);
+    if (updates.length > 0) reorderMutation.mutate(updates);
+  };
+
   const toggleVisibility = (layer: MarkupLayer) => {
     const nextVisible = !layer.isVisible;
     // Optimistic local update so the canvas reflects the toggle without
@@ -153,12 +208,62 @@ export default function MarkupLayersPanel({
         {layers.map((l) => {
           const isActive = activeLayerId === l.id || (!activeLayerId && l.isDefault);
           const isRenaming = renamingId === l.id;
+          const isDragging = draggingId === l.id;
+          const isDropTarget = dragOverId === l.id && draggingId !== null && draggingId !== l.id;
           return (
             <div
               key={l.id}
-              className="flex items-center gap-1 px-2 py-1"
+              className={`flex items-center gap-1 px-2 py-1 ${isDragging ? "opacity-50" : ""} ${
+                isDropTarget ? "border-t-2 border-t-primary" : ""
+              }`}
               data-testid={`row-markup-layer-${l.id}`}
+              onDragOver={(e) => {
+                if (!draggingId || isRenaming) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                if (dragOverId !== l.id) setDragOverId(l.id);
+              }}
+              onDragLeave={() => {
+                if (dragOverId === l.id) setDragOverId(null);
+              }}
+              onDrop={(e) => {
+                if (!draggingId) return;
+                e.preventDefault();
+                const sourceId = draggingId;
+                setDraggingId(null);
+                setDragOverId(null);
+                reorder(sourceId, l.id);
+              }}
             >
+              <button
+                type="button"
+                draggable={!isRenaming}
+                onDragStart={(e) => {
+                  if (isRenaming) {
+                    e.preventDefault();
+                    return;
+                  }
+                  e.dataTransfer.effectAllowed = "move";
+                  // Some browsers require data on the transfer to fire
+                  // subsequent drag events.
+                  try {
+                    e.dataTransfer.setData("text/plain", l.id);
+                  } catch {
+                    // Older browsers may throw on setData; safe to ignore.
+                  }
+                  setDraggingId(l.id);
+                }}
+                onDragEnd={() => {
+                  setDraggingId(null);
+                  setDragOverId(null);
+                }}
+                className="text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing"
+                aria-label={`Drag to reorder layer ${l.name}`}
+                title="Drag to reorder"
+                data-testid={`button-markup-layer-drag-${l.id}`}
+              >
+                <GripVertical className="w-3.5 h-3.5" />
+              </button>
               <button
                 type="button"
                 onClick={() => toggleVisibility(l)}
@@ -262,6 +367,31 @@ export default function MarkupLayersPanel({
             </div>
           );
         })}
+        {layers.length > 1 && (
+          <div
+            className={`h-2 ${
+              dragOverId === "__end__" && draggingId ? "border-t-2 border-t-primary" : ""
+            }`}
+            data-testid="dropzone-markup-layer-end"
+            onDragOver={(e) => {
+              if (!draggingId) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              if (dragOverId !== "__end__") setDragOverId("__end__");
+            }}
+            onDragLeave={() => {
+              if (dragOverId === "__end__") setDragOverId(null);
+            }}
+            onDrop={(e) => {
+              if (!draggingId) return;
+              e.preventDefault();
+              const sourceId = draggingId;
+              setDraggingId(null);
+              setDragOverId(null);
+              reorder(sourceId, null);
+            }}
+          />
+        )}
       </div>
 
       <form
