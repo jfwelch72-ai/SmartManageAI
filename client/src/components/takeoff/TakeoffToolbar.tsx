@@ -88,16 +88,6 @@ interface TakeoffToolbarProps {
    *  icon+label rows instead of icon-only chips, matching the
    *  bid Plans tab "Labeled toolbar" preference. */
   labeled?: boolean;
-  /**
-   * Task #1724 — Click handler for the markup popover's "Undo last
-   * group move" button. Mirrors the project-side wiring in
-   * UnifiedPlanToolbar / PlansTab. When omitted, the embedded
-   * `<PlanMarkupToolbar>` hides its Undo button entirely so the
-   * popover keeps its existing layout for callers that don't opt in.
-   */
-  onMarkupUndoLastMove?: () => void;
-  /** Task #1724 — Whether a markup move is actually available to undo. */
-  canMarkupUndoLastMove?: boolean;
 }
 
 export function TakeoffToolbar({
@@ -119,7 +109,6 @@ export function TakeoffToolbar({
   showMeasurementLabels, onToggleMeasurementLabels,
   showStructuralGridlines, onToggleStructuralGridlines,
   labeled = false,
-  onMarkupUndoLastMove, canMarkupUndoLastMove,
 }: TakeoffToolbarProps) {
   const isMarkupTool = MARKUP_TOOL_IDS.includes(activeTool as any);
   const zoomPercent = Math.round(stageScale * 100);
@@ -306,13 +295,13 @@ export function TakeoffToolbar({
                 showSelect={false}
                 labeled={labeled}
                 className="border-0 bg-transparent px-1 py-1"
-                // Task #1724 — surface the markup move undo from the
-                // takeoff workspace through the popover. The shared
+                // Task #1742 — markup body moves now flow through the
+                // unified `useTakeoffHistory` stack via the sidebar
+                // Undo/Redo buttons and the bubble-phase Cmd/Ctrl+Z
+                // handler in `useTakeoffInteractions`, so the popover
+                // no longer wires its own `onUndoLastMove`. The shared
                 // `<PlanMarkupToolbar>` hides the button entirely when
-                // `onUndoLastMove` is omitted, so existing callers that
-                // never wire this up keep their original layout.
-                onUndoLastMove={onMarkupUndoLastMove}
-                canUndoLastMove={!!canMarkupUndoLastMove}
+                // the prop is omitted.
               />
             </div>
           </PopoverContent>

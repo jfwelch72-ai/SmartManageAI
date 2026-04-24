@@ -6,7 +6,6 @@ import {
   MARKUP_TOOLBAR_DEFAULT_THICKNESS,
   MARKUP_TOOLBAR_THICKNESSES,
 } from "@/components/markups/PlanMarkupToolbar";
-import { buildMoveSnapshot } from "@/components/markups/PlanMarkupLayer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -341,18 +340,6 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     hiddenHandles: Array<{ visible: boolean; listening: boolean; node: any }>;
     siblings: Array<{ id: string; node: any }>;
   } | null>(null);
-  // Task #1724 — pre-move points of the most recent markup body drag,
-  // kept so the user can undo the bulk move with Cmd/Ctrl+Z or the
-  // Undo button in the takeoff popover's PlanMarkupToolbar. Single-step:
-  // undo consumes the snapshot. Captured in `onBodyDragEnd` BEFORE the
-  // forward `updateMarkupMutation` fires so the snapshot reflects the
-  // points the user dragged away from. Mirrors the project-side flow in
-  // PlanMarkupLayer (Task #1705) and reuses `buildMoveSnapshot`.
-  const [lastMarkupMoveSnapshot, setLastMarkupMoveSnapshot] = useState<
-    Array<{ id: string; points: Array<{ x: number; y: number }> }> | null
-  >(null);
-  const lastMarkupMoveSnapshotRef = useRef<typeof lastMarkupMoveSnapshot>(null);
-  lastMarkupMoveSnapshotRef.current = lastMarkupMoveSnapshot;
   const [markupResizePreview, setMarkupResizePreview] = useState<{ id: string; points: { x: number; y: number }[] } | null>(null);
   const markupResizeRef = useRef<{
     id: string;
@@ -517,55 +504,15 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     }
   }, [sheetsLoading, sheets, selectedSheet]);
 
-  // Task #1724 — Undo the most recent markup body move by re-issuing
-  // updateMarkupMutation with the captured pre-move points. The
-  // snapshot is consumed (cleared) so a second Cmd/Ctrl+Z is a no-op —
-  // markup body moves are explicitly single-step here, matching the
-  // plan-side surface (Task #1705). The bid-side `updateMarkupMutation`
-  // is per-markup; iterate so multi-entry snapshots (future-proof if
-  // multi-markup selection lands) are restored together.
-  const undoLastMarkupMove = useCallback(() => {
-    const snap = lastMarkupMoveSnapshotRef.current;
-    if (!snap || snap.length === 0) return;
-    setLastMarkupMoveSnapshot(null);
-    for (const entry of snap) {
-      updateMarkupMutation.mutate({ id: entry.id, points: entry.points });
-    }
-  }, [updateMarkupMutation]);
-
-  // Task #1724 — clear the snapshot when the user navigates to a
-  // different sheet. Undoing against a stale sheet would silently
-  // mutate hidden markups, which is confusing.
-  useEffect(() => {
-    setLastMarkupMoveSnapshot(null);
-  }, [selectedSheet]);
-
-  // Task #1724 — global Cmd/Ctrl+Z handler for the markup move undo.
-  // Attached only while there is something to undo so we never compete
-  // with the existing takeoff history undo (`useTakeoffInteractions`)
-  // when there's no markup move snapshot. Capture phase + immediate
-  // propagation stop ensures we win the race against that bubble-phase
-  // listener, preventing a stray `takeoffHistory.undo()` from undoing
-  // a previously-pushed measurement edit when the user really meant
-  // "put my markup back". Shift+Cmd/Ctrl+Z (redo) is intentionally
-  // ignored — single-step undo is the spec.
-  useEffect(() => {
-    if (!lastMarkupMoveSnapshot) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      if (e.shiftKey) return;
-      if (e.key !== "z" && e.key !== "Z") return;
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-      const editable = (e.target as HTMLElement | null)?.isContentEditable;
-      if (editable) return;
-      e.preventDefault();
-      e.stopImmediatePropagation();
-      undoLastMarkupMove();
-    };
-    window.addEventListener("keydown", onKeyDown, { capture: true });
-    return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
-  }, [lastMarkupMoveSnapshot, undoLastMarkupMove]);
+  // Task #1742 — Markup body moves now flow through the unified
+  // `useTakeoffHistory` stack (see `onBodyDragEnd` below, which passes
+  // a `previous: { points }` payload to `updateMarkupMutation` so its
+  // onSuccess handler pushes a `MARKUP_UPDATE` history entry). The
+  // sidebar Undo/Redo buttons and the bubble-phase Cmd/Ctrl+Z handler
+  // in `use-takeoff-interactions` therefore handle markup drags just
+  // like measurement edits — interleaved in correct order. The
+  // single-step popover Undo + capture-phase keydown handler that
+  // Task #1724 added have been removed in favor of this unified path.
 
   const [compareDialogOpen, setCompareDialogOpen] = useState(false);
   const [selectedIssueId, setSelectedIssueId] = useState<string | null>(null);
@@ -1751,11 +1698,6 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         showStructuralGridlines={showStructuralGridlines}
         onToggleStructuralGridlines={setShowStructuralGridlines}
         labeled={labeled}
-        // Task #1724 — wire the markup move undo into the popover
-        // toolbar. The button stays mounted but disabled when there's
-        // nothing to undo so its position in the popover is stable.
-        onMarkupUndoLastMove={undoLastMarkupMove}
-        canMarkupUndoLastMove={!!lastMarkupMoveSnapshot}
         onFitToPage={() => {
           if (pdfImage && containerRef.current) {
             const cw = containerRef.current.clientWidth;
@@ -3945,45 +3887,25 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                     const siblingIds = drag.siblings.map(s => s.id);
                     markupBodyDragRef.current = null;
                     if (dx === 0 && dy === 0) return;
-                    // Task #1724 + #1736 — capture pre-move points for
-                    // EVERY member of the selection (dragged + siblings)
-                    // BEFORE issuing the forward mutates so a single
-                    // Cmd/Ctrl+Z restores the entire group. Reuses the
-                    // shared `buildMoveSnapshot` helper from PlanMarkupLayer
-                    // (Task #1705); it accepts an array of memberIds and
-                    // the per-markup undo handler (`undoLastMarkupMove`)
-                    // already replays multi-entry snapshots one mutate
-                    // at a time. Snapshot is consumed on undo.
-                    const allIds = [markup.id, ...siblingIds];
-                    setLastMarkupMoveSnapshot(
-                      buildMoveSnapshot(markups as MarkupShape[], allIds),
-                    );
-                    // Task #1736 — fire N parallel PATCHes for every
-                    // selected member. The dragged markup is committed
-                    // first; siblings are looked up in `markups` so we
-                    // translate their persisted points (not the Konva
-                    // group transform, which we just reset). If the
-                    // selection only had one member, `siblingIds` is
-                    // empty and this collapses to the same single PATCH
-                    // the pre-Task #1736 code did.
+                    // Task #1742 — fire N parallel PATCHes for every
+                    // selected member, each with a `previous: { points }`
+                    // payload so `updateMarkupMutation.onSuccess` pushes
+                    // a `MARKUP_UPDATE` entry into the unified takeoff
+                    // history. After this, the sidebar Undo/Redo buttons
+                    // and the bubble-phase Cmd/Ctrl+Z handler in
+                    // `useTakeoffInteractions` restore body drags
+                    // alongside measurement edits in the correct order.
+                    // For multi-select drags each member gets its own
+                    // history entry — N undo presses to reverse the
+                    // whole group — which matches how the takeoff
+                    // history already treats other bulk operations and
+                    // keeps each markup individually undoable.
                     const newPts = rawPts.map(p => ({ x: p.x + dx, y: p.y + dy }));
-                    updateMarkupMutation.mutate(
-                      { id: markup.id, points: newPts },
-                      {
-                        // Task #1724 — if the forward move never landed
-                        // (server error, permission denied, etc.) the
-                        // toast handler in `updateMarkupMutation` already
-                        // surfaces the failure. Clear the just-captured
-                        // snapshot too so the user doesn't see an Undo
-                        // button for a move that didn't happen — pressing
-                        // it would issue a no-op PATCH against points
-                        // that never changed on the server. Any sibling
-                        // PATCH failing also clears the snapshot, since a
-                        // partial-failure undo would put the group back
-                        // into an inconsistent layout.
-                        onError: () => setLastMarkupMoveSnapshot(null),
-                      },
-                    );
+                    updateMarkupMutation.mutate({
+                      id: markup.id,
+                      points: newPts,
+                      previous: { points: rawPts },
+                    });
                     for (const id of siblingIds) {
                       const m = markups.find((x: any) => x.id === id);
                       if (!m) continue;
@@ -3991,15 +3913,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                         ? JSON.parse(m.points)
                         : m.points) as { x: number; y: number }[];
                       if (!sPts || sPts.length === 0) continue;
-                      updateMarkupMutation.mutate(
-                        {
-                          id,
-                          points: sPts.map(p => ({ x: p.x + dx, y: p.y + dy })),
-                        },
-                        {
-                          onError: () => setLastMarkupMoveSnapshot(null),
-                        },
-                      );
+                      updateMarkupMutation.mutate({
+                        id,
+                        points: sPts.map(p => ({ x: p.x + dx, y: p.y + dy })),
+                        previous: { points: sPts },
+                      });
                     }
                   };
                   const groupProps = isDraggable
