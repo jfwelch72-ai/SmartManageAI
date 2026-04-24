@@ -6,6 +6,7 @@ import UnifiedPlanToolbar from "@/components/plans/UnifiedPlanToolbar";
 import MarkupLayersPanel from "@/components/markups/MarkupLayersPanel";
 import type { MarkupTool } from "@/components/markups/MarkupRenderer";
 import CarryoverAnnotationsDialog from "@/components/markups/CarryoverAnnotationsDialog";
+import LayerPickerExportDialog from "@/components/markups/LayerPickerExportDialog";
 import { findSupersededPdfDoc, uploadOutcomeToast } from "@/components/project-tabs/planRevisionMatch";
 import SheetJumpPalette, { useSheetJumpPaletteHotkey, type SheetJumpResult } from "@/components/SheetJumpPalette";
 import { useLocation } from "wouter";
@@ -418,6 +419,12 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
     toDocumentId: string;
     fromLabel?: string;
     toLabel?: string;
+  } | null>(null);
+  // Task #1703 — layer-pick dialog launched from the per-document
+  // "Download PDF (with markups) → By layer..." menu entry.
+  const [layerPickerDoc, setLayerPickerDoc] = useState<{
+    id: string;
+    label: string;
   } | null>(null);
   useSheetJumpPaletteHotkey(setSheetJumpOpen);
   const isMobilePin = typeof window !== "undefined" && window.innerWidth < 640;
@@ -1761,6 +1768,18 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                                 {opt.label}
                                               </DropdownMenuItem>
                                             ))}
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem
+                                              onClick={() => {
+                                                setLayerPickerDoc({
+                                                  id: doc.id,
+                                                  label: doc.title || doc.fileName,
+                                                });
+                                              }}
+                                              data-testid={`button-export-pdf-${doc.id}-by-layer`}
+                                            >
+                                              By layer…
+                                            </DropdownMenuItem>
                                           </DropdownMenuSubContent>
                                         </DropdownMenuSub>
                                       )}
@@ -3000,6 +3019,12 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                 .map((d: any) => ({ id: d.id, label: d.title || d.fileName }))
             : undefined
         }
+      />
+      <LayerPickerExportDialog
+        open={!!layerPickerDoc}
+        onOpenChange={(o) => { if (!o) setLayerPickerDoc(null); }}
+        documentId={layerPickerDoc?.id ?? null}
+        documentLabel={layerPickerDoc?.label}
       />
     </div>
   );
