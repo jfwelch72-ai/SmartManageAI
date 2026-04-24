@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { PlanPinLayer, type PinFilter } from "@/components/PlanPinLayer";
 
 export default function PlanPinsHarnessPage() {
@@ -9,6 +9,15 @@ export default function PlanPinsHarnessPage() {
     pageNumber: number;
     width: number;
     height: number;
+    /**
+     * Task #1670 — When `?clusterZoom=mock` is set the harness wires a
+     * mock `onZoomToCluster` callback into PlanPinLayer so the e2e
+     * tests can verify the new "click-cluster-to-zoom" behavior end to
+     * end. The mock records each call into a hidden DOM element so
+     * tests can assert on cluster centroids and click coordinates.
+     */
+    clusterZoom: "mock" | "off";
+    clusterZoomReturns: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -20,8 +29,12 @@ export default function PlanPinsHarnessPage() {
       pageNumber: parseInt(q.get("pageNumber") || "1", 10),
       width: parseInt(q.get("width") || "800", 10),
       height: parseInt(q.get("height") || "600", 10),
+      clusterZoom: q.get("clusterZoom") === "mock" ? "mock" : "off",
+      clusterZoomReturns: q.get("clusterZoomReturns") !== "false",
     });
   }, []);
+
+  const callsRef = useRef<HTMLDivElement | null>(null);
 
   if (!params || !params.projectCode || !params.documentId) {
     return (
@@ -32,6 +45,23 @@ export default function PlanPinsHarnessPage() {
   }
 
   const filter: PinFilter = { type: "ALL", openOnly: false };
+
+  const onZoomToCluster =
+    params.clusterZoom === "mock"
+      ? (xFrac: number, yFrac: number, anchorX?: number, anchorY?: number) => {
+          if (callsRef.current) {
+            const prev = callsRef.current.dataset.calls
+              ? JSON.parse(callsRef.current.dataset.calls)
+              : [];
+            prev.push({ xFrac, yFrac, anchorX, anchorY });
+            callsRef.current.dataset.calls = JSON.stringify(prev);
+            callsRef.current.dataset.lastXfrac = String(xFrac);
+            callsRef.current.dataset.lastYfrac = String(yFrac);
+            callsRef.current.dataset.callCount = String(prev.length);
+          }
+          return params.clusterZoomReturns;
+        }
+      : undefined;
 
   return (
     <div className="p-8">
@@ -54,8 +84,15 @@ export default function PlanPinsHarnessPage() {
           documentId={params.documentId}
           pageNumber={params.pageNumber}
           filter={filter}
+          onZoomToCluster={onZoomToCluster}
         />
       </div>
+      <div
+        ref={callsRef}
+        data-testid="harness-zoom-calls"
+        data-call-count="0"
+        style={{ display: "none" }}
+      />
     </div>
   );
 }

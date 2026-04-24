@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import * as pdfjsLib from "pdfjs-dist";
 import { Button } from "@/components/ui/button";
@@ -24,7 +24,21 @@ interface PdfPreviewProps {
   pinMode?: boolean;
   onPinDrop?: (info: { x: number; y: number; pageNumber: number }) => void;
   onPageChange?: (pageNumber: number) => void;
-  overlay?: (info: { pageNumber: number; canvasWidth: number; canvasHeight: number }) => React.ReactNode;
+  overlay?: (info: {
+    pageNumber: number;
+    canvasWidth: number;
+    canvasHeight: number;
+    /**
+     * Task #1670 — Lets overlay children (e.g. cluster markers) request a
+     * one-step zoom-in toward a specific fractional point on the current
+     * page. The viewport is scrolled so the (xFrac, yFrac) point stays
+     * under the same screen position (defaults to its current location).
+     * Returns true when a zoom step was scheduled, false when already at
+     * max zoom (so the caller can fall back to other behavior).
+     */
+    zoomInAtPoint: (xFrac: number, yFrac: number, anchorClientX?: number, anchorClientY?: number) => boolean;
+    canZoomIn: boolean;
+  }) => React.ReactNode;
   pageBadges?: Record<number, number>;
   pageBadgesClosed?: Record<number, number>;
   pageBadgeMode?: "open" | "all";
@@ -55,6 +69,16 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
   }, [pageNum, onPageChange]);
   const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null);
   const loadingTaskRef = useRef<pdfjsLib.PDFDocumentLoadingTask | null>(null);
+
+  // Task #1670 — Pending zoom-at-point request. When set, the layout
+  // effect below applies a scroll delta after the next canvas render so
+  // the anchored point stays under the user's cursor.
+  const pendingZoomTargetRef = useRef<{
+    xFrac: number;
+    yFrac: number;
+    anchorClientX: number;
+    anchorClientY: number;
+  } | null>(null);
 
   // Task #1659 — spacebar-hold-to-pan drag state. Refs (not state) so the
   // pointer handlers don't re-render the canvas mid-drag.
@@ -198,6 +222,54 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
   const zoomIn = () => setZoomIdx((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1));
   const zoomOut = () => setZoomIdx((i) => Math.max(0, i - 1));
   const resetZoom = () => setZoomIdx(2);
+
+  // Task #1670 — Zoom one step in toward a fractional point on the page,
+  // keeping that point under the same screen position. The actual scroll
+  // adjustment happens in a useLayoutEffect after the canvas re-renders
+  // at the new zoom level (see below).
+  const canZoomIn = zoomIdx < ZOOM_LEVELS.length - 1;
+  const zoomInAtPoint = useCallback(
+    (xFrac: number, yFrac: number, anchorClientX?: number, anchorClientY?: number): boolean => {
+      if (zoomIdx >= ZOOM_LEVELS.length - 1) return false;
+      const canvas = canvasRef.current;
+      let aX = anchorClientX;
+      let aY = anchorClientY;
+      if ((aX === undefined || aY === undefined) && canvas) {
+        const r = canvas.getBoundingClientRect();
+        if (aX === undefined) aX = r.left + xFrac * r.width;
+        if (aY === undefined) aY = r.top + yFrac * r.height;
+      }
+      pendingZoomTargetRef.current = {
+        xFrac: Math.max(0, Math.min(1, xFrac)),
+        yFrac: Math.max(0, Math.min(1, yFrac)),
+        anchorClientX: aX ?? 0,
+        anchorClientY: aY ?? 0,
+      };
+      setZoomIdx((i) => Math.min(ZOOM_LEVELS.length - 1, i + 1));
+      return true;
+    },
+    [zoomIdx],
+  );
+
+  // After the canvas re-renders at a new zoom level, apply any pending
+  // scroll adjustment so the anchored point stays under the cursor.
+  useLayoutEffect(() => {
+    const t = pendingZoomTargetRef.current;
+    if (!t) return;
+    const canvas = canvasRef.current;
+    const sc = scrollContainerRef.current;
+    if (!canvas || !sc) return;
+    const cr = canvas.getBoundingClientRect();
+    const newClientX = cr.left + t.xFrac * cr.width;
+    const newClientY = cr.top + t.yFrac * cr.height;
+    const dx = newClientX - t.anchorClientX;
+    const dy = newClientY - t.anchorClientY;
+    if (dx !== 0 || dy !== 0) {
+      sc.scrollLeft += dx;
+      sc.scrollTop += dy;
+    }
+    pendingZoomTargetRef.current = null;
+  }, [canvasSize.w, canvasSize.h]);
 
   if (loading) {
     return (
@@ -379,7 +451,13 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
               style={{ width: "100%", height: "100%" }}
               data-testid="pdf-preview-overlay"
             >
-              {overlay({ pageNumber: pageNum, canvasWidth: canvasSize.w, canvasHeight: canvasSize.h })}
+              {overlay({
+                pageNumber: pageNum,
+                canvasWidth: canvasSize.w,
+                canvasHeight: canvasSize.h,
+                zoomInAtPoint,
+                canZoomIn,
+              })}
             </div>
           )}
         </div>

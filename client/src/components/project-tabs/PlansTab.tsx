@@ -2642,7 +2642,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                             pageBadgesClosed={planPinSummary[doc.id]?.closedPages}
                             pageBadgeMode={pinCountMode}
                             spacePanActive={spacePanActive}
-                            overlay={({ pageNumber, canvasWidth, canvasHeight }) => (
+                            overlay={({ pageNumber, canvasWidth, canvasHeight, zoomInAtPoint, canZoomIn }) => (
                               <>
                                 <PlanPinLayer
                                   projectCode={projectCode}
@@ -2652,6 +2652,12 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                   filter={pinFilter}
                                   onOpenSource={handleOpenPinSource}
                                   clusteringEnabled={pinClusteringEnabled}
+                                  /* Task #1670 — Click-cluster-to-zoom.
+                                     Pass the zoom callback only while
+                                     more zoom is available so the
+                                     cluster can fall back to its
+                                     popover list at max zoom. */
+                                  onZoomToCluster={canZoomIn ? zoomInAtPoint : undefined}
                                 />
                                 <PlanMarkupLayer
                                   documentId={doc.id}

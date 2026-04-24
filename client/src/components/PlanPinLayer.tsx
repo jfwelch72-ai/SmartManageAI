@@ -3,7 +3,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { AlertCircle, Wrench, FileCheck, X, Trash2, Move, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -77,6 +77,24 @@ interface PlanPinLayerProps {
   filter: PinFilter;
   onOpenSource?: (pin: PlanPin) => void;
   clusteringEnabled?: boolean;
+  /**
+   * Task #1670 — Default behavior when a user clicks a pin cluster.
+   * "zoom" (default) calls `onZoomToCluster` to step zoom in toward the
+   * cluster centroid, breaking the cluster apart spatially. "list"
+   * preserves the legacy popover-of-pins behavior. Holding Shift while
+   * clicking inverts whichever default is active so users can always
+   * reach the other behavior without changing the setting.
+   */
+  clusterClickAction?: "zoom" | "list";
+  /**
+   * Task #1670 — Provided by `<PdfPreview />` via its overlay render
+   * prop. When present and the user clicks a cluster (without Shift)
+   * with `clusterClickAction === "zoom"`, the preview zooms one step in
+   * toward the cluster centroid and scrolls so the cluster stays under
+   * the cursor. If omitted (or the preview cannot zoom further), the
+   * cluster falls back to the popover list.
+   */
+  onZoomToCluster?: (xFrac: number, yFrac: number, anchorClientX?: number, anchorClientY?: number) => boolean;
 }
 
 interface PinCluster {
@@ -128,6 +146,8 @@ export function PlanPinLayer({
   filter,
   onOpenSource,
   clusteringEnabled = true,
+  clusterClickAction = "zoom",
+  onZoomToCluster,
 }: PlanPinLayerProps) {
   const { toast } = useToast();
 
@@ -296,6 +316,8 @@ export function PlanPinLayer({
             cluster={c}
             metaMap={metaMap}
             onOpenSource={onOpenSource}
+            clickAction={clusterClickAction}
+            onZoomToCluster={onZoomToCluster}
           />
         ) : (
           <PinItem
@@ -322,9 +344,23 @@ interface ClusterMarkerProps {
   cluster: PinCluster;
   metaMap: Map<string, PinMeta>;
   onOpenSource?: (pin: PlanPin) => void;
+  /**
+   * Task #1670 — When "zoom" (default), a plain click zooms the PDF in
+   * one step toward the cluster centroid; Shift-click opens the popover
+   * list. When "list", the click opens the popover and Shift-click
+   * zooms instead. Either way the popover is always reachable.
+   */
+  clickAction?: "zoom" | "list";
+  onZoomToCluster?: (xFrac: number, yFrac: number, anchorClientX?: number, anchorClientY?: number) => boolean;
 }
 
-function ClusterMarker({ cluster, metaMap, onOpenSource }: ClusterMarkerProps) {
+function ClusterMarker({
+  cluster,
+  metaMap,
+  onOpenSource,
+  clickAction = "zoom",
+  onZoomToCluster,
+}: ClusterMarkerProps) {
   const total = cluster.pins.length;
   const counts: Record<PinType, number> = { RFI: 0, PUNCH: 0, SUBMITTAL: 0 };
   for (const p of cluster.pins) counts[p.pinType] += 1;
@@ -354,18 +390,54 @@ function ClusterMarker({ cluster, metaMap, onOpenSource }: ClusterMarkerProps) {
   style.width = `${size}px`;
   style.height = `${size}px`;
 
+  // Task #1670 — Controlled popover so a plain click can zoom (default)
+  // while Shift-click opens the popover list. Without controlling state
+  // the Radix trigger would always toggle the popover on click.
+  const [popoverOpen, setPopoverOpen] = useState(false);
+
+  const zoomEnabled = clickAction === "zoom" && !!onZoomToCluster;
+  const titleHint = zoomEnabled
+    ? `${total} pins in this area — click to zoom in, Shift-click for list`
+    : onZoomToCluster
+      ? `${total} pins in this area — click for list, Shift-click to zoom in`
+      : `${total} pins in this area`;
+
+  const handleClusterClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const wantsZoom = e.shiftKey ? clickAction === "list" : clickAction === "zoom";
+    if (wantsZoom && onZoomToCluster) {
+      const ok = onZoomToCluster(cluster.cx, cluster.cy, e.clientX, e.clientY);
+      if (ok) {
+        // Successfully zoomed — explicitly close any popover that may
+        // have been left open (e.g. from a prior Shift-click) so the
+        // user can stay focused on the now-spatially-broken-apart
+        // cluster instead of tracking a stale list.
+        setPopoverOpen(false);
+        return;
+      }
+      // At max zoom (or zoom unavailable): fall through to popover so
+      // the user still has a way to reach individual pins.
+    }
+    setPopoverOpen(true);
+  };
+
   return (
-    <Popover>
-      <PopoverTrigger asChild>
+    <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+      <PopoverAnchor asChild>
         <button
+          type="button"
+          onClick={handleClusterClick}
           className={cn(
             "absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto",
             "flex items-center justify-center rounded-full shadow-md hover:scale-110 transition-transform",
             "border-2 border-white text-white font-semibold",
           )}
           style={style}
-          title={`${total} pins in this area`}
+          title={titleHint}
+          aria-label={titleHint}
+          aria-haspopup="dialog"
+          aria-expanded={popoverOpen}
           data-testid={`plan-pin-cluster-${cluster.id}`}
+          data-cluster-action={zoomEnabled ? "zoom" : "list"}
         >
           <Layers className="absolute opacity-30 w-4 h-4" />
           <span
@@ -375,7 +447,7 @@ function ClusterMarker({ cluster, metaMap, onOpenSource }: ClusterMarkerProps) {
             {total > 999 ? "999+" : total}
           </span>
         </button>
-      </PopoverTrigger>
+      </PopoverAnchor>
       <PopoverContent
         side="top"
         className="w-72 p-2 text-sm"
@@ -443,7 +515,11 @@ function ClusterMarker({ cluster, metaMap, onOpenSource }: ClusterMarkerProps) {
           })}
         </div>
         <div className="text-[10px] text-muted-foreground mt-2 px-1">
-          Tip: zoom in to break this cluster into individual pins.
+          {zoomEnabled
+            ? "Tip: click the cluster to zoom in one step (Shift-click opens this list)."
+            : onZoomToCluster
+              ? "Tip: Shift-click the cluster to zoom in one step instead."
+              : "Tip: zoom in to break this cluster into individual pins."}
         </div>
       </PopoverContent>
     </Popover>
