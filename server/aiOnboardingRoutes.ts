@@ -832,7 +832,9 @@ router.post("/ai/onboarding/complete", sensitiveLimiter, requireAuth, async (req
   }
 });
 
-async function extractThemeFromWebsite(organizationId: string, websiteUrl: string, userId: string | null): Promise<void> {
+// Exported (Task #1543) so the safeDownload integration can be exercised
+// directly by the URL-fetcher test suite.
+export async function extractThemeFromWebsite(organizationId: string, websiteUrl: string, userId: string | null): Promise<void> {
   try {
     // Task #1498: route this third-party fetch through the shared
     // safeDownload helper so SSRF checks (incl. DNS resolution),

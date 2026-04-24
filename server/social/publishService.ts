@@ -325,7 +325,9 @@ async function publishToTikTok(post: PostData, token: string, accountId: string)
   }
 }
 
-async function publishToYouTube(post: PostData, token: string): Promise<PublishResult> {
+// Exported (Task #1543) so the safeDownload integration can be exercised
+// directly by the URL-fetcher test suite.
+export async function publishToYouTube(post: PostData, token: string): Promise<PublishResult> {
   try {
     const mediaUrl = post.mediaUrls && post.mediaUrls.length > 0 ? post.mediaUrls[0] : null;
     const isVideo = mediaUrl && /\.(mp4|mov|avi|webm)$/i.test(mediaUrl);
