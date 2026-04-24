@@ -1063,6 +1063,12 @@ const upload = multer({
         // is `false` (admin receives the email); flipping to `true`
         // silences it while leaving the in-app bell intact.
         integrationSyncExhaustedEmailOptOut: z.boolean().optional(),
+        // Task #1695 — per-user preferences for the Plans surface.
+        // Replace per-user-id localStorage keys (`plan-toolbar-labeled-<uid>`
+        // and `plans-tour-completed-<uid>`) with server-side flags so the
+        // settings sync across devices.
+        plansToolbarLabeled: z.boolean().optional(),
+        plansTourCompleted: z.boolean().optional(),
       });
       const parsed = profileSchema.safeParse(req.body);
       if (!parsed.success) { res.status(400).json({ error: "Invalid input", details: parsed.error.errors }); return; }
@@ -1084,7 +1090,9 @@ const upload = multer({
         crmAlertFailureFallbackEnabled,
         crmAlertFailureFallbackMutedChannels,
         alertFailureEmailMode,
-        integrationSyncExhaustedEmailOptOut } = parsed.data;
+        integrationSyncExhaustedEmailOptOut,
+        plansToolbarLabeled,
+        plansTourCompleted } = parsed.data;
       const updateData: Record<string, unknown> = { updatedAt: new Date() };
       if (firstName !== undefined) updateData.firstName = firstName;
       if (lastName !== undefined) updateData.lastName = lastName;
@@ -1125,6 +1133,11 @@ const upload = multer({
       if (integrationSyncExhaustedEmailOptOut !== undefined) {
         updateData.integrationSyncExhaustedEmailOptOut = integrationSyncExhaustedEmailOptOut;
       }
+      // Task #1695 — Plans-surface preferences (labeled toolbar + plans-tour
+      // dismissal). Persisted under the user profile so the settings sync
+      // across devices instead of being trapped in per-user-id localStorage.
+      if (plansToolbarLabeled !== undefined) updateData.plansToolbarLabeled = plansToolbarLabeled;
+      if (plansTourCompleted !== undefined) updateData.plansTourCompleted = plansTourCompleted;
 
       const [updated] = await db.update(users).set(updateData).where(eq(users.id, userId)).returning();
       if (!updated) { res.status(404).json({ error: "User not found" }); return; }

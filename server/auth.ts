@@ -233,6 +233,12 @@ export async function authMiddleware(
       // INTEGRATION_SYNC_RETRIES_EXHAUSTED transactional email so the
       // settings toggle reflects the saved state across reloads.
       integrationSyncExhaustedEmailOptOut: user.integrationSyncExhaustedEmailOptOut,
+      // Task #1695 — per-user Plans-surface preferences (labeled toolbar
+      // toggle + plans-tour dismissal marker). Promoted from per-user
+      // localStorage keys so the settings hydrate from the server on
+      // every device the user signs in on.
+      plansToolbarLabeled: user.plansToolbarLabeled,
+      plansTourCompleted: user.plansTourCompleted,
       effectiveRole,
       isHustlerOwner,
     };

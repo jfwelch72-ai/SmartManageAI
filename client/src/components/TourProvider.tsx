@@ -603,28 +603,37 @@ const plansTourSteps: Step[] = [
   },
 ];
 
-const PLANS_TOUR_KEY_PREFIX = "plans-tour-completed-";
+// Task #1695 — The plans-tour dismissal marker moved server-side under
+// `users.plansTourCompleted` so it syncs across devices alongside the
+// labeled-toolbar preference. The legacy per-user-id localStorage key
+// remains here only for one-shot migration (read once, push to the
+// server, then clear) so users who already dismissed the tour on a
+// previous session do not see it replay on the new flow.
+const LEGACY_PLANS_TOUR_KEY_PREFIX = "plans-tour-completed-";
 
-function getPlansTourCompleted(userId: string | undefined | null): boolean {
+function readLegacyPlansTourCompleted(userId: string | undefined | null): boolean {
   if (!userId || typeof window === "undefined") return false;
   try {
-    return window.localStorage.getItem(`${PLANS_TOUR_KEY_PREFIX}${userId}`) === "1";
+    return window.localStorage.getItem(`${LEGACY_PLANS_TOUR_KEY_PREFIX}${userId}`) === "1";
   } catch {
     return false;
   }
 }
 
-function setPlansTourCompleted(userId: string | undefined | null, completed: boolean) {
+function clearLegacyPlansTourCompleted(userId: string | undefined | null) {
   if (!userId || typeof window === "undefined") return;
   try {
-    if (completed) {
-      window.localStorage.setItem(`${PLANS_TOUR_KEY_PREFIX}${userId}`, "1");
-    } else {
-      window.localStorage.removeItem(`${PLANS_TOUR_KEY_PREFIX}${userId}`);
-    }
+    window.localStorage.removeItem(`${LEGACY_PLANS_TOUR_KEY_PREFIX}${userId}`);
   } catch {
     // localStorage unavailable (private browsing, quota) — silently ignore
   }
+}
+
+async function persistPlansTourCompleted(completed: boolean): Promise<void> {
+  await apiRequest("PATCH", "/api/auth/profile", {
+    plansTourCompleted: completed,
+  });
+  await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
 }
 
 export function TourProvider({ children }: { children: React.ReactNode }) {
@@ -640,13 +649,36 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
   const skipCheckRef = useRef(false);
   const [targetReady, setTargetReady] = useState(false);
 
-  // Task #1663 — Plans-surface tour state, independent from the
-  // role-based dashboard tour above.
+  // Task #1663 / #1695 — Plans-surface tour state, independent from the
+  // role-based dashboard tour above. The dismissal marker now lives on
+  // the user profile (`users.plansTourCompleted`) so it carries across
+  // devices and survives cache clears. We also one-shot migrate the
+  // legacy per-user-id localStorage key (`plans-tour-completed-<uid>`)
+  // up to the server the first time we see a previously-dismissed
+  // user with the new server flag still false.
   const [isPlansTourActive, setIsPlansTourActive] = useState(false);
-  const [plansTourCompleted, setPlansTourCompletedState] = useState<boolean>(false);
+  const plansTourCompleted = user?.plansTourCompleted ?? false;
+  const legacyPlansTourMigratedRef = useRef<string | null>(null);
   useEffect(() => {
-    setPlansTourCompletedState(getPlansTourCompleted(user?.id));
-  }, [user?.id]);
+    const uid = user?.id;
+    if (!uid) return;
+    if (user?.plansTourCompleted) return;
+    if (legacyPlansTourMigratedRef.current === uid) return;
+    if (!readLegacyPlansTourCompleted(uid)) return;
+    legacyPlansTourMigratedRef.current = uid;
+    void (async () => {
+      try {
+        await persistPlansTourCompleted(true);
+        clearLegacyPlansTourCompleted(uid);
+      } catch (error) {
+        console.error("Failed to migrate legacy plans-tour completion flag:", error);
+        // Allow another attempt on the next render so a transient
+        // failure does not strand a previously-dismissed user with
+        // the tour replaying every visit.
+        legacyPlansTourMigratedRef.current = null;
+      }
+    })();
+  }, [user?.id, user?.plansTourCompleted]);
   
   const role = user?.effectiveRole || user?.role || "FIELD_WORKER";
   
@@ -900,33 +932,43 @@ export function TourProvider({ children }: { children: React.ReactNode }) {
     setShowCompletion(false);
   }, []);
 
-  // ── Task #1663 — Plans-surface tour controls ─────────────────────────
+  // ── Task #1663 / #1695 — Plans-surface tour controls ────────────────
+  // The dismissal marker (`users.plansTourCompleted`) is persisted on
+  // the server so it carries across devices. /api/auth/me is then
+  // invalidated so `user.plansTourCompleted` flips to `true` on the
+  // next refetch and PlansTab stops auto-launching the tour. Failures
+  // are logged but do not block the UX (the modal still closes); the
+  // next visit will simply see the tour again.
   const startPlansTour = useCallback(() => {
     setIsPlansTourActive(true);
   }, []);
 
-  const skipPlansTour = useCallback(() => {
+  const finishPlansTour = useCallback(async () => {
     setIsPlansTourActive(false);
-    setPlansTourCompleted(user?.id, true);
-    setPlansTourCompletedState(true);
+    if (!user?.id) return;
+    try {
+      await persistPlansTourCompleted(true);
+    } catch (error) {
+      console.error("Failed to persist plans-tour completion:", error);
+    }
   }, [user?.id]);
+
+  const skipPlansTour = useCallback(() => {
+    void finishPlansTour();
+  }, [finishPlansTour]);
 
   const handlePlansTourCallback = useCallback(
     (data: CallBackProps) => {
       const { status, action } = data;
       if (status === STATUS.FINISHED) {
-        setIsPlansTourActive(false);
-        setPlansTourCompleted(user?.id, true);
-        setPlansTourCompletedState(true);
+        void finishPlansTour();
         return;
       }
       if (status === STATUS.SKIPPED || action === ACTIONS.CLOSE) {
-        setIsPlansTourActive(false);
-        setPlansTourCompleted(user?.id, true);
-        setPlansTourCompletedState(true);
+        void finishPlansTour();
       }
     },
-    [user?.id],
+    [finishPlansTour],
   );
 
   return (

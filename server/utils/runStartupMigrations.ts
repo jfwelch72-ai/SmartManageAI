@@ -119,6 +119,7 @@ import { ensureCrmTranscriptBackfillAlertDeliveriesTable } from "./ensureCrmTran
 import { ensureUsersAlertFailureEmailModeColumn } from "./ensureUsersAlertFailureEmailModeColumn";
 import { ensureUsersIntegrationSyncExhaustedEmailOptOutColumn } from "./ensureUsersIntegrationSyncExhaustedEmailOptOutColumn";
 import { ensureUsersCrmBackfillSummaryPreferenceColumns } from "./ensureUsersCrmBackfillSummaryPreferenceColumns";
+import { ensureUsersPlansSurfacePreferenceColumns } from "./ensureUsersPlansSurfacePreferenceColumns";
 import { ensureCrmTranscriptBackfillTestAlertsTable } from "./ensureCrmTranscriptBackfillTestAlertsTable";
 import { ensureCrmAndReportingTables } from "./ensureCrmAndReportingTables";
 import { ensureCrmTranscriptBackfillAlertResendCooldownsTable } from "./ensureCrmTranscriptBackfillAlertResendCooldownsTable";
@@ -341,6 +342,11 @@ const migrations: MigrationStep[] = [
   // fresh dev DBs get the `crm_backfill_summary_channel` enum/column and the
   // `crm_backfill_summary_on_failure_only` flag without needing manual psql.
   { name: "users_crm_backfill_summary_preference_columns", category: "ADD_COLUMN", fn: ensureUsersCrmBackfillSummaryPreferenceColumns },
+  // Task #1695 — server-side per-user preferences for the Plans surface
+  // (labeled toolbar toggle + plans-tour dismissal marker). Promoted
+  // from per-user-id `localStorage` keys so the settings sync across
+  // devices instead of being lost on cache clears or device switches.
+  { name: "users_plans_surface_preference_columns", category: "ADD_COLUMN", fn: ensureUsersPlansSurfacePreferenceColumns },
   // Task #1087 — fresh checkouts were missing 14 CRM/reporting tables that
   // never had a static migration. The schema-drift reconciler only adds
   // missing columns/enums, never whole tables, so users had to run

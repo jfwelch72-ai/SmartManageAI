@@ -108,48 +108,123 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const { isEnabled: isFeatureFlagEnabled } = useFeatureFlags();
   const bimEnabled = isFeatureFlagEnabled("BIM_VIEWER");
 
-  // Task #1663 — Per-user "Labeled toolbar" preference. Toggled from
-  // the plans view settings menu and stored in localStorage scoped by
-  // user id so each person keeps their own preference. The state is
-  // re-hydrated whenever user.id resolves or changes (including
-  // account switches) so no preference leaks across users.
+  // Task #1695 — Per-user "Labeled toolbar" preference. Promoted from
+  // the legacy `plan-toolbar-labeled-<userId>` localStorage key to a
+  // server-side column on the user profile so the toggle syncs across
+  // every device the user signs in on.
+  //
+  // Hydration: initialize from `user.plansToolbarLabeled`, refresh
+  // whenever the active user changes (initial resolve or switch), and
+  // re-sync if /api/auth/me reports a different value (e.g. another
+  // device toggled it).
+  //
+  // Toggle: optimistically flip local state for instant feedback, then
+  // PATCH /api/auth/profile and invalidate /api/auth/me. On failure,
+  // revert and surface a toast so the user knows the change didn't
+  // persist.
+  //
+  // One-shot migration: the first time we see this user with the new
+  // server flag still false but the legacy localStorage flag set, push
+  // the local value up to the server and clear the localStorage entry.
   const { startPlansTour, isPlansTourCompleted } = useTour();
-  const labeledStorageKey = (uid: string | undefined | null) =>
-    uid ? `plan-toolbar-labeled-${uid}` : null;
-  const readLabeledPref = (uid: string | undefined | null): boolean => {
-    if (typeof window === "undefined") return false;
-    const key = labeledStorageKey(uid);
-    if (!key) return false;
+  const LEGACY_LABELED_KEY_PREFIX = "plan-toolbar-labeled-";
+  const readLegacyLabeledPref = (uid: string | undefined | null): boolean => {
+    if (!uid || typeof window === "undefined") return false;
     try {
-      return window.localStorage.getItem(key) === "1";
+      return window.localStorage.getItem(`${LEGACY_LABELED_KEY_PREFIX}${uid}`) === "1";
     } catch {
       return false;
     }
   };
-  const [labeledToolbar, setLabeledToolbar] = useState<boolean>(() =>
-    readLabeledPref(user?.id),
+  const clearLegacyLabeledPref = (uid: string | undefined | null) => {
+    if (!uid || typeof window === "undefined") return;
+    try {
+      window.localStorage.removeItem(`${LEGACY_LABELED_KEY_PREFIX}${uid}`);
+    } catch {}
+  };
+  const [labeledToolbar, setLabeledToolbar] = useState<boolean>(
+    () => user?.plansToolbarLabeled ?? false,
   );
-  // Re-hydrate when the active user changes (initial resolve or switch).
+  // Re-sync from the server whenever the active user changes or the
+  // server-side preference value updates (e.g. another device toggled
+  // it and the next /api/auth/me poll returned the new value).
   useEffect(() => {
-    setLabeledToolbar(readLabeledPref(user?.id));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
-  // Save the preference inline at toggle time (not in a state-sync
-  // effect) so re-hydrating one user's value never overwrites
-  // another user's localStorage entry.
+    setLabeledToolbar(user?.plansToolbarLabeled ?? false);
+  }, [user?.id, user?.plansToolbarLabeled]);
+  // Persist toggles to the server. We optimistically flip local state
+  // first so the toolbar updates instantly; on failure we restore the
+  // captured prior value (deterministic across rapid toggles / races)
+  // and surface a toast. A monotonically increasing request id lets us
+  // ignore stale failures: only the most recent toggle's failure may
+  // roll back, so rapid back-to-back toggles converge on the latest
+  // user intent rather than thrashing local state.
+  const labeledToolbarRequestSeq = useRef(0);
+  const persistLabeledToolbar = useCallback(
+    async (next: boolean, previous: boolean) => {
+      const requestId = ++labeledToolbarRequestSeq.current;
+      try {
+        await apiRequest("PATCH", "/api/auth/profile", {
+          plansToolbarLabeled: next,
+        });
+        await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      } catch (error) {
+        console.error("Failed to save labeled toolbar preference:", error);
+        if (requestId !== labeledToolbarRequestSeq.current) {
+          // A newer toggle superseded this one; let its outcome decide
+          // the final local state instead of stomping it with a stale
+          // rollback.
+          return;
+        }
+        setLabeledToolbar(previous);
+        toast({
+          title: "Couldn't save toolbar preference",
+          description:
+            "We couldn't sync your labeled toolbar preference to your account. Please try again.",
+          variant: "destructive",
+        });
+      }
+    },
+    [toast],
+  );
   const toggleLabeledToolbar = useCallback(() => {
     setLabeledToolbar((prev) => {
       const next = !prev;
-      const key = labeledStorageKey(user?.id);
-      if (key && typeof window !== "undefined") {
-        try {
-          if (next) window.localStorage.setItem(key, "1");
-          else window.localStorage.removeItem(key);
-        } catch {}
-      }
+      void persistLabeledToolbar(next, prev);
       return next;
     });
-  }, [user?.id]);
+  }, [persistLabeledToolbar]);
+  // One-shot migration: if the server still reports `false` but the
+  // legacy per-user-id localStorage key is "1", carry the preference
+  // up once and clear the legacy key. Runs at most once per user (the
+  // server flag flips to `true` and the legacy key is removed).
+  const legacyMigrationAttemptedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const uid = user?.id;
+    if (!uid) return;
+    if (user?.plansToolbarLabeled) return;
+    if (legacyMigrationAttemptedRef.current === uid) return;
+    if (!readLegacyLabeledPref(uid)) return;
+    legacyMigrationAttemptedRef.current = uid;
+    void (async () => {
+      try {
+        await apiRequest("PATCH", "/api/auth/profile", {
+          plansToolbarLabeled: true,
+        });
+        clearLegacyLabeledPref(uid);
+        // Server is now the source of truth; the invalidation triggers
+        // a /api/auth/me refetch which propagates the new value into
+        // local state via the hydrate effect above. We avoid eagerly
+        // flipping local state so a failed migration cannot leave the
+        // UI temporarily diverged from the server.
+        await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
+      } catch (error) {
+        console.error("Failed to migrate legacy labeled toolbar preference:", error);
+        // Allow another attempt on the next render so a transient
+        // failure does not strand the user on the icon-only toolbar.
+        legacyMigrationAttemptedRef.current = null;
+      }
+    })();
+  }, [user?.id, user?.plansToolbarLabeled]);
 
   const { data: documents = [], isLoading: documentsLoading } = useProjectDocuments(projectCode);
   type PinSummaryEntry = {

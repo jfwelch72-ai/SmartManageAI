@@ -553,6 +553,18 @@ export const users = pgTable("users", {
   integrationSyncExhaustedEmailOptOut: boolean(
     "integration_sync_exhausted_email_opt_out",
   ).notNull().default(false),
+  // Task #1695 — Per-user preferences for the Plans surface (takeoff
+  // workspace). Promoted from per-user-id `localStorage` keys so the
+  // settings travel with the user across devices and survive cache
+  // clears. Mirrors the existing `walkthroughCompleted` server-side
+  // pattern.
+  //   - `plansToolbarLabeled` toggles the labeled (icon + text) variant
+  //     of the unified plan toolbar. Defaults to false (icon-only).
+  //   - `plansTourCompleted` is the dismissal marker for the
+  //     plans-surface guided tour (Task #1663). Once true, the tour
+  //     does not auto-replay; users can still relaunch it manually.
+  plansToolbarLabeled: boolean("plans_toolbar_labeled").notNull().default(false),
+  plansTourCompleted: boolean("plans_tour_completed").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
