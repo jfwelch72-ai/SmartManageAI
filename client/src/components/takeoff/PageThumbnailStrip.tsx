@@ -141,6 +141,57 @@ export function PageThumbnailStrip({
       }),
   });
 
+  // Task #1806 — gate the drag-to-copy path on the same existing-copy
+  // check the picker uses, so users can't bypass the duplicate warning
+  // by dragging instead of clicking. Looks up the per-destination copy
+  // summary, prompts the user when the target already holds one or
+  // more "(copy)" layers derived from the source, and only then fires
+  // the mutation. The summary fetch is best-effort: a network blip
+  // shouldn't block the copy attempt itself, so on failure we fall
+  // through to the mutation (which has its own error toast).
+  const confirmAndCopyLayer = useCallback(
+    async ({
+      layerId,
+      layerName,
+      targetDocumentId,
+    }: {
+      layerId: string;
+      layerName: string;
+      targetDocumentId: string;
+    }) => {
+      let existingCount = 0;
+      try {
+        const r = await fetch(
+          `/api/plan-markup-layers/${encodeURIComponent(layerId)}/copy-targets`,
+          { credentials: "include" },
+        );
+        if (r.ok) {
+          const data = (await r.json()) as {
+            targets?: Array<{ documentId: string; existingCopyCount: number }>;
+          };
+          const target = data.targets?.find((t) => t.documentId === targetDocumentId);
+          existingCount = target?.existingCopyCount ?? 0;
+        }
+      } catch {
+        // Best-effort lookup — fall through and let the copy itself
+        // surface any server-side problem.
+      }
+      if (
+        existingCount > 0 &&
+        typeof window !== "undefined" &&
+        !window.confirm(
+          `This sheet already has ${existingCount} ` +
+            `cop${existingCount === 1 ? "y" : "ies"} of "${layerName}". ` +
+            `Create another copy anyway?`,
+        )
+      ) {
+        return;
+      }
+      copyLayerMutation.mutate({ layerId, targetDocumentId });
+    },
+    [copyLayerMutation],
+  );
+
   // True iff the in-flight drag carries the markup-layer MIME we
   // accept. Browsers expose `dataTransfer.types` as a lower-cased,
   // stringified DOMStringList; some environments report a frozen Array.
@@ -254,8 +305,17 @@ export function PageThumbnailStrip({
                 });
                 return;
               }
-              copyLayerMutation.mutate({
+              // Task #1806 — mirror the picker's duplicate-warning so
+              // the drag path can't bypass the confirm. Fetch the
+              // per-destination copy summary; if the target already
+              // holds one or more "(copy)" layers derived from this
+              // one, ask the user before creating another. Failure to
+              // load the summary is non-fatal — we fall through to
+              // the copy and let the server's own response surface
+              // any error.
+              void confirmAndCopyLayer({
                 layerId: payload.layerId,
+                layerName: payload.layerName,
                 targetDocumentId: layerDropTargetDocId,
               });
             }}
