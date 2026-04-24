@@ -1,4 +1,4 @@
-// Task #1400 — Notify project managers when the daily Davis-Bacon
+// Task #1400 — Notify org admins when the daily Davis-Bacon
 // stale-refresh sweep replaces a cached wage determination with one
 // whose classification rates differ from the prior payload.
 //
@@ -6,8 +6,12 @@
 //  - When the refreshed payload matches the cached rates (no-op
 //    refresh), no WAGE_DECISION_RATES_CHANGED notification is sent.
 //  - When the refreshed payload changes a classification's rate, a
-//    WAGE_DECISION_RATES_CHANGED notification is fanned out per
-//    affected project to its project manager and the org admins.
+//    WAGE_DECISION_RATES_CHANGED admin-digest notification is fanned
+//    out for affected projects. (Task #1487: project managers are no
+//    longer recipients on this path — they receive the dedicated
+//    per-project WAGE_DECISION_RATES_CHANGED_FOR_PM email written by
+//    `persistRateChangeRecords` so assigned PMs only get one email per
+//    refresh.)
 //  - The pure diffWageRates helper returns null on equivalent payloads
 //    and a structured diff otherwise (covers added/removed/changed).
 
@@ -193,7 +197,7 @@ describe("processStaleWageDecisions rate-change notifications (Task #1400)", () 
     expect(noteRows).toHaveLength(0);
   });
 
-  it("notifies the project manager and org admins when rates differ", async () => {
+  it("notifies org admins (but not the project manager) when rates differ", async () => {
     const decision = "CA20260301";
     const proj = await makeProject(decision, true);
     await seedStaleRow(decision, [
@@ -212,11 +216,15 @@ describe("processStaleWageDecisions rate-change notifications (Task #1400)", () 
     expect(out.succeeded).toBe(1);
 
     const noteRows = await rateChangeNotificationsFor(orgId);
-    // One project, two recipients (PM + admin) → 2 notifications.
-    expect(noteRows).toHaveLength(2);
+    // Task #1487: PMs are no longer included in this admin-digest path —
+    // they receive the dedicated WAGE_DECISION_RATES_CHANGED_FOR_PM
+    // email from persistRateChangeRecords instead. So one project with
+    // one admin → exactly 1 WAGE_DECISION_RATES_CHANGED notification,
+    // delivered to the admin and NOT to the PM.
+    expect(noteRows).toHaveLength(1);
     const recipients = new Set(noteRows.map((n) => n.userId));
-    expect(recipients.has(pmId)).toBe(true);
     expect(recipients.has(adminId)).toBe(true);
+    expect(recipients.has(pmId)).toBe(false);
     for (const n of noteRows) {
       expect(n.title).toContain(decision);
       expect(n.relatedEntityId).toBe(proj.id);
@@ -224,11 +232,33 @@ describe("processStaleWageDecisions rate-change notifications (Task #1400)", () 
       // Summary mentions the changed classification.
       expect(String(n.message)).toMatch(/Carpenter/);
     }
+
+    // Task #1487 — end-to-end consolidation check. The same stale-refresh
+    // sweep must also fan exactly ONE WAGE_DECISION_RATES_CHANGED_FOR_PM
+    // notification out to the project manager (via the
+    // persistRateChangeRecords path called inside processStaleWageDecisions),
+    // and zero of those rows must land on the admin. Combined with the
+    // assertions above this proves the "exactly one email per refresh" rule
+    // for both audiences end-to-end:
+    //   - PM      → 1 row total (FOR_PM only)
+    //   - Admin   → 1 row total (digest only)
+    const pmRows = await db
+      .select()
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.organizationId, orgId),
+          eq(notifications.type, "WAGE_DECISION_RATES_CHANGED_FOR_PM"),
+        ),
+      );
+    expect(pmRows).toHaveLength(1);
+    expect(pmRows[0].userId).toBe(pmId);
+    expect(pmRows[0].relatedEntityId).toBe(proj.id);
   });
 
-  it("does not deliver duplicate notifications when the PM is also an admin", async () => {
+  it("when the PM is also an admin they still receive the admin digest exactly once", async () => {
     const decision = "CA20260302";
-    // Promote the PM seed to ADMIN so it appears in both audiences.
+    // Promote the PM seed to ADMIN so they sit in the admin audience.
     await db.update(users).set({ role: "ADMIN" }).where(eq(users.id, pmId));
     const proj = await makeProject(decision, true);
     await seedStaleRow(decision, [
@@ -240,10 +270,15 @@ describe("processStaleWageDecisions rate-change notifications (Task #1400)", () 
     await processStaleWageDecisions(new Date(), { staleAfterDays: 30 });
 
     const noteRows = await rateChangeNotificationsFor(orgId);
-    // PM (now also ADMIN) + the other admin = 2 unique recipients → 2 notifications.
+    // Both seeded users are now ADMIN → 2 unique recipients → 2 admin
+    // notifications. The PM-also-admin user is included via the admin
+    // role, not via the (now-removed) PM branch, so they still get the
+    // org-level digest exactly once.
     expect(noteRows).toHaveLength(2);
     const recipients = new Set(noteRows.map((n) => n.userId));
     expect(recipients.size).toBe(2);
+    expect(recipients.has(pmId)).toBe(true);
+    expect(recipients.has(adminId)).toBe(true);
     for (const n of noteRows) {
       expect(n.relatedEntityId).toBe(proj.id);
     }
@@ -282,12 +317,13 @@ describe("notifyProjectManagersOfWageRateChange digest (Task #1407)", () => {
     });
 
     const noteRows = await rateChangeNotificationsFor(orgId);
-    // 3 projects × 2 recipients (PM + admin) would have been 6
-    // notifications under the old fan-out. Digest collapses to one
-    // notification per recipient = 2.
-    expect(noteRows).toHaveLength(2);
+    // Task #1487: PMs are no longer recipients on this admin-digest
+    // path, so 3 projects × 1 admin recipient → digest collapses to one
+    // notification per recipient = 1 (admin only). The PM receives a
+    // separate per-project email via the dedicated PM-only path.
+    expect(noteRows).toHaveLength(1);
     const recipients = new Set(noteRows.map((n) => n.userId));
-    expect(recipients.has(pmId)).toBe(true);
+    expect(recipients.has(pmId)).toBe(false);
     expect(recipients.has(adminId)).toBe(true);
     for (const n of noteRows) {
       // Multi-project digest: title mentions the project count, and
@@ -330,7 +366,12 @@ describe("notifyProjectManagersOfWageRateChange digest (Task #1407)", () => {
     });
 
     const noteRows = await rateChangeNotificationsFor(orgId);
-    expect(noteRows).toHaveLength(2);
+    // Task #1487: admin-only audience → 1 notification (the admin), and
+    // the PM does NOT receive the WAGE_DECISION_RATES_CHANGED email
+    // (they get the dedicated WAGE_DECISION_RATES_CHANGED_FOR_PM email
+    // from the persistRateChangeRecords path instead).
+    expect(noteRows).toHaveLength(1);
+    expect(noteRows[0].userId).toBe(adminId);
     for (const n of noteRows) {
       // Single-project format: no "N projects" in title, links to project.
       expect(n.title).toBe(`Davis-Bacon rates changed for ${decision}`);

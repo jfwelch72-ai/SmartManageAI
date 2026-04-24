@@ -441,8 +441,18 @@ function summarizeDiff(diff: WageRateDiff, max = 5): string {
 /**
  * Task #1400 / #1407 — notify the audience for every project in
  * `organizationId` whose `wageDecision` matches `decisionNumber` that the
- * cached Davis-Bacon rates just changed. Recipients per project: the
- * project manager (when set) plus every active org admin.
+ * cached Davis-Bacon rates just changed.
+ *
+ * Recipients per project: every active org admin. Project managers are
+ * intentionally NOT included here — Task #1487 split the PM audience out
+ * to `notifyProjectManagersOnPersistedRateChanges` (the richer
+ * per-project, payroll-tab-linked email of type
+ * WAGE_DECISION_RATES_CHANGED_FOR_PM, written from
+ * `persistRateChangeRecords`). The stale-refresh sweep used to call both
+ * paths back-to-back, which delivered two emails per refresh to any PM
+ * assigned to an affected project. This function now keeps the org-level
+ * admin digest behaviour (unchanged from a recipient's perspective) while
+ * leaving the per-project PM email to the dedicated path.
  *
  * Task #1407: a single user is notified at most once per sweep/decision,
  * even when they're the recipient for many affected projects. When the
@@ -487,8 +497,12 @@ export async function notifyProjectManagersOfWageRateChange(
   type ProjectRef = { id: string; name: string; code: string };
   const byUser = new Map<string, ProjectRef[]>();
   for (const project of affected) {
+    // Task #1487: PMs are notified via the dedicated per-project email
+    // path (notifyProjectManagersOnPersistedRateChanges). Only fan the
+    // org-level admin digest out from here so PMs assigned to an
+    // affected project no longer receive two near-identical emails per
+    // stale-refresh sweep.
     const recipients = new Set<string>(adminIds);
-    if (project.projectManagerId) recipients.add(project.projectManagerId);
     if (recipients.size === 0) {
       logInfo("No recipients for wage rate change notification", {
         organizationId: args.organizationId,

@@ -209,6 +209,24 @@ describe("persistRateChangeRecords PM email fan-out (Task #1449)", () => {
 
     // orgB's PM is untouched — cross-tenant isolation.
     expect(orgBRows).toHaveLength(0);
+
+    // Task #1487: persisting rate-change records is the *only* email
+    // path that fires for a PM on a wage-rate refresh — the wider
+    // admin-digest path (WAGE_DECISION_RATES_CHANGED) no longer
+    // includes PMs as recipients, so a PM whose project references the
+    // changed decision receives exactly one email per refresh (this
+    // per-project, payroll-tab-linked one).
+    const orgAAdminDigest = await db
+      .select()
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.organizationId, orgAId),
+          eq(notifications.userId, pmAId),
+          eq(notifications.type, "WAGE_DECISION_RATES_CHANGED"),
+        ),
+      );
+    expect(orgAAdminDigest).toHaveLength(0);
   });
 
   it("does not notify when no project in the org references the decision", async () => {
