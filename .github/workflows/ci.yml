@@ -164,6 +164,62 @@ jobs:
       - name: Run cloud-import security tests (safeDownload + from-cloud SSRF)
         run: npx vitest run server/__tests__/safe-download.test.ts server/__tests__/from-cloud-ssrf-redirect.test.ts
 
+  sage-sync-tests:
+    # Task #1605 — Run the Sage Intacct sync vitest suite on every PR so the
+    # XML envelope structure (the only place pinning down the wire format
+    # we send to Sage) and the `exportInvoice` idempotency contract can't
+    # regress unnoticed. The unit-level suite (`sage-sync.test.ts`,
+    # added in Task #1600) covers envelope build / response parse /
+    # credential resolution / feature-flag gate; the DB-backed
+    # `sage-export-invoice-idempotency.test.ts` exercises the round-trip
+    # against `integration_sync_state` with only the network layer stubbed
+    # (via the `fetchImpl` injection seam on exportInvoice), so a bug that
+    # re-pushes the same invoice every run (double-billing customers) fails
+    # the build instead of shipping. The DB-backed file needs a real
+    # Postgres for the seeded org/connection rows, so this job provisions
+    # its own postgres service.
+    name: Sage Sync Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/app_test
+      SESSION_SECRET: ci-session-secret-do-not-use-in-prod
+      JWT_SECRET: ci-jwt-secret-do-not-use-in-prod
+      CI: "true"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run Sage sync vitest suite
+        run: npx vitest run server/__tests__/sage-sync.test.ts server/__tests__/sage-export-invoice-idempotency.test.ts
+
   lint:
     name: Code Quality
     runs-on: ubuntu-latest

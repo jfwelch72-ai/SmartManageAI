@@ -377,10 +377,20 @@ export interface ExportInvoiceResult extends SyncResult {
   sageInvoiceId?: string;
 }
 
+export interface SageSyncOptions {
+  /**
+   * Inject an alternate fetch implementation (forwarded to `sageRequest`).
+   * Used by DB-backed tests to stub the network without mocking any other
+   * collaborator. Production callers always omit this.
+   */
+  fetchImpl?: typeof fetch;
+}
+
 export async function exportInvoice(
   connection: IntegrationConnection,
   invoice: SageInvoiceInput,
   dryRun: boolean = false,
+  options: SageSyncOptions = {},
 ): Promise<ExportInvoiceResult> {
   const errors: SyncError[] = [];
 
@@ -435,22 +445,26 @@ export async function exportInvoice(
     });
 
     const controlKey = `inv-${invoice.localInvoiceId || invoice.docNumber || Date.now()}`;
-    const response = await sageRequest<Record<string, any>>(credentials, [
-      {
-        name: "create",
-        controlId: controlKey,
-        body: {
-          ARINVOICE: {
-            CUSTOMERID: invoice.customerRef,
-            DATEPOSTED: invoice.invoiceDate || todayString(),
-            DATECREATED: invoice.invoiceDate || todayString(),
-            ...(invoice.dueDate ? { DATEDUE: invoice.dueDate } : {}),
-            ...(invoice.docNumber ? { RECORDID: invoice.docNumber } : {}),
-            ARINVOICEITEMS: { ARINVOICEITEM: invoiceItems },
+    const response = await sageRequest<Record<string, any>>(
+      credentials,
+      [
+        {
+          name: "create",
+          controlId: controlKey,
+          body: {
+            ARINVOICE: {
+              CUSTOMERID: invoice.customerRef,
+              DATEPOSTED: invoice.invoiceDate || todayString(),
+              DATECREATED: invoice.invoiceDate || todayString(),
+              ...(invoice.dueDate ? { DATEDUE: invoice.dueDate } : {}),
+              ...(invoice.docNumber ? { RECORDID: invoice.docNumber } : {}),
+              ARINVOICEITEMS: { ARINVOICEITEM: invoiceItems },
+            },
           },
         },
-      },
-    ]);
+      ],
+      options.fetchImpl ? { fetchImpl: options.fetchImpl } : {},
+    );
 
     if (!response.success) {
       const errMsg = response.errors.map((e) => e.message).join("; ") || "Sage error";
