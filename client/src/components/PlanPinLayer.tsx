@@ -49,7 +49,31 @@ const PIN_STYLE: Record<PinType, { icon: typeof AlertCircle; color: string; bg: 
   SUBMITTAL: { icon: FileCheck, color: "text-white", bg: "bg-blue-500", label: "Submittal", hex: "#3b82f6" },
 };
 
-const CLUSTER_RADIUS_PX = 36;
+// Task #1671 — Pin cluster radius is now user-adjustable via a
+// "Cluster density" setting alongside the existing "Cluster pins"
+// toggle. On real punch-walk floor plans with hundreds of pins per
+// room, a single fixed 36px radius either over-clustered (hiding pins
+// users wanted to see at moderate zoom) or under-clustered (leaving
+// overlapping pin halos). Three discrete steps cover the practical
+// range without overwhelming users with a slider:
+//   - low    (24px)  — minimal clustering, best at high zoom or
+//                      moderate pin density.
+//   - medium (36px)  — previous default; balanced for typical sheets.
+//   - high   (56px)  — aggressive clustering for very dense
+//                      punch-walks (hundreds of pins per room).
+// Note: clustering is screen-space; because PlanPinLayer is sized to
+// the rendered page canvas, zooming the PDF in already grows the
+// canvas and naturally breaks clusters apart, so density is the only
+// extra knob we need.
+export type ClusterDensity = "low" | "medium" | "high";
+
+export const CLUSTER_RADIUS_PX_BY_DENSITY: Record<ClusterDensity, number> = {
+  low: 24,
+  medium: 36,
+  high: 56,
+};
+
+export const DEFAULT_CLUSTER_DENSITY: ClusterDensity = "medium";
 
 const OPEN_STATUSES = new Set([
   "OPEN", "DRAFT", "SUBMITTED", "UNDER_REVIEW", "FORWARDED", "IN_PROGRESS", "PENDING",
@@ -95,16 +119,23 @@ interface PlanPinLayerProps {
    * cluster falls back to the popover list.
    */
   onZoomToCluster?: (xFrac: number, yFrac: number, anchorClientX?: number, anchorClientY?: number) => boolean;
+  /**
+   * Task #1671 — Tunable cluster radius for very dense punch-walks.
+   * "low" (24px) keeps nearby pins visually separate; "medium" (36px,
+   * the previous fixed default) is balanced; "high" (56px) collapses
+   * pins that overlap visually at moderate zoom into a single cluster.
+   */
+  clusterDensity?: ClusterDensity;
 }
 
-interface PinCluster {
+export interface PinCluster {
   id: string;
   pins: PlanPin[];
   cx: number;
   cy: number;
 }
 
-function clusterPins(pins: PlanPin[], canvasW: number, canvasH: number, radiusPx: number): PinCluster[] {
+export function clusterPins(pins: PlanPin[], canvasW: number, canvasH: number, radiusPx: number): PinCluster[] {
   if (canvasW <= 0 || canvasH <= 0) {
     return pins.map((p) => ({ id: p.id, pins: [p], cx: p.x, cy: p.y }));
   }
@@ -148,6 +179,7 @@ export function PlanPinLayer({
   clusteringEnabled = true,
   clusterClickAction = "zoom",
   onZoomToCluster,
+  clusterDensity = DEFAULT_CLUSTER_DENSITY,
 }: PlanPinLayerProps) {
   const { toast } = useToast();
 
@@ -304,8 +336,11 @@ export function PlanPinLayer({
     if (!clusteringEnabled) {
       return visiblePins.map<PinCluster>((p) => ({ id: p.id, pins: [p], cx: p.x, cy: p.y }));
     }
-    return clusterPins(visiblePins, containerSize.w, containerSize.h, CLUSTER_RADIUS_PX);
-  }, [visiblePins, containerSize.w, containerSize.h, clusteringEnabled]);
+    const radiusPx =
+      CLUSTER_RADIUS_PX_BY_DENSITY[clusterDensity] ??
+      CLUSTER_RADIUS_PX_BY_DENSITY[DEFAULT_CLUSTER_DENSITY];
+    return clusterPins(visiblePins, containerSize.w, containerSize.h, radiusPx);
+  }, [visiblePins, containerSize.w, containerSize.h, clusteringEnabled, clusterDensity]);
 
   return (
     <div ref={containerRef} className="absolute inset-0 pointer-events-none" data-testid="plan-pin-layer">
@@ -1017,7 +1052,37 @@ interface PinFilterChipsProps {
   onTogglePinMode: () => void;
   clusteringEnabled?: boolean;
   onToggleClustering?: () => void;
+  // Task #1671 — Optional cluster density control. When both
+  // clustering is enabled and `onClusterDensityChange` is provided,
+  // a small Low / Med / High segmented control is rendered next to
+  // the "Cluster pins" toggle so users can tune for very dense
+  // punch-walks without leaving the toolbar.
+  clusterDensity?: ClusterDensity;
+  onClusterDensityChange?: (d: ClusterDensity) => void;
 }
+
+const CLUSTER_DENSITY_OPTIONS: Array<{
+  value: ClusterDensity;
+  label: string;
+  tooltip: string;
+}> = [
+  {
+    value: "low",
+    label: "Low",
+    tooltip: "Smaller cluster radius — more individual pins stay visible",
+  },
+  {
+    value: "medium",
+    label: "Med",
+    tooltip: "Default cluster radius — balanced for typical sheets",
+  },
+  {
+    value: "high",
+    label: "High",
+    tooltip:
+      "Larger cluster radius — collapses very dense punch-walks into fewer, bigger clusters",
+  },
+];
 
 export function PinFilterChips({
   filter,
@@ -1026,6 +1091,8 @@ export function PinFilterChips({
   onTogglePinMode,
   clusteringEnabled,
   onToggleClustering,
+  clusterDensity = DEFAULT_CLUSTER_DENSITY,
+  onClusterDensityChange,
 }: PinFilterChipsProps) {
   // Task #1663 — Every chip gets a hover tooltip explaining what the
   // filter does. None of these have keyboard shortcuts wired, so the
@@ -1094,6 +1161,43 @@ export function PinFilterChips({
             !!clusteringEnabled,
             onToggleClustering,
             "chip-filter-cluster",
+          )}
+          {/* Task #1671 — Cluster density mini-segmented control. Only
+              meaningful when clustering is currently on, so we hide the
+              control when the toggle is off to keep the toolbar quiet. */}
+          {onClusterDensityChange && clusteringEnabled && (
+            <div
+              role="group"
+              aria-label="Cluster density"
+              className="inline-flex items-center rounded-full border border-border overflow-hidden"
+              data-testid="cluster-density-control"
+            >
+              {CLUSTER_DENSITY_OPTIONS.map((opt) => {
+                const active = clusterDensity === opt.value;
+                return (
+                  <Tooltip key={opt.value}>
+                    <TooltipTrigger asChild>
+                      <button
+                        type="button"
+                        onClick={() => onClusterDensityChange(opt.value)}
+                        aria-pressed={active}
+                        aria-label={`Cluster density ${opt.label}`}
+                        className={cn(
+                          "px-2 py-1 text-[11px] leading-none transition-colors",
+                          active
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-card hover:bg-accent text-foreground",
+                        )}
+                        data-testid={`chip-cluster-density-${opt.value}`}
+                      >
+                        {opt.label}
+                      </button>
+                    </TooltipTrigger>
+                    <TooltipContent side="bottom"><span>{opt.tooltip}</span></TooltipContent>
+                  </Tooltip>
+                );
+              })}
+            </div>
           )}
         </>
       )}

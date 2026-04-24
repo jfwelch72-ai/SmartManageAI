@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { PlanPinLayer, type PinFilter } from "@/components/PlanPinLayer";
+import {
+  PlanPinLayer,
+  PinFilterChips,
+  type PinFilter,
+  type ClusterDensity,
+  DEFAULT_CLUSTER_DENSITY,
+} from "@/components/PlanPinLayer";
 
 export default function PlanPinsHarnessPage() {
   const [params, setParams] = useState<{
@@ -19,6 +25,15 @@ export default function PlanPinsHarnessPage() {
     clusterZoom: "mock" | "off";
     clusterZoomReturns: boolean;
   } | null>(null);
+
+  // Task #1671 — Harness controls for the cluster-density chip group so
+  // tests (and humans) can exercise the new control without needing a
+  // real authenticated project + PDF preview to land on
+  // <UnifiedPlanToolbar>.
+  const [filter, setFilter] = useState<PinFilter>({ type: "ALL", openOnly: false });
+  const [pinModeActive, setPinModeActive] = useState(false);
+  const [clusteringEnabled, setClusteringEnabled] = useState(true);
+  const [clusterDensity, setClusterDensity] = useState<ClusterDensity>(DEFAULT_CLUSTER_DENSITY);
 
   useEffect(() => {
     const q = new URLSearchParams(window.location.search);
@@ -44,8 +59,9 @@ export default function PlanPinsHarnessPage() {
     );
   }
 
-  const filter: PinFilter = { type: "ALL", openOnly: false };
-
+  // Task #1670 — When `?clusterZoom=mock` is set, wire a recording mock
+  // for `onZoomToCluster` so e2e tests can assert the cluster-click-to-
+  // zoom behavior without driving a real PDF preview.
   const onZoomToCluster =
     params.clusterZoom === "mock"
       ? (xFrac: number, yFrac: number, anchorX?: number, anchorY?: number) => {
@@ -64,8 +80,25 @@ export default function PlanPinsHarnessPage() {
       : undefined;
 
   return (
-    <div className="p-8">
-      <h1 className="text-lg font-semibold mb-2">Plan Pin Harness (DEV)</h1>
+    <div className="p-8 space-y-3">
+      <h1 className="text-lg font-semibold">Plan Pin Harness (DEV)</h1>
+      <div data-testid="harness-toolbar" className="border rounded p-2 bg-card">
+        <PinFilterChips
+          filter={filter}
+          onChange={setFilter}
+          pinModeActive={pinModeActive}
+          onTogglePinMode={() => setPinModeActive((v) => !v)}
+          clusteringEnabled={clusteringEnabled}
+          onToggleClustering={() => setClusteringEnabled((v) => !v)}
+          clusterDensity={clusterDensity}
+          onClusterDensityChange={setClusterDensity}
+        />
+      </div>
+      <div className="text-xs text-muted-foreground" data-testid="harness-density-label">
+        density: <span data-testid="harness-density-value">{clusterDensity}</span>
+        {" · "}
+        clustering: <span data-testid="harness-clustering-value">{clusteringEnabled ? "on" : "off"}</span>
+      </div>
       <div
         id="harness-page"
         data-testid="harness-page"
@@ -84,6 +117,8 @@ export default function PlanPinsHarnessPage() {
           documentId={params.documentId}
           pageNumber={params.pageNumber}
           filter={filter}
+          clusteringEnabled={clusteringEnabled}
+          clusterDensity={clusterDensity}
           onZoomToCluster={onZoomToCluster}
         />
       </div>

@@ -22,7 +22,7 @@
  */
 import { Hand, Pin, Settings2, Type, BookOpen } from "lucide-react";
 import PlanMarkupToolbar from "@/components/markups/PlanMarkupToolbar";
-import { PinFilterChips, type PinFilter } from "@/components/PlanPinLayer";
+import { PinFilterChips, type PinFilter, type ClusterDensity } from "@/components/PlanPinLayer";
 import type { MarkupTool } from "@/components/markups/MarkupRenderer";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -55,6 +55,11 @@ export interface UnifiedPlanToolbarProps {
   // Optional cluster toggle (forwarded to PinFilterChips when provided).
   clusteringEnabled?: boolean;
   onToggleClustering?: () => void;
+  // Task #1671 — Optional cluster density control (Low / Med / High),
+  // forwarded to PinFilterChips. Lets users tune the cluster radius
+  // for very dense punch-walks without leaving the plan toolbar.
+  clusterDensity?: ClusterDensity;
+  onClusterDensityChange?: (d: ClusterDensity) => void;
   // Navigate (informational — pan/zoom controls live inside PdfPreview)
   spacePanActive?: boolean;
   // Task #1663 — Labeled toolbar preference (icon-only ↔ icon+label).
@@ -106,6 +111,8 @@ export default function UnifiedPlanToolbar({
   onChangePinCountMode,
   clusteringEnabled,
   onToggleClustering,
+  clusterDensity,
+  onClusterDensityChange,
   spacePanActive,
   labeled = false,
   onToggleLabeled,
@@ -192,6 +199,8 @@ export default function UnifiedPlanToolbar({
           onTogglePinMode={onTogglePinMode}
           clusteringEnabled={clusteringEnabled}
           onToggleClustering={onToggleClustering}
+          clusterDensity={clusterDensity}
+          onClusterDensityChange={onClusterDensityChange}
         />
       </div>
 

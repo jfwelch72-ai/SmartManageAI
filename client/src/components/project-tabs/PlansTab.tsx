@@ -1,6 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } from "react";
 import PdfPreview from "@/components/PdfPreview";
-import { PlanPinLayer, PinPicker, PinCreateDialog, type PinFilter, type PinType, type PlanPin } from "@/components/PlanPinLayer";
+import { PlanPinLayer, PinPicker, PinCreateDialog, type PinFilter, type PinType, type PlanPin, type ClusterDensity, DEFAULT_CLUSTER_DENSITY } from "@/components/PlanPinLayer";
 import PlanMarkupLayer, { type MarkupHistoryState } from "@/components/markups/PlanMarkupLayer";
 import UnifiedPlanToolbar from "@/components/plans/UnifiedPlanToolbar";
 import MarkupLayersPanel from "@/components/markups/MarkupLayersPanel";
@@ -274,6 +274,24 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
       sessionStorage.setItem("plan-pin-clustering", pinClusteringEnabled ? "on" : "off");
     } catch {}
   }, [pinClusteringEnabled]);
+  // Task #1671 — User-tunable cluster density. Persisted alongside the
+  // existing "Cluster pins" toggle so a user's preference for very
+  // dense punch-walks survives navigation.
+  const [pinClusterDensity, setPinClusterDensity] = useState<ClusterDensity>(() => {
+    if (typeof window === "undefined") return DEFAULT_CLUSTER_DENSITY;
+    try {
+      const v = sessionStorage.getItem("plan-pin-cluster-density");
+      if (v === "low" || v === "medium" || v === "high") return v;
+      return DEFAULT_CLUSTER_DENSITY;
+    } catch {
+      return DEFAULT_CLUSTER_DENSITY;
+    }
+  });
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("plan-pin-cluster-density", pinClusterDensity);
+    } catch {}
+  }, [pinClusterDensity]);
   const { data: sheets = [] } = useQuery<TakeoffSheet[]>({
     queryKey: ["/api/projects", project?.id, "takeoff", "sheets"],
     enabled: !!project?.id,
@@ -2573,6 +2591,8 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                         onChangePinCountMode={setPinCountMode}
                         clusteringEnabled={pinClusteringEnabled}
                         onToggleClustering={() => setPinClusteringEnabled((v) => !v)}
+                        clusterDensity={pinClusterDensity}
+                        onClusterDensityChange={setPinClusterDensity}
                         spacePanActive={spacePanActive}
                         labeled={labeledToolbar}
                         onToggleLabeled={toggleLabeledToolbar}
@@ -2658,6 +2678,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                      cluster can fall back to its
                                      popover list at max zoom. */
                                   onZoomToCluster={canZoomIn ? zoomInAtPoint : undefined}
+                                  clusterDensity={pinClusterDensity}
                                 />
                                 <PlanMarkupLayer
                                   documentId={doc.id}
