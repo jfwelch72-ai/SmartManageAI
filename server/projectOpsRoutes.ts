@@ -461,6 +461,20 @@ router.post("/api/documents", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
       grantedById: req.user!.id,
     }]);
 
+    // Task #1534 — Mirror the from-url/from-cloud routes by writing a CREATE
+    // audit row for the standard upload path. Without this entry the
+    // compliance trail had a gap for plain uploads (only imports were
+    // audited), making cross-tenant investigations incomplete.
+    await logCreate(req.user!.id, "plan_document", newDoc.id, {
+      source: "upload",
+      scope: requestedScope,
+      title: newDoc.title,
+      projectId: newDoc.projectId,
+      organizationId: newDoc.organizationId,
+      fileSize: newDoc.fileSize,
+      mimeType: newDoc.mimeType,
+    }, req);
+
     res.status(201).json(newDoc);
   } catch (error: any) {
     next(error);
