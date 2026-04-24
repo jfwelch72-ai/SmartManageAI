@@ -1,3 +1,4 @@
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import {
@@ -8,16 +9,25 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { ArrowLeft, RefreshCw, Trash2, ListChecks, AlertCircle, Settings2 } from "lucide-react";
+import {
+  ArrowLeft,
+  RefreshCw,
+  Trash2,
+  ListChecks,
+  AlertCircle,
+  Settings2,
+  ChevronDown,
+  ChevronUp,
+  X,
+} from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { useState } from "react";
 
 interface OneShotJobRecentRun {
   id: string;
@@ -103,7 +113,20 @@ function statusBadgeVariant(
   return "outline";
 }
 
-function JobCard({ job }: { job: OneShotJob }) {
+const DEFAULT_RECENT_LIMIT = 5;
+const EXPANDED_RECENT_LIMIT = 25;
+
+function JobCard({
+  job,
+  expanded,
+  onToggleExpanded,
+  filtersActive,
+}: {
+  job: OneShotJob;
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  filtersActive: boolean;
+}) {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [paramValues, setParamValues] = useState<Record<string, string | boolean>>(
@@ -123,7 +146,7 @@ function JobCard({ job }: { job: OneShotJob }) {
       return (await res.json()) as RerunOutcome;
     },
     onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ["/api/admin/jobs/one-shot"] });
+      qc.invalidateQueries({ queryKey: ["/api/admin/jobs/one-shot"], exact: false });
       if (data.status === "completed") {
         toast({
           title: "Job re-run complete",
@@ -306,11 +329,27 @@ function JobCard({ job }: { job: OneShotJob }) {
             className="rounded-md border p-3"
             data-testid={`history-one-shot-${job.name}`}
           >
-            <div className="text-xs uppercase tracking-wide text-muted-foreground mb-2">
-              Recent manual re-runs
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-xs uppercase tracking-wide text-muted-foreground">
+                Recent manual re-runs{filtersActive ? " (filtered)" : ""}
+              </div>
+              <span
+                className="text-xs text-muted-foreground tabular-nums"
+                data-testid={`history-count-${job.name}`}
+              >
+                {expanded
+                  ? `showing ${job.recentRuns.length}`
+                  : `showing ${Math.min(
+                      job.recentRuns.length,
+                      DEFAULT_RECENT_LIMIT,
+                    )} of ${job.recentRuns.length}`}
+              </span>
             </div>
             <ul className="space-y-1.5 text-xs">
-              {job.recentRuns.map((run) => (
+              {(expanded
+                ? job.recentRuns
+                : job.recentRuns.slice(0, DEFAULT_RECENT_LIMIT)
+              ).map((run) => (
                 <li
                   key={run.id}
                   className="flex flex-wrap items-center gap-x-2 gap-y-1"
@@ -359,6 +398,40 @@ function JobCard({ job }: { job: OneShotJob }) {
                 </li>
               ))}
             </ul>
+            {job.recentRuns.length > DEFAULT_RECENT_LIMIT && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="mt-2 h-7 px-2 text-xs"
+                onClick={onToggleExpanded}
+                data-testid={`button-show-more-${job.name}`}
+              >
+                {expanded ? (
+                  <>
+                    <ChevronUp className="h-3.5 w-3.5 mr-1" /> Show less
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="h-3.5 w-3.5 mr-1" /> Show more
+                  </>
+                )}
+              </Button>
+            )}
+            {!expanded &&
+              job.recentRuns.length === DEFAULT_RECENT_LIMIT && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="mt-2 h-7 px-2 text-xs"
+                  onClick={onToggleExpanded}
+                  data-testid={`button-show-more-${job.name}`}
+                >
+                  <ChevronDown className="h-3.5 w-3.5 mr-1" /> Show more (load up
+                  to {EXPANDED_RECENT_LIMIT})
+                </Button>
+              )}
           </div>
         )}
         {rerun.data && (
@@ -385,11 +458,63 @@ function JobCard({ job }: { job: OneShotJob }) {
 }
 
 export default function AdminOneShotJobs() {
+  // Draft state for the filter inputs (debounced into `applied` on submit so
+  // we don't refetch on every keystroke). Only `applied` is wired into the
+  // query key.
+  const [actorEmailDraft, setActorEmailDraft] = useState("");
+  const [sinceDraft, setSinceDraft] = useState("");
+  const [applied, setApplied] = useState<{
+    actorEmail: string;
+    since: string;
+  }>({ actorEmail: "", since: "" });
+  const [expandedJobs, setExpandedJobs] = useState<Set<string>>(new Set());
+  const anyExpanded = expandedJobs.size > 0;
+
+  const sinceIso = useMemo(() => {
+    if (!applied.since) return "";
+    const parsed = new Date(applied.since);
+    return Number.isNaN(parsed.getTime()) ? "" : parsed.toISOString();
+  }, [applied.since]);
+
+  const queryParams = {
+    actorEmail: applied.actorEmail || undefined,
+    since: sinceIso || undefined,
+    limit: anyExpanded ? EXPANDED_RECENT_LIMIT : undefined,
+  };
+
   const { data, isLoading, isError, error, refetch, isFetching } = useQuery<
     OneShotJobsResponse
   >({
-    queryKey: ["/api/admin/jobs/one-shot"],
+    queryKey: ["/api/admin/jobs/one-shot", queryParams],
   });
+
+  const filtersActive = Boolean(applied.actorEmail || applied.since);
+
+  const handleApplyFilters = (e: React.FormEvent) => {
+    e.preventDefault();
+    setApplied({
+      actorEmail: actorEmailDraft.trim(),
+      since: sinceDraft.trim(),
+    });
+  };
+
+  const handleClearFilters = () => {
+    setActorEmailDraft("");
+    setSinceDraft("");
+    setApplied({ actorEmail: "", since: "" });
+  };
+
+  const toggleExpanded = (jobName: string) => {
+    setExpandedJobs((prev) => {
+      const next = new Set(prev);
+      if (next.has(jobName)) {
+        next.delete(jobName);
+      } else {
+        next.add(jobName);
+      }
+      return next;
+    });
+  };
 
   return (
     <div className="container max-w-5xl mx-auto p-6 space-y-6">
@@ -453,10 +578,86 @@ export default function AdminOneShotJobs() {
         </Card>
       )}
 
+      <form
+        onSubmit={handleApplyFilters}
+        className="rounded-md border bg-muted/30 p-3 flex flex-wrap items-end gap-3"
+        data-testid="form-one-shot-filters"
+      >
+        <div className="flex flex-col gap-1">
+          <Label
+            htmlFor="filter-actor-email"
+            className="text-xs text-muted-foreground"
+          >
+            Actor email contains
+          </Label>
+          <Input
+            id="filter-actor-email"
+            type="text"
+            value={actorEmailDraft}
+            onChange={(e) => setActorEmailDraft(e.target.value)}
+            placeholder="alice@example.com"
+            className="h-8 w-64"
+            data-testid="input-filter-actor-email"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label
+            htmlFor="filter-since"
+            className="text-xs text-muted-foreground"
+          >
+            Since
+          </Label>
+          <Input
+            id="filter-since"
+            type="datetime-local"
+            value={sinceDraft}
+            onChange={(e) => setSinceDraft(e.target.value)}
+            className="h-8 w-56"
+            data-testid="input-filter-since"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            type="submit"
+            size="sm"
+            data-testid="button-apply-filters"
+          >
+            Apply filters
+          </Button>
+          {filtersActive && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={handleClearFilters}
+              data-testid="button-clear-filters"
+            >
+              <X className="h-4 w-4 mr-1" /> Clear
+            </Button>
+          )}
+        </div>
+        {filtersActive && (
+          <span
+            className="text-xs text-muted-foreground"
+            data-testid="text-filters-active"
+          >
+            Filtering re-run history
+            {applied.actorEmail ? ` by actor "${applied.actorEmail}"` : ""}
+            {applied.since ? ` since ${applied.since}` : ""}
+          </span>
+        )}
+      </form>
+
       {!isLoading && data && data.jobs.length > 0 && (
         <div className="space-y-4" data-testid="list-one-shot-jobs">
           {data.jobs.map((job) => (
-            <JobCard key={job.name} job={job} />
+            <JobCard
+              key={job.name}
+              job={job}
+              expanded={expandedJobs.has(job.name)}
+              onToggleExpanded={() => toggleExpanded(job.name)}
+              filtersActive={filtersActive}
+            />
           ))}
         </div>
       )}

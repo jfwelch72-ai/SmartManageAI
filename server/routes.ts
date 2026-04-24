@@ -61,7 +61,7 @@ import {
   revokeUserTokens,
   type AuthRequest 
 } from "./auth";
-import { eq, ne, desc, asc, sql, and, or, isNull, inArray, type SQL } from "drizzle-orm";
+import { eq, ne, desc, asc, sql, and, or, isNull, inArray, gte, ilike, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { authLimiter, sensitiveLimiter, apiLimiter } from "./rateLimiter";
 import { logCreate, logUpdate, logDelete, logApprove, logReject, logAudit } from "./auditLogger";
@@ -1036,7 +1036,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     "/api/admin/jobs/one-shot",
     requireAuth,
     requireRole("SUPER_ADMIN"),
-    async (_req: AuthRequest, res: Response, next: NextFunction) => {
+    async (req: AuthRequest, res: Response, next: NextFunction) => {
       try {
         await import("./utils/runCertifiedPayrollBackfillOnce");
         await import("./utils/runExhaustedSyncRetryAlertsBackfillOnce");
@@ -1044,6 +1044,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
           getRegisteredOneShotJobs,
           readOneShotJobLedger,
         } = await import("./utils/oneShotJobRegistry");
+
+        // Task #1529 — optional filters so admins can scope the recent-runs
+        // view to a specific actor or time window during incident
+        // postmortems, and bump the per-job cap when "Show more" is in use.
+        const actorEmailFilterRaw =
+          typeof req.query.actorEmail === "string"
+            ? req.query.actorEmail.trim()
+            : "";
+        const actorEmailFilter =
+          actorEmailFilterRaw.length > 0 ? actorEmailFilterRaw : null;
+        let sinceFilter: Date | null = null;
+        if (typeof req.query.since === "string" && req.query.since.trim()) {
+          const parsed = new Date(req.query.since);
+          if (!Number.isNaN(parsed.getTime())) {
+            sinceFilter = parsed;
+          }
+        }
+        let perJobLimit = 5;
+        if (typeof req.query.limit === "string" && req.query.limit.trim()) {
+          const parsedLimit = Number.parseInt(req.query.limit, 10);
+          if (Number.isFinite(parsedLimit) && parsedLimit > 0) {
+            perJobLimit = Math.min(parsedLimit, 25);
+          }
+        }
 
         const [descriptors, ledger] = await Promise.all([
           Promise.resolve(getRegisteredOneShotJobs()),
@@ -1102,10 +1126,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // spelunking through the audit log. We read directly from the
         // dedicated `one_shot_job_runs` structured table (Task #1528),
         // which replaced the previous fragile regex-parse of
-        // `audit_log.new_value`. We pull the last ~5 entries per job.
-        const RECENT_PER_JOB = 5;
+        // `audit_log.new_value`.
+        // Task #1529 added optional actorEmail/since filters and a tunable
+        // per-job limit so admins can drill into a specific user or window
+        // during incident postmortems.
+        const RECENT_PER_JOB = perJobLimit;
         const jobNames = jobs.map((j) => j.name);
         if (jobNames.length > 0) {
+          const whereConditions: SQL[] = [
+            inArray(oneShotJobRuns.jobName, jobNames),
+          ];
+          if (actorEmailFilter) {
+            whereConditions.push(ilike(users.email, `%${actorEmailFilter}%`));
+          }
+          if (sinceFilter) {
+            whereConditions.push(gte(oneShotJobRuns.startedAt, sinceFilter));
+          }
           const runRows = await db
             .select({
               id: oneShotJobRuns.id,
@@ -1121,7 +1157,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             })
             .from(oneShotJobRuns)
             .leftJoin(users, eq(oneShotJobRuns.runByUserId, users.id))
-            .where(inArray(oneShotJobRuns.jobName, jobNames))
+            .where(and(...whereConditions))
             .orderBy(desc(oneShotJobRuns.startedAt))
             .limit(jobNames.length * RECENT_PER_JOB * 4);
 
