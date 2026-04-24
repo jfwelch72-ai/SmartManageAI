@@ -917,7 +917,7 @@ router.post("/davis-bacon/suppressed-failures/reset", requireAuth, async (req, r
     // the integrations panel can show "Last reset by X at Y" on each
     // suppressed-failure row, preventing two admins from racing each
     // other on the same row during an outage.
-    recordSuppressionReset({
+    await recordSuppressionReset({
       orgId: user.organizationId,
       userId: user.id,
       connectionId,
@@ -972,7 +972,7 @@ router.post("/davis-bacon/suppressed-failures/reset-all", requireAuth, async (re
     // reset history buffer so the "Last reset by X" line on the panel
     // reflects bulk resets too, not just per-row clicks.
     for (const decisionNumber of decisionNumbers) {
-      recordSuppressionReset({
+      await recordSuppressionReset({
         orgId: user.organizationId,
         userId: user.id,
         connectionId,
@@ -1010,7 +1010,7 @@ router.get("/davis-bacon/suppression-resets", requireAuth, async (req, res, next
       Number.isFinite(rawLimit) && rawLimit > 0
         ? Math.min(rawLimit, 200)
         : 100;
-    const entries = listSuppressionResets(user.organizationId, limit);
+    const entries = await listSuppressionResets(user.organizationId, limit);
 
     const userIds = Array.from(
       new Set(entries.map((e) => e.userId).filter((u): u is string => !!u)),

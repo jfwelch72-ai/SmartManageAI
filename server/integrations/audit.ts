@@ -1,3 +1,6 @@
+import { desc, eq } from "drizzle-orm";
+import { db } from "../db";
+import { integrationSuppressionResets } from "@shared/schema";
 import { logInfo, logWarn, logError } from "../utils/logger";
 
 export type IntegrationAuditAction = 
@@ -82,15 +85,17 @@ export function getSecurityAuditLog(limit: number = 50): SecurityAuditEntry[] {
 }
 
 /**
- * Task #1442 — Per-org ring buffer of recent Davis-Bacon
+ * Task #1442 / #1472 — Per-org history of recent Davis-Bacon
  * `davis_bacon.suppression_reset` events. The integrations panel reads
  * this so admins can see "Jane reset CA20260111 4 minutes ago" before
  * they click Reset themselves during an active outage and end up
  * stomping on each other.
  *
- * Stored in-memory (matching the rest of this file) — the audit logger
- * is the canonical record; this buffer is just a fast lookup for the
- * UI's most-recent-N display.
+ * Originally a process-local ring buffer; now persisted to
+ * `integration_suppression_resets` so the "Last reset by X at Y" line
+ * survives a server restart or redeploy. The structured audit log
+ * remains the canonical record; this table is just a fast,
+ * org-scoped feed for the UI's most-recent-N display.
  */
 export interface SuppressionResetAuditEntry {
   orgId: string;
@@ -101,34 +106,59 @@ export interface SuppressionResetAuditEntry {
   timestamp: string;
 }
 
-const suppressionResetLog: SuppressionResetAuditEntry[] = [];
-const MAX_SUPPRESSION_RESET_LOG_SIZE = 500;
-
-export function recordSuppressionReset(
+export async function recordSuppressionReset(
   entry: Omit<SuppressionResetAuditEntry, "timestamp">,
-): void {
-  suppressionResetLog.unshift({
-    ...entry,
-    timestamp: new Date().toISOString(),
-  });
-  if (suppressionResetLog.length > MAX_SUPPRESSION_RESET_LOG_SIZE) {
-    suppressionResetLog.length = MAX_SUPPRESSION_RESET_LOG_SIZE;
+): Promise<void> {
+  try {
+    await db.insert(integrationSuppressionResets).values({
+      organizationId: entry.orgId,
+      connectionId: entry.connectionId,
+      decisionNumber: entry.decisionNumber,
+      userId: entry.userId ?? null,
+      cleared: entry.cleared,
+    });
+  } catch (err) {
+    // Persistence failure here must not break the reset request — the
+    // structured audit logger above already captured the event.
+    logWarn("[IntegrationAudit] failed to persist suppression reset", {
+      orgId: entry.orgId,
+      connectionId: entry.connectionId,
+      decisionNumber: entry.decisionNumber,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }
 
-export function listSuppressionResets(
+export async function listSuppressionResets(
   orgId: string,
   limit: number = 50,
-): SuppressionResetAuditEntry[] {
-  const out: SuppressionResetAuditEntry[] = [];
-  for (const e of suppressionResetLog) {
-    if (e.orgId !== orgId) continue;
-    out.push(e);
-    if (out.length >= limit) break;
-  }
-  return out;
+): Promise<SuppressionResetAuditEntry[]> {
+  const safeLimit = Number.isFinite(limit) && limit > 0 ? Math.min(Math.floor(limit), 500) : 50;
+  const rows = await db
+    .select({
+      connectionId: integrationSuppressionResets.connectionId,
+      decisionNumber: integrationSuppressionResets.decisionNumber,
+      userId: integrationSuppressionResets.userId,
+      cleared: integrationSuppressionResets.cleared,
+      createdAt: integrationSuppressionResets.createdAt,
+    })
+    .from(integrationSuppressionResets)
+    .where(eq(integrationSuppressionResets.organizationId, orgId))
+    .orderBy(desc(integrationSuppressionResets.createdAt))
+    .limit(safeLimit);
+  return rows.map((r) => ({
+    orgId,
+    connectionId: r.connectionId,
+    decisionNumber: r.decisionNumber,
+    userId: r.userId ?? undefined,
+    cleared: r.cleared,
+    timestamp:
+      r.createdAt instanceof Date
+        ? r.createdAt.toISOString()
+        : new Date(r.createdAt as unknown as string).toISOString(),
+  }));
 }
 
-export function _clearSuppressionResetLogForTests(): void {
-  suppressionResetLog.length = 0;
+export async function _clearSuppressionResetLogForTests(): Promise<void> {
+  await db.delete(integrationSuppressionResets);
 }

@@ -660,3 +660,27 @@ export type Project = typeof projects.$inferSelect;
 export type InsertBid = z.infer<typeof insertBidSchema>;
 export type Bid = typeof bids.$inferSelect;
 
+// Task #1472 — durable per-org history of `davis_bacon.suppression_reset`
+// audit events. The integrations panel reads the most recent N entries
+// here (via `listSuppressionResets`) so the "Last reset by X at Y" line
+// on each suppressed-failure row survives a server restart or redeploy
+// — previously the in-memory ring buffer in server/integrations/audit.ts
+// got wiped, which caused two admins to race each other on the same
+// (connection, decision) during a long outage.
+export const integrationSuppressionResets = pgTable("integration_suppression_resets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  connectionId: varchar("connection_id").notNull(),
+  decisionNumber: text("decision_number").notNull(),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  cleared: boolean("cleared").notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgCreatedIdx: index("integration_suppression_resets_org_created_idx").on(
+    table.organizationId,
+    table.createdAt,
+  ),
+}));
+
+export type IntegrationSuppressionReset = typeof integrationSuppressionResets.$inferSelect;
+
