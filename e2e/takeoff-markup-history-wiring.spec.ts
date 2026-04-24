@@ -775,4 +775,145 @@ test.describe("Takeoff markup history wiring - Task #1761", () => {
       "expected sidebar Undo to restore markup B's pre-group-drag points",
     );
   });
+
+  // Task #1859 — Multi-select group drag → Undo → Redo round trip. The
+  // sibling test above proves the Undo half of the
+  // `MARKUP_UPDATE_BATCH` history entry (`markupBatchBefore` replayed
+  // through the bulk PATCH endpoint). The Redo half —
+  // `applyMarkupBatchSnapshots(entry.markupBatchAfter)` in
+  // `useTakeoffHistory.redo` — has only unit-level coverage, so a
+  // regression that swapped `markupBatchAfter` for `markupBatchBefore`
+  // (or dropped the bulk fan-out for the redo path) would not fail the
+  // existing e2e suite. This scenario drags the group, Undoes it, then
+  // Redoes it via the sidebar button and asserts both members land
+  // back at the post-drag positions.
+  test("Sidebar Redo restores both markups after Undo of a multi-select group drag", async ({
+    page,
+    browserName,
+  }) => {
+    test.setTimeout(60_000);
+
+    await devLogin(page, "ADMIN");
+    const { sheetId, markup: markupA, initialPoints: pointsA, centroid: centroidA } =
+      await seedWorkspace(page, Date.now() + 5);
+
+    const POINTS_B: { x: number; y: number }[] = [
+      { x: 480, y: 220 },
+      { x: 620, y: 320 },
+    ];
+    const CENTROID_B = {
+      x: (POINTS_B[0].x + POINTS_B[1].x) / 2,
+      y: (POINTS_B[0].y + POINTS_B[1].y) / 2,
+    };
+    const markupB = await createSecondHighlightApi(page, sheetId, POINTS_B);
+
+    // Mirror the sibling Undo test: refetch via reload so the cached
+    // markup list picks up markup B (created after first mount).
+    await page.reload();
+    await page.waitForLoadState("domcontentloaded");
+    await page
+      .locator(".konvajs-content canvas")
+      .first()
+      .waitFor({ state: "visible", timeout: 15_000 });
+
+    await selectMarkup(page, centroidA);
+    await shiftClickOnCanvas(page, CENTROID_B);
+    await expect(page.getByTestId("text-markup-edit-header")).toHaveText(
+      "Edit 2 markups",
+      { timeout: 10_000 },
+    );
+    // Same one-frame wait as the Undo sibling so Konva flushes the
+    // `name="markup-drag-member-..."` Group prop on the second member
+    // before the drag begins.
+    await page.waitForTimeout(150);
+
+    // Drag the group by a known delta and snapshot the post-drag
+    // positions returned by the server. Redo must replay these *exact*
+    // points (the `markupBatchAfter` snapshots) — asserting equality
+    // against this payload (rather than just "not equal to original")
+    // is what catches a regression where the redo branch accidentally
+    // replays `markupBatchBefore`.
+    const dragEnd = {
+      x: centroidA.x + BODY_DRAG_DELTA.dx,
+      y: centroidA.y + BODY_DRAG_DELTA.dy,
+    };
+    await dragOnCanvas(page, centroidA, dragEnd, browserName);
+
+    await expect
+      .poll(
+        async () => {
+          const list = await listMarkups(page, sheetId);
+          const a = list.find((m) => m.id === markupA.id);
+          const b = list.find((m) => m.id === markupB.id);
+          if (!a || !b) return null;
+          return { a: a.points, b: b.points };
+        },
+        {
+          message:
+            "expected the bulk group-drag PATCH to land for both selected markups",
+          timeout: 15_000,
+        },
+      )
+      .not.toEqual({ a: pointsA, b: POINTS_B });
+
+    const afterDrag = await listMarkups(page, sheetId);
+    const aDragged = afterDrag.find((m) => m.id === markupA.id)!.points;
+    const bDragged = afterDrag.find((m) => m.id === markupB.id)!.points;
+    // Sanity: the drag must have translated every point on every
+    // member (not just one corner of one shape). If the gesture
+    // accidentally routed through the resize path or only committed
+    // the dragged-Group's points, the Redo assertion below could
+    // pass for the wrong reason.
+    expect(aDragged[0]).not.toEqual(pointsA[0]);
+    expect(aDragged[1]).not.toEqual(pointsA[1]);
+    expect(bDragged[0]).not.toEqual(POINTS_B[0]);
+    expect(bDragged[1]).not.toEqual(POINTS_B[1]);
+
+    // Undo first so there's a `MARKUP_UPDATE_BATCH` entry on the redo
+    // stack. We use the sidebar Undo so the round trip exercises the
+    // same toolbar wiring covered by the sibling Undo test above.
+    await clickSidebarUndo(page);
+    await waitForPointsToMatch(
+      page,
+      sheetId,
+      markupA.id,
+      pointsA,
+      "expected sidebar Undo to restore markup A's pre-group-drag points before Redo",
+    );
+    await waitForPointsToMatch(
+      page,
+      sheetId,
+      markupB.id,
+      POINTS_B,
+      "expected sidebar Undo to restore markup B's pre-group-drag points before Redo",
+    );
+
+    // Now Redo via the sidebar button. The redo branch of
+    // `MARKUP_UPDATE_BATCH` calls
+    // `applyMarkupBatchSnapshots(entry.markupBatchAfter)`, which fans
+    // back out through the bulk PATCH endpoint to restore the
+    // post-drag points for *every* member. If the redo branch ever
+    // replays `markupBatchBefore` (no-op against the pre-drag state)
+    // or drops the bulk fan-out (only one member moves), at least one
+    // of the two `waitForPointsToMatch` assertions below will time
+    // out. The exact-payload match against the captured `aDragged` /
+    // `bDragged` (rather than "not equal to pre-drag") is the
+    // assertion that catches a snapshot-swap regression.
+    await clickSidebarRedo(page);
+
+    await waitForPointsToMatch(
+      page,
+      sheetId,
+      markupA.id,
+      aDragged,
+      "expected sidebar Redo to restore markup A's post-group-drag points",
+    );
+    await waitForPointsToMatch(
+      page,
+      sheetId,
+      markupB.id,
+      bDragged,
+      "expected sidebar Redo to restore markup B's post-group-drag points",
+    );
+  });
 });
