@@ -290,6 +290,60 @@ export function CompanyNotificationsTab() {
     },
   });
 
+  // Task #1750 — admin "Send test digest now" mutation. Fires the
+  // failures-digest worker against the caller's org with a one-shot
+  // bypass of the cadence gate so the admin can confirm the digest
+  // lands in the right inboxes immediately after editing the schedule
+  // controls. The server rate-limits to once per 30s per org, so a
+  // double-click round-trips a 429 with a Retry-After header — we
+  // surface the wait time in the toast so the admin knows when to
+  // try again. Only ADMIN / SUPER_ADMIN can trigger this; the matching
+  // role check below hides the button for everyone else.
+  const canSendTestProjectLogEmailDigest = !!user
+    && ["SUPER_ADMIN", "ADMIN"].includes(user.role);
+  type TestDigestResult = {
+    recipientCount: number;
+    failingScheduleCount: number;
+    skipped?: boolean;
+    reason?: string;
+    message?: string;
+  };
+  const sendTestProjectLogEmailDigestMutation = useMutation<TestDigestResult, Error, void>({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/organizations/project-log-email-settings/test-digest");
+      return (await res.json()) as TestDigestResult;
+    },
+    onSuccess: (result) => {
+      // The server returns 200 for both "fanned out" and the
+      // "no failing schedules right now" no-op so the toast can
+      // celebrate either outcome. The 409 cases (NO_ADMINS) and
+      // 429 land in onError below.
+      if (result.skipped) {
+        toast({
+          title: "Test digest — nothing to send",
+          description: result.message
+            ?? "There were no failing schedules to roll up just now.",
+        });
+        return;
+      }
+      const recipientLabel = result.recipientCount === 1 ? "1 admin" : `${result.recipientCount} admins`;
+      const scheduleLabel = result.failingScheduleCount === 1
+        ? "1 failing schedule"
+        : `${result.failingScheduleCount} failing schedules`;
+      toast({
+        title: "Test digest sent",
+        description: `Delivered to ${recipientLabel} covering ${scheduleLabel}. The next scheduled digest is unaffected.`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Test digest failed",
+        description: error?.message || "Could not send the test digest. Try again in a moment.",
+        variant: "destructive",
+      });
+    },
+  });
+
   useEffect(() => {
     if (payrollSettings) {
       setPayrollForm({
@@ -1327,6 +1381,47 @@ export function CompanyNotificationsTab() {
                         </span>
                       )}
                     </div>
+
+                    {/*
+                      Task #1750 — admin "Send test digest now" button.
+                      Hits the test-digest endpoint which fans out the
+                      same digest the cron would, against the caller's
+                      org only, with a one-shot bypass of the cadence /
+                      hour / weekday gate (including cadence === OFF,
+                      so an admin can verify the recipient list on a
+                      paused org) and a unique dedupe key (so the test
+                      send doesn't suppress that day's real digest).
+                      Hidden for non-admins (the endpoint is also
+                      role-gated to ADMIN/SUPER_ADMIN, so this is just
+                      a UX hint so MANAGER/SUPERINTENDENT don't see a
+                      button that would 403 on click).
+                    */}
+                    {canSendTestProjectLogEmailDigest ? (
+                      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                        <p className="text-xs text-muted-foreground">
+                          Send a one-off copy to all admins now to confirm the
+                          distribution list is correct. Works even when the
+                          cadence is Off, and won't suppress the next
+                          scheduled fire.
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => sendTestProjectLogEmailDigestMutation.mutate()}
+                          disabled={sendTestProjectLogEmailDigestMutation.isPending}
+                          data-testid="button-send-test-project-log-email-digest"
+                        >
+                          {sendTestProjectLogEmailDigestMutation.isPending ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Sending...
+                            </>
+                          ) : (
+                            "Send test digest now"
+                          )}
+                        </Button>
+                      </div>
+                    ) : null}
                   </div>
 
                   {canEditProjectLogEmailThreshold ? (

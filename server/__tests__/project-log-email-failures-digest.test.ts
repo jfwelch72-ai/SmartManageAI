@@ -516,4 +516,258 @@ describe("processProjectLogEmailFailuresDigest", () => {
 
     expect(insertedNotifications).toHaveLength(1);
   });
+
+  // ----------------------------------------------------------------
+  // Task #1750 — escape hatches the admin "Send test digest now"
+  // endpoint relies on. The shared worker must:
+  //   - Fan out for the explicitly-listed org even when the wall-clock
+  //     hour / weekday wouldn't normally pass the gate
+  //     (`bypassScheduleGate: true`). This bypass *also* covers
+  //     cadence === "OFF": an admin verifying the recipient list on
+  //     a paused org should still be able to fire a one-off without
+  //     first re-enabling the schedule.
+  //   - Use the supplied `dedupeKeyOverride` instead of the
+  //     YYYY-MM-DD-of-today key so the test row is a fresh
+  //     notification distinguishable from the day's real digest.
+  // The summary return shape (perOrg map) is the channel the route
+  // uses to surface skip reasons in the toast, so the tests pin both
+  // the inserted-notification side effects *and* the returned summary.
+  // ----------------------------------------------------------------
+  it("bypassScheduleGate=true fans out at an off-hour for the listed org", async () => {
+    // 23:00 UTC is well outside the default 08:00 fire window. Without
+    // the bypass this org would skip; with it we expect a fan-out.
+    const now = new Date("2026-04-20T23:00:00Z");
+    queueFailures([
+      {
+        scheduleId: "sched-1",
+        organizationId: ORG_A,
+        projectId: "proj-1",
+        projectName: "Bridge 7",
+        projectCode: "BR-7",
+        logType: "RFI",
+        cadence: "DAILY",
+        lastAttemptAt: new Date("2026-04-19T08:00:00Z"),
+        lastAttemptStatus: "FAILURE",
+        lastAttemptError: "Bounced",
+        lastAttemptRecipientCount: 3,
+        consecutiveFailureCount: 2,
+      },
+    ]);
+    queueOrgSettings([
+      { id: ORG_A, cadence: "DAILY", weekday: null, hour: 8, timezone: "UTC" },
+    ]);
+    queueExistingDigest([]);
+    queueAdmins([{ id: "admin-1" }]);
+
+    const summary = await processProjectLogEmailFailuresDigest({
+      now,
+      organizationIds: [ORG_A],
+      bypassScheduleGate: true,
+      dedupeKeyOverride: "test-2026-04-20T23:00:00.000Z-actor-1",
+    });
+
+    expect(insertedNotifications).toHaveLength(1);
+    const orgEntry = summary.perOrg.get(ORG_A);
+    expect(orgEntry).toBeDefined();
+    expect(orgEntry!.skipped).toBeFalsy();
+    expect(orgEntry!.notificationCount).toBe(1);
+    expect(orgEntry!.failingScheduleCount).toBe(1);
+  });
+
+  it("bypassScheduleGate=true also overrides cadence=OFF", async () => {
+    // Sibling guarantee for the route's "Send test digest now" path:
+    // an admin should be able to verify the recipient list on a paused
+    // org without first flipping the cadence back to Daily/Weekly.
+    // Without the bypass this org skips with reason CADENCE_OFF (see
+    // the "skips orgs whose digest cadence is OFF" test above).
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueFailures([
+      {
+        scheduleId: "sched-1",
+        organizationId: ORG_A,
+        projectId: "proj-1",
+        projectName: "Bridge 7",
+        projectCode: "BR-7",
+        logType: "RFI",
+        cadence: "DAILY",
+        lastAttemptAt: new Date("2026-04-19T08:00:00Z"),
+        lastAttemptStatus: "FAILURE",
+        lastAttemptError: "Bounced",
+        lastAttemptRecipientCount: 3,
+        consecutiveFailureCount: 2,
+      },
+    ]);
+    queueOrgSettings([
+      { id: ORG_A, cadence: "OFF", weekday: null, hour: null, timezone: "UTC" },
+    ]);
+    queueExistingDigest([]);
+    queueAdmins([{ id: "admin-1" }]);
+
+    const summary = await processProjectLogEmailFailuresDigest({
+      now,
+      organizationIds: [ORG_A],
+      bypassScheduleGate: true,
+      dedupeKeyOverride: "test-key-x",
+    });
+
+    expect(insertedNotifications).toHaveLength(1);
+    const orgEntry = summary.perOrg.get(ORG_A);
+    expect(orgEntry?.skipped).toBeFalsy();
+    expect(orgEntry?.notificationCount).toBe(1);
+  });
+
+  it("dedupeKeyOverride is written to relatedEntityId and bypasses the same-day idempotency check", async () => {
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueFailures([
+      {
+        scheduleId: "sched-1",
+        organizationId: ORG_A,
+        projectId: "proj-1",
+        projectName: "Bridge 7",
+        projectCode: "BR-7",
+        logType: "RFI",
+        cadence: "DAILY",
+        lastAttemptAt: new Date("2026-04-19T08:00:00Z"),
+        lastAttemptStatus: "FAILURE",
+        lastAttemptError: "Bounced",
+        lastAttemptRecipientCount: 3,
+        consecutiveFailureCount: 2,
+      },
+    ]);
+    // Critically: a row exists for today's normal dedupe key. The
+    // override must skip that lookup so the test send still goes
+    // through. (No queueExistingDigest call — the worker should not
+    // ask the notifications table for the prior-digest row at all.)
+    queueAdmins([{ id: "admin-1" }]);
+
+    const customKey = "test-2026-04-20T08:00:00.000Z-actor-7";
+    await processProjectLogEmailFailuresDigest({
+      now,
+      organizationIds: [ORG_A],
+      bypassScheduleGate: true,
+      dedupeKeyOverride: customKey,
+    });
+
+    expect(insertedNotifications).toHaveLength(1);
+    const batch = insertedNotifications[0] as Array<{ relatedEntityId: string }>;
+    expect(batch).toHaveLength(1);
+    expect(batch[0].relatedEntityId).toBe(customKey);
+  });
+
+  it("organizationIds filter ignores other orgs with failures even on the same tick", async () => {
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueFailures([
+      {
+        scheduleId: "sched-a",
+        organizationId: ORG_A,
+        projectId: "proj-a",
+        projectName: "Bridge 7",
+        projectCode: "BR-7",
+        logType: "RFI",
+        cadence: "DAILY",
+        lastAttemptAt: new Date("2026-04-19T08:00:00Z"),
+        lastAttemptStatus: "FAILURE",
+        lastAttemptError: "Bounced",
+        lastAttemptRecipientCount: 3,
+        consecutiveFailureCount: 1,
+      },
+      {
+        scheduleId: "sched-b",
+        organizationId: ORG_B,
+        projectId: "proj-b",
+        projectName: "Levee 3",
+        projectCode: "LV-3",
+        logType: "SUBMITTAL",
+        cadence: "WEEKLY",
+        lastAttemptAt: new Date("2026-04-18T08:00:00Z"),
+        lastAttemptStatus: "NO_RECIPIENTS",
+        lastAttemptError: "No recipients",
+        lastAttemptRecipientCount: 0,
+        consecutiveFailureCount: 1,
+      },
+    ]);
+    // Only one org's settings + admins are queued because only one
+    // should be visited.
+    queueAdmins([{ id: "admin-A" }]);
+
+    const summary = await processProjectLogEmailFailuresDigest({
+      now,
+      organizationIds: [ORG_A],
+      bypassScheduleGate: true,
+      dedupeKeyOverride: "test-key-y",
+    });
+
+    expect(insertedNotifications).toHaveLength(1);
+    const allNotifs = insertedNotifications.flat() as Array<{ organizationId: string }>;
+    expect(allNotifs.every((n) => n.organizationId === ORG_A)).toBe(true);
+    // ORG_B never appears in the per-org summary either.
+    expect(summary.perOrg.has(ORG_B)).toBe(false);
+  });
+
+  it("returns NO_FAILURES in the summary when the listed org has no failing schedules", async () => {
+    const now = new Date("2026-04-20T08:00:00Z");
+    // Other org has failures but our target does not.
+    queueFailures([
+      {
+        scheduleId: "sched-b",
+        organizationId: ORG_B,
+        projectId: "proj-b",
+        projectName: "Levee 3",
+        projectCode: "LV-3",
+        logType: "SUBMITTAL",
+        cadence: "WEEKLY",
+        lastAttemptAt: new Date("2026-04-18T08:00:00Z"),
+        lastAttemptStatus: "FAILURE",
+        lastAttemptError: "Bounced",
+        lastAttemptRecipientCount: 1,
+        consecutiveFailureCount: 1,
+      },
+    ]);
+
+    const summary = await processProjectLogEmailFailuresDigest({
+      now,
+      organizationIds: [ORG_A],
+      bypassScheduleGate: true,
+      dedupeKeyOverride: "test-key-z",
+    });
+
+    expect(insertedNotifications).toHaveLength(0);
+    const orgEntry = summary.perOrg.get(ORG_A);
+    expect(orgEntry?.skipped).toBe(true);
+    expect(orgEntry?.reason).toBe("NO_FAILURES");
+  });
+
+  it("returns NO_ADMINS in the summary when the org has failures but no admins", async () => {
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueFailures([
+      {
+        scheduleId: "sched-1",
+        organizationId: ORG_A,
+        projectId: "proj-1",
+        projectName: "Bridge 7",
+        projectCode: "BR-7",
+        logType: "RFI",
+        cadence: "DAILY",
+        lastAttemptAt: new Date("2026-04-19T08:00:00Z"),
+        lastAttemptStatus: "FAILURE",
+        lastAttemptError: "Bounced",
+        lastAttemptRecipientCount: 3,
+        consecutiveFailureCount: 2,
+      },
+    ]);
+    queueAdmins([]); // None.
+
+    const summary = await processProjectLogEmailFailuresDigest({
+      now,
+      organizationIds: [ORG_A],
+      bypassScheduleGate: true,
+      dedupeKeyOverride: "test-key-w",
+    });
+
+    expect(insertedNotifications).toHaveLength(0);
+    const orgEntry = summary.perOrg.get(ORG_A);
+    expect(orgEntry?.skipped).toBe(true);
+    expect(orgEntry?.reason).toBe("NO_ADMINS");
+    expect(orgEntry?.failingScheduleCount).toBe(1);
+  });
 });

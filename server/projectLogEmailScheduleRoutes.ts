@@ -49,7 +49,11 @@ import {
 } from "@shared/schema";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { isValidTimezone } from "@shared/timezones";
-import { executeProjectLogEmailScheduleSend, getProjectLogEmailFailureThreshold } from "./jobs/jobRunner";
+import {
+  executeProjectLogEmailScheduleSend,
+  getProjectLogEmailFailureThreshold,
+  processProjectLogEmailFailuresDigest,
+} from "./jobs/jobRunner";
 import { buildProjectLogPdfBuffer } from "./services/projectLogService";
 import { sendEmailWithResult } from "./services/emailService";
 import { logError, logInfo } from "./utils/logger";
@@ -488,6 +492,21 @@ function consumeSendNowDebounce(key: string, now: number): { allowed: true } | {
 // limiter between cases without resorting to module re-imports.
 export function __resetSendNowDebounceForTests() {
   sendNowLastInvocation.clear();
+}
+
+// Task #1750 — admin "Send test digest now" debounce. Mirrors the
+// per-project send-now rate limiter above so a frantic click (or a
+// retrying script) can't spam every admin's inbox with duplicate
+// digest rows. Keyed by org id since that's the unit of fan-out the
+// digest operates on; an org with two SUPER_ADMINs each clicking the
+// button would still only fan out once per 30 seconds. The matching
+// front-end disables the button for the same window so the typical
+// flow doesn't even reach the server.
+const TEST_DIGEST_DEBOUNCE_MS = 30_000;
+const testDigestLastInvocation = new Map<string, number>();
+
+export function __resetTestDigestDebounceForTests() {
+  testDigestLastInvocation.clear();
 }
 
 router.put(
@@ -1303,6 +1322,159 @@ router.put(
           hour: updated.failuresDigestHour,
           timezone: updated.failuresDigestTimezone,
         },
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// Task #1750 — admin "Send test digest now" endpoint.
+//
+// After tweaking the cadence / hour / weekday / timezone on the
+// failures-digest schedule card, an admin previously had to wait until
+// the configured tick to confirm the digest actually lands in the
+// right inboxes. This endpoint short-circuits that loop by running the
+// existing `processProjectLogEmailFailuresDigest` worker against just
+// the caller's org with two opt-in escape hatches:
+//
+//   - `bypassScheduleGate: true` so the cadence / hour / weekday gate
+//     does not skip the send. This *also* bypasses `cadence === "OFF"`:
+//     an admin verifying the digest plumbing on a paused org should
+//     still be able to fire a one-off without first re-enabling the
+//     schedule.
+//   - A unique `dedupeKeyOverride` so the test record never collides
+//     with (and thereby suppresses) the same day's real digest, and
+//     so multiple test clicks within the same minute each produce a
+//     fresh notification row the admin can inspect.
+//
+// Role gate is ADMIN / SUPER_ADMIN only — same audience the digest
+// itself fans out to. MANAGER / SUPERINTENDENT can already view the
+// failures dashboard but the digest is org-admin-only, so letting
+// them trigger it would route a notification to people they aren't
+// even on the recipient list for.
+//
+// Per-org 30s rate limit (in-memory, mirrors the per-schedule send-now
+// debounce above) prevents a frantic click loop from spamming every
+// admin's inbox with duplicate digest rows.
+router.post(
+  "/organizations/project-log-email-settings/test-digest",
+  requireAuth,
+  requireRole("SUPER_ADMIN", "ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
+
+      // Per-org rate limit. Two admins clicking within 30s of each
+      // other on the same org both bounce off the same window so the
+      // org's admins don't get hit with two test digests in quick
+      // succession.
+      const nowMs = Date.now();
+      const last = testDigestLastInvocation.get(organizationId);
+      if (last !== undefined && nowMs - last < TEST_DIGEST_DEBOUNCE_MS) {
+        const retryAfterSeconds = Math.max(
+          1,
+          Math.ceil((TEST_DIGEST_DEBOUNCE_MS - (nowMs - last)) / 1000),
+        );
+        res.set("Retry-After", String(retryAfterSeconds));
+        return res.status(429).json({
+          error: "Test digest was sent recently. Please wait before retrying.",
+          retryAfterSeconds,
+        });
+      }
+      testDigestLastInvocation.set(organizationId, nowMs);
+      // Best-effort cleanup so the map can't grow unboundedly under
+      // multi-tenant load. Sweep entries older than 5x the debounce
+      // window since they no longer affect the limit.
+      if (testDigestLastInvocation.size > 1000) {
+        const cutoff = nowMs - TEST_DIGEST_DEBOUNCE_MS * 5;
+        for (const [k, ts] of testDigestLastInvocation) {
+          if (ts < cutoff) testDigestLastInvocation.delete(k);
+        }
+      }
+
+      // Per-click unique dedupe key so the test row is distinguishable
+      // in the admin's notifications list and never collides with the
+      // same day's real digest. Including the actor id keeps two
+      // admins clicking in the same millisecond (or a clock that
+      // doesn't advance between calls) on separate rows.
+      const dedupeKey = `test-${new Date(nowMs).toISOString()}-${req.user?.id ?? "anon"}`;
+
+      const summary = await processProjectLogEmailFailuresDigest({
+        organizationIds: [organizationId],
+        bypassScheduleGate: true,
+        dedupeKeyOverride: dedupeKey,
+      });
+
+      // The function always populates a per-org entry for filtered
+      // orgs (success or skipped), so a missing entry is unexpected
+      // and points at a regression.
+      const orgSummary = summary.perOrg.get(organizationId);
+      if (!orgSummary) {
+        logError("Test digest produced no per-org summary entry", {
+          organizationId,
+          actorId: req.user?.id ?? null,
+        });
+        return res.status(500).json({ error: "Test digest failed unexpectedly" });
+      }
+
+      if (orgSummary.skipped) {
+        // Each skip reason maps to a distinct admin-facing message so
+        // the toast can tell the admin exactly why nothing landed.
+        // Note: CADENCE_OFF cannot occur here because we pass
+        // `bypassScheduleGate: true`, which short-circuits the OFF
+        // check in the worker.
+        if (orgSummary.reason === "NO_FAILURES") {
+          // Not an error — the digest is healthy because there's
+          // nothing to roll up. Surface this as a 200 with a clear
+          // message so the toast can be celebratory rather than red.
+          return res.json({
+            recipientCount: 0,
+            failingScheduleCount: 0,
+            skipped: true,
+            reason: "NO_FAILURES",
+            message: "No scheduled log emails are currently failing, so the digest had nothing to send. Your distribution lists look healthy.",
+          });
+        }
+        if (orgSummary.reason === "NO_ADMINS") {
+          return res.status(409).json({
+            error: "No active admins are configured to receive the digest. Promote at least one ADMIN or SUPER_ADMIN before testing.",
+            reason: "NO_ADMINS",
+            recipientCount: 0,
+            failingScheduleCount: orgSummary.failingScheduleCount,
+          });
+        }
+        // ITERATION_FAILED bubbles up as a 500 because it means the
+        // worker logged an internal error mid-loop; we already logged
+        // there but echo it here so the client sees a proper failure.
+        if (orgSummary.reason === "ITERATION_FAILED") {
+          return res.status(500).json({
+            error: "Test digest failed while building the message. Check server logs for details.",
+            reason: orgSummary.reason,
+          });
+        }
+        // HOUR_GATE / WEEKDAY_GATE shouldn't happen because we set
+        // `bypassScheduleGate: true`; surface them as 500s so a
+        // future regression in the worker becomes visible.
+        return res.status(500).json({
+          error: "Test digest was unexpectedly skipped",
+          reason: orgSummary.reason,
+        });
+      }
+
+      logInfo("Project log email failures digest test send", {
+        organizationId,
+        actorId: req.user?.id ?? null,
+        recipientCount: orgSummary.notificationCount,
+        failingScheduleCount: orgSummary.failingScheduleCount,
+        dedupeKey,
+      });
+
+      res.json({
+        recipientCount: orgSummary.notificationCount,
+        failingScheduleCount: orgSummary.failingScheduleCount,
+        skipped: false,
       });
     } catch (err) {
       next(err);

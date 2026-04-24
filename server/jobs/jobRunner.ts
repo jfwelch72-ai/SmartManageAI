@@ -4848,8 +4848,69 @@ async function maybeNotifyProjectLogEmailRepeatedFailure(args: {
 // decide which orgs (if any) actually fan out on this tick. The
 // defaults — DAILY at 08:00 UTC — preserve the original behavior for
 // orgs that have never touched the new settings.
-export async function processProjectLogEmailFailuresDigest(opts: { now?: Date } = {}) {
+//
+// Task #1750 — opt-in knobs so the admin "Send test digest now" button
+// (`POST /api/organizations/project-log-email-settings/test-digest`)
+// can reuse this exact code path without going around it. None of the
+// new options change behavior when omitted, so the cron caller is
+// unaffected:
+//
+//   - `organizationIds` limits the per-org loop to a specific set.
+//     The route uses this to scope the test send to the caller's org
+//     so an admin can't accidentally trigger every tenant's digest.
+//   - `bypassScheduleGate` skips the cadence / hour / weekday gate so
+//     the test send fires immediately regardless of when the org's
+//     real digest is configured to land. This bypass *also* covers
+//     cadence === "OFF": an admin verifying the recipient list on a
+//     paused org should still be able to fire a one-off without
+//     first re-enabling the schedule (so the route never sees a
+//     CADENCE_OFF skip on this code path).
+//   - `dedupeKeyOverride` swaps the YYYY-MM-DD dedupe sentinel for a
+//     caller-supplied string so the test send doesn't suppress the
+//     same day's real digest. The route generates a unique
+//     `test-<isoTimestamp>` key per click; multiple test sends within
+//     the same minute deliberately bypass the dedupe (each click is a
+//     fresh record).
+//
+// Returns a per-org summary the route uses to render
+// "Test digest sent to N admins" — the cron caller ignores it.
+export type ProjectLogEmailFailuresDigestSummary = {
+  totalNotifications: number;
+  totalOrgsNotified: number;
+  perOrg: Map<string, {
+    notificationCount: number;
+    failingScheduleCount: number;
+    skipped: false;
+  } | {
+    notificationCount: 0;
+    failingScheduleCount: number;
+    skipped: true;
+    reason:
+      | "CADENCE_OFF"
+      | "HOUR_GATE"
+      | "WEEKDAY_GATE"
+      | "ALREADY_SENT_TODAY"
+      | "NO_ADMINS"
+      | "ITERATION_FAILED"
+      | "NO_FAILURES";
+  }>;
+};
+
+export async function processProjectLogEmailFailuresDigest(opts: {
+  now?: Date;
+  organizationIds?: string[];
+  bypassScheduleGate?: boolean;
+  dedupeKeyOverride?: string;
+} = {}): Promise<ProjectLogEmailFailuresDigestSummary> {
   const now = opts.now ?? new Date();
+  const summary: ProjectLogEmailFailuresDigestSummary = {
+    totalNotifications: 0,
+    totalOrgsNotified: 0,
+    perOrg: new Map(),
+  };
+  const orgFilter = opts.organizationIds && opts.organizationIds.length > 0
+    ? new Set(opts.organizationIds)
+    : null;
 
   // Pull every failing schedule in one sweep, joined with the project
   // row so the digest body can render "Project name (code)" without a
@@ -4882,15 +4943,50 @@ export async function processProjectLogEmailFailuresDigest(opts: { now?: Date } 
     .where(inArray(projectLogEmailSchedules.lastAttemptStatus, ["FAILURE", "NO_RECIPIENTS"]))
     .orderBy(desc(projectLogEmailSchedules.lastAttemptAt));
 
-  if (failures.length === 0) return;
+  if (failures.length === 0) {
+    // Task #1750 — when an org filter is set (typical for the admin
+    // "test digest" route), surface a per-org skipped entry so the
+    // route can render "No failing schedules" instead of falling back
+    // to a generic "0 admins notified" message.
+    if (orgFilter) {
+      for (const id of orgFilter) {
+        summary.perOrg.set(id, {
+          notificationCount: 0,
+          failingScheduleCount: 0,
+          skipped: true,
+          reason: "NO_FAILURES",
+        });
+      }
+    }
+    return summary;
+  }
 
   // Group by org so each org's admins get one digest covering only
-  // their own failing schedules.
+  // their own failing schedules. When the caller supplied an org
+  // filter (test-send route, Task #1750), drop everything else here so
+  // the per-org loop and the org-settings lookup below only consider
+  // the requested orgs.
   const byOrg = new Map<string, typeof failures>();
   for (const row of failures) {
+    if (orgFilter && !orgFilter.has(row.organizationId)) continue;
     const list = byOrg.get(row.organizationId);
     if (list) list.push(row);
     else byOrg.set(row.organizationId, [row]);
+  }
+  if (orgFilter) {
+    // Pre-populate skipped entries for filter orgs that had no failing
+    // schedules so the route always sees a per-org row for every org
+    // it asked about. The success path overwrites these entries below.
+    for (const id of orgFilter) {
+      if (!byOrg.has(id)) {
+        summary.perOrg.set(id, {
+          notificationCount: 0,
+          failingScheduleCount: 0,
+          skipped: true,
+          reason: "NO_FAILURES",
+        });
+      }
+    }
   }
 
   // Task #1732: load per-org schedule overrides for every org with
@@ -4941,35 +5037,85 @@ export async function processProjectLogEmailFailuresDigest(opts: { now?: Date } 
         hour: PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_HOUR,
         timezone: PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_TIMEZONE,
       };
-      if (settings.cadence === "OFF") continue;
+      // Cadence "OFF" skips for the scheduled cron (the org has opted
+      // out of automatic sends), but the test-send route (Task #1750)
+      // can override this via `bypassScheduleGate: true` so an admin
+      // can verify the digest payload / recipient list even on an
+      // org whose cadence is currently OFF.
+      if (settings.cadence === "OFF" && !opts.bypassScheduleGate) {
+        summary.perOrg.set(organizationId, {
+          notificationCount: 0,
+          failingScheduleCount: rows.length,
+          skipped: true,
+          reason: "CADENCE_OFF",
+        });
+        continue;
+      }
       const local = getLocalDateParts(now, settings.timezone);
-      if (local.hour !== settings.hour) continue;
-      if (settings.cadence === "WEEKLY" && local.weekday !== settings.weekday) continue;
+      if (!opts.bypassScheduleGate) {
+        if (local.hour !== settings.hour) {
+          summary.perOrg.set(organizationId, {
+            notificationCount: 0,
+            failingScheduleCount: rows.length,
+            skipped: true,
+            reason: "HOUR_GATE",
+          });
+          continue;
+        }
+        if (settings.cadence === "WEEKLY" && local.weekday !== settings.weekday) {
+          summary.perOrg.set(organizationId, {
+            notificationCount: 0,
+            failingScheduleCount: rows.length,
+            skipped: true,
+            reason: "WEEKDAY_GATE",
+          });
+          continue;
+        }
+      }
 
       // Dedupe sentinel: org's local calendar date. With the per-org
       // hour/weekday gate above, the handler can only fire once per
       // local day per org, so a YYYY-MM-DD key is enough to make a
       // re-run within the same firing hour (manual debug invocation,
       // boot during the firing minute) idempotent.
+      //
+      // Task #1750 — the test-send route swaps in a unique
+      // `test-<isoTimestamp>` so the test record can't collide with
+      // (and thereby suppress) the same day's real digest, and so
+      // multiple test clicks within the same minute each produce a
+      // fresh notification row for the admin to inspect.
       const dayKey = `${local.year.toString().padStart(4, "0")}-${local.month
         .toString()
         .padStart(2, "0")}-${local.day.toString().padStart(2, "0")}`;
+      const dedupeKey = opts.dedupeKeyOverride ?? dayKey;
 
       // Idempotency: skip orgs that already received today's digest.
       // Querying the notifications table directly keeps the dedupe
       // information close to where the row is written and avoids a
-      // schema change.
-      const [existing] = await db
-        .select({ id: notifications.id })
-        .from(notifications)
-        .where(and(
-          eq(notifications.organizationId, organizationId),
-          eq(notifications.type, "PROJECT_LOG_EMAIL_FAILURES_DIGEST"),
-          eq(notifications.relatedEntityType, "PROJECT_LOG_EMAIL_FAILURES_DIGEST"),
-          eq(notifications.relatedEntityId, dayKey),
-        ))
-        .limit(1);
-      if (existing) continue;
+      // schema change. Skipped for the test-send path which always
+      // supplies a fresh per-click key (so the lookup would never
+      // match anyway, but skipping it saves a round-trip).
+      if (!opts.dedupeKeyOverride) {
+        const [existing] = await db
+          .select({ id: notifications.id })
+          .from(notifications)
+          .where(and(
+            eq(notifications.organizationId, organizationId),
+            eq(notifications.type, "PROJECT_LOG_EMAIL_FAILURES_DIGEST"),
+            eq(notifications.relatedEntityType, "PROJECT_LOG_EMAIL_FAILURES_DIGEST"),
+            eq(notifications.relatedEntityId, dedupeKey),
+          ))
+          .limit(1);
+        if (existing) {
+          summary.perOrg.set(organizationId, {
+            notificationCount: 0,
+            failingScheduleCount: rows.length,
+            skipped: true,
+            reason: "ALREADY_SENT_TODAY",
+          });
+          continue;
+        }
+      }
 
       // Resolve recipients: active ADMIN / SUPER_ADMIN users in the
       // org. MANAGER / SUPERINTENDENT can already see the dashboard
@@ -4991,6 +5137,12 @@ export async function processProjectLogEmailFailuresDigest(opts: { now?: Date } 
         logWarn("Project log email failures digest: no admins to notify", {
           organizationId,
           failingSchedules: rows.length,
+        });
+        summary.perOrg.set(organizationId, {
+          notificationCount: 0,
+          failingScheduleCount: rows.length,
+          skipped: true,
+          reason: "NO_ADMINS",
         });
         continue;
       }
@@ -5033,20 +5185,37 @@ export async function processProjectLogEmailFailuresDigest(opts: { now?: Date } 
         // The day key doubles as the dedupe sentinel for the
         // org-level idempotency check above and as a stable
         // relatedEntityId for the email composer's entityUrlMap, which
-        // ignores the value when building the dashboard URL.
-        relatedEntityId: dayKey,
+        // ignores the value when building the dashboard URL. The test
+        // send (Task #1750) supplies a unique per-click key here so
+        // the row is distinguishable in the admin's notifications
+        // list and doesn't collide with the same day's real digest.
+        relatedEntityId: dedupeKey,
       }));
 
       await insertNotifications(notifs);
       totalNotifications += notifs.length;
       totalOrgsNotified += 1;
+      summary.perOrg.set(organizationId, {
+        notificationCount: notifs.length,
+        failingScheduleCount: rows.length,
+        skipped: false,
+      });
     } catch (err) {
       logError("Project log email failures digest org iteration failed", {
         organizationId,
         error: err instanceof Error ? err.message : String(err),
       });
+      summary.perOrg.set(organizationId, {
+        notificationCount: 0,
+        failingScheduleCount: rows.length,
+        skipped: true,
+        reason: "ITERATION_FAILED",
+      });
     }
   }
+
+  summary.totalNotifications = totalNotifications;
+  summary.totalOrgsNotified = totalOrgsNotified;
 
   if (totalNotifications > 0) {
     logInfo("Project log email failures digest sent", {
@@ -5054,6 +5223,8 @@ export async function processProjectLogEmailFailuresDigest(opts: { now?: Date } 
       notifications: totalNotifications,
     });
   }
+
+  return summary;
 }
 
 // ============================================================
