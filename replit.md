@@ -53,6 +53,19 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Drawings & Markup at Scale**: Includes plan-document markups with various tools, carryover-on-revision functionality, burned-in PDF export, searchable sheet navigation, and virtualization for efficient rendering.
 *   **Submittals & RFI Production Field Workflow**: Automated escalations, external document email service, PDF log endpoints, and scheduled log emails. Mobile app supports field stamping and updates.
 
+## Development Workflow
+
+### Type-checking
+
+Run the project's TypeScript type-check via the registered `typecheck` validation step (it executes `NODE_OPTIONS='--max-old-space-size=8192' npx tsc -p tsconfig.json`). The compiler runs with `incremental: true` and persists its build cache at `node_modules/.cache/typecheck/tsbuildinfo`, so warm runs reuse cached output.
+
+- Cold run (no cache): ~3 minutes for the full ~1,500-file project.
+- Warm run (cache present): ~10 seconds.
+
+Always invoke type-checking through the validation step rather than calling `tsc` ad-hoc — the validation harness streams full output, summarizes failures, and avoids re-running a 2+ minute cold compile every time. The cache lives under `node_modules`, so it survives between agent steps but is rebuilt after a fresh `npm install`. If you need to force a clean rebuild, delete `node_modules/.cache/typecheck/tsbuildinfo`.
+
+The codebase currently has pre-existing type errors (tracked separately) — the validation step's job is to surface *new* regressions added by a change, not to be at zero today.
+
 ## External Dependencies
 *   PostgreSQL (Neon)
 *   Replit Object Storage (Google Cloud Storage backend)

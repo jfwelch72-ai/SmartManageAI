@@ -34,6 +34,10 @@ author = "agent"
 task = "workflow.run"
 args = "Start application"
 
+[[workflows.workflow.tasks]]
+task = "workflow.run"
+args = "typecheck"
+
 [[workflows.workflow]]
 name = "Start application"
 author = "agent"
@@ -45,6 +49,17 @@ waitForPort = 5000
 
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow]]
+name = "typecheck"
+author = "agent"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "NODE_OPTIONS='--max-old-space-size=8192' npx tsc -p tsconfig.json"
+
+[workflows.workflow.metadata]
+isValidation = true
 
 [agent]
 integrations = ["javascript_database:1.0.0", "javascript_object_storage:1.0.0", "javascript_openai_ai_integrations:1.0.0", "sendgrid:1.0.0"]
