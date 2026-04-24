@@ -112,6 +112,95 @@ jobs:
           path: test-results/
           retention-days: 14
 
+  e2e-canvas-firefox-webkit:
+    # Task #1886 — Task #1867 refactored the canvas-heavy Konva specs to share
+    # an engine-aware drag helper (`e2e/helpers/canvasDrag.ts`) so they no
+    # longer drift between Chromium and the other engines. To prove the green
+    # bar end-to-end on Firefox + WebKit (the Replit dev container can launch
+    # Firefox locally but cannot launch WebKit because Nix only ships
+    # libjpeg.so.62 instead of the .so.8 WebKit links against, plus other
+    # missing libs), this job runs the six refactored specs on both engines
+    # against a real Postgres + dev server. Ubuntu's standard
+    # /usr/lib/x86_64-linux-gnu paths supply every lib WebKit needs, and
+    # `playwright install --with-deps` adds anything else (libnss3, libxkbcommon,
+    # libgbm, etc.) so the host-requirements validator passes.
+    name: E2E Canvas Specs (Firefox + WebKit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: development
+      ENABLE_DEV_SEED: "true"
+      PORT: "5000"
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/app_test
+      SESSION_SECRET: ci-session-secret-do-not-use-in-prod
+      JWT_SECRET: ci-jwt-secret-do-not-use-in-prod
+      CI: "true"
+      # Match the local Replit layout the task description references so the
+      # install + test invocations agree on where the engine binaries live.
+      PLAYWRIGHT_BROWSERS_PATH: .cache/ms-playwright
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright Firefox + WebKit with system deps
+        run: npx playwright install --with-deps firefox webkit
+
+      - name: Push database schema
+        run: npm run db:push -- --force
+
+      - name: Run canvas-heavy specs on Firefox + WebKit
+        run: |
+          npx playwright test \
+            --project=firefox --project=webkit \
+            e2e/takeoff-markup-drawing.spec.ts \
+            e2e/plan-markup-group-drag.spec.ts \
+            e2e/plan-markup-marquee-select.spec.ts \
+            e2e/plan-pins.spec.ts \
+            e2e/takeoff-markup-history-wiring.spec.ts \
+            e2e/takeoff-markup-undo.spec.ts
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-canvas-firefox-webkit
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-canvas-firefox-webkit
+          path: test-results/
+          retention-days: 14
+
   cloud-import-security:
     # Task #1507 — Run the cloud-import SSRF + size guard suites on every PR
     # so a regression to `safeDownload` or the `POST /api/documents/from-cloud`
