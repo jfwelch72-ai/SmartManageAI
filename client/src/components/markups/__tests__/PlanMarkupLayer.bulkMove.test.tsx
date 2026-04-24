@@ -9,7 +9,7 @@
  * decides "did every selected member move by the same amount?".
  */
 import { describe, it, expect } from "vitest";
-import { buildBulkMoveUpdates } from "../PlanMarkupLayer";
+import { buildBulkMoveUpdates, buildMoveSnapshot } from "../PlanMarkupLayer";
 import type { MarkupShape } from "../MarkupRenderer";
 
 const mk = (id: string, points: Array<{ x: number; y: number }>): MarkupShape => ({
@@ -78,5 +78,79 @@ describe("buildBulkMoveUpdates", () => {
     const out = buildBulkMoveUpdates([free], ["f"], 0.5, 0.5);
     expect(out[0].points).toHaveLength(4);
     expect(out[0].points[2]).toEqual({ x: 0.7, y: 0.55 });
+  });
+});
+
+/**
+ * Task #1705 — `buildMoveSnapshot` is the inverse-payload helper used to
+ * undo a group move with a single bulk-PATCH. The acceptance criteria
+ * require that the snapshot, replayed verbatim through the same bulk-
+ * PATCH route, restores the previous positions of every moved shape —
+ * so this suite locks down the round-trip math: snapshot ∘ apply-delta
+ * ∘ snapshot must be a no-op on the original points.
+ */
+describe("buildMoveSnapshot", () => {
+  const markups = [
+    mk("a", [
+      { x: 0.1, y: 0.1 },
+      { x: 0.2, y: 0.2 },
+    ]),
+    mk("b", [
+      { x: 0.3, y: 0.3 },
+      { x: 0.4, y: 0.4 },
+    ]),
+  ];
+
+  it("captures the pre-move points of every selected member", () => {
+    const snap = buildMoveSnapshot(markups, ["a", "b"]);
+    expect(snap).toHaveLength(2);
+    const byId = new Map(snap.map((s) => [s.id, s]));
+    expect(byId.get("a")!.points).toEqual([
+      { x: 0.1, y: 0.1 },
+      { x: 0.2, y: 0.2 },
+    ]);
+    expect(byId.get("b")!.points).toEqual([
+      { x: 0.3, y: 0.3 },
+      { x: 0.4, y: 0.4 },
+    ]);
+  });
+
+  it("returns a deep-copied points array (snapshot is not aliased to the cache)", () => {
+    // Mutating the snapshot must NOT mutate the source markup. Otherwise
+    // the optimistic update would corrupt our undo payload mid-flight.
+    const snap = buildMoveSnapshot(markups, ["a"]);
+    snap[0].points[0].x = 0.99;
+    expect(markups[0].points[0].x).toBe(0.1);
+  });
+
+  it("skips memberIds that are not present in the cache", () => {
+    // A stale id (e.g. just-deleted markup) must not crash the snapshot.
+    const snap = buildMoveSnapshot(markups, ["a", "ghost"]);
+    expect(snap).toHaveLength(1);
+    expect(snap[0].id).toBe("a");
+  });
+
+  it("round-trip: replaying snapshot after a delta restores original points", () => {
+    // This is the contract of the undo feature. We:
+    //   1. snapshot the pre-move state
+    //   2. apply a delta and pretend the cache moved to that state
+    //   3. replay the snapshot as a "set points" payload
+    // The result must equal the original points exactly.
+    const ids = ["a", "b"];
+    const snap = buildMoveSnapshot(markups, ids);
+    const moved = buildBulkMoveUpdates(markups, ids, 0.07, -0.03);
+    // Simulate the cache after the optimistic update.
+    const movedCache = markups.map((m) => {
+      const u = moved.find((x) => x.id === m.id);
+      return u ? { ...m, points: u.points } : m;
+    });
+    // Replaying the snapshot through the same cache layout must
+    // restore exactly the original points.
+    for (const s of snap) {
+      const cached = movedCache.find((m) => m.id === s.id)!;
+      const restored = { ...cached, points: s.points };
+      const original = markups.find((m) => m.id === s.id)!;
+      expect(restored.points).toEqual(original.points);
+    }
   });
 });

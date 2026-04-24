@@ -62,6 +62,12 @@ export interface UnifiedPlanToolbarProps {
   onToggleLabeled?: () => void;
   // Task #1663 — Replay first-run plans tour from the settings menu.
   onReplayTour?: () => void;
+  // Task #1705 — "Undo last group move" handler + availability flag.
+  // Forwarded to <PlanMarkupToolbar /> so the Undo button lives next to
+  // the markup tools. PlansTab owns the state and updates it whenever
+  // <PlanMarkupLayer /> reports a fresh snapshot via `onUndoChange`.
+  onUndoLastMove?: () => void;
+  canUndoLastMove?: boolean;
 }
 
 function GroupLabel({ children }: { children: React.ReactNode }) {
@@ -95,6 +101,8 @@ export default function UnifiedPlanToolbar({
   labeled = false,
   onToggleLabeled,
   onReplayTour,
+  onUndoLastMove,
+  canUndoLastMove = false,
 }: UnifiedPlanToolbarProps) {
   return (
     <div
@@ -144,6 +152,8 @@ export default function UnifiedPlanToolbar({
           showLabel={false}
           showSelect={true}
           labeled={labeled}
+          onUndoLastMove={onUndoLastMove}
+          canUndoLastMove={canUndoLastMove}
           className="border-0 bg-transparent px-0 py-0"
         />
       </div>

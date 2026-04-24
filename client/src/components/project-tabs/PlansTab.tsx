@@ -264,6 +264,19 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const [markupTool, setMarkupTool] = useState<MarkupTool | null>(null);
   const [markupColor, setMarkupColor] = useState<string>("#ef4444");
   const [markupThickness, setMarkupThickness] = useState<number>(2);
+  // Task #1705 — Holds the latest "undo last group move" callback that
+  // <PlanMarkupLayer /> reports up via `onUndoChange`. We pass it to
+  // <UnifiedPlanToolbar /> so the Undo button next to the markup tools
+  // can fire the same handler the Cmd/Ctrl+Z shortcut runs. Wrapped in
+  // an object so React's `setState(fn)` functional-updater contract
+  // doesn't accidentally invoke the callback during state writes.
+  const [markupUndoMove, setMarkupUndoMove] = useState<{ fn: () => void } | null>(null);
+  const handleMarkupUndoChange = useCallback(
+    (undo: (() => void) | null) => {
+      setMarkupUndoMove(undo ? { fn: undo } : null);
+    },
+    [],
+  );
   // Task #1659 — hold-spacebar-to-pan from any tool (Figma / Bluebeam style).
   const [spacePanActive, setSpacePanActive] = useState(false);
   // Task #1662 — active layer + visibility set are owned here so the
@@ -2461,6 +2474,8 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                           setPreviewDocId(null);
                           window.setTimeout(() => startPlansTour(), 250);
                         }}
+                        onUndoLastMove={markupUndoMove ? markupUndoMove.fn : undefined}
+                        canUndoLastMove={!!markupUndoMove}
                       />
                     )}
                     <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
@@ -2517,6 +2532,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                   spacePanActive={spacePanActive}
                                   activeLayerId={activeMarkupLayerId}
                                   hiddenLayerIds={hiddenMarkupLayerIds}
+                                  onUndoChange={handleMarkupUndoChange}
                                 />
                                 {pickerPosition && pendingPin && pendingPin.pageNumber === pageNumber && !isMobilePin && (
                                   <PinPicker

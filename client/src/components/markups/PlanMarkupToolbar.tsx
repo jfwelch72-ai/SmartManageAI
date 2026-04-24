@@ -25,6 +25,7 @@ import {
   Pencil,
   X,
   MousePointer2,
+  Undo2,
 } from "lucide-react";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
@@ -104,6 +105,14 @@ export interface PlanMarkupToolbarProps {
    *  Persisted per user via the plans view "Labeled toolbar" toggle so
    *  first-time users can de-mystify the icon-only toolbar. */
   labeled?: boolean;
+  /** Task #1705 — Click handler for the "Undo last group move" button.
+   *  When omitted, the button is hidden entirely so non-plan surfaces
+   *  (e.g. the takeoff popover) keep their existing layout. */
+  onUndoLastMove?: () => void;
+  /** Task #1705 — Whether an undo is actually available right now. The
+   *  button stays mounted (so its position doesn't jump) but is
+   *  disabled when there's nothing to undo. */
+  canUndoLastMove?: boolean;
 }
 
 export default function PlanMarkupToolbar({
@@ -117,6 +126,8 @@ export default function PlanMarkupToolbar({
   showLabel = true,
   showSelect = true,
   labeled = false,
+  onUndoLastMove,
+  canUndoLastMove = false,
 }: PlanMarkupToolbarProps) {
   const visibleTools = showSelect
     ? TOOLS
@@ -187,6 +198,37 @@ export default function PlanMarkupToolbar({
           </TooltipTrigger>
           <TooltipContent side="bottom">
             <ToolTip name="Cancel markup tool" shortcut="Esc" />
+          </TooltipContent>
+        </Tooltip>
+      )}
+
+      {/* Task #1705 — Undo last group move. Only rendered on surfaces
+          that wire up `onUndoLastMove` (the plan toolbar). The button
+          stays mounted but disabled when there's no move to undo so
+          its position is stable. */}
+      {onUndoLastMove && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className={cn("h-7", labeled ? "px-2 gap-1.5" : "px-2")}
+              onClick={() => canUndoLastMove && onUndoLastMove()}
+              disabled={!canUndoLastMove}
+              aria-label="Undo last group move (Ctrl+Z)"
+              aria-disabled={!canUndoLastMove}
+              data-testid="button-markup-undo-move"
+            >
+              <Undo2 className="w-3.5 h-3.5" />
+              {labeled && <span className="text-[11px]">Undo move</span>}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <ToolTip
+              name={canUndoLastMove ? "Undo last group move" : "Nothing to undo"}
+              shortcut="Ctrl+Z"
+            />
           </TooltipContent>
         </Tooltip>
       )}

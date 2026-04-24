@@ -20,9 +20,17 @@
  *    plan-side bulk PATCH endpoint persists the new normalized points
  *    atomically. Halos render on every group member during selection so
  *    the user can see exactly what they are about to move.
+ *
+ * Task #1705 — Single-step undo for the most recent group move:
+ *  - Before firing the bulk-PATCH, capture a snapshot of every moved
+ *    markup's pre-move points (`buildMoveSnapshot`).
+ *  - Cmd/Ctrl+Z (or the toolbar Undo button via `onUndoChange`) re-fires
+ *    the same bulk-PATCH with the snapshot points, restoring the prior
+ *    layout. The snapshot is consumed (cleared) on undo so a second
+ *    Ctrl+Z is a no-op — group moves are explicitly single-step.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Trash2, Group as GroupIcon, Ungroup } from "lucide-react";
 import type { KonvaEventObject, Node as KonvaNode } from "konva/lib/Node";
@@ -60,6 +68,14 @@ export interface PlanMarkupLayerProps {
   activeLayerId?: string | null;
   /** Task #1662 — set of layer ids the user has hidden from view. */
   hiddenLayerIds?: Set<string>;
+  /**
+   * Task #1705 — Reports the latest "undo last group move" handler up to
+   * the parent so the plan toolbar can render an Undo button. Called
+   * with `null` when there is nothing to undo (initial mount, after the
+   * snapshot is consumed, or after a layer/page change). Called with a
+   * stable callback when a fresh group-move snapshot is available.
+   */
+  onUndoChange?: (undo: (() => void) | null) => void;
 }
 
 interface ServerMarkup extends MarkupShape {
@@ -102,6 +118,30 @@ export function buildBulkMoveUpdates(
   return out;
 }
 
+/**
+ * Task #1705 — pure helper that captures a snapshot of every moved
+ * markup's pre-move points for the bulk-PATCH undo. Run this BEFORE
+ * `buildBulkMoveUpdates` is sent to the server so the snapshot reflects
+ * the points as they were when the user grabbed the group. Replaying
+ * this same array as a bulk-PATCH payload restores the prior layout.
+ */
+export function buildMoveSnapshot(
+  markups: MarkupShape[],
+  memberIds: string[],
+): Array<{ id: string; points: Array<{ x: number; y: number }> }> {
+  const out: Array<{ id: string; points: Array<{ x: number; y: number }> }> = [];
+  for (const id of memberIds) {
+    const m = markups.find((x) => x.id === id);
+    if (!m) continue;
+    out.push({
+      id: m.id,
+      // Defensive copy — callers may mutate the snapshot otherwise.
+      points: m.points.map((p) => ({ x: p.x, y: p.y })),
+    });
+  }
+  return out;
+}
+
 export default function PlanMarkupLayer({
   documentId,
   pageNumber,
@@ -114,6 +154,7 @@ export default function PlanMarkupLayer({
   spacePanActive,
   activeLayerId = null,
   hiddenLayerIds,
+  onUndoChange,
 }: PlanMarkupLayerProps) {
   const { toast } = useToast();
   // Selection is stored as a set so SELECT + Shift can multi-select.
@@ -140,6 +181,17 @@ export default function PlanMarkupLayer({
     origY: number;
     siblings: KonvaNode[];
   } | null>(null);
+  // Task #1705 — pre-move points of the most recent group/selection
+  // drag, kept so the user can undo the bulk move with Cmd/Ctrl+Z or
+  // the toolbar Undo button. Single-step: undo consumes the snapshot.
+  // Captured in `onDragEnd` (after Task #1706's ref-based drag has
+  // resolved the final delta) so the snapshot reflects the points the
+  // user actually dragged away from.
+  const [lastMoveSnapshot, setLastMoveSnapshot] = useState<
+    Array<{ id: string; points: Array<{ x: number; y: number }> }> | null
+  >(null);
+  const lastMoveSnapshotRef = useRef<typeof lastMoveSnapshot>(null);
+  lastMoveSnapshotRef.current = lastMoveSnapshot;
   // Task #1653 — anchor for the in-canvas text input that replaces the
   // legacy `window.prompt()` flow. Coordinates are normalized 0-1 to
   // match `MarkupShape.points`; we denormalize when positioning the
@@ -291,6 +343,57 @@ export default function PlanMarkupLayer({
     },
     onSettled: () => invalidate(),
   });
+
+  // Task #1705 — Undo the most recent group move by re-issuing the same
+  // bulk-PATCH with the captured pre-move points. The snapshot is
+  // consumed (cleared) so a second Cmd/Ctrl+Z does nothing — group
+  // moves are explicitly single-step. The bulk PATCH route handles the
+  // optimistic cache rewrite + rollback identically to a forward move,
+  // so the UI rolls back atomically.
+  const undoLastMove = useCallback(() => {
+    const snap = lastMoveSnapshotRef.current;
+    if (!snap || snap.length === 0) return;
+    setLastMoveSnapshot(null);
+    bulkMoveMutation.mutate(snap);
+  }, [bulkMoveMutation]);
+
+  // Task #1705 — surface the undo handler to the parent toolbar. We
+  // pass either a stable callback (when there's a snapshot) or null
+  // (when there isn't) so the parent can render the Undo button as
+  // enabled/disabled. The callback identity itself is stable, so the
+  // parent doesn't see needless re-renders mid-drag.
+  useEffect(() => {
+    if (!onUndoChange) return;
+    onUndoChange(lastMoveSnapshot ? undoLastMove : null);
+  }, [lastMoveSnapshot, undoLastMove, onUndoChange]);
+
+  // Task #1705 — clear the snapshot when the user navigates to a
+  // different page or document. Undo against a stale page would
+  // silently mutate hidden markups, which is confusing.
+  useEffect(() => {
+    setLastMoveSnapshot(null);
+  }, [documentId, pageNumber]);
+
+  // Task #1705 — global Cmd/Ctrl+Z handler. Attached only while there
+  // is something to undo so we never compete with browser/text-input
+  // undo when there's no group move to roll back. Shift+Cmd/Ctrl+Z
+  // (redo) is intentionally ignored — single-step undo is the spec.
+  useEffect(() => {
+    if (!lastMoveSnapshot) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.shiftKey) return;
+      if (e.key !== "z" && e.key !== "Z") return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      const editable = (e.target as HTMLElement | null)?.isContentEditable;
+      if (editable) return;
+      e.preventDefault();
+      undoLastMove();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [lastMoveSnapshot, undoLastMove]);
 
   // For the toolbar/anchor we still highlight the most-recently-selected
   // markup, but groups expand so the whole sibling set highlights.
@@ -556,14 +659,27 @@ export default function PlanMarkupLayer({
           groupDragRef.current = null;
           if (dx === 0 && dy === 0) return;
           if (canvasWidth <= 0 || canvasHeight <= 0) return;
+          const memberIds = Array.from(expandedSelection);
           const updates = buildBulkMoveUpdates(
             markups,
-            Array.from(expandedSelection),
+            memberIds,
             dx / canvasWidth,
             dy / canvasHeight,
           );
           if (updates.length === 0) return;
-          bulkMoveMutation.mutate(updates);
+          // Task #1705 — capture pre-move points BEFORE the optimistic
+          // update rewrites the cache, so a subsequent undo restores
+          // exactly the layout the user dragged away from.
+          setLastMoveSnapshot(buildMoveSnapshot(markups, memberIds));
+          bulkMoveMutation.mutate(updates, {
+            // If the forward move never landed (server error,
+            // permission denied, etc.) the cache rolls back via the
+            // shared onError above. Clear the just-captured snapshot
+            // too so the user does not see an Undo button for a move
+            // that didn't actually happen — pressing it would issue a
+            // no-op PATCH against the already-restored points.
+            onError: () => setLastMoveSnapshot(null),
+          });
         },
       };
     },
