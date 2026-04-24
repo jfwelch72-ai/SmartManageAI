@@ -143,7 +143,8 @@ function ObservationDialog() {
     projectId: "",
   });
   const { toast } = useToast();
-  const { data: projects = [] } = useQuery<Array<{ id: string; name: string; code?: string }>>({ queryKey: ["/api/projects"] });
+  const { data: projectsResp } = useQuery<{ data: Array<{ id: string; name: string; code?: string }> } | Array<{ id: string; name: string; code?: string }>>({ queryKey: ["/api/projects"] });
+  const projects = Array.isArray(projectsResp) ? projectsResp : (projectsResp?.data ?? []);
 
   const createObs = useMutation({
     mutationFn: async () => {
