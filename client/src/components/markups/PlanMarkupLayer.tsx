@@ -628,15 +628,22 @@ export default function PlanMarkupLayer({
   // of a group always selects the whole group (handled via expandedSelection
   // for highlighting — the underlying `selectedIds` only stores the
   // explicitly-clicked ids so Shift+click can deselect a group member).
+  //
+  // Task #1729 — The Shift modifier now flows in through `modifiers`
+  // (forwarded by `<MarkupRenderer />` from the actual Konva click
+  // event) instead of being read off the legacy `window.event` global.
+  // `window.event` is non-standard, undefined under some event-dispatch
+  // paths (programmatic dispatches, certain test runners) and SSR
+  // contexts, and made selection logic untestable without a real DOM.
+  // Plumbing the modifier through the callback keeps multi-select
+  // deterministic and easy to drive from a unit test.
   const handleSelectShape = useCallback(
-    (id: string | null) => {
+    (id: string | null, modifiers?: { shift: boolean }) => {
       if (id === null) {
         setSelectedIds(new Set());
         return;
       }
-      const shift =
-        typeof window !== "undefined" &&
-        (window.event as MouseEvent | undefined)?.shiftKey === true;
+      const shift = modifiers?.shift === true;
       setSelectedIds((prev) => {
         if (shift) {
           const next = new Set(prev);
@@ -829,7 +836,7 @@ export default function PlanMarkupLayer({
         // Task #1676 — halo every member of the selection (incl. group
         // siblings) so the user sees what's about to move.
         selectedIds={expandedSelection}
-        onSelect={(id) => handleSelectShape(id)}
+        onSelect={(id, modifiers) => handleSelectShape(id, modifiers)}
         readOnly={false}
         draft={draft}
         onPointerDown={handlePointerDown}

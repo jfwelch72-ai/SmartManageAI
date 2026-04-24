@@ -272,8 +272,9 @@ test.describe("PlanMarkupLayer — group drag E2E (Task #1707)", () => {
     ).toBeVisible({ timeout: 10_000 });
 
     // Shift+click on markup B → adds B to the selection. The
-    // PlanMarkupLayer reads shiftKey via window.event at click time,
-    // so we must hold Shift through the native dispatch.
+    // PlanMarkupLayer reads shiftKey off the actual click event
+    // (forwarded by MarkupRenderer per Task #1729), so we must hold
+    // Shift through the native dispatch.
     await page.keyboard.down("Shift");
     await page.mouse.move(ptB.x, ptB.y);
     await page.mouse.click(ptB.x, ptB.y);

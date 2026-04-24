@@ -47,7 +47,13 @@ export interface MarkupRendererProps {
    * callers (read-only viewers, print page) keep working unchanged.
    */
   selectedIds?: Set<string>;
-  onSelect?: (id: string | null) => void;
+  /**
+   * Task #1729 — Selection callback. The optional `modifiers` argument
+   * carries the modifier keys read off the actual click event (Shift
+   * today; future modifiers can be added without changing call sites).
+   * Cleared selections (`id === null`) are fired without modifiers.
+   */
+  onSelect?: (id: string | null, modifiers?: { shift: boolean }) => void;
   /** When true, the stage is non-interactive (just a render) — used in
    *  read-only contexts like the print page or the gallery. */
   readOnly?: boolean;
@@ -89,7 +95,13 @@ export interface MarkupShapeViewProps {
   shape: MarkupShape;
   pts: Array<{ x: number; y: number }>;
   selected: boolean;
-  onSelect?: () => void;
+  /**
+   * Task #1729 — Selection callback. Receives the modifier flags read
+   * off the actual Konva click event (Shift today). The argument is
+   * optional so existing callers that don't care about modifiers keep
+   * working unchanged.
+   */
+  onSelect?: (modifiers: { shift: boolean }) => void;
   readOnly?: boolean;
   /** Per-shape hit-testing toggle. Defaults to !readOnly. The takeoff
    *  workspace flips this off when the active tool is not "select" so
@@ -128,7 +140,14 @@ export function MarkupShapeView({
   const handle = isInteractive && onSelect
     ? (evt: KonvaEventObject<MouseEvent>) => {
         evt.cancelBubble = true;
-        onSelect();
+        // Task #1729 — read the Shift modifier off the actual native
+        // event Konva forwards on `evt.evt`, instead of the legacy
+        // `window.event` global. `evt.evt` is undefined for some
+        // synthetic dispatches (notably plain `node.fire("click")`
+        // without an event object), so default to `false` in that
+        // case rather than throwing.
+        const native = evt.evt as MouseEvent | undefined;
+        onSelect({ shift: native?.shiftKey === true });
       }
     : undefined;
   const shadow = {
@@ -333,7 +352,7 @@ export default function MarkupRenderer({
             selected={
               selectedIds ? selectedIds.has(shape.id) : selectedId === shape.id
             }
-            onSelect={() => onSelect?.(shape.id)}
+            onSelect={(modifiers) => onSelect?.(shape.id, modifiers)}
             readOnly={readOnly}
             groupProps={getGroupProps?.(shape)}
           />

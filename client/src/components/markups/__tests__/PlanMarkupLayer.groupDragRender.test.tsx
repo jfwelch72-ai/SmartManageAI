@@ -19,8 +19,9 @@
  *
  * Coverage:
  *   1. A multi-markup selection is established by clicking the rendered
- *      Konva groups (with `window.event.shiftKey` set, the modifier
- *      `handleSelectShape` actually reads).
+ *      Konva groups (with `shiftKey` set on the dispatched event — the
+ *      modifier `MarkupShapeView` now forwards through `onSelect` per
+ *      Task #1729, replacing the legacy `window.event` lookup).
  *   2. A `<Profiler>` wrapping `<PlanMarkupLayer />` records every
  *      React commit; the count is captured AFTER selection settles and
  *      must NOT change while we fire `dragstart` followed by N
@@ -185,20 +186,25 @@ function getStage(): Konva.Stage {
 function clickShape(stage: Konva.Stage, idx: number, shift: boolean) {
   // Each markup renders as a wrapping <Group> in the order they were
   // seeded (one direct child of the Layer). Clicking the Group drives
-  // MarkupShapeView -> handleSelectShape, which reads the Shift state
-  // off `window.event` (legacy DOM API the layer intentionally uses
-  // so the renderer doesn't have to forward modifier flags).
+  // MarkupShapeView -> handleSelectShape via the renderer's onSelect
+  // callback. Per Task #1729 the Shift modifier is forwarded off the
+  // synthetic Konva event's underlying native event (`evt.evt`), so
+  // we attach a stub MouseEvent with the desired shiftKey here. No
+  // reliance on `window.event` — the modifier flows entirely through
+  // the dispatched event object.
   const layer = stage.getLayers()[0];
   const groups = layer.getChildren();
   expect(groups.length).toBeGreaterThanOrEqual(idx + 1);
   const group = groups[idx];
-  Object.defineProperty(window, "event", {
-    value: { shiftKey: shift } as MouseEvent,
-    configurable: true,
-    writable: true,
-  });
   act(() => {
-    group.fire("click", { cancelBubble: false } as never, true);
+    group.fire(
+      "click",
+      {
+        cancelBubble: false,
+        evt: { shiftKey: shift } as MouseEvent,
+      } as never,
+      true,
+    );
   });
 }
 
