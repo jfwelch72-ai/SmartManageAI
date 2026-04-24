@@ -5098,116 +5098,29 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           setMarkupEditDraft(null);
           setMarkupEditInitial(null);
         };
-        // Task #1758 — Bulk style save. For a single-selection edit we
-        // keep the original path through `updateMarkupMutation`'s
-        // onSuccess (one MARKUP_UPDATE history entry, no behavior
-        // change). For a multi-selection bulk apply we build per-
-        // markup before/after snapshots and route every member through
-        // ONE bulk PATCH so the user gets a single round-trip + a
-        // single cache invalidation no matter how many markups are
-        // selected (Task #1765 — closes the same N-roundtrip gap that
-        // #1752 closed for group drags). The MARKUP_UPDATE_BATCH
-        // history entry is pushed only after the bulk PATCH resolves
-        // (mirrors #1759) so a failed request never leaves a phantom
-        // Undo entry on the stack — one Undo reverts the whole bulk
-        // style change; one Redo reapplies it.
-        const save = async () => {
-          const colorChanged = markupEditDraft.color !== markupEditInitial.color;
-          const thicknessChanged = markupEditDraft.thickness !== markupEditInitial.thickness;
-          const textChanged = showTextInput && markupEditDraft.text !== markupEditInitial.text;
-          if (!colorChanged && !thicknessChanged && !textChanged) {
-            close();
-            return;
-          }
-          if (!isMulti) {
-            const editing = anchor;
-            const updates: { id: string; color?: string; thickness?: number; text?: string | null; previous?: { color?: string; thickness?: number; text?: string | null } } = { id: editing.id };
-            const previous: { color?: string; thickness?: number; text?: string | null } = {};
-            if (colorChanged) {
-              updates.color = markupEditDraft.color;
-              previous.color = editing.color;
-            }
-            if (thicknessChanged && (editing.tool as string) !== "TEXT") {
-              updates.thickness = markupEditDraft.thickness;
-              previous.thickness = editing.thickness;
-            }
-            if (textChanged && (editing.tool as string) === "TEXT") {
-              updates.text = markupEditDraft.text;
-              previous.text = editing.text ?? "";
-            }
-            if (Object.keys(updates).length === 1) { close(); return; }
-            updates.previous = previous;
-            try {
-              await updateMarkupMutation.mutateAsync(updates);
-              toast({ title: "Markup updated" });
-              close();
-            } catch (err) {
-              console.warn("[Takeoff] Failed to update markup:", err);
-            }
-            return;
-          }
-          // Multi-select bulk apply.
-          const beforeSnaps: { id: string; color?: string; thickness?: number; text?: string | null }[] = [];
-          const afterSnaps: { id: string; color?: string; thickness?: number; text?: string | null }[] = [];
-          const bulkUpdates: Array<{ id: string; color?: string; thickness?: number; text?: string | null }> = [];
-          for (const m of selectedMarkups) {
-            const before: { id: string; color?: string; thickness?: number; text?: string | null } = { id: m.id };
-            const after: { id: string; color?: string; thickness?: number; text?: string | null } = { id: m.id };
-            const updateFields: { color?: string; thickness?: number; text?: string | null } = {};
-            let hasChange = false;
-            if (colorChanged && m.color !== markupEditDraft.color) {
-              before.color = m.color;
-              after.color = markupEditDraft.color;
-              updateFields.color = markupEditDraft.color;
-              hasChange = true;
-            }
-            // Skip thickness on TEXT members — they have no stroke.
-            if (thicknessChanged && (m.tool as string) !== "TEXT" && m.thickness !== markupEditDraft.thickness) {
-              before.thickness = m.thickness;
-              after.thickness = markupEditDraft.thickness;
-              updateFields.thickness = markupEditDraft.thickness;
-              hasChange = true;
-            }
-            // Task #1758 — Bulk text edit. Only routed for TEXT
-            // members (the popover gates `showTextInput` to all-TEXT
-            // selections, and we double-check here). Each member's
-            // before snapshot keeps its individual prior label so
-            // Undo restores them independently rather than collapsing
-            // them all to the new shared string.
-            if (textChanged && (m.tool as string) === "TEXT" && (m.text ?? "") !== markupEditDraft.text) {
-              before.text = m.text ?? "";
-              after.text = markupEditDraft.text;
-              updateFields.text = markupEditDraft.text;
-              hasChange = true;
-            }
-            if (!hasChange) continue;
-            beforeSnaps.push(before);
-            afterSnaps.push(after);
-            bulkUpdates.push({ id: m.id, ...updateFields });
-          }
-          if (bulkUpdates.length === 0) {
-            close();
-            return;
-          }
-          // Task #1765 — Single bulk PATCH replaces the legacy fan-out
-          // of N parallel `updateMarkupMutation.mutateAsync({...,
-          // skipHistory:true})` calls. Capture the sheet id before
-          // awaiting so a sheet switch mid-flight can't push the
-          // history batch into the wrong sheet (mirrors the body-drag
-          // commit guard from #1757).
-          const sheetIdForBatch = selectedSheet;
-          try {
-            await bulkUpdateMarkupsMutation.mutateAsync({ updates: bulkUpdates });
-          } catch (err) {
-            console.warn("[Takeoff] Failed to bulk-update markups:", err);
-            return;
-          }
-          if (sheetIdForBatch) {
-            takeoffHistory.pushMarkupUpdateBatchAction(beforeSnaps, afterSnaps, sheetIdForBatch);
-          }
-          toast({ title: `Updated ${bulkUpdates.length} markups` });
-          close();
-        };
+        // Task #1758 / #1765 — Real save logic lives in the exported
+        // `saveMarkupStylingPopover` helper at the bottom of this file
+        // so it can be exercised directly from tests (Task #1772)
+        // without mounting the entire workspace. Single-select still
+        // routes through `updateMarkupMutation` (one MARKUP_UPDATE
+        // entry); multi-select fans out into ONE bulk PATCH and ONE
+        // MARKUP_UPDATE_BATCH history entry pushed only after the
+        // PATCH resolves.
+        const save = () =>
+          saveMarkupStylingPopover({
+            draft: markupEditDraft,
+            initial: markupEditInitial,
+            showTextInput,
+            isMulti,
+            anchor,
+            selectedMarkups,
+            selectedSheet,
+            updateMarkupMutation,
+            bulkUpdateMarkupsMutation,
+            takeoffHistory,
+            toast,
+            close,
+          });
         return (
           <div
             className="absolute top-16 right-3 z-50 bg-card border rounded-lg shadow-lg p-3 w-64 space-y-3"
@@ -5636,4 +5549,188 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       </Dialog>
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Markup styling popover save handler (extracted for Task #1772 testability).
+//
+// Production wiring lives in the popover JSX above — the inline `save`
+// callback delegates to `saveMarkupStylingPopover` so the same code path
+// runs whether the user clicks Save in the workspace or a test invokes the
+// helper directly. Single-select edits stay on the `updateMarkupMutation`
+// path (one MARKUP_UPDATE history entry via the mutation's onSuccess).
+// Multi-select bulk style changes always collapse into ONE bulk PATCH and
+// ONE MARKUP_UPDATE_BATCH history entry, pushed only after the PATCH
+// resolves so a failed request never leaves a phantom Undo entry.
+// ---------------------------------------------------------------------------
+
+export type MarkupStylingDraft = {
+  color: string;
+  thickness: number;
+  text: string;
+};
+
+export type MarkupStylingTarget = {
+  id: string;
+  tool: string;
+  color: string;
+  thickness: number;
+  text: string | null;
+};
+
+export type MarkupSnapshot = {
+  id: string;
+  color?: string;
+  thickness?: number;
+  text?: string | null;
+};
+
+export type SaveMarkupStylingPopoverArgs = {
+  draft: MarkupStylingDraft;
+  initial: MarkupStylingDraft;
+  showTextInput: boolean;
+  isMulti: boolean;
+  anchor: MarkupStylingTarget;
+  selectedMarkups: MarkupStylingTarget[];
+  selectedSheet: string | null;
+  updateMarkupMutation: {
+    mutateAsync: (vars: {
+      id: string;
+      color?: string;
+      thickness?: number;
+      text?: string | null;
+      previous?: { color?: string; thickness?: number; text?: string | null };
+    }) => Promise<unknown>;
+  };
+  bulkUpdateMarkupsMutation: {
+    mutateAsync: (vars: {
+      updates: Array<{ id: string; color?: string; thickness?: number; text?: string | null }>;
+    }) => Promise<unknown>;
+  };
+  takeoffHistory: {
+    pushMarkupUpdateBatchAction: (
+      before: MarkupSnapshot[],
+      after: MarkupSnapshot[],
+      sheetId: string,
+    ) => void;
+  };
+  toast: (opts: { title: string }) => void;
+  close: () => void;
+};
+
+export async function saveMarkupStylingPopover(
+  args: SaveMarkupStylingPopoverArgs,
+): Promise<void> {
+  const {
+    draft,
+    initial,
+    showTextInput,
+    isMulti,
+    anchor,
+    selectedMarkups,
+    selectedSheet,
+    updateMarkupMutation,
+    bulkUpdateMarkupsMutation,
+    takeoffHistory,
+    toast,
+    close,
+  } = args;
+
+  const colorChanged = draft.color !== initial.color;
+  const thicknessChanged = draft.thickness !== initial.thickness;
+  const textChanged = showTextInput && draft.text !== initial.text;
+  if (!colorChanged && !thicknessChanged && !textChanged) {
+    close();
+    return;
+  }
+
+  if (!isMulti) {
+    const editing = anchor;
+    const updates: {
+      id: string;
+      color?: string;
+      thickness?: number;
+      text?: string | null;
+      previous?: { color?: string; thickness?: number; text?: string | null };
+    } = { id: editing.id };
+    const previous: { color?: string; thickness?: number; text?: string | null } = {};
+    if (colorChanged) {
+      updates.color = draft.color;
+      previous.color = editing.color;
+    }
+    if (thicknessChanged && editing.tool !== "TEXT") {
+      updates.thickness = draft.thickness;
+      previous.thickness = editing.thickness;
+    }
+    if (textChanged && editing.tool === "TEXT") {
+      updates.text = draft.text;
+      previous.text = editing.text ?? "";
+    }
+    if (Object.keys(updates).length === 1) {
+      close();
+      return;
+    }
+    updates.previous = previous;
+    try {
+      await updateMarkupMutation.mutateAsync(updates);
+      toast({ title: "Markup updated" });
+      close();
+    } catch (err) {
+      console.warn("[Takeoff] Failed to update markup:", err);
+    }
+    return;
+  }
+
+  const beforeSnaps: MarkupSnapshot[] = [];
+  const afterSnaps: MarkupSnapshot[] = [];
+  const bulkUpdates: Array<{ id: string; color?: string; thickness?: number; text?: string | null }> = [];
+  for (const m of selectedMarkups) {
+    const before: MarkupSnapshot = { id: m.id };
+    const after: MarkupSnapshot = { id: m.id };
+    const updateFields: { color?: string; thickness?: number; text?: string | null } = {};
+    let hasChange = false;
+    if (colorChanged && m.color !== draft.color) {
+      before.color = m.color;
+      after.color = draft.color;
+      updateFields.color = draft.color;
+      hasChange = true;
+    }
+    // Skip thickness on TEXT members — they have no stroke.
+    if (thicknessChanged && m.tool !== "TEXT" && m.thickness !== draft.thickness) {
+      before.thickness = m.thickness;
+      after.thickness = draft.thickness;
+      updateFields.thickness = draft.thickness;
+      hasChange = true;
+    }
+    // Bulk text edit only for TEXT members; each member's before snapshot
+    // keeps its individual prior label so Undo restores them independently.
+    if (textChanged && m.tool === "TEXT" && (m.text ?? "") !== draft.text) {
+      before.text = m.text ?? "";
+      after.text = draft.text;
+      updateFields.text = draft.text;
+      hasChange = true;
+    }
+    if (!hasChange) continue;
+    beforeSnaps.push(before);
+    afterSnaps.push(after);
+    bulkUpdates.push({ id: m.id, ...updateFields });
+  }
+  if (bulkUpdates.length === 0) {
+    close();
+    return;
+  }
+  // Capture the sheet id before awaiting so a sheet switch mid-flight
+  // can't push the history batch into the wrong sheet.
+  const sheetIdForBatch = selectedSheet;
+  try {
+    await bulkUpdateMarkupsMutation.mutateAsync({ updates: bulkUpdates });
+  } catch (err) {
+    console.warn("[Takeoff] Failed to bulk-update markups:", err);
+    return;
+  }
+  if (sheetIdForBatch) {
+    takeoffHistory.pushMarkupUpdateBatchAction(beforeSnaps, afterSnaps, sheetIdForBatch);
+  }
+  toast({ title: `Updated ${bulkUpdates.length} markups` });
+  close();
 }
