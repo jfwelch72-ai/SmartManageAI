@@ -763,7 +763,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ jobs: await getAllJobMetricsForRange(range), range });
   });
 
-  app.get("/api/admin/metrics/jobs/:jobName", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response) => {
+  app.get("/api/admin/metrics/jobs/:jobName", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
+    // Task #1495 — `/api/admin/metrics/jobs/alerts*` is a sibling
+    // namespace (registered further down) for the alert engine, not a
+    // job named "alerts". Skip so the more-specific handlers below
+    // can match instead of returning an empty metrics envelope and
+    // shadowing the wage-refresh threshold editor's GET.
+    if (req.params.jobName === "alerts") {
+      next();
+      return;
+    }
     const { getJobMetricsForRange, parseMetricsRange } = await import("./utils/jobMetrics");
     const range = parseMetricsRange(req.query.range);
     const metrics = await getJobMetricsForRange(req.params.jobName, range);
