@@ -312,4 +312,13 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   "0061_project_log_email_schedule_attempts.sql": {
     helper: "ensureProjectLogEmailScheduleAttemptsTable",
   },
+  // Task #1668 — per-org override for the repeated-failure backstop
+  // notification threshold on the per-project scheduled log email
+  // worker. NULL means "use the env / global default", a positive
+  // integer overrides PROJECT_LOG_EMAIL_FAILURE_THRESHOLD for that
+  // org's schedules only. Mirrored at boot by
+  // ensureProjectLogEmailFailureThresholdSetting.
+  "0062_project_log_email_failure_threshold_setting.sql": {
+    helper: "ensureProjectLogEmailFailureThresholdSetting",
+  },
 };

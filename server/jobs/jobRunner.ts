@@ -4498,9 +4498,44 @@ async function maybeNotifyProjectLogEmailFailure(args: {
 // climbing past the threshold doesn't spam the same admins on every
 // subsequent tick — they'll get re-notified when the streak resets and
 // re-crosses, which is exactly the "it broke again" signal we want.
+//
+// Task #1668 — the threshold is now ALSO overridable per-organization
+// via `organizations.project_log_email_failure_threshold`. Resolution
+// order, highest precedence first:
+//   1. per-org column (when populated)
+//   2. env var PROJECT_LOG_EMAIL_FAILURE_THRESHOLD (when valid)
+//   3. hard-coded fallback (`PROJECT_LOG_EMAIL_FAILURE_DEFAULT_THRESHOLD`)
+// Each layer is independently validated so a garbled value in one tier
+// silently falls through to the next instead of disabling the backstop.
+// Validation asymmetry is intentional: the org-override path is
+// reachable only via the admin API which clamps to [MIN..MAX] (1..50)
+// using the shared schema bounds, whereas the env var path is an
+// operator escape hatch that only requires "positive integer". Ops
+// occasionally need to push the threshold above 50 temporarily during
+// a known incident without a code change, so we deliberately don't
+// re-apply the UI's 50 cap here.
 const PROJECT_LOG_EMAIL_FAILURE_DEFAULT_THRESHOLD = 3;
 
-export function getProjectLogEmailFailureThreshold(): number {
+function isPositiveIntegerThreshold(value: unknown): value is number {
+  return typeof value === "number"
+    && Number.isFinite(value)
+    && Number.isInteger(value)
+    && value >= 1;
+}
+
+// Exported (kept from incoming `main` change) so callers outside this
+// module — currently the worker test harness — can introspect the
+// resolved threshold without re-implementing the precedence rules.
+export function getProjectLogEmailFailureThreshold(orgOverride?: number | null): number {
+  // Tier 1: per-org override. Validated the same way as the env var so
+  // a stale/garbled DB value (shouldn't happen — the API guards on
+  // write — but defensive in case of manual SQL) doesn't accidentally
+  // fire the backstop on the very first failure.
+  if (orgOverride !== undefined && orgOverride !== null) {
+    if (isPositiveIntegerThreshold(orgOverride)) return orgOverride;
+    // Fall through to env / default if the column value is junk.
+  }
+  // Tier 2: env override.
   const raw = process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
   if (!raw) return PROJECT_LOG_EMAIL_FAILURE_DEFAULT_THRESHOLD;
   // Guardrails: the env value must be a *whole positive integer* —
@@ -4512,10 +4547,36 @@ export function getProjectLogEmailFailureThreshold(): number {
   const trimmed = raw.trim();
   if (trimmed === "") return PROJECT_LOG_EMAIL_FAILURE_DEFAULT_THRESHOLD;
   const parsed = Number(trimmed);
-  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 1) {
+  if (!isPositiveIntegerThreshold(parsed)) {
     return PROJECT_LOG_EMAIL_FAILURE_DEFAULT_THRESHOLD;
   }
   return parsed;
+}
+
+// Task #1668 — resolves the per-org override (if any) for
+// `getProjectLogEmailFailureThreshold`. Kept as a tiny helper so the
+// backstop fan-out below stays readable and the SELECT is centralised
+// (also makes it easy to mock / stub in tests). Returns `null` when
+// the org has no override set OR when the lookup fails — never throws.
+async function loadOrgProjectLogEmailFailureThreshold(
+  organizationId: string,
+): Promise<number | null> {
+  try {
+    const [row] = await db
+      .select({ threshold: organizations.projectLogEmailFailureThreshold })
+      .from(organizations)
+      .where(eq(organizations.id, organizationId))
+      .limit(1);
+    return row?.threshold ?? null;
+  } catch (err) {
+    // Telemetry-only — a failed lookup MUST NOT block the fan-out, the
+    // env / global default keeps the backstop functional.
+    logWarn("Failed to load per-org project log email failure threshold", {
+      organizationId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
 }
 
 async function maybeNotifyProjectLogEmailRepeatedFailure(args: {
@@ -4528,7 +4589,11 @@ async function maybeNotifyProjectLogEmailRepeatedFailure(args: {
   projectName: string | null;
   projectCode: string | null;
 }): Promise<void> {
-  const threshold = getProjectLogEmailFailureThreshold();
+  // Task #1668 — read the per-org override (if any) before resolving
+  // the threshold so each org can dial in its own tolerance. NULL
+  // (no override) falls through to the env / global default.
+  const orgOverride = await loadOrgProjectLogEmailFailureThreshold(args.organizationId);
+  const threshold = getProjectLogEmailFailureThreshold(orgOverride);
   // Edge-trigger only: we want one fan-out the moment the streak
   // reaches the threshold, not a fresh fan-out on every subsequent
   // failure. A SUCCESS resets the counter to 0 and the next streak

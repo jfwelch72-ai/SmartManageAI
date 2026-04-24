@@ -73,4 +73,5 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   DocuSign
 *   Sage Intacct
 *   Bluebeam, Autodesk Construction Cloud (OAuth integration scaffolds)
+*   Public API at `/api/v1/public`
 *   @node-saml/node-saml

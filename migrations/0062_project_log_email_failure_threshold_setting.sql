@@ -1,0 +1,23 @@
+-- Task #1668: per-org override for the repeated-failure backstop
+-- notification threshold on the per-project scheduled RFI / submittal
+-- log email worker (`maybeNotifyProjectLogEmailRepeatedFailure` in
+-- server/jobs/jobRunner.ts).
+--
+-- Task #1651 introduced the backstop notification, but the only knob
+-- was the env var PROJECT_LOG_EMAIL_FAILURE_THRESHOLD (default 3).
+-- That meant every tenant on the platform shared the same tolerance:
+-- some orgs want to be alerted on the very first failure (e.g.
+-- compliance-heavy GCs) while others want a longer streak before the
+-- whole admin pool gets paged. This column lets each org tune that
+-- without redeploying.
+--
+--   * `project_log_email_failure_threshold` - nullable. NULL means
+--                                             "use the global default"
+--                                             (env var when set,
+--                                             otherwise the hard-coded
+--                                             fallback of 3). When
+--                                             populated it overrides
+--                                             the env var for that
+--                                             org's schedules only.
+ALTER TABLE organizations
+  ADD COLUMN IF NOT EXISTS project_log_email_failure_threshold integer;

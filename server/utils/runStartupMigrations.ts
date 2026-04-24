@@ -71,6 +71,7 @@ import { ensureProjectLogEmailSchedules } from "./ensureProjectLogEmailSchedules
 import { ensureProjectLogEmailAttemptTracking } from "./ensureProjectLogEmailAttemptTracking";
 import { ensureProjectLogEmailFailureNotifications } from "./ensureProjectLogEmailFailureNotifications";
 import { ensureProjectLogEmailConsecutiveFailures } from "./ensureProjectLogEmailConsecutiveFailures";
+import { ensureProjectLogEmailFailureThresholdSetting } from "./ensureProjectLogEmailFailureThresholdSetting";
 import { ensureProjectLogEmailScheduleAttemptsTable } from "./ensureProjectLogEmailScheduleAttemptsTable";
 import { ensureGanttPdfRenderSamplesTable } from "./ensureGanttPdfRenderSamplesTable";
 import { ensurePortfolioPdfRenderSamplesTable } from "./ensurePortfolioPdfRenderSamplesTable";
@@ -259,6 +260,12 @@ const migrations: MigrationStep[] = [
   // 3) times in a row, so a quietly-broken distribution list can't go
   // un-noticed for weeks just because nobody opens project settings.
   { name: "project_log_email_consecutive_failures", category: "ADD_COLUMN", fn: ensureProjectLogEmailConsecutiveFailures },
+  // Task #1668 — per-org override for the repeated-failure backstop
+  // notification threshold. NULL means "use the env / global default";
+  // a positive integer overrides PROJECT_LOG_EMAIL_FAILURE_THRESHOLD
+  // for that org's schedules only. Lets each org dial in its own
+  // tolerance without redeploying.
+  { name: "project_log_email_failure_threshold_setting", category: "ADD_COLUMN", fn: ensureProjectLogEmailFailureThresholdSetting },
   // Task #1652 — append-only per-schedule send history so admins can
   // audit every cron tick + manual send (status, error, recipient
   // count, triggered-by) instead of only seeing the most recent

@@ -10472,12 +10472,14 @@ export const projectLogEmailSchedules = pgTable("project_log_email_schedules", {
   // (cron or manual send-now) and reset to 0 on a successful send so
   // a single recovery clears the streak. Once the count crosses the
   // configured threshold (default 3, env-overridable via
-  // PROJECT_LOG_EMAIL_FAILURE_THRESHOLD) the worker fans out a
-  // backstop notification to every ADMIN/MANAGER/SUPER_ADMIN in the
-  // org so a project's distribution list can't quietly stay broken
-  // for weeks just because nobody opened the project settings page.
-  // Defaults to 0 so existing rows behave as if they had no prior
-  // failures the first time the new worker observes them.
+  // PROJECT_LOG_EMAIL_FAILURE_THRESHOLD, additionally per-org
+  // overridable via `organizations.project_log_email_failure_threshold`
+  // — Task #1668) the worker fans out a backstop notification to
+  // every ADMIN/MANAGER/SUPER_ADMIN in the org so a project's
+  // distribution list can't quietly stay broken for weeks just because
+  // nobody opened the project settings page. Defaults to 0 so existing
+  // rows behave as if they had no prior failures the first time the
+  // new worker observes them.
   consecutiveFailureCount: integer("consecutive_failure_count").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),

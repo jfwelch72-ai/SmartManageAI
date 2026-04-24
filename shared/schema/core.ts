@@ -55,6 +55,16 @@ export const organizations = pgTable("organizations", {
   // upgrading is a no-op for existing orgs.
   docOverdueReminderMaxCount: integer("doc_overdue_reminder_max_count").notNull().default(5),
   docOverdueReminderIntervalHours: integer("doc_overdue_reminder_interval_hours").notNull().default(22),
+  // Task #1668: per-org override for the repeated-failure backstop
+  // notification threshold on the per-project scheduled RFI / submittal
+  // log email worker (see `getProjectLogEmailFailureThreshold` and
+  // `maybeNotifyProjectLogEmailRepeatedFailure` in
+  // server/jobs/jobRunner.ts). NULL means "use the global default"
+  // (env `PROJECT_LOG_EMAIL_FAILURE_THRESHOLD` or the hard-coded
+  // fallback of 3). When set, the worker reads this value instead so
+  // each org can dial in how aggressively they want to be paged about
+  // a quietly-broken distribution list without redeploying.
+  projectLogEmailFailureThreshold: integer("project_log_email_failure_threshold"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -69,6 +79,17 @@ export const DOC_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS = 22;
 export const SWPPP_OVERDUE_REMINDER_MAX_CAP = 365;
 export const SWPPP_OVERDUE_REMINDER_MIN_INTERVAL_HOURS = 1;
 export const SWPPP_OVERDUE_REMINDER_MAX_INTERVAL_HOURS = 24 * 30;
+
+// Task #1668: bounds for the per-org repeated-failure backstop
+// notification threshold. Min 1 = "alert me on the first failure",
+// max 50 keeps admins from disabling the backstop by setting an
+// effectively-infinite value (a streak that climbs that high without
+// anyone noticing is exactly the regression the alert is supposed to
+// catch). The default (used when the per-org override is NULL and
+// no env var is set) matches the historical hard-coded constant.
+export const PROJECT_LOG_EMAIL_FAILURE_DEFAULT_THRESHOLD = 3;
+export const PROJECT_LOG_EMAIL_FAILURE_MIN_THRESHOLD = 1;
+export const PROJECT_LOG_EMAIL_FAILURE_MAX_THRESHOLD = 50;
 
 export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;

@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { Calendar, FileText, CheckCircle2, Clock, Loader2, Lock, MessageSquare, AlertCircle, ClipboardCheck, ShieldAlert } from "lucide-react";
+import { Calendar, FileText, CheckCircle2, Clock, Loader2, Lock, MessageSquare, AlertCircle, ClipboardCheck, ShieldAlert, MailWarning } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import type { PayrollSettings } from "./types";
 import { DAYS_OF_WEEK, DIGEST_CADENCES, DIGEST_WEEKDAYS, COMMON_TIMEZONES } from "./types";
@@ -135,6 +135,73 @@ export function CompanyNotificationsTab() {
     },
     onError: (error: any) => {
       toast({ title: "Error", description: error.message || "Failed to update SWPPP reminder settings", variant: "destructive" });
+    },
+  });
+
+  // Task #1668 — per-org override for the repeated-failure backstop
+  // notification threshold on the per-project scheduled RFI / submittal
+  // log email worker. NULL means "use the global default" (env var
+  // when set, otherwise the platform fallback of 3); a positive
+  // integer in the bounds range overrides it for this org's
+  // schedules only.
+  type ProjectLogEmailSettings = {
+    organizationId: string;
+    failureThreshold: number | null;
+    effectiveThreshold: number;
+    defaults: {
+      envThreshold: number | null;
+      hardcodedDefault: number;
+      globalDefault: number;
+    };
+    bounds: { min: number; max: number };
+  };
+  const { data: projectLogEmailSettings, isLoading: loadingProjectLogEmail } =
+    useQuery<ProjectLogEmailSettings>({
+      queryKey: ["/api/organizations/project-log-email-settings"],
+      enabled: !!user && ["ADMIN", "MANAGER", "SUPER_ADMIN", "SUPERINTENDENT"].includes(user.role),
+    });
+  // Write access mirrors the PUT route's role list. SUPERINTENDENT can
+  // see the current threshold but cannot change it, so we render the
+  // controls disabled rather than showing a save button that would
+  // 403 on click.
+  const canEditProjectLogEmailThreshold = !!user
+    && ["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role);
+  // Local form state. `useGlobalDefault === true` means "save NULL,
+  // fall back to the platform default"; `false` means "save this
+  // explicit number". Two-piece state keeps the input editable even
+  // when the org currently uses the global default (so admins can
+  // type a number then flip the toggle to save it).
+  const [projectLogEmailForm, setProjectLogEmailForm] = useState<{
+    useGlobalDefault: boolean;
+    threshold: number;
+  }>({ useGlobalDefault: true, threshold: 3 });
+  useEffect(() => {
+    if (projectLogEmailSettings) {
+      setProjectLogEmailForm({
+        useGlobalDefault: projectLogEmailSettings.failureThreshold === null,
+        threshold: projectLogEmailSettings.failureThreshold
+          ?? projectLogEmailSettings.defaults.globalDefault,
+      });
+    }
+  }, [projectLogEmailSettings]);
+  const updateProjectLogEmailMutation = useMutation({
+    mutationFn: async (data: typeof projectLogEmailForm) => {
+      // Send `null` when reverting to the global default, otherwise
+      // the chosen integer. The PUT endpoint validates bounds.
+      return await apiRequest("PUT", "/api/organizations/project-log-email-settings", {
+        threshold: data.useGlobalDefault ? null : data.threshold,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/organizations/project-log-email-settings"] });
+      toast({ title: "Repeated-failure alert threshold updated" });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to update repeated-failure alert threshold",
+        variant: "destructive",
+      });
     },
   });
 
@@ -756,6 +823,139 @@ export function CompanyNotificationsTab() {
                       )}
                     </Button>
                   </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="lg:col-span-2" data-testid="card-project-log-email-failure-threshold">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <MailWarning className="h-5 w-5" />
+                Scheduled Log Email — Repeated Failure Alerts
+              </CardTitle>
+              <CardDescription>
+                Choose how many failed sends in a row should trigger an
+                in-app alert to all admins, managers, and super-admins
+                for a project's scheduled RFI / submittal log emails.
+                Platform default:{" "}
+                <span data-testid="text-project-log-email-platform-default">
+                  {projectLogEmailSettings?.defaults.globalDefault ?? 3}
+                </span>{" "}
+                consecutive failures.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {loadingProjectLogEmail ? (
+                <Skeleton className="h-24" />
+              ) : (
+                <>
+                  <div className="flex items-start space-x-2">
+                    <input
+                      type="checkbox"
+                      id="project-log-email-use-default"
+                      checked={projectLogEmailForm.useGlobalDefault}
+                      disabled={!canEditProjectLogEmailThreshold}
+                      onChange={(e) =>
+                        setProjectLogEmailForm((prev) => ({
+                          ...prev,
+                          useGlobalDefault: e.target.checked,
+                        }))
+                      }
+                      className="h-4 w-4 mt-1 rounded border-gray-300"
+                      data-testid="checkbox-project-log-email-use-default"
+                    />
+                    <div className="space-y-0.5">
+                      <Label
+                        htmlFor="project-log-email-use-default"
+                        className="cursor-pointer"
+                      >
+                        Use platform default ({projectLogEmailSettings?.defaults.globalDefault ?? 3} consecutive failures)
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        Uncheck to set an organization-specific threshold below.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="project-log-email-threshold">
+                      Consecutive failures before alerting admins
+                    </Label>
+                    <Input
+                      id="project-log-email-threshold"
+                      type="number"
+                      min={projectLogEmailSettings?.bounds.min ?? 1}
+                      max={projectLogEmailSettings?.bounds.max ?? 50}
+                      value={projectLogEmailForm.threshold}
+                      disabled={projectLogEmailForm.useGlobalDefault || !canEditProjectLogEmailThreshold}
+                      onChange={(e) => {
+                        const min = projectLogEmailSettings?.bounds.min ?? 1;
+                        const max = projectLogEmailSettings?.bounds.max ?? 50;
+                        const raw = parseInt(e.target.value, 10);
+                        const next = Number.isFinite(raw) ? raw : min;
+                        setProjectLogEmailForm((prev) => ({
+                          ...prev,
+                          threshold: Math.min(max, Math.max(min, next)),
+                        }));
+                      }}
+                      data-testid="input-project-log-email-threshold"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Lower values surface broken distribution lists faster but
+                      can be noisy. Higher values wait longer before paging the
+                      whole admin pool. Allowed range:{" "}
+                      {projectLogEmailSettings?.bounds.min ?? 1}–
+                      {projectLogEmailSettings?.bounds.max ?? 50}.
+                    </p>
+                  </div>
+
+                  <Alert data-testid="alert-project-log-email-effective-threshold">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>
+                      Effective threshold for this organization:{" "}
+                      <strong data-testid="text-project-log-email-effective-threshold">
+                        {projectLogEmailForm.useGlobalDefault
+                          ? (projectLogEmailSettings?.defaults.globalDefault ?? 3)
+                          : projectLogEmailForm.threshold}
+                      </strong>{" "}
+                      consecutive failure
+                      {(
+                        projectLogEmailForm.useGlobalDefault
+                          ? (projectLogEmailSettings?.defaults.globalDefault ?? 3)
+                          : projectLogEmailForm.threshold
+                      ) === 1
+                        ? ""
+                        : "s"}{" "}
+                      will trigger the backstop alert.
+                    </AlertDescription>
+                  </Alert>
+
+                  {canEditProjectLogEmailThreshold ? (
+                    <div className="flex justify-end">
+                      <Button
+                        onClick={() => updateProjectLogEmailMutation.mutate(projectLogEmailForm)}
+                        disabled={updateProjectLogEmailMutation.isPending}
+                        data-testid="button-save-project-log-email-threshold"
+                      >
+                        {updateProjectLogEmailMutation.isPending ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Saving...
+                          </>
+                        ) : (
+                          "Save Alert Threshold"
+                        )}
+                      </Button>
+                    </div>
+                  ) : (
+                    <p
+                      className="text-xs text-muted-foreground text-right"
+                      data-testid="text-project-log-email-readonly-notice"
+                    >
+                      Read-only — your role cannot change this setting.
+                    </p>
+                  )}
                 </>
               )}
             </CardContent>

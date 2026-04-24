@@ -26,6 +26,10 @@ import { db } from "./db";
 import {
   PROJECT_LOG_EMAIL_CADENCES,
   PROJECT_LOG_EMAIL_LOG_TYPES,
+  PROJECT_LOG_EMAIL_FAILURE_DEFAULT_THRESHOLD,
+  PROJECT_LOG_EMAIL_FAILURE_MAX_THRESHOLD,
+  PROJECT_LOG_EMAIL_FAILURE_MIN_THRESHOLD,
+  organizations,
   projectEmailDistributionLists,
   projectLogEmailSchedules,
   projectLogEmailScheduleAttempts,
@@ -644,6 +648,161 @@ router.get(
       });
 
       res.json({ attempts });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// =========================
+// Project Log Email — per-org failure threshold (Task #1668)
+// =========================
+//
+// The repeated-failure backstop notification (Task #1651) fires once a
+// schedule's `consecutive_failure_count` crosses a configurable
+// threshold, broadcasting an in-app notification to every
+// ADMIN/MANAGER/SUPER_ADMIN in the org. The threshold default is 3 and
+// could only be overridden via the env var
+// PROJECT_LOG_EMAIL_FAILURE_THRESHOLD — fine for the platform default
+// but useless for a tenant that wants to be alerted on the very first
+// failure (or wait longer than the platform default).
+//
+// These two endpoints expose a per-org override on
+// `organizations.project_log_email_failure_threshold`. NULL means
+// "use the global default" (env var when set, otherwise the
+// hard-coded fallback of 3); a positive integer in [MIN..MAX]
+// overrides it for that org's schedules only. The Company
+// Notifications tab reads / writes this value.
+
+// Same role gate as the per-project schedule editor — the per-org
+// threshold is also a notification-policy knob, so anyone who can
+// edit the cadences can edit the threshold too. Lower-privilege
+// users can read the value (so the project-settings card can render
+// "current threshold: N") but can't change it.
+const FAILURE_THRESHOLD_READ_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"] as const;
+const FAILURE_THRESHOLD_WRITE_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER"] as const;
+
+const failureThresholdUpsertSchema = z.object({
+  // Nullable — passing `null` (or omitting) is the canonical
+  // "clear my override, use the global default" gesture so admins
+  // can revert without having to remember what the platform default
+  // was.
+  threshold: z.number()
+    .int()
+    .min(PROJECT_LOG_EMAIL_FAILURE_MIN_THRESHOLD)
+    .max(PROJECT_LOG_EMAIL_FAILURE_MAX_THRESHOLD)
+    .nullable(),
+});
+
+router.get(
+  "/organizations/project-log-email-settings",
+  requireAuth,
+  requireRole(...FAILURE_THRESHOLD_READ_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
+
+      const [row] = await db
+        .select({
+          id: organizations.id,
+          failureThreshold: organizations.projectLogEmailFailureThreshold,
+        })
+        .from(organizations)
+        .where(eq(organizations.id, organizationId))
+        .limit(1);
+
+      if (!row) return res.status(404).json({ error: "Organization not found" });
+
+      // Surface the env / global default alongside the org override so
+      // the UI can render "Effective threshold: N" (= override ?? env
+      // default ?? hard-coded default) without the client having to
+      // re-implement the resolution logic. Mirrors the
+      // `getProjectLogEmailFailureThreshold` precedence in jobRunner.
+      const envRaw = process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD?.trim();
+      let envThreshold: number | null = null;
+      if (envRaw) {
+        const parsed = Number(envRaw);
+        if (Number.isFinite(parsed) && Number.isInteger(parsed) && parsed >= 1) {
+          envThreshold = parsed;
+        }
+      }
+      const globalDefault = envThreshold ?? PROJECT_LOG_EMAIL_FAILURE_DEFAULT_THRESHOLD;
+      // Mirror the runtime validation in
+      // `getProjectLogEmailFailureThreshold` (jobRunner.ts): a stale or
+      // manually-corrupted DB value (non-positive, non-integer) silently
+      // falls through to the global default at send-time, so the UI's
+      // "effective threshold" must agree to avoid misleading admins.
+      const orgValue = row.failureThreshold;
+      const orgValueIsValid =
+        typeof orgValue === "number"
+        && Number.isFinite(orgValue)
+        && Number.isInteger(orgValue)
+        && orgValue >= 1;
+      const effectiveThreshold = orgValueIsValid ? orgValue : globalDefault;
+
+      res.json({
+        organizationId: row.id,
+        failureThreshold: row.failureThreshold,
+        effectiveThreshold,
+        defaults: {
+          // What "clear my override" would result in, in priority order.
+          envThreshold,
+          hardcodedDefault: PROJECT_LOG_EMAIL_FAILURE_DEFAULT_THRESHOLD,
+          globalDefault,
+        },
+        bounds: {
+          min: PROJECT_LOG_EMAIL_FAILURE_MIN_THRESHOLD,
+          max: PROJECT_LOG_EMAIL_FAILURE_MAX_THRESHOLD,
+        },
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.put(
+  "/organizations/project-log-email-settings",
+  requireAuth,
+  requireRole(...FAILURE_THRESHOLD_WRITE_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
+
+      const parsed = failureThresholdUpsertSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Invalid request",
+          details: parsed.error.flatten(),
+        });
+      }
+
+      const [updated] = await db
+        .update(organizations)
+        .set({
+          projectLogEmailFailureThreshold: parsed.data.threshold,
+          updatedAt: new Date(),
+        })
+        .where(eq(organizations.id, organizationId))
+        .returning({
+          id: organizations.id,
+          failureThreshold: organizations.projectLogEmailFailureThreshold,
+        });
+
+      if (!updated) return res.status(404).json({ error: "Organization not found" });
+
+      logInfo("Project log email failure threshold updated", {
+        organizationId,
+        actorId: req.user?.id ?? null,
+        threshold: parsed.data.threshold,
+      });
+
+      res.json({
+        organizationId: updated.id,
+        failureThreshold: updated.failureThreshold,
+      });
     } catch (err) {
       next(err);
     }
