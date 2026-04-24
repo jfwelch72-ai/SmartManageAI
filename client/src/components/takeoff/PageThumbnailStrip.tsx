@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback } from "react";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ImageOff, UserCircle, CheckCircle2 } from "lucide-react";
+import { Loader2, ImageOff, UserCircle, CheckCircle2, Pin, AlertTriangle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePdfThumbnails } from "@/hooks/use-pdf-thumbnails";
 import type { TakeoffSheet } from "@shared/schema";
@@ -12,6 +12,12 @@ interface PageThumbnailStripProps {
   onSelectSheet: (id: string) => void;
   layout?: "horizontal" | "grid";
   measurementCounts?: Map<string, number>;
+  // Task #1661 — optional active-set context. When provided, each
+  // thumbnail surfaces whether it is pinned to the active drawing set
+  // and whether a newer revision exists, mirroring the inline badges
+  // shown in the sheet list.
+  pinnedSheetIds?: Set<string>;
+  newerSheetIds?: Set<string>;
 }
 
 export function PageThumbnailStrip({
@@ -20,6 +26,8 @@ export function PageThumbnailStrip({
   onSelectSheet,
   layout = "grid",
   measurementCounts,
+  pinnedSheetIds,
+  newerSheetIds,
 }: PageThumbnailStripProps) {
   const { thumbnails, failedSheets, isLoading, progress, observeRef } = usePdfThumbnails(sheets);
   const activeRef = useRef<HTMLButtonElement | null>(null);
@@ -57,6 +65,8 @@ export function PageThumbnailStrip({
         const thumb = thumbnails.get(sheet.id);
         const isActive = sheet.id === selectedSheet;
         const isSuperseded = sheet.isActive === false;
+        const isPinnedToActiveSet = pinnedSheetIds?.has(sheet.id) ?? false;
+        const hasNewerInActiveSet = newerSheetIds?.has(sheet.id) ?? false;
 
         return (
           <button
@@ -102,6 +112,24 @@ export function PageThumbnailStrip({
               )}
               {isActive && (
                 <div className="absolute inset-0 border-2 border-primary rounded-t pointer-events-none" />
+              )}
+              {isPinnedToActiveSet && (
+                <div
+                  className="absolute top-0.5 left-0.5 flex items-center justify-center w-4 h-4 rounded-full bg-green-600 text-white shadow"
+                  title="Pinned to active drawing set"
+                  data-testid={`thumb-pinned-${sheet.id}`}
+                >
+                  <Pin className="w-2.5 h-2.5" />
+                </div>
+              )}
+              {hasNewerInActiveSet && isPinnedToActiveSet && (
+                <div
+                  className="absolute top-0.5 right-0.5 flex items-center justify-center w-4 h-4 rounded-full bg-amber-500 text-white shadow"
+                  title="A newer revision is available"
+                  data-testid={`thumb-newer-${sheet.id}`}
+                >
+                  <AlertTriangle className="w-2.5 h-2.5" />
+                </div>
               )}
             </div>
             <div className="w-full px-1.5 py-1 text-center min-w-0">

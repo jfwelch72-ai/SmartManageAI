@@ -23,7 +23,7 @@ import {
   Upload, Download, Eye, FileText, Trash2, FolderOpen, Folder, ChevronRight, ChevronDown,
   Search, MoreVertical, File, Pencil, GripVertical, ArrowRight, Copy, Loader2,
   ExternalLink, X, FolderPlus, Printer, RotateCw, EyeOff, RefreshCw, Box, BookOpen, Columns2, Link2,
-  Building2, Layers
+  Building2, Layers, Pin, PinOff, ArrowUpCircle
 } from "lucide-react";
 const BimViewer = lazy(() => import("@/components/bid/BimViewer"));
 import BimQuantityDialog from "@/components/bim/BimQuantityDialog";
@@ -431,6 +431,18 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
     return !pinnedNames.has(sheet.sheetName || "");
   }, [effectiveSetId, pinnedSheetIdSet, sheets]);
 
+  // Task #1661 — find the latest sheet ID we'd swap a pinned sheet to.
+  // Returns null when the pinned revision is already the latest, or when
+  // sheet-status hasn't loaded yet.
+  const getLatestRevisionSheetId = useCallback((sheet: TakeoffSheet): string | null => {
+    if (!effectiveSetId || !sheetStatus) return null;
+    const latest = sheetStatus.pinnedToLatestMap?.[sheet.id];
+    if (!latest || latest === sheet.id) return null;
+    return latest;
+  }, [effectiveSetId, sheetStatus]);
+
+  const canManageDrawingSets = ["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(user?.role || "");
+
   const displaySheets = useMemo(() => {
     if (!effectiveSetId || activeSetItemMap.size === 0) return sheets;
     if (!showAllSheets) {
@@ -561,6 +573,72 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", project?.id, "takeoff", "sheets"] });
       setDeleteSheetId(null);
       toast({ title: "Sheet deleted" });
+    },
+  });
+
+  // Task #1661 — invalidate every active-set-derived query after an inline
+  // pin/unpin/swap so the Drawing Sets panel, sheet list badges, and
+  // compare view all reflect the change without a full refresh.
+  const invalidateDrawingSetCaches = useCallback((setId: string | null | undefined) => {
+    if (!setId) return;
+    queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "items"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "sheet-status"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "compare"] });
+    if (project?.id) {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", project.id, "drawing-sets"] });
+    }
+  }, [project?.id]);
+
+  // Task #1661 — pin a sheet to the active drawing set from the sheet list row.
+  // We intentionally omit revisionId because the sheet row itself already
+  // identifies the specific revision (each upload creates a new takeoff sheet).
+  const pinSheetToActiveSetMutation = useMutation({
+    mutationFn: async ({ setId, sheetId }: { setId: string; sheetId: string }) => {
+      const res = await apiRequest("POST", `/api/projects/drawing-sets/${setId}/items`, { sheetId });
+      return res.json();
+    },
+    onSuccess: (_data, vars) => {
+      invalidateDrawingSetCaches(vars.setId);
+      toast({ title: "Pinned to set" });
+    },
+    onError: (err: unknown) => {
+      const message = err instanceof Error ? err.message : "";
+      toast({
+        title: "Error",
+        description: message.includes("409") ? "Sheet already pinned." : "Failed to pin sheet.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const unpinSheetFromActiveSetMutation = useMutation({
+    mutationFn: async ({ setId, itemId }: { setId: string; itemId: string }) => {
+      await apiRequest("DELETE", `/api/projects/drawing-sets/${setId}/items/${itemId}`);
+    },
+    onSuccess: (_data, vars) => {
+      invalidateDrawingSetCaches(vars.setId);
+      toast({ title: "Removed from set" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to unpin sheet.", variant: "destructive" });
+    },
+  });
+
+  // Task #1661 — swap the pinned revision in place: remove the old item
+  // first then add the latest sheet so the unique (set, sheet) constraint
+  // never trips. Both calls must succeed for the toast to fire.
+  const swapPinnedRevisionMutation = useMutation({
+    mutationFn: async ({ setId, oldItemId, newSheetId }: { setId: string; oldItemId: string; newSheetId: string }) => {
+      await apiRequest("DELETE", `/api/projects/drawing-sets/${setId}/items/${oldItemId}`);
+      const res = await apiRequest("POST", `/api/projects/drawing-sets/${setId}/items`, { sheetId: newSheetId });
+      return res.json();
+    },
+    onSuccess: (_data, vars) => {
+      invalidateDrawingSetCaches(vars.setId);
+      toast({ title: "Pinned to latest revision" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to swap pinned revision.", variant: "destructive" });
     },
   });
 
@@ -1792,21 +1870,103 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                       ) : (
                                         <span className="break-words flex-1 min-w-0 leading-snug">{sheet.sheetName}</span>
                                       )}
-                                      {sheetHasNewerRevision(sheet) && (
-                                        <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0 bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400" data-testid={`badge-newer-revision-${sheet.id}`}>
-                                          Newer
-                                        </Badge>
-                                      )}
-                                      {isSheetPinned(sheet) && !sheetHasNewerRevision(sheet) && (
-                                        <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0 bg-green-50 text-green-600 border-green-300 dark:bg-green-900/20 dark:text-green-400" data-testid={`badge-pinned-${sheet.id}`}>
-                                          Pinned
-                                        </Badge>
-                                      )}
-                                      {isSheetNotInCurrentSet(sheet) && (
-                                        <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0 bg-gray-50 text-gray-500 border-gray-300 dark:bg-gray-800 dark:text-gray-400" data-testid={`badge-not-in-set-${sheet.id}`}>
-                                          Not in set
-                                        </Badge>
-                                      )}
+                                      {(() => {
+                                        // Task #1661 — render pinned/newer/not-in-set
+                                        // badges alongside inline pin/unpin/swap
+                                        // controls so document-control users can
+                                        // change set membership directly from the
+                                        // sheet row.
+                                        if (!effectiveSetId) return null;
+                                        const pinnedItem = activeSetItemMap.get(sheet.id);
+                                        const isPinned = isSheetPinned(sheet);
+                                        const hasNewer = sheetHasNewerRevision(sheet);
+                                        const latestId = getLatestRevisionSheetId(sheet);
+                                        const pinnedRevLabel = sheet.revisionLabel || pinnedItem?.revisionId || null;
+                                        const setName = drawingSetsData.find(s => s.id === effectiveSetId)?.name || "set";
+                                        return (
+                                          <>
+                                            {hasNewer && isPinned && (
+                                              <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0 bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400" data-testid={`badge-newer-revision-${sheet.id}`} title="A newer revision is available">
+                                                Newer
+                                              </Badge>
+                                            )}
+                                            {isPinned && (
+                                              <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0 bg-green-50 text-green-600 border-green-300 dark:bg-green-900/20 dark:text-green-400" data-testid={`badge-pinned-${sheet.id}`} title={`Pinned to ${setName}${pinnedRevLabel ? ` (${pinnedRevLabel})` : ""}`}>
+                                                <Pin className="w-2.5 h-2.5 mr-0.5" />
+                                                {pinnedRevLabel ? `Pinned: ${pinnedRevLabel}` : "Pinned"}
+                                              </Badge>
+                                            )}
+                                            {isSheetNotInCurrentSet(sheet) && !isPinned && (
+                                              <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0 bg-gray-50 text-gray-500 border-gray-300 dark:bg-gray-800 dark:text-gray-400" data-testid={`badge-not-in-set-${sheet.id}`}>
+                                                Not in set
+                                              </Badge>
+                                            )}
+                                            {canManageDrawingSets && renameSheetId !== sheet.id && (
+                                              <>
+                                                {isPinned && hasNewer && latestId && (
+                                                  <Button
+                                                    size="icon"
+                                                    variant="ghost"
+                                                    className="h-5 w-5 shrink-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                                                    title="Swap pinned revision to latest"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      if (!pinnedItem) return;
+                                                      swapPinnedRevisionMutation.mutate({
+                                                        setId: effectiveSetId,
+                                                        oldItemId: pinnedItem.id,
+                                                        newSheetId: latestId,
+                                                      });
+                                                    }}
+                                                    disabled={swapPinnedRevisionMutation.isPending}
+                                                    data-testid={`button-swap-revision-${sheet.id}`}
+                                                  >
+                                                    <ArrowUpCircle className="w-3.5 h-3.5" />
+                                                  </Button>
+                                                )}
+                                                {isPinned ? (
+                                                  <Button
+                                                    size="icon"
+                                                    variant="ghost"
+                                                    className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100"
+                                                    title={`Remove from ${setName}`}
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      if (!pinnedItem) return;
+                                                      unpinSheetFromActiveSetMutation.mutate({
+                                                        setId: effectiveSetId,
+                                                        itemId: pinnedItem.id,
+                                                      });
+                                                    }}
+                                                    disabled={unpinSheetFromActiveSetMutation.isPending}
+                                                    data-testid={`button-unpin-sheet-${sheet.id}`}
+                                                  >
+                                                    <PinOff className="w-3.5 h-3.5" />
+                                                  </Button>
+                                                ) : (
+                                                  <Button
+                                                    size="icon"
+                                                    variant="ghost"
+                                                    className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100"
+                                                    title={`Pin to ${setName}`}
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      pinSheetToActiveSetMutation.mutate({
+                                                        setId: effectiveSetId,
+                                                        sheetId: sheet.id,
+                                                      });
+                                                    }}
+                                                    disabled={pinSheetToActiveSetMutation.isPending}
+                                                    data-testid={`button-pin-sheet-${sheet.id}`}
+                                                  >
+                                                    <Pin className="w-3.5 h-3.5" />
+                                                  </Button>
+                                                )}
+                                              </>
+                                            )}
+                                          </>
+                                        );
+                                      })()}
                                       {(sheet as any).folderGroup === "BIM" && (
                                         <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0 bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" data-testid={`badge-bim-sheet-${sheet.id}`}>BIM</Badge>
                                       )}
@@ -1864,6 +2024,56 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                                 ))}
                                               </DropdownMenuSubContent>
                                             </DropdownMenuSub>
+                                            {effectiveSetId && canManageDrawingSets && (() => {
+                                              // Task #1661 — duplicate the inline pin/unpin/swap
+                                              // controls in the menu so keyboard / accessibility
+                                              // users can manage set membership without hovering.
+                                              const pinnedItem = activeSetItemMap.get(sheet.id);
+                                              const isPinned = isSheetPinned(sheet);
+                                              const latestId = getLatestRevisionSheetId(sheet);
+                                              return (
+                                                <>
+                                                  <DropdownMenuSeparator />
+                                                  {isPinned ? (
+                                                    <DropdownMenuItem
+                                                      onClick={() => {
+                                                        if (!pinnedItem) return;
+                                                        unpinSheetFromActiveSetMutation.mutate({ setId: effectiveSetId, itemId: pinnedItem.id });
+                                                      }}
+                                                      data-testid={`menu-unpin-sheet-${sheet.id}`}
+                                                    >
+                                                      <PinOff className="w-4 h-4 mr-2" />
+                                                      Unpin from active set
+                                                    </DropdownMenuItem>
+                                                  ) : (
+                                                    <DropdownMenuItem
+                                                      onClick={() => {
+                                                        pinSheetToActiveSetMutation.mutate({ setId: effectiveSetId, sheetId: sheet.id });
+                                                      }}
+                                                      data-testid={`menu-pin-sheet-${sheet.id}`}
+                                                    >
+                                                      <Pin className="w-4 h-4 mr-2" />
+                                                      Pin to active set
+                                                    </DropdownMenuItem>
+                                                  )}
+                                                  {isPinned && latestId && pinnedItem && (
+                                                    <DropdownMenuItem
+                                                      onClick={() => {
+                                                        swapPinnedRevisionMutation.mutate({
+                                                          setId: effectiveSetId,
+                                                          oldItemId: pinnedItem.id,
+                                                          newSheetId: latestId,
+                                                        });
+                                                      }}
+                                                      data-testid={`menu-swap-revision-${sheet.id}`}
+                                                    >
+                                                      <ArrowUpCircle className="w-4 h-4 mr-2" />
+                                                      Use latest revision
+                                                    </DropdownMenuItem>
+                                                  )}
+                                                </>
+                                              );
+                                            })()}
                                             <DropdownMenuSeparator />
                                             <DropdownMenuItem
                                               onClick={() => setDeleteSheetId(sheet.id)}

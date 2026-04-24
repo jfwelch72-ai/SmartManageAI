@@ -25,6 +25,8 @@ import {
   Check,
   X,
   GitCompare,
+  Pin,
+  Info,
 } from "lucide-react";
 import type { TakeoffSheet } from "@shared/schema";
 
@@ -169,35 +171,41 @@ export default function DrawingSetsPanel({
     },
   });
 
-  const addItemMutation = useMutation({
-    mutationFn: async ({ setId, sheetId, revisionId }: { setId: string; sheetId: string; revisionId?: string }) => {
-      const res = await apiRequest("POST", `/api/projects/drawing-sets/${setId}/items`, { sheetId, revisionId });
+  // Task #1661 — bulk-replace mutation: rewrites the entire pinned-sheet
+  // list in one call. Used by the "Pin all active sheets" and "Clear all
+  // pinned sheets" bulk actions in the slimmed-down Manage modal. Routine
+  // per-sheet pin/unpin happens inline on the sheet row, not in this modal.
+  const bulkReplaceMutation = useMutation({
+    mutationFn: async ({ setId, items }: { setId: string; items: Array<{ sheetId: string }> }) => {
+      if (items.length === 0) {
+        // Backend rejects empty arrays; clear by deleting each existing item.
+        await Promise.all(
+          manageItems.map(i =>
+            apiRequest("DELETE", `/api/projects/drawing-sets/${setId}/items/${i.id}`),
+          ),
+        );
+        return [];
+      }
+      const res = await apiRequest("POST", `/api/projects/drawing-sets/${setId}/items/bulk`, { items });
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", manageSetId, "items"] });
-      toast({ title: "Sheet added to set" });
+    onSuccess: (_data, vars) => {
+      // Use vars.setId rather than the closure-bound manageSetId so a
+      // late-arriving response cannot invalidate the wrong set's caches
+      // if the user closes the modal or switches sets mid-flight.
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", vars.setId, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", vars.setId, "sheet-status"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", vars.setId, "compare"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "drawing-sets"] });
+      toast({ title: "Pinned sheets updated" });
     },
     onError: () => {
-      toast({ title: "Error", description: "Failed to add sheet.", variant: "destructive" });
-    },
-  });
-
-  const removeItemMutation = useMutation({
-    mutationFn: async ({ setId, itemId }: { setId: string; itemId: string }) => {
-      await apiRequest("DELETE", `/api/projects/drawing-sets/${setId}/items/${itemId}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", manageSetId, "items"] });
-      toast({ title: "Sheet removed from set" });
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to remove sheet.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to update pinned sheets.", variant: "destructive" });
     },
   });
 
   const managedItemSheetIds = new Set(manageItems.map(i => i.sheetId));
-  const availableSheets = sheets.filter(s => !managedItemSheetIds.has(s.id) && s.isActive);
+  const activeProjectSheets = sheets.filter(s => s.isActive);
 
   return (
     <div className="space-y-3" data-testid="drawing-sets-panel">
@@ -414,86 +422,88 @@ export default function DrawingSetsPanel({
       <Dialog open={!!manageSetId} onOpenChange={(open) => { if (!open) setManageSetId(null); }}>
         <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto" data-testid="dialog-manage-set-items">
           <DialogHeader>
-            <DialogTitle>Manage Drawing Set Sheets</DialogTitle>
+            <DialogTitle>Bulk Manage Drawing Set</DialogTitle>
           </DialogHeader>
+          {/* Task #1661 — slimmed-down modal: routine per-sheet pin/unpin
+              now happens inline on each sheet row when this set is active.
+              This dialog is kept for bulk operations (replace all, clear all)
+              and a read-only summary of what is currently pinned. */}
           <div className="space-y-4">
-            {manageItems.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium mb-2">Pinned Sheets</h4>
-                <div className="space-y-1">
+            <div className="flex items-start gap-2 p-2 rounded border bg-muted/30 text-xs text-muted-foreground" data-testid="manage-set-inline-hint">
+              <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>
+                Tip: pin and unpin individual sheets directly from the sheet
+                list while this set is active. Use the actions below for
+                bulk changes.
+              </span>
+            </div>
+
+            <div>
+              <h4 className="text-sm font-medium mb-2">Bulk Actions</h4>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => bulkReplaceMutation.mutate({
+                    setId: manageSetId!,
+                    items: activeProjectSheets.map(s => ({ sheetId: s.id })),
+                  })}
+                  disabled={bulkReplaceMutation.isPending || activeProjectSheets.length === 0}
+                  data-testid="button-pin-all-active"
+                >
+                  {bulkReplaceMutation.isPending && <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />}
+                  <Pin className="w-3.5 h-3.5 mr-1" />
+                  Pin all active sheets ({activeProjectSheets.length})
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => bulkReplaceMutation.mutate({ setId: manageSetId!, items: [] })}
+                  disabled={bulkReplaceMutation.isPending || manageItems.length === 0}
+                  data-testid="button-clear-all-pinned"
+                >
+                  <X className="w-3.5 h-3.5 mr-1" />
+                  Clear all pinned
+                </Button>
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-sm font-medium mb-2">Currently Pinned ({manageItems.length})</h4>
+              {manageItems.length === 0 ? (
+                <p className="text-xs text-muted-foreground italic" data-testid="text-no-pinned-sheets">
+                  No sheets pinned yet. Pin from the sheet list or use a bulk action above.
+                </p>
+              ) : (
+                <div className="space-y-1 max-h-60 overflow-y-auto">
                   {manageItems.map((item) => {
                     const sheet = sheets.find(s => s.id === item.sheetId);
+                    const revLabel = sheet?.revisionLabel || item.revisionId;
                     return (
                       <div
                         key={item.id}
                         className="flex items-center justify-between p-2 rounded border text-sm"
                         data-testid={`pinned-sheet-${item.id}`}
                       >
-                        <div className="min-w-0 flex-1">
+                        <div className="min-w-0 flex-1 flex items-center gap-2">
+                          <Pin className="w-3 h-3 text-green-600 shrink-0" />
                           <span className="truncate">{sheet?.sheetName || item.sheetId}</span>
-                          {item.revisionId && (
-                            <Badge variant="outline" className="ml-2 text-xs">Rev: {item.revisionId}</Badge>
+                          {revLabel && (
+                            <Badge variant="outline" className="text-xs shrink-0">Rev: {revLabel}</Badge>
                           )}
                         </div>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-6 w-6 text-destructive"
-                          onClick={() => removeItemMutation.mutate({ setId: manageSetId!, itemId: item.id })}
-                          disabled={removeItemMutation.isPending}
-                          data-testid={`button-remove-item-${item.id}`}
-                        >
-                          <X className="w-3.5 h-3.5" />
-                        </Button>
                       </div>
                     );
                   })}
                 </div>
-              </div>
-            )}
-
-            {availableSheets.length > 0 && (
-              <div>
-                <h4 className="text-sm font-medium mb-2">Available Sheets</h4>
-                <div className="space-y-1 max-h-60 overflow-y-auto">
-                  {availableSheets.map((sheet) => (
-                    <div
-                      key={sheet.id}
-                      className="flex items-center justify-between p-2 rounded border text-sm hover:bg-muted/50"
-                      data-testid={`available-sheet-${sheet.id}`}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <span className="truncate">{sheet.sheetName || `Sheet ${sheet.sheetIndex}`}</span>
-                        {sheet.revisionLabel && (
-                          <Badge variant="secondary" className="ml-2 text-xs">Rev {sheet.revisionLabel}</Badge>
-                        )}
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6"
-                        onClick={() => addItemMutation.mutate({
-                          setId: manageSetId!,
-                          sheetId: sheet.id,
-                          revisionId: sheet.revisionLabel || undefined,
-                        })}
-                        disabled={addItemMutation.isPending}
-                        data-testid={`button-add-sheet-${sheet.id}`}
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {availableSheets.length === 0 && manageItems.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-3">
-                No sheets available in this project.
-              </p>
-            )}
+              )}
+            </div>
           </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setManageSetId(null)} data-testid="button-close-manage-set">
+              Close
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

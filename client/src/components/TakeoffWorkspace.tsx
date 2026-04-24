@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback, Fragment } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, Fragment } from "react";
 import { Stage, Layer, Image as KonvaImage, Line, Circle, Text, Rect, Group } from "react-konva";
 import { MarkupShapeView, type MarkupShape } from "@/components/markups/MarkupRenderer";
 import {
@@ -512,6 +512,43 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         hasSOV: new Set<string>(measurementLinksData.linkedMeasurementIds.sov || []),
       }
     : undefined;
+
+  // Task #1661 — surface drawing-set membership state on the takeoff
+  // canvas thumbnail strip. We resolve the project's active (or primary)
+  // drawing set, fetch its pinned items + per-sheet status, and pass the
+  // derived id sets into <PageThumbnailStrip /> so each thumbnail can
+  // render the same Pinned / Newer indicators shown in the Plans tab.
+  const drawingSetsEnabled = !!projectId && context?.type !== "bid";
+  const { data: drawingSetsForCanvas = [] } = useQuery<Array<{ id: string; name: string; isPrimary: boolean }>>({
+    queryKey: ["/api/projects", projectId, "drawing-sets"],
+    enabled: drawingSetsEnabled,
+    staleTime: 30000,
+  });
+  const activeCanvasSetId = useMemo(() => {
+    const primary = drawingSetsForCanvas.find(s => s.isPrimary);
+    return primary?.id ?? drawingSetsForCanvas[0]?.id ?? null;
+  }, [drawingSetsForCanvas]);
+  // Sheet-status payload contract matches PlansTab: the server returns
+  // pinnedSheetIds + newerSheetIds + pinnedToLatestMap (see
+  // server/drawingSetRoutes.ts GET /drawing-sets/:setId/sheet-status).
+  const { data: activeSetStatus } = useQuery<{ pinnedSheetIds: string[]; newerSheetIds: string[]; pinnedToLatestMap?: Record<string, string | null> }>({
+    queryKey: ["/api/projects", "drawing-sets", activeCanvasSetId, "sheet-status"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/drawing-sets/${activeCanvasSetId}/sheet-status`, { credentials: "include" });
+      if (!res.ok) return { pinnedSheetIds: [], newerSheetIds: [] };
+      return res.json();
+    },
+    enabled: !!activeCanvasSetId,
+    staleTime: 30000,
+  });
+  const pinnedSheetIdsForStrip = useMemo(
+    () => new Set<string>(activeSetStatus?.pinnedSheetIds ?? []),
+    [activeSetStatus],
+  );
+  const newerSheetIdsForStrip = useMemo(
+    () => new Set<string>(activeSetStatus?.newerSheetIds ?? []),
+    [activeSetStatus],
+  );
 
   const { data: orgUsersData = [] } = useQuery({ queryKey: ["/api/messaging/users"] });
   const orgUsers: any[] = (orgUsersData as any[]).map((u: any) => ({
@@ -2054,6 +2091,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               onSelectSheet={setSelectedSheet}
               layout="horizontal"
               measurementCounts={measurementCountsPerSheet}
+              pinnedSheetIds={pinnedSheetIdsForStrip}
+              newerSheetIds={newerSheetIdsForStrip}
             />
           </div>
         )}
