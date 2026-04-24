@@ -1,5 +1,8 @@
 {pkgs}: {
   deps = [
+    pkgs.nghttp2
+    pkgs.libpsl
+    pkgs.libjpeg8
     pkgs.zlib
     pkgs.libgbm
     pkgs.libjpeg_turbo

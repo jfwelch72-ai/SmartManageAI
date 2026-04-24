@@ -20,3 +20,12 @@ timeout 30 npx tsx scripts/scrub-legacy-roles.ts 2>&1 || echo "[post-merge] lega
 # See DATABASE_MIGRATION_STRATEGY.md for details.
 timeout 200 npx tsx scripts/dev-schema-sync.ts 2>&1 \
   || echo "[post-merge] dev schema sync skipped or failed (schema handled by startup migrations)"
+
+# Task #1866 — keep Playwright's bundled WebKit launchable on the Replit
+# dev container. The setup script is idempotent: when WebKit is already
+# installed and patched it is a no-op (~50ms). When the WebKit cache is
+# wiped or upgraded by `npx playwright install` it re-applies the
+# `MiniBrowser` LD_LIBRARY_PATH fix so `--project=webkit` keeps working.
+# Failures are tolerated so a Playwright cache hiccup never blocks merges.
+timeout 60 bash scripts/setup-playwright-webkit.sh 2>&1 \
+  || echo "[post-merge] playwright webkit setup skipped or failed (run scripts/setup-playwright-webkit.sh manually)"

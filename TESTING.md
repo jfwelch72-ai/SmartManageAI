@@ -57,3 +57,51 @@ re-run `npm run test:setup`:
 ```sql
 DROP DATABASE heliumdb_test;
 ```
+
+# Running Playwright (`npm run test:e2e`) on Replit
+
+Chromium and Firefox work out of the box on the Replit dev container.
+The bundled WebKit needs a one-time fix for two reasons:
+
+1. Playwright's WebKit zip ships a `MiniBrowser` shell wrapper that
+   exports `LD_LIBRARY_PATH="${MYDIR}/lib:${MYDIR}/sys/lib"` at launch,
+   which clobbers the nix-store paths in `$REPLIT_LD_LIBRARY_PATH` where
+   `libjpeg.so.8`, `libpsl.so.5`, and `libnghttp2.so.14` live (see the
+   `libjpeg8`, `libpsl`, and `nghttp2` entries near the top of
+   `replit.nix`).
+2. Playwright's pre-launch `validateDependenciesLinux` runs `ldd` against
+   the binary *before* the wrapper executes, so it bails with a misleading
+   "Host system is missing dependencies" error even though the libs are
+   reachable at runtime.
+
+## One-shot setup (per workspace)
+
+```bash
+bash scripts/setup-playwright-webkit.sh
+```
+
+That script:
+
+- Runs `npx playwright install webkit` if the WebKit folder is missing
+  under `$XDG_CACHE_HOME/ms-playwright` (which on Replit is
+  `/home/runner/workspace/.cache/ms-playwright`).
+- Idempotently patches both `minibrowser-gtk/MiniBrowser` and
+  `minibrowser-wpe/MiniBrowser` so the `LD_LIBRARY_PATH` export *appends*
+  the previous `LD_LIBRARY_PATH` and `REPLIT_LD_LIBRARY_PATH` instead of
+  clobbering them. Re-running is safe — patched wrappers are detected via
+  a sentinel comment.
+
+`playwright.config.ts` already sets
+`PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1` automatically when
+`REPLIT_LD_LIBRARY_PATH` is present, so once the wrappers are patched the
+WebKit project just works:
+
+```bash
+npx playwright test --project=webkit e2e/takeoff-markup-undo.spec.ts \
+  e2e/takeoff-markup-history-wiring.spec.ts
+```
+
+CI (Ubuntu) is unaffected — `npx playwright install --with-deps` puts
+every required lib under `/usr/lib/x86_64-linux-gnu`, so the wrapper's
+default `LD_LIBRARY_PATH` resolves them and host-requirements validation
+passes without the env override.
