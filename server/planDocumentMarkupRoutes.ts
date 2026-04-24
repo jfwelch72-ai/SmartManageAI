@@ -694,6 +694,276 @@ router.post(
 );
 
 // ============================================================================
+// Task #1737 — Bulk RESTORE markups with caller-supplied ids. Powers the
+// "undo delete" / "redo create" paths in the plan markup overlay. The
+// undo stack hands back the full pre-deletion snapshot of every removed
+// markup; this route re-inserts them with their original ids so any
+// downstream references (group memberships, pin links, source_markup_id
+// carryover) stay valid. ON CONFLICT DO NOTHING per row makes the route
+// idempotent so a double-click or stale Ctrl+Z never errors out.
+// ============================================================================
+const restoreMarkupsBody = z.object({
+  markups: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        pageNumber: z.number().int().min(1),
+        tool: z.enum(["ARROW", "TEXT", "RECTANGLE", "CLOUD", "HIGHLIGHT", "FREEHAND"]),
+        points: z.array(z.object({ x: z.number(), y: z.number() })).min(1),
+        color: z.string().min(1).max(16),
+        thickness: z.number().int().min(1).max(64),
+        text: z.string().nullable().optional(),
+        layerId: z.string().min(1).nullable().optional(),
+        groupId: z.string().min(1).nullable().optional(),
+        createdBy: z.string().min(1).optional(),
+      }),
+    )
+    .min(1)
+    .max(500),
+});
+
+router.post(
+  "/api/plan-documents/:docId/markups/restore",
+  requireAuth,
+  requireRole(...MARKUP_AUTHOR_ROLES),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const startedAt = Date.now();
+    try {
+      const user = req.user!;
+      if (!user.organizationId) {
+        res.status(403).json({ error: "No organization assigned" });
+        return;
+      }
+      const access = await loadDocAndAssertOrg(req.params.docId, req);
+      if (!access.ok) {
+        res.status(access.status).json({ error: access.error });
+        return;
+      }
+      const body = restoreMarkupsBody.parse(req.body || {});
+
+      // Only admins/managers (and SUPER_ADMIN) may preserve the
+      // original creator's id when restoring; everyone else is forced
+      // to caller-id attribution to prevent authorship spoofing.
+      const isAdminOrManagerForRestore =
+        user.role === "SUPER_ADMIN" ||
+        user.role === "ADMIN" ||
+        user.role === "MANAGER";
+
+      // Verify any caller-supplied layerIds belong to this plan document
+      // (mirrors the per-row check in the create handler so a malicious
+      // restore payload can't leak markups into another sheet's layer).
+      const layerIds = Array.from(
+        new Set(
+          body.markups
+            .map((m) => m.layerId)
+            .filter((v): v is string => typeof v === "string"),
+        ),
+      );
+      let validLayerIds = new Set<string>();
+      if (layerIds.length > 0) {
+        const layers = await db
+          .select()
+          .from(planMarkupLayers)
+          .where(inArray(planMarkupLayers.id, layerIds));
+        for (const l of layers) {
+          if (l.planDocumentId === access.doc.id) validLayerIds.add(l.id);
+        }
+        for (const lid of layerIds) {
+          if (!validLayerIds.has(lid)) {
+            res.status(400).json({ error: "Layer does not belong to this plan document" });
+            return;
+          }
+        }
+      }
+
+      // Insert each row with its original id. ON CONFLICT (id) DO NOTHING
+      // makes a duplicate restore (e.g. user double-tapped Ctrl+Z) a
+      // no-op rather than a 500 — the previously-restored row stays.
+      const inserted: Array<typeof planDocumentMarkups.$inferSelect> = [];
+      await db.transaction(async (tx) => {
+        for (const m of body.markups) {
+          const values = {
+            id: m.id,
+            organizationId: user.organizationId!,
+            projectId: access.doc.projectId,
+            planDocumentId: access.doc.id,
+            pageNumber: m.pageNumber,
+            tool: m.tool,
+            points: JSON.stringify(m.points),
+            color: m.color,
+            thickness: m.thickness,
+            text: m.text ?? null,
+            // Authorship preservation: an admin/manager may restore a
+            // row with the original creator's id (so undo of someone
+            // else's delete keeps audit lineage intact). Non-privileged
+            // callers (FIELD_WORKER / SUPERINTENDENT) can never spoof
+            // authorship — we force createdBy to the caller's id even
+            // if the client sends a different value, so this route
+            // can't be used to forge attribution or escalate
+            // ownership-based edit rights.
+            createdBy:
+              isAdminOrManagerForRestore && m.createdBy
+                ? m.createdBy
+                : user.id,
+            layerId: m.layerId ?? null,
+            groupId: m.groupId ?? null,
+          };
+          const rows = await tx
+            .insert(planDocumentMarkups)
+            .values(values)
+            .onConflictDoNothing({ target: planDocumentMarkups.id })
+            .returning();
+          if (rows[0]) inserted.push(rows[0]);
+        }
+      });
+
+      await logAudit(
+        {
+          userId: user.id,
+          action: "CREATE",
+          entityType: "planDocumentMarkup",
+          entityId: access.doc.id,
+          newValue: JSON.stringify({
+            op: "restore",
+            requested: body.markups.length,
+            inserted: inserted.length,
+            ids: body.markups.map((m) => m.id),
+          }),
+        },
+        req,
+      );
+      recordJobMetrics("plan_document_markups_restore", {
+        ok: 1,
+        count: inserted.length,
+        ms: Date.now() - startedAt,
+      });
+      res.status(201).json({
+        ok: true,
+        count: inserted.length,
+        markups: inserted.map((m) => ({ ...m, points: safeParsePoints(m.points) })),
+      });
+    } catch (err: any) {
+      recordJobMetrics("plan_document_markups_restore", {
+        error: 1,
+        ms: Date.now() - startedAt,
+      });
+      if (err?.name === "ZodError") {
+        res.status(400).json({ error: "Invalid restore request", details: err.errors });
+        return;
+      }
+      logError("Error restoring plan document markups", {}, err instanceof Error ? err : new Error(String(err)));
+      next(err);
+    }
+  },
+);
+
+// ============================================================================
+// Task #1737 — Bulk SET groupId per markup. Powers the "undo group" /
+// "undo ungroup" / "redo group" / "redo ungroup" paths. Each entry on
+// the undo stack remembers the pre-mutation groupId per markup so this
+// route can restore the prior state in a single round-trip. Each
+// markup's groupId can be set independently, which lets us undo an
+// "ungroup" that originally affected members from multiple groups
+// without merging them into a single new group.
+// ============================================================================
+const groupAssignmentsBody = z.object({
+  assignments: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        groupId: z.string().min(1).nullable(),
+      }),
+    )
+    .min(1)
+    .max(500),
+});
+
+router.post(
+  "/api/plan-documents/:docId/markup-group-assignments",
+  requireAuth,
+  requireRole(...MARKUP_AUTHOR_ROLES),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const startedAt = Date.now();
+    try {
+      const access = await loadDocAndAssertOrg(req.params.docId, req);
+      if (!access.ok) {
+        res.status(access.status).json({ error: access.error });
+        return;
+      }
+      const body = groupAssignmentsBody.parse(req.body || {});
+      const ids = body.assignments.map((a) => a.id);
+      const rows = await db
+        .select()
+        .from(planDocumentMarkups)
+        .where(inArray(planDocumentMarkups.id, ids));
+      if (rows.length !== ids.length) {
+        res.status(404).json({ error: "One or more markups were not found" });
+        return;
+      }
+      const user = req.user!;
+      const isSuperAdmin = user.role === "SUPER_ADMIN";
+      // RBAC parity: this route is the inverse of the forward
+      // /markup-groups and /markup-ungroup routes (Task #1737 undo /
+      // redo path), so its authorization must match theirs exactly —
+      // role + same-doc + same-org. The forward routes deliberately
+      // do NOT enforce per-row ownership (a non-admin user can group
+      // a mixed-ownership selection successfully today), so neither
+      // does this one. Otherwise Ctrl+Z would 403 on a group/ungroup
+      // that the same user just performed without error.
+      for (const r of rows) {
+        if (r.planDocumentId !== access.doc.id) {
+          res
+            .status(400)
+            .json({ error: "All markups must belong to the same plan document" });
+          return;
+        }
+        if (!isSuperAdmin && r.organizationId !== user.organizationId) {
+          res.status(403).json({ error: "Access denied" });
+          return;
+        }
+      }
+      await db.transaction(async (tx) => {
+        for (const a of body.assignments) {
+          await tx
+            .update(planDocumentMarkups)
+            .set({ groupId: a.groupId })
+            .where(eq(planDocumentMarkups.id, a.id));
+        }
+      });
+      await logAudit(
+        {
+          userId: user.id,
+          action: "UPDATE",
+          entityType: "planDocumentMarkup",
+          entityId: access.doc.id,
+          newValue: JSON.stringify({
+            op: "groupAssignments",
+            count: body.assignments.length,
+          }),
+        },
+        req,
+      );
+      recordJobMetrics("plan_document_markups_group_assign", {
+        ok: 1,
+        count: body.assignments.length,
+        ms: Date.now() - startedAt,
+      });
+      res.json({ ok: true, count: body.assignments.length });
+    } catch (err: any) {
+      recordJobMetrics("plan_document_markups_group_assign", {
+        error: 1,
+        ms: Date.now() - startedAt,
+      });
+      if (err?.name === "ZodError") {
+        res.status(400).json({ error: "Invalid group-assignments request", details: err.errors });
+        return;
+      }
+      next(err);
+    }
+  },
+);
+
+// ============================================================================
 // Task #1662 — Layer CRUD: list/create/rename/delete + per-user
 // visibility toggle. Layers live one-per-plan_document and the default
 // layer is auto-materialised on first read so legacy sheets keep

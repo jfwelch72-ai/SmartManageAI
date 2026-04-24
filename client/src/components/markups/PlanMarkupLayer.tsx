@@ -45,6 +45,17 @@
  *    descriptive labels) up to the parent via `onHistoryChange` so the
  *    toolbar can render Undo / Redo buttons whose tooltips spell out
  *    exactly which action will be reversed.
+ *
+ * Task #1737 — Extend the undo/redo stack to cover create / delete /
+ * group / ungroup actions in addition to group moves. The
+ * `MarkupHistoryEntry` is now a discriminated union (`type` =
+ * "move" | "create" | "delete" | "group" | "ungroup"); each variant
+ * carries the snapshot data needed to fire the inverse mutation
+ * (re-create deleted markups with their original ids via the new
+ * `/markups/restore` endpoint, restore prior groupId memberships via
+ * the new `/markup-group-assignments` endpoint, etc.). The same N=20
+ * bounded policy applies — mixing action types still walks the stack
+ * one step per Ctrl+Z.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -135,16 +146,111 @@ export interface MarkupMoveHistoryEntry {
 }
 
 /**
- * Task #1723 — Format a history entry for the toolbar tooltip. Pure
- * helper so the label rendering stays consistent between the Undo and
- * Redo buttons and is unit-testable independently of the layer.
+ * Task #1737 — Snapshot of every field needed to re-create a deleted
+ * markup with its original id via `POST /markups/restore`. Captured at
+ * deletion time (so the cache is the source of truth) and stored on the
+ * undo stack until the entry is consumed.
  */
-export function describeHistoryEntry(entry: MarkupMoveHistoryEntry): string {
-  if (entry.type === "move") {
-    const n = entry.count;
-    return n === 1 ? "Move 1 markup" : `Move ${n} markups`;
+export interface MarkupRestoreSnapshot {
+  id: string;
+  pageNumber: number;
+  tool: MarkupTool;
+  points: Array<{ x: number; y: number }>;
+  color: string;
+  thickness: number;
+  text: string | null;
+  layerId: string | null;
+  groupId: string | null;
+  createdBy?: string;
+}
+
+/**
+ * Task #1737 — Create entry. Forward action created the markup; undo
+ * deletes it; redo re-creates it via the restore endpoint so the
+ * original id (and any references like group memberships) survives.
+ */
+export interface MarkupCreateHistoryEntry {
+  type: "create";
+  markup: MarkupRestoreSnapshot;
+}
+
+/**
+ * Task #1737 — Delete entry. Forward action deleted one or more markups
+ * (a single Delete click on a multi-member selection counts as one
+ * entry, so the user undoes it in one Ctrl+Z). Undo re-creates every
+ * snapshot via the restore endpoint; redo deletes them again. The
+ * `count` powers the toolbar tooltip ("Delete N markups").
+ */
+export interface MarkupDeleteHistoryEntry {
+  type: "delete";
+  markups: MarkupRestoreSnapshot[];
+  count: number;
+}
+
+/**
+ * Task #1737 — Group entry. Each member remembers what its groupId was
+ * before the group action (usually null, but a markup could have been
+ * moved between groups) and the new groupId assigned by the server.
+ * Undo restores `previousGroupId` per member via the bulk
+ * group-assignments endpoint; redo restores `nextGroupId`. Storing
+ * per-member values means we never accidentally merge formerly-distinct
+ * groups when redoing.
+ */
+export interface MarkupGroupHistoryEntry {
+  type: "group";
+  assignments: Array<{
+    id: string;
+    previousGroupId: string | null;
+    nextGroupId: string;
+  }>;
+  count: number;
+}
+
+/**
+ * Task #1737 — Ungroup entry. Each member remembers what its prior
+ * groupId was; undo restores it; redo clears the groupId again.
+ */
+export interface MarkupUngroupHistoryEntry {
+  type: "ungroup";
+  assignments: Array<{ id: string; previousGroupId: string }>;
+  count: number;
+}
+
+/**
+ * Task #1737 — Discriminated union covering every action type the
+ * markup undo/redo stack accepts. The shared bounded ring buffer
+ * (`MAX_MARKUP_HISTORY`) walks any mix of these one entry per Ctrl+Z.
+ */
+export type MarkupHistoryEntry =
+  | MarkupMoveHistoryEntry
+  | MarkupCreateHistoryEntry
+  | MarkupDeleteHistoryEntry
+  | MarkupGroupHistoryEntry
+  | MarkupUngroupHistoryEntry;
+
+/**
+ * Task #1723 / Task #1737 — Format a history entry for the toolbar
+ * tooltip. Pure helper so the label rendering stays consistent between
+ * the Undo and Redo buttons (which prepend "Undo " / "Redo ") and is
+ * unit-testable independently of the layer.
+ */
+export function describeHistoryEntry(entry: MarkupHistoryEntry): string {
+  switch (entry.type) {
+    case "move": {
+      const n = entry.count;
+      return n === 1 ? "Move 1 markup" : `Move ${n} markups`;
+    }
+    case "create":
+      return "Create";
+    case "delete": {
+      const n = entry.count;
+      return n === 1 ? "Delete 1 markup" : `Delete ${n} markups`;
+    }
+    case "group":
+      return "Group";
+    case "ungroup":
+      return "Ungroup";
   }
-  return "Edit";
 }
 
 interface ServerMarkup extends MarkupShape {
@@ -152,6 +258,10 @@ interface ServerMarkup extends MarkupShape {
   organizationId?: string;
   layerId?: string | null;
   groupId?: string | null;
+  // Task #1737 — Page number is included on the GET/POST response so
+  // the delete-undo snapshot can be re-posted to the restore endpoint
+  // without inferring the page from the surrounding component state.
+  pageNumber?: number;
 }
 
 function makeId() {
@@ -218,12 +328,28 @@ export default function PlanMarkupLayer({
   // global keyboard listener and the parent-facing handlers see the
   // latest stack contents without needing to be re-bound on every
   // edit.
-  const [undoStack, setUndoStack] = useState<MarkupMoveHistoryEntry[]>([]);
-  const [redoStack, setRedoStack] = useState<MarkupMoveHistoryEntry[]>([]);
-  const undoStackRef = useRef<MarkupMoveHistoryEntry[]>([]);
-  const redoStackRef = useRef<MarkupMoveHistoryEntry[]>([]);
+  const [undoStack, setUndoStack] = useState<MarkupHistoryEntry[]>([]);
+  const [redoStack, setRedoStack] = useState<MarkupHistoryEntry[]>([]);
+  const undoStackRef = useRef<MarkupHistoryEntry[]>([]);
+  const redoStackRef = useRef<MarkupHistoryEntry[]>([]);
   undoStackRef.current = undoStack;
   redoStackRef.current = redoStack;
+
+  // Task #1737 — Helper that pushes a fresh history entry onto the
+  // undo stack and clears the redo stack (the standard undo-history
+  // contract: any new edit invalidates pending redo entries). The
+  // bounded ring buffer drops the oldest entry once the stack grows
+  // past `MAX_MARKUP_HISTORY` so memory stays flat across long edit
+  // sessions.
+  const pushHistory = useCallback((entry: MarkupHistoryEntry) => {
+    setUndoStack((prev) => {
+      const next = [...prev, entry];
+      return next.length > MAX_MARKUP_HISTORY
+        ? next.slice(next.length - MAX_MARKUP_HISTORY)
+        : next;
+    });
+    setRedoStack([]);
+  }, []);
   // Task #1653 — anchor for the in-canvas text input that replaces the
   // legacy `window.prompt()` flow. Coordinates are normalized 0-1 to
   // match `MarkupShape.points`; we denormalize when positioning the
@@ -272,28 +398,64 @@ export default function PlanMarkupLayer({
     });
   }, [documentId, pageNumber]);
 
+  // Task #1737 — Capture the original create-mutation behavior plus a
+  // history-on-success step. The server returns the materialised
+  // markup (including its server-generated id, the resolved layerId,
+  // and createdBy) which becomes the snapshot the undo stack hands
+  // back to the restore endpoint when the user redoes a "create" or
+  // undoes a "delete" of this same row. We push history after a
+  // successful POST (rather than in `onMutate`) because the snapshot
+  // needs the canonical server id.
   const createMutation = useMutation({
     mutationFn: async (shape: MarkupShape) => {
-      return apiRequest("POST", `/api/plan-documents/${encodeURIComponent(documentId)}/markups`, {
-        pageNumber,
-        tool: shape.tool,
-        points: shape.points,
-        color: shape.color,
-        thickness: shape.thickness,
-        text: shape.text ?? null,
-        // Task #1662 — explicit layerId so new markups land in whichever
-        // layer the user picked from the panel. null routes to the
-        // server-side default layer.
-        layerId: activeLayerId,
-      });
+      const res = await apiRequest(
+        "POST",
+        `/api/plan-documents/${encodeURIComponent(documentId)}/markups`,
+        {
+          pageNumber,
+          tool: shape.tool,
+          points: shape.points,
+          color: shape.color,
+          thickness: shape.thickness,
+          text: shape.text ?? null,
+          // Task #1662 — explicit layerId so new markups land in whichever
+          // layer the user picked from the panel. null routes to the
+          // server-side default layer.
+          layerId: activeLayerId,
+        },
+      );
+      return (await res.json()) as ServerMarkup;
     },
-    onSuccess: () => invalidate(),
+    onSuccess: (created) => {
+      pushHistory({
+        type: "create",
+        markup: {
+          id: created.id,
+          pageNumber: created.pageNumber ?? pageNumber,
+          tool: created.tool as MarkupTool,
+          points: created.points.map((p) => ({ x: p.x, y: p.y })),
+          color: created.color,
+          thickness: created.thickness,
+          text: created.text ?? null,
+          layerId: created.layerId ?? null,
+          groupId: created.groupId ?? null,
+          createdBy: created.createdBy,
+        },
+      });
+      invalidate();
+    },
     onError: (e: Error) => {
       invalidate();
       toast({ title: "Could not save markup", description: e.message, variant: "destructive" });
     },
   });
 
+  // Task #1737 — Bulk delete used by the selection toolbar. Captures a
+  // snapshot of every selected markup BEFORE issuing the network calls
+  // so the undo stack has everything it needs to recreate them via the
+  // restore endpoint, optimistically removes them from the cache, and
+  // pushes a single history entry covering the whole selection so the
+  // user undoes a multi-delete in one Ctrl+Z.
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => apiRequest("DELETE", `/api/plan-document-markups/${id}`),
     onSuccess: () => {
@@ -303,27 +465,217 @@ export default function PlanMarkupLayer({
       toast({ title: "Could not delete markup", description: e.message, variant: "destructive" }),
   });
 
+  // Task #1737 — Bulk delete + history capture. Returns whether the
+  // delete actually fired (so the toolbar can clear the selection only
+  // when at least one row was queued).
+  const deleteSelection = useCallback(
+    async (ids: string[]) => {
+      if (ids.length === 0) return;
+      const snapshots: MarkupRestoreSnapshot[] = [];
+      for (const id of ids) {
+        const m = markups.find((x) => x.id === id);
+        if (!m) continue;
+        snapshots.push({
+          id: m.id,
+          pageNumber: m.pageNumber ?? pageNumber,
+          tool: m.tool,
+          points: m.points.map((p) => ({ x: p.x, y: p.y })),
+          color: m.color,
+          thickness: m.thickness,
+          text: m.text ?? null,
+          layerId: m.layerId ?? null,
+          groupId: m.groupId ?? null,
+          createdBy: m.createdBy,
+        });
+      }
+      if (snapshots.length === 0) return;
+      // Optimistically pull the rows out of the cache so the canvas
+      // updates immediately. Rolled back below if every delete fails.
+      const queryKey = ["/api/plan-documents", documentId, "markups", pageNumber];
+      const previous = queryClient.getQueryData<ServerMarkup[]>(queryKey);
+      queryClient.setQueryData<ServerMarkup[]>(queryKey, (old) =>
+        old ? old.filter((m) => !snapshots.some((s) => s.id === m.id)) : old,
+      );
+      try {
+        await Promise.all(snapshots.map((s) => deleteMutation.mutateAsync(s.id)));
+        pushHistory({
+          type: "delete",
+          markups: snapshots,
+          count: snapshots.length,
+        });
+      } catch {
+        if (previous) queryClient.setQueryData(queryKey, previous);
+        invalidate();
+      }
+    },
+    [markups, documentId, pageNumber, deleteMutation, pushHistory, invalidate],
+  );
+
   // Task #1662 — group / ungroup mutations. Group expands the user's
   // current selection (plus any siblings already sharing groups with
   // the selected ids) so a single Group click on two markups always
   // produces one group.
+  // Task #1737 — Both mutations now also capture per-member previous
+  // groupId snapshots and push a history entry on success so the user
+  // can undo/redo the action via Ctrl+Z.
   const groupMutation = useMutation({
-    mutationFn: async (ids: string[]) =>
-      apiRequest("POST", `/api/plan-documents/${encodeURIComponent(documentId)}/markup-groups`, {
-        markupIds: ids,
-      }),
-    onSuccess: () => invalidate(),
+    mutationFn: async (ids: string[]) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/plan-documents/${encodeURIComponent(documentId)}/markup-groups`,
+        { markupIds: ids },
+      );
+      const body = (await res.json()) as { ok: boolean; groupId: string; count: number };
+      return { ids, groupId: body.groupId };
+    },
+    onMutate: async (ids: string[]) => {
+      const previous = ids.map((id) => {
+        const m = markups.find((x) => x.id === id);
+        return { id, previousGroupId: m?.groupId ?? null };
+      });
+      return { previous };
+    },
+    onSuccess: ({ ids, groupId }, _vars, ctx) => {
+      const prevById = new Map(
+        (ctx?.previous ?? []).map((p) => [p.id, p.previousGroupId]),
+      );
+      pushHistory({
+        type: "group",
+        assignments: ids.map((id) => ({
+          id,
+          previousGroupId: prevById.get(id) ?? null,
+          nextGroupId: groupId,
+        })),
+        count: ids.length,
+      });
+      invalidate();
+    },
     onError: (e: Error) =>
       toast({ title: "Could not group markups", description: e.message, variant: "destructive" }),
   });
   const ungroupMutation = useMutation({
-    mutationFn: async (ids: string[]) =>
-      apiRequest("POST", `/api/plan-documents/${encodeURIComponent(documentId)}/markup-ungroup`, {
-        markupIds: ids,
-      }),
-    onSuccess: () => invalidate(),
+    mutationFn: async (ids: string[]) => {
+      await apiRequest(
+        "POST",
+        `/api/plan-documents/${encodeURIComponent(documentId)}/markup-ungroup`,
+        { markupIds: ids },
+      );
+      return { ids };
+    },
+    onMutate: async (ids: string[]) => {
+      const previous = ids
+        .map((id) => {
+          const m = markups.find((x) => x.id === id);
+          return { id, previousGroupId: m?.groupId ?? null };
+        })
+        // An ungroup entry only makes sense for members that actually
+        // had a groupId; markups already ungrouped contribute nothing
+        // to the inverse mutation.
+        .filter((p): p is { id: string; previousGroupId: string } => p.previousGroupId !== null);
+      return { previous };
+    },
+    onSuccess: ({ ids }, _vars, ctx) => {
+      const previous = ctx?.previous ?? [];
+      if (previous.length === 0) {
+        invalidate();
+        return;
+      }
+      pushHistory({
+        type: "ungroup",
+        assignments: previous,
+        count: previous.length,
+      });
+      invalidate();
+    },
     onError: (e: Error) =>
       toast({ title: "Could not ungroup markups", description: e.message, variant: "destructive" }),
+  });
+
+  // Task #1737 — Restore mutation: re-creates one or more markups with
+  // their original ids via `POST /markups/restore`. Used for the undo
+  // path of "delete" and the redo path of "create". Optimistically
+  // re-adds the rows to the cache so the canvas updates immediately.
+  const restoreMutation = useMutation({
+    mutationFn: async (snapshots: MarkupRestoreSnapshot[]) =>
+      apiRequest(
+        "POST",
+        `/api/plan-documents/${encodeURIComponent(documentId)}/markups/restore`,
+        { markups: snapshots },
+      ),
+    onMutate: async (snapshots) => {
+      const queryKey = ["/api/plan-documents", documentId, "markups", pageNumber];
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<ServerMarkup[]>(queryKey);
+      queryClient.setQueryData<ServerMarkup[]>(queryKey, (old) => {
+        const base = old ?? [];
+        // Drop any stale row with the same id so we don't end up with
+        // a duplicate when the optimistic restore overlaps an
+        // in-flight refetch.
+        const baseFiltered = base.filter(
+          (m) => !snapshots.some((s) => s.id === m.id),
+        );
+        const newRows: ServerMarkup[] = snapshots.map((s) => ({
+          id: s.id,
+          tool: s.tool,
+          points: s.points,
+          color: s.color,
+          thickness: s.thickness,
+          text: s.text ?? undefined,
+          layerId: s.layerId,
+          groupId: s.groupId,
+        }));
+        return [...baseFiltered, ...newRows];
+      });
+      return { previous };
+    },
+    onError: (e: Error, _vars, ctx) => {
+      const queryKey = ["/api/plan-documents", documentId, "markups", pageNumber];
+      if (ctx?.previous) queryClient.setQueryData(queryKey, ctx.previous);
+      toast({
+        title: "Could not restore markup",
+        description: e.message,
+        variant: "destructive",
+      });
+    },
+    onSettled: () => invalidate(),
+  });
+
+  // Task #1737 — Bulk-set per-markup groupIds in one round-trip. Used
+  // for the undo/redo paths of group + ungroup so we can restore the
+  // exact prior membership (including formerly-distinct groups) without
+  // creating a fresh merged group.
+  const groupAssignMutation = useMutation({
+    mutationFn: async (
+      assignments: Array<{ id: string; groupId: string | null }>,
+    ) =>
+      apiRequest(
+        "POST",
+        `/api/plan-documents/${encodeURIComponent(documentId)}/markup-group-assignments`,
+        { assignments },
+      ),
+    onMutate: async (assignments) => {
+      const queryKey = ["/api/plan-documents", documentId, "markups", pageNumber];
+      await queryClient.cancelQueries({ queryKey });
+      const previous = queryClient.getQueryData<ServerMarkup[]>(queryKey);
+      const updateById = new Map(assignments.map((a) => [a.id, a.groupId]));
+      queryClient.setQueryData<ServerMarkup[]>(queryKey, (old) => {
+        if (!old) return old;
+        return old.map((m) =>
+          updateById.has(m.id) ? { ...m, groupId: updateById.get(m.id)! } : m,
+        );
+      });
+      return { previous };
+    },
+    onError: (e: Error, _vars, ctx) => {
+      const queryKey = ["/api/plan-documents", documentId, "markups", pageNumber];
+      if (ctx?.previous) queryClient.setQueryData(queryKey, ctx.previous);
+      toast({
+        title: "Could not update group membership",
+        description: e.message,
+        variant: "destructive",
+      });
+    },
+    onSettled: () => invalidate(),
   });
 
   // Task #1676 — atomic bulk reposition. Used after a group/selection
@@ -376,30 +728,118 @@ export default function PlanMarkupLayer({
     onSettled: () => invalidate(),
   });
 
-  // Task #1723 — Undo / redo helpers. Both pop from one stack and push
-  // onto the other, then re-issue the same bulk-PATCH that originally
-  // applied the move (Undo replays `before`, Redo replays `after`). If
-  // the bulk-PATCH itself fails the entry is restored to its source
-  // stack so the user can retry — symmetric with how a fresh forward
-  // move pops itself off the undo stack on failure.
+  // Task #1723 / Task #1737 — Undo / redo helpers. Both pop from one
+  // stack and push onto the other, then dispatch the inverse mutation
+  // for whichever variant of `MarkupHistoryEntry` is at the top of the
+  // stack. If the underlying network call fails, the entry is restored
+  // to its source stack so the user can retry — symmetric with how a
+  // fresh forward edit pops itself off the undo stack on failure.
+  const dispatchUndo = useCallback(
+    (entry: MarkupHistoryEntry, onError: () => void) => {
+      switch (entry.type) {
+        case "move":
+          bulkMoveMutation.mutate(entry.before, { onError });
+          return;
+        case "create":
+          // Undo a create == delete the row we just made.
+          deleteMutation.mutate(entry.markup.id, { onError });
+          return;
+        case "delete":
+          // Undo a delete == restore every snapshot with its original id.
+          restoreMutation.mutate(entry.markups, { onError });
+          return;
+        case "group":
+          // Undo a group == restore each member's prior groupId.
+          groupAssignMutation.mutate(
+            entry.assignments.map((a) => ({ id: a.id, groupId: a.previousGroupId })),
+            { onError },
+          );
+          return;
+        case "ungroup":
+          // Undo an ungroup == restore each member's prior groupId.
+          groupAssignMutation.mutate(
+            entry.assignments.map((a) => ({ id: a.id, groupId: a.previousGroupId })),
+            { onError },
+          );
+          return;
+      }
+    },
+    [bulkMoveMutation, deleteMutation, restoreMutation, groupAssignMutation],
+  );
+
+  const dispatchRedo = useCallback(
+    (entry: MarkupHistoryEntry, onError: () => void) => {
+      switch (entry.type) {
+        case "move":
+          bulkMoveMutation.mutate(entry.after, { onError });
+          return;
+        case "create":
+          // Redo a create == re-create with the original id so any
+          // downstream references (group memberships, pin links) survive.
+          restoreMutation.mutate([entry.markup], { onError });
+          return;
+        case "delete":
+          // Redo a delete == fan-out individual DELETEs for every
+          // snapshot. We optimistically pull them from the cache here
+          // so the canvas updates immediately; on failure we invalidate
+          // to resync. The DELETE endpoint is per-row, so we Promise.all.
+          {
+            const queryKey = ["/api/plan-documents", documentId, "markups", pageNumber];
+            const previous = queryClient.getQueryData<ServerMarkup[]>(queryKey);
+            queryClient.setQueryData<ServerMarkup[]>(queryKey, (old) =>
+              old ? old.filter((m) => !entry.markups.some((s) => s.id === m.id)) : old,
+            );
+            Promise.all(
+              entry.markups.map((s) => deleteMutation.mutateAsync(s.id)),
+            )
+              .catch(() => {
+                if (previous) queryClient.setQueryData(queryKey, previous);
+                invalidate();
+                onError();
+              });
+          }
+          return;
+        case "group":
+          // Redo a group == reapply each member's assigned groupId.
+          groupAssignMutation.mutate(
+            entry.assignments.map((a) => ({ id: a.id, groupId: a.nextGroupId })),
+            { onError },
+          );
+          return;
+        case "ungroup":
+          // Redo an ungroup == clear groupId for every member.
+          groupAssignMutation.mutate(
+            entry.assignments.map((a) => ({ id: a.id, groupId: null })),
+            { onError },
+          );
+          return;
+      }
+    },
+    [
+      bulkMoveMutation,
+      restoreMutation,
+      deleteMutation,
+      groupAssignMutation,
+      documentId,
+      pageNumber,
+      invalidate,
+    ],
+  );
+
   const undoLastMove = useCallback(() => {
     const stack = undoStackRef.current;
     if (stack.length === 0) return;
     const entry = stack[stack.length - 1];
     setUndoStack((prev) => prev.slice(0, -1));
     setRedoStack((prev) => [...prev, entry]);
-    bulkMoveMutation.mutate(entry.before, {
-      onError: () => {
-        // Roll back the stack swap so the user can try again. We push
-        // the entry back to the front of the undo stack and remove it
-        // from the redo stack — both stacks are mutated optimistically
-        // above, so any new edits the user fired in between would
-        // already have cleared the redo stack regardless.
-        setUndoStack((prev) => [...prev, entry]);
-        setRedoStack((prev) => prev.filter((e) => e !== entry));
-      },
+    dispatchUndo(entry, () => {
+      // Roll back the stack swap so the user can try again. We push
+      // the entry back to the top of the undo stack and remove it
+      // from the redo stack.
+      setUndoStack((prev) => [...prev, entry]);
+      setRedoStack((prev) => prev.filter((e) => e !== entry));
     });
-  }, [bulkMoveMutation]);
+  }, [dispatchUndo]);
 
   const redoLastMove = useCallback(() => {
     const stack = redoStackRef.current;
@@ -407,13 +847,11 @@ export default function PlanMarkupLayer({
     const entry = stack[stack.length - 1];
     setRedoStack((prev) => prev.slice(0, -1));
     setUndoStack((prev) => [...prev, entry]);
-    bulkMoveMutation.mutate(entry.after, {
-      onError: () => {
-        setRedoStack((prev) => [...prev, entry]);
-        setUndoStack((prev) => prev.filter((e) => e !== entry));
-      },
+    dispatchRedo(entry, () => {
+      setRedoStack((prev) => [...prev, entry]);
+      setUndoStack((prev) => prev.filter((e) => e !== entry));
     });
-  }, [bulkMoveMutation]);
+  }, [dispatchRedo]);
 
   // Task #1705 / Task #1723 — surface the current history shape to the
   // parent toolbar. Either handler is `null` when its stack is empty so
@@ -773,13 +1211,11 @@ export default function PlanMarkupLayer({
             after,
             count: before.length,
           };
-          setUndoStack((prev) => {
-            const next = [...prev, entry];
-            return next.length > MAX_MARKUP_HISTORY
-              ? next.slice(next.length - MAX_MARKUP_HISTORY)
-              : next;
-          });
-          setRedoStack([]);
+          // Task #1737 — go through the shared `pushHistory` helper so
+          // every action variant (move/create/delete/group/ungroup)
+          // funnels through the same bounded ring-buffer + redo-clear
+          // policy.
+          pushHistory(entry);
           bulkMoveMutation.mutate(updates, {
             // If the forward move never landed (server error,
             // permission denied, etc.) the cache rolls back via the
@@ -798,6 +1234,7 @@ export default function PlanMarkupLayer({
       canvasWidth,
       canvasHeight,
       bulkMoveMutation,
+      pushHistory,
     ],
   );
 
@@ -878,9 +1315,13 @@ export default function PlanMarkupLayer({
             type="button"
             className="p-1 rounded-full hover:bg-destructive hover:text-destructive-foreground"
             onClick={async () => {
+              // Task #1737 — delegate to `deleteSelection` so the
+              // optimistic cache update, snapshot capture, and history
+              // entry all happen atomically; the user's Ctrl+Z then
+              // restores the entire selection in one step.
               const ids = Array.from(expandedSelection);
-              await Promise.all(ids.map((id) => deleteMutation.mutateAsync(id)));
               setSelectedIds(new Set());
+              await deleteSelection(ids);
             }}
             disabled={deleteMutation.isPending}
             aria-label="Delete markup"

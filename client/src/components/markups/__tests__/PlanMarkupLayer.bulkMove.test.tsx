@@ -14,7 +14,9 @@ import {
   buildMoveSnapshot,
   describeHistoryEntry,
   MAX_MARKUP_HISTORY,
+  type MarkupHistoryEntry,
   type MarkupMoveHistoryEntry,
+  type MarkupRestoreSnapshot,
 } from "../PlanMarkupLayer";
 import type { MarkupShape } from "../MarkupRenderer";
 
@@ -194,6 +196,148 @@ describe("describeHistoryEntry", () => {
     // drag handler skips zero-delta moves), but the label must still
     // be human-readable if it does.
     expect(describeHistoryEntry(moveEntry(0))).toBe("Move 0 markups");
+  });
+
+  // Task #1737 — labels for the new entry variants. The toolbar
+  // prepends "Undo " / "Redo " when rendering, so the bare label
+  // describes the action itself ("Create" → "Undo Create").
+  const snapshot: MarkupRestoreSnapshot = {
+    id: "id-1",
+    pageNumber: 1,
+    tool: "ARROW",
+    points: [{ x: 0, y: 0 }, { x: 1, y: 1 }],
+    color: "#ef4444",
+    thickness: 2,
+    text: null,
+    layerId: null,
+    groupId: null,
+  };
+
+  it("labels a create entry as 'Create'", () => {
+    const entry: MarkupHistoryEntry = { type: "create", markup: snapshot };
+    expect(describeHistoryEntry(entry)).toBe("Create");
+  });
+
+  it("labels a delete entry with singular markup count", () => {
+    const entry: MarkupHistoryEntry = {
+      type: "delete",
+      markups: [snapshot],
+      count: 1,
+    };
+    expect(describeHistoryEntry(entry)).toBe("Delete 1 markup");
+  });
+
+  it("labels a delete entry with plural markup count", () => {
+    const entry: MarkupHistoryEntry = {
+      type: "delete",
+      markups: [snapshot, { ...snapshot, id: "id-2" }, { ...snapshot, id: "id-3" }],
+      count: 3,
+    };
+    expect(describeHistoryEntry(entry)).toBe("Delete 3 markups");
+  });
+
+  it("labels a group entry as 'Group'", () => {
+    const entry: MarkupHistoryEntry = {
+      type: "group",
+      assignments: [
+        { id: "id-1", previousGroupId: null, nextGroupId: "g-1" },
+        { id: "id-2", previousGroupId: null, nextGroupId: "g-1" },
+      ],
+      count: 2,
+    };
+    expect(describeHistoryEntry(entry)).toBe("Group");
+  });
+
+  it("labels an ungroup entry as 'Ungroup'", () => {
+    const entry: MarkupHistoryEntry = {
+      type: "ungroup",
+      assignments: [
+        { id: "id-1", previousGroupId: "g-1" },
+        { id: "id-2", previousGroupId: "g-1" },
+      ],
+      count: 2,
+    };
+    expect(describeHistoryEntry(entry)).toBe("Ungroup");
+  });
+});
+
+/**
+ * Task #1737 — Mixed-action ring buffer policy. The undo stack now
+ * accepts any combination of move/create/delete/group/ungroup entries;
+ * the bounded eviction policy applies uniformly so a 25-action editing
+ * session keeps only the last 20 regardless of which action types were
+ * involved.
+ */
+describe("undo stack ring-buffer with mixed action types", () => {
+  const push = (
+    stack: MarkupHistoryEntry[],
+    entry: MarkupHistoryEntry,
+  ): MarkupHistoryEntry[] => {
+    const next = [...stack, entry];
+    return next.length > MAX_MARKUP_HISTORY
+      ? next.slice(next.length - MAX_MARKUP_HISTORY)
+      : next;
+  };
+
+  it("walks one step per action regardless of variant type", () => {
+    let stack: MarkupHistoryEntry[] = [];
+    const snap: MarkupRestoreSnapshot = {
+      id: "x",
+      pageNumber: 1,
+      tool: "ARROW",
+      points: [{ x: 0, y: 0 }],
+      color: "#000",
+      thickness: 2,
+      text: null,
+      layerId: null,
+      groupId: null,
+    };
+    stack = push(stack, { type: "move", before: [], after: [], count: 1 });
+    stack = push(stack, { type: "create", markup: snap });
+    stack = push(stack, { type: "delete", markups: [snap], count: 1 });
+    stack = push(stack, {
+      type: "group",
+      assignments: [{ id: "x", previousGroupId: null, nextGroupId: "g-1" }],
+      count: 1,
+    });
+    stack = push(stack, {
+      type: "ungroup",
+      assignments: [{ id: "x", previousGroupId: "g-1" }],
+      count: 1,
+    });
+    expect(stack).toHaveLength(5);
+    expect(stack.map((e) => e.type)).toEqual([
+      "move",
+      "create",
+      "delete",
+      "group",
+      "ungroup",
+    ]);
+  });
+
+  it("evicts the oldest mixed-action entries past MAX_MARKUP_HISTORY", () => {
+    let stack: MarkupHistoryEntry[] = [];
+    const snap: MarkupRestoreSnapshot = {
+      id: "x",
+      pageNumber: 1,
+      tool: "ARROW",
+      points: [{ x: 0, y: 0 }],
+      color: "#000",
+      thickness: 2,
+      text: null,
+      layerId: null,
+      groupId: null,
+    };
+    // Push MAX + 3 entries alternating between create and move; only
+    // the most-recent MAX entries should survive.
+    for (let i = 0; i < MAX_MARKUP_HISTORY + 3; i++) {
+      const e: MarkupHistoryEntry =
+        i % 2 === 0
+          ? { type: "create", markup: { ...snap, id: `x-${i}` } }
+          : { type: "move", before: [], after: [], count: i };
+      stack = push(stack, e);
+    }
+    expect(stack).toHaveLength(MAX_MARKUP_HISTORY);
   });
 });
 
