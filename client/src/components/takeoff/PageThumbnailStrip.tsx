@@ -1,9 +1,13 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, useState } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { ScrollArea, ScrollBar } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ImageOff, UserCircle, CheckCircle2, Pin, PinOff, ArrowUpCircle, AlertTriangle } from "lucide-react";
+import { Loader2, ImageOff, UserCircle, CheckCircle2, Pin, PinOff, ArrowUpCircle, AlertTriangle, Copy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { usePdfThumbnails } from "@/hooks/use-pdf-thumbnails";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { PLAN_MARKUP_LAYER_DRAG_MIME } from "@/components/markups/MarkupLayersPanel";
 import type { TakeoffSheet } from "@shared/schema";
 
 interface PageThumbnailStripProps {
@@ -29,6 +33,44 @@ interface PageThumbnailStripProps {
   onSwapToLatestRevision?: (sheetId: string) => void;
   pinActionsDisabled?: boolean;
   activeSetName?: string | null;
+  // Task #1721 — optional sheet → planDocument id mapping that opts a
+  // thumbnail into "drop a markup layer here" behaviour. When the map
+  // contains an entry for `sheet.id`, dropping a drag carrying the
+  // `application/x-plan-markup-layer` MIME (emitted by
+  // MarkupLayersPanel) POSTs to
+  // /api/plan-markup-layers/:layerId/copy-to-document with the mapped
+  // plan-document id as the target. Sheets without an entry behave
+  // exactly as before (no drop affordance, no API call). Drops where
+  // the source layer already lives on the target document are ignored
+  // to avoid silent self-copies.
+  sheetDocumentIds?: Map<string, string>;
+}
+
+interface MarkupLayerDragPayload {
+  layerId: string;
+  layerName: string;
+  sourceDocumentId: string;
+}
+
+function parseLayerDragPayload(raw: string): MarkupLayerDragPayload | null {
+  try {
+    const data = JSON.parse(raw);
+    if (
+      data &&
+      typeof data === "object" &&
+      typeof data.layerId === "string" &&
+      typeof data.sourceDocumentId === "string"
+    ) {
+      return {
+        layerId: data.layerId,
+        layerName: typeof data.layerName === "string" ? data.layerName : "Layer",
+        sourceDocumentId: data.sourceDocumentId,
+      };
+    }
+  } catch {
+    // fall through
+  }
+  return null;
 }
 
 export function PageThumbnailStrip({
@@ -45,9 +87,73 @@ export function PageThumbnailStrip({
   onSwapToLatestRevision,
   pinActionsDisabled = false,
   activeSetName,
+  sheetDocumentIds,
 }: PageThumbnailStripProps) {
   const { thumbnails, failedSheets, isLoading, progress, observeRef } = usePdfThumbnails(sheets);
   const activeRef = useRef<HTMLButtonElement | null>(null);
+  const { toast } = useToast();
+  // Task #1721 — track which thumbnail is the current layer-drop
+  // hover target so we can render a visible affordance. Stored as the
+  // sheet id so multiple thumbnails never highlight at once.
+  const [layerDropSheetId, setLayerDropSheetId] = useState<string | null>(null);
+
+  const copyLayerMutation = useMutation({
+    mutationFn: async ({
+      layerId,
+      targetDocumentId,
+    }: {
+      layerId: string;
+      targetDocumentId: string;
+    }) => {
+      const r = await apiRequest(
+        "POST",
+        `/api/plan-markup-layers/${layerId}/copy-to-document`,
+        { targetDocumentId },
+      );
+      return (await r.json()) as {
+        ok: boolean;
+        layer: { id: string; name: string };
+        markupsCopied: number;
+      };
+    },
+    onSuccess: (data, variables) => {
+      // Invalidate the destination's layers + markups so any open view
+      // of that sheet picks up the new "(copy)" layer next render.
+      queryClient.invalidateQueries({
+        queryKey: ["/api/plan-documents", variables.targetDocumentId, "markup-layers"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/plan-documents", variables.targetDocumentId, "markups"],
+      });
+      toast({
+        title: `Copied "${data.layer.name}"`,
+        description:
+          data.markupsCopied === 0
+            ? "Layer was empty; an empty layer was created on the destination."
+            : `${data.markupsCopied} markup${data.markupsCopied === 1 ? "" : "s"} copied.`,
+      });
+    },
+    onError: (e: Error) =>
+      toast({
+        title: "Could not copy layer",
+        description: e.message,
+        variant: "destructive",
+      }),
+  });
+
+  // True iff the in-flight drag carries the markup-layer MIME we
+  // accept. Browsers expose `dataTransfer.types` as a lower-cased,
+  // stringified DOMStringList; some environments report a frozen Array.
+  const dragHasLayerMime = (e: React.DragEvent): boolean => {
+    const types = e.dataTransfer?.types;
+    if (!types) return false;
+    const wanted = PLAN_MARKUP_LAYER_DRAG_MIME.toLowerCase();
+    for (let i = 0; i < types.length; i++) {
+      const t = types[i];
+      if (typeof t === "string" && t.toLowerCase() === wanted) return true;
+    }
+    return false;
+  };
 
   useEffect(() => {
     if (activeRef.current) {
@@ -84,6 +190,13 @@ export function PageThumbnailStrip({
         const isSuperseded = sheet.isActive === false;
         const isPinnedToActiveSet = pinnedSheetIds?.has(sheet.id) ?? false;
         const hasNewerInActiveSet = newerSheetIds?.has(sheet.id) ?? false;
+        // Task #1721 — only thumbnails the parent has mapped to a
+        // plan-document id can accept layer drops. We resolve the
+        // target eagerly so the drop handler can guard against
+        // self-copies (source doc === target doc).
+        const layerDropTargetDocId = sheetDocumentIds?.get(sheet.id);
+        const isLayerDropTarget = !!layerDropTargetDocId;
+        const isLayerDropActive = isLayerDropTarget && layerDropSheetId === sheet.id;
 
         return (
           <button
@@ -95,6 +208,57 @@ export function PageThumbnailStrip({
               thumbRef(sheet.id)(el);
             }}
             onClick={() => onSelectSheet(sheet.id)}
+            onDragOver={(e) => {
+              if (!isLayerDropTarget) return;
+              if (!dragHasLayerMime(e)) return;
+              // The drop handler will reject self-copies; we still
+              // light up the affordance during hover so the user gets
+              // feedback the target was at least recognised.
+              e.preventDefault();
+              if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+              if (layerDropSheetId !== sheet.id) setLayerDropSheetId(sheet.id);
+            }}
+            onDragEnter={(e) => {
+              if (!isLayerDropTarget) return;
+              if (!dragHasLayerMime(e)) return;
+              e.preventDefault();
+              if (layerDropSheetId !== sheet.id) setLayerDropSheetId(sheet.id);
+            }}
+            onDragLeave={() => {
+              if (!isLayerDropTarget) return;
+              if (layerDropSheetId === sheet.id) setLayerDropSheetId(null);
+            }}
+            onDrop={(e) => {
+              if (!isLayerDropTarget || !layerDropTargetDocId) return;
+              if (!dragHasLayerMime(e)) return;
+              e.preventDefault();
+              e.stopPropagation();
+              setLayerDropSheetId(null);
+              const raw = e.dataTransfer.getData(PLAN_MARKUP_LAYER_DRAG_MIME);
+              const payload = parseLayerDragPayload(raw);
+              if (!payload) {
+                toast({
+                  title: "Could not copy layer",
+                  description: "The dragged layer data was unreadable.",
+                  variant: "destructive",
+                });
+                return;
+              }
+              if (payload.sourceDocumentId === layerDropTargetDocId) {
+                // Dropping onto the layer's own sheet would silently
+                // create a "(copy)" layer in place, which is rarely
+                // what the user wants. Surface a friendly hint.
+                toast({
+                  title: "Pick a different sheet",
+                  description: `"${payload.layerName}" already lives on this sheet.`,
+                });
+                return;
+              }
+              copyLayerMutation.mutate({
+                layerId: payload.layerId,
+                targetDocumentId: layerDropTargetDocId,
+              });
+            }}
             className={cn(
               "group relative flex flex-col items-center rounded-md border-2 transition-all cursor-pointer",
               "hover:border-primary/50 hover:shadow-sm",
@@ -103,10 +267,15 @@ export function PageThumbnailStrip({
                 ? "border-primary bg-primary/5 shadow-sm"
                 : "border-border bg-background",
               isSuperseded && "opacity-60",
-              "data-[pin-drop-active=true]:ring-2 data-[pin-drop-active=true]:ring-primary data-[pin-drop-active=true]:bg-primary/10 data-[pin-drop-active=true]:border-primary"
+              "data-[pin-drop-active=true]:ring-2 data-[pin-drop-active=true]:ring-primary data-[pin-drop-active=true]:bg-primary/10 data-[pin-drop-active=true]:border-primary",
+              "data-[layer-drop-active=true]:ring-2 data-[layer-drop-active=true]:ring-primary data-[layer-drop-active=true]:bg-primary/10 data-[layer-drop-active=true]:border-primary"
             )}
             data-pin-drop-target=""
             data-pin-drop-sheet={sheet.id}
+            {...(isLayerDropTarget
+              ? { "data-layer-drop-target": "", "data-layer-drop-doc": layerDropTargetDocId }
+              : {})}
+            {...(isLayerDropActive ? { "data-layer-drop-active": "true" } : {})}
             data-testid={`thumbnail-sheet-${sheet.id}`}
           >
             <div className="relative w-full aspect-[4/3] overflow-hidden rounded-t flex items-center justify-center bg-muted">
@@ -246,6 +415,22 @@ export function PageThumbnailStrip({
                     )
                   )}
                 </span>
+              )}
+              {/* Task #1721 — explicit drop affordance shown over the
+                  thumbnail while a markup-layer drag is hovering. The
+                  data-[layer-drop-active] ring above tints the border;
+                  this overlay adds the "Copy here" hint so users know
+                  exactly what the gesture will do. */}
+              {isLayerDropActive && (
+                <div
+                  className="absolute inset-0 flex items-center justify-center bg-primary/10 pointer-events-none"
+                  data-testid={`thumb-layer-drop-hint-${sheet.id}`}
+                >
+                  <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-primary text-primary-foreground text-[10px] font-medium shadow">
+                    <Copy className="w-3 h-3" />
+                    Copy here
+                  </div>
+                </div>
               )}
             </div>
             <div className="w-full px-1.5 py-1 text-center min-w-0">
