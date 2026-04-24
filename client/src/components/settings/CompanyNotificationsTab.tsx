@@ -154,6 +154,22 @@ export function CompanyNotificationsTab() {
       globalDefault: number;
     };
     bounds: { min: number; max: number };
+    // Task #1688 — schedules currently at or one shy of the
+    // effective threshold, so admins can see who's been triggered
+    // most recently and tune the cap with real data.
+    streakingSchedules: Array<{
+      scheduleId: string;
+      projectId: string;
+      projectName: string;
+      projectCode: string | null;
+      logType: "RFI" | "SUBMITTAL";
+      consecutiveFailureCount: number;
+      lastFailureNotifiedAt: string | null;
+      lastFailureNotifiedStatus: string | null;
+      lastAttemptAt: string | null;
+      lastAttemptStatus: string | null;
+    }>;
+    streakingCutoff: number;
   };
   const { data: projectLogEmailSettings, isLoading: loadingProjectLogEmail } =
     useQuery<ProjectLogEmailSettings>({
@@ -930,6 +946,108 @@ export function CompanyNotificationsTab() {
                       will trigger the backstop alert.
                     </AlertDescription>
                   </Alert>
+
+                  {/*
+                    Task #1688 — surface schedules currently in a streaking-failure state
+                    so admins can see who's been triggered (or is about to trigger) and
+                    tune the threshold above with real data instead of guessing. The
+                    server includes any schedule with consecutive_failure_count >=
+                    max(1, effectiveThreshold - 1) so the list shows BOTH already-alerted
+                    streaks and approaching-the-line streaks.
+                  */}
+                  <div
+                    className="rounded-md border border-border bg-muted/40 p-4 space-y-3"
+                    data-testid="section-project-log-email-streaks"
+                  >
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold">
+                        Currently in a failing streak
+                      </h4>
+                      <span className="text-xs text-muted-foreground">
+                        Schedules at{" "}
+                        {projectLogEmailSettings?.streakingCutoff ?? Math.max(
+                          1,
+                          (projectLogEmailSettings?.effectiveThreshold ?? 3) - 1,
+                        )}
+                        + consecutive failures
+                      </span>
+                    </div>
+                    {projectLogEmailSettings && projectLogEmailSettings.streakingSchedules.length > 0 ? (
+                      <ul
+                        className="divide-y divide-border rounded border border-border bg-background"
+                        data-testid="list-project-log-email-streaks"
+                      >
+                        {projectLogEmailSettings.streakingSchedules.map((s) => {
+                          const effective = projectLogEmailSettings.effectiveThreshold;
+                          const atOrAboveThreshold = s.consecutiveFailureCount >= effective;
+                          const lastAlert = s.lastFailureNotifiedAt
+                            ? new Date(s.lastFailureNotifiedAt).toLocaleString()
+                            : "Not yet alerted";
+                          const lastAttempt = s.lastAttemptAt
+                            ? new Date(s.lastAttemptAt).toLocaleString()
+                            : "—";
+                          const projectLabel = s.projectName
+                            || s.projectCode
+                            || "Unknown project";
+                          const scheduleName = `${s.logType === "SUBMITTAL" ? "Submittal" : "RFI"} log`;
+                          // The project route is keyed by project code
+                          // (`/projects/:code`); fall back to id when the
+                          // project has no code so the link still resolves.
+                          const href = `/projects/${s.projectCode ?? s.projectId}`;
+                          return (
+                            <li
+                              key={s.scheduleId}
+                              className="text-sm"
+                              data-testid={`row-project-log-email-streak-${s.scheduleId}`}
+                            >
+                              <Link
+                                href={href}
+                                className="flex items-start justify-between gap-3 px-3 py-2 hover-elevate active-elevate-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-sm"
+                                data-testid={`link-project-log-email-streak-${s.scheduleId}`}
+                              >
+                                <div className="min-w-0 space-y-0.5">
+                                  <p
+                                    className="truncate font-medium"
+                                    data-testid={`text-project-log-email-streak-project-${s.scheduleId}`}
+                                  >
+                                    {projectLabel}
+                                    {s.projectCode && s.projectName ? (
+                                      <span className="text-muted-foreground font-normal">
+                                        {" "}({s.projectCode})
+                                      </span>
+                                    ) : null}
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {scheduleName} · Last alert sent:{" "}
+                                    <span data-testid={`text-project-log-email-streak-last-alert-${s.scheduleId}`}>
+                                      {lastAlert}
+                                    </span>
+                                  </p>
+                                  <p className="text-xs text-muted-foreground">
+                                    Last attempt: {lastAttempt}
+                                  </p>
+                                </div>
+                                <Badge
+                                  variant={atOrAboveThreshold ? "destructive" : "secondary"}
+                                  className="shrink-0"
+                                  data-testid={`badge-project-log-email-streak-count-${s.scheduleId}`}
+                                >
+                                  {s.consecutiveFailureCount} / {effective}
+                                </Badge>
+                              </Link>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : (
+                      <p
+                        className="text-sm text-muted-foreground"
+                        data-testid="text-project-log-email-streaks-empty"
+                      >
+                        No schedules are currently at or near the threshold. Your scheduled log emails are healthy.
+                      </p>
+                    )}
+                  </div>
 
                   {canEditProjectLogEmailThreshold ? (
                     <div className="flex justify-end">

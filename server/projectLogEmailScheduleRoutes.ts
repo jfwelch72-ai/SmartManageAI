@@ -21,7 +21,7 @@
  */
 import { Router } from "express";
 import { z } from "zod";
-import { and, desc, eq, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, ne, or } from "drizzle-orm";
 import { db } from "./db";
 import {
   PROJECT_LOG_EMAIL_CADENCES,
@@ -946,6 +946,51 @@ router.get(
         && orgValue >= 1;
       const effectiveThreshold = orgValueIsValid ? orgValue : globalDefault;
 
+      // Task #1688 — surface schedules currently in a streaking-failure
+      // state so admins can tune the threshold with real data instead of
+      // guessing. We include any schedule whose
+      // `consecutive_failure_count` is at or one shy of the effective
+      // threshold (clamped to >=1), so the card shows BOTH "already
+      // crossed and was alerted" and "approaching the threshold" rows
+      // — exactly the context an admin needs to decide whether to
+      // tighten or loosen the cap. Capped at 25 rows to keep the
+      // payload bounded for orgs with many broken distribution lists.
+      const streakCutoff = Math.max(1, effectiveThreshold - 1);
+      const STREAKING_LIMIT = 25;
+      const streakingRows = await db
+        .select({
+          scheduleId: projectLogEmailSchedules.id,
+          projectId: projectLogEmailSchedules.projectId,
+          projectName: projects.name,
+          projectCode: projects.code,
+          logType: projectLogEmailSchedules.logType,
+          consecutiveFailureCount: projectLogEmailSchedules.consecutiveFailureCount,
+          lastFailureNotifiedAt: projectLogEmailSchedules.lastFailureNotifiedAt,
+          lastFailureNotifiedStatus: projectLogEmailSchedules.lastFailureNotifiedStatus,
+          lastAttemptAt: projectLogEmailSchedules.lastAttemptAt,
+          lastAttemptStatus: projectLogEmailSchedules.lastAttemptStatus,
+        })
+        .from(projectLogEmailSchedules)
+        // Inner-join projects with a tenant-scoped predicate as
+        // defense-in-depth, mirroring the org-failures dashboard
+        // (`/log-email-schedule-failures`) above.
+        .innerJoin(projects, and(
+          eq(projects.id, projectLogEmailSchedules.projectId),
+          eq(projects.gcOrganizationId, organizationId),
+        ))
+        .where(and(
+          eq(projectLogEmailSchedules.organizationId, organizationId),
+          gte(projectLogEmailSchedules.consecutiveFailureCount, streakCutoff),
+        ))
+        // Highest streaks first so the most-painful cases bubble to
+        // the top; tie-break on the most recent attempt so admins
+        // see freshly-broken schedules above stale ones.
+        .orderBy(
+          desc(projectLogEmailSchedules.consecutiveFailureCount),
+          desc(projectLogEmailSchedules.lastAttemptAt),
+        )
+        .limit(STREAKING_LIMIT);
+
       res.json({
         organizationId: row.id,
         failureThreshold: row.failureThreshold,
@@ -960,6 +1005,8 @@ router.get(
           min: PROJECT_LOG_EMAIL_FAILURE_MIN_THRESHOLD,
           max: PROJECT_LOG_EMAIL_FAILURE_MAX_THRESHOLD,
         },
+        streakingSchedules: streakingRows,
+        streakingCutoff: streakCutoff,
       });
     } catch (err) {
       next(err);
