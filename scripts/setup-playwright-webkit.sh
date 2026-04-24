@@ -48,7 +48,17 @@ fi
 
 webkit_dir="$(find "$cache_root" -maxdepth 1 -type d -name 'webkit-*' 2>/dev/null | sort -r | head -n 1 || true)"
 
+# Task #1890 — `PLAYWRIGHT_WEBKIT_PATCH_ONLY=1` is set by the
+# `playwright.global-setup.ts` self-heal hook so the per-test-run invocation
+# is a no-op when WebKit isn't installed (the user might be running only
+# `--project=chromium`, and we don't want to silently download ~80MB of
+# WebKit on their behalf). Manual one-shot setup (no env var) keeps the
+# original behavior of fetching WebKit if it's missing.
 if [[ -z "$webkit_dir" ]]; then
+  if [[ "${PLAYWRIGHT_WEBKIT_PATCH_ONLY:-}" == "1" ]]; then
+    echo "[setup-playwright-webkit] WebKit not installed under $cache_root — skipping (PLAYWRIGHT_WEBKIT_PATCH_ONLY=1)."
+    exit 0
+  fi
   echo "[setup-playwright-webkit] WebKit not installed — fetching via 'npx playwright install webkit' …"
   PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1 npx --yes playwright install webkit
   webkit_dir="$(find "$cache_root" -maxdepth 1 -type d -name 'webkit-*' 2>/dev/null | sort -r | head -n 1)"

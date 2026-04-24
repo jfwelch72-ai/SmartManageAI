@@ -18,6 +18,13 @@ const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 // safe because the patched wrapper resolves every required lib at
 // runtime; on CI (Ubuntu) the libs are already in the standard
 // `/usr/lib/x86_64-linux-gnu` paths so the validator passes regardless.
+//
+// Task #1890 — `globalSetup` (below) re-applies the MiniBrowser patch
+// at the start of every test run. That makes the fix self-healing
+// across `npm install` and Playwright version bumps (the previous
+// `scripts/post-merge.sh` hook only fired on merges, leaving fresh
+// `webkit-NNNN` revisions unpatched until someone re-ran the script
+// manually).
 if (!process.env.PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS && process.env.REPLIT_LD_LIBRARY_PATH) {
   process.env.PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "1";
 }
@@ -42,6 +49,7 @@ const CHROMIUM_PATH = resolveChromium();
 export default defineConfig({
   testDir: "./e2e",
   testMatch: /.*\.spec\.ts/,
+  globalSetup: "./playwright.global-setup.ts",
   timeout: 60_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,

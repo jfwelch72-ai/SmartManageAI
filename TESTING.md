@@ -91,6 +91,25 @@ That script:
   clobbering them. Re-running is safe — patched wrappers are detected via
   a sentinel comment.
 
+## Self-healing on every test run (Task #1890)
+
+`playwright.global-setup.ts` re-invokes the same patcher (with
+`PLAYWRIGHT_WEBKIT_PATCH_ONLY=1` so it never auto-downloads WebKit) at
+the start of every `npx playwright test` invocation. That means:
+
+- A fresh `npm install` no longer requires a manual setup step — the
+  first `npx playwright test --project=webkit` self-heals.
+- Bumping `@playwright/test` to a version that needs a newer WebKit
+  revision is also self-healing: after `npx playwright install webkit`
+  lays down the new (unpatched) `webkit-NNNN` directory, the next test
+  run re-applies the patch automatically.
+- Chromium / Firefox-only test runs pay only the cost of an idempotent
+  shell exec (~50ms when wrappers are already patched, an early exit
+  when WebKit isn't installed at all).
+
+The hook is gated on `REPLIT_LD_LIBRARY_PATH` being set, so CI on
+Ubuntu is unaffected.
+
 `playwright.config.ts` already sets
 `PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1` automatically when
 `REPLIT_LD_LIBRARY_PATH` is present, so once the wrappers are patched the
