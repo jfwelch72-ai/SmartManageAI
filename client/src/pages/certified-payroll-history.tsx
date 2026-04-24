@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Archive, ArchiveRestore, Download, FileSpreadsheet, FileText, History, Loader2, Trash2 } from "lucide-react";
+import { Archive, ArchiveRestore, ClipboardCheck, Download, FileSpreadsheet, FileText, History, Loader2, Trash2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -20,6 +20,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
@@ -93,6 +100,7 @@ export default function CertifiedPayrollHistoryPage() {
   const [endDate, setEndDate] = useState<string>(initial.endDate);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [ackExportFormat, setAckExportFormat] = useState<"csv" | "json" | null>(null);
   const [showArchived, setShowArchived] = useState(false);
   const [archiveDialog, setArchiveDialog] = useState<CertifiedPayrollReportRow | null>(null);
   const [deleteDialog, setDeleteDialog] = useState<CertifiedPayrollReportRow | null>(null);
@@ -111,6 +119,11 @@ export default function CertifiedPayrollHistoryPage() {
 
   const { permissionRole } = useAuth();
   const isAdmin = permissionRole === "ADMIN" || permissionRole === "SUPER_ADMIN";
+  // Task #1515: defense-in-depth gate for the org-wide acknowledgement export
+  // button. The route itself is already guarded by `canManagePayroll`, but
+  // checking the same flag locally lets us hide the control if the
+  // permission ever gets revoked while the page is open.
+  const canManagePayroll = useFeaturePermission("canManagePayroll");
 
   const filterParams = useMemo(() => {
     const p: Record<string, string> = {};
@@ -192,6 +205,50 @@ export default function CertifiedPayrollHistoryPage() {
     }
   };
 
+  // Task #1515: surface the org-wide acknowledgement export
+  // (`/api/payroll/acknowledgement-export`) so payroll admins no longer
+  // have to call the URL by hand. The endpoint covers every wage
+  // decision referenced by any project in the org — multi-decision
+  // audit binders that the per-project "Export acknowledgements"
+  // control on the Prevailing Wage card cannot produce.
+  const handleExportAcknowledgements = async (fmt: "csv" | "json") => {
+    setAckExportFormat(fmt);
+    try {
+      const res = await fetch(`/api/payroll/acknowledgement-export?format=${fmt}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        let msg = `Export failed (${res.status})`;
+        try {
+          const body = await res.json();
+          if (body?.error) msg = body.error;
+        } catch {
+          /* non-JSON error body — fall back to status */
+        }
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `wage-decision-acknowledgements-org-${new Date()
+        .toISOString()
+        .slice(0, 10)}.${fmt}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      toast({
+        title: "Export failed",
+        description: err instanceof Error ? err.message : "Could not export acknowledgement history",
+        variant: "destructive",
+      });
+    } finally {
+      setAckExportFormat(null);
+    }
+  };
+
   const archiveMutation = useMutation({
     mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
       await apiRequest("POST", `/api/payroll/certified-reports/${id}/archive`, { reason });
@@ -262,14 +319,48 @@ export default function CertifiedPayrollHistoryPage() {
         content="Org-wide audit log of every certified payroll PDF generated across all projects."
       />
 
-      <div className="flex flex-col gap-2">
-        <h1 className="text-3xl font-bold tracking-tight" data-testid="heading-certified-history">
-          Certified Payroll History
-        </h1>
-        <p className="text-muted-foreground">
-          Audit every certified payroll PDF generated across all projects in your organization.
-          State and federal compliance teams frequently request these for prevailing-wage audits.
-        </p>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-3xl font-bold tracking-tight" data-testid="heading-certified-history">
+            Certified Payroll History
+          </h1>
+          <p className="text-muted-foreground">
+            Audit every certified payroll PDF generated across all projects in your organization.
+            State and federal compliance teams frequently request these for prevailing-wage audits.
+          </p>
+        </div>
+        {canManagePayroll && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                disabled={ackExportFormat !== null}
+                data-testid="button-download-acknowledgement-history"
+              >
+                {ackExportFormat ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ClipboardCheck className="h-4 w-4" />
+                )}
+                <span className="ml-2">Download acknowledgement history</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                onClick={() => handleExportAcknowledgements("csv")}
+                data-testid="menu-download-acknowledgement-history-csv"
+              >
+                Download CSV
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => handleExportAcknowledgements("json")}
+                data-testid="menu-download-acknowledgement-history-json"
+              >
+                Download JSON
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       <Card>
