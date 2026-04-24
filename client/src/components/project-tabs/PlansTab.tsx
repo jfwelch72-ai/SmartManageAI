@@ -927,6 +927,23 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
     enabled: !!project?.id,
   });
 
+  // Task #1895 — Sheet uploads, renames, duplicates, and deletions can
+  // change which active revisions exist for a project, which in turn
+  // affects every drawing set's "out of date" badge (SetStaleBadge).
+  // Invalidate the `/compare` query for every set in this project so the
+  // badge stays in sync without requiring a window refocus or refresh.
+  // Existing pin/unpin/swap flows already invalidate the active set's
+  // compare via `invalidateDrawingSetCaches`; this helper covers the
+  // sheet-side mutations that affect every set.
+  const invalidateProjectSetCompares = useCallback(() => {
+    if (!project?.id || drawingSetsData.length === 0) return;
+    for (const set of drawingSetsData) {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/projects", "drawing-sets", set.id, "compare"],
+      });
+    }
+  }, [project?.id, drawingSetsData]);
+
   const primarySet = useMemo(() => drawingSetsData.find(s => s.isPrimary) || null, [drawingSetsData]);
 
   const effectiveSetId = activeDrawingSetId || primarySet?.id || null;
@@ -1083,6 +1100,9 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", project?.id, "takeoff", "sheets"] });
+      // Task #1895 — sheet_name change shifts which sheet a set's pinned
+      // revision matches as the latest active, so refresh every set's badge.
+      invalidateProjectSetCompares();
       setRenameSheetId(null);
       setRenameSheetValue("");
       toast({ title: "Sheet renamed" });
@@ -1096,6 +1116,9 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", project?.id, "takeoff", "sheets"] });
+      // Task #1895 — duplicate creates a new active sheet that may match a
+      // pinned sheet name, flipping a set from "Up to date" to "newer".
+      invalidateProjectSetCompares();
       toast({ title: "Sheet duplicated" });
     },
   });
@@ -1106,6 +1129,9 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", project?.id, "takeoff", "sheets"] });
+      // Task #1895 — deleting a sheet drops it from the project's active set,
+      // potentially clearing or revealing a newer revision for any set.
+      invalidateProjectSetCompares();
       setDeleteSheetId(null);
       toast({ title: "Sheet deleted" });
     },
@@ -1579,6 +1605,16 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
     // rows may have been created and the list needs to reflect that.
     queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "documents"] });
 
+    // Task #1895 — uploads can introduce new sheet revisions for the project
+    // (either directly via background processing or imminently via the
+    // import-plan flow / supersede prompt). Invalidate the takeoff sheets
+    // list and every drawing set's compare query so the SetStaleBadge stays
+    // accurate without waiting for window refocus or a manual refresh.
+    if (savedCount > 0) {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", project?.id, "takeoff", "sheets"] });
+      invalidateProjectSetCompares();
+    }
+
     // Surface the actual outcome. Only clear the in-progress title when at
     // least one document was saved, so a single-file failure leaves the
     // user's typed title intact for retry.
@@ -1606,6 +1642,10 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
       toast({ title: "Success", description: "Document deleted" });
       await queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "documents"] });
       await queryClient.invalidateQueries({ queryKey: ["/api/projects", project?.id, "takeoff", "sheets"] });
+      // Task #1895 — document deletion cascades to its takeoff sheets,
+      // changing the project's active-revision set and every drawing set's
+      // staleness signal. Refresh all set compares so SetStaleBadge updates.
+      invalidateProjectSetCompares();
       if (selectedDocId === docId) setSelectedDocId(null);
       if (previewDocId === docId) setPreviewDocId(null);
     } catch (error: any) {
@@ -1619,6 +1659,10 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
       await apiRequest("POST", `/api/projects/${project!.id}/takeoff/import-plan`, { documentId: docId });
       toast({ title: "Success", description: "Plan imported to takeoff workspace" });
       await queryClient.invalidateQueries({ queryKey: ["/api/projects", project!.id, "takeoff", "sheets"] });
+      // Task #1895 — importing a plan creates new active takeoff_sheets that
+      // may match pinned sheet names in any drawing set, so refresh every
+      // set's compare query to keep the badge accurate.
+      invalidateProjectSetCompares();
     } catch (error: any) {
       toast({ title: "Error", description: error?.message || "Failed to import plan", variant: "destructive" });
     }
