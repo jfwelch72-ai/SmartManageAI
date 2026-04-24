@@ -4050,10 +4050,22 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                             onDragEnd={async (e: any) => {
                               const np = rawPts.map(p => ({ ...p }));
                               np[idx] = { x: e.target.x() + handleHalf, y: e.target.y() + handleHalf };
+                              // Task #1754 — Capture the pre-resize points
+                              // before nulling the ref so we can pass them
+                              // as `previous` to `updateMarkupMutation`.
+                              // Without this the resize would not land on
+                              // the `useTakeoffHistory` stack and the
+                              // sidebar Undo / Cmd+Z would skip over it
+                              // (mirrors the body-drag fix from Task #1742).
+                              const origPts = markupResizeRef.current?.origPts;
                               markupResizeRef.current = null;
                               setMarkupResizePreview({ id: markup.id, points: np });
                               try {
-                                await updateMarkupMutation.mutateAsync({ id: markup.id, points: np });
+                                await updateMarkupMutation.mutateAsync({
+                                  id: markup.id,
+                                  points: np,
+                                  ...(origPts ? { previous: { points: origPts } } : {}),
+                                });
                               } catch {}
                               setMarkupResizePreview(curr => (curr && curr.id === markup.id) ? null : curr);
                             }}
@@ -4145,10 +4157,22 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                             onDragEnd={async (e: any) => {
                               if (!markupResizeRef.current) { setMarkupResizePreview(null); return; }
                               const newPts = computeNewPts(c.name, e.target.x() + handleHalf, e.target.y() + handleHalf);
+                              // Task #1754 — Capture the pre-resize points
+                              // before nulling the ref so we can pass them
+                              // as `previous` to `updateMarkupMutation`.
+                              // Without this the resize would not land on
+                              // the `useTakeoffHistory` stack and the
+                              // sidebar Undo / Cmd+Z would skip over it
+                              // (mirrors the body-drag fix from Task #1742).
+                              const origPts = markupResizeRef.current.origPts;
                               markupResizeRef.current = null;
                               setMarkupResizePreview({ id: markup.id, points: newPts });
                               try {
-                                await updateMarkupMutation.mutateAsync({ id: markup.id, points: newPts });
+                                await updateMarkupMutation.mutateAsync({
+                                  id: markup.id,
+                                  points: newPts,
+                                  previous: { points: origPts },
+                                });
                               } catch {}
                               setMarkupResizePreview(curr => (curr && curr.id === markup.id) ? null : curr);
                             }}
