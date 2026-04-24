@@ -5758,10 +5758,16 @@ export function BackfillAlertFailuresDigestCard({
                   className="rounded-md border bg-muted/20"
                   data-testid="section-alert-failures-digest-quiet-orgs"
                 >
+                  {/* Task #1579 — surface the org count and the freshest
+                      lastJobAt on the collapsed header so platform support
+                      can decide whether the "Quiet orgs CSV" (Task #1568)
+                      is worth pulling without expanding the section. The
+                      digest already returns quietOrgs sorted by most-recent
+                      activity desc, so quietOrgs[0] is the freshest. */}
                   <button
                     type="button"
                     onClick={() => setQuietOrgsExpanded((v) => !v)}
-                    className="w-full flex items-center gap-2 p-2.5 text-left text-sm font-medium hover:bg-muted/40 rounded-md"
+                    className="w-full flex flex-wrap items-center gap-2 p-2.5 text-left text-sm font-medium hover:bg-muted/40 rounded-md"
                     data-testid="button-toggle-quiet-orgs"
                     aria-expanded={quietOrgsExpanded}
                     title={
@@ -5784,6 +5790,18 @@ export function BackfillAlertFailuresDigestCard({
                     </Badge>
                     <span className="text-xs font-normal text-muted-foreground">
                       ran backfill but reported no alert deliveries
+                    </span>
+                    <span
+                      className="text-xs font-normal text-muted-foreground ml-auto"
+                      data-testid="text-quiet-orgs-freshest-last-job"
+                      title={`Freshest activity: ${quietOrgs[0].lastJobAt} (${formatDistanceStrict(
+                        new Date(quietOrgs[0].lastJobAt),
+                        new Date(),
+                        { addSuffix: true },
+                      )})`}
+                    >
+                      freshest activity{" "}
+                      {format(new Date(quietOrgs[0].lastJobAt), "PPp")}
                     </span>
                   </button>
                   {quietOrgsExpanded && (
