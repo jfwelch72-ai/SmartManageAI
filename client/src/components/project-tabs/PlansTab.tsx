@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense, memo } from "react";
 import PdfPreview from "@/components/PdfPreview";
 import { PlanPinLayer, PinPicker, PinCreateDialog, type PinFilter, type PinType, type PlanPin, type ClusterDensity, DEFAULT_CLUSTER_DENSITY } from "@/components/PlanPinLayer";
 import PlanMarkupLayer, { type MarkupHistoryState } from "@/components/markups/PlanMarkupLayer";
@@ -104,6 +104,338 @@ interface SheetStatusData {
   newerSheetIds: string[];
   pinnedToLatestMap: Record<string, string | null>;
 }
+
+// Task #1858 — Folder names hoisted to module scope so the memoized
+// SheetRow can reference them without taking an extra (unstable) prop.
+const SHEET_FOLDER_NAMES = ["Plans", "Supporting Documents", "BIM"] as const;
+
+// Task #1858 — Extracted, memoized sheet row. PlansTab is a very large
+// component whose tree re-renders on every background query refetch
+// (sheets, sheet-status, drawing-sets, items, etc.). Without this memo,
+// the inline pin/unpin buttons get reconciled on every refetch and
+// Playwright's actionability heuristic flakes — which is the same lag
+// human users feel on slow networks/laptops when they click pin and the
+// row is mid-reconciliation. Props are primitives and the callbacks are
+// stable identities, so a parent re-render with unchanged row state
+// short-circuits via React.memo's default shallow compare and the row's
+// DOM (and therefore the pin/unpin button) stays put.
+interface SheetRowProps {
+  sheetId: string;
+  sheetName: string | null;
+  isBim: boolean;
+  hasScale: boolean;
+  isSelected: boolean;
+  isDragging: boolean;
+  isRenaming: boolean;
+  renameValue: string;
+  effectiveSetId: string | null;
+  pinnedItemId: string | null;
+  pinnedRevLabel: string | null;
+  isPinned: boolean;
+  hasNewer: boolean;
+  isNotInSet: boolean;
+  latestRevisionSheetId: string | null;
+  setName: string;
+  canManageDrawingSets: boolean;
+  pinPending: boolean;
+  unpinPending: boolean;
+  swapPending: boolean;
+  currentFolderName: string;
+  onSelect: (sheetId: string) => void;
+  onDragStart: (e: any, sheetId: string) => void;
+  onDragEnd: () => void;
+  onRenameValueChange: (value: string) => void;
+  onRenameCommit: (sheetId: string, value: string) => void;
+  onRenameCancel: () => void;
+  onRenameStart: (sheetId: string, currentName: string) => void;
+  onPin: (setId: string, sheetId: string) => void;
+  onUnpin: (setId: string, itemId: string) => void;
+  onSwapRevision: (setId: string, oldItemId: string, newSheetId: string) => void;
+  onDuplicate: (sheetId: string) => void;
+  onMove: (sheetId: string, folderGroup: string) => void;
+  onDeleteRequest: (sheetId: string) => void;
+}
+
+const SheetRow = memo(function SheetRow({
+  sheetId,
+  sheetName,
+  isBim,
+  hasScale,
+  isSelected,
+  isDragging,
+  isRenaming,
+  renameValue,
+  effectiveSetId,
+  pinnedItemId,
+  pinnedRevLabel,
+  isPinned,
+  hasNewer,
+  isNotInSet,
+  latestRevisionSheetId,
+  setName,
+  canManageDrawingSets,
+  pinPending,
+  unpinPending,
+  swapPending,
+  currentFolderName,
+  onSelect,
+  onDragStart,
+  onDragEnd,
+  onRenameValueChange,
+  onRenameCommit,
+  onRenameCancel,
+  onRenameStart,
+  onPin,
+  onUnpin,
+  onSwapRevision,
+  onDuplicate,
+  onMove,
+  onDeleteRequest,
+}: SheetRowProps) {
+  return (
+    <div
+      draggable
+      onDragStart={(e) => onDragStart(e, sheetId)}
+      onDragEnd={onDragEnd}
+      onClick={() => {
+        if (isRenaming) return;
+        onSelect(sheetId);
+      }}
+      className={cn(
+        "flex items-start gap-1.5 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent/50 transition-colors group",
+        isDragging && "opacity-50",
+        isSelected && "bg-accent text-accent-foreground"
+      )}
+      data-testid={`sheet-${sheetId}`}
+    >
+      <GripVertical
+        className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab mt-0.5"
+        onClick={(e) => e.stopPropagation()}
+      />
+      <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
+      {isRenaming ? (
+        <Input
+          value={renameValue}
+          onChange={(e) => onRenameValueChange(e.target.value)}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && renameValue.trim()) {
+              onRenameCommit(sheetId, renameValue.trim());
+            } else if (e.key === "Escape") {
+              onRenameCancel();
+            }
+          }}
+          onBlur={() => {
+            if (renameValue.trim()) {
+              onRenameCommit(sheetId, renameValue.trim());
+            } else {
+              onRenameCancel();
+            }
+          }}
+          autoFocus
+          className="h-6 text-sm flex-1 px-1"
+          data-testid={`input-rename-sheet-${sheetId}`}
+        />
+      ) : (
+        <span className="break-words flex-1 min-w-0 leading-snug">{sheetName}</span>
+      )}
+      {effectiveSetId && (
+        <>
+          {hasNewer && isPinned && (
+            <Badge
+              variant="outline"
+              className="text-[9px] h-4 px-1 shrink-0 bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400"
+              data-testid={`badge-newer-revision-${sheetId}`}
+              title="A newer revision is available"
+            >
+              Newer
+            </Badge>
+          )}
+          {isPinned && (
+            <Badge
+              variant="outline"
+              className="text-[9px] h-4 px-1 shrink-0 bg-green-50 text-green-600 border-green-300 dark:bg-green-900/20 dark:text-green-400"
+              data-testid={`badge-pinned-${sheetId}`}
+              title={`Pinned to ${setName}${pinnedRevLabel ? ` (${pinnedRevLabel})` : ""}`}
+            >
+              <Pin className="w-2.5 h-2.5 mr-0.5" />
+              {pinnedRevLabel ? `Pinned: ${pinnedRevLabel}` : "Pinned"}
+            </Badge>
+          )}
+          {isNotInSet && !isPinned && (
+            <Badge
+              variant="outline"
+              className="text-[9px] h-4 px-1 shrink-0 bg-gray-50 text-gray-500 border-gray-300 dark:bg-gray-800 dark:text-gray-400"
+              data-testid={`badge-not-in-set-${sheetId}`}
+            >
+              Not in set
+            </Badge>
+          )}
+          {canManageDrawingSets && !isRenaming && (
+            <>
+              {isPinned && hasNewer && latestRevisionSheetId && pinnedItemId && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-5 w-5 shrink-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20"
+                  title="Swap pinned revision to latest"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSwapRevision(effectiveSetId, pinnedItemId, latestRevisionSheetId);
+                  }}
+                  disabled={swapPending}
+                  data-testid={`button-swap-revision-${sheetId}`}
+                >
+                  <ArrowUpCircle className="w-3.5 h-3.5" />
+                </Button>
+              )}
+              {isPinned ? (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100"
+                  title={`Remove from ${setName}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (!pinnedItemId) return;
+                    onUnpin(effectiveSetId, pinnedItemId);
+                  }}
+                  disabled={unpinPending}
+                  data-testid={`button-unpin-sheet-${sheetId}`}
+                >
+                  <PinOff className="w-3.5 h-3.5" />
+                </Button>
+              ) : (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100"
+                  title={`Pin to ${setName}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPin(effectiveSetId, sheetId);
+                  }}
+                  disabled={pinPending}
+                  data-testid={`button-pin-sheet-${sheetId}`}
+                >
+                  <Pin className="w-3.5 h-3.5" />
+                </Button>
+              )}
+            </>
+          )}
+        </>
+      )}
+      {isBim && (
+        <Badge
+          variant="secondary"
+          className="text-[9px] h-4 px-1 shrink-0 bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300"
+          data-testid={`badge-bim-sheet-${sheetId}`}
+        >
+          BIM
+        </Badge>
+      )}
+      {hasScale && !isRenaming && (
+        <Badge variant="outline" className="text-[10px] h-4 px-1 shrink-0">
+          Cal
+        </Badge>
+      )}
+      {!isRenaming && (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-5 w-5 opacity-0 group-hover:opacity-100 shrink-0"
+              onClick={(e) => e.stopPropagation()}
+              data-testid={`menu-sheet-${sheetId}`}
+            >
+              <MoreVertical className="w-3 h-3" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              onClick={() => onRenameStart(sheetId, sheetName || "")}
+              data-testid={`button-rename-sheet-${sheetId}`}
+            >
+              <Pencil className="w-4 h-4 mr-2" />
+              Rename
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => onDuplicate(sheetId)}
+              data-testid={`button-duplicate-sheet-${sheetId}`}
+            >
+              <Copy className="w-4 h-4 mr-2" />
+              Duplicate
+            </DropdownMenuItem>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <ArrowRight className="w-4 h-4 mr-2" />
+                Move to
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                {SHEET_FOLDER_NAMES.filter((f) => f !== currentFolderName).map((targetFolder) => (
+                  <DropdownMenuItem
+                    key={targetFolder}
+                    onClick={() => onMove(sheetId, targetFolder)}
+                    data-testid={`button-move-sheet-${sheetId}-${targetFolder.toLowerCase().replace(/\s+/g, "-")}`}
+                  >
+                    <Folder className="w-4 h-4 mr-2" />
+                    {targetFolder}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            {effectiveSetId && canManageDrawingSets && (
+              <>
+                <DropdownMenuSeparator />
+                {isPinned ? (
+                  <DropdownMenuItem
+                    onClick={() => {
+                      if (!pinnedItemId) return;
+                      onUnpin(effectiveSetId, pinnedItemId);
+                    }}
+                    data-testid={`menu-unpin-sheet-${sheetId}`}
+                  >
+                    <PinOff className="w-4 h-4 mr-2" />
+                    Unpin from active set
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem
+                    onClick={() => onPin(effectiveSetId, sheetId)}
+                    data-testid={`menu-pin-sheet-${sheetId}`}
+                  >
+                    <Pin className="w-4 h-4 mr-2" />
+                    Pin to active set
+                  </DropdownMenuItem>
+                )}
+                {isPinned && latestRevisionSheetId && pinnedItemId && (
+                  <DropdownMenuItem
+                    onClick={() => {
+                      onSwapRevision(effectiveSetId, pinnedItemId, latestRevisionSheetId);
+                    }}
+                    data-testid={`menu-swap-revision-${sheetId}`}
+                  >
+                    <ArrowUpCircle className="w-4 h-4 mr-2" />
+                    Use latest revision
+                  </DropdownMenuItem>
+                )}
+              </>
+            )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => onDeleteRequest(sheetId)}
+              className="text-destructive"
+              data-testid={`button-delete-sheet-${sheetId}`}
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
+    </div>
+  );
+});
 
 export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const { user } = useAuth();
@@ -481,10 +813,9 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
       else sessionStorage.removeItem(sheetStorageKey);
     } catch {}
   }, [selectedSheetId, sheetStorageKey]);
-  const handleSelectSheetFromSidebar = (sheetId: string) => {
-    setPreviewDocId(null);
-    setSelectedSheetId(sheetId);
-  };
+  // Task #1858 — Sidebar sheet-row clicks now go through the memoized
+  // SheetRow's `onSelect` callback (`handleSelectSheet`, defined below
+  // alongside the other stable row callbacks).
   const docIdIndex = useMemo(() => {
     const m = new Map<string, number>();
     documents.forEach((d: any, i: number) => m.set(d.id, i));
@@ -631,26 +962,11 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
     return map;
   }, [activeSetItems]);
 
-  const isSheetPinned = useCallback((sheet: TakeoffSheet): boolean => {
-    if (!effectiveSetId) return false;
-    return pinnedSheetIdSet.has(sheet.id);
-  }, [effectiveSetId, pinnedSheetIdSet]);
-
-  const sheetHasNewerRevision = useCallback((sheet: TakeoffSheet): boolean => {
-    if (!effectiveSetId) return false;
-    return newerSheetIdSet.has(sheet.id);
-  }, [effectiveSetId, newerSheetIdSet]);
-
-  const isSheetNotInCurrentSet = useCallback((sheet: TakeoffSheet): boolean => {
-    if (!effectiveSetId || pinnedSheetIdSet.size === 0) return false;
-    if (pinnedSheetIdSet.has(sheet.id)) return false;
-    const pinnedNames = new Set<string>();
-    for (const sid of pinnedSheetIdSet) {
-      const s = sheets.find(sh => sh.id === sid);
-      if (s?.sheetName) pinnedNames.add(s.sheetName);
-    }
-    return !pinnedNames.has(sheet.sheetName || "");
-  }, [effectiveSetId, pinnedSheetIdSet, sheets]);
+  // Task #1858 — The previous `isSheetPinned`, `sheetHasNewerRevision`,
+  // and `isSheetNotInCurrentSet` callbacks were inlined into the
+  // SheetRow render loop below as direct Set lookups (with the pinned
+  // names precomputed once via `pinnedSheetNames`), so the row receives
+  // primitive booleans and React.memo can short-circuit re-renders.
 
   // Task #1661 — find the latest sheet ID we'd swap a pinned sheet to.
   // Returns null when the pinned revision is already the latest, or when
@@ -749,8 +1065,6 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
 
   const previewUrlData = previewDocId ? { url: `/api/projects/${projectCode}/documents/${previewDocId}/stream` } : undefined;
   const previewUrlLoading = false;
-
-  const SHEET_FOLDER_NAMES = ["Plans", "Supporting Documents", "BIM"];
 
   const moveSheetMutation = useMutation({
     mutationFn: async ({ sheetId, folderGroup }: { sheetId: string; folderGroup: string }) => {
@@ -866,6 +1180,116 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
       toast({ title: "Error", description: "Failed to swap pinned revision.", variant: "destructive" });
     },
   });
+
+  // Task #1858 — Stable callback identities for the memoized SheetRow.
+  // Pulling `.mutate` out of the mutation objects (whose top-level
+  // identity churns each render) gives us a stable handler reference;
+  // the row's React.memo shallow compare can then short-circuit when
+  // its primitive props haven't changed.
+  const moveSheetMutate = moveSheetMutation.mutate;
+  const renameSheetMutate = renameSheetMutation.mutate;
+  const duplicateSheetMutate = duplicateSheetMutation.mutate;
+  const pinSheetMutate = pinSheetToActiveSetMutation.mutate;
+  const unpinSheetMutate = unpinSheetFromActiveSetMutation.mutate;
+  const swapPinnedRevisionMutate = swapPinnedRevisionMutation.mutate;
+
+  const handleSelectSheet = useCallback((sheetId: string) => {
+    setPreviewDocId(null);
+    setSelectedSheetId(sheetId);
+  }, []);
+
+  const handleSheetDragEnd = useCallback(() => {
+    setDraggedSheetId(null);
+  }, []);
+
+  const handleRenameValueChange = useCallback((value: string) => {
+    setRenameSheetValue(value);
+  }, []);
+
+  const handleRenameCommit = useCallback(
+    (sheetId: string, value: string) => {
+      renameSheetMutate({ sheetId, sheetName: value });
+    },
+    [renameSheetMutate],
+  );
+
+  const handleRenameCancel = useCallback(() => {
+    setRenameSheetId(null);
+  }, []);
+
+  const handleRenameStart = useCallback((sheetId: string, currentName: string) => {
+    setRenameSheetId(sheetId);
+    setRenameSheetValue(currentName);
+  }, []);
+
+  const handlePinSheet = useCallback(
+    (setId: string, sheetId: string) => {
+      pinSheetMutate({ setId, sheetId });
+    },
+    [pinSheetMutate],
+  );
+
+  const handleUnpinSheet = useCallback(
+    (setId: string, itemId: string) => {
+      unpinSheetMutate({ setId, itemId });
+    },
+    [unpinSheetMutate],
+  );
+
+  const handleSwapRevision = useCallback(
+    (setId: string, oldItemId: string, newSheetId: string) => {
+      swapPinnedRevisionMutate({ setId, oldItemId, newSheetId });
+    },
+    [swapPinnedRevisionMutate],
+  );
+
+  const handleDuplicateSheet = useCallback(
+    (sheetId: string) => {
+      duplicateSheetMutate(sheetId);
+    },
+    [duplicateSheetMutate],
+  );
+
+  const handleMoveSheet = useCallback(
+    (sheetId: string, folderGroup: string) => {
+      moveSheetMutate({ sheetId, folderGroup });
+    },
+    [moveSheetMutate],
+  );
+
+  const handleDeleteSheetRequest = useCallback((sheetId: string) => {
+    setDeleteSheetId(sheetId);
+  }, []);
+
+  const pinPending = pinSheetToActiveSetMutation.isPending;
+  const unpinPending = unpinSheetFromActiveSetMutation.isPending;
+  const swapPending = swapPinnedRevisionMutation.isPending;
+
+  // Task #1858 — Build a stable per-sheet name lookup so isSheetNotInCurrentSet
+  // (used by the SheetRow `isNotInSet` prop) doesn't trigger a different
+  // computation on each render.
+  const sheetNamesById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of sheets) {
+      m.set(s.id, s.sheetName || "");
+    }
+    return m;
+  }, [sheets]);
+
+  const pinnedSheetNames = useMemo(() => {
+    const names = new Set<string>();
+    if (!effectiveSetId || pinnedSheetIdSet.size === 0) return names;
+    pinnedSheetIdSet.forEach((sid) => {
+      const name = sheetNamesById.get(sid);
+      if (name) names.add(name);
+    });
+    return names;
+  }, [effectiveSetId, pinnedSheetIdSet, sheetNamesById]);
+
+  const activeSetName = useMemo(
+    () => drawingSetsData.find((s) => s.id === effectiveSetId)?.name || "set",
+    [drawingSetsData, effectiveSetId],
+  );
 
   const groupedSheets = useMemo(() => {
     const result: Record<string, TakeoffSheet[]> = {};
@@ -2059,272 +2483,64 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                 {folderSheets.length === 0 ? (
                                   <div className="px-6 py-1 text-xs text-muted-foreground italic">No sheets</div>
                                 ) : (
-                                  folderSheets.filter((s) => !hiddenSheetIds.has(s.id)).map((sheet) => (
-                                    <div
-                                      key={sheet.id}
-                                      draggable
-                                      onDragStart={(e) => handleSheetDragStart(e, sheet.id)}
-                                      onDragEnd={() => setDraggedSheetId(null)}
-                                      onClick={() => {
-                                        if (renameSheetId === sheet.id) return;
-                                        handleSelectSheetFromSidebar(sheet.id);
-                                      }}
-                                      className={cn(
-                                        "flex items-start gap-1.5 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent/50 transition-colors group",
-                                        draggedSheetId === sheet.id && "opacity-50",
-                                        selectedSheetId === sheet.id && !previewDocId && "bg-accent text-accent-foreground"
-                                      )}
-                                      data-testid={`sheet-${sheet.id}`}
-                                    >
-                                      <GripVertical
-                                        className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab mt-0.5"
-                                        onClick={(e) => e.stopPropagation()}
+                                  folderSheets.filter((s) => !hiddenSheetIds.has(s.id)).map((sheet) => {
+                                    // Task #1858 — Per-sheet derivations are computed
+                                    // here (not inside the memoized SheetRow) so the
+                                    // row only takes primitive props. Anything that
+                                    // depends on the activeSetItemMap, sheet-status,
+                                    // or other parent collections is reduced to
+                                    // booleans / ids before crossing the memo
+                                    // boundary, allowing React.memo to short-circuit
+                                    // re-renders during background refetches.
+                                    const pinnedItem = activeSetItemMap.get(sheet.id);
+                                    const isPinned = !!effectiveSetId && pinnedSheetIdSet.has(sheet.id);
+                                    const hasNewer = !!effectiveSetId && newerSheetIdSet.has(sheet.id);
+                                    const latestId = getLatestRevisionSheetId(sheet);
+                                    const isNotInSet =
+                                      !!effectiveSetId &&
+                                      pinnedSheetIdSet.size > 0 &&
+                                      !isPinned &&
+                                      !pinnedSheetNames.has(sheet.sheetName || "");
+                                    return (
+                                      <SheetRow
+                                        key={sheet.id}
+                                        sheetId={sheet.id}
+                                        sheetName={sheet.sheetName}
+                                        isBim={(sheet as any).folderGroup === "BIM"}
+                                        hasScale={!!sheet.scalePxPerFoot}
+                                        isSelected={selectedSheetId === sheet.id && !previewDocId}
+                                        isDragging={draggedSheetId === sheet.id}
+                                        isRenaming={renameSheetId === sheet.id}
+                                        renameValue={renameSheetId === sheet.id ? renameSheetValue : ""}
+                                        effectiveSetId={effectiveSetId}
+                                        pinnedItemId={pinnedItem?.id ?? null}
+                                        pinnedRevLabel={sheet.revisionLabel || pinnedItem?.revisionId || null}
+                                        isPinned={isPinned}
+                                        hasNewer={hasNewer}
+                                        isNotInSet={isNotInSet}
+                                        latestRevisionSheetId={latestId}
+                                        setName={activeSetName}
+                                        canManageDrawingSets={canManageDrawingSets}
+                                        pinPending={pinPending}
+                                        unpinPending={unpinPending}
+                                        swapPending={swapPending}
+                                        currentFolderName={folderName}
+                                        onSelect={handleSelectSheet}
+                                        onDragStart={handleSheetDragStart}
+                                        onDragEnd={handleSheetDragEnd}
+                                        onRenameValueChange={handleRenameValueChange}
+                                        onRenameCommit={handleRenameCommit}
+                                        onRenameCancel={handleRenameCancel}
+                                        onRenameStart={handleRenameStart}
+                                        onPin={handlePinSheet}
+                                        onUnpin={handleUnpinSheet}
+                                        onSwapRevision={handleSwapRevision}
+                                        onDuplicate={handleDuplicateSheet}
+                                        onMove={handleMoveSheet}
+                                        onDeleteRequest={handleDeleteSheetRequest}
                                       />
-                                      <FileText className="w-3.5 h-3.5 text-blue-400 shrink-0 mt-0.5" />
-                                      {renameSheetId === sheet.id ? (
-                                        <Input
-                                          value={renameSheetValue}
-                                          onChange={(e) => setRenameSheetValue(e.target.value)}
-                                          onClick={(e) => e.stopPropagation()}
-                                          onKeyDown={(e) => {
-                                            if (e.key === "Enter" && renameSheetValue.trim()) {
-                                              renameSheetMutation.mutate({ sheetId: sheet.id, sheetName: renameSheetValue.trim() });
-                                            } else if (e.key === "Escape") {
-                                              setRenameSheetId(null);
-                                            }
-                                          }}
-                                          onBlur={() => {
-                                            if (renameSheetValue.trim()) {
-                                              renameSheetMutation.mutate({ sheetId: sheet.id, sheetName: renameSheetValue.trim() });
-                                            } else {
-                                              setRenameSheetId(null);
-                                            }
-                                          }}
-                                          autoFocus
-                                          className="h-6 text-sm flex-1 px-1"
-                                          data-testid={`input-rename-sheet-${sheet.id}`}
-                                        />
-                                      ) : (
-                                        <span className="break-words flex-1 min-w-0 leading-snug">{sheet.sheetName}</span>
-                                      )}
-                                      {(() => {
-                                        // Task #1661 — render pinned/newer/not-in-set
-                                        // badges alongside inline pin/unpin/swap
-                                        // controls so document-control users can
-                                        // change set membership directly from the
-                                        // sheet row.
-                                        if (!effectiveSetId) return null;
-                                        const pinnedItem = activeSetItemMap.get(sheet.id);
-                                        const isPinned = isSheetPinned(sheet);
-                                        const hasNewer = sheetHasNewerRevision(sheet);
-                                        const latestId = getLatestRevisionSheetId(sheet);
-                                        const pinnedRevLabel = sheet.revisionLabel || pinnedItem?.revisionId || null;
-                                        const setName = drawingSetsData.find(s => s.id === effectiveSetId)?.name || "set";
-                                        return (
-                                          <>
-                                            {hasNewer && isPinned && (
-                                              <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0 bg-amber-50 text-amber-700 border-amber-300 dark:bg-amber-900/20 dark:text-amber-400" data-testid={`badge-newer-revision-${sheet.id}`} title="A newer revision is available">
-                                                Newer
-                                              </Badge>
-                                            )}
-                                            {isPinned && (
-                                              <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0 bg-green-50 text-green-600 border-green-300 dark:bg-green-900/20 dark:text-green-400" data-testid={`badge-pinned-${sheet.id}`} title={`Pinned to ${setName}${pinnedRevLabel ? ` (${pinnedRevLabel})` : ""}`}>
-                                                <Pin className="w-2.5 h-2.5 mr-0.5" />
-                                                {pinnedRevLabel ? `Pinned: ${pinnedRevLabel}` : "Pinned"}
-                                              </Badge>
-                                            )}
-                                            {isSheetNotInCurrentSet(sheet) && !isPinned && (
-                                              <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0 bg-gray-50 text-gray-500 border-gray-300 dark:bg-gray-800 dark:text-gray-400" data-testid={`badge-not-in-set-${sheet.id}`}>
-                                                Not in set
-                                              </Badge>
-                                            )}
-                                            {canManageDrawingSets && renameSheetId !== sheet.id && (
-                                              <>
-                                                {isPinned && hasNewer && latestId && (
-                                                  <Button
-                                                    size="icon"
-                                                    variant="ghost"
-                                                    className="h-5 w-5 shrink-0 text-amber-600 hover:text-amber-700 hover:bg-amber-50 dark:hover:bg-amber-900/20"
-                                                    title="Swap pinned revision to latest"
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      if (!pinnedItem) return;
-                                                      swapPinnedRevisionMutation.mutate({
-                                                        setId: effectiveSetId,
-                                                        oldItemId: pinnedItem.id,
-                                                        newSheetId: latestId,
-                                                      });
-                                                    }}
-                                                    disabled={swapPinnedRevisionMutation.isPending}
-                                                    data-testid={`button-swap-revision-${sheet.id}`}
-                                                  >
-                                                    <ArrowUpCircle className="w-3.5 h-3.5" />
-                                                  </Button>
-                                                )}
-                                                {isPinned ? (
-                                                  <Button
-                                                    size="icon"
-                                                    variant="ghost"
-                                                    className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100"
-                                                    title={`Remove from ${setName}`}
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      if (!pinnedItem) return;
-                                                      unpinSheetFromActiveSetMutation.mutate({
-                                                        setId: effectiveSetId,
-                                                        itemId: pinnedItem.id,
-                                                      });
-                                                    }}
-                                                    disabled={unpinSheetFromActiveSetMutation.isPending}
-                                                    data-testid={`button-unpin-sheet-${sheet.id}`}
-                                                  >
-                                                    <PinOff className="w-3.5 h-3.5" />
-                                                  </Button>
-                                                ) : (
-                                                  <Button
-                                                    size="icon"
-                                                    variant="ghost"
-                                                    className="h-5 w-5 shrink-0 opacity-0 group-hover:opacity-100"
-                                                    title={`Pin to ${setName}`}
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      pinSheetToActiveSetMutation.mutate({
-                                                        setId: effectiveSetId,
-                                                        sheetId: sheet.id,
-                                                      });
-                                                    }}
-                                                    disabled={pinSheetToActiveSetMutation.isPending}
-                                                    data-testid={`button-pin-sheet-${sheet.id}`}
-                                                  >
-                                                    <Pin className="w-3.5 h-3.5" />
-                                                  </Button>
-                                                )}
-                                              </>
-                                            )}
-                                          </>
-                                        );
-                                      })()}
-                                      {(sheet as any).folderGroup === "BIM" && (
-                                        <Badge variant="secondary" className="text-[9px] h-4 px-1 shrink-0 bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" data-testid={`badge-bim-sheet-${sheet.id}`}>BIM</Badge>
-                                      )}
-                                      {sheet.scalePxPerFoot && renameSheetId !== sheet.id && (
-                                        <Badge variant="outline" className="text-[10px] h-4 px-1 shrink-0">
-                                          Cal
-                                        </Badge>
-                                      )}
-                                      {renameSheetId !== sheet.id && (
-                                        <DropdownMenu>
-                                          <DropdownMenuTrigger asChild>
-                                            <Button
-                                              size="icon"
-                                              variant="ghost"
-                                              className="h-5 w-5 opacity-0 group-hover:opacity-100 shrink-0"
-                                              onClick={(e) => e.stopPropagation()}
-                                              data-testid={`menu-sheet-${sheet.id}`}
-                                            >
-                                              <MoreVertical className="w-3 h-3" />
-                                            </Button>
-                                          </DropdownMenuTrigger>
-                                          <DropdownMenuContent align="end">
-                                            <DropdownMenuItem
-                                              onClick={() => {
-                                                setRenameSheetId(sheet.id);
-                                                setRenameSheetValue(sheet.sheetName || "");
-                                              }}
-                                              data-testid={`button-rename-sheet-${sheet.id}`}
-                                            >
-                                              <Pencil className="w-4 h-4 mr-2" />
-                                              Rename
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem
-                                              onClick={() => duplicateSheetMutation.mutate(sheet.id)}
-                                              data-testid={`button-duplicate-sheet-${sheet.id}`}
-                                            >
-                                              <Copy className="w-4 h-4 mr-2" />
-                                              Duplicate
-                                            </DropdownMenuItem>
-                                            <DropdownMenuSub>
-                                              <DropdownMenuSubTrigger>
-                                                <ArrowRight className="w-4 h-4 mr-2" />
-                                                Move to
-                                              </DropdownMenuSubTrigger>
-                                              <DropdownMenuSubContent>
-                                                {SHEET_FOLDER_NAMES.filter(f => f !== folderName).map(targetFolder => (
-                                                  <DropdownMenuItem
-                                                    key={targetFolder}
-                                                    onClick={() => moveSheetMutation.mutate({ sheetId: sheet.id, folderGroup: targetFolder })}
-                                                    data-testid={`button-move-sheet-${sheet.id}-${targetFolder.toLowerCase().replace(/\s+/g, '-')}`}
-                                                  >
-                                                    <Folder className="w-4 h-4 mr-2" />
-                                                    {targetFolder}
-                                                  </DropdownMenuItem>
-                                                ))}
-                                              </DropdownMenuSubContent>
-                                            </DropdownMenuSub>
-                                            {effectiveSetId && canManageDrawingSets && (() => {
-                                              // Task #1661 — duplicate the inline pin/unpin/swap
-                                              // controls in the menu so keyboard / accessibility
-                                              // users can manage set membership without hovering.
-                                              const pinnedItem = activeSetItemMap.get(sheet.id);
-                                              const isPinned = isSheetPinned(sheet);
-                                              const latestId = getLatestRevisionSheetId(sheet);
-                                              return (
-                                                <>
-                                                  <DropdownMenuSeparator />
-                                                  {isPinned ? (
-                                                    <DropdownMenuItem
-                                                      onClick={() => {
-                                                        if (!pinnedItem) return;
-                                                        unpinSheetFromActiveSetMutation.mutate({ setId: effectiveSetId, itemId: pinnedItem.id });
-                                                      }}
-                                                      data-testid={`menu-unpin-sheet-${sheet.id}`}
-                                                    >
-                                                      <PinOff className="w-4 h-4 mr-2" />
-                                                      Unpin from active set
-                                                    </DropdownMenuItem>
-                                                  ) : (
-                                                    <DropdownMenuItem
-                                                      onClick={() => {
-                                                        pinSheetToActiveSetMutation.mutate({ setId: effectiveSetId, sheetId: sheet.id });
-                                                      }}
-                                                      data-testid={`menu-pin-sheet-${sheet.id}`}
-                                                    >
-                                                      <Pin className="w-4 h-4 mr-2" />
-                                                      Pin to active set
-                                                    </DropdownMenuItem>
-                                                  )}
-                                                  {isPinned && latestId && pinnedItem && (
-                                                    <DropdownMenuItem
-                                                      onClick={() => {
-                                                        swapPinnedRevisionMutation.mutate({
-                                                          setId: effectiveSetId,
-                                                          oldItemId: pinnedItem.id,
-                                                          newSheetId: latestId,
-                                                        });
-                                                      }}
-                                                      data-testid={`menu-swap-revision-${sheet.id}`}
-                                                    >
-                                                      <ArrowUpCircle className="w-4 h-4 mr-2" />
-                                                      Use latest revision
-                                                    </DropdownMenuItem>
-                                                  )}
-                                                </>
-                                              );
-                                            })()}
-                                            <DropdownMenuSeparator />
-                                            <DropdownMenuItem
-                                              onClick={() => setDeleteSheetId(sheet.id)}
-                                              className="text-destructive"
-                                              data-testid={`button-delete-sheet-${sheet.id}`}
-                                            >
-                                              <Trash2 className="w-4 h-4 mr-2" />
-                                              Delete
-                                            </DropdownMenuItem>
-                                          </DropdownMenuContent>
-                                        </DropdownMenu>
-                                      )}
-                                    </div>
-                                  ))
+                                    );
+                                  })
                                 )}
                               </div>
                             )}

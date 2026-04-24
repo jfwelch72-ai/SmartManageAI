@@ -168,9 +168,10 @@ test.describe("Task #1683 — Drawing-set pin/unpin and bulk modal (UI)", () => 
       , { timeout: 2_000 })
       .toBeGreaterThan(0.5);
 
-    // Inline pin. dispatchEvent avoids actionability flakiness from
-    // background polling re-renders on the dev server.
-    await pinBtn1.dispatchEvent("click");
+    // Inline pin. Task #1858 — sheet rows are now memoized (`SheetRow`) so
+    // background refetches no longer destabilize the inline pin/unpin
+    // buttons. A normal `.click()` is sufficient.
+    await pinBtn1.click();
     await expect(page.getByTestId(`badge-pinned-${sheet1.id}`)).toBeVisible({
       timeout: 10_000,
     });
@@ -181,7 +182,7 @@ test.describe("Task #1683 — Drawing-set pin/unpin and bulk modal (UI)", () => 
     // Inline unpin.
     const unpinBtn1 = page.getByTestId(`button-unpin-sheet-${sheet1.id}`);
     await unpinBtn1.waitFor({ state: "attached" });
-    await unpinBtn1.dispatchEvent("click");
+    await unpinBtn1.click();
     await expect(page.getByTestId(`badge-pinned-${sheet1.id}`)).toHaveCount(0, {
       timeout: 10_000,
     });
