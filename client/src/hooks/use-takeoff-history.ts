@@ -2,7 +2,7 @@ import { useRef, useCallback, useState } from "react";
 import type { TakeoffMeasurement, TakeoffMarkup } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
-type ActionType = "CREATE" | "DELETE" | "UPDATE" | "MARKUP_CREATE" | "MARKUP_DELETE" | "MARKUP_UPDATE";
+type ActionType = "CREATE" | "DELETE" | "UPDATE" | "MARKUP_CREATE" | "MARKUP_DELETE" | "MARKUP_UPDATE" | "MARKUP_UPDATE_BATCH";
 
 export interface MarkupSnapshot {
   id: string;
@@ -19,6 +19,8 @@ interface HistoryEntry {
   markup?: TakeoffMarkup & { points: { x: number; y: number }[] };
   markupBefore?: MarkupSnapshot;
   markupAfter?: MarkupSnapshot;
+  markupBatchBefore?: MarkupSnapshot[];
+  markupBatchAfter?: MarkupSnapshot[];
   sheetId: string;
 }
 
@@ -85,6 +87,21 @@ export function useTakeoffHistory(selectedSheet: string | null) {
     updateFlags();
   }, [updateFlags]);
 
+  // Task #1755 — group multi-select markup body drags into a single
+  // history entry so one Undo/Redo press reverses the whole gesture.
+  // Without this, after Task #1742 each member of a 5-markup drag pushed
+  // its own MARKUP_UPDATE entry, forcing the user to press Undo five
+  // times to put the group back. The batch entry PATCHes every member
+  // in parallel during undo/redo and falls back gracefully if a single
+  // snapshot lacks a meaningful diff (we still push when the caller
+  // pre-screens for changes).
+  const pushMarkupUpdateBatchAction = useCallback((before: MarkupSnapshot[], after: MarkupSnapshot[], sheetId: string) => {
+    if (before.length === 0 || after.length === 0) return;
+    undoStack.current.push({ type: "MARKUP_UPDATE_BATCH", markupBatchBefore: before, markupBatchAfter: after, sheetId });
+    redoStack.current = [];
+    updateFlags();
+  }, [updateFlags]);
+
   const applyMarkupSnapshot = async (snapshot: MarkupSnapshot) => {
     const payload: Record<string, unknown> = {};
     if (snapshot.color !== undefined) payload.color = snapshot.color;
@@ -135,6 +152,8 @@ export function useTakeoffHistory(selectedSheet: string | null) {
         entry.markup = { ...restored, points: typeof restored.points === "string" ? JSON.parse(restored.points) : restored.points };
       } else if (entry.type === "MARKUP_UPDATE" && entry.markupBefore) {
         await applyMarkupSnapshot(entry.markupBefore);
+      } else if (entry.type === "MARKUP_UPDATE_BATCH" && entry.markupBatchBefore) {
+        await Promise.all(entry.markupBatchBefore.map(applyMarkupSnapshot));
       }
       redoStack.current.push(entry);
       invalidate(entry.sheetId, entry.type.startsWith("MARKUP"));
@@ -182,6 +201,8 @@ export function useTakeoffHistory(selectedSheet: string | null) {
         await apiRequest("DELETE", `/api/takeoff/markups/${entry.markup.id}`);
       } else if (entry.type === "MARKUP_UPDATE" && entry.markupAfter) {
         await applyMarkupSnapshot(entry.markupAfter);
+      } else if (entry.type === "MARKUP_UPDATE_BATCH" && entry.markupBatchAfter) {
+        await Promise.all(entry.markupBatchAfter.map(applyMarkupSnapshot));
       }
       undoStack.current.push(entry);
       invalidate(entry.sheetId, entry.type.startsWith("MARKUP"));
@@ -199,5 +220,5 @@ export function useTakeoffHistory(selectedSheet: string | null) {
     updateFlags();
   }, [updateFlags]);
 
-  return { pushAction, pushMarkupAction, pushMarkupUpdateAction, undo, redo, canUndo, canRedo, isPending, clear };
+  return { pushAction, pushMarkupAction, pushMarkupUpdateAction, pushMarkupUpdateBatchAction, undo, redo, canUndo, canRedo, isPending, clear };
 }

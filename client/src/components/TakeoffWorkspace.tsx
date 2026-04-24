@@ -3889,35 +3889,67 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                     if (dx === 0 && dy === 0) return;
                     // Task #1742 — fire N parallel PATCHes for every
                     // selected member, each with a `previous: { points }`
-                    // payload so `updateMarkupMutation.onSuccess` pushes
-                    // a `MARKUP_UPDATE` entry into the unified takeoff
-                    // history. After this, the sidebar Undo/Redo buttons
-                    // and the bubble-phase Cmd/Ctrl+Z handler in
-                    // `useTakeoffInteractions` restore body drags
+                    // payload so the unified takeoff history can restore
+                    // the gesture. The sidebar Undo/Redo buttons and the
+                    // bubble-phase Cmd/Ctrl+Z handler in
+                    // `useTakeoffInteractions` then walk the same stack
                     // alongside measurement edits in the correct order.
-                    // For multi-select drags each member gets its own
-                    // history entry — N undo presses to reverse the
-                    // whole group — which matches how the takeoff
-                    // history already treats other bulk operations and
-                    // keeps each markup individually undoable.
+                    //
+                    // Task #1755 — for a multi-select drag, push a
+                    // single MARKUP_UPDATE_BATCH entry up front
+                    // describing every member's before/after points and
+                    // tell each per-markup mutation to skip its own
+                    // history push (`skipHistory: true`). One Undo press
+                    // PATCHes every member back in parallel; one Redo
+                    // press reapplies the whole group. Single-markup
+                    // body drags still take the original
+                    // `pushMarkupUpdateAction` path through the
+                    // mutation's onSuccess — exactly one entry per drag,
+                    // no regression for the common case.
                     const newPts = rawPts.map(p => ({ x: p.x + dx, y: p.y + dy }));
-                    updateMarkupMutation.mutate({
-                      id: markup.id,
-                      points: newPts,
-                      previous: { points: rawPts },
-                    });
-                    for (const id of siblingIds) {
-                      const m = markups.find((x: any) => x.id === id);
-                      if (!m) continue;
-                      const sPts = (typeof m.points === "string"
-                        ? JSON.parse(m.points)
-                        : m.points) as { x: number; y: number }[];
-                      if (!sPts || sPts.length === 0) continue;
+                    if (siblingIds.length === 0) {
                       updateMarkupMutation.mutate({
-                        id,
-                        points: sPts.map(p => ({ x: p.x + dx, y: p.y + dy })),
-                        previous: { points: sPts },
+                        id: markup.id,
+                        points: newPts,
+                        previous: { points: rawPts },
                       });
+                    } else {
+                      const beforeSnaps: { id: string; points: { x: number; y: number }[] }[] = [
+                        { id: markup.id, points: rawPts },
+                      ];
+                      const afterSnaps: { id: string; points: { x: number; y: number }[] }[] = [
+                        { id: markup.id, points: newPts },
+                      ];
+                      const siblingPayloads: { id: string; before: { x: number; y: number }[]; after: { x: number; y: number }[] }[] = [];
+                      for (const id of siblingIds) {
+                        const m = markups.find((x: any) => x.id === id);
+                        if (!m) continue;
+                        const sPts = (typeof m.points === "string"
+                          ? JSON.parse(m.points)
+                          : m.points) as { x: number; y: number }[];
+                        if (!sPts || sPts.length === 0) continue;
+                        const sNewPts = sPts.map(p => ({ x: p.x + dx, y: p.y + dy }));
+                        beforeSnaps.push({ id, points: sPts });
+                        afterSnaps.push({ id, points: sNewPts });
+                        siblingPayloads.push({ id, before: sPts, after: sNewPts });
+                      }
+                      if (selectedSheet) {
+                        takeoffHistory.pushMarkupUpdateBatchAction(beforeSnaps, afterSnaps, selectedSheet);
+                      }
+                      updateMarkupMutation.mutate({
+                        id: markup.id,
+                        points: newPts,
+                        previous: { points: rawPts },
+                        skipHistory: true,
+                      });
+                      for (const sp of siblingPayloads) {
+                        updateMarkupMutation.mutate({
+                          id: sp.id,
+                          points: sp.after,
+                          previous: { points: sp.before },
+                          skipHistory: true,
+                        });
+                      }
                     }
                   };
                   const groupProps = isDraggable

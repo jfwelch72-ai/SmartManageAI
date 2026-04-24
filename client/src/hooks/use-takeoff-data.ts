@@ -480,11 +480,19 @@ export function useTakeoffData({
         text?: string | null;
         points?: { x: number; y: number }[];
       };
+      // Task #1755 — when a multi-select body drag fans out into N
+      // parallel PATCHes, the caller already pushed a single
+      // MARKUP_UPDATE_BATCH history entry for the whole gesture, so the
+      // per-mutation onSuccess must NOT push its own MARKUP_UPDATE entry
+      // (otherwise the user is back to N+1 Undo presses to reverse one
+      // drag). Single-markup drags omit this flag and keep producing
+      // exactly one MARKUP_UPDATE entry — no regression.
+      skipHistory?: boolean;
     }) => {
-      const { id, previous, ...updates } = data;
+      const { id, previous, skipHistory, ...updates } = data;
       const res = await apiRequest("PATCH", `/api/takeoff/markups/${id}`, updates);
       const result = await res.json();
-      return { result, id, updates, previous };
+      return { result, id, updates, previous, skipHistory };
     },
     // Task #1735 — Optimistically rewrite the cached markup before the
     // PATCH lands so a body drag does not snap back to its pre-drag
@@ -515,9 +523,9 @@ export function useTakeoffData({
       }
       return { previousMarkups, queryKey };
     },
-    onSuccess: ({ id, updates, previous }) => {
+    onSuccess: ({ id, updates, previous, skipHistory }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "markups"] });
-      if (selectedSheet && previous) {
+      if (selectedSheet && previous && !skipHistory) {
         const before: { id: string; color?: string; thickness?: number; text?: string | null; points?: { x: number; y: number }[] } = { id };
         const after: { id: string; color?: string; thickness?: number; text?: string | null; points?: { x: number; y: number }[] } = { id };
         let hasChange = false;
