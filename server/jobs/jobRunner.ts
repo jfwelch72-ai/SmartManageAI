@@ -25,6 +25,7 @@ import { processArchivedCertifiedPayrollPurge } from "./certifiedPayrollPurge";
 import { processFailedWageDecisionRetries, processStaleWageDecisions } from "../integrations/providers/dol_davis_bacon/sync";
 import { processMissingWageDecisionReminders } from "../services/davisBaconAdminNotifications";
 import { processIntegrationSyncRetries, recordSyncFailure, recordSyncSuccess } from "../integrations/syncRetry";
+import { pruneSuppressionResets } from "../integrations/audit";
 import { qboSyncEntityType } from "../integrations/providers/qbo/sync";
 import { ensureAllEmailPushSubscriptions } from "../emailPushNotifications";
 import { sendEmail } from "../services/emailService";
@@ -67,6 +68,7 @@ let certifiedPayrollPurgeTask: ReturnType<typeof cron.schedule> | null = null;
 let wageDecisionRetryTask: ReturnType<typeof cron.schedule> | null = null;
 let wageDecisionMissingReminderTask: ReturnType<typeof cron.schedule> | null = null;
 let wageDecisionStaleRefreshTask: ReturnType<typeof cron.schedule> | null = null;
+let suppressionResetPruneTask: ReturnType<typeof cron.schedule> | null = null;
 
 /**
  * Task #1491 — Publish a per-tick succeeded/failed sample for a cron
@@ -484,6 +486,25 @@ export function startJobRunner() {
     }
   });
 
+  // Task #1512: nightly retention sweep for the
+  // `integration_suppression_resets` table. The integrations panel only
+  // ever reads the most recent N rows per org, so anything older than
+  // INTEGRATION_SUPPRESSION_RESET_RETENTION_DAYS (default 90 days) is
+  // dead weight that will eventually slow down inserts/queries on busy
+  // orgs. Runs at 03:45 UTC alongside the other nightly cleanup jobs.
+  suppressionResetPruneTask = cron.schedule("45 3 * * *", async () => {
+    try {
+      const deleted = await pruneSuppressionResets();
+      if (deleted > 0) {
+        logInfo("Suppression-reset retention sweep", { deleted });
+      }
+      recordJobOutcome("suppression_reset_prune", true);
+    } catch (err) {
+      recordJobOutcome("suppression_reset_prune", false);
+      logError("Suppression-reset retention sweep failed", { error: String(err) });
+    }
+  });
+
   // Task #1344: daily 08:00 UTC fan-out reminder to org admins about
   // projects whose Davis-Bacon wage decision has been missing for >24h.
   // The handler itself enforces a 1-per-project-per-week throttle so a
@@ -645,6 +666,10 @@ export function stopJobRunner() {
     wageDecisionStaleRefreshTask.stop();
     wageDecisionStaleRefreshTask = null;
   }
+  if (suppressionResetPruneTask) {
+    suppressionResetPruneTask.stop();
+    suppressionResetPruneTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -697,6 +722,9 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   // Task #1380: re-sync cached Davis-Bacon wage decisions whose lastSyncAt
   // has crossed the configured staleness threshold (default 30 days).
   wage_decision_stale_refresh: { fn: async () => { await processStaleWageDecisions(); }, description: "Re-sync cached Davis-Bacon wage decisions whose lastSyncAt is older than DOL_DAVIS_BACON_STALE_AFTER_DAYS (default 30 days); skips rows currently in the failure-backoff lane", schedule: "0 6 * * *" },
+  // Task #1512: bound the integration_suppression_resets table. Default
+  // 90 days; configurable via INTEGRATION_SUPPRESSION_RESET_RETENTION_DAYS.
+  suppression_reset_prune: { fn: async () => { await pruneSuppressionResets(); }, description: "Delete integration_suppression_resets rows older than INTEGRATION_SUPPRESSION_RESET_RETENTION_DAYS (default 90 days)", schedule: "45 3 * * *" },
 };
 
 async function processOutbox() {

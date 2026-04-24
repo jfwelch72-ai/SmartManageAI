@@ -1,4 +1,4 @@
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, lt } from "drizzle-orm";
 import { db } from "../db";
 import { integrationSuppressionResets } from "@shared/schema";
 import { logInfo, logWarn, logError } from "../utils/logger";
@@ -161,4 +161,64 @@ export async function listSuppressionResets(
 
 export async function _clearSuppressionResetLogForTests(): Promise<void> {
   await db.delete(integrationSuppressionResets);
+}
+
+/**
+ * Task #1512 — retention sweep for `integration_suppression_resets`.
+ *
+ * The integrations panel only ever reads the most recent N rows per
+ * org (default 50, max 500 — see `listSuppressionResets` above), so
+ * anything older than the retention window is dead weight that will
+ * eventually slow down inserts/queries on busy orgs.
+ *
+ * Deletes rows whose `created_at` is older than the configured window.
+ * The window is controlled by the env var
+ * `INTEGRATION_SUPPRESSION_RESET_RETENTION_DAYS` (default 90 days).
+ * A non-positive or non-finite value disables the sweep so operators
+ * can pause it without redeploying.
+ *
+ * Returns the number of rows deleted (0 on no-op). DB failures are
+ * logged AND re-thrown so the cron wrapper in `jobRunner.ts` records
+ * a failed sample for `suppression_reset_prune` instead of silently
+ * marking every tick as a success when the DB is misbehaving.
+ */
+export const SUPPRESSION_RESET_DEFAULT_RETENTION_DAYS = 90;
+
+export function getSuppressionResetRetentionDays(): number {
+  const raw = process.env.INTEGRATION_SUPPRESSION_RESET_RETENTION_DAYS;
+  if (raw === undefined || raw === null || String(raw).trim() === "") {
+    return SUPPRESSION_RESET_DEFAULT_RETENTION_DAYS;
+  }
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed)) return SUPPRESSION_RESET_DEFAULT_RETENTION_DAYS;
+  return parsed;
+}
+
+export async function pruneSuppressionResets(): Promise<number> {
+  const days = getSuppressionResetRetentionDays();
+  if (!Number.isFinite(days) || days <= 0) {
+    logInfo("[IntegrationAudit] suppression-reset retention sweep disabled", { days });
+    return 0;
+  }
+  const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  try {
+    const deleted = await db
+      .delete(integrationSuppressionResets)
+      .where(lt(integrationSuppressionResets.createdAt, cutoff))
+      .returning({ id: integrationSuppressionResets.id });
+    if (deleted.length > 0) {
+      logInfo("[IntegrationAudit] pruned old suppression-reset rows", {
+        deleted: deleted.length,
+        cutoff: cutoff.toISOString(),
+        retentionDays: days,
+      });
+    }
+    return deleted.length;
+  } catch (err) {
+    logError("[IntegrationAudit] failed to prune suppression-reset rows", {
+      error: err instanceof Error ? err.message : String(err),
+      retentionDays: days,
+    });
+    throw err;
+  }
 }
