@@ -181,6 +181,14 @@ function queueDistLists(rows: Row[]) {
 function queueUsers(rows: Row[]) {
   (selectByTable["users"] ??= []).push(rows);
 }
+// Task #1689 — per-org failure threshold override is read from the
+// `organizations` table (column `project_log_email_failure_threshold`)
+// by `loadOrgProjectLogEmailFailureThreshold`. The test below
+// asserting per-org > env precedence queues a row here so the worker
+// sees the override exactly the way it would in production.
+function queueOrganizations(rows: Row[]) {
+  (selectByTable["organizations"] ??= []).push(rows);
+}
 
 describe("processProjectLogEmailSchedules", () => {
   it("does nothing when there are no enabled schedules", async () => {
@@ -984,6 +992,120 @@ describe("processProjectLogEmailSchedules", () => {
       const notifInserts = inserts.filter((i) => i.table === "notifications");
       expect(notifInserts).toHaveLength(1);
       expect(notifInserts[0].values).toHaveLength(1);
+      expect(notifInserts[0].values[0].userId).toBe("user-admin-1");
+    } finally {
+      if (original === undefined) delete process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
+      else process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD = original;
+    }
+  });
+
+  it("prefers the per-org override over PROJECT_LOG_EMAIL_FAILURE_THRESHOLD when both are set", async () => {
+    // Task #1689 — `getProjectLogEmailFailureThreshold` resolves
+    // priority as: per-org column → env var → hard-coded default.
+    // We pin that here by setting env=10 (would NOT fire on the
+    // first failure) and an org override of 1 (WOULD fire on the
+    // first failure). Observing the backstop fan-out proves the
+    // org override beat the env var; if the env var were used
+    // instead, the streak (0 → 1) would be far below 10 and no
+    // notification would be inserted.
+    const original = process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
+    process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD = "10";
+    try {
+      const now = new Date("2026-04-20T08:00:00Z");
+      queueSchedules([{
+        id: "sched-1",
+        organizationId: "org-1",
+        projectId: "proj-1",
+        logType: "RFI",
+        cadence: "WEEKLY",
+        weekday: 1,
+        hour: 8,
+        timezone: "UTC",
+        lastSentAt: null,
+        lastEditedById: null,
+        // Already notified so the per-transition (Task #1637) fan-out
+        // is suppressed and the only insert we observe comes from the
+        // repeated-failure backstop — isolating the threshold under
+        // test instead of mixing it with the per-attempt path.
+        lastFailureNotifiedStatus: "FAILURE",
+        consecutiveFailureCount: 0,
+      }]);
+      queueProject([{
+        id: "proj-1",
+        code: "PRJ-99",
+        name: "Tunnel 99",
+        gcOrganizationId: "org-1",
+        projectManagerId: null,
+      }]);
+      queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+      sendEmailNextResults.push({ ok: false, error: "Boom" });
+      // Per-org override of 1 — strictly tighter than the env (10).
+      queueOrganizations([{ threshold: 1 }]);
+      queueUsers([{ id: "user-admin-1" }]);
+
+      await processProjectLogEmailSchedules({ now });
+
+      // Streak goes 0 → 1; org override (1) is crossed, env (10) is
+      // not. A notification means the per-org override won.
+      const notifInserts = inserts.filter((i) => i.table === "notifications");
+      expect(notifInserts).toHaveLength(1);
+      expect(notifInserts[0].values).toHaveLength(1);
+      expect(notifInserts[0].values[0].userId).toBe("user-admin-1");
+      // The backstop message advertises the streak length, which is
+      // a sanity check that we didn't accidentally fire a different
+      // notification path (per-transition has different copy).
+      expect(String(notifInserts[0].values[0].message)).toContain("1 times in a row");
+    } finally {
+      if (original === undefined) delete process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
+      else process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD = original;
+    }
+  });
+
+  it("falls through to the env var when the per-org override is invalid (e.g. 0 or NaN)", async () => {
+    // Task #1689 — defense-in-depth: the admin API clamps the org
+    // column to [1..50], but a stale or hand-edited DB value should
+    // not silently disable the backstop. `getProjectLogEmailFailureThreshold`
+    // ignores junk overrides and falls through to the env / default.
+    // Here env=1 should fire on the first failure even though the
+    // org column carries a bogus 0.
+    const original = process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
+    process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD = "1";
+    try {
+      const now = new Date("2026-04-20T08:00:00Z");
+      queueSchedules([{
+        id: "sched-1",
+        organizationId: "org-1",
+        projectId: "proj-1",
+        logType: "RFI",
+        cadence: "WEEKLY",
+        weekday: 1,
+        hour: 8,
+        timezone: "UTC",
+        lastSentAt: null,
+        lastEditedById: null,
+        lastFailureNotifiedStatus: "FAILURE",
+        consecutiveFailureCount: 0,
+      }]);
+      queueProject([{
+        id: "proj-1",
+        code: "PRJ-99",
+        name: "Tunnel 99",
+        gcOrganizationId: "org-1",
+        projectManagerId: null,
+      }]);
+      queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+      sendEmailNextResults.push({ ok: false, error: "Boom" });
+      // Bogus override (0 is below MIN=1) — should be ignored.
+      queueOrganizations([{ threshold: 0 }]);
+      queueUsers([{ id: "user-admin-1" }]);
+
+      await processProjectLogEmailSchedules({ now });
+
+      const notifInserts = inserts.filter((i) => i.table === "notifications");
+      // Env (1) fires; if the bogus 0 had been honored, the worker's
+      // edge-trigger (`previousCount >= threshold` → return) would
+      // suppress the fan-out forever and this assertion would fail.
+      expect(notifInserts).toHaveLength(1);
       expect(notifInserts[0].values[0].userId).toBe("user-admin-1");
     } finally {
       if (original === undefined) delete process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
