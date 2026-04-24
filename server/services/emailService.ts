@@ -57,8 +57,47 @@ async function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-export async function sendEmail(options: EmailOptions & { headers?: Record<string, string> }): Promise<boolean> {
-  let lastError: any;
+/**
+ * Result of an outbound send, surfaced for callers that need to record
+ * the failure reason somewhere user-facing (e.g. Task #1622 — the
+ * scheduled project log emailer stamps the error onto the schedule row
+ * so admins see "Last send failed" badges in the project settings).
+ *
+ * `error` is a short, human-readable summary of the failure. We keep
+ * it bounded so it can safely live in a varchar column.
+ */
+export interface SendEmailResult {
+  ok: boolean;
+  error?: string;
+  recipientCount: number;
+}
+
+const SEND_EMAIL_ERROR_MAX_LEN = 500;
+
+function summarizeSendError(err: unknown): string {
+  let raw: string;
+  if (err instanceof Error) raw = err.message;
+  else if (err && typeof err === 'object') {
+    try { raw = JSON.stringify(err); } catch { raw = String(err); }
+  } else raw = String(err);
+  raw = raw.trim();
+  if (!raw) raw = 'Unknown email send error';
+  if (raw.length > SEND_EMAIL_ERROR_MAX_LEN) {
+    return raw.slice(0, SEND_EMAIL_ERROR_MAX_LEN - 1) + '…';
+  }
+  return raw;
+}
+
+/**
+ * Attempt to deliver `options` and return `{ ok, error?, recipientCount }`.
+ * Handles the same retries / transient-error backoff as the legacy
+ * `sendEmail` helper, but exposes the underlying provider error
+ * message on failure so cron jobs can record it.
+ */
+export async function sendEmailWithResult(
+  options: EmailOptions & { headers?: Record<string, string> },
+): Promise<SendEmailResult> {
+  let lastError: unknown;
 
   let recipients: string[] = [];
   if (typeof options.to === 'string') {
@@ -82,7 +121,7 @@ export async function sendEmail(options: EmailOptions & { headers?: Record<strin
       replyTo: options.replyTo,
       source: 'resend',
     });
-    return true;
+    return { ok: true, recipientCount };
   }
 
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -123,11 +162,11 @@ export async function sendEmail(options: EmailOptions & { headers?: Record<strin
           continue;
         }
         logError(`Resend email error (${recipientCount} recipient(s)): ${errorMsg}`, {}, new Error(errorMsg));
-        return false;
+        return { ok: false, error: summarizeSendError(error), recipientCount };
       }
 
       console.log(`Email sent successfully via Resend (${recipientCount} recipient(s))`, data?.id);
-      return true;
+      return { ok: true, recipientCount };
     } catch (error: any) {
       lastError = error;
       const errorMsg = error instanceof Error ? error.message : (typeof error === 'object' ? JSON.stringify(error) : String(error));
@@ -138,13 +177,18 @@ export async function sendEmail(options: EmailOptions & { headers?: Record<strin
         continue;
       }
       logError(`Resend email error (${recipientCount} recipient(s)): ${errorMsg}`, {}, error instanceof Error ? error : new Error(errorMsg));
-      return false;
+      return { ok: false, error: summarizeSendError(error), recipientCount };
     }
   }
 
   const finalMsg = lastError instanceof Error ? lastError.message : (typeof lastError === 'object' ? JSON.stringify(lastError) : String(lastError));
   logError(`Resend email failed after ${MAX_RETRIES + 1} attempts: ${finalMsg}`, {}, lastError instanceof Error ? lastError : new Error(finalMsg));
-  return false;
+  return { ok: false, error: summarizeSendError(lastError), recipientCount };
+}
+
+export async function sendEmail(options: EmailOptions & { headers?: Record<string, string> }): Promise<boolean> {
+  const result = await sendEmailWithResult(options);
+  return result.ok;
 }
 
 export async function sendNotificationEmail(

@@ -1,0 +1,375 @@
+/**
+ * Task #1622 — project-settings panel that lets admins configure the
+ * scheduled RFI / submittal log email cadence AND, more importantly,
+ * surfaces when the most recent attempt failed to deliver. Before this
+ * task the cron quietly logged a server-side error on bounces /
+ * suppressions, leaving project teams to discover broken distribution
+ * lists only when a recipient complained. The "Last send failed"
+ * badge here closes that loop in-app.
+ */
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { AlertCircle, CheckCircle2, Loader2, Mail, MailWarning } from "lucide-react";
+import { format } from "date-fns";
+import {
+  COMMON_TIMEZONES,
+  DIGEST_CADENCES,
+  DIGEST_WEEKDAYS,
+} from "@/components/settings/types";
+
+type Cadence = "OFF" | "DAILY" | "WEEKLY" | "BIWEEKLY";
+type LogType = "RFI" | "SUBMITTAL";
+type AttemptStatus = "SUCCESS" | "FAILURE" | "NO_RECIPIENTS";
+
+interface ScheduleRow {
+  id: string | null;
+  organizationId: string;
+  projectId: string;
+  logType: LogType;
+  cadence: Cadence;
+  weekday: number;
+  hour: number;
+  timezone: string;
+  lastSentAt: string | null;
+  lastAttemptAt: string | null;
+  lastAttemptStatus: AttemptStatus | null;
+  lastAttemptError: string | null;
+  lastAttemptRecipientCount: number | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+}
+
+interface ProjectLogEmailScheduleCardProps {
+  projectId: string;
+}
+
+const LOG_TYPE_LABELS: Record<LogType, string> = {
+  RFI: "RFI log",
+  SUBMITTAL: "Submittal log",
+};
+
+const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => ({
+  value: h,
+  label: `${h.toString().padStart(2, "0")}:00`,
+}));
+
+function formatAttemptTime(iso: string | null): string {
+  if (!iso) return "—";
+  try {
+    return format(new Date(iso), "MMM d, yyyy h:mm a");
+  } catch {
+    return iso;
+  }
+}
+
+export default function ProjectLogEmailScheduleCard({ projectId }: ProjectLogEmailScheduleCardProps) {
+  const { toast } = useToast();
+  const queryKey = useMemo(() => ["/api/projects", projectId, "log-email-schedules"] as const, [projectId]);
+
+  const { data, isLoading, isError } = useQuery<{ schedules: ScheduleRow[] }>({
+    queryKey,
+    enabled: !!projectId,
+  });
+
+  if (isLoading) {
+    return (
+      <Card data-testid="card-log-email-schedule-loading">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Mail className="w-4 h-4" /> Scheduled log emails
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError) {
+    return (
+      <Card data-testid="card-log-email-schedule-error">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Mail className="w-4 h-4" /> Scheduled log emails
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground" data-testid="text-log-email-schedule-error">
+            Couldn't load the scheduled log email settings. Try refreshing the page.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const schedules = data?.schedules ?? [];
+
+  return (
+    <Card data-testid="card-log-email-schedule">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Mail className="w-4 h-4" /> Scheduled log emails
+        </CardTitle>
+        <CardDescription>
+          Email the latest RFI or submittal log PDF to this project's distribution lists on a recurring cadence.
+          A "Last send failed" badge appears here if the most recent automated send didn't go out — e.g. because every
+          address was suppressed or the distribution list is empty.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {schedules.map((s) => (
+          <ScheduleRowEditor key={s.logType} projectId={projectId} schedule={s} queryKey={queryKey} toast={toast} />
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+interface ScheduleRowEditorProps {
+  projectId: string;
+  schedule: ScheduleRow;
+  queryKey: readonly unknown[];
+  toast: ReturnType<typeof useToast>["toast"];
+}
+
+function ScheduleRowEditor({ projectId, schedule, queryKey, toast }: ScheduleRowEditorProps) {
+  const [cadence, setCadence] = useState<Cadence>(schedule.cadence);
+  const [weekday, setWeekday] = useState<number>(schedule.weekday);
+  const [hour, setHour] = useState<number>(schedule.hour);
+  const [timezone, setTimezone] = useState<string>(schedule.timezone);
+
+  // Re-sync local state if the parent query refreshes after a mutation.
+  useEffect(() => {
+    setCadence(schedule.cadence);
+    setWeekday(schedule.weekday);
+    setHour(schedule.hour);
+    setTimezone(schedule.timezone);
+  }, [schedule.cadence, schedule.weekday, schedule.hour, schedule.timezone]);
+
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(
+        "PUT",
+        `/api/projects/${projectId}/log-email-schedules/${schedule.logType}`,
+        { cadence, weekday, hour, timezone },
+      );
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ title: "Schedule saved", description: `${LOG_TYPE_LABELS[schedule.logType]} cadence updated.` });
+      queryClient.invalidateQueries({ queryKey });
+    },
+    onError: () => {
+      toast({ title: "Couldn't save schedule", variant: "destructive" });
+    },
+  });
+
+  const dirty =
+    cadence !== schedule.cadence ||
+    weekday !== schedule.weekday ||
+    hour !== schedule.hour ||
+    timezone !== schedule.timezone;
+
+  const showWeekday = cadence === "WEEKLY" || cadence === "BIWEEKLY";
+  const testIdSuffix = schedule.logType.toLowerCase();
+
+  return (
+    <div
+      className="rounded-md border p-4 space-y-3"
+      data-testid={`row-log-email-schedule-${testIdSuffix}`}
+    >
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <p className="font-medium text-sm" data-testid={`text-log-email-schedule-title-${testIdSuffix}`}>
+            {LOG_TYPE_LABELS[schedule.logType]}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {schedule.lastSentAt
+              ? <>Last successful send: <span data-testid={`text-last-sent-${testIdSuffix}`}>{formatAttemptTime(schedule.lastSentAt)}</span></>
+              : <span data-testid={`text-last-sent-${testIdSuffix}`}>No successful send yet.</span>}
+          </p>
+        </div>
+        <AttemptStatusBadge schedule={schedule} testIdSuffix={testIdSuffix} />
+      </div>
+
+      <AttemptFailureDetail schedule={schedule} testIdSuffix={testIdSuffix} />
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="space-y-1">
+          <Label className="text-xs" htmlFor={`cadence-${testIdSuffix}`}>Cadence</Label>
+          <Select value={cadence} onValueChange={(v) => setCadence(v as Cadence)}>
+            <SelectTrigger id={`cadence-${testIdSuffix}`} data-testid={`select-cadence-${testIdSuffix}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {DIGEST_CADENCES.map((c) => (
+                <SelectItem key={c.value} value={c.value} data-testid={`option-cadence-${testIdSuffix}-${c.value.toLowerCase()}`}>
+                  {c.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {showWeekday && (
+          <div className="space-y-1">
+            <Label className="text-xs" htmlFor={`weekday-${testIdSuffix}`}>Day of week</Label>
+            <Select value={String(weekday)} onValueChange={(v) => setWeekday(Number(v))}>
+              <SelectTrigger id={`weekday-${testIdSuffix}`} data-testid={`select-weekday-${testIdSuffix}`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {DIGEST_WEEKDAYS.map((d) => (
+                  <SelectItem key={d.value} value={String(d.value)} data-testid={`option-weekday-${testIdSuffix}-${d.value}`}>
+                    {d.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
+        <div className="space-y-1">
+          <Label className="text-xs" htmlFor={`hour-${testIdSuffix}`}>Hour (local)</Label>
+          <Select value={String(hour)} onValueChange={(v) => setHour(Number(v))}>
+            <SelectTrigger id={`hour-${testIdSuffix}`} data-testid={`select-hour-${testIdSuffix}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="max-h-64">
+              {HOUR_OPTIONS.map((h) => (
+                <SelectItem key={h.value} value={String(h.value)} data-testid={`option-hour-${testIdSuffix}-${h.value}`}>
+                  {h.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1">
+          <Label className="text-xs" htmlFor={`timezone-${testIdSuffix}`}>Timezone</Label>
+          <Select value={timezone} onValueChange={setTimezone}>
+            <SelectTrigger id={`timezone-${testIdSuffix}`} data-testid={`select-timezone-${testIdSuffix}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="max-h-64">
+              {COMMON_TIMEZONES.map((tz) => (
+                <SelectItem key={tz} value={tz} data-testid={`option-timezone-${testIdSuffix}-${tz.toLowerCase().replace(/\W+/g, "-")}`}>
+                  {tz}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          disabled={!dirty || saveMutation.isPending}
+          onClick={() => saveMutation.mutate()}
+          data-testid={`button-save-schedule-${testIdSuffix}`}
+        >
+          {saveMutation.isPending && <Loader2 className="w-3 h-3 mr-2 animate-spin" />}
+          Save
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function AttemptStatusBadge({ schedule, testIdSuffix }: { schedule: ScheduleRow; testIdSuffix: string }) {
+  // No attempts yet — keep the row visually quiet so admins focus on
+  // the cadence editor rather than wondering what an empty status means.
+  if (!schedule.lastAttemptStatus || !schedule.lastAttemptAt) {
+    if (schedule.cadence === "OFF") {
+      return (
+        <Badge variant="outline" data-testid={`badge-status-${testIdSuffix}`}>
+          Off
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="outline" data-testid={`badge-status-${testIdSuffix}`}>
+        Awaiting first send
+      </Badge>
+    );
+  }
+
+  if (schedule.lastAttemptStatus === "SUCCESS") {
+    return (
+      <Badge
+        variant="outline"
+        className="border-emerald-500 text-emerald-700 dark:text-emerald-400"
+        data-testid={`badge-status-${testIdSuffix}`}
+      >
+        <CheckCircle2 className="w-3 h-3 mr-1" /> Last send delivered
+      </Badge>
+    );
+  }
+
+  if (schedule.lastAttemptStatus === "NO_RECIPIENTS") {
+    return (
+      <Badge
+        variant="outline"
+        className="border-amber-500 text-amber-700 dark:text-amber-400"
+        data-testid={`badge-status-${testIdSuffix}`}
+      >
+        <MailWarning className="w-3 h-3 mr-1" /> Last send had no recipients
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge variant="destructive" data-testid={`badge-status-${testIdSuffix}`}>
+      <AlertCircle className="w-3 h-3 mr-1" /> Last send failed
+    </Badge>
+  );
+}
+
+function AttemptFailureDetail({ schedule, testIdSuffix }: { schedule: ScheduleRow; testIdSuffix: string }) {
+  const status = schedule.lastAttemptStatus;
+  if (status !== "FAILURE" && status !== "NO_RECIPIENTS") return null;
+
+  const isFailure = status === "FAILURE";
+  const wrapperClass = isFailure
+    ? "rounded-md border border-destructive/40 bg-destructive/5 p-3 text-sm space-y-1"
+    : "rounded-md border border-amber-400/60 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm space-y-1";
+  const headlineClass = isFailure ? "font-medium text-destructive" : "font-medium text-amber-800 dark:text-amber-300";
+  const headline = isFailure ? "Last send failed" : "Last send had no recipients";
+
+  return (
+    <div className={wrapperClass} data-testid={`alert-attempt-failure-${testIdSuffix}`}>
+      <p className={headlineClass}>{headline}</p>
+      <p className="text-muted-foreground" data-testid={`text-attempt-time-${testIdSuffix}`}>
+        At {formatAttemptTime(schedule.lastAttemptAt)}
+        {typeof schedule.lastAttemptRecipientCount === "number" && (
+          <> · {schedule.lastAttemptRecipientCount} recipient{schedule.lastAttemptRecipientCount === 1 ? "" : "s"} attempted</>
+        )}
+      </p>
+      {schedule.lastAttemptError && (
+        <p className="text-muted-foreground break-words" data-testid={`text-attempt-error-${testIdSuffix}`}>
+          Reason: {schedule.lastAttemptError}
+        </p>
+      )}
+      {isFailure ? (
+        <p className="text-muted-foreground">
+          The cron will try again at the next scheduled tick. Fix any bad addresses on this project's distribution lists, then trigger a manual send if needed.
+        </p>
+      ) : (
+        <p className="text-muted-foreground">
+          Add at least one valid email to this project's distribution lists so the next scheduled send has somewhere to go.
+        </p>
+      )}
+    </div>
+  );
+}

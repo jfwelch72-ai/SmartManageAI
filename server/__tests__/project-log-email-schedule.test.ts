@@ -90,10 +90,24 @@ vi.mock("../utils/logger", () => ({
 }));
 
 const sendEmailCalls: Array<Record<string, unknown>> = [];
+// Task #1622 — `processProjectLogEmailSchedules` now uses
+// `sendEmailWithResult` so it can persist the failure reason on the
+// schedule row. The mock here lets tests force a failure by pushing
+// onto `sendEmailNextResults`.
+const sendEmailNextResults: Array<{ ok: boolean; error?: string; recipientCount?: number }> = [];
 vi.mock("../services/emailService", () => ({
   sendEmail: vi.fn(async (opts: Record<string, unknown>) => {
     sendEmailCalls.push(opts);
     return true;
+  }),
+  sendEmailWithResult: vi.fn(async (opts: Record<string, unknown>) => {
+    sendEmailCalls.push(opts);
+    const recipients = Array.isArray(opts.to) ? (opts.to as string[]).length : 1;
+    if (sendEmailNextResults.length > 0) {
+      const next = sendEmailNextResults.shift()!;
+      return { ok: next.ok, error: next.error, recipientCount: next.recipientCount ?? recipients };
+    }
+    return { ok: true, recipientCount: recipients };
   }),
 }));
 
@@ -111,6 +125,7 @@ beforeEach(async () => {
   for (const k of Object.keys(selectByTable)) delete selectByTable[k];
   updates.length = 0;
   sendEmailCalls.length = 0;
+  sendEmailNextResults.length = 0;
   pdfCalls.length = 0;
   ({ processProjectLogEmailSchedules } = await import("../jobs/jobRunner"));
 });
@@ -172,10 +187,17 @@ describe("processProjectLogEmailSchedules", () => {
     expect((atts[0].content as Buffer).toString()).toBe("pdf:RFI:proj-1");
     expect(atts[0].contentType).toBe("application/pdf");
 
-    // lastSentAt was stamped on project_log_email_schedules.
+    // lastSentAt was stamped on project_log_email_schedules. Task #1622
+    // also stamps the per-attempt outcome (status=SUCCESS, no error,
+    // recipient count) so the project settings UI can report it.
     expect(updates).toHaveLength(1);
     expect(updates[0].table).toBe("project_log_email_schedules");
-    expect((updates[0].values as Row).lastSentAt).toBeInstanceOf(Date);
+    const successValues = updates[0].values as Row;
+    expect(successValues.lastSentAt).toBeInstanceOf(Date);
+    expect(successValues.lastAttemptAt).toBeInstanceOf(Date);
+    expect(successValues.lastAttemptStatus).toBe("SUCCESS");
+    expect(successValues.lastAttemptError).toBeNull();
+    expect(successValues.lastAttemptRecipientCount).toBe(2);
   });
 
   it("does not fire when the local hour does not match the configured hour", async () => {
@@ -275,7 +297,49 @@ describe("processProjectLogEmailSchedules", () => {
     await processProjectLogEmailSchedules({ now });
     expect(sendEmailCalls).toHaveLength(0);
     expect(pdfCalls).toHaveLength(0);
-    expect(updates).toHaveLength(0); // no stamp when nothing was sent
+    // Task #1622 — even though nothing went out, the worker stamps
+    // NO_RECIPIENTS so the project settings UI can show admins that the
+    // distribution lists are empty. `lastSentAt` is intentionally left
+    // alone so cadence dedupe windows still treat the row as never-sent
+    // and retry on the next firing.
+    expect(updates).toHaveLength(1);
+    expect(updates[0].table).toBe("project_log_email_schedules");
+    const noRecipValues = updates[0].values as Row;
+    expect(noRecipValues.lastSentAt).toBeUndefined();
+    expect(noRecipValues.lastAttemptStatus).toBe("NO_RECIPIENTS");
+    expect(noRecipValues.lastAttemptRecipientCount).toBe(0);
+    expect(typeof noRecipValues.lastAttemptError).toBe("string");
+  });
+
+  it("records FAILURE with the provider error when the email transport returns ok=false", async () => {
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueSchedules([{
+      id: "sched-1",
+      organizationId: "org-1",
+      projectId: "proj-1",
+      logType: "RFI",
+      cadence: "WEEKLY",
+      weekday: 1,
+      hour: 8,
+      timezone: "UTC",
+      lastSentAt: null,
+    }]);
+    queueProject([{ id: "proj-1", name: "Bridge 7", gcOrganizationId: "org-1" }]);
+    queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+    sendEmailNextResults.push({ ok: false, error: "All recipients suppressed by SendGrid" });
+
+    await processProjectLogEmailSchedules({ now });
+
+    expect(sendEmailCalls).toHaveLength(1);
+    // lastSentAt is NOT stamped — we want the next cadence tick to try
+    // again rather than believe today's send already happened.
+    expect(updates).toHaveLength(1);
+    const failValues = updates[0].values as Row;
+    expect(failValues.lastSentAt).toBeUndefined();
+    expect(failValues.lastAttemptStatus).toBe("FAILURE");
+    expect(failValues.lastAttemptError).toBe("All recipients suppressed by SendGrid");
+    expect(failValues.lastAttemptRecipientCount).toBe(1);
+    expect(failValues.lastAttemptAt).toBeInstanceOf(Date);
   });
 
   it("dedupes recipients across overlapping distribution lists (case-insensitive)", async () => {

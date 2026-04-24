@@ -72,7 +72,11 @@ router.get(
 
       const byType = new Map(rows.map((r) => [r.logType, r]));
       // Always return both log types; missing rows surface as the
-      // default-OFF schedule the worker would also infer.
+      // default-OFF schedule the worker would also infer. Task #1622
+      // added per-attempt status fields so the UI can render a "Last
+      // send failed" badge — surface them as nulls on the default rows
+      // so the client doesn't have to defensively probe for missing
+      // properties.
       const schedules = PROJECT_LOG_EMAIL_LOG_TYPES.map((logType) => {
         const existing = byType.get(logType);
         if (existing) return existing;
@@ -86,6 +90,10 @@ router.get(
           hour: 8,
           timezone: "UTC",
           lastSentAt: null,
+          lastAttemptAt: null,
+          lastAttemptStatus: null,
+          lastAttemptError: null,
+          lastAttemptRecipientCount: null,
           createdAt: null,
           updatedAt: null,
         };

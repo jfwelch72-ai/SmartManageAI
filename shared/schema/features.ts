@@ -10437,6 +10437,20 @@ export const projectLogEmailSchedules = pgTable("project_log_email_schedules", {
   // Stamped after a successful send so the worker can dedupe (DAILY
   // skips if <23h has elapsed) and BIWEEKLY can skip its off-week.
   lastSentAt: timestamp("last_sent_at"),
+  // Task #1622 — per-attempt outcome tracking so project admins can see
+  // when this morning's RFI / submittal log never went out (SendGrid
+  // bounce, suppressed list, etc.) without having to check server logs
+  // or wait for a recipient to complain. `lastAttemptAt` is stamped on
+  // every attempt (success, failure, no-recipients), `lastAttemptStatus`
+  // records which of those happened, and `lastAttemptError` carries a
+  // short human-readable reason on the failure paths so the UI badge
+  // can surface "Last send failed: <reason>". `lastAttemptRecipientCount`
+  // captures how many addresses were tried so admins can tell apart
+  // "we sent to 12 people" vs. "we tried but the list was empty".
+  lastAttemptAt: timestamp("last_attempt_at"),
+  lastAttemptStatus: text("last_attempt_status"),
+  lastAttemptError: text("last_attempt_error"),
+  lastAttemptRecipientCount: integer("last_attempt_recipient_count"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -10455,6 +10469,15 @@ export const PROJECT_LOG_EMAIL_LOG_TYPES = ["RFI", "SUBMITTAL"] as const;
 export type ProjectLogEmailLogType = typeof PROJECT_LOG_EMAIL_LOG_TYPES[number];
 export const PROJECT_LOG_EMAIL_CADENCES = ["OFF", "DAILY", "WEEKLY", "BIWEEKLY"] as const;
 export type ProjectLogEmailCadence = typeof PROJECT_LOG_EMAIL_CADENCES[number];
+// Task #1622 — vocabulary stamped onto `last_attempt_status`.
+// SUCCESS: SendGrid/Resend accepted the message for delivery.
+// FAILURE: the transport returned an error (bounce, auth issue, etc).
+// NO_RECIPIENTS: the schedule was due, but the resolved distribution
+//   lists yielded zero deliverable addresses. Surfacing this distinct
+//   from FAILURE lets the UI nudge admins to fix the address book
+//   instead of suspecting their mail provider.
+export const PROJECT_LOG_EMAIL_ATTEMPT_STATUSES = ["SUCCESS", "FAILURE", "NO_RECIPIENTS"] as const;
+export type ProjectLogEmailAttemptStatus = typeof PROJECT_LOG_EMAIL_ATTEMPT_STATUSES[number];
 
 // ============================================
 // GANTT PDF ALERT RECIPIENTS

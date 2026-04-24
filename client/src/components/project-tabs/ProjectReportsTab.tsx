@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths } from "date-fns";
 import { useFeatureFlags } from "@/hooks/use-feature-flags";
+import ProjectLogEmailScheduleCard from "./ProjectLogEmailScheduleCard";
 
 interface ReportData {
   project: { id: string; name: string; projectCode: string | null; status: string };
@@ -499,6 +500,10 @@ export default function ProjectReportsTab({ projectId }: ProjectReportsTabProps)
           </CardContent>
         </Card>
       )}
+
+      {/* Task #1622 — scheduled RFI/submittal log emails. Surfaces a
+          "Last send failed" badge when the cron couldn't deliver. */}
+      <ProjectLogEmailScheduleCard projectId={projectId} />
 
       {isLoading ? (
         <div className="space-y-3">
