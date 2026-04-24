@@ -553,14 +553,24 @@ router.post("/api/takeoff/markups", requireAuth, requireRole("ADMIN", "MANAGER",
 // single transaction so a partial failure either commits everything
 // or nothing.
 //
+// Task #1765 — Extended to also accept optional `color`, `thickness`,
+// and `text` per entry so the toolbar / properties panel can collapse
+// a multi-selection recolor / restyle into one PATCH instead of N
+// per-id PATCHes (matching the field set the per-id PATCH below
+// accepts). Each entry must carry at least one mutable field; the
+// updater builds a per-row `set` payload from whichever fields are
+// present, so a single bulk call can mix payloads (e.g. recolor some
+// members, retext others) without forcing the client to issue
+// separate requests.
+//
 // Auth mirrors the per-id PATCH below — `requireAuth` only (no
 // `requireRole`), with per-row owner-or-admin/manager checks so a
-// FIELD_WORKER can still bulk-move groups composed of their own
-// markups. Same-sheet enforcement is added on top because the only
-// caller is the multi-select group-drag commit, which by definition
-// operates inside one sheet; refusing cross-sheet payloads guards
-// against a malformed request silently relocating markups on
-// unrelated sheets.
+// FIELD_WORKER can still bulk-edit groups composed of their own
+// markups. Same-sheet enforcement is added on top because every
+// caller (group-drag commit and bulk style apply) operates inside
+// one sheet by definition; refusing cross-sheet payloads guards
+// against a malformed request silently mutating markups on unrelated
+// sheets.
 //
 // Route MUST be registered before `/api/takeoff/markups/:markupId`
 // or Express will route "bulk" into `:markupId` and 404.
@@ -573,13 +583,26 @@ router.patch("/api/takeoff/markups/bulk", requireAuth, async (req: AuthRequest, 
     const bulkSchema = z.object({
       updates: z
         .array(
-          z.object({
-            id: z.string().min(1),
-            points: z
-              .array(z.object({ x: z.number(), y: z.number() }))
-              .min(1)
-              .max(4096),
-          }),
+          z
+            .object({
+              id: z.string().min(1),
+              points: z
+                .array(z.object({ x: z.number(), y: z.number() }))
+                .min(1)
+                .max(4096)
+                .optional(),
+              color: z.string().min(1).optional(),
+              thickness: z.number().int().min(1).max(64).optional(),
+              text: z.string().nullable().optional(),
+            })
+            .refine(
+              (u) =>
+                u.points !== undefined ||
+                u.color !== undefined ||
+                u.thickness !== undefined ||
+                u.text !== undefined,
+              { message: "Each update must include at least one of points, color, thickness, or text" },
+            ),
         )
         .min(1)
         .max(500),
@@ -623,12 +646,17 @@ router.patch("/api/takeoff/markups/bulk", requireAuth, async (req: AuthRequest, 
     const updated = await db.transaction(async (tx) => {
       const out: typeof rows = [];
       for (const u of validated.updates) {
+        const setPayload: Record<string, unknown> = {};
+        if (u.points !== undefined) setPayload.points = JSON.stringify(u.points);
+        if (u.color !== undefined) setPayload.color = u.color;
+        if (u.thickness !== undefined) setPayload.thickness = u.thickness;
+        if (u.text !== undefined) setPayload.text = u.text;
         const whereClause = isSuperAdmin
           ? eq(takeoffMarkups.id, u.id)
           : and(eq(takeoffMarkups.id, u.id), eq(takeoffMarkups.organizationId, orgId!));
         const [row] = await tx
           .update(takeoffMarkups)
-          .set({ points: JSON.stringify(u.points) })
+          .set(setPayload)
           .where(whereClause)
           .returning();
         if (row) out.push(row);

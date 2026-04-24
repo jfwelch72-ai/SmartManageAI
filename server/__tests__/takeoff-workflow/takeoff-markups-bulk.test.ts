@@ -14,6 +14,20 @@
  *  - partial-failure atomicity: if any id is missing the whole
  *    request 404s and NO row is mutated (transaction rollback)
  *  - validation: zod errors come back as 400
+ *
+ * Task #1765 — Bulk endpoint additionally accepts optional `color`,
+ * `thickness`, and `text` per entry so the multi-select properties
+ * panel can collapse a recolor / restyle into one PATCH instead of N
+ * per-id PATCHes. The new tests below cover:
+ *
+ *  - color-only bulk update
+ *  - thickness-only bulk update
+ *  - text-only bulk update (label rename)
+ *  - mixed-field payload (different fields per entry, including a
+ *    points + color combo)
+ *  - partial-failure atomicity for the new style fields (one missing
+ *    id ⇒ 404 and NO color / thickness / text change is committed)
+ *  - validation: an entry with no mutable fields is rejected with 400
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Server } from "http";
@@ -182,6 +196,29 @@ async function createMarkup(sheetId: string, x: number, y: number, token = admin
   return res.body as MarkupResponse;
 }
 
+async function createTextMarkup(
+  sheetId: string,
+  x: number,
+  y: number,
+  text: string,
+  token = adminToken,
+): Promise<MarkupResponse> {
+  const res = await apiPost(
+    "/api/takeoff/markups",
+    {
+      sheetId,
+      tool: "TEXT",
+      points: [{ x, y }],
+      color: "#222222",
+      thickness: 2,
+      text,
+    },
+    token,
+  );
+  expect(res.status).toBe(201);
+  return res.body as MarkupResponse;
+}
+
 async function fetchMarkupsForSheet(sheetId: string): Promise<MarkupResponse[]> {
   const res = await apiGet(`/api/takeoff/sheets/${sheetId}/markups`);
   expect(res.status).toBe(200);
@@ -294,16 +331,147 @@ describe("PATCH /api/takeoff/markups/bulk", () => {
     const empty = await apiPatch("/api/takeoff/markups/bulk", { updates: [] });
     expect(empty.status).toBe(400);
 
-    // Missing points
-    const noPoints = await apiPatch("/api/takeoff/markups/bulk", {
+    // Entry with no mutable fields (Task #1765 — must include at
+    // least one of points / color / thickness / text).
+    const noFields = await apiPatch("/api/takeoff/markups/bulk", {
       updates: [{ id: "abc" }],
     });
-    expect(noPoints.status).toBe(400);
+    expect(noFields.status).toBe(400);
 
     // Non-numeric coordinates
     const badCoords = await apiPatch("/api/takeoff/markups/bulk", {
       updates: [{ id: "abc", points: [{ x: "oops", y: 1 }] }],
     });
     expect(badCoords.status).toBe(400);
+  });
+
+  // Task #1765 — color / thickness / text bulk updates.
+  it("bulk-applies a color change to every selected markup", async () => {
+    const m1 = await createMarkup(sheetIdA, 300, 10);
+    const m2 = await createMarkup(sheetIdA, 300, 80);
+    const m3 = await createMarkup(sheetIdA, 300, 150);
+    const newColor = "#ff8800";
+
+    const res = await apiPatch("/api/takeoff/markups/bulk", {
+      updates: [m1, m2, m3].map((m) => ({ id: m.id, color: newColor })),
+    });
+    expect(res.status).toBe(200);
+    const returned = res.body as MarkupResponse[];
+    expect(returned.length).toBe(3);
+    for (const r of returned) expect(r.color).toBe(newColor);
+
+    // Re-read to confirm the color landed in the DB and that the
+    // points were NOT touched (omitted fields stay as-is).
+    const refreshed = await fetchMarkupsForSheet(sheetIdA);
+    const byId = new Map(refreshed.map((r) => [r.id, r]));
+    for (const m of [m1, m2, m3]) {
+      const r = byId.get(m.id)!;
+      expect(r.color).toBe(newColor);
+      expect(r.points).toEqual(m.points);
+    }
+  });
+
+  it("bulk-applies a thickness change to every selected markup", async () => {
+    const m1 = await createMarkup(sheetIdA, 500, 10);
+    const m2 = await createMarkup(sheetIdA, 500, 80);
+    const newThickness = 7;
+
+    const res = await apiPatch("/api/takeoff/markups/bulk", {
+      updates: [m1, m2].map((m) => ({ id: m.id, thickness: newThickness })),
+    });
+    expect(res.status).toBe(200);
+    const returned = res.body as MarkupResponse[];
+    for (const r of returned) expect(r.thickness).toBe(newThickness);
+
+    const refreshed = await fetchMarkupsForSheet(sheetIdA);
+    const byId = new Map(refreshed.map((r) => [r.id, r]));
+    for (const m of [m1, m2]) {
+      expect(byId.get(m.id)!.thickness).toBe(newThickness);
+    }
+  });
+
+  it("bulk-applies a label rename across multiple TEXT markups", async () => {
+    const t1 = await createTextMarkup(sheetIdA, 700, 10, "Old Label A");
+    const t2 = await createTextMarkup(sheetIdA, 700, 80, "Old Label B");
+    const newText = "Renamed via bulk";
+
+    const res = await apiPatch("/api/takeoff/markups/bulk", {
+      updates: [t1, t2].map((m) => ({ id: m.id, text: newText })),
+    });
+    expect(res.status).toBe(200);
+    const returned = res.body as MarkupResponse[];
+    for (const r of returned) expect(r.text).toBe(newText);
+
+    const refreshed = await fetchMarkupsForSheet(sheetIdA);
+    const byId = new Map(refreshed.map((r) => [r.id, r]));
+    for (const m of [t1, t2]) {
+      expect(byId.get(m.id)!.text).toBe(newText);
+    }
+  });
+
+  it("accepts mixed-field payloads and applies each entry's fields independently", async () => {
+    const m1 = await createMarkup(sheetIdA, 900, 10);
+    const m2 = await createMarkup(sheetIdA, 900, 80);
+    const m3 = await createMarkup(sheetIdA, 900, 150);
+    const newPoints = m3.points.map((p) => ({ x: p.x + 11, y: p.y + 22 }));
+
+    const res = await apiPatch("/api/takeoff/markups/bulk", {
+      updates: [
+        { id: m1.id, color: "#abcdef" },
+        { id: m2.id, thickness: 5 },
+        // Combine a points move with a color change in the same entry
+        // — the per-row set payload should write both fields.
+        { id: m3.id, points: newPoints, color: "#123456" },
+      ],
+    });
+    expect(res.status).toBe(200);
+
+    const refreshed = await fetchMarkupsForSheet(sheetIdA);
+    const byId = new Map(refreshed.map((r) => [r.id, r]));
+
+    // m1: only color changed; thickness and points are unchanged.
+    expect(byId.get(m1.id)!.color).toBe("#abcdef");
+    expect(byId.get(m1.id)!.thickness).toBe(m1.thickness);
+    expect(byId.get(m1.id)!.points).toEqual(m1.points);
+
+    // m2: only thickness changed; color and points are unchanged.
+    expect(byId.get(m2.id)!.thickness).toBe(5);
+    expect(byId.get(m2.id)!.color).toBe(m2.color);
+    expect(byId.get(m2.id)!.points).toEqual(m2.points);
+
+    // m3: both points and color changed; thickness unchanged.
+    expect(byId.get(m3.id)!.points).toEqual(newPoints);
+    expect(byId.get(m3.id)!.color).toBe("#123456");
+    expect(byId.get(m3.id)!.thickness).toBe(m3.thickness);
+  });
+
+  it("rolls the entire transaction back on a missing id even for style-only payloads", async () => {
+    const real1 = await createMarkup(sheetIdA, 1100, 10);
+    const real2 = await createMarkup(sheetIdA, 1100, 80);
+    const beforeColor1 = real1.color;
+    const beforeColor2 = real2.color;
+    const beforeThickness1 = real1.thickness;
+    const beforeThickness2 = real2.thickness;
+    const fakeId = "00000000-0000-0000-0000-000000000000";
+
+    const res = await apiPatch("/api/takeoff/markups/bulk", {
+      updates: [
+        { id: real1.id, color: "#deadbe" },
+        { id: real2.id, thickness: 12 },
+        { id: fakeId, color: "#cafe00" },
+      ],
+    });
+    expect(res.status).toBe(404);
+
+    // Confirm NO row was mutated — the missing-id pre-check fires
+    // before the transaction opens, so partial style writes never
+    // commit. Same atomicity guarantee as the points-only path.
+    const refreshed = await fetchMarkupsForSheet(sheetIdA);
+    const r1 = refreshed.find((r) => r.id === real1.id)!;
+    const r2 = refreshed.find((r) => r.id === real2.id)!;
+    expect(r1.color).toBe(beforeColor1);
+    expect(r1.thickness).toBe(beforeThickness1);
+    expect(r2.color).toBe(beforeColor2);
+    expect(r2.thickness).toBe(beforeThickness2);
   });
 });

@@ -5101,14 +5101,16 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         // Task #1758 — Bulk style save. For a single-selection edit we
         // keep the original path through `updateMarkupMutation`'s
         // onSuccess (one MARKUP_UPDATE history entry, no behavior
-        // change). For a multi-selection bulk apply we mirror the
-        // body-drag pattern from Task #1755: build a single
-        // MARKUP_UPDATE_BATCH entry up front with per-markup before/
-        // after snapshots, then fan out N PATCHes with
-        // `skipHistory: true` so the per-mutation onSuccess does not
-        // push N additional MARKUP_UPDATE entries. Result: one Undo
-        // press reverts the whole bulk style change; one Redo
-        // reapplies it.
+        // change). For a multi-selection bulk apply we build per-
+        // markup before/after snapshots and route every member through
+        // ONE bulk PATCH so the user gets a single round-trip + a
+        // single cache invalidation no matter how many markups are
+        // selected (Task #1765 — closes the same N-roundtrip gap that
+        // #1752 closed for group drags). The MARKUP_UPDATE_BATCH
+        // history entry is pushed only after the bulk PATCH resolves
+        // (mirrors #1759) so a failed request never leaves a phantom
+        // Undo entry on the stack — one Undo reverts the whole bulk
+        // style change; one Redo reapplies it.
         const save = async () => {
           const colorChanged = markupEditDraft.color !== markupEditInitial.color;
           const thicknessChanged = markupEditDraft.thickness !== markupEditInitial.thickness;
@@ -5147,17 +5149,15 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           // Multi-select bulk apply.
           const beforeSnaps: { id: string; color?: string; thickness?: number; text?: string | null }[] = [];
           const afterSnaps: { id: string; color?: string; thickness?: number; text?: string | null }[] = [];
-          const perMarkupUpdates: Array<{ id: string; color?: string; thickness?: number; text?: string | null; previous: { color?: string; thickness?: number; text?: string | null } }> = [];
+          const bulkUpdates: Array<{ id: string; color?: string; thickness?: number; text?: string | null }> = [];
           for (const m of selectedMarkups) {
             const before: { id: string; color?: string; thickness?: number; text?: string | null } = { id: m.id };
             const after: { id: string; color?: string; thickness?: number; text?: string | null } = { id: m.id };
-            const previous: { color?: string; thickness?: number; text?: string | null } = {};
             const updateFields: { color?: string; thickness?: number; text?: string | null } = {};
             let hasChange = false;
             if (colorChanged && m.color !== markupEditDraft.color) {
               before.color = m.color;
               after.color = markupEditDraft.color;
-              previous.color = m.color;
               updateFields.color = markupEditDraft.color;
               hasChange = true;
             }
@@ -5165,7 +5165,6 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             if (thicknessChanged && (m.tool as string) !== "TEXT" && m.thickness !== markupEditDraft.thickness) {
               before.thickness = m.thickness;
               after.thickness = markupEditDraft.thickness;
-              previous.thickness = m.thickness;
               updateFields.thickness = markupEditDraft.thickness;
               hasChange = true;
             }
@@ -5178,33 +5177,36 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             if (textChanged && (m.tool as string) === "TEXT" && (m.text ?? "") !== markupEditDraft.text) {
               before.text = m.text ?? "";
               after.text = markupEditDraft.text;
-              previous.text = m.text ?? "";
               updateFields.text = markupEditDraft.text;
               hasChange = true;
             }
             if (!hasChange) continue;
             beforeSnaps.push(before);
             afterSnaps.push(after);
-            perMarkupUpdates.push({ id: m.id, ...updateFields, previous });
+            bulkUpdates.push({ id: m.id, ...updateFields });
           }
-          if (perMarkupUpdates.length === 0) {
+          if (bulkUpdates.length === 0) {
             close();
             return;
           }
-          if (selectedSheet) {
-            takeoffHistory.pushMarkupUpdateBatchAction(beforeSnaps, afterSnaps, selectedSheet);
-          }
+          // Task #1765 — Single bulk PATCH replaces the legacy fan-out
+          // of N parallel `updateMarkupMutation.mutateAsync({...,
+          // skipHistory:true})` calls. Capture the sheet id before
+          // awaiting so a sheet switch mid-flight can't push the
+          // history batch into the wrong sheet (mirrors the body-drag
+          // commit guard from #1757).
+          const sheetIdForBatch = selectedSheet;
           try {
-            await Promise.all(
-              perMarkupUpdates.map(u =>
-                updateMarkupMutation.mutateAsync({ ...u, skipHistory: true }),
-              ),
-            );
-            toast({ title: `Updated ${perMarkupUpdates.length} markups` });
-            close();
+            await bulkUpdateMarkupsMutation.mutateAsync({ updates: bulkUpdates });
           } catch (err) {
             console.warn("[Takeoff] Failed to bulk-update markups:", err);
+            return;
           }
+          if (sheetIdForBatch) {
+            takeoffHistory.pushMarkupUpdateBatchAction(beforeSnaps, afterSnaps, sheetIdForBatch);
+          }
+          toast({ title: `Updated ${bulkUpdates.length} markups` });
+          close();
         };
         return (
           <div

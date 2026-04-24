@@ -567,9 +567,23 @@ export function useTakeoffData({
   // mirrors `updateMarkupMutation.onMutate` so the dragged markups do
   // not snap back to their pre-drag location while the PATCH is in
   // flight.
+  //
+  // Task #1765 — Extended to also carry optional `color`, `thickness`,
+  // and `text` per entry so the multi-select properties panel can
+  // collapse a recolor / restyle into the same single PATCH +
+  // single invalidation. The optimistic cache rewrite applies any
+  // present field, mirroring `updateMarkupMutation.onMutate` so a
+  // bulk recolor lands instantly in the canvas instead of waiting
+  // for the round-trip.
   const bulkUpdateMarkupsMutation = useMutation({
     mutationFn: async (data: {
-      updates: { id: string; points: { x: number; y: number }[] }[];
+      updates: {
+        id: string;
+        points?: { x: number; y: number }[];
+        color?: string;
+        thickness?: number;
+        text?: string | null;
+      }[];
     }) => {
       const res = await apiRequest("PATCH", "/api/takeoff/markups/bulk", { updates: data.updates });
       return res.json();
@@ -579,13 +593,18 @@ export function useTakeoffData({
       await queryClient.cancelQueries({ queryKey });
       const previousMarkups = queryClient.getQueryData<TakeoffMarkupWithAuthor[]>(queryKey);
       if (previousMarkups) {
-        const byId = new Map(updates.map(u => [u.id, u.points]));
+        const byId = new Map(updates.map(u => [u.id, u]));
         queryClient.setQueryData<TakeoffMarkupWithAuthor[]>(queryKey, (old) => {
           if (!old) return old;
           return old.map((m) => {
-            const pts = byId.get(m.id);
-            if (!pts) return m;
-            return { ...m, points: pts };
+            const u = byId.get(m.id);
+            if (!u) return m;
+            const next = { ...m };
+            if (u.points !== undefined) next.points = u.points;
+            if (u.color !== undefined) next.color = u.color;
+            if (u.thickness !== undefined) next.thickness = u.thickness;
+            if (u.text !== undefined) next.text = u.text;
+            return next;
           });
         });
       }
