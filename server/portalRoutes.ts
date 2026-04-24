@@ -6,7 +6,7 @@ import { insertNotifications } from "./services/notificationService";
 import { subcontractorPortalTokens, portalActivityLog, projects, users, crmOrganisations, bidDocumentDistributions, notifications, portalChatThreads, portalChatMessages, clientPortalAccess, rfis, submittals, documentTransmittals, transmittalRecipients, rfiActivity, submittalActivity } from "@shared/schema";
 import { eq, and, desc, inArray, sql, asc, gt, or } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
-import { generatePortalToken, hashPortalToken, requirePortalAuth, requirePortalPermission, type PortalRequest } from "./portalAuth";
+import { generatePortalToken, hashPortalToken, computePortalTokenLookupHash, requirePortalAuth, requirePortalPermission, type PortalRequest } from "./portalAuth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { emitPortalChatMessage, emitPortalChatThreadUpdate } from "./portalChatEvents";
 import { sendEmail } from "./email";
@@ -124,6 +124,9 @@ router.post("/bid-docs/send", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
     if (createPortalAccess && projectId) {
       const rawToken = generatePortalToken();
       const tokenHash = await hashPortalToken(rawToken);
+      // Task #1614 — populate the indexed lookup hash so requirePortalAuth
+      // can resolve this token in O(1) instead of bcrypt-scanning every row.
+      const tokenLookupHash = computePortalTokenLookupHash(rawToken);
       const days = expiresInDays || 90;
       const expiresAt = new Date();
       expiresAt.setDate(expiresAt.getDate() + days);
@@ -135,6 +138,7 @@ router.post("/bid-docs/send", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "
         contactEmail,
         contactName,
         tokenHash,
+        tokenLookupHash,
         permissions: ["view", "comment"],
         status: "active",
         expiresAt,
@@ -1251,6 +1255,9 @@ router.post("/portal/manage/invite", requireAuth, requireRole("SUPER_ADMIN", "AD
 
     const rawToken = generatePortalToken();
     const tokenHash = await hashPortalToken(rawToken);
+    // Task #1614 — populate the indexed lookup hash so requirePortalAuth
+    // can resolve this token in O(1) instead of bcrypt-scanning every row.
+    const tokenLookupHash = computePortalTokenLookupHash(rawToken);
 
     const days = expiresInDays || 90;
     const expiresAt = new Date();
@@ -1265,6 +1272,7 @@ router.post("/portal/manage/invite", requireAuth, requireRole("SUPER_ADMIN", "AD
       contactEmail,
       contactName,
       tokenHash,
+      tokenLookupHash,
       permissions: defaultPermissions,
       status: "active",
       expiresAt,
@@ -1377,6 +1385,10 @@ router.post("/portal/manage/resend/:tokenId", requireAuth, requireRole("SUPER_AD
 
     const rawToken = generatePortalToken();
     const tokenHash = await hashPortalToken(rawToken);
+    // Task #1614 — re-issuing the token also rotates the indexed lookup
+    // hash so the new token resolves in O(1) and the previous lookup-hash
+    // value (now obsolete) cannot match anything.
+    const tokenLookupHash = computePortalTokenLookupHash(rawToken);
 
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 90);
@@ -1385,6 +1397,7 @@ router.post("/portal/manage/resend/:tokenId", requireAuth, requireRole("SUPER_AD
       .update(subcontractorPortalTokens)
       .set({
         tokenHash,
+        tokenLookupHash,
         status: "active",
         expiresAt,
         revokedAt: null,
@@ -1431,10 +1444,13 @@ router.post("/portal/manage/link/:tokenId", requireAuth, requireRole("SUPER_ADMI
 
     const rawToken = generatePortalToken();
     const tokenHash = await hashPortalToken(rawToken);
+    // Task #1614 — minting a fresh deep-link rotates both the bcrypt
+    // hash and the indexed lookup hash so the new token resolves in O(1).
+    const tokenLookupHash = computePortalTokenLookupHash(rawToken);
 
     await db
       .update(subcontractorPortalTokens)
-      .set({ tokenHash })
+      .set({ tokenHash, tokenLookupHash })
       .where(eq(subcontractorPortalTokens.id, tokenId));
 
     const baseUrl = process.env.REPLIT_DOMAINS

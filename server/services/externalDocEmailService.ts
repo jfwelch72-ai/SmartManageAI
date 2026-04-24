@@ -6,7 +6,7 @@ import {
   crmContacts,
   projects,
 } from "@shared/schema";
-import { generatePortalToken, hashPortalToken } from "../portalAuth";
+import { generatePortalToken, hashPortalToken, computePortalTokenLookupHash } from "../portalAuth";
 import { sendEmail } from "../services/emailService";
 import { isFeatureEnabled } from "./featureFlagService";
 import { logAudit } from "../auditLogger";
@@ -117,6 +117,10 @@ export async function sendExternalDocEmail(
   // human-driven invite endpoint) scoped to this project + crm org.
   const rawToken = generatePortalToken();
   const tokenHash = await hashPortalToken(rawToken);
+  // Task #1614 — populate the deterministic lookup hash so this token
+  // can be resolved by `requirePortalAuth` via an indexed equality
+  // lookup instead of the legacy O(N) bcrypt scan.
+  const tokenLookupHash = computePortalTokenLookupHash(rawToken);
   const expiresAt = new Date();
   expiresAt.setDate(expiresAt.getDate() + 90);
 
@@ -131,6 +135,7 @@ export async function sendExternalDocEmail(
         contactEmail: recipientEmail,
         contactName: match.contactName ?? recipientEmail,
         tokenHash,
+        tokenLookupHash,
         permissions: ["view", "comment"],
         status: "active",
         expiresAt,

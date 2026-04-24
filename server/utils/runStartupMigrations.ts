@@ -100,6 +100,7 @@ import { ensureSwpppOverdueReminderSettings } from "./ensureSwpppOverdueReminder
 import { ensureRfiOverdueColumns } from "./ensureRfiOverdueColumns";
 import { ensureSubmittalReviewOverdueColumns } from "./ensureSubmittalReviewOverdueColumns";
 import { ensureDocOverdueReminderSettings } from "./ensureDocOverdueReminderSettings";
+import { ensurePortalTokenLookupHashColumn } from "./ensurePortalTokenLookupHashColumn";
 import { ensureCrmTranscriptBackfillJobsTable } from "./ensureCrmTranscriptBackfillJobsTable";
 import { ensureCrmTranscriptBackfillNotificationSettingsTable } from "./ensureCrmTranscriptBackfillNotificationSettingsTable";
 import { ensureFeatureFlagPresetApplicationsTable } from "./ensureFeatureFlagPresetApplicationsTable";
@@ -277,6 +278,10 @@ const migrations: MigrationStep[] = [
   // Task #1599 — per-org cap + cadence for the document-control
   // overdue sweeps (mirrors the SWPPP per-org policy column pair).
   { name: "doc_overdue_reminder_settings", category: "ADD_COLUMN", fn: ensureDocOverdueReminderSettings },
+  // Task #1614 — adds subcontractor_portal_tokens.token_lookup_hash +
+  // its btree index so requirePortalAuth can index-fetch the single
+  // candidate row instead of bcrypt-scanning every active token.
+  { name: "portal_token_lookup_hash_column", category: "ADD_COLUMN", fn: ensurePortalTokenLookupHashColumn },
   { name: "crm_transcript_backfill_jobs_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillJobsTable },
   { name: "crm_transcript_backfill_notification_settings_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillNotificationSettingsTable },
   // Task #1022 — must run AFTER the jobs table since it FK-references it.

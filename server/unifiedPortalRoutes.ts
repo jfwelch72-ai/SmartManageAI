@@ -2,8 +2,11 @@ import { Router, Request, Response, NextFunction } from "express";
 import { db } from "./db";
 import { clientPortalAccess, projects, organizations, subcontractorPortalTokens, vendorUsers, crmOrganisations, organizationDocuments } from "@shared/schema";
 import { eq, and, gt } from "drizzle-orm";
-import bcrypt from "bcrypt";
 import { logError } from "./utils/logger";
+// Task #1614 — share the indexed token resolver with `requirePortalAuth`
+// so both portal-auth entry points get the O(1) lookup instead of the
+// O(N) bcrypt-scan over every active row.
+import { resolvePortalTokenRow } from "./portalAuth";
 import { objectStorageClient } from "./objectStorage";
 import { ObjectStorageService } from "./objectStorage";
 
@@ -131,24 +134,9 @@ router.post("/portal/auth/resolve", async (req: Request, res: Response, next: Ne
         return res.status(400).json({ error: "Token is required for subcontractor access" });
       }
 
-      const activeTokens = await db
-        .select()
-        .from(subcontractorPortalTokens)
-        .where(
-          and(
-            eq(subcontractorPortalTokens.status, "active"),
-            gt(subcontractorPortalTokens.expiresAt, new Date())
-          )
-        );
-
-      let matchedToken = null;
-      for (const t of activeTokens) {
-        const isMatch = await bcrypt.compare(token, t.tokenHash);
-        if (isMatch) {
-          matchedToken = t;
-          break;
-        }
-      }
+      // Task #1614 — was a linear bcrypt-compare loop over every active
+      // unexpired row; now an indexed lookup via the shared resolver.
+      const matchedToken = await resolvePortalTokenRow(token);
 
       if (!matchedToken) {
         return res.status(401).json({ error: "Invalid or expired portal access token" });

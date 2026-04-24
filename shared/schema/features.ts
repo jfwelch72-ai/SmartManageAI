@@ -6844,6 +6844,15 @@ export const subcontractorPortalTokens = pgTable("subcontractor_portal_tokens", 
   contactEmail: text("contact_email").notNull(),
   contactName: text("contact_name").notNull(),
   tokenHash: text("token_hash").notNull().unique(),
+  // Task #1614 — deterministic per-token lookup key (HMAC-SHA256 of the
+  // raw token using SESSION_SECRET) so `requirePortalAuth` can grab the
+  // single candidate row by index instead of scanning every active row
+  // and bcrypt-comparing each one. Nullable because legacy rows that
+  // pre-date this column cannot be backfilled (we never persist the raw
+  // token); the auth path falls back to the legacy linear scan for those
+  // rows and opportunistically writes the lookup hash on a successful
+  // bcrypt match so subsequent auths are O(1).
+  tokenLookupHash: text("token_lookup_hash"),
   permissions: text("permissions").array().notNull().default(sql`ARRAY['view','comment','upload','acknowledge']`),
   status: text("status").notNull().default("active"),
   expiresAt: timestamp("expires_at").notNull(),
@@ -6857,6 +6866,10 @@ export const subcontractorPortalTokens = pgTable("subcontractor_portal_tokens", 
   projectIdx: index("sub_portal_tokens_project_idx").on(table.projectId),
   crmOrgIdx: index("sub_portal_tokens_crm_org_idx").on(table.crmOrganisationId),
   tokenIdx: index("sub_portal_tokens_token_idx").on(table.tokenHash),
+  // Task #1614 — index the deterministic lookup hash so the "find the
+  // single matching active token" query in requirePortalAuth is an
+  // index-driven equality lookup rather than a full scan.
+  tokenLookupIdx: index("sub_portal_tokens_token_lookup_idx").on(table.tokenLookupHash),
   statusIdx: index("sub_portal_tokens_status_idx").on(table.status),
 }));
 

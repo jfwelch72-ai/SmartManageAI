@@ -271,4 +271,9 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   // backs the admin Sage mapping panel and the periodic XML Gateway
   // sync. Mirrored at boot by ensureSageAccountMappingsTable.
   "0057_sage_account_mappings.sql": { helper: "ensureSageAccountMappingsTable" },
+  // Task #1614 — adds subcontractor_portal_tokens.token_lookup_hash +
+  // a btree index on it so requirePortalAuth can index-fetch the single
+  // candidate row instead of bcrypt-scanning every active token.
+  // Mirrored at boot by ensurePortalTokenLookupHashColumn.
+  "0058_portal_token_lookup_hash.sql": { helper: "ensurePortalTokenLookupHashColumn" },
 };

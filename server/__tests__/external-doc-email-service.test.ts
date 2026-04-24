@@ -83,6 +83,10 @@ vi.mock("../services/emailService", () => ({
 vi.mock("../portalAuth", () => ({
   generatePortalToken: () => "raw-token",
   hashPortalToken: async () => "hashed-token",
+  // Task #1614 — service now also stamps an indexed lookup hash so
+  // requirePortalAuth can resolve tokens in O(1). The unit test mock
+  // returns a deterministic stub since these tests don't exercise auth.
+  computePortalTokenLookupHash: () => "lookup-hash",
 }));
 
 vi.mock("../utils/logger", () => ({
