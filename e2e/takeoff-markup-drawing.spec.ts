@@ -268,11 +268,14 @@ test.describe("Takeoff markup drawing - Playwright E2E", () => {
     await editPanel.waitFor({ state: "visible", timeout: 10_000 });
 
     // Change the rectangle's color and thickness, then save. The color
-    // and range inputs are React-controlled, so we use the native value
-    // setter so React's internal value tracker actually fires onChange
-    // (just setting `.value` and dispatching events is a no-op here).
+    // input is React-controlled, so we use the native value setter so
+    // React's internal value tracker actually fires onChange (just
+    // setting `.value` and dispatching events is a no-op here). The
+    // thickness picker is now a row of preset buttons (matching the
+    // toolbar presets in MARKUP_TOOLBAR_THICKNESSES) so we click the
+    // button for the desired preset.
     const newRectColor = "#00aa55";
-    const newRectThickness = 6;
+    const newRectThickness = 4;
     const setReactInputValue = async (
       locator: ReturnType<typeof editPanel.getByTestId>,
       value: string,
@@ -291,10 +294,9 @@ test.describe("Takeoff markup drawing - Playwright E2E", () => {
       editPanel.getByTestId("input-markup-color"),
       newRectColor,
     );
-    await setReactInputValue(
-      editPanel.getByTestId("input-markup-thickness"),
-      String(newRectThickness),
-    );
+    await editPanel
+      .getByTestId(`button-markup-thickness-${newRectThickness}`)
+      .click();
     await page.getByTestId("button-save-markup-edit").click();
     await editPanel.waitFor({ state: "hidden", timeout: 10_000 });
 

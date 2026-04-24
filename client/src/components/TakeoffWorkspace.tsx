@@ -4,6 +4,7 @@ import { MarkupShapeView, type MarkupShape } from "@/components/markups/MarkupRe
 import {
   MARKUP_TOOLBAR_DEFAULT_COLOR,
   MARKUP_TOOLBAR_DEFAULT_THICKNESS,
+  MARKUP_TOOLBAR_THICKNESSES,
 } from "@/components/markups/PlanMarkupToolbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -290,6 +291,16 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [markupTextInput, setMarkupTextInput] = useState<{ x: number; y: number; value: string } | null>(null);
   const [selectedMarkupId, setSelectedMarkupId] = useState<string | null>(null);
   const [markupEditDraft, setMarkupEditDraft] = useState<{ color: string; thickness: number; text: string } | null>(null);
+  // Task #1654 — Snap a markup's persisted thickness to the nearest
+  // toolbar preset when opening the edit panel. Older markups created
+  // before the toolbar/edit panel were aligned may have non-preset
+  // thickness values (e.g. 6 px from the legacy 1–20 slider); without
+  // this, none of the preset buttons would appear active.
+  const snapToPresetThickness = useCallback((value: number) => {
+    return MARKUP_TOOLBAR_THICKNESSES.reduce((best, preset) =>
+      Math.abs(preset - value) < Math.abs(best - value) ? preset : best,
+    );
+  }, []);
   const [markupBodyDragId, setMarkupBodyDragId] = useState<string | null>(null);
   const [markupResizePreview, setMarkupResizePreview] = useState<{ id: string; points: { x: number; y: number }[] } | null>(null);
   const markupResizeRef = useRef<{
@@ -3726,7 +3737,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                             setSelectedMarkupId(markup.id);
                             setMarkupEditDraft({
                               color,
-                              thickness,
+                              thickness: snapToPresetThickness(thickness),
                               text: (markup.text as string) || "",
                             });
                           }
@@ -4626,15 +4637,23 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             {!isText && (
               <div className="space-y-1">
                 <label className="text-xs text-muted-foreground">{isHighlight ? "Border thickness" : "Thickness"}: {markupEditDraft.thickness}px</label>
-                <input
-                  type="range"
-                  min={1}
-                  max={20}
-                  value={markupEditDraft.thickness}
-                  onChange={(e) => setMarkupEditDraft({ ...markupEditDraft, thickness: parseInt(e.target.value, 10) })}
-                  className="w-full"
-                  data-testid="input-markup-thickness"
-                />
+                <div className="flex items-center gap-1" data-testid="input-markup-thickness">
+                  {MARKUP_TOOLBAR_THICKNESSES.map((t) => (
+                    <Button
+                      key={t}
+                      type="button"
+                      size="sm"
+                      variant={markupEditDraft.thickness === t ? "default" : "ghost"}
+                      className="h-7 w-7 p-0"
+                      onClick={() => setMarkupEditDraft({ ...markupEditDraft, thickness: t })}
+                      aria-label={`Thickness ${t}`}
+                      aria-pressed={markupEditDraft.thickness === t}
+                      data-testid={`button-markup-thickness-${t}`}
+                    >
+                      <span style={{ fontSize: 10 }}>{t}px</span>
+                    </Button>
+                  ))}
+                </div>
               </div>
             )}
             <div className="flex items-center justify-between gap-2 pt-1">
