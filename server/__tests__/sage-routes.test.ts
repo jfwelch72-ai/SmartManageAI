@@ -126,6 +126,162 @@ describe("sage routes registration + RBAC", () => {
     expect(paths).toContain("/connections/:id/sage-account-mappings/auto-map");
   });
 
+  it("registers Sage payment-status read + refresh endpoints (Task #1604)", async () => {
+    const mod: any = await import("../integrationRoutes");
+    const router: any = mod.default;
+    const paths = router.stack
+      .filter((l: any) => l.route)
+      .map((l: any) => ({ path: l.route.path, methods: l.route.methods }));
+
+    const getStatuses = paths.find((x: any) => x.path === "/sage/payment-statuses");
+    expect(getStatuses, "missing GET /sage/payment-statuses").toBeDefined();
+    expect(getStatuses.methods.get).toBe(true);
+
+    const refresh = paths.find((x: any) => x.path === "/sage/payment-statuses/refresh");
+    expect(refresh, "missing POST /sage/payment-statuses/refresh").toBeDefined();
+    expect(refresh.methods.post).toBe(true);
+  });
+
+  it("allows MANAGER on POST /sage/payment-statuses/refresh (PMs need refresh)", async () => {
+    process.env.INTEGRATION_SAGE = "true";
+    const mod: any = await import("../integrationRoutes");
+    const router: any = mod.default;
+    const layer = router.stack.find(
+      (l: any) => l.route?.path === "/sage/payment-statuses/refresh",
+    );
+    expect(layer).toBeDefined();
+    const handler = layer.route.stack[layer.route.stack.length - 1].handle;
+
+    let status = 200;
+    let body: any = null;
+    const req: any = {
+      user: { role: "MANAGER", id: "u1", organizationId: "org-no-conn" },
+      params: {},
+      body: {},
+    };
+    const res: any = {
+      status(s: number) { status = s; return res; },
+      json(b: any) { body = b; return res; },
+    };
+    await handler(req, res, () => {});
+    // MANAGER should not be rejected with 403; lacking a connection yields 404 instead.
+    expect(status, `expected non-403 for MANAGER, got ${status} body=${JSON.stringify(body)}`).not.toBe(403);
+  });
+
+  it("denies non-MANAGER+ roles on POST /sage/payment-statuses/refresh", async () => {
+    const mod: any = await import("../integrationRoutes");
+    const router: any = mod.default;
+    const layer = router.stack.find(
+      (l: any) => l.route?.path === "/sage/payment-statuses/refresh",
+    );
+    const handler = layer.route.stack[layer.route.stack.length - 1].handle;
+
+    for (const role of ["VIEWER", "USER", "MEMBER"]) {
+      let status = 200;
+      const req: any = { user: { role, id: "u1", organizationId: "org-1" }, params: {}, body: {} };
+      const res: any = {
+        status(s: number) { status = s; return res; },
+        json() { return res; },
+      };
+      await handler(req, res, () => {});
+      expect(status, `expected 403 for role ${role}`).toBe(403);
+    }
+  });
+
+  it("GET /sage/payment-statuses maps Sage RECORDNOs back to local pay-app IDs", async () => {
+    process.env.INTEGRATION_SAGE = "true";
+    const mod: any = await import("../integrationRoutes");
+    const router: any = mod.default;
+    const layer = router.stack.find(
+      (l: any) => l.route?.path === "/sage/payment-statuses",
+    );
+    expect(layer).toBeDefined();
+    const handler = layer.route.stack[layer.route.stack.length - 1].handle;
+
+    // Three sequential .where() reads: connection, exported_sage_invoices row, payment_status_snapshot row.
+    dbState.selectQueue = [
+      [{ ...baseConnection }],
+      [{
+        connectionId: "conn-1",
+        entityType: "exported_sage_invoices",
+        metadata: {
+          idMapping: {
+            "payapp-A": "1001",
+            "payapp-B": "1002",
+            "payapp-C": "1003", // exported but no snapshot entry → "No status yet"
+          },
+        },
+      }],
+      [{
+        connectionId: "conn-1",
+        entityType: "payment_status_snapshot",
+        metadata: {
+          checkedAt: "2026-04-24T08:00:00.000Z",
+          statuses: [
+            { invoiceId: "1001", status: "paid", totalDue: 100, totalPaid: 100 },
+            { invoiceId: "1002", status: "partial", totalDue: 200, totalPaid: 50, dueDate: "2026-05-01" },
+            { invoiceId: "9999", status: "paid", totalDue: 1, totalPaid: 1 }, // unmapped → ignored
+          ],
+        },
+        lastSyncAt: new Date("2026-04-24T08:00:00.000Z"),
+      }],
+    ];
+
+    let body: any = null;
+    const req: any = { user: { role: "MANAGER", id: "u1", organizationId: "org-1" }, params: {}, body: {} };
+    const res: any = {
+      status() { return res; },
+      json(b: any) { body = b; return res; },
+    };
+    await handler(req, res, () => {});
+
+    expect(body?.enabled).toBe(true);
+    expect(body?.connected).toBe(true);
+    expect(body?.checkedAt).toBe("2026-04-24T08:00:00.000Z");
+    expect(body?.exportedPayAppIds).toEqual(expect.arrayContaining(["payapp-A", "payapp-B", "payapp-C"]));
+
+    expect(body?.statuses?.["payapp-A"]).toMatchObject({
+      status: "paid",
+      totalDue: 100,
+      totalPaid: 100,
+      sageInvoiceId: "1001",
+    });
+    expect(body?.statuses?.["payapp-B"]).toMatchObject({
+      status: "partial",
+      totalDue: 200,
+      totalPaid: 50,
+      dueDate: "2026-05-01",
+      sageInvoiceId: "1002",
+    });
+    // payapp-C exported but no snapshot entry → not in statuses, but listed in exportedPayAppIds.
+    expect(body?.statuses?.["payapp-C"]).toBeUndefined();
+    // Unmapped Sage RECORDNO 9999 must not surface under any local id.
+    for (const v of Object.values(body?.statuses ?? {})) {
+      expect((v as any).sageInvoiceId).not.toBe("9999");
+    }
+  });
+
+  it("GET /sage/payment-statuses returns empty payload when feature flag is off", async () => {
+    process.env.INTEGRATION_SAGE = "false";
+    const mod: any = await import("../integrationRoutes");
+    const router: any = mod.default;
+    const layer = router.stack.find(
+      (l: any) => l.route?.path === "/sage/payment-statuses",
+    );
+    const handler = layer.route.stack[layer.route.stack.length - 1].handle;
+
+    let body: any = null;
+    const req: any = { user: { role: "MANAGER", id: "u1", organizationId: "org-1" }, params: {}, body: {} };
+    const res: any = {
+      status() { return res; },
+      json(b: any) { body = b; return res; },
+    };
+    await handler(req, res, () => {});
+
+    expect(body).toMatchObject({ enabled: false, connected: false, statuses: {}, exportedPayAppIds: [] });
+    process.env.INTEGRATION_SAGE = "true";
+  });
+
   it("registers POST /sage/credentials for secure tenant credential upload", async () => {
     const mod: any = await import("../integrationRoutes");
     const router: any = mod.default;

@@ -24,6 +24,7 @@ import {
   Building2, BarChart3, RefreshCw,
 } from "lucide-react";
 import { useFeatureFlags } from "@/hooks/use-feature-flags";
+import { useAuth } from "@/hooks/use-auth";
 
 interface BillingProject {
   projectId: string;
@@ -217,9 +218,122 @@ function AgingBar({ aging }: { aging: BillingSummary["aging"] }) {
   );
 }
 
+interface SagePaymentStatusEntry {
+  status: "paid" | "partial" | "unpaid" | "overdue" | "unknown";
+  totalDue: number;
+  totalPaid: number;
+  dueDate?: string;
+  sageInvoiceId: string;
+}
+
+interface SagePaymentStatusResponse {
+  enabled: boolean;
+  connected: boolean;
+  checkedAt: string | null;
+  statuses: Record<string, SagePaymentStatusEntry>;
+  exportedPayAppIds?: string[];
+}
+
+function SagePaymentStatusBadge({
+  entry,
+  payAppId,
+  isExported,
+}: {
+  entry: SagePaymentStatusEntry | undefined;
+  payAppId: string;
+  isExported: boolean;
+}) {
+  if (!entry) {
+    if (!isExported) {
+      return (
+        <span
+          className="text-xs text-muted-foreground"
+          data-testid={`badge-sage-${payAppId}`}
+          title="This pay application has not been exported to Sage Intacct"
+        >
+          Not exported
+        </span>
+      );
+    }
+    return (
+      <Badge
+        variant="outline"
+        className="text-muted-foreground"
+        data-testid={`badge-sage-${payAppId}`}
+        title="Exported to Sage but no payment status has been recorded yet — try Refresh from Sage"
+      >
+        <Clock className="h-3 w-3 mr-1" />
+        No status yet
+      </Badge>
+    );
+  }
+  const remaining = Math.max(0, entry.totalDue - entry.totalPaid);
+  const tooltip = `Sage invoice ${entry.sageInvoiceId} — paid ${fmt(entry.totalPaid)} of ${fmt(entry.totalDue)} (remaining ${fmt(remaining)})`;
+  switch (entry.status) {
+    case "paid":
+      return (
+        <Badge
+          variant="secondary"
+          className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+          data-testid={`badge-sage-${payAppId}`}
+          title={tooltip}
+        >
+          <CheckCircle className="h-3 w-3 mr-1" />
+          Paid
+        </Badge>
+      );
+    case "partial":
+      return (
+        <Badge
+          variant="secondary"
+          className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+          data-testid={`badge-sage-${payAppId}`}
+          title={tooltip}
+        >
+          <DollarSign className="h-3 w-3 mr-1" />
+          Partial
+        </Badge>
+      );
+    case "overdue":
+      return (
+        <Badge
+          variant="destructive"
+          data-testid={`badge-sage-${payAppId}`}
+          title={tooltip}
+        >
+          <AlertTriangle className="h-3 w-3 mr-1" />
+          Overdue
+        </Badge>
+      );
+    case "unpaid":
+      return (
+        <Badge
+          variant="secondary"
+          className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+          data-testid={`badge-sage-${payAppId}`}
+          title={tooltip}
+        >
+          <Clock className="h-3 w-3 mr-1" />
+          Unpaid
+        </Badge>
+      );
+    default:
+      return (
+        <Badge
+          variant="outline"
+          data-testid={`badge-sage-${payAppId}`}
+          title={tooltip}
+        >
+          {entry.status}
+        </Badge>
+      );
+  }
+}
+
 export default function ProgressBillingPage() {
   const { toast } = useToast();
   const { isEnabled } = useFeatureFlags();
+  const { permissionRole } = useAuth();
   const dotProgressEstimateEnabled = isEnabled("DOT_PROGRESS_ESTIMATE");
   const [activeTab, setActiveTab] = useState("overview");
   const [createPayAppOpen, setCreatePayAppOpen] = useState(false);
@@ -257,6 +371,37 @@ export default function ProgressBillingPage() {
     queryKey: ["/api/projects"],
   });
   const projectsList = projectsResponse?.data ?? [];
+
+  const { data: sagePaymentStatuses } = useQuery<SagePaymentStatusResponse>({
+    queryKey: ["/api/integrations/sage/payment-statuses"],
+    staleTime: 60 * 1000,
+  });
+  const sageEnabled = !!sagePaymentStatuses?.enabled && !!sagePaymentStatuses?.connected;
+  const canRefreshSage =
+    sageEnabled && ["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(permissionRole ?? "");
+
+  const refreshSagePayments = useMutation({
+    mutationFn: async (invoiceIds: string[]) => {
+      const res = await apiRequest("POST", "/api/integrations/sage/payment-statuses/refresh", {
+        invoiceIds,
+      });
+      return res.json();
+    },
+    onSuccess: (data: { refreshed?: number; message?: string }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations/sage/payment-statuses"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/aia-billing/pay-applications"] });
+      if (data?.message) {
+        toast({ title: "Sage refresh", description: data.message });
+      } else {
+        toast({
+          title: "Refreshed from Sage",
+          description: `${data?.refreshed ?? 0} invoice status${(data?.refreshed ?? 0) === 1 ? "" : "es"} updated`,
+        });
+      }
+    },
+    onError: (err: Error) =>
+      toast({ title: "Sage refresh failed", description: err.message, variant: "destructive" }),
+  });
 
   const updatePayAppStatus = useMutation({
     mutationFn: async ({ id, status, rejectionReason }: { id: string; status: string; rejectionReason?: string }) => {
@@ -485,11 +630,40 @@ export default function ProgressBillingPage() {
 
         <TabsContent value="pay-applications" className="space-y-4">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="text-base">Pay Applications</CardTitle>
-              <Button size="sm" onClick={() => setCreatePayAppOpen(true)} data-testid="button-new-pay-app-tab">
-                <Plus className="mr-1.5 h-4 w-4" /> New
-              </Button>
+            <CardHeader className="flex flex-row items-center justify-between gap-2">
+              <div className="flex items-center gap-3 flex-wrap">
+                <CardTitle className="text-base">Pay Applications</CardTitle>
+                {sageEnabled && sagePaymentStatuses?.checkedAt && (
+                  <span
+                    className="text-xs text-muted-foreground"
+                    data-testid="text-sage-checked-at"
+                  >
+                    Sage status as of {fmtDate(sagePaymentStatuses.checkedAt)}
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {canRefreshSage && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => refreshSagePayments.mutate(payApps.map((a) => a.id))}
+                    disabled={refreshSagePayments.isPending || payApps.length === 0}
+                    data-testid="button-refresh-sage-payments"
+                    title="Pull latest payment status from Sage Intacct"
+                  >
+                    {refreshSagePayments.isPending ? (
+                      <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="mr-1.5 h-4 w-4" />
+                    )}
+                    Refresh from Sage
+                  </Button>
+                )}
+                <Button size="sm" onClick={() => setCreatePayAppOpen(true)} data-testid="button-new-pay-app-tab">
+                  <Plus className="mr-1.5 h-4 w-4" /> New
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {payAppsLoading ? (
@@ -507,6 +681,7 @@ export default function ProgressBillingPage() {
                       <TableHead className="text-right">Completed</TableHead>
                       <TableHead className="text-right">Payment Due</TableHead>
                       <TableHead>Status</TableHead>
+                      {sageEnabled && <TableHead>Sage</TableHead>}
                       <TableHead>Actions</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -520,6 +695,17 @@ export default function ProgressBillingPage() {
                         <TableCell className="text-right">{fmt(app.totalCompletedAndStored)}</TableCell>
                         <TableCell className="text-right font-semibold">{fmt(app.currentPaymentDue)}</TableCell>
                         <TableCell>{statusBadge(app.status)}</TableCell>
+                        {sageEnabled && (
+                          <TableCell>
+                            <SagePaymentStatusBadge
+                              entry={sagePaymentStatuses?.statuses?.[app.id]}
+                              payAppId={app.id}
+                              isExported={
+                                sagePaymentStatuses?.exportedPayAppIds?.includes(app.id) ?? false
+                              }
+                            />
+                          </TableCell>
+                        )}
                         <TableCell>
                           <div className="flex gap-1 flex-wrap">
                             {app.status === "DRAFT" && (

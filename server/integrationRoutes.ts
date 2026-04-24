@@ -23,6 +23,7 @@ import {
   importPaymentStatus as sageImportPaymentStatus,
   getTrackedSageInvoiceRecordIds,
 } from "./integrations/providers/sage";
+import { getIdMapping } from "./integrations/idMapping";
 import { parseEbsxJson, importBidPackage, exportEstimateAsEbsx } from "./integrations/providers/aashtoware";
 import { importWageDetermination, listSuppressedFailureNotifications, resetSuppressedFailureNotification, resetAllSuppressedFailureNotifications } from "./integrations/providers/dol_davis_bacon";
 import { searchDirectory as searchDbeDirectory, refreshCertifications as refreshDbeCertifications, verifyCertification as verifyDbeCertification } from "./integrations/providers/dbe_directory";
@@ -2054,6 +2055,158 @@ router.post("/sage/import-payments", requireAuth, async (req, res, next) => {
     }
     const result = await sageImportPaymentStatus(conn, invoiceIds);
     res.status(result.success ? 200 : 502).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Task #1604 — read the cached Sage `payment_status_snapshot` and project it
+// onto local pay-application IDs (via the `exported_sage_invoices` idMapping)
+// so the SOV / pay-app list can render Paid / Partial / Unpaid badges
+// without a per-row Sage round-trip. Safe for any authenticated org user
+// (read-only cached data); gracefully returns an empty map when the Sage
+// integration is disabled or no active connection exists, so the UI can
+// always render unconditionally.
+router.get("/sage/payment-statuses", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    const empty = {
+      enabled: process.env.INTEGRATION_SAGE === "true",
+      connected: false,
+      checkedAt: null as string | null,
+      statuses: {} as Record<string, unknown>,
+      exportedPayAppIds: [] as string[],
+    };
+    if (!empty.enabled) return res.json(empty);
+
+    const [conn] = await db
+      .select()
+      .from(integrationConnections)
+      .where(and(
+        eq(integrationConnections.organizationId, user.organizationId),
+        eq(integrationConnections.provider, "sage_intacct"),
+        eq(integrationConnections.status, "active"),
+      ));
+    if (!conn) return res.json(empty);
+
+    const [exportedRow] = await db
+      .select()
+      .from(integrationSyncState)
+      .where(and(
+        eq(integrationSyncState.connectionId, conn.id),
+        eq(integrationSyncState.entityType, "exported_sage_invoices"),
+      ));
+    const [snapshotRow] = await db
+      .select()
+      .from(integrationSyncState)
+      .where(and(
+        eq(integrationSyncState.connectionId, conn.id),
+        eq(integrationSyncState.entityType, "payment_status_snapshot"),
+      ));
+
+    const exportedMeta = (exportedRow?.metadata ?? {}) as Record<string, any>;
+    const idMapping = (exportedMeta.idMapping ?? {}) as Record<string, string>;
+    const sageToLocal = new Map<string, string>();
+    const exportedPayAppIds: string[] = [];
+    for (const [local, sageId] of Object.entries(idMapping)) {
+      if (sageId) {
+        sageToLocal.set(String(sageId), local);
+        exportedPayAppIds.push(local);
+      }
+    }
+
+    const snapMeta = (snapshotRow?.metadata ?? {}) as Record<string, any>;
+    const rawStatuses: Array<Record<string, any>> = Array.isArray(snapMeta.statuses)
+      ? snapMeta.statuses
+      : [];
+    const statuses: Record<string, {
+      status: string;
+      totalDue: number;
+      totalPaid: number;
+      dueDate?: string;
+      sageInvoiceId: string;
+    }> = {};
+    for (const s of rawStatuses) {
+      const sageId = String(s?.invoiceId ?? "");
+      if (!sageId) continue;
+      const local = sageToLocal.get(sageId);
+      if (!local) continue;
+      statuses[local] = {
+        status: typeof s.status === "string" ? s.status : "unknown",
+        totalDue: Number(s.totalDue ?? 0),
+        totalPaid: Number(s.totalPaid ?? 0),
+        ...(typeof s.dueDate === "string" && s.dueDate ? { dueDate: s.dueDate } : {}),
+        sageInvoiceId: sageId,
+      };
+    }
+
+    res.json({
+      enabled: true,
+      connected: true,
+      checkedAt:
+        (typeof snapMeta.checkedAt === "string" && snapMeta.checkedAt) ||
+        (snapshotRow?.lastSyncAt ? snapshotRow.lastSyncAt.toISOString() : null),
+      statuses,
+      exportedPayAppIds,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Task #1604 — PM-accessible refresh affordance that triggers the existing
+// `sage_payment_status` sync op for the (optionally) supplied local pay-app
+// IDs. Local IDs are translated to Sage RECORDNOs via the
+// `exported_sage_invoices` idMapping so the route accepts the same IDs the
+// UI already renders. MANAGER+ may invoke this (PMs need to refresh badges
+// from the SOV / invoice list); the read-only ARINVOICE query is safe to
+// expose at that level even though the named /sage/* mutation routes are
+// kept ADMIN-only.
+router.post("/sage/payment-statuses/refresh", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN", "MANAGER"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    if (!requireSageEnabledOrFail(res)) return;
+    const conn = await loadActiveSageConnection(user.organizationId);
+    if (!conn) return res.status(404).json({ error: "No active Sage Intacct connection" });
+
+    const localIds: string[] = Array.isArray(req.body?.invoiceIds)
+      ? req.body.invoiceIds.filter((v: unknown): v is string => typeof v === "string" && v.length > 0)
+      : [];
+
+    let sageIds: string[];
+    if (localIds.length > 0) {
+      const idMapping = await getIdMapping(conn.id, "exported_sage_invoices");
+      const seen = new Set<string>();
+      sageIds = [];
+      for (const local of localIds) {
+        const sageId = idMapping[local];
+        if (sageId && !seen.has(String(sageId))) {
+          seen.add(String(sageId));
+          sageIds.push(String(sageId));
+        }
+      }
+    } else {
+      sageIds = (await getTrackedSageInvoiceRecordIds(conn.id)).slice(0, 200);
+    }
+
+    if (sageIds.length === 0) {
+      return res.json({
+        success: true,
+        refreshed: 0,
+        skipped: localIds.length,
+        message: "No Sage-exported invoices to refresh",
+      });
+    }
+
+    const result = await sageImportPaymentStatus(conn, sageIds);
+    res.status(result.success ? 200 : 502).json({
+      success: result.success,
+      refreshed: result.updated,
+      errors: result.errors,
+    });
   } catch (err) {
     next(err);
   }
