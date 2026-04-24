@@ -4,6 +4,7 @@ import { PlanPinLayer, PinPicker, PinCreateDialog, type PinFilter, type PinType,
 import PlanMarkupLayer, { type MarkupHistoryState } from "@/components/markups/PlanMarkupLayer";
 import UnifiedPlanToolbar from "@/components/plans/UnifiedPlanToolbar";
 import MarkupLayersPanel from "@/components/markups/MarkupLayersPanel";
+import MarkupTrashPanel from "@/components/markups/MarkupTrashPanel";
 import type { MarkupTool } from "@/components/markups/MarkupRenderer";
 import CarryoverAnnotationsDialog from "@/components/markups/CarryoverAnnotationsDialog";
 import LayerPickerExportDialog from "@/components/markups/LayerPickerExportDialog";
@@ -413,6 +414,12 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   // useEffect below.
   const [activeMarkupLayerId, setActiveMarkupLayerId] = useState<string | null>(null);
   const [hiddenMarkupLayerIds, setHiddenMarkupLayerIds] = useState<Set<string>>(new Set());
+  // Task #1845 — Trash dialog open state. Anchored to the layer panel
+  // so users can browse + bulk-restore older deletions when the
+  // toolbar's one-click "Undo delete" banner is no longer available
+  // (it auto-dismisses after a few seconds and only knows about the
+  // most recent delete batch on the current sheet).
+  const [trashOpenForDocId, setTrashOpenForDocId] = useState<string | null>(null);
   const [sheetJumpOpen, setSheetJumpOpen] = useState(false);
   const [carryoverOpen, setCarryoverOpen] = useState(false);
   const [carryoverContext, setCarryoverContext] = useState<{
@@ -2674,6 +2681,23 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                     label: d.title || d.fileName || "Untitled sheet",
                                   }))}
                               />
+                              {/* Task #1845 — "Trash" entry point
+                                  alongside the layer panel. Opens a
+                                  dialog that lists every soft-deleted
+                                  markup for this sheet so the user
+                                  can browse + bulk-restore older
+                                  deletions, not just the most recent
+                                  delete batch the toolbar's "Undo
+                                  delete" banner remembers. */}
+                              <button
+                                type="button"
+                                onClick={() => setTrashOpenForDocId(doc.id)}
+                                className="mt-1 w-full flex items-center justify-center gap-1.5 text-xs px-2 py-1 rounded border bg-card hover:bg-accent text-muted-foreground hover:text-foreground"
+                                data-testid={`button-open-markup-trash-${doc.id}`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                <span>Trash</span>
+                              </button>
                             </div>
                           </div>
                           <PdfPreview
@@ -3031,6 +3055,16 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
         documentId={layerPickerDoc?.id ?? null}
         documentLabel={layerPickerDoc?.label}
       />
+      {/* Task #1845 — Trash dialog renders at the root so it stays
+          mounted across PdfPreview re-renders and isn't clipped by the
+          plan view's overflow container. */}
+      {trashOpenForDocId && (
+        <MarkupTrashPanel
+          documentId={trashOpenForDocId}
+          open={!!trashOpenForDocId}
+          onOpenChange={(o) => { if (!o) setTrashOpenForDocId(null); }}
+        />
+      )}
     </div>
   );
 }

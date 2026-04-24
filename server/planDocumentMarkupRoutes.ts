@@ -11,7 +11,7 @@
 
 import { Router, type Response, type NextFunction } from "express";
 import { db } from "./db";
-import { eq, and, inArray, isNull, sql } from "drizzle-orm";
+import { eq, and, inArray, isNull, isNotNull, sql, desc } from "drizzle-orm";
 import {
   planDocumentMarkups,
   planDocuments,
@@ -1130,6 +1130,222 @@ router.post(
         error: 1,
         ms: Date.now() - startedAt,
       });
+      next(err);
+    }
+  },
+);
+
+// ============================================================================
+// Task #1845 — LIST soft-deleted ("trash") markups for a plan document.
+//
+// The main LIST endpoint at `GET /api/plan-documents/:docId/markups`
+// filters `deleted_at IS NULL` so soft-deleted rows never reach the
+// canvas, the print page, or any of the downstream group / move /
+// carryover surfaces. The Trash panel needs the inverse view: only
+// rows with a non-null `deleted_at`, so users can browse markups that
+// were deleted yesterday or by a teammate (the toolbar's one-click
+// "Undo delete" only knows about the *most recent* delete batch on
+// the current sheet and its banner auto-dismisses after a few
+// seconds).
+//
+// Returns the same shape as the live LIST plus the deletedAt timestamp
+// so the client can group by author + date and show "deleted N hours
+// ago". Org filtering matches the live LIST exactly so a cross-tenant
+// caller never sees another tenant's trashed markups.
+// ============================================================================
+router.get(
+  "/api/plan-documents/:docId/markups/trash",
+  requireAuth,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const startedAt = Date.now();
+    try {
+      const access = await loadDocAndAssertOrg(req.params.docId, req);
+      if (!access.ok) {
+        res.status(access.status).json({ error: access.error });
+        return;
+      }
+
+      const rows = await db
+        .select({
+          id: planDocumentMarkups.id,
+          organizationId: planDocumentMarkups.organizationId,
+          projectId: planDocumentMarkups.projectId,
+          planDocumentId: planDocumentMarkups.planDocumentId,
+          pageNumber: planDocumentMarkups.pageNumber,
+          tool: planDocumentMarkups.tool,
+          points: planDocumentMarkups.points,
+          color: planDocumentMarkups.color,
+          thickness: planDocumentMarkups.thickness,
+          text: planDocumentMarkups.text,
+          createdBy: planDocumentMarkups.createdBy,
+          createdAt: planDocumentMarkups.createdAt,
+          deletedAt: planDocumentMarkups.deletedAt,
+          layerId: planDocumentMarkups.layerId,
+          groupId: planDocumentMarkups.groupId,
+          authorFirstName: users.firstName,
+          authorLastName: users.lastName,
+          authorAvatarUrl: users.avatarUrl,
+        })
+        .from(planDocumentMarkups)
+        .leftJoin(users, eq(planDocumentMarkups.createdBy, users.id))
+        .where(
+          and(
+            eq(planDocumentMarkups.planDocumentId, req.params.docId),
+            isNotNull(planDocumentMarkups.deletedAt),
+          ),
+        )
+        // Most recently deleted first so the user sees their newest
+        // mistakes at the top of the panel without scrolling.
+        .orderBy(desc(planDocumentMarkups.deletedAt));
+
+      recordJobMetrics("plan_document_markups_trash_list", {
+        ok: 1,
+        markups: rows.length,
+        ms: Date.now() - startedAt,
+      });
+
+      res.json(
+        rows.map((m) => ({
+          ...m,
+          points: safeParsePoints(m.points),
+        })),
+      );
+    } catch (err) {
+      recordJobMetrics("plan_document_markups_trash_list", {
+        error: 1,
+        ms: Date.now() - startedAt,
+      });
+      next(err);
+    }
+  },
+);
+
+// ============================================================================
+// Task #1845 — Bulk RESTORE soft-deleted markups by id.
+//
+// The existing per-id `POST /api/plan-document-markups/:id/restore`
+// works for one row at a time but the Trash panel lets users
+// multi-select dozens of rows; firing N round-trips would be slow and
+// would also create a window where some rows are restored and others
+// are still trashed if the network blips mid-flight. This route
+// batches the restore in a single transaction with the same per-row
+// owner-or-manager + cross-org checks the per-id route applies, so a
+// bulk restore can never grant a caller permission they didn't have
+// to restore each row individually.
+//
+// The single LIST + restore round-trip is also cheaper than the
+// alternative "client sends back the full snapshot" pattern used by
+// the older `/markups/restore` route — the rows still exist in the DB
+// (soft-delete preserved them), so all this endpoint has to do is
+// clear the `deleted_at` column for the supplied ids. The original
+// id, layer, group, points, and createdBy survive intact.
+// ============================================================================
+const bulkRestoreBody = z.object({
+  ids: z.array(z.string().min(1)).min(1).max(500),
+});
+
+router.post(
+  "/api/plan-documents/:docId/markups/restore-bulk",
+  requireAuth,
+  requireRole(...MARKUP_AUTHOR_ROLES),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const startedAt = Date.now();
+    try {
+      const access = await loadDocAndAssertOrg(req.params.docId, req);
+      if (!access.ok) {
+        res.status(access.status).json({ error: access.error });
+        return;
+      }
+      const body = bulkRestoreBody.parse(req.body || {});
+
+      // Look up the rows including soft-deleted ones (the whole point of
+      // this route is to restore them). Per-id auth/cross-doc checks
+      // mirror the single restore handler so the bulk path can never
+      // grant a caller permissions they wouldn't have row-by-row.
+      const rows = await db
+        .select()
+        .from(planDocumentMarkups)
+        .where(inArray(planDocumentMarkups.id, body.ids));
+      if (rows.length === 0) {
+        res.status(404).json({ error: "No markups found" });
+        return;
+      }
+
+      const user = req.user!;
+      const isSuperAdmin = user.role === "SUPER_ADMIN";
+      const isAdminOrManager =
+        isSuperAdmin || user.role === "ADMIN" || user.role === "MANAGER";
+
+      const restorableIds: string[] = [];
+      for (const r of rows) {
+        if (r.planDocumentId !== access.doc.id) {
+          res
+            .status(400)
+            .json({ error: "All markups must belong to the same plan document" });
+          return;
+        }
+        if (!isSuperAdmin && r.organizationId !== user.organizationId) {
+          res.status(403).json({ error: "Access denied" });
+          return;
+        }
+        if (!isAdminOrManager && r.createdBy !== user.id) {
+          res
+            .status(403)
+            .json({ error: "You can only restore your own markups" });
+          return;
+        }
+        restorableIds.push(r.id);
+      }
+
+      // Single UPDATE clears `deleted_at` for every restorable row.
+      // Already-live rows (deleted_at is already NULL) are silently
+      // re-set to NULL — idempotent so a stale double-click can't 500.
+      const restored = await db
+        .update(planDocumentMarkups)
+        .set({ deletedAt: null })
+        .where(inArray(planDocumentMarkups.id, restorableIds))
+        .returning();
+
+      await logAudit(
+        {
+          userId: user.id,
+          action: "UPDATE",
+          entityType: "planDocumentMarkup",
+          entityId: access.doc.id,
+          newValue: JSON.stringify({
+            op: "restoreBulk",
+            count: restored.length,
+            ids: restorableIds,
+          }),
+        },
+        req,
+      );
+
+      recordJobMetrics("plan_document_markups_restore_bulk", {
+        ok: 1,
+        count: restored.length,
+        ms: Date.now() - startedAt,
+      });
+
+      res.json({
+        ok: true,
+        count: restored.length,
+        markups: restored.map((m) => ({ ...m, points: safeParsePoints(m.points) })),
+      });
+    } catch (err: any) {
+      recordJobMetrics("plan_document_markups_restore_bulk", {
+        error: 1,
+        ms: Date.now() - startedAt,
+      });
+      if (err?.name === "ZodError") {
+        res.status(400).json({ error: "Invalid restore request", details: err.errors });
+        return;
+      }
+      logError(
+        "Error bulk-restoring plan document markups",
+        {},
+        err instanceof Error ? err : new Error(String(err)),
+      );
       next(err);
     }
   },
