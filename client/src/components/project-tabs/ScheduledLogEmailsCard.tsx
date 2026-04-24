@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Mail, Loader2 } from "lucide-react";
+import { Mail, Loader2, Send } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { COMMON_TIMEZONES } from "@shared/timezones";
 import {
@@ -181,6 +181,36 @@ function ScheduleRowEditor({ projectId, logType, initial }: ScheduleRowEditorPro
     },
   });
 
+  // Task #1628 — fires the same PDF + email pipeline the cron uses,
+  // immediately, so admins can verify recipients/branding/contents
+  // before turning the cadence on.
+  const testMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(
+        "POST",
+        `/api/projects/${projectId}/log-email-schedules/${logType}/test`,
+      );
+      return res.json() as Promise<{ ok: boolean; recipientCount: number }>;
+    },
+    onSuccess: (data) => {
+      const count = data?.recipientCount ?? 0;
+      toast({
+        title: `Test ${LOG_TYPE_LABELS[logType].toLowerCase()} email sent`,
+        description:
+          count > 0
+            ? `Delivered to ${count} recipient${count === 1 ? "" : "s"}.`
+            : "Email queued for delivery.",
+      });
+    },
+    onError: (err: Error) => {
+      toast({
+        title: "Failed to send test email",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const isDirty =
     form.cadence !== initial.cadence ||
     form.weekday !== initial.weekday ||
@@ -342,7 +372,21 @@ function ScheduleRowEditor({ projectId, logType, initial }: ScheduleRowEditorPro
         )}
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => testMutation.mutate()}
+          disabled={testMutation.isPending || mutation.isPending}
+          data-testid={`button-test-log-email-schedule-${lowerType}`}
+        >
+          {testMutation.isPending ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <Send className="h-4 w-4 mr-2" />
+          )}
+          Send test now
+        </Button>
         <Button
           size="sm"
           onClick={() => mutation.mutate(form)}

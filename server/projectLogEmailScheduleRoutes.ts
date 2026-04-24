@@ -21,17 +21,21 @@
  */
 import { Router } from "express";
 import { z } from "zod";
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 import { db } from "./db";
 import {
   PROJECT_LOG_EMAIL_CADENCES,
   PROJECT_LOG_EMAIL_LOG_TYPES,
+  projectEmailDistributionLists,
   projectLogEmailSchedules,
   projects,
 } from "@shared/schema";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { isValidTimezone } from "@shared/timezones";
 import { executeProjectLogEmailScheduleSend } from "./jobs/jobRunner";
+import { buildProjectLogPdfBuffer } from "./services/projectLogService";
+import { sendEmailWithResult } from "./services/emailService";
+import { logError, logInfo } from "./utils/logger";
 
 const router = Router();
 
@@ -48,6 +52,7 @@ async function loadProject(projectId: string, organizationId: string) {
   const [project] = await db
     .select({
       id: projects.id,
+      name: projects.name,
       gcOrganizationId: projects.gcOrganizationId,
     })
     .from(projects)
@@ -295,6 +300,117 @@ router.post(
         },
         schedule: refreshed ?? existing,
       });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// Task #1628 — "Send test now" button. Renders the same PDF the cron
+// would and emails it to the project's distribution recipients right
+// now so admins can verify the pipeline end-to-end without waiting for
+// the next scheduled firing. Deliberately does NOT touch
+// `lastSentAt` / `lastAttemptAt` on the schedule row so a manual test
+// can't move the cadence dedupe window or overwrite the real cron's
+// telemetry. Reuses the same role gate as the existing PUT — anyone
+// who can configure the cadence can also fire a test send.
+router.post(
+  "/projects/:projectId/log-email-schedules/:logType/test",
+  requireAuth,
+  requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
+      const project = await loadProject(req.params.projectId, organizationId);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+
+      const logTypeParse = logTypeParam.safeParse(req.params.logType);
+      if (!logTypeParse.success) return res.status(400).json({ error: "Invalid logType" });
+      const logType = logTypeParse.data;
+
+      // Mirror the cron's recipient resolution: project-scoped list +
+      // org-level fallback. Keeps the test send aligned with what the
+      // scheduled run would actually do.
+      const lists = await db
+        .select({
+          contactEmails: projectEmailDistributionLists.contactEmails,
+          extraEmails: projectEmailDistributionLists.extraEmails,
+        })
+        .from(projectEmailDistributionLists)
+        .where(and(
+          eq(projectEmailDistributionLists.organizationId, organizationId),
+          or(
+            eq(projectEmailDistributionLists.projectId, project.id),
+            isNull(projectEmailDistributionLists.projectId),
+          ),
+        ));
+
+      const recipientSet = new Set<string>();
+      for (const l of lists) {
+        for (const e of l.contactEmails ?? []) {
+          if (e && e.includes("@")) recipientSet.add(e.trim().toLowerCase());
+        }
+        for (const e of l.extraEmails ?? []) {
+          if (e && e.includes("@")) recipientSet.add(e.trim().toLowerCase());
+        }
+      }
+
+      if (recipientSet.size === 0) {
+        return res.status(400).json({
+          error:
+            "No recipients resolved from the project's distribution lists. Add recipients before sending a test.",
+          recipientCount: 0,
+        });
+      }
+
+      const pdfBuffer = await buildProjectLogPdfBuffer(logType, {
+        id: project.id,
+        name: project.name,
+        gcOrganizationId: project.gcOrganizationId,
+      });
+
+      const logLabel = logType === "RFI" ? "RFI" : "Submittal";
+      const safeName = project.name.replace(/[^a-z0-9]+/gi, "_");
+      const filename = `${logType.toLowerCase()}-log-${safeName}.pdf`;
+      // Subject line is prefixed with [TEST] so recipients can tell
+      // this is an on-demand verification send rather than the regular
+      // scheduled digest.
+      const subject = `[TEST] ${logLabel} log — ${project.name}`;
+      const text = `This is a test send of the ${logLabel} log for project "${project.name}". The attached PDF matches what the scheduled email would deliver.`;
+      const html = `<p>This is a <strong>test send</strong> of the ${logLabel} log for project <strong>${project.name}</strong>.</p><p>The attached PDF matches what the scheduled email would deliver.</p>`;
+
+      const recipients = Array.from(recipientSet);
+      const result = await sendEmailWithResult({
+        to: recipients,
+        subject,
+        text,
+        html,
+        attachments: [{ filename, content: pdfBuffer, contentType: "application/pdf" }],
+      });
+
+      if (!result.ok) {
+        logError("Project log email test send failed", {
+          projectId: project.id,
+          organizationId,
+          logType,
+          error: result.error,
+          recipients: recipients.length,
+        });
+        return res.status(502).json({
+          error: result.error ?? "Unknown email send error",
+          recipientCount: recipients.length,
+        });
+      }
+
+      logInfo("Project log email test send succeeded", {
+        projectId: project.id,
+        organizationId,
+        logType,
+        recipients: recipients.length,
+      });
+
+      return res.json({ ok: true, recipientCount: recipients.length });
     } catch (err) {
       next(err);
     }
