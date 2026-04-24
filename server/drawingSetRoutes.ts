@@ -243,7 +243,13 @@ router.post("/drawing-sets/:setId/items/bulk", requireAuth, requireRoleOrFeature
 
     const inserted = await db.insert(drawingSetItems).values(values).returning();
     res.json(inserted);
-  } catch (err) {
+  } catch (err: any) {
+    // Task #1812 — match the single-item POST so duplicate sheetIds within
+    // a bulk request surface as a 409 (caught by the bulk-manage modal's
+    // friendly toast) rather than a generic 500.
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "Sheet already in this drawing set" });
+    }
     next(err);
   }
 });

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { bulkPinErrorDescription } from "@/lib/drawingSetErrors";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -199,8 +200,16 @@ export default function DrawingSetsPanel({
       queryClient.invalidateQueries({ queryKey: ["/api/projects", projectId, "drawing-sets"] });
       toast({ title: "Pinned sheets updated" });
     },
-    onError: () => {
-      toast({ title: "Error", description: "Failed to update pinned sheets.", variant: "destructive" });
+    // Task #1812 — surface duplicate-pin (409) responses with a friendly,
+    // set-named toast so users understand why a bulk pin attempt didn't
+    // appear to do anything. Other failures keep the generic message.
+    onError: (err: unknown, vars) => {
+      const setName = drawingSets.find(s => s.id === vars.setId)?.name || null;
+      toast({
+        title: "Error",
+        description: bulkPinErrorDescription(err, { setName }),
+        variant: "destructive",
+      });
     },
   });
 

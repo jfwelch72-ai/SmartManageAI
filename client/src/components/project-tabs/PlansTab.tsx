@@ -45,6 +45,7 @@ import { useToast } from "@/hooks/use-toast";
 import { format } from "date-fns";
 import { useProjectDocuments } from "@/hooks/use-data";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { pinSheetErrorDescription } from "@/lib/drawingSetErrors";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { useTour } from "@/components/TourProvider";
@@ -814,11 +815,15 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
       invalidateDrawingSetCaches(vars.setId);
       toast({ title: "Pinned to set" });
     },
-    onError: (err: unknown) => {
-      const message = err instanceof Error ? err.message : "";
+    // Task #1812 — surface the backend's 409 (duplicate pin) as a friendly,
+    // sheet- and set-named toast so users understand why the click didn't
+    // appear to do anything. Other 4xx/5xx errors keep the generic message.
+    onError: (err: unknown, vars) => {
+      const sheetName = sheets.find(s => s.id === vars.sheetId)?.sheetName || null;
+      const setName = drawingSetsData.find(s => s.id === vars.setId)?.name || null;
       toast({
         title: "Error",
-        description: message.includes("409") ? "Sheet already pinned." : "Failed to pin sheet.",
+        description: pinSheetErrorDescription(err, { sheetName, setName }),
         variant: "destructive",
       });
     },
