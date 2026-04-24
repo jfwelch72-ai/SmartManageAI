@@ -65,9 +65,18 @@ export interface UnifiedPlanToolbarProps {
   // Task #1705 — "Undo last group move" handler + availability flag.
   // Forwarded to <PlanMarkupToolbar /> so the Undo button lives next to
   // the markup tools. PlansTab owns the state and updates it whenever
-  // <PlanMarkupLayer /> reports a fresh snapshot via `onUndoChange`.
+  // <PlanMarkupLayer /> reports a fresh history shape via
+  // `onHistoryChange`.
   onUndoLastMove?: () => void;
   canUndoLastMove?: boolean;
+  // Task #1723 — Redo counterpart plus action-description labels for
+  // the toolbar tooltips ("Undo Move 5 markups" / "Redo Move 5
+  // markups"). Same wiring path as Undo: PlansTab forwards whatever
+  // <PlanMarkupLayer /> reports via `onHistoryChange`.
+  onRedoLastMove?: () => void;
+  canRedoLastMove?: boolean;
+  undoLabel?: string | null;
+  redoLabel?: string | null;
 }
 
 function GroupLabel({ children }: { children: React.ReactNode }) {
@@ -103,6 +112,10 @@ export default function UnifiedPlanToolbar({
   onReplayTour,
   onUndoLastMove,
   canUndoLastMove = false,
+  onRedoLastMove,
+  canRedoLastMove = false,
+  undoLabel,
+  redoLabel,
 }: UnifiedPlanToolbarProps) {
   return (
     <div
@@ -154,6 +167,10 @@ export default function UnifiedPlanToolbar({
           labeled={labeled}
           onUndoLastMove={onUndoLastMove}
           canUndoLastMove={canUndoLastMove}
+          onRedoLastMove={onRedoLastMove}
+          canRedoLastMove={canRedoLastMove}
+          undoLabel={undoLabel}
+          redoLabel={redoLabel}
           className="border-0 bg-transparent px-0 py-0"
         />
       </div>

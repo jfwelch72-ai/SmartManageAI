@@ -26,6 +26,7 @@ import {
   X,
   MousePointer2,
   Undo2,
+  Redo2,
 } from "lucide-react";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
@@ -113,6 +114,19 @@ export interface PlanMarkupToolbarProps {
    *  button stays mounted (so its position doesn't jump) but is
    *  disabled when there's nothing to undo. */
   canUndoLastMove?: boolean;
+  /** Task #1723 — Click handler for the "Redo last group move" button.
+   *  Rendered alongside Undo on surfaces that wire up `onUndoLastMove`. */
+  onRedoLastMove?: () => void;
+  /** Task #1723 — Whether a redo is actually available right now. */
+  canRedoLastMove?: boolean;
+  /** Task #1723 — Optional label describing the action that Undo will
+   *  reverse (e.g. "Move 5 markups"). When provided, the tooltip on
+   *  the Undo button surfaces it so users know what they're about to
+   *  undo. */
+  undoLabel?: string | null;
+  /** Task #1723 — Optional label describing the action that Redo will
+   *  replay. */
+  redoLabel?: string | null;
 }
 
 export default function PlanMarkupToolbar({
@@ -128,6 +142,10 @@ export default function PlanMarkupToolbar({
   labeled = false,
   onUndoLastMove,
   canUndoLastMove = false,
+  onRedoLastMove,
+  canRedoLastMove = false,
+  undoLabel,
+  redoLabel,
 }: PlanMarkupToolbarProps) {
   const visibleTools = showSelect
     ? TOOLS
@@ -202,10 +220,13 @@ export default function PlanMarkupToolbar({
         </Tooltip>
       )}
 
-      {/* Task #1705 — Undo last group move. Only rendered on surfaces
-          that wire up `onUndoLastMove` (the plan toolbar). The button
-          stays mounted but disabled when there's no move to undo so
-          its position is stable. */}
+      {/* Task #1705 / Task #1723 — Undo + Redo for group moves. Only
+          rendered on surfaces that wire up `onUndoLastMove` (the plan
+          toolbar). Buttons stay mounted but disabled when their stack
+          is empty so the toolbar position is stable. The Undo tooltip
+          spells out exactly which action will be reversed (e.g. "Undo
+          Move 5 markups") so users can see what they're stepping back
+          through. */}
       {onUndoLastMove && (
         <Tooltip>
           <TooltipTrigger asChild>
@@ -216,18 +237,65 @@ export default function PlanMarkupToolbar({
               className={cn("h-7", labeled ? "px-2 gap-1.5" : "px-2")}
               onClick={() => canUndoLastMove && onUndoLastMove()}
               disabled={!canUndoLastMove}
-              aria-label="Undo last group move (Ctrl+Z)"
+              aria-label={
+                canUndoLastMove && undoLabel
+                  ? `Undo: ${undoLabel} (Ctrl+Z)`
+                  : "Undo (Ctrl+Z)"
+              }
               aria-disabled={!canUndoLastMove}
               data-testid="button-markup-undo-move"
             >
               <Undo2 className="w-3.5 h-3.5" />
-              {labeled && <span className="text-[11px]">Undo move</span>}
+              {labeled && <span className="text-[11px]">Undo</span>}
             </Button>
           </TooltipTrigger>
           <TooltipContent side="bottom">
             <ToolTip
-              name={canUndoLastMove ? "Undo last group move" : "Nothing to undo"}
+              name={
+                canUndoLastMove
+                  ? undoLabel
+                    ? `Undo ${undoLabel}`
+                    : "Undo last group move"
+                  : "Nothing to undo"
+              }
               shortcut="Ctrl+Z"
+            />
+          </TooltipContent>
+        </Tooltip>
+      )}
+
+      {onRedoLastMove && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className={cn("h-7", labeled ? "px-2 gap-1.5" : "px-2")}
+              onClick={() => canRedoLastMove && onRedoLastMove()}
+              disabled={!canRedoLastMove}
+              aria-label={
+                canRedoLastMove && redoLabel
+                  ? `Redo: ${redoLabel} (Ctrl+Shift+Z)`
+                  : "Redo (Ctrl+Shift+Z)"
+              }
+              aria-disabled={!canRedoLastMove}
+              data-testid="button-markup-redo-move"
+            >
+              <Redo2 className="w-3.5 h-3.5" />
+              {labeled && <span className="text-[11px]">Redo</span>}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            <ToolTip
+              name={
+                canRedoLastMove
+                  ? redoLabel
+                    ? `Redo ${redoLabel}`
+                    : "Redo last group move"
+                  : "Nothing to redo"
+              }
+              shortcut="Ctrl+Shift+Z"
             />
           </TooltipContent>
         </Tooltip>

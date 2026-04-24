@@ -9,7 +9,13 @@
  * decides "did every selected member move by the same amount?".
  */
 import { describe, it, expect } from "vitest";
-import { buildBulkMoveUpdates, buildMoveSnapshot } from "../PlanMarkupLayer";
+import {
+  buildBulkMoveUpdates,
+  buildMoveSnapshot,
+  describeHistoryEntry,
+  MAX_MARKUP_HISTORY,
+  type MarkupMoveHistoryEntry,
+} from "../PlanMarkupLayer";
 import type { MarkupShape } from "../MarkupRenderer";
 
 const mk = (id: string, points: Array<{ x: number; y: number }>): MarkupShape => ({
@@ -131,6 +137,8 @@ describe("buildMoveSnapshot", () => {
   });
 
   it("round-trip: replaying snapshot after a delta restores original points", () => {
+    // (sanity check on the historical single-step undo contract; the
+    // multi-step undo/redo helpers below build on the same primitive.)
     // This is the contract of the undo feature. We:
     //   1. snapshot the pre-move state
     //   2. apply a delta and pretend the cache moved to that state
@@ -152,5 +160,87 @@ describe("buildMoveSnapshot", () => {
       const original = markups.find((m) => m.id === s.id)!;
       expect(restored.points).toEqual(original.points);
     }
+  });
+});
+
+/**
+ * Task #1723 — Multi-step undo / redo. The drag handler in
+ * `<PlanMarkupLayer />` pushes one of these entries onto the undo
+ * stack on every group move; undo and redo each fire one bulk-PATCH
+ * (using `before` / `after` respectively) and swap the entry between
+ * stacks. These tests lock down (a) the tooltip label format the
+ * toolbar surfaces and (b) the bounded ring-buffer policy that keeps
+ * the stack from growing unboundedly during a long editing session.
+ */
+describe("describeHistoryEntry", () => {
+  const moveEntry = (count: number): MarkupMoveHistoryEntry => ({
+    type: "move",
+    before: [],
+    after: [],
+    count,
+  });
+
+  it("uses singular form for a single-markup move", () => {
+    expect(describeHistoryEntry(moveEntry(1))).toBe("Move 1 markup");
+  });
+
+  it("uses plural form for a multi-markup move", () => {
+    expect(describeHistoryEntry(moveEntry(5))).toBe("Move 5 markups");
+    expect(describeHistoryEntry(moveEntry(20))).toBe("Move 20 markups");
+  });
+
+  it("uses plural form for a zero-markup move (defensive)", () => {
+    // A 0-count entry should never reach the toolbar in practice (the
+    // drag handler skips zero-delta moves), but the label must still
+    // be human-readable if it does.
+    expect(describeHistoryEntry(moveEntry(0))).toBe("Move 0 markups");
+  });
+});
+
+describe("undo stack ring-buffer policy", () => {
+  // The drag handler pushes new entries with the standard pattern
+  //   next = [...prev, entry];
+  //   if (next.length > MAX_MARKUP_HISTORY) next = next.slice(next.length - MAX_MARKUP_HISTORY);
+  // This test re-implements that policy and verifies the trailing
+  // window stays at exactly MAX_MARKUP_HISTORY entries (oldest dropped
+  // from the front), so a long editing session never grows the stack
+  // unboundedly while preserving the most-recent N actions.
+  const push = (
+    stack: MarkupMoveHistoryEntry[],
+    entry: MarkupMoveHistoryEntry,
+  ): MarkupMoveHistoryEntry[] => {
+    const next = [...stack, entry];
+    return next.length > MAX_MARKUP_HISTORY
+      ? next.slice(next.length - MAX_MARKUP_HISTORY)
+      : next;
+  };
+
+  it("MAX_MARKUP_HISTORY meets the spec (>= 20)", () => {
+    // Task #1723 acceptance criterion: "Cmd/Ctrl+Z repeatedly walks
+    // back at least the last N group-move actions (suggested N = 20)".
+    expect(MAX_MARKUP_HISTORY).toBeGreaterThanOrEqual(20);
+  });
+
+  it("retains every entry while the stack is below the limit", () => {
+    let stack: MarkupMoveHistoryEntry[] = [];
+    for (let i = 0; i < MAX_MARKUP_HISTORY; i++) {
+      stack = push(stack, { type: "move", before: [], after: [], count: i });
+    }
+    expect(stack).toHaveLength(MAX_MARKUP_HISTORY);
+    expect(stack[0].count).toBe(0);
+    expect(stack[stack.length - 1].count).toBe(MAX_MARKUP_HISTORY - 1);
+  });
+
+  it("drops the oldest entry once the stack exceeds the limit", () => {
+    let stack: MarkupMoveHistoryEntry[] = [];
+    // Push MAX + 5 distinct entries; only the last MAX should survive.
+    for (let i = 0; i < MAX_MARKUP_HISTORY + 5; i++) {
+      stack = push(stack, { type: "move", before: [], after: [], count: i });
+    }
+    expect(stack).toHaveLength(MAX_MARKUP_HISTORY);
+    // First retained entry is `5` (entries 0-4 were dropped).
+    expect(stack[0].count).toBe(5);
+    // Last entry is the most-recent push.
+    expect(stack[stack.length - 1].count).toBe(MAX_MARKUP_HISTORY + 4);
   });
 });

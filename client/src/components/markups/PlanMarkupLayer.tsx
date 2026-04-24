@@ -28,6 +28,23 @@
  *    the same bulk-PATCH with the snapshot points, restoring the prior
  *    layout. The snapshot is consumed (cleared) on undo so a second
  *    Ctrl+Z is a no-op — group moves are explicitly single-step.
+ *
+ * Task #1723 — Multi-step undo / redo for group moves:
+ *  - Replaces the single `lastMoveSnapshot` with a bounded ring buffer
+ *    (`undoStack`, capped at `MAX_HISTORY = 20`) plus a forward
+ *    `redoStack`. Each entry remembers both the pre-move points
+ *    (`before`) and the post-move points (`after`) plus how many
+ *    markups participated, so undo and redo can each fire a single
+ *    bulk-PATCH and the toolbar tooltip can describe the action that
+ *    will be undone/redone (e.g. "Move 5 markups").
+ *  - Cmd/Ctrl+Z walks back through the undo stack one entry at a time;
+ *    Cmd/Ctrl+Shift+Z (and Ctrl+Y on Windows muscle memory) replays the
+ *    redo stack forward. A fresh group move clears the redo stack —
+ *    the standard undo-history contract every editor follows.
+ *  - The layer reports the full history shape (undo/redo handlers +
+ *    descriptive labels) up to the parent via `onHistoryChange` so the
+ *    toolbar can render Undo / Redo buttons whose tooltips spell out
+ *    exactly which action will be reversed.
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -69,13 +86,65 @@ export interface PlanMarkupLayerProps {
   /** Task #1662 — set of layer ids the user has hidden from view. */
   hiddenLayerIds?: Set<string>;
   /**
-   * Task #1705 — Reports the latest "undo last group move" handler up to
-   * the parent so the plan toolbar can render an Undo button. Called
-   * with `null` when there is nothing to undo (initial mount, after the
-   * snapshot is consumed, or after a layer/page change). Called with a
-   * stable callback when a fresh group-move snapshot is available.
+   * Task #1705 / Task #1723 — Reports the current undo/redo history shape
+   * up to the parent so the plan toolbar can render Undo + Redo buttons
+   * whose enabled state and tooltips reflect the actual stack contents.
+   * Called whenever the stack contents change. Either handler is `null`
+   * when there is nothing to walk in that direction (initial mount, page
+   * change, or after the user has stepped fully back/forward). Labels
+   * describe the action (e.g. "Move 5 markups") so the tooltip can spell
+   * out exactly which edit will be reversed.
    */
-  onUndoChange?: (undo: (() => void) | null) => void;
+  onHistoryChange?: (state: MarkupHistoryState) => void;
+}
+
+/**
+ * Task #1723 — Shape reported by `<PlanMarkupLayer />` to the parent
+ * toolbar via `onHistoryChange`. Both handlers are `null` when their
+ * respective stack is empty so the parent can disable the matching
+ * button without having to track stack depth itself.
+ */
+export interface MarkupHistoryState {
+  undo: (() => void) | null;
+  redo: (() => void) | null;
+  /** Human-readable description of the action that Undo would reverse. */
+  undoLabel: string | null;
+  /** Human-readable description of the action that Redo would replay. */
+  redoLabel: string | null;
+}
+
+/**
+ * Task #1723 — Maximum number of group-move actions kept on the undo
+ * stack. Older entries are dropped from the front when the stack grows
+ * past this limit, so the user can always step back through their
+ * recent edits without unbounded memory growth.
+ */
+export const MAX_MARKUP_HISTORY = 20;
+
+/**
+ * Task #1723 — One entry on the undo / redo stack. We keep both the
+ * pre-move and post-move points so undo and redo can each fire a
+ * single bulk-PATCH against the same shapes — no need to recompute the
+ * delta. `count` powers the toolbar tooltip ("Move N markups").
+ */
+export interface MarkupMoveHistoryEntry {
+  type: "move";
+  before: Array<{ id: string; points: Array<{ x: number; y: number }> }>;
+  after: Array<{ id: string; points: Array<{ x: number; y: number }> }>;
+  count: number;
+}
+
+/**
+ * Task #1723 — Format a history entry for the toolbar tooltip. Pure
+ * helper so the label rendering stays consistent between the Undo and
+ * Redo buttons and is unit-testable independently of the layer.
+ */
+export function describeHistoryEntry(entry: MarkupMoveHistoryEntry): string {
+  if (entry.type === "move") {
+    const n = entry.count;
+    return n === 1 ? "Move 1 markup" : `Move ${n} markups`;
+  }
+  return "Edit";
 }
 
 interface ServerMarkup extends MarkupShape {
@@ -154,7 +223,7 @@ export default function PlanMarkupLayer({
   spacePanActive,
   activeLayerId = null,
   hiddenLayerIds,
-  onUndoChange,
+  onHistoryChange,
 }: PlanMarkupLayerProps) {
   const { toast } = useToast();
   // Selection is stored as a set so SELECT + Shift can multi-select.
@@ -181,17 +250,21 @@ export default function PlanMarkupLayer({
     origY: number;
     siblings: KonvaNode[];
   } | null>(null);
-  // Task #1705 — pre-move points of the most recent group/selection
-  // drag, kept so the user can undo the bulk move with Cmd/Ctrl+Z or
-  // the toolbar Undo button. Single-step: undo consumes the snapshot.
-  // Captured in `onDragEnd` (after Task #1706's ref-based drag has
-  // resolved the final delta) so the snapshot reflects the points the
-  // user actually dragged away from.
-  const [lastMoveSnapshot, setLastMoveSnapshot] = useState<
-    Array<{ id: string; points: Array<{ x: number; y: number }> }> | null
-  >(null);
-  const lastMoveSnapshotRef = useRef<typeof lastMoveSnapshot>(null);
-  lastMoveSnapshotRef.current = lastMoveSnapshot;
+  // Task #1705 / Task #1723 — Bounded undo stack + forward redo stack
+  // for group/selection drags. The drag handler captures both the
+  // pre-move and post-move points (after Task #1706's ref-based drag
+  // has resolved the final delta) and pushes a fresh entry onto the
+  // undo stack; firing a new move clears any pending redo entries
+  // (standard undo-history contract). Refs mirror the state so the
+  // global keyboard listener and the parent-facing handlers see the
+  // latest stack contents without needing to be re-bound on every
+  // edit.
+  const [undoStack, setUndoStack] = useState<MarkupMoveHistoryEntry[]>([]);
+  const [redoStack, setRedoStack] = useState<MarkupMoveHistoryEntry[]>([]);
+  const undoStackRef = useRef<MarkupMoveHistoryEntry[]>([]);
+  const redoStackRef = useRef<MarkupMoveHistoryEntry[]>([]);
+  undoStackRef.current = undoStack;
+  redoStackRef.current = redoStack;
   // Task #1653 — anchor for the in-canvas text input that replaces the
   // legacy `window.prompt()` flow. Coordinates are normalized 0-1 to
   // match `MarkupShape.points`; we denormalize when positioning the
@@ -344,56 +417,103 @@ export default function PlanMarkupLayer({
     onSettled: () => invalidate(),
   });
 
-  // Task #1705 — Undo the most recent group move by re-issuing the same
-  // bulk-PATCH with the captured pre-move points. The snapshot is
-  // consumed (cleared) so a second Cmd/Ctrl+Z does nothing — group
-  // moves are explicitly single-step. The bulk PATCH route handles the
-  // optimistic cache rewrite + rollback identically to a forward move,
-  // so the UI rolls back atomically.
+  // Task #1723 — Undo / redo helpers. Both pop from one stack and push
+  // onto the other, then re-issue the same bulk-PATCH that originally
+  // applied the move (Undo replays `before`, Redo replays `after`). If
+  // the bulk-PATCH itself fails the entry is restored to its source
+  // stack so the user can retry — symmetric with how a fresh forward
+  // move pops itself off the undo stack on failure.
   const undoLastMove = useCallback(() => {
-    const snap = lastMoveSnapshotRef.current;
-    if (!snap || snap.length === 0) return;
-    setLastMoveSnapshot(null);
-    bulkMoveMutation.mutate(snap);
+    const stack = undoStackRef.current;
+    if (stack.length === 0) return;
+    const entry = stack[stack.length - 1];
+    setUndoStack((prev) => prev.slice(0, -1));
+    setRedoStack((prev) => [...prev, entry]);
+    bulkMoveMutation.mutate(entry.before, {
+      onError: () => {
+        // Roll back the stack swap so the user can try again. We push
+        // the entry back to the front of the undo stack and remove it
+        // from the redo stack — both stacks are mutated optimistically
+        // above, so any new edits the user fired in between would
+        // already have cleared the redo stack regardless.
+        setUndoStack((prev) => [...prev, entry]);
+        setRedoStack((prev) => prev.filter((e) => e !== entry));
+      },
+    });
   }, [bulkMoveMutation]);
 
-  // Task #1705 — surface the undo handler to the parent toolbar. We
-  // pass either a stable callback (when there's a snapshot) or null
-  // (when there isn't) so the parent can render the Undo button as
-  // enabled/disabled. The callback identity itself is stable, so the
-  // parent doesn't see needless re-renders mid-drag.
-  useEffect(() => {
-    if (!onUndoChange) return;
-    onUndoChange(lastMoveSnapshot ? undoLastMove : null);
-  }, [lastMoveSnapshot, undoLastMove, onUndoChange]);
+  const redoLastMove = useCallback(() => {
+    const stack = redoStackRef.current;
+    if (stack.length === 0) return;
+    const entry = stack[stack.length - 1];
+    setRedoStack((prev) => prev.slice(0, -1));
+    setUndoStack((prev) => [...prev, entry]);
+    bulkMoveMutation.mutate(entry.after, {
+      onError: () => {
+        setRedoStack((prev) => [...prev, entry]);
+        setUndoStack((prev) => prev.filter((e) => e !== entry));
+      },
+    });
+  }, [bulkMoveMutation]);
 
-  // Task #1705 — clear the snapshot when the user navigates to a
-  // different page or document. Undo against a stale page would
+  // Task #1705 / Task #1723 — surface the current history shape to the
+  // parent toolbar. Either handler is `null` when its stack is empty so
+  // the parent can disable the matching button without tracking depth.
+  // The labels describe the action that would be reversed/replayed
+  // (e.g. "Move 5 markups") so the tooltip can be specific.
+  useEffect(() => {
+    if (!onHistoryChange) return;
+    const undoTop = undoStack[undoStack.length - 1] ?? null;
+    const redoTop = redoStack[redoStack.length - 1] ?? null;
+    onHistoryChange({
+      undo: undoTop ? undoLastMove : null,
+      redo: redoTop ? redoLastMove : null,
+      undoLabel: undoTop ? describeHistoryEntry(undoTop) : null,
+      redoLabel: redoTop ? describeHistoryEntry(redoTop) : null,
+    });
+  }, [undoStack, redoStack, undoLastMove, redoLastMove, onHistoryChange]);
+
+  // Task #1705 — clear both stacks when the user navigates to a
+  // different page or document. Undo/redo against a stale page would
   // silently mutate hidden markups, which is confusing.
   useEffect(() => {
-    setLastMoveSnapshot(null);
+    setUndoStack([]);
+    setRedoStack([]);
   }, [documentId, pageNumber]);
 
-  // Task #1705 — global Cmd/Ctrl+Z handler. Attached only while there
-  // is something to undo so we never compete with browser/text-input
-  // undo when there's no group move to roll back. Shift+Cmd/Ctrl+Z
-  // (redo) is intentionally ignored — single-step undo is the spec.
+  // Task #1705 / Task #1723 — global keyboard handlers for Undo (Ctrl/
+  // Cmd+Z) and Redo (Ctrl/Cmd+Shift+Z, plus Ctrl+Y for Windows muscle
+  // memory). Attached only while at least one stack has contents so we
+  // never compete with browser/text-input undo when there's nothing to
+  // walk through. The listener reads the latest stack via refs so a
+  // single registration covers any number of subsequent edits.
   useEffect(() => {
-    if (!lastMoveSnapshot) return;
+    if (undoStack.length === 0 && redoStack.length === 0) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return;
-      if (e.shiftKey) return;
-      if (e.key !== "z" && e.key !== "Z") return;
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       const editable = (e.target as HTMLElement | null)?.isContentEditable;
       if (editable) return;
-      e.preventDefault();
-      undoLastMove();
+      const key = e.key.toLowerCase();
+      if (key === "z" && !e.shiftKey) {
+        if (undoStackRef.current.length === 0) return;
+        e.preventDefault();
+        undoLastMove();
+        return;
+      }
+      // Redo: Ctrl/Cmd+Shift+Z OR Ctrl+Y (Windows convention). Cmd+Y
+      // on macOS is "history" in browsers, so we keep the Y shortcut
+      // gated on Ctrl rather than the meta key.
+      if ((key === "z" && e.shiftKey) || (key === "y" && e.ctrlKey && !e.metaKey)) {
+        if (redoStackRef.current.length === 0) return;
+        e.preventDefault();
+        redoLastMove();
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [lastMoveSnapshot, undoLastMove]);
+  }, [undoStack.length, redoStack.length, undoLastMove, redoLastMove]);
 
   // For the toolbar/anchor we still highlight the most-recently-selected
   // markup, but groups expand so the whole sibling set highlights.
@@ -667,18 +787,41 @@ export default function PlanMarkupLayer({
             dy / canvasHeight,
           );
           if (updates.length === 0) return;
-          // Task #1705 — capture pre-move points BEFORE the optimistic
-          // update rewrites the cache, so a subsequent undo restores
-          // exactly the layout the user dragged away from.
-          setLastMoveSnapshot(buildMoveSnapshot(markups, memberIds));
+          // Task #1705 / Task #1723 — capture both the pre-move points
+          // (`before`, used by undo) and the post-move points
+          // (`after`, used by redo) BEFORE the optimistic update
+          // rewrites the cache. The new entry is pushed onto the
+          // bounded undo stack and the redo stack is cleared (a fresh
+          // edit always invalidates any pending redo entries — the
+          // standard contract every editor follows). Older entries
+          // beyond `MAX_MARKUP_HISTORY` are dropped from the front so
+          // the stack stays bounded.
+          const before = buildMoveSnapshot(markups, memberIds);
+          const after = updates.map((u) => ({
+            id: u.id,
+            points: u.points.map((p) => ({ x: p.x, y: p.y })),
+          }));
+          const entry: MarkupMoveHistoryEntry = {
+            type: "move",
+            before,
+            after,
+            count: before.length,
+          };
+          setUndoStack((prev) => {
+            const next = [...prev, entry];
+            return next.length > MAX_MARKUP_HISTORY
+              ? next.slice(next.length - MAX_MARKUP_HISTORY)
+              : next;
+          });
+          setRedoStack([]);
           bulkMoveMutation.mutate(updates, {
             // If the forward move never landed (server error,
             // permission denied, etc.) the cache rolls back via the
-            // shared onError above. Clear the just-captured snapshot
-            // too so the user does not see an Undo button for a move
-            // that didn't actually happen — pressing it would issue a
+            // shared onError above. Pop the just-pushed entry too so
+            // the user does not see an Undo button for a move that
+            // didn't actually happen — pressing it would issue a
             // no-op PATCH against the already-restored points.
-            onError: () => setLastMoveSnapshot(null),
+            onError: () => setUndoStack((prev) => prev.filter((e) => e !== entry)),
           });
         },
       };

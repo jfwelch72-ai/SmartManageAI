@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense } from "react";
 import PdfPreview from "@/components/PdfPreview";
 import { PlanPinLayer, PinPicker, PinCreateDialog, type PinFilter, type PinType, type PlanPin } from "@/components/PlanPinLayer";
-import PlanMarkupLayer from "@/components/markups/PlanMarkupLayer";
+import PlanMarkupLayer, { type MarkupHistoryState } from "@/components/markups/PlanMarkupLayer";
 import UnifiedPlanToolbar from "@/components/plans/UnifiedPlanToolbar";
 import MarkupLayersPanel from "@/components/markups/MarkupLayersPanel";
 import type { MarkupTool } from "@/components/markups/MarkupRenderer";
@@ -339,19 +339,45 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const [markupTool, setMarkupTool] = useState<MarkupTool | null>(null);
   const [markupColor, setMarkupColor] = useState<string>("#ef4444");
   const [markupThickness, setMarkupThickness] = useState<number>(2);
-  // Task #1705 — Holds the latest "undo last group move" callback that
-  // <PlanMarkupLayer /> reports up via `onUndoChange`. We pass it to
-  // <UnifiedPlanToolbar /> so the Undo button next to the markup tools
-  // can fire the same handler the Cmd/Ctrl+Z shortcut runs. Wrapped in
-  // an object so React's `setState(fn)` functional-updater contract
-  // doesn't accidentally invoke the callback during state writes.
-  const [markupUndoMove, setMarkupUndoMove] = useState<{ fn: () => void } | null>(null);
-  const handleMarkupUndoChange = useCallback(
-    (undo: (() => void) | null) => {
-      setMarkupUndoMove(undo ? { fn: undo } : null);
+  // Task #1705 / Task #1723 — Holds the latest undo / redo state that
+  // <PlanMarkupLayer /> reports up via `onHistoryChange`. We forward
+  // it to <UnifiedPlanToolbar /> so the Undo + Redo buttons next to
+  // the markup tools fire the same handlers the Cmd/Ctrl+Z and
+  // Cmd/Ctrl+Shift+Z shortcuts run, and the tooltips can spell out
+  // exactly which action will be reversed (e.g. "Undo Move 5 markups").
+  // Default value keeps both handlers null so the buttons render
+  // disabled before the layer has reported any history.
+  const [markupHistory, setMarkupHistory] = useState<MarkupHistoryState>({
+    undo: null,
+    redo: null,
+    undoLabel: null,
+    redoLabel: null,
+  });
+  const handleMarkupHistoryChange = useCallback(
+    (state: MarkupHistoryState) => {
+      setMarkupHistory(state);
     },
     [],
   );
+  // Task #1723 — Stable wrapper callbacks so the Undo / Redo buttons
+  // stay mounted at all times (driven by `canUndoLastMove` /
+  // `canRedoLastMove` for enabled state). If we passed the raw
+  // `markupHistory.undo` reference straight through, it would be
+  // `undefined` whenever the stack is empty and the toolbar (which
+  // conditionally mounts the button on the handler being defined)
+  // would *unmount* the button — making it disappear and re-appear
+  // mid-edit instead of merely toggling the disabled state. Reading
+  // through a ref also keeps the callback identity stable across
+  // re-renders so `<PlanMarkupToolbar />` doesn't see needless prop
+  // churn while the user is dragging.
+  const markupHistoryRef = useRef<MarkupHistoryState>(markupHistory);
+  markupHistoryRef.current = markupHistory;
+  const handleMarkupUndo = useCallback(() => {
+    markupHistoryRef.current.undo?.();
+  }, []);
+  const handleMarkupRedo = useCallback(() => {
+    markupHistoryRef.current.redo?.();
+  }, []);
   // Task #1659 — hold-spacebar-to-pan from any tool (Figma / Bluebeam style).
   const [spacePanActive, setSpacePanActive] = useState(false);
   // Task #1662 — active layer + visibility set are owned here so the
@@ -2549,8 +2575,12 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                           setPreviewDocId(null);
                           window.setTimeout(() => startPlansTour(), 250);
                         }}
-                        onUndoLastMove={markupUndoMove ? markupUndoMove.fn : undefined}
-                        canUndoLastMove={!!markupUndoMove}
+                        onUndoLastMove={handleMarkupUndo}
+                        canUndoLastMove={!!markupHistory.undo}
+                        onRedoLastMove={handleMarkupRedo}
+                        canRedoLastMove={!!markupHistory.redo}
+                        undoLabel={markupHistory.undoLabel}
+                        redoLabel={markupHistory.redoLabel}
                       />
                     )}
                     <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
@@ -2628,7 +2658,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                   spacePanActive={spacePanActive}
                                   activeLayerId={activeMarkupLayerId}
                                   hiddenLayerIds={hiddenMarkupLayerIds}
-                                  onUndoChange={handleMarkupUndoChange}
+                                  onHistoryChange={handleMarkupHistoryChange}
                                 />
                                 {pickerPosition && pendingPin && pendingPin.pageNumber === pageNumber && !isMobilePin && (
                                   <PinPicker
