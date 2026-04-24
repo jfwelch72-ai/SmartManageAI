@@ -654,6 +654,83 @@ router.get(
   },
 );
 
+// ============================================================
+// Task #1666 — org-wide scheduled email failures dashboard
+// ============================================================
+//
+// Per-project send history (Task #1652) lives inside the project
+// settings card, so admins triaging failures across many projects
+// have to open each one to audit attempts. This endpoint surfaces
+// every failing schedule across the caller's org in a single call so
+// the new "scheduled email failures" dashboard can list them and
+// expose a per-row "View history" popover that hits the existing
+// `GET .../attempts` endpoint.
+//
+// "Failing" means the most recent attempt status is FAILURE or
+// NO_RECIPIENTS — i.e. the same conditions that drive the per-project
+// "Last send failed" badge (Task #1622). SUCCESS rows and never-sent
+// rows are intentionally excluded; the dashboard is for triage, not
+// inventory.
+//
+// Capped at 200 rows so a misconfigured org with hundreds of stale
+// schedules can't blow the response. The UI defaults to 50.
+const ORG_FAILURES_DEFAULT_LIMIT = 50;
+const ORG_FAILURES_MAX_LIMIT = 200;
+router.get(
+  "/log-email-schedule-failures",
+  requireAuth,
+  // Same role gate as the per-project schedule endpoints — anyone who
+  // can edit the cadence on a project can see the org-wide failures
+  // dashboard.
+  requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
+
+      const limitRaw = Number.parseInt(String(req.query.limit ?? ""), 10);
+      const limit = Number.isFinite(limitRaw) && limitRaw > 0
+        ? Math.min(limitRaw, ORG_FAILURES_MAX_LIMIT)
+        : ORG_FAILURES_DEFAULT_LIMIT;
+
+      // Inner-join projects so we can render "Project name (code)" on
+      // each row without a second round-trip. Tenant-scoping on both
+      // sides of the join is defense-in-depth: an attacker who somehow
+      // controlled `organization_id` on a schedule row still couldn't
+      // surface a project from a different tenant.
+      const rows = await db
+        .select({
+          scheduleId: projectLogEmailSchedules.id,
+          projectId: projectLogEmailSchedules.projectId,
+          projectName: projects.name,
+          projectCode: projects.code,
+          logType: projectLogEmailSchedules.logType,
+          cadence: projectLogEmailSchedules.cadence,
+          lastAttemptAt: projectLogEmailSchedules.lastAttemptAt,
+          lastAttemptStatus: projectLogEmailSchedules.lastAttemptStatus,
+          lastAttemptError: projectLogEmailSchedules.lastAttemptError,
+          lastAttemptRecipientCount: projectLogEmailSchedules.lastAttemptRecipientCount,
+          consecutiveFailureCount: projectLogEmailSchedules.consecutiveFailureCount,
+        })
+        .from(projectLogEmailSchedules)
+        .innerJoin(projects, and(
+          eq(projects.id, projectLogEmailSchedules.projectId),
+          eq(projects.gcOrganizationId, organizationId),
+        ))
+        .where(and(
+          eq(projectLogEmailSchedules.organizationId, organizationId),
+          inArray(projectLogEmailSchedules.lastAttemptStatus, ["FAILURE", "NO_RECIPIENTS"]),
+        ))
+        .orderBy(desc(projectLogEmailSchedules.lastAttemptAt))
+        .limit(limit);
+
+      res.json({ failures: rows });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
 // =========================
 // Project Log Email — per-org failure threshold (Task #1668)
 // =========================

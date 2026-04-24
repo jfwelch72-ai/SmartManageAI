@@ -239,6 +239,7 @@ const DeveloperPortalPage = lazy(() => import("@/pages/developer-portal"));
 const AdminEmailOutboxPage = lazy(() => import("@/pages/admin-email-outbox"));
 const AdminStatusPage = lazy(() => import("@/pages/admin-status"));
 const AdminTranscriptBackfillPage = lazy(() => import("@/pages/admin-transcript-backfill"));
+const AdminLogEmailFailuresPage = lazy(() => import("@/pages/admin-log-email-failures"));
 const EnterpriseSettingsPage = lazy(() => import("@/pages/enterprise-settings"));
 const ReportsPage = lazy(() => import("@/pages/reports"));
 const SafetyTrainingPage = lazy(() => import("@/pages/safety-training"));
@@ -422,6 +423,14 @@ function Router() {
       <Route path="/admin/email-outbox" component={() => <ProtectedRoute component={AdminEmailOutboxPage} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/status" component={() => <ProtectedRoute component={AdminStatusPage} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/transcript-backfill" component={() => <ProtectedRoute component={AdminTranscriptBackfillPage} permission={(role) => role === "ADMIN" || role === "SUPER_ADMIN"} />} />
+      {/* Task #1666 — org-wide scheduled email failures dashboard.
+          Role gate mirrors the backend (`requireRole("SUPER_ADMIN",
+          "ADMIN", "MANAGER", "SUPERINTENDENT")` on
+          `GET /api/log-email-schedule-failures`) and the per-project
+          settings card those same roles can already edit, so a
+          manager/superintendent who can change cadences can also
+          triage failures across the org. */}
+      <Route path="/admin/log-email-failures" component={() => <ProtectedRoute component={AdminLogEmailFailuresPage} permission={(role) => role === "ADMIN" || role === "SUPER_ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT"} />} />
       <Route path="/enterprise-settings" component={() => <ProtectedRoute component={EnterpriseSettingsPage} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       <Route path="/cost-codes" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=cost-codes" />} permission={RoutePermissions.COMPANY_SETTINGS} />} />
       

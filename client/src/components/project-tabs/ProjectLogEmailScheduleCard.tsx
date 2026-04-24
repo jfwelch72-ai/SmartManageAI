@@ -17,15 +17,17 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { AlertCircle, CheckCircle2, ChevronDown, ChevronRight, History, Loader2, Mail, MailWarning, Send } from "lucide-react";
+import { AlertCircle, CheckCircle2, Loader2, Mail, MailWarning, Send } from "lucide-react";
 import { format } from "date-fns";
 import {
   COMMON_TIMEZONES,
   DIGEST_CADENCES,
   DIGEST_WEEKDAYS,
 } from "@/components/settings/types";
+import {
+  RecentAttemptsCollapsible,
+  buildAttemptsQueryKey,
+} from "@/components/log-email/RecentAttempts";
 
 type Cadence = "OFF" | "DAILY" | "WEEKLY" | "BIWEEKLY";
 type LogType = "RFI" | "SUBMITTAL";
@@ -240,9 +242,11 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast, failureThresh
       // attempt row this send just wrote shows up immediately. Without
       // this, the global `staleTime: Infinity` in queryClient means the
       // collapsible would keep displaying yesterday's data until the
-      // user closed and re-opened the panel.
+      // user closed and re-opened the panel. Builder shared with the
+      // org-wide failures dashboard (Task #1666) so a single source of
+      // truth keys the cache.
       queryClient.invalidateQueries({
-        queryKey: ["/api/projects", projectId, "log-email-schedules", schedule.logType, "attempts"],
+        queryKey: buildAttemptsQueryKey(projectId, schedule.logType),
       });
     },
     onError: (err) => {
@@ -315,21 +319,29 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast, failureThresh
           button (and inherits its toasts + cache invalidations).
           We disable retry while there are unsaved cadence edits to
           avoid the same "send now triggers stale config" footgun
-          the main button guards against. */}
+          the main button guards against.
+
+          Task #1666 — the collapsible itself was extracted into a
+          shared component so the org-wide failures dashboard can
+          render the same table behind a "View history" popover
+          without duplicating the fetch shape. The dashboard call
+          site omits the `retry` prop, so its popover is read-only. */}
       {schedule.id !== null && (
-        <RecentAttempts
+        <RecentAttemptsCollapsible
           projectId={projectId}
           logType={schedule.logType}
           testIdSuffix={testIdSuffix}
-          onRetry={canSendNow ? () => sendNowMutation.mutate() : null}
-          isRetrying={sendNowMutation.isPending}
-          retryDisabled={sendNowDisabled}
-          retryDisabledReason={
-            !canSendNow
-              ? "Set a cadence and save the schedule before retrying."
-              : dirty
-                ? "Save your unsaved changes first, then retry."
-                : null
+          retry={
+            canSendNow
+              ? {
+                  onRetry: () => sendNowMutation.mutate(),
+                  isRetrying: sendNowMutation.isPending,
+                  disabled: sendNowDisabled,
+                  disabledReason: dirty
+                    ? "Save your unsaved changes first, then retry."
+                    : null,
+                }
+              : null
           }
         />
       )}
@@ -557,200 +569,20 @@ function AttemptFailureDetail({
 }
 
 // ============================================================
-// Task #1652 — per-schedule send history
+// Task #1652 — per-schedule send history (extracted)
 // ============================================================
 //
-// Lazy-loaded collapsible that fetches and renders the most recent
-// 10 attempts (cron + manual) so admins debugging a flaky
-// distribution list can see trend data instead of just the most
-// recent attempt that's already on the schedule row. Open-state
-// triggers the fetch (`enabled: open`) so an admin who never
-// expands the section doesn't pay for the query.
-interface AttemptRow {
-  id: string;
-  status: AttemptStatus;
-  error: string | null;
-  recipientCount: number;
-  triggerType: "CRON" | "MANUAL";
-  triggeredById: string | null;
-  triggeredByLabel: string;
-  createdAt: string;
-}
-
-function RecentAttempts({
-  projectId,
-  logType,
-  testIdSuffix,
-  onRetry,
-  isRetrying,
-  retryDisabled,
-  retryDisabledReason,
-}: {
-  projectId: string;
-  logType: LogType;
-  testIdSuffix: string;
-  // Task #1664 — null when the schedule cannot be retried at all
-  // (e.g. cadence is OFF). When non-null, FAILURE rows show a Retry
-  // button that invokes this callback.
-  onRetry: (() => void) | null;
-  isRetrying: boolean;
-  retryDisabled: boolean;
-  retryDisabledReason: string | null;
-}) {
-  const [open, setOpen] = useState(false);
-  const queryKey = useMemo(
-    () => ["/api/projects", projectId, "log-email-schedules", logType, "attempts"] as const,
-    [projectId, logType],
-  );
-  const { data, isLoading, isError } = useQuery<{ attempts: AttemptRow[] }>({
-    queryKey,
-    enabled: open,
-  });
-
-  const attempts = data?.attempts ?? [];
-
-  return (
-    <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger asChild>
-        <button
-          type="button"
-          className="flex items-center gap-1 text-xs text-muted-foreground hover-elevate active-elevate-2 rounded px-2 py-1 -ml-2"
-          data-testid={`button-toggle-attempt-history-${testIdSuffix}`}
-        >
-          {open ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-          <History className="w-3 h-3" />
-          <span>Recent attempts</span>
-        </button>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="pt-2">
-        {isLoading ? (
-          <div className="space-y-2" data-testid={`loading-attempt-history-${testIdSuffix}`}>
-            <Skeleton className="h-6 w-full" />
-            <Skeleton className="h-6 w-full" />
-            <Skeleton className="h-6 w-full" />
-          </div>
-        ) : isError ? (
-          <p className="text-xs text-muted-foreground" data-testid={`error-attempt-history-${testIdSuffix}`}>
-            Couldn't load the send history. Try collapsing and re-opening this section.
-          </p>
-        ) : attempts.length === 0 ? (
-          <p className="text-xs text-muted-foreground" data-testid={`empty-attempt-history-${testIdSuffix}`}>
-            No attempts recorded yet. The next scheduled cron tick (or a manual "Send now" click) will appear here.
-          </p>
-        ) : (
-          <div className="rounded-md border overflow-hidden" data-testid={`table-attempt-history-${testIdSuffix}`}>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-xs">When</TableHead>
-                  <TableHead className="text-xs">Status</TableHead>
-                  <TableHead className="text-xs">Triggered by</TableHead>
-                  <TableHead className="text-xs text-right">Recipients</TableHead>
-                  {/* Task #1664 — actions column hosts the per-row
-                      Retry button on FAILURE rows. We only render
-                      the column when retry is wired up at all
-                      (cadence != OFF, schedule persisted) so we
-                      don't add a permanently empty column for
-                      retired schedules. */}
-                  {onRetry !== null && <TableHead className="text-xs text-right w-0">Actions</TableHead>}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {attempts.map((a) => (
-                  <TableRow key={a.id} data-testid={`row-attempt-${testIdSuffix}-${a.id}`}>
-                    <TableCell className="text-xs whitespace-nowrap" data-testid={`text-attempt-when-${a.id}`}>
-                      {formatAttemptTime(a.createdAt)}
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      <AttemptHistoryBadge status={a.status} attemptId={a.id} />
-                      {a.error && (a.status === "FAILURE" || a.status === "NO_RECIPIENTS") && (
-                        <p
-                          className="text-xs text-muted-foreground break-words mt-1"
-                          data-testid={`text-attempt-error-${a.id}`}
-                        >
-                          {a.error}
-                        </p>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs" data-testid={`text-attempt-trigger-${a.id}`}>
-                      {a.triggerType === "CRON" ? (
-                        <span title="Automatic scheduled send">Scheduled run</span>
-                      ) : (
-                        <span title="Manual 'Send now' click">{a.triggeredByLabel}</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-xs text-right tabular-nums" data-testid={`text-attempt-recipients-${a.id}`}>
-                      {a.recipientCount}
-                    </TableCell>
-                    {/* Task #1664 — Retry action. Only meaningful
-                        for FAILURE rows; SUCCESS / NO_RECIPIENTS
-                        rows render an empty cell so column
-                        alignment stays consistent. */}
-                    {onRetry !== null && (
-                      <TableCell className="text-xs text-right">
-                        {a.status === "FAILURE" && (
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="outline"
-                            disabled={retryDisabled}
-                            onClick={() => onRetry()}
-                            data-testid={`button-retry-attempt-${a.id}`}
-                            title={
-                              retryDisabledReason ??
-                              "Retry this send using the saved cadence's recipients."
-                            }
-                          >
-                            {isRetrying ? (
-                              <Loader2 className="w-3 h-3 mr-1 animate-spin" />
-                            ) : (
-                              <Send className="w-3 h-3 mr-1" />
-                            )}
-                            Retry
-                          </Button>
-                        )}
-                      </TableCell>
-                    )}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        )}
-      </CollapsibleContent>
-    </Collapsible>
-  );
-}
-
-function AttemptHistoryBadge({ status, attemptId }: { status: AttemptStatus; attemptId: string }) {
-  if (status === "SUCCESS") {
-    return (
-      <Badge
-        variant="outline"
-        className="border-emerald-500 text-emerald-700 dark:text-emerald-400"
-        data-testid={`badge-attempt-status-${attemptId}`}
-      >
-        <CheckCircle2 className="w-3 h-3 mr-1" /> Sent
-      </Badge>
-    );
-  }
-  if (status === "NO_RECIPIENTS") {
-    return (
-      <Badge
-        variant="outline"
-        className="border-amber-500 text-amber-700 dark:text-amber-400"
-        data-testid={`badge-attempt-status-${attemptId}`}
-      >
-        <MailWarning className="w-3 h-3 mr-1" /> No recipients
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="destructive" data-testid={`badge-attempt-status-${attemptId}`}>
-      <AlertCircle className="w-3 h-3 mr-1" /> Failed
-    </Badge>
-  );
-}
+// The collapsible audit trail used to live here as a private
+// `RecentAttempts` component plus an `AttemptHistoryBadge` helper.
+// Task #1666 moved both into `@/components/log-email/RecentAttempts`
+// so the new org-wide "scheduled email failures" dashboard can render
+// the same table inside a per-row "View history" popover. Both call
+// sites still hit the same `GET .../attempts` endpoint — there is no
+// second underlying API.
+//
+// Task #1664's per-row Retry button now lives on the shared component
+// behind an optional `retry` prop, which the project settings card
+// supplies (and the dashboard's read-only popover omits).
 
 // Task #1667 — at-a-glance streak indicator beside the per-attempt
 // status badge. Hidden when the streak is 0 (no signal worth showing
