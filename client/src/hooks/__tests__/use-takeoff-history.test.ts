@@ -149,6 +149,91 @@ describe("useTakeoffHistory MARKUP_UPDATE", () => {
     expect(result.current.canRedo).toBe(false);
   });
 
+  // Task #1758 — bulk color/thickness style edits coalesce into one
+  // MARKUP_UPDATE_BATCH entry the same way body drags do (Task #1755),
+  // so one Undo press reverses every member's prior style and one Redo
+  // press reapplies the new style.
+  it("MARKUP_UPDATE_BATCH undo/redo restores per-member color and thickness", async () => {
+    const { result } = renderHook(() => useTakeoffHistory("sheet-1"));
+
+    act(() => {
+      result.current.pushMarkupUpdateBatchAction(
+        [
+          { id: "a", color: "#000000", thickness: 2 },
+          { id: "b", color: "#222222", thickness: 4 },
+        ],
+        [
+          { id: "a", color: "#ff0000", thickness: 6 },
+          { id: "b", color: "#ff0000", thickness: 6 },
+        ],
+        "sheet-1",
+      );
+    });
+
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(false);
+
+    await act(async () => { await result.current.undo(); });
+    expect(apiRequestMock.mock.calls).toEqual(
+      expect.arrayContaining([
+        ["PATCH", "/api/takeoff/markups/a", { color: "#000000", thickness: 2 }],
+        ["PATCH", "/api/takeoff/markups/b", { color: "#222222", thickness: 4 }],
+      ]),
+    );
+    expect(result.current.canUndo).toBe(false);
+    expect(result.current.canRedo).toBe(true);
+
+    apiRequestMock.mockClear();
+    await act(async () => { await result.current.redo(); });
+    expect(apiRequestMock.mock.calls).toEqual(
+      expect.arrayContaining([
+        ["PATCH", "/api/takeoff/markups/a", { color: "#ff0000", thickness: 6 }],
+        ["PATCH", "/api/takeoff/markups/b", { color: "#ff0000", thickness: 6 }],
+      ]),
+    );
+    expect(result.current.canUndo).toBe(true);
+    expect(result.current.canRedo).toBe(false);
+  });
+
+  // Task #1758 — bulk-renaming N TEXT markups to the same string also
+  // collapses into one MARKUP_UPDATE_BATCH entry. Each member's before
+  // snapshot must preserve its individual prior label so Undo restores
+  // them independently (not all to a shared value).
+  it("MARKUP_UPDATE_BATCH undo/redo restores per-member text labels", async () => {
+    const { result } = renderHook(() => useTakeoffHistory("sheet-1"));
+
+    act(() => {
+      result.current.pushMarkupUpdateBatchAction(
+        [
+          { id: "t1", text: "TBD" },
+          { id: "t2", text: "old label" },
+        ],
+        [
+          { id: "t1", text: "Stair detail" },
+          { id: "t2", text: "Stair detail" },
+        ],
+        "sheet-1",
+      );
+    });
+
+    await act(async () => { await result.current.undo(); });
+    expect(apiRequestMock.mock.calls).toEqual(
+      expect.arrayContaining([
+        ["PATCH", "/api/takeoff/markups/t1", { text: "TBD" }],
+        ["PATCH", "/api/takeoff/markups/t2", { text: "old label" }],
+      ]),
+    );
+
+    apiRequestMock.mockClear();
+    await act(async () => { await result.current.redo(); });
+    expect(apiRequestMock.mock.calls).toEqual(
+      expect.arrayContaining([
+        ["PATCH", "/api/takeoff/markups/t1", { text: "Stair detail" }],
+        ["PATCH", "/api/takeoff/markups/t2", { text: "Stair detail" }],
+      ]),
+    );
+  });
+
   it("MARKUP_UPDATE_BATCH ignores empty snapshot arrays", () => {
     const { result } = renderHook(() => useTakeoffHistory("sheet-1"));
     act(() => {

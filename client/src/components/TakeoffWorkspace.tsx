@@ -306,6 +306,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     ? (selectedMarkupIds.values().next().value as string)
     : null;
   const [markupEditDraft, setMarkupEditDraft] = useState<{ color: string; thickness: number; text: string } | null>(null);
+  // Task #1758 — Initial values captured when the styling popover opens
+  // so a multi-selection bulk save can tell which fields the user
+  // actually touched. Without this, the bulk save would either over-
+  // apply unchanged fields across N markups or silently drop edits
+  // when the per-markup current value happened to equal the draft.
+  // For single-selection this stays semantically equivalent to the
+  // pre-#1758 `draft !== editing.color` check.
+  const [markupEditInitial, setMarkupEditInitial] = useState<{ color: string; thickness: number; text: string } | null>(null);
   // Task #1654 — Snap a markup's persisted thickness to the nearest
   // toolbar preset when opening the edit panel. Older markups created
   // before the toolbar/edit panel were aligned may have non-preset
@@ -900,12 +908,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     if (activeTool !== "select" && selectedMarkupIds.size > 0) {
       setSelectedMarkupIds(new Set());
       setMarkupEditDraft(null);
+      setMarkupEditInitial(null);
     }
   }, [activeTool, selectedMarkupIds]);
 
   useEffect(() => {
     setSelectedMarkupIds(new Set());
     setMarkupEditDraft(null);
+    setMarkupEditInitial(null);
   }, [selectedSheet]);
 
   const handleMarkupMouseDown = (e: any) => {
@@ -3997,21 +4007,29 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                             setSelectedMarkupIds(prev => {
                               if (shift) {
                                 const next = new Set(prev);
+                                const wasOpen = markupEditDraft !== null;
                                 if (next.has(markup.id)) next.delete(markup.id);
                                 else next.add(markup.id);
-                                // Edit panel stays in sync: opens when
-                                // the new set has exactly one member,
-                                // closes otherwise.
-                                if (next.size === 1) {
-                                  const onlyId = next.values().next().value as string;
-                                  if (onlyId === markup.id) setMarkupEditDraft(draft);
-                                  else setMarkupEditDraft(null);
-                                } else {
+                                // Task #1758 — Keep the edit panel open
+                                // for multi-selection so bulk color/
+                                // thickness edits become possible. If
+                                // the panel was closed, opening it
+                                // seeds the draft from the just-clicked
+                                // markup; if it was already open we
+                                // preserve in-progress edits so a
+                                // shift-click to grow the selection
+                                // does not clobber unsaved pickers.
+                                if (next.size === 0) {
                                   setMarkupEditDraft(null);
+                                  setMarkupEditInitial(null);
+                                } else if (!wasOpen) {
+                                  setMarkupEditDraft(draft);
+                                  setMarkupEditInitial(draft);
                                 }
                                 return next;
                               }
                               setMarkupEditDraft(draft);
+                              setMarkupEditInitial(draft);
                               return new Set([markup.id]);
                             });
                           }
@@ -4884,38 +4902,141 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         </div>
       )}
 
-      {selectedMarkupId && markupEditDraft && (() => {
-        const editing = markups.find(m => m.id === selectedMarkupId);
-        if (!editing) return null;
-        const isText = (editing.tool as string) === "TEXT";
-        const isHighlight = (editing.tool as string) === "HIGHLIGHT";
-        const close = () => { setSelectedMarkupIds(new Set()); setMarkupEditDraft(null); };
+      {selectedMarkupIds.size >= 1 && markupEditDraft && markupEditInitial && (() => {
+        const selectedMarkups = markups.filter(m => selectedMarkupIds.has(m.id));
+        if (selectedMarkups.length === 0) return null;
+        // Anchor: when only one is selected we use it directly; when
+        // multiple are selected we still pick the first as a header
+        // hint, but bulk save fans out across every selectedMarkup.
+        const anchor = selectedMarkups.find(m => m.id === selectedMarkupId) ?? selectedMarkups[0];
+        const isMulti = selectedMarkups.length > 1;
+        const allText = selectedMarkups.every(m => (m.tool as string) === "TEXT");
+        const allHighlight = selectedMarkups.every(m => (m.tool as string) === "HIGHLIGHT");
+        // Task #1758 — Text input shows for a single TEXT markup OR
+        // for a multi-selection that is exclusively TEXT markups (so a
+        // user can rename a group of labels to the same string in one
+        // shot). Mixed selections still hide it because bulk-renaming
+        // non-TEXT shapes has no meaning. The bulk save routes the
+        // text change through the same MARKUP_UPDATE_BATCH path as
+        // color/thickness so one Undo press reverts every renamed
+        // label.
+        const showTextInput = allText;
+        // Thickness applies to every non-text tool. If the selection
+        // is exclusively TEXT markups, hide the thickness control
+        // (matches existing single-select behavior).
+        const showThicknessInput = !allText;
+        const isHighlight = allHighlight;
+        const close = () => {
+          setSelectedMarkupIds(new Set());
+          setMarkupEditDraft(null);
+          setMarkupEditInitial(null);
+        };
+        // Task #1758 — Bulk style save. For a single-selection edit we
+        // keep the original path through `updateMarkupMutation`'s
+        // onSuccess (one MARKUP_UPDATE history entry, no behavior
+        // change). For a multi-selection bulk apply we mirror the
+        // body-drag pattern from Task #1755: build a single
+        // MARKUP_UPDATE_BATCH entry up front with per-markup before/
+        // after snapshots, then fan out N PATCHes with
+        // `skipHistory: true` so the per-mutation onSuccess does not
+        // push N additional MARKUP_UPDATE entries. Result: one Undo
+        // press reverts the whole bulk style change; one Redo
+        // reapplies it.
         const save = async () => {
-          const updates: { id: string; color?: string; thickness?: number; text?: string | null; previous?: { color?: string; thickness?: number; text?: string | null } } = { id: editing.id };
-          const previous: { color?: string; thickness?: number; text?: string | null } = {};
-          if (markupEditDraft.color !== editing.color) {
-            updates.color = markupEditDraft.color;
-            previous.color = editing.color;
+          const colorChanged = markupEditDraft.color !== markupEditInitial.color;
+          const thicknessChanged = markupEditDraft.thickness !== markupEditInitial.thickness;
+          const textChanged = showTextInput && markupEditDraft.text !== markupEditInitial.text;
+          if (!colorChanged && !thicknessChanged && !textChanged) {
+            close();
+            return;
           }
-          if (markupEditDraft.thickness !== editing.thickness) {
-            updates.thickness = markupEditDraft.thickness;
-            previous.thickness = editing.thickness;
-          }
-          if (isText) {
-            const newText = markupEditDraft.text;
-            if (newText !== (editing.text || "")) {
-              updates.text = newText;
+          if (!isMulti) {
+            const editing = anchor;
+            const updates: { id: string; color?: string; thickness?: number; text?: string | null; previous?: { color?: string; thickness?: number; text?: string | null } } = { id: editing.id };
+            const previous: { color?: string; thickness?: number; text?: string | null } = {};
+            if (colorChanged) {
+              updates.color = markupEditDraft.color;
+              previous.color = editing.color;
+            }
+            if (thicknessChanged && (editing.tool as string) !== "TEXT") {
+              updates.thickness = markupEditDraft.thickness;
+              previous.thickness = editing.thickness;
+            }
+            if (textChanged && (editing.tool as string) === "TEXT") {
+              updates.text = markupEditDraft.text;
               previous.text = editing.text ?? "";
             }
+            if (Object.keys(updates).length === 1) { close(); return; }
+            updates.previous = previous;
+            try {
+              await updateMarkupMutation.mutateAsync(updates);
+              toast({ title: "Markup updated" });
+              close();
+            } catch (err) {
+              console.warn("[Takeoff] Failed to update markup:", err);
+            }
+            return;
           }
-          if (Object.keys(updates).length === 1) { close(); return; }
-          updates.previous = previous;
+          // Multi-select bulk apply.
+          const beforeSnaps: { id: string; color?: string; thickness?: number; text?: string | null }[] = [];
+          const afterSnaps: { id: string; color?: string; thickness?: number; text?: string | null }[] = [];
+          const perMarkupUpdates: Array<{ id: string; color?: string; thickness?: number; text?: string | null; previous: { color?: string; thickness?: number; text?: string | null } }> = [];
+          for (const m of selectedMarkups) {
+            const before: { id: string; color?: string; thickness?: number; text?: string | null } = { id: m.id };
+            const after: { id: string; color?: string; thickness?: number; text?: string | null } = { id: m.id };
+            const previous: { color?: string; thickness?: number; text?: string | null } = {};
+            const updateFields: { color?: string; thickness?: number; text?: string | null } = {};
+            let hasChange = false;
+            if (colorChanged && m.color !== markupEditDraft.color) {
+              before.color = m.color;
+              after.color = markupEditDraft.color;
+              previous.color = m.color;
+              updateFields.color = markupEditDraft.color;
+              hasChange = true;
+            }
+            // Skip thickness on TEXT members — they have no stroke.
+            if (thicknessChanged && (m.tool as string) !== "TEXT" && m.thickness !== markupEditDraft.thickness) {
+              before.thickness = m.thickness;
+              after.thickness = markupEditDraft.thickness;
+              previous.thickness = m.thickness;
+              updateFields.thickness = markupEditDraft.thickness;
+              hasChange = true;
+            }
+            // Task #1758 — Bulk text edit. Only routed for TEXT
+            // members (the popover gates `showTextInput` to all-TEXT
+            // selections, and we double-check here). Each member's
+            // before snapshot keeps its individual prior label so
+            // Undo restores them independently rather than collapsing
+            // them all to the new shared string.
+            if (textChanged && (m.tool as string) === "TEXT" && (m.text ?? "") !== markupEditDraft.text) {
+              before.text = m.text ?? "";
+              after.text = markupEditDraft.text;
+              previous.text = m.text ?? "";
+              updateFields.text = markupEditDraft.text;
+              hasChange = true;
+            }
+            if (!hasChange) continue;
+            beforeSnaps.push(before);
+            afterSnaps.push(after);
+            perMarkupUpdates.push({ id: m.id, ...updateFields, previous });
+          }
+          if (perMarkupUpdates.length === 0) {
+            close();
+            return;
+          }
+          if (selectedSheet) {
+            takeoffHistory.pushMarkupUpdateBatchAction(beforeSnaps, afterSnaps, selectedSheet);
+          }
           try {
-            await updateMarkupMutation.mutateAsync(updates);
-            toast({ title: "Markup updated" });
+            await Promise.all(
+              perMarkupUpdates.map(u =>
+                updateMarkupMutation.mutateAsync({ ...u, skipHistory: true }),
+              ),
+            );
+            toast({ title: `Updated ${perMarkupUpdates.length} markups` });
             close();
           } catch (err) {
-            console.warn("[Takeoff] Failed to update markup:", err);
+            console.warn("[Takeoff] Failed to bulk-update markups:", err);
           }
         };
         return (
@@ -4924,12 +5045,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             data-testid="panel-markup-properties"
           >
             <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold">Edit markup</span>
+              <span className="text-sm font-semibold" data-testid="text-markup-edit-header">
+                {isMulti ? `Edit ${selectedMarkups.length} markups` : "Edit markup"}
+              </span>
               <Button variant="ghost" size="icon" className="h-6 w-6" onClick={close} data-testid="button-close-markup-properties">
                 <X className="w-4 h-4" />
               </Button>
             </div>
-            {isText && (
+            {showTextInput && (
               <div className="space-y-1">
                 <label className="text-xs text-muted-foreground">Label</label>
                 <Input
@@ -4952,7 +5075,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 <span className="text-xs font-mono">{markupEditDraft.color}</span>
               </div>
             </div>
-            {!isText && (
+            {showThicknessInput && (
               <div className="space-y-1">
                 <label className="text-xs text-muted-foreground">{isHighlight ? "Border thickness" : "Thickness"}: {markupEditDraft.thickness}px</label>
                 <div className="flex items-center gap-1" data-testid="input-markup-thickness">
@@ -4975,21 +5098,23 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               </div>
             )}
             <div className="flex items-center justify-between gap-2 pt-1">
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={async () => {
-                  try {
-                    await deleteMarkupMutation.mutateAsync(editing.id);
-                    close();
-                  } catch (err) {
-                    console.warn("[Takeoff] Failed to delete markup:", err);
-                  }
-                }}
-                data-testid="button-delete-markup"
-              >
-                Delete
-              </Button>
+              {!isMulti ? (
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  onClick={async () => {
+                    try {
+                      await deleteMarkupMutation.mutateAsync(anchor.id);
+                      close();
+                    } catch (err) {
+                      console.warn("[Takeoff] Failed to delete markup:", err);
+                    }
+                  }}
+                  data-testid="button-delete-markup"
+                >
+                  Delete
+                </Button>
+              ) : <div />}
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={close} data-testid="button-cancel-markup-edit">Cancel</Button>
                 <Button
