@@ -3678,3 +3678,89 @@ export const crmTranscriptBackfillAlertResendCooldowns = pgTable(
 );
 export type CrmTranscriptBackfillAlertResendCooldown =
   typeof crmTranscriptBackfillAlertResendCooldowns.$inferSelect;
+
+// ============================================
+// PLATFORM INCIDENT REVIEWS (Task #1578)
+// Lightweight platform-support concept that lets SUPER_ADMINs file an
+// incident review and attach the cross-org alert-failure CSVs (summary /
+// samples / quiet) directly from the "Recent alert failures" card.
+// Previously platform support had to download the CSV and re-upload it as
+// an attachment; storing the review + attachment rows here lets the
+// /api/crm/.../attach-to-incident-review handler stream the same CSV
+// branch into Replit object storage and link it back to the review.
+//
+// Reviews are platform-wide (no organizationId — they are typically about
+// a cross-org problem) and are limited to SUPER_ADMINs at the route layer.
+// ============================================
+export const platformIncidentReviews = pgTable(
+  "platform_incident_reviews",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    title: text("title").notNull(),
+    summary: text("summary"),
+    status: text("status").notNull().default("OPEN"),
+    createdById: varchar("created_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    statusIdx: index("platform_incident_reviews_status_idx").on(
+      table.status,
+      table.createdAt,
+    ),
+  }),
+);
+export const insertPlatformIncidentReviewSchema = createInsertSchema(
+  platformIncidentReviews,
+).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPlatformIncidentReview = z.infer<
+  typeof insertPlatformIncidentReviewSchema
+>;
+export type PlatformIncidentReview =
+  typeof platformIncidentReviews.$inferSelect;
+
+// One row per CSV attached to an incident review. Captures the dataset
+// branch ("summary" / "samples" / "quiet"), the windowHours used to
+// generate it, the SUPER_ADMIN actor, and the object-storage key the CSV
+// was streamed to, so the existing CSV audit row written by the
+// alert-failures-digest.csv endpoint stays the single source of truth for
+// "who pulled what, when" while the attachment row links the same pull to
+// the review record.
+export const platformIncidentReviewAttachments = pgTable(
+  "platform_incident_review_attachments",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    reviewId: varchar("review_id")
+      .notNull()
+      .references(() => platformIncidentReviews.id, { onDelete: "cascade" }),
+    source: text("source").notNull().default("alert_failures_digest"),
+    dataset: text("dataset").notNull(),
+    windowHours: integer("window_hours").notNull(),
+    fileName: text("file_name").notNull(),
+    objectKey: text("object_key").notNull(),
+    fileSize: integer("file_size").notNull().default(0),
+    contentType: text("content_type").notNull().default("text/csv"),
+    orgRowCount: integer("org_row_count").notNull().default(0),
+    sampleRowCount: integer("sample_row_count").notNull().default(0),
+    attachedById: varchar("attached_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    attachedAt: timestamp("attached_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    reviewIdx: index("platform_incident_review_attachments_review_idx").on(
+      table.reviewId,
+      table.attachedAt,
+    ),
+  }),
+);
+export const insertPlatformIncidentReviewAttachmentSchema = createInsertSchema(
+  platformIncidentReviewAttachments,
+).omit({ id: true, attachedAt: true });
+export type InsertPlatformIncidentReviewAttachment = z.infer<
+  typeof insertPlatformIncidentReviewAttachmentSchema
+>;
+export type PlatformIncidentReviewAttachment =
+  typeof platformIncidentReviewAttachments.$inferSelect;

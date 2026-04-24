@@ -98,7 +98,17 @@ import {
   transcribeCallRecording,
 } from "./services/callTranscriptionService";
 import { insertNotifications } from "./services/notificationService";
-import { objectStorageClient } from "./objectStorage";
+import { objectStorageClient, parseObjectPath } from "./objectStorage";
+import {
+  buildAlertFailuresDigestCsv,
+  clampAlertFailuresRecentSampleLimit,
+  clampAlertFailuresWindowHours,
+  parseAlertFailuresDataset,
+} from "./utils/alertFailuresDigestCsv";
+import {
+  platformIncidentReviews,
+  platformIncidentReviewAttachments,
+} from "@shared/schema";
 
 const router = Router();
 
@@ -4546,256 +4556,50 @@ router.get(
           .json({ error: "Cross-org CSV export is restricted to super admins" });
       }
 
-      const rawHours = parseInt(String(req.query.windowHours ?? "24"), 10);
-      const windowHours = Math.min(
-        Math.max(Number.isFinite(rawHours) ? rawHours : 24, 1),
-        720,
-      );
-      const rawSample = parseInt(
-        String(req.query.recentSampleLimit ?? "20"),
-        10,
-      );
-      const recentSampleLimit = Math.min(
-        Math.max(Number.isFinite(rawSample) ? rawSample : 20, 1),
-        50,
+      const windowHours = clampAlertFailuresWindowHours(req.query.windowHours);
+      const recentSampleLimit = clampAlertFailuresRecentSampleLimit(
+        req.query.recentSampleLimit,
       );
       // Task #1568 — third dataset: "quiet" exports the orgs that ran
       // backfill in the window but produced ZERO alert deliveries. Mirrors
       // the "Quiet orgs in this window" section the JSON digest already
       // surfaces (Task #1548) so platform support can attach the silent-
       // pipeline signal to incident reviews alongside the failure data.
-      const rawDataset = String(req.query.dataset ?? "summary");
-      const dataset: "summary" | "samples" | "quiet" =
-        rawDataset === "samples"
-          ? "samples"
-          : rawDataset === "quiet"
-            ? "quiet"
-            : "summary";
-      const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
-      const generatedAt = new Date();
+      const dataset = parseAlertFailuresDataset(req.query.dataset);
 
-      // The quiet dataset doesn't need the failure aggregator — skip the
-      // (potentially expensive) failure scan when we know we won't read
-      // it. We still load org metadata below using the quiet entries'
-      // org ids so we can render names/slugs in the CSV.
-      const aggregates =
-        dataset === "quiet"
-          ? []
-          : await aggregateRecentCrmTranscriptBackfillAlertFailures(since, {
-              recentSampleLimit,
-            });
-      const quietEntries =
-        dataset === "quiet"
-          ? await findQuietCrmTranscriptBackfillOrgsSince(since)
-          : [];
-      const orgIds = Array.from(
-        new Set([
-          ...aggregates.map((a) => a.organizationId),
-          ...quietEntries.map((q) => q.organizationId),
-        ]),
-      );
-      const orgRows = orgIds.length
-        ? await db
-            .select({
-              id: organizations.id,
-              name: organizations.name,
-              slug: organizations.slug,
-            })
-            .from(organizations)
-            .where(inArray(organizations.id, orgIds))
-        : [];
-      const orgById = new Map(orgRows.map((o) => [o.id, o]));
-
-      const sortedAggregates = [...aggregates].sort((a, b) => {
-        if (b.total !== a.total) return b.total - a.total;
-        const am = orgById.get(a.organizationId);
-        const bm = orgById.get(b.organizationId);
-        const an = (am?.name ?? a.organizationId).toLowerCase();
-        const bn = (bm?.name ?? b.organizationId).toLowerCase();
-        return an.localeCompare(bn);
+      // Task #1578 — the row-building lives in `buildAlertFailuresDigestCsv`
+      // so the new "Attach to incident review" handler can produce the
+      // exact same CSV branch (and audit summary shape) without a copy.
+      const built = await buildAlertFailuresDigestCsv({
+        dataset,
+        windowHours,
+        recentSampleLimit,
       });
 
-      const escapeCsv = (v: unknown): string => {
-        if (v === null || v === undefined) return "";
-        const s = String(v);
-        if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
-        return s;
-      };
-
-      const sinceIso = since.toISOString();
-      const generatedAtIso = generatedAt.toISOString();
-      const windowLabel = `${windowHours}h`;
-
-      // Task #1568 — quiet orgs are sorted by most-recent activity so the
-      // CSV opens with the freshest "silent" tenants first, matching the
-      // ordering the JSON digest already returns to the UI. Name tiebreak
-      // keeps the file deterministic between consecutive downloads.
-      const sortedQuietEntries = [...quietEntries].sort((a, b) => {
-        const at = a.lastJobAt.getTime();
-        const bt = b.lastJobAt.getTime();
-        if (bt !== at) return bt - at;
-        const am = orgById.get(a.organizationId);
-        const bm = orgById.get(b.organizationId);
-        const an = (am?.name ?? a.organizationId).toLowerCase();
-        const bn = (bm?.name ?? b.organizationId).toLowerCase();
-        return an.localeCompare(bn);
-      });
-
-      let lines: string[];
-      let filenameSuffix: string;
-      if (dataset === "samples") {
-        const HEADERS = [
-          "organization_id",
-          "organization_name",
-          "organization_slug",
-          "job_id",
-          "channel",
-          "attempted_at",
-          "recipient",
-          "error",
-          "window_hours",
-          "since",
-          "generated_at",
-        ];
-        lines = [HEADERS.join(",")];
-        for (const entry of sortedAggregates) {
-          const meta = orgById.get(entry.organizationId);
-          for (const f of entry.recentFailures) {
-            lines.push(
-              [
-                entry.organizationId,
-                meta?.name ?? "",
-                meta?.slug ?? "",
-                f.jobId ?? "",
-                f.channel,
-                f.attemptedAt.toISOString(),
-                f.recipientSummary ?? "",
-                f.errorMessage ?? "",
-                windowHours,
-                sinceIso,
-                generatedAtIso,
-              ]
-                .map(escapeCsv)
-                .join(","),
-            );
-          }
-        }
-        filenameSuffix = "samples";
-      } else if (dataset === "quiet") {
-        // Task #1568 — one row per "quiet" org so platform support can
-        // attach the silent-pipeline list to the same incident review they
-        // attach the failure summary to. jobs_in_window / last_job_at
-        // mirror the JSON digest fields exactly.
-        const HEADERS = [
-          "organization_id",
-          "organization_name",
-          "organization_slug",
-          "jobs_in_window",
-          "last_job_at",
-          "window_hours",
-          "since",
-          "generated_at",
-        ];
-        lines = [HEADERS.join(",")];
-        for (const entry of sortedQuietEntries) {
-          const meta = orgById.get(entry.organizationId);
-          lines.push(
-            [
-              entry.organizationId,
-              meta?.name ?? "",
-              meta?.slug ?? "",
-              entry.jobsInWindow,
-              entry.lastJobAt.toISOString(),
-              windowHours,
-              sinceIso,
-              generatedAtIso,
-            ]
-              .map(escapeCsv)
-              .join(","),
-          );
-        }
-        filenameSuffix = "quiet";
-      } else {
-        const HEADERS = [
-          "organization_id",
-          "organization_name",
-          "organization_slug",
-          "total",
-          "slack_count",
-          "email_count",
-          "window_hours",
-          "since",
-          "generated_at",
-        ];
-        lines = [HEADERS.join(",")];
-        for (const entry of sortedAggregates) {
-          const meta = orgById.get(entry.organizationId);
-          lines.push(
-            [
-              entry.organizationId,
-              meta?.name ?? "",
-              meta?.slug ?? "",
-              entry.total,
-              entry.slackCount,
-              entry.emailCount,
-              windowHours,
-              sinceIso,
-              generatedAtIso,
-            ]
-              .map(escapeCsv)
-              .join(","),
-          );
-        }
-        filenameSuffix = "summary";
-      }
-
-      const stamp = generatedAtIso.replace(/[:.]/g, "-");
       res.setHeader("Content-Type", "text/csv; charset=utf-8");
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="alert-failures-${filenameSuffix}-${windowLabel}-${stamp}.csv"`,
+        `attachment; filename="${built.filename}"`,
       );
-      res.send(lines.join("\n") + "\n");
+      res.send(built.csv);
 
       // Task #1549 — write a SOC2 / tenant-trust audit row whenever a super
       // admin successfully pulls one of the cross-org CSVs. Captures actor,
-      // dataset (summary vs samples), windowHours, the org row count and
-      // (for samples) the total sample row count exported, so the existing
-      // admin audit dashboard can surface "who pulled what, when" alongside
-      // other super-admin actions. Logged after res.send so a slow audit
-      // write never blocks the download, and only on the success path so
-      // we don't pollute the trail with rows for callers that 4xx'd above.
+      // dataset (summary vs samples vs quiet), windowHours, the org row
+      // count and (for samples) the total sample row count exported, so
+      // the existing admin audit dashboard can surface "who pulled what,
+      // when" alongside other super-admin actions. Logged after res.send
+      // so a slow audit write never blocks the download, and only on the
+      // success path so we don't pollute the trail with rows for callers
+      // that 4xx'd above.
       try {
-        // Task #1568 — for the new quiet dataset the "org row count" is
-        // the number of quiet orgs exported, not the failure-aggregate
-        // count (which is empty for that dataset). Sample row count stays
-        // zero outside the samples branch.
-        const orgRowCount =
-          dataset === "quiet"
-            ? sortedQuietEntries.length
-            : sortedAggregates.length;
-        const sampleRowCount =
-          dataset === "samples"
-            ? sortedAggregates.reduce(
-                (n, e) => n + e.recentFailures.length,
-                0,
-              )
-            : 0;
-        const summary = {
-          dataset,
-          windowHours,
-          orgRowCount,
-          sampleRowCount,
-          recentSampleLimit,
-          generatedAt: generatedAtIso,
-        };
         await logAudit(
           {
             userId: req.user!.id,
             action: "CREATE",
             entityType: "admin_csv_export",
             entityId: "crm_transcript_backfill_alert_failures",
-            newValue: JSON.stringify(summary),
+            newValue: JSON.stringify(built.summary),
           },
           req,
         );
@@ -4803,6 +4607,184 @@ router.get(
         // logAudit already swallows DB errors; this catch is just defence
         // in depth so a bad summary value never bubbles up after the
         // response has been sent.
+      }
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+// Task #1578 — platform-support shortcut that streams the same alert-failures
+// digest CSV branch directly into the attachment storage of an existing
+// incident review, skipping the "download then re-upload" round-trip support
+// previously had to do. Mirrors the gating of the CSV endpoint above
+// (SUPER_ADMIN + crossOrg=true) and reuses `buildAlertFailuresDigestCsv` so
+// the bytes platform support attached are the exact same bytes the
+// download button would have produced.
+//
+// Behaviour:
+//   1. Validates the (reviewId, dataset, windowHours) input.
+//   2. Generates the CSV via the shared helper.
+//   3. Streams the CSV bytes to Replit object storage at a deterministic
+//      key under the platform's private bucket.
+//   4. Inserts a `platform_incident_review_attachments` row linking the
+//      review, the dataset, the windowHours and the SUPER_ADMIN actor.
+//   5. Writes the SAME audit row the CSV endpoint writes, decorated with
+//      the review/attachment ids so the existing admin audit dashboard
+//      surfaces "who attached what to which review".
+router.post(
+  "/api/crm/calls/transcripts/backfill/alert-failures-digest/attach-to-incident-review",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const superAdmin = isSuperAdmin(req.user);
+      const crossOrg =
+        superAdmin && String(req.body?.crossOrg ?? "") === "true";
+      if (!crossOrg) {
+        return res.status(403).json({
+          error: "Attach-to-incident-review is restricted to super admins",
+        });
+      }
+
+      const reviewId = String(req.body?.reviewId ?? "").trim();
+      if (!reviewId) {
+        return res.status(400).json({ error: "Missing reviewId" });
+      }
+      const [review] = await db
+        .select()
+        .from(platformIncidentReviews)
+        .where(eq(platformIncidentReviews.id, reviewId))
+        .limit(1);
+      if (!review) {
+        return res.status(404).json({ error: "Incident review not found" });
+      }
+
+      const windowHours = clampAlertFailuresWindowHours(req.body?.windowHours);
+      const recentSampleLimit = clampAlertFailuresRecentSampleLimit(
+        req.body?.recentSampleLimit,
+      );
+      const dataset = parseAlertFailuresDataset(req.body?.dataset);
+
+      const built = await buildAlertFailuresDigestCsv({
+        dataset,
+        windowHours,
+        recentSampleLimit,
+      });
+
+      const privateDir =
+        process.env.PRIVATE_OBJECT_DIR ||
+        process.env.REPLIT_OBJECT_STORAGE_PRIVATE_DIR;
+      if (!privateDir) {
+        return res.status(500).json({
+          error:
+            "Object storage is not configured (PRIVATE_OBJECT_DIR is unset)",
+        });
+      }
+
+      // Insert the attachment row first so we have a stable id for the
+      // object key. If the upload then fails we delete the row so the
+      // review never references an attachment that doesn't exist.
+      const buf = Buffer.from(built.csv, "utf-8");
+      const [attachmentRow] = await db
+        .insert(platformIncidentReviewAttachments)
+        .values({
+          reviewId: review.id,
+          source: "alert_failures_digest",
+          dataset,
+          windowHours,
+          fileName: built.filename,
+          // Placeholder — replaced below once we know the full object key.
+          objectKey: "",
+          fileSize: buf.byteLength,
+          contentType: "text/csv; charset=utf-8",
+          orgRowCount: built.summary.orgRowCount,
+          sampleRowCount: built.summary.sampleRowCount,
+          attachedById: req.user?.id ?? null,
+        })
+        .returning();
+
+      const objectKey = `${privateDir}/_platform/incident-reviews/${review.id}/${attachmentRow.id}-${built.filename}`;
+      try {
+        const { bucketName, objectName } = parseObjectPath(objectKey);
+        const bucket = objectStorageClient.bucket(bucketName);
+        const file = bucket.file(objectName);
+        await file.save(buf, {
+          contentType: "text/csv; charset=utf-8",
+          metadata: { contentType: "text/csv; charset=utf-8" },
+        });
+      } catch (uploadErr) {
+        // Roll back the placeholder row so we don't leak a dangling
+        // attachment that points at a missing object.
+        await db
+          .delete(platformIncidentReviewAttachments)
+          .where(eq(platformIncidentReviewAttachments.id, attachmentRow.id))
+          .catch(() => {});
+        logError(
+          "attach-to-incident-review: object storage upload failed",
+          { reviewId: review.id, attachmentId: attachmentRow.id, dataset },
+          uploadErr instanceof Error
+            ? uploadErr
+            : new Error(String(uploadErr)),
+        );
+        return res
+          .status(500)
+          .json({ error: "Failed to upload CSV to object storage" });
+      }
+
+      // Patch the row with the real object key + bump the review's
+      // updated_at so the list view sorts the freshly-touched review to
+      // the top.
+      await db
+        .update(platformIncidentReviewAttachments)
+        .set({ objectKey })
+        .where(eq(platformIncidentReviewAttachments.id, attachmentRow.id));
+      await db
+        .update(platformIncidentReviews)
+        .set({ updatedAt: new Date() })
+        .where(eq(platformIncidentReviews.id, review.id));
+
+      res.status(201).json({
+        attachment: {
+          id: attachmentRow.id,
+          reviewId: review.id,
+          dataset,
+          windowHours,
+          fileName: built.filename,
+          fileSize: buf.byteLength,
+          orgRowCount: built.summary.orgRowCount,
+          sampleRowCount: built.summary.sampleRowCount,
+          attachedAt: attachmentRow.attachedAt,
+        },
+        review: {
+          id: review.id,
+          title: review.title,
+          status: review.status,
+        },
+      });
+
+      // Reuse the SAME audit row shape the download endpoint logs, with
+      // the review/attachment ids appended so the audit trail records
+      // "this CSV pull was attached to incident review X" alongside
+      // ordinary "downloaded the CSV" rows.
+      try {
+        const auditPayload = {
+          ...built.summary,
+          attachedToReviewId: review.id,
+          attachmentId: attachmentRow.id,
+        };
+        await logAudit(
+          {
+            userId: req.user!.id,
+            action: "CREATE",
+            entityType: "admin_csv_export",
+            entityId: "crm_transcript_backfill_alert_failures",
+            newValue: JSON.stringify(auditPayload),
+          },
+          req,
+        );
+      } catch {
+        // logAudit swallows DB errors; defence in depth.
       }
     } catch (e) {
       next(e);

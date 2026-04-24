@@ -100,6 +100,7 @@ import { ensureFeatureFlagPresetApplicationsTable } from "./ensureFeatureFlagPre
 import { ensureFeatureFlagManualChangesTable } from "./ensureFeatureFlagManualChangesTable";
 import { ensureDotPayItemMatchHistory } from "./ensureDotPayItemMatchHistory";
 import { ensureDolClassificationMappingsTable } from "./ensureDolClassificationMappingsTable";
+import { ensurePlatformIncidentReviewTables } from "./ensurePlatformIncidentReviewTables";
 import { ensureCrmTranscriptBackfillNotificationsTable } from "./ensureCrmTranscriptBackfillNotificationsTable";
 import { ensureCrmTranscriptBackfillAlertDeliveriesTable } from "./ensureCrmTranscriptBackfillAlertDeliveriesTable";
 import { ensureUsersAlertFailureEmailModeColumn } from "./ensureUsersAlertFailureEmailModeColumn";
@@ -308,6 +309,9 @@ const migrations: MigrationStep[] = [
   // chosen `job_classifications` row. Must run AFTER `job_classifications`
   // exists (Drizzle migrations cover that baseline table).
   { name: "dol_classification_mappings_table", category: "CREATE_TABLE", fn: ensureDolClassificationMappingsTable },
+  // Task #1578 — platform-support incident review tables that back the new
+  // "Attach to incident review" action on the Recent alert failures card.
+  { name: "platform_incident_review_tables", category: "CREATE_TABLE", fn: ensurePlatformIncidentReviewTables },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

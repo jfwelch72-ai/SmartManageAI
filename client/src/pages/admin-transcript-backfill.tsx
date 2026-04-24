@@ -17,6 +17,14 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -54,6 +62,7 @@ import {
   Bell,
   Mail,
   BellOff,
+  Paperclip,
 } from "lucide-react";
 import {
   Tooltip,
@@ -5337,6 +5346,22 @@ export function BackfillAlertFailuresDigestCard({
   const [exportingDataset, setExportingDataset] = useState<
     "summary" | "samples" | "quiet" | null
   >(null);
+  // Task #1578 — state for the "Attach to incident review" dialog. The
+  // dialog is the entry point for the new one-click flow that streams the
+  // same CSV branch into Replit object storage and links it to a review
+  // record. Gated on isSuperAdmin && isCrossOrgView, mirroring the CSV
+  // download buttons.
+  const [attachOpen, setAttachOpen] = useState<boolean>(false);
+  const [attachDataset, setAttachDataset] = useState<
+    "summary" | "samples" | "quiet"
+  >("summary");
+  const [attachReviewMode, setAttachReviewMode] = useState<
+    "existing" | "new"
+  >("existing");
+  const [attachSelectedReviewId, setAttachSelectedReviewId] =
+    useState<string>("");
+  const [attachNewTitle, setAttachNewTitle] = useState<string>("");
+  const [attaching, setAttaching] = useState<boolean>(false);
   const queryKey = failuresDigestKey(windowHours, effectiveCrossOrg);
   const failuresQuery = useQuery<BackfillAlertFailuresDigest>({
     queryKey,
@@ -5399,7 +5424,100 @@ export function BackfillAlertFailuresDigestCard({
     }
   };
 
+  // Task #1578 — list existing incident reviews so platform support can
+  // attach to one without leaving the page. Only fires when the dialog
+  // is open AND we're in cross-org SUPER_ADMIN mode (otherwise the
+  // server would 403 anyway).
+  const incidentReviewsQuery = useQuery<{
+    reviews: Array<{
+      id: string;
+      title: string;
+      status: string;
+      attachmentCount: number;
+      updatedAt: string;
+    }>;
+  }>({
+    queryKey: ["/api/platform-support/incident-reviews"],
+    queryFn: async () => {
+      const res = await apiRequest(
+        "GET",
+        "/api/platform-support/incident-reviews",
+      );
+      return await res.json();
+    },
+    enabled: attachOpen && isSuperAdmin && isCrossOrgView,
+  });
+
+  const handleAttachToIncidentReview = async () => {
+    setAttaching(true);
+    try {
+      let reviewId = attachSelectedReviewId;
+      if (attachReviewMode === "new") {
+        const title = attachNewTitle.trim();
+        if (!title) {
+          toast({
+            title: "Title required",
+            description: "Enter a title for the new incident review.",
+            variant: "destructive",
+          });
+          setAttaching(false);
+          return;
+        }
+        const createRes = await apiRequest(
+          "POST",
+          "/api/platform-support/incident-reviews",
+          { title },
+        );
+        const created = (await createRes.json()) as {
+          review: { id: string };
+        };
+        reviewId = created.review.id;
+      }
+      if (!reviewId) {
+        toast({
+          title: "Pick a review",
+          description: "Select an existing incident review or create one.",
+          variant: "destructive",
+        });
+        setAttaching(false);
+        return;
+      }
+      const res = await apiRequest(
+        "POST",
+        "/api/crm/calls/transcripts/backfill/alert-failures-digest/attach-to-incident-review",
+        {
+          reviewId,
+          dataset: attachDataset,
+          windowHours,
+          crossOrg: "true",
+        },
+      );
+      const payload = (await res.json()) as {
+        attachment: { fileName: string; fileSize: number };
+      };
+      toast({
+        title: "Attached to incident review",
+        description: `${payload.attachment.fileName} (${payload.attachment.fileSize} bytes) is now linked to the review.`,
+      });
+      setAttachOpen(false);
+      setAttachNewTitle("");
+      setAttachSelectedReviewId("");
+      queryClient.invalidateQueries({
+        queryKey: ["/api/platform-support/incident-reviews"],
+      });
+    } catch (err) {
+      toast({
+        title: "Failed to attach to incident review",
+        description: err instanceof Error ? err.message : String(err),
+        variant: "destructive",
+      });
+    } finally {
+      setAttaching(false);
+    }
+  };
+
   return (
+    <>
     <Card data-testid="card-alert-failures-digest">
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-3">
@@ -5476,6 +5594,29 @@ export function BackfillAlertFailuresDigestCard({
                     <Download className="h-4 w-4 mr-2" />
                   )}
                   Quiet orgs CSV
+                </Button>
+                {/* Task #1578 — one-click "Attach to incident review" entry
+                    point. Opens a dialog where platform support picks the
+                    dataset branch (summary / samples / quiet) and either
+                    an existing incident review or types a new title. The
+                    server then streams the SAME CSV bytes the download
+                    buttons above would have produced into Replit object
+                    storage and links them to the review. */}
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={() => {
+                    setAttachOpen(true);
+                    setAttachDataset("summary");
+                  }}
+                  disabled={
+                    failuresQuery.isLoading || failuresQuery.isError
+                  }
+                  data-testid="button-attach-alert-failures-to-incident-review"
+                  title="Stream the CSV branch into an incident review attachment"
+                >
+                  <Paperclip className="h-4 w-4 mr-2" />
+                  Attach to incident review
                 </Button>
               </>
             )}
@@ -5945,6 +6086,156 @@ export function BackfillAlertFailuresDigestCard({
         )}
       </CardContent>
     </Card>
+    {/* Task #1578 — Attach to incident review dialog. Lets platform support
+        pick the dataset branch + an existing review (or create one inline)
+        and POST to the new attach endpoint, which streams the same CSV
+        bytes into Replit object storage and links them to the review. */}
+    <Dialog open={attachOpen} onOpenChange={setAttachOpen}>
+      <DialogContent
+        className="sm:max-w-[480px]"
+        data-testid="dialog-attach-alert-failures-to-incident-review"
+      >
+        <DialogHeader>
+          <DialogTitle>Attach alert failures CSV to incident review</DialogTitle>
+          <DialogDescription>
+            Streams the same CSV branch (currently {windowHours}h window)
+            into object storage and links it to the chosen review. Mirrors
+            the audit row written by the Download CSV button.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label htmlFor="attach-dataset">Dataset</Label>
+            <Select
+              value={attachDataset}
+              onValueChange={(v) =>
+                setAttachDataset(v as "summary" | "samples" | "quiet")
+              }
+            >
+              <SelectTrigger
+                id="attach-dataset"
+                data-testid="select-attach-dataset"
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="summary" data-testid="option-attach-dataset-summary">
+                  Summary (per-org rollup)
+                </SelectItem>
+                <SelectItem value="samples" data-testid="option-attach-dataset-samples">
+                  Samples (per-org failure samples)
+                </SelectItem>
+                <SelectItem value="quiet" data-testid="option-attach-dataset-quiet">
+                  Quiet orgs (zero deliveries in window)
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Incident review</Label>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={
+                  attachReviewMode === "existing" ? "default" : "outline"
+                }
+                size="sm"
+                onClick={() => setAttachReviewMode("existing")}
+                data-testid="button-attach-mode-existing"
+              >
+                Existing
+              </Button>
+              <Button
+                type="button"
+                variant={attachReviewMode === "new" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setAttachReviewMode("new")}
+                data-testid="button-attach-mode-new"
+              >
+                Create new
+              </Button>
+            </div>
+            {attachReviewMode === "existing" ? (
+              <Select
+                value={attachSelectedReviewId}
+                onValueChange={setAttachSelectedReviewId}
+                disabled={incidentReviewsQuery.isLoading}
+              >
+                <SelectTrigger
+                  data-testid="select-attach-existing-review"
+                >
+                  <SelectValue
+                    placeholder={
+                      incidentReviewsQuery.isLoading
+                        ? "Loading reviews…"
+                        : "Pick an incident review"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {(incidentReviewsQuery.data?.reviews ?? []).map((r) => (
+                    <SelectItem
+                      key={r.id}
+                      value={r.id}
+                      data-testid={`option-attach-review-${r.id}`}
+                    >
+                      {r.title} · {r.status} ({r.attachmentCount})
+                    </SelectItem>
+                  ))}
+                  {(incidentReviewsQuery.data?.reviews ?? []).length === 0 &&
+                    !incidentReviewsQuery.isLoading && (
+                      <SelectItem
+                        value="__none__"
+                        disabled
+                        data-testid="option-attach-review-empty"
+                      >
+                        No incident reviews yet — switch to Create new
+                      </SelectItem>
+                    )}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                placeholder="Incident review title (e.g. 2026-04-24 Slack delivery outage)"
+                value={attachNewTitle}
+                onChange={(e) => setAttachNewTitle(e.target.value)}
+                maxLength={200}
+                data-testid="input-attach-new-review-title"
+              />
+            )}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => setAttachOpen(false)}
+            disabled={attaching}
+            data-testid="button-attach-cancel"
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={handleAttachToIncidentReview}
+            disabled={
+              attaching ||
+              (attachReviewMode === "existing" && !attachSelectedReviewId) ||
+              (attachReviewMode === "new" && !attachNewTitle.trim())
+            }
+            data-testid="button-attach-confirm"
+          >
+            {attaching ? (
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            ) : (
+              <Paperclip className="h-4 w-4 mr-2" />
+            )}
+            Attach
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 }
 
