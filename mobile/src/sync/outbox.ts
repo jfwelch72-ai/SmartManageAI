@@ -90,11 +90,19 @@ export async function markFailed(localId: string, error: string): Promise<void> 
   );
 }
 
-export async function markConflict(localId: string, serverUpdatedAt: string): Promise<void> {
+export async function markConflict(
+  localId: string,
+  serverUpdatedAt: string,
+  reason?: string
+): Promise<void> {
   const db = await getDb();
+  // Task #1607: persist the human-readable conflict reason in
+  // last_error so the SUBMITTAL_STAMP screen (and any other surface
+  // listing the outbox) can render "office already approved this
+  // review" instead of a generic "CONFLICT" pill.
   await db.runAsync(
-    "UPDATE outbox SET status='CONFLICT', conflict_server_updated_at=? WHERE local_id=?",
-    [serverUpdatedAt, localId]
+    "UPDATE outbox SET status='CONFLICT', conflict_server_updated_at=?, last_error=? WHERE local_id=?",
+    [serverUpdatedAt, reason ?? null, localId]
   );
 }
 

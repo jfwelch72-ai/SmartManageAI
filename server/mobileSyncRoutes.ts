@@ -26,13 +26,32 @@ type MobileSyncRecord = {
   }>;
   [k: string]: unknown;
 };
-type ProcessedItem = { localId: string; status: "QUEUED" | "CONFLICT" | "SAVED" | "DUPLICATE"; serverUpdatedAt?: string; serverId?: string };
+type ProcessedItem = {
+  localId: string;
+  status: "QUEUED" | "CONFLICT" | "SAVED" | "DUPLICATE" | "FAILED";
+  serverUpdatedAt?: string;
+  serverId?: string;
+  // Task #1607: when a SUBMITTAL_STAMP is rejected because the target
+  // review row was already resolved (APPROVED/REJECTED/etc) by office
+  // staff while the field reviewer was offline, we surface the
+  // server-side status so the device can render a clear
+  // "this review was already <status>" message instead of a generic
+  // CONFLICT pill.
+  serverStatus?: string;
+  reason?: string;
+};
 type ConflictItem = {
-  entityType: SyncEntityKey;
+  // Task #1607: SUBMITTAL_STAMP joins the conflict surface (alongside
+  // the timestamp-based offline-queue entities) when the target review
+  // is no longer actionable. Keep the union narrow — only entities the
+  // server actually emits conflicts for.
+  entityType: SyncEntityKey | "SUBMITTAL_STAMP";
   entityId: string;
   localId?: string;
   serverUpdatedAt: string;
   clientTimestamp?: string;
+  reason?: string;
+  serverStatus?: string;
 };
 // Org-scoped server lookup for conflict detection. Each entity's lookup runs
 // a typed query bounded by both id AND organizationId to prevent any
@@ -1148,14 +1167,91 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
               eq(submittalReviews.status, "IN_REVIEW"),
             ))
             .limit(1);
+          // Task #1607: stale-review detection. The strict lookup
+          // above rejects when status !== "IN_REVIEW", but it can't
+          // tell the device *why* it failed (truly missing row vs.
+          // resolved-by-office vs. wrong-reviewer-id). Run a
+          // tenant- and reviewer-scoped lookup without the status
+          // gate so we can distinguish a review that was already
+          // stamped/cancelled by office staff while the field
+          // reviewer was offline. When detected, surface it as a
+          // CONFLICT (not a generic FAILED) so the mobile UI can
+          // tell the user "office already resolved this review"
+          // and let them clear the queued tap instead of silently
+          // overwriting the resolved row.
+          const RESOLVED_STATUSES = [
+            "APPROVED",
+            "APPROVED_AS_NOTED",
+            "REJECTED",
+            "REVISE_AND_RESUBMIT",
+            "CANCELLED",
+          ];
+          const detectStale = async (): Promise<boolean> => {
+            const [staleRow] = await db
+              .select({
+                id: submittalReviews.id,
+                status: submittalReviews.status,
+                dateReviewed: submittalReviews.dateReviewed,
+                reviewerId: submittalReviews.reviewerId,
+              })
+              .from(submittalReviews)
+              .innerJoin(submittals, eq(submittals.id, submittalReviews.submittalId))
+              .where(and(
+                eq(submittalReviews.id, reviewId),
+                eq(submittalReviews.submittalId, submittalId),
+                eq(submittalReviews.organizationId, organizationId),
+                eq(submittals.organizationId, organizationId),
+                eq(submittalReviews.reviewerId, userId),
+              ))
+              .limit(1);
+            if (!staleRow || !RESOLVED_STATUSES.includes(staleRow.status as string)) {
+              return false;
+            }
+            const serverIso = (staleRow.dateReviewed ?? new Date()).toISOString();
+            const reason = `Review was already resolved (${staleRow.status}) before your stamp arrived`;
+            // Mark this stamp idempotent so the next push round does not
+            // re-attempt it after the user resolves the conflict on the
+            // device. Without this, the FAILED row would replay until
+            // the retry cap and surface as a generic failure.
+            await markPersisted("SUBMITTAL_STAMP", stamp.localId, {
+              ...stamp,
+              _conflictReason: reason,
+              _serverStatus: staleRow.status,
+            });
+            conflicts.push({
+              entityType: "SUBMITTAL_STAMP",
+              entityId: reviewId,
+              localId: stamp.localId,
+              serverUpdatedAt: serverIso,
+              reason,
+              serverStatus: staleRow.status as string,
+            });
+            processed.submittalStamps.push({
+              localId: stamp.localId,
+              status: "CONFLICT",
+              serverUpdatedAt: serverIso,
+              serverStatus: staleRow.status as string,
+              reason,
+            });
+            return true;
+          };
           if (!reviewRow) {
+            if (await detectStale()) continue;
             processed.submittalStamps.push({ localId: stamp.localId, status: "FAILED" });
             continue;
           }
           const comments = typeof stamp.comments === "string" ? stamp.comments : null;
+          // Task #1607: atomic conditional update — guard the SET on
+          // status='IN_REVIEW' AND use .returning() so we can detect
+          // a SELECT→UPDATE race where office staff resolved the row
+          // between our authz lookup and the write. Without this, a
+          // 0-row UPDATE would silently fall through to writing an
+          // activity row + advancing the chain on a review the office
+          // already closed. We re-run stale detection on a 0-row
+          // UPDATE to surface the conflict instead.
           // The four allowed action values are also valid
           // submittal_review_status enum members.
-          await db
+          const updated = await db
             .update(submittalReviews)
             .set({
               status: action as "APPROVED" | "APPROVED_AS_NOTED" | "REJECTED" | "REVISE_AND_RESUBMIT",
@@ -1168,7 +1264,13 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
               eq(submittalReviews.organizationId, organizationId),
               eq(submittalReviews.reviewerId, userId),
               eq(submittalReviews.status, "IN_REVIEW"),
-            ));
+            ))
+            .returning({ id: submittalReviews.id });
+          if (updated.length === 0) {
+            if (await detectStale()) continue;
+            processed.submittalStamps.push({ localId: stamp.localId, status: "FAILED" });
+            continue;
+          }
           await db.insert(submittalActivity).values({
             submittalId,
             userId,

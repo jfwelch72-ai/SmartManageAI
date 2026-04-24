@@ -69,6 +69,12 @@ type PendingStamp = {
   action: StampAction;
   comments?: string;
   status: string;
+  // Task #1607: when the server flips this stamp to CONFLICT (because
+  // office staff already resolved the review while the device was
+  // offline), the coordinator persists the human-readable reason on
+  // the outbox row so we can render "Office already approved this
+  // review" instead of a generic CONFLICT pill.
+  conflictReason?: string;
 };
 
 const STAMP_OPTIONS: Array<{ value: StampAction; label: string; needsComments: boolean }> = [
@@ -125,6 +131,11 @@ export function SubmittalsScreen() {
             action: (p.action as StampAction) ?? "APPROVED",
             comments: p.comments,
             status: o.status,
+            // Task #1607: lastError holds the human-readable conflict
+            // explanation written by the coordinator's markConflict
+            // call ("Review was already resolved (APPROVED) before
+            // your stamp arrived").
+            conflictReason: o.status === "CONFLICT" ? o.lastError ?? undefined : undefined,
           };
         })
         .reverse(),
@@ -261,13 +272,35 @@ export function SubmittalsScreen() {
         {pendingStamps.length > 0 ? (
           <Text style={styles.section}>Pending stamps</Text>
         ) : null}
-        {pendingStamps.map((p) => (
-          <View key={p.localId} style={styles.row} testID={`row-stamp-pending-${p.localId}`}>
-            <Text style={styles.rowTitle}>{p.action}</Text>
-            <Text style={styles.rowSub}>Submittal {p.submittalId.slice(0, 8)} · review {p.reviewId.slice(0, 8)} · {p.status}</Text>
-            {p.comments ? <Text style={styles.rowSub} numberOfLines={2}>{p.comments}</Text> : null}
-          </View>
-        ))}
+        {pendingStamps.map((p) => {
+          const isConflict = p.status === "CONFLICT";
+          return (
+            <View
+              key={p.localId}
+              style={[styles.row, isConflict && styles.rowConflict]}
+              testID={`row-stamp-pending-${p.localId}`}
+            >
+              <Text style={styles.rowTitle}>{p.action}</Text>
+              <Text style={styles.rowSub}>Submittal {p.submittalId.slice(0, 8)} · review {p.reviewId.slice(0, 8)} · {p.status}</Text>
+              {/*
+                Task #1607: when the server flips this stamp to CONFLICT
+                because office staff already resolved the review, render
+                the explanation so the field reviewer immediately
+                understands why their tap did not stick — instead of
+                seeing a silent SAVED.
+              */}
+              {isConflict ? (
+                <Text
+                  style={[styles.rowSub, styles.rowConflictText]}
+                  testID={`text-stamp-conflict-${p.localId}`}
+                >
+                  {p.conflictReason ?? "This review was already resolved by office staff. Your stamp was not applied."}
+                </Text>
+              ) : null}
+              {p.comments ? <Text style={styles.rowSub} numberOfLines={2}>{p.comments}</Text> : null}
+            </View>
+          );
+        })}
 
         <Text style={styles.section}>
           {assignmentFilter === "MINE" ? "Submittals awaiting your stamp" : "Project submittals"}
@@ -462,6 +495,10 @@ const styles = StyleSheet.create({
   row: { backgroundColor: colors.surface, padding: spacing(2), borderRadius: 8 },
   rowTitle: { color: colors.text, fontWeight: "600" },
   rowSub: { color: colors.textMuted, fontSize: 12 },
+  // Task #1607: visual treatment for stale-review CONFLICT rows so
+  // they stand out from pending/synced stamps in the list.
+  rowConflict: { borderWidth: 1, borderColor: colors.danger },
+  rowConflictText: { color: colors.danger, fontWeight: "600" },
   section: { color: colors.textMuted, fontSize: 12, fontWeight: "600", marginTop: spacing(1), textTransform: "uppercase" },
   label: { color: colors.textMuted, fontSize: 12, fontWeight: "600", marginTop: spacing(2), textTransform: "uppercase" },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },

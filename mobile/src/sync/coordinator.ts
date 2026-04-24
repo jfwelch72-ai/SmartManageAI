@@ -247,10 +247,24 @@ export async function push(): Promise<{ pushed: number; conflicts: number }> {
         localId: string;
         status: string;
         serverUpdatedAt?: string;
+        // Task #1607: SUBMITTAL_STAMP conflict path — when the target
+        // review was already resolved by office staff, the server emits
+        // CONFLICT with a human-readable `reason` and `serverStatus`
+        // (e.g. "APPROVED"). Fall back to current time if the server
+        // omitted serverUpdatedAt so the row is still flipped to
+        // CONFLICT instead of being silently retried into FAILED.
+        reason?: string;
+        serverStatus?: string;
       }>;
       for (const item of items) {
-        if (item.status === "CONFLICT" && item.serverUpdatedAt) {
-          await markConflict(item.localId, item.serverUpdatedAt);
+        if (item.status === "CONFLICT") {
+          const serverIso = item.serverUpdatedAt ?? new Date().toISOString();
+          const reason =
+            item.reason ??
+            (item.serverStatus
+              ? `Office staff already resolved this review (${item.serverStatus})`
+              : undefined);
+          await markConflict(item.localId, serverIso, reason);
           conflicts++;
         } else if (
           item.status === "QUEUED" ||

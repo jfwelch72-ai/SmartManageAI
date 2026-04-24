@@ -31,11 +31,24 @@ const TEST_PREFIX = "__sync_sub_stamp__";
 
 interface ProcessedStamp {
   localId: string;
-  status: "SAVED" | "FAILED" | "DUPLICATE";
+  status: "SAVED" | "FAILED" | "DUPLICATE" | "CONFLICT";
+  serverUpdatedAt?: string;
+  serverStatus?: string;
+  reason?: string;
+}
+
+interface ConflictItem {
+  entityType: string;
+  entityId: string;
+  localId?: string;
+  serverUpdatedAt: string;
+  reason?: string;
+  serverStatus?: string;
 }
 
 interface SyncResponseBody {
   processed: { submittalStamps: ProcessedStamp[] };
+  conflicts: ConflictItem[];
 }
 
 let app: Express;
@@ -45,6 +58,12 @@ let projectId: string;
 let submittalId: string;
 let pendingReviewId: string;
 let activeReviewId: string;
+// Task #1607: a second IN_REVIEW row that office staff "resolves"
+// out-of-band between the field reviewer's offline tap and the
+// device's eventual sync. Used to drive the stale-review CONFLICT
+// assertion without disturbing the existing PENDING/IN_REVIEW
+// authorization tests.
+let staleReviewId: string;
 let deviceTextId: string;
 
 async function buildApp(): Promise<Express> {
@@ -169,6 +188,27 @@ beforeAll(async () => {
     })
     .returning({ id: submittalReviews.id });
   activeReviewId = activeRev.id;
+
+  // Task #1607: a separate IN_REVIEW row owned by the same field
+  // reviewer that the test will mutate to a resolved status (e.g.
+  // APPROVED) *before* the mobile push arrives, simulating office
+  // staff stamping the review while the device was offline. The push
+  // must then be reported back as CONFLICT (not silently overwritten,
+  // and not bucketed as a generic FAILED).
+  const [staleRev] = await db
+    .insert(submittalReviews)
+    .values({
+      submittalId,
+      organizationId: orgId,
+      reviewerRole: "GC_MANAGER",
+      reviewerId: userId,
+      reviewerName: "Field Reviewer",
+      sequenceOrder: 3,
+      status: "IN_REVIEW",
+      dateAssigned: new Date(),
+    })
+    .returning({ id: submittalReviews.id });
+  staleReviewId = staleRev.id;
 }, 60_000);
 
 afterAll(async () => {
@@ -297,6 +337,111 @@ describe("Mobile sync — SUBMITTAL_STAMP active-step authorization", () => {
 
     expect(res.status).toBe(200);
     const body = res.body as SyncResponseBody;
+    expect(body.processed.submittalStamps[0].status).toBe("DUPLICATE");
+  });
+
+  // Task #1607: stale-review case. Office staff resolves the review
+  // (APPROVED) while the field reviewer is offline; their queued
+  // SUBMITTAL_STAMP push must then come back as CONFLICT — not
+  // silently overwriting the office decision and not bucketed into
+  // the generic FAILED bin which the device cannot tell apart from a
+  // bad payload.
+  it("returns CONFLICT (not silent SAVED) when the target review was already resolved by office staff", async () => {
+    // Simulate office staff stamping the review out-of-band (before
+    // the device sync arrives). Bypass advanceChain entirely — we
+    // only care about the row state the mobile push will see.
+    const officeReviewedAt = new Date("2026-04-23T12:00:00.000Z");
+    await db
+      .update(submittalReviews)
+      .set({
+        status: "APPROVED",
+        stampAction: "APPROVED",
+        comments: "Office stamped first",
+        dateReviewed: officeReviewedAt,
+      })
+      .where(eq(submittalReviews.id, staleReviewId));
+
+    const res = await authedPost("/api/ai-features/mobile/sync", {
+      deviceId: deviceTextId,
+      changes: {
+        submittalStamps: [
+          {
+            localId: "stamp-stale-1",
+            reviewId: staleReviewId,
+            submittalId,
+            action: "REJECTED",
+            comments: "Field reviewer queued this while offline",
+          },
+        ],
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const body = res.body as SyncResponseBody;
+    expect(body.processed.submittalStamps).toHaveLength(1);
+    const item = body.processed.submittalStamps[0];
+    expect(item.localId).toBe("stamp-stale-1");
+    expect(item.status).toBe("CONFLICT");
+    expect(item.serverStatus).toBe("APPROVED");
+    expect(typeof item.reason).toBe("string");
+    expect(item.reason).toMatch(/APPROVED/);
+    expect(item.serverUpdatedAt).toBe(officeReviewedAt.toISOString());
+
+    // The CONFLICT must also be surfaced in the response-level
+    // conflicts array so the device's existing conflict-feed
+    // plumbing picks it up alongside the timestamp-based offline
+    // queue conflicts.
+    const stampConflict = body.conflicts.find(
+      (c) => c.entityType === "SUBMITTAL_STAMP" && c.localId === "stamp-stale-1",
+    );
+    expect(stampConflict).toBeDefined();
+    expect(stampConflict!.entityId).toBe(staleReviewId);
+    expect(stampConflict!.serverStatus).toBe("APPROVED");
+    expect(stampConflict!.serverUpdatedAt).toBe(officeReviewedAt.toISOString());
+
+    // Critically: the office's resolved review row MUST NOT have been
+    // overwritten by the mobile tap. This is the silent-data-loss
+    // bug the conflict surface protects against.
+    const [row] = await db
+      .select({
+        status: submittalReviews.status,
+        stampAction: submittalReviews.stampAction,
+        comments: submittalReviews.comments,
+        dateReviewed: submittalReviews.dateReviewed,
+      })
+      .from(submittalReviews)
+      .where(eq(submittalReviews.id, staleReviewId))
+      .limit(1);
+    expect(row.status).toBe("APPROVED");
+    expect(row.stampAction).toBe("APPROVED");
+    expect(row.comments).toBe("Office stamped first");
+    expect(row.dateReviewed?.toISOString()).toBe(officeReviewedAt.toISOString());
+  });
+
+  it("returns DUPLICATE on a re-push of a stamp previously surfaced as CONFLICT (no retry storm)", async () => {
+    // After the conflict, the device may try the queued stamp again
+    // before the user resolves it on the conflict screen. The server
+    // must recognize the localId as already-persisted and short-
+    // circuit to DUPLICATE — otherwise the same review would be
+    // CONFLICT-thrashed on every sync cycle.
+    const res = await authedPost("/api/ai-features/mobile/sync", {
+      deviceId: deviceTextId,
+      changes: {
+        submittalStamps: [
+          {
+            localId: "stamp-stale-1",
+            reviewId: staleReviewId,
+            submittalId,
+            action: "REJECTED",
+            comments: "Field reviewer queued this while offline",
+          },
+        ],
+      },
+    });
+
+    expect(res.status).toBe(200);
+    const body = res.body as SyncResponseBody;
+    expect(body.processed.submittalStamps).toHaveLength(1);
     expect(body.processed.submittalStamps[0].status).toBe("DUPLICATE");
   });
 });
