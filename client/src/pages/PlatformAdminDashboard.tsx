@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Building2, Users, TrendingUp, Activity, ChevronRight, Database, Clock, Server, DollarSign, FileText, ListChecks, Headphones } from "lucide-react";
+import { Building2, Users, TrendingUp, Activity, ChevronRight, Database, Clock, Server, DollarSign, FileText, ListChecks, Headphones, MailWarning } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -465,6 +465,18 @@ export default function PlatformAdminDashboard() {
             </Card>
           </Link>
         )}
+
+        <Link href="/admin/log-email-failures">
+          <Card className="hover-elevate cursor-pointer transition-colors" data-testid="link-admin-log-email-failures">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MailWarning className="h-5 w-5" />
+                Scheduled email failures
+              </CardTitle>
+              <CardDescription>Per-project log email schedules whose most recent send failed or had no recipients</CardDescription>
+            </CardHeader>
+          </Card>
+        </Link>
       </div>
 
       <section data-testid="section-admin-background-jobs" className="space-y-3">

@@ -554,6 +554,7 @@ export const NavItems: Record<string, NavItem> = {
   '/surety-bonds': { href: '/surety-bonds', label: 'Surety Bonds', testId: 'nav-surety-bonds', featureFlag: 'SURETY_BONDS', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canViewSuretyBonds : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "HUSTLER" },
   '/dbe-goals': { href: '/dbe-goals', label: 'DBE Goals', testId: 'nav-dbe-goals', featureFlag: 'DBE_TRACKING', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canViewDbeGoals : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "HUSTLER" },
   '/material-certifications': { href: '/material-certifications', label: 'Material Certifications', testId: 'nav-material-certifications', featureFlag: 'BUY_AMERICA', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canViewMaterialCertifications : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "ESTIMATOR" || role === "HUSTLER" },
+  '/admin/log-email-failures': { href: '/admin/log-email-failures', label: 'Scheduled Email Failures', testId: 'nav-admin-log-email-failures', visible: (role?: string) => role === "ADMIN" || role === "SUPER_ADMIN" },
 };
 
 export const NavigationConfig = {
@@ -567,7 +568,7 @@ export const NavigationConfig = {
   marketplaceMenu: [NavItems['/marketplace']],
   hiringMenu: [NavItems['/hiring']],
   insightsMenu: [NavItems['/portfolio'], NavItems['/executive-digest']],
-  administrationMenu: [NavItems['/users'], NavItems['/company-settings'], NavItems['/scope-settings'], NavItems['/ai-settings'], NavItems['/audit-logs'], NavItems['/reports'], NavItems['/approvals']],
+  administrationMenu: [NavItems['/users'], NavItems['/company-settings'], NavItems['/scope-settings'], NavItems['/ai-settings'], NavItems['/audit-logs'], NavItems['/reports'], NavItems['/approvals'], NavItems['/admin/log-email-failures']],
   toolsMenu: [NavItems['/website-builder'], NavItems['/social-media'], NavItems['/calculator']],
   timeClockMenu: [NavItems['/time-clock'], NavItems['/time-clock-manager'], NavItems['/tm-daily']],
 };
@@ -593,7 +594,7 @@ const ADMIN_WORKFLOW: WorkflowGroup[] = [
   { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/cost-rates', '/production-rates', '/subcontractor-payables', '/overhead-costs'] },
   { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/dispatch-board', '/equipment', '/procurement-module', '/approvals', '/lidar-scans', '/permits', '/compliance'] },
   { key: 'field_compliance', label: 'Field Compliance', itemHrefs: ['/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
-  { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/ai-settings', '/audit-logs', '/reports'] },
+  { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/ai-settings', '/audit-logs', '/reports', '/admin/log-email-failures'] },
   { key: 'marketing', label: 'Marketing', itemHrefs: ['/website-builder', '/social-media', '/email-campaigns'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
 ];
