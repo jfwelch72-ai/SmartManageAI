@@ -5212,14 +5212,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               ) : <div />}
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={close} data-testid="button-cancel-markup-edit">Cancel</Button>
-                <Button
-                  size="sm"
-                  onClick={save}
-                  disabled={updateMarkupMutation.isPending}
-                  data-testid="button-save-markup-edit"
-                >
-                  {updateMarkupMutation.isPending ? "Saving..." : "Save"}
-                </Button>
+                <MarkupStylingPopoverSaveButton
+                  onSave={save}
+                  updatePending={updateMarkupMutation.isPending}
+                  bulkPending={bulkUpdateMarkupsMutation.isPending}
+                />
               </div>
             </div>
           </div>
@@ -5561,6 +5558,40 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Markup styling popover Save button (extracted for Task #1840 testability).
+//
+// The button is disabled and re-labelled "Saving..." while EITHER the
+// single-update or bulk-update mutation is in flight. Locking both flags
+// here prevents a future refactor from forgetting the bulk path and
+// re-introducing the double-fire regression Task #1772 prevented at the
+// history-stack layer (a slow bulk PATCH that left the button enabled
+// could otherwise produce two MARKUP_UPDATE_BATCH entries from a single
+// user intent).
+// ---------------------------------------------------------------------------
+
+export function MarkupStylingPopoverSaveButton({
+  onSave,
+  updatePending,
+  bulkPending,
+}: {
+  onSave: () => void;
+  updatePending: boolean;
+  bulkPending: boolean;
+}): JSX.Element {
+  const isPending = updatePending || bulkPending;
+  return (
+    <Button
+      size="sm"
+      onClick={onSave}
+      disabled={isPending}
+      data-testid="button-save-markup-edit"
+    >
+      {isPending ? "Saving..." : "Save"}
+    </Button>
   );
 }
 
