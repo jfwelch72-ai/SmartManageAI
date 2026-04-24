@@ -11,18 +11,10 @@
  * route's payload validation, the upsert wiring, or the delete-flow
  * are exactly what this suite is designed to catch.
  *
- * Strategy: mount a minimal Express app that mirrors the production
- * route (`server/routes.ts` lines around the
- * `/api/admin/metrics/jobs/alerts/rules` handlers) and hit it with
- * supertest. The handler delegates to the real
- * `upsertJobMetricAlertRule` / `deleteJobMetricAlertRule` helpers,
- * which write to the test DB provisioned by globalSetup. A logged-in
- * SUPER_ADMIN is simulated via a tiny auth shim so we don't have to
- * stand up the full session/cookie stack.
- *
- * If the production route's Zod schema changes, update the schema
- * literal below to match — the schema is intentionally copy/pasted
- * from server/routes.ts so changes there are caught here.
+ * Task #1540 — the production routes were extracted into
+ * `server/jobMetricAlertRulesRoutes.ts`, so this suite now imports the
+ * real router (with its real Zod schema) and mounts it behind a tiny
+ * auth shim. No more copy/pasted schema literal.
  */
 
 import {
@@ -32,6 +24,7 @@ import {
   beforeAll,
   beforeEach,
   afterAll,
+  vi,
 } from "vitest";
 import express, {
   type Express,
@@ -40,84 +33,56 @@ import express, {
   type NextFunction,
 } from "express";
 import request from "supertest";
-import { z } from "zod";
 import { sql } from "drizzle-orm";
+
+vi.mock("../auth", async () => {
+  const actual = await vi.importActual<typeof import("../auth")>("../auth");
+  const passthrough = (
+    req: Request & { user?: any },
+    _res: Response,
+    next: NextFunction,
+  ) => {
+    req.user = { id: "test-super-admin", role: "SUPER_ADMIN" };
+    next();
+  };
+  return {
+    ...actual,
+    requireAuth: passthrough,
+    requireRole: () => passthrough,
+  };
+});
+
+vi.mock("../auditLogger", async () => {
+  const actual = await vi.importActual<typeof import("../auditLogger")>(
+    "../auditLogger",
+  );
+  return {
+    ...actual,
+    logAudit: vi.fn(async () => {}),
+  };
+});
 
 import {
   upsertJobMetricAlertRule,
-  deleteJobMetricAlertRule,
   DEFAULT_SPIKE_MIN_ABSOLUTE,
   DEFAULT_DEDUPE_MINUTES,
 } from "../utils/jobMetricAlerts";
+import jobMetricAlertRulesRoutes, {
+  upsertJobMetricAlertRuleSchema,
+} from "../jobMetricAlertRulesRoutes";
 
 // Constants the WageRefreshAlertThresholdsCard sends with every payload.
 // Mirrors client/src/pages/JobMetricsHealth.tsx.
 const WAGE_REFRESH_JOB = "wage_decision_stale_refresh";
 const WAGE_REFRESH_SPIKE_COUNTER = "failed";
 
-// Mirror of the inline Zod schema in server/routes.ts.
-const upsertSchema = z.object({
-  id: z.string().optional().nullable(),
-  job: z.string().min(1).max(120),
-  counter: z.string().min(1).max(120).optional().nullable(),
-  kind: z.enum(["spike", "stall"]),
-  threshold: z.number().positive().max(100000),
-  minAbsolute: z.number().int().min(0).max(1_000_000).optional(),
-  dedupeMinutes: z.number().int().min(1).max(24 * 60).optional(),
-  enabled: z.boolean().optional(),
-  emailWhenAbove: z.number().positive().max(100000).nullable().optional(),
-});
-
 let app: Express;
 let db: typeof import("../db").db;
-
-function fakeAuth() {
-  return (req: Request & { user?: any }, _res: Response, next: NextFunction) => {
-    req.user = { id: "test-super-admin", role: "SUPER_ADMIN" };
-    next();
-  };
-}
 
 function buildApp(): Express {
   const a = express();
   a.use(express.json());
-  a.use(fakeAuth());
-
-  // Mirror of POST /api/admin/metrics/jobs/alerts/rules
-  a.post(
-    "/api/admin/metrics/jobs/alerts/rules",
-    async (req: Request, res: Response, next: NextFunction) => {
-      try {
-        const parsed = upsertSchema.parse(req.body);
-        const rule = await upsertJobMetricAlertRule(parsed);
-        res.json(rule);
-      } catch (err: any) {
-        if (err instanceof z.ZodError) {
-          res.status(400).json({ error: "Invalid rule", details: err.errors });
-          return;
-        }
-        next(err);
-      }
-    },
-  );
-
-  // Mirror of DELETE /api/admin/metrics/jobs/alerts/rules/:id
-  a.delete(
-    "/api/admin/metrics/jobs/alerts/rules/:id",
-    async (req: Request, res: Response, next: NextFunction) => {
-      try {
-        const ok = await deleteJobMetricAlertRule(req.params.id);
-        if (!ok) {
-          res.status(404).json({ error: "Rule not found" });
-          return;
-        }
-        res.json({ deleted: req.params.id });
-      } catch (err: any) {
-        next(err);
-      }
-    },
-  );
-
+  a.use("/api", jobMetricAlertRulesRoutes);
   return a;
 }
 
@@ -140,6 +105,31 @@ beforeEach(async () => {
 
 afterAll(async () => {
   await cleanup();
+});
+
+describe("upsertJobMetricAlertRuleSchema — exported contract (Task #1540)", () => {
+  it("accepts a minimal wage-refresh stall payload", () => {
+    const parsed = upsertJobMetricAlertRuleSchema.parse({
+      job: WAGE_REFRESH_JOB,
+      counter: null,
+      kind: "stall",
+      threshold: 36,
+    });
+    expect(parsed.job).toBe(WAGE_REFRESH_JOB);
+    expect(parsed.kind).toBe("stall");
+    expect(parsed.threshold).toBe(36);
+  });
+
+  it("rejects an unknown kind at the schema level", () => {
+    expect(() =>
+      upsertJobMetricAlertRuleSchema.parse({
+        job: WAGE_REFRESH_JOB,
+        counter: null,
+        kind: "blowup",
+        threshold: 4,
+      }),
+    ).toThrow();
+  });
 });
 
 describe("POST /api/admin/metrics/jobs/alerts/rules — wage refresh stall (Task #1495)", () => {
