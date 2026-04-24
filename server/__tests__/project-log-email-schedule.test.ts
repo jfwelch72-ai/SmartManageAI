@@ -361,6 +361,14 @@ describe("processProjectLogEmailSchedules", () => {
     queueProject([proj]);
     queueProject([proj]);
     queueDistLists([{ contactEmails: [], extraEmails: [] }]);
+    // Task #1672 — the per-transition fan-out now resolves the
+    // named recipients' active status before notifying. Queue them
+    // both as active so the helper picks the editor + PM rather
+    // than the admin backstop.
+    queueUsers([
+      { id: "user-editor", isActive: true },
+      { id: "user-pm", isActive: true },
+    ]);
 
     await processProjectLogEmailSchedules({ now });
     expect(sendEmailCalls).toHaveLength(0);
@@ -432,6 +440,10 @@ describe("processProjectLogEmailSchedules", () => {
     }
     queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
     sendEmailNextResults.push({ ok: false, error: "All recipients suppressed by SendGrid" });
+    // Task #1672 — single shared user, queued as active so the
+    // per-transition fan-out picks the named recipient instead of
+    // the admin backstop.
+    queueUsers([{ id: "user-editor", isActive: true }]);
 
     await processProjectLogEmailSchedules({ now });
 
@@ -529,6 +541,13 @@ describe("processProjectLogEmailSchedules", () => {
     }
     queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
     sendEmailNextResults.push({ ok: false, error: "Bounce" });
+    // Task #1672 — both named recipients are active so the
+    // per-transition fan-out targets them rather than the admin
+    // backstop.
+    queueUsers([
+      { id: "user-editor", isActive: true },
+      { id: "user-pm", isActive: true },
+    ]);
 
     await processProjectLogEmailSchedules({ now });
 
@@ -540,12 +559,15 @@ describe("processProjectLogEmailSchedules", () => {
     expect(notifInserts[0].values).toHaveLength(2);
   });
 
-  it("stamps the dedupe marker even when there are no recipients to notify", async () => {
+  it("stamps the dedupe marker and falls back to org admins when there are no named recipients to notify", async () => {
     // Task #1637 — schedule has neither editor nor PM (e.g. row
     // pre-dates the column or both users were deleted). We still
     // stamp the dedupe marker so subsequent ticks don't keep
-    // re-evaluating an unactionable row; the project settings panel
-    // remains the source of truth for unattended failures.
+    // re-evaluating an unactionable row.
+    // Task #1672 — instead of silently dropping the alert, the
+    // worker now routes the failure to the org's admins so a stuck
+    // schedule with no named recipient still pings someone with the
+    // authority to fix it.
     const now = new Date("2026-04-20T08:00:00Z");
     queueSchedules([{
       id: "sched-1",
@@ -561,7 +583,12 @@ describe("processProjectLogEmailSchedules", () => {
       lastFailureNotifiedStatus: null,
     }]);
     {
-      // Helper + cron both SELECT the project — queue twice.
+      // The worker queries `projects` twice: once inside
+      // `executeProjectLogEmailScheduleSend` (which loads the project
+      // before building the PDF) and once back in
+      // `processProjectLogEmailSchedules` after a FAILURE result so the
+      // per-transition fan-out has access to `code` + projectManagerId
+      // for the deep link. Queue the same row twice to satisfy both.
       const proj = {
         id: "proj-1",
         code: "PRJ-7",
@@ -574,12 +601,163 @@ describe("processProjectLogEmailSchedules", () => {
     }
     queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
     sendEmailNextResults.push({ ok: false, error: "Boom" });
+    // Admin backstop (Task #1672): no named recipients → helper
+    // falls through directly to the admins SELECT.
+    queueUsers([
+      { id: "user-admin-1" },
+      { id: "user-admin-2" },
+    ]);
 
     await processProjectLogEmailSchedules({ now });
 
     expect(updates).toHaveLength(2);
     expect((updates[1].values as Row).lastFailureNotifiedStatus).toBe("FAILURE");
-    expect(inserts.filter((i) => i.table === "notifications")).toHaveLength(0);
+
+    const notifInserts = inserts.filter((i) => i.table === "notifications");
+    expect(notifInserts).toHaveLength(1);
+    const rows = notifInserts[0].values;
+    expect(rows).toHaveLength(2);
+    expect(new Set(rows.map((r) => r.userId))).toEqual(
+      new Set(["user-admin-1", "user-admin-2"]),
+    );
+    for (const r of rows) {
+      expect(r.type).toBe("PROJECT_LOG_EMAIL_FAILED");
+      expect(r.relatedEntityType).toBe("PROJECT_LOG_EMAIL_SCHEDULE");
+      expect(r.relatedEntityId).toBe("PRJ-7");
+      expect(String(r.title)).toContain("no active recipients");
+      expect(String(r.message)).toContain("routed to org admins");
+    }
+  });
+
+  it("falls back to org admins when every named recipient is deactivated", async () => {
+    // Task #1672 — both the project manager and the schedule's last
+    // editor have been deactivated. Pre-#1672 the worker would
+    // silently insert notification rows for the inactive users
+    // (which nobody could ever read). Now it should route the alert
+    // to the org's active admins so a stuck schedule still pings
+    // someone with the authority to fix it, log the backstop fan-out
+    // for production telemetry, and stamp the dedupe marker so the
+    // next tick doesn't re-fire.
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueSchedules([{
+      id: "sched-1",
+      organizationId: "org-1",
+      projectId: "proj-1",
+      logType: "SUBMITTAL",
+      cadence: "WEEKLY",
+      weekday: 1,
+      hour: 8,
+      timezone: "UTC",
+      lastSentAt: null,
+      lastEditedById: "user-editor",
+      lastFailureNotifiedStatus: null,
+    }]);
+    // Queue the project twice: once for the send pipeline's lookup
+    // and once for the per-transition fan-out's lookup.
+    const proj9 = {
+      id: "proj-1",
+      code: "PRJ-9",
+      name: "Bridge 9",
+      gcOrganizationId: "org-1",
+      projectManagerId: "user-pm",
+    };
+    queueProject([proj9]);
+    queueProject([proj9]);
+    queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+    sendEmailNextResults.push({ ok: false, error: "SMTP 550" });
+    // First users SELECT resolves the named recipients — both are
+    // deactivated.
+    queueUsers([
+      { id: "user-editor", isActive: false },
+      { id: "user-pm", isActive: false },
+    ]);
+    // Second users SELECT resolves the admin backstop pool.
+    queueUsers([
+      { id: "user-admin-1" },
+      { id: "user-admin-2" },
+    ]);
+
+    await processProjectLogEmailSchedules({ now });
+
+    expect(updates).toHaveLength(2);
+    expect((updates[1].values as Row).lastFailureNotifiedStatus).toBe("FAILURE");
+
+    const notifInserts = inserts.filter((i) => i.table === "notifications");
+    // Exactly one batch — to admins, not to the deactivated named
+    // recipients. The deactivated editor / PM should NOT receive a
+    // notification record.
+    expect(notifInserts).toHaveLength(1);
+    const rows = notifInserts[0].values;
+    expect(rows).toHaveLength(2);
+    const userIds = new Set(rows.map((r) => r.userId));
+    expect(userIds).toEqual(new Set(["user-admin-1", "user-admin-2"]));
+    expect(userIds.has("user-editor")).toBe(false);
+    expect(userIds.has("user-pm")).toBe(false);
+    for (const r of rows) {
+      expect(r.type).toBe("PROJECT_LOG_EMAIL_FAILED");
+      expect(r.relatedEntityType).toBe("PROJECT_LOG_EMAIL_SCHEDULE");
+      expect(r.relatedEntityId).toBe("PRJ-9");
+      expect(String(r.title)).toContain("no active recipients");
+      expect(String(r.title)).toContain("Bridge 9");
+      expect(String(r.message)).toContain("project manager");
+      expect(String(r.message)).toContain("deactivated");
+      expect(String(r.message)).toContain("routed to org admins");
+    }
+  });
+
+  it("notifies only the active named recipient when the other is deactivated", async () => {
+    // Task #1672 — partial deactivation: PM is deactivated but the
+    // last editor is still active. We should notify the active
+    // editor and skip the deactivated PM entirely (no dead
+    // notification row written for them) without invoking the admin
+    // backstop, since there's still one actionable recipient.
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueSchedules([{
+      id: "sched-1",
+      organizationId: "org-1",
+      projectId: "proj-1",
+      logType: "RFI",
+      cadence: "WEEKLY",
+      weekday: 1,
+      hour: 8,
+      timezone: "UTC",
+      lastSentAt: null,
+      lastEditedById: "user-editor",
+      lastFailureNotifiedStatus: null,
+    }]);
+    // Queue the project twice: once for the send pipeline's lookup
+    // and once for the per-transition fan-out's lookup.
+    const projPartial = {
+      id: "proj-1",
+      code: "PRJ-7",
+      name: "Bridge 7",
+      gcOrganizationId: "org-1",
+      projectManagerId: "user-pm",
+    };
+    queueProject([projPartial]);
+    queueProject([projPartial]);
+    queueDistLists([{ contactEmails: ["pm@example.com"], extraEmails: [] }]);
+    sendEmailNextResults.push({ ok: false, error: "Bounce" });
+    queueUsers([
+      { id: "user-editor", isActive: true },
+      { id: "user-pm", isActive: false },
+    ]);
+    // If the helper incorrectly fell back to the admin pool, this
+    // queued admin row would surface in the inserts and the test
+    // would fail.
+    queueUsers([{ id: "user-admin-should-not-be-used" }]);
+
+    await processProjectLogEmailSchedules({ now });
+
+    const notifInserts = inserts.filter((i) => i.table === "notifications");
+    expect(notifInserts).toHaveLength(1);
+    const rows = notifInserts[0].values;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].userId).toBe("user-editor");
+    // No admin backstop fan-out triggered.
+    expect(rows.some((r) => r.userId === "user-admin-should-not-be-used")).toBe(false);
+    // Title is the regular failure copy, not the "no active recipients" backstop copy.
+    expect(String(rows[0].title)).not.toContain("no active recipients");
   });
 
   // ----------------------------------------------------------

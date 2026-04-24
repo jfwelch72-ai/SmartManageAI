@@ -4428,39 +4428,151 @@ async function maybeNotifyProjectLogEmailFailure(args: {
   // fan-out but DON'T re-stamp — there's nothing new to record.
   if (args.previousStatus === args.status) return;
 
-  const recipientIds = new Set<string>();
-  if (args.lastEditedById) recipientIds.add(args.lastEditedById);
-  if (args.projectManagerId) recipientIds.add(args.projectManagerId);
+  const namedRecipientIds = new Set<string>();
+  if (args.lastEditedById) namedRecipientIds.add(args.lastEditedById);
+  if (args.projectManagerId) namedRecipientIds.add(args.projectManagerId);
 
-  // Stamp the dedupe marker even when there's nobody to notify so a
-  // schedule with no editor + no PM doesn't get re-evaluated every
-  // tick. The "Last send failed" badge in the project settings panel
-  // is still the source of truth for unattended failures.
-  if (recipientIds.size > 0) {
-    const logLabel = args.logType === "SUBMITTAL" ? "submittal" : "RFI";
-    const reasonLabel = args.status === "NO_RECIPIENTS"
-      ? "no recipients resolved from the project's distribution lists"
-      : args.reason;
-    const title = args.status === "NO_RECIPIENTS"
-      ? `Scheduled ${logLabel} log email skipped: ${args.projectName}`
-      : `Scheduled ${logLabel} log email failed: ${args.projectName}`;
-    const message = `The scheduled ${logLabel} log email for ${args.projectName} did not send — ${reasonLabel}.`;
+  // Task #1672 — resolve the named recipients so we can filter out
+  // anyone whose account has been deactivated. Pre-#1672 the worker
+  // happily wrote a notification row for inactive users (matching the
+  // "(inactive)" badge the project settings card surfaces), which
+  // meant a schedule that started failing while both pointers (PM +
+  // last editor) had been deactivated would silently drop its alerts:
+  // the rows were created, but nobody could ever read them. Now we
+  // (a) skip inactive named recipients on the per-transition fan-out
+  // and (b) fall back to the org's admins/managers when zero active
+  // named recipients remain so a stuck schedule still pings someone
+  // with the authority to fix it. We scope the lookup to the
+  // schedule's organization to defend against any cross-tenant
+  // pointer drift — surfacing a recipient from a different org would
+  // be both confusing and a privacy leak. Mirrors the same active/
+  // inactive resolution the GET handler in
+  // `projectLogEmailScheduleRoutes.ts` (Task #1655) does for the
+  // settings card.
+  const activeRecipientIds = new Set<string>();
+  if (namedRecipientIds.size > 0) {
+    const namedRows = await db
+      .select({ id: users.id, isActive: users.isActive })
+      .from(users)
+      .where(and(
+        inArray(users.id, Array.from(namedRecipientIds)),
+        eq(users.organizationId, args.organizationId),
+      ));
+    for (const row of namedRows) {
+      if (row.isActive) activeRecipientIds.add(row.id);
+    }
+  }
 
-    const notifs: InsertNotification[] = Array.from(recipientIds).map((userId) => ({
+  const logLabel = args.logType === "SUBMITTAL" ? "submittal" : "RFI";
+  const reasonLabel = args.status === "NO_RECIPIENTS"
+    ? "no recipients resolved from the project's distribution lists"
+    : args.reason;
+  const baseTitle = args.status === "NO_RECIPIENTS"
+    ? `Scheduled ${logLabel} log email skipped: ${args.projectName}`
+    : `Scheduled ${logLabel} log email failed: ${args.projectName}`;
+  const baseMessage = `The scheduled ${logLabel} log email for ${args.projectName} did not send — ${reasonLabel}.`;
+  const relatedEntityId = args.projectCode ?? args.scheduleId;
+
+  let routedTo: "named" | "admin_backstop" | "none" = "none";
+  let backstopRecipientCount = 0;
+
+  if (activeRecipientIds.size > 0) {
+    routedTo = "named";
+    const notifs: InsertNotification[] = Array.from(activeRecipientIds).map((userId) => ({
       userId,
       organizationId: args.organizationId,
       type: "PROJECT_LOG_EMAIL_FAILED" as const,
-      title,
-      message,
+      title: baseTitle,
+      message: baseMessage,
       relatedEntityType: "PROJECT_LOG_EMAIL_SCHEDULE",
       // Fall back to the schedule id when the project has no `code`
       // — keeps the notification record valid even if the deep-link
       // can't fully resolve.
-      relatedEntityId: args.projectCode ?? args.scheduleId,
+      relatedEntityId,
     }));
     await insertNotifications(notifs);
+  } else {
+    // Task #1672 — zero active named recipients (either none
+    // resolved at all, or every named recipient is deactivated).
+    // Route the alert to the org's admins so a stuck schedule never
+    // silently drops its alerts. We deliberately re-query rather
+    // than reusing the repeated-failure backstop helper because the
+    // signals mean different things: this fan-out fires on the
+    // *very first* failure transition when the named pointers are
+    // unactionable, while the repeated-failure backstop fires only
+    // after the streak crosses a configurable threshold. Both can
+    // legitimately fire on the same tick (and that's fine — admins
+    // see one "named recipients are inactive" alert and one
+    // "schedule has failed N times" alert, which is what you want
+    // when both conditions are true). We also filter the admin pool
+    // to active accounts so we don't cascade the same dead-mailbox
+    // problem.
+    const adminRows = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(
+        eq(users.organizationId, args.organizationId),
+        inArray(users.role, ["SUPER_ADMIN", "ADMIN", "MANAGER"]),
+        eq(users.isActive, true),
+      ));
+
+    if (adminRows.length > 0) {
+      routedTo = "admin_backstop";
+      backstopRecipientCount = adminRows.length;
+      const backstopTitle = args.status === "NO_RECIPIENTS"
+        ? `Scheduled ${logLabel} log email skipped (no active recipients): ${args.projectName}`
+        : `Scheduled ${logLabel} log email failed (no active recipients): ${args.projectName}`;
+      const backstopMessage = namedRecipientIds.size > 0
+        ? `${baseMessage} The project manager and the schedule's last editor are deactivated, so this alert is being routed to org admins instead.`
+        : `${baseMessage} The schedule has no project manager or last editor on file, so this alert is being routed to org admins instead.`;
+
+      const notifs: InsertNotification[] = adminRows.map((row) => ({
+        userId: row.id,
+        organizationId: args.organizationId,
+        type: "PROJECT_LOG_EMAIL_FAILED" as const,
+        title: backstopTitle,
+        message: backstopMessage,
+        relatedEntityType: "PROJECT_LOG_EMAIL_SCHEDULE",
+        relatedEntityId,
+      }));
+      await insertNotifications(notifs);
+
+      // Task #1672 — surface the backstop fan-out in production
+      // telemetry so on-call can see "we lost the named recipients
+      // and routed to admins" without having to inspect the DB. A
+      // warning level is appropriate: nothing is broken (the alert
+      // landed somewhere), but the schedule is in a degraded state
+      // until someone re-assigns a PM / last editor.
+      logWarn("Project log email failure notification routed to org admin backstop", {
+        scheduleId: args.scheduleId,
+        organizationId: args.organizationId,
+        status: args.status,
+        namedRecipientCount: namedRecipientIds.size,
+        activeRecipientCount: 0,
+        backstopRecipientCount,
+        reason: namedRecipientIds.size > 0
+          ? "all_named_recipients_inactive"
+          : "no_named_recipients",
+      });
+    } else {
+      // No admins to notify either (rare — happens during initial
+      // setup or after a bulk role/active change). We still stamp
+      // the dedupe marker below so the row doesn't get re-evaluated
+      // every tick; the project settings card remains the source of
+      // truth for unattended failures. Log it loudly so on-call can
+      // see that the alert was effectively dropped.
+      logWarn("Project log email failure notification dropped — no active recipients and no admins to back-stop", {
+        scheduleId: args.scheduleId,
+        organizationId: args.organizationId,
+        status: args.status,
+        namedRecipientCount: namedRecipientIds.size,
+      });
+    }
   }
 
+  // Stamp the dedupe marker regardless of whether we found someone
+  // to notify so a schedule with no actionable recipients doesn't
+  // get re-evaluated every tick.
   await db
     .update(projectLogEmailSchedules)
     .set({
@@ -4473,7 +4585,10 @@ async function maybeNotifyProjectLogEmailFailure(args: {
   logInfo("Project log email failure notification fanned out", {
     scheduleId: args.scheduleId,
     status: args.status,
-    recipients: recipientIds.size,
+    namedRecipients: namedRecipientIds.size,
+    activeRecipients: activeRecipientIds.size,
+    routedTo,
+    backstopRecipientCount,
   });
 }
 
