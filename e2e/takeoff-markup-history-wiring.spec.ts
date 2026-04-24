@@ -26,6 +26,28 @@
  * pre-selected via sessionStorage, bid-plans tour suppressed via
  * localStorage) is intentionally identical to the sibling spec so any
  * future refactor of the workspace bootstrap only needs one mental model.
+ *
+ * Task #1823 extends this spec with the two corners of the same wiring
+ * that previously had only unit-level coverage:
+ *
+ *   3. **Redo** — `button-redo` in `TakeoffToolbar` and the
+ *      Ctrl+Y / Ctrl+Shift+Z bindings in `use-takeoff-interactions.ts`
+ *      both forward to `takeoffHistory.redo()`. The redo half of
+ *      `useTakeoffHistory` is unit-tested but a broken sidebar binding
+ *      or a missing keyboard handler would silently ship without an
+ *      end-to-end check. Two new scenarios drag, undo, then redo via
+ *      each binding and assert the markup ends up back at the dragged
+ *      location.
+ *   4. **Multi-select body drag** — `commitMarkupBodyDrag` has a
+ *      separate branch (Task #1752) that batches a multi-selection
+ *      through `bulkUpdateMarkupsMutation` and pushes a single
+ *      `MARKUP_UPDATE_BATCH` history entry only after the bulk PATCH
+ *      resolves (Task #1759). The bulk mutation contract is unit-
+ *      tested, but nothing previously proved that an actual two-markup
+ *      Shift+click group drag round-trips back through Undo. The new
+ *      scenario seeds two HIGHLIGHTs, multi-selects via Shift+click,
+ *      drags the group, and asserts both members snap back when the
+ *      sidebar Undo replays the bulk batch.
  */
 import { test, expect, type Page } from "@playwright/test";
 import { installCsrf } from "./helpers/csrf";
@@ -326,6 +348,70 @@ async function clickSidebarUndo(page: Page) {
   await undo.dispatchEvent("click");
 }
 
+async function clickSidebarRedo(page: Page) {
+  // Mirrors `clickSidebarUndo`: the sidebar Redo button
+  // (`TakeoffToolbar.tsx`, `button-redo`) is a `TinyBtn` wrapped in a
+  // shadcn `<Tooltip>` whose hovering tip can intercept the pointer.
+  // After an Undo lands the button transitions from disabled →
+  // enabled (its `disabled` prop is `!takeoffHistory.canRedo || isPending`),
+  // so we explicitly assert the enabled state to catch a regression
+  // that strands the button in `disabled` even though redo is wired —
+  // a failure mode the unit tests around `useTakeoffHistory` cannot
+  // see because they call `redo()` directly without the toolbar in
+  // the loop. `dispatchEvent("click")` then fires the React onClick
+  // handler that invokes `takeoffHistory.redo()`.
+  const redo = page.getByTestId("button-redo");
+  await redo.waitFor({ state: "visible", timeout: 10_000 });
+  await expect(redo).toBeEnabled();
+  await redo.dispatchEvent("click");
+}
+
+async function createSecondHighlightApi(
+  page: Page,
+  sheetId: string,
+  points: { x: number; y: number }[],
+): Promise<MarkupResponse> {
+  // Multi-select scenarios need a sibling HIGHLIGHT on the same sheet
+  // so the body drag drives the `siblingIds.length > 0` branch of
+  // `commitMarkupBodyDrag` (the bulk-mutation + MARKUP_UPDATE_BATCH
+  // path covered by Tasks #1752 / #1755 / #1759). We seed via the API
+  // for the same reason the primary HIGHLIGHT is seeded that way:
+  // deterministic placement without relying on the canvas drawing
+  // flow.
+  return createMarkupApi(page, {
+    sheetId,
+    tool: "HIGHLIGHT",
+    points,
+    color: "#10b981",
+    thickness: 2,
+  });
+}
+
+async function shiftClickOnCanvas(
+  page: Page,
+  point: { x: number; y: number },
+) {
+  // Shift+click adds a markup to `selectedMarkupIds` instead of
+  // replacing the set. The Konva click handler in TakeoffWorkspace
+  // reads the modifier off `window.event.shiftKey` (see Task #1736),
+  // so the modifier must be physically held through the native click
+  // dispatch — `mouse.click({ modifiers: ["Shift"] })` is not enough
+  // because Playwright issues a synthetic-only modifier overlay that
+  // doesn't propagate to `window.event` for Konva's listener.
+  // Mirrors the plan-side `plan-markup-group-drag.spec.ts` pattern.
+  const box = await getCanvasBox(page);
+  await page.keyboard.down("Shift");
+  try {
+    await page.mouse.move(box.x + point.x, box.y + point.y);
+    await page.mouse.move(box.x + point.x, box.y + point.y);
+    await page.mouse.down();
+    await page.waitForTimeout(30);
+    await page.mouse.up();
+  } finally {
+    await page.keyboard.up("Shift");
+  }
+}
+
 // Disable Playwright video capture for this spec at the file level — the
 // Replit container doesn't ship ffmpeg by default and the suite-wide
 // retention setting would fail the test before any assertion runs.
@@ -433,6 +519,260 @@ test.describe("Takeoff markup history wiring - Task #1761", () => {
       markup.id,
       initialPoints,
       "expected Ctrl+Z to restore the markup's pre-resize points",
+    );
+  });
+
+  // Task #1823 — Redo wiring (sidebar button half).
+  test("Sidebar Redo restores the dragged markup after Undo of a body drag", async ({
+    page,
+    browserName,
+  }) => {
+    test.setTimeout(60_000);
+    await devLogin(page, "ADMIN");
+    const { sheetId, markup, initialPoints, centroid } = await seedWorkspace(
+      page,
+      Date.now() + 2,
+    );
+
+    await selectMarkup(page, centroid);
+
+    // Drag the body by a known delta and snapshot the post-drag points
+    // returned by the server. We assert against this exact payload after
+    // Redo so the test catches a regression where Redo replays the wrong
+    // snapshot (e.g. the `before` instead of the `after`).
+    const dragEnd = {
+      x: centroid.x + BODY_DRAG_DELTA.dx,
+      y: centroid.y + BODY_DRAG_DELTA.dy,
+    };
+    await dragOnCanvas(page, centroid, dragEnd, browserName);
+    await waitForPointsToChange(page, sheetId, markup.id, initialPoints);
+    const afterDrag = await listMarkups(page, sheetId);
+    const draggedPoints = afterDrag.find((m) => m.id === markup.id)!.points;
+    // Sanity: every point should have moved (body drag translates all
+    // points by the same delta). If only one moved, we accidentally
+    // routed through the resize path and the rest of the assertion
+    // would still pass for the wrong reason.
+    expect(draggedPoints[0]).not.toEqual(initialPoints[0]);
+    expect(draggedPoints[1]).not.toEqual(initialPoints[1]);
+
+    // Undo first so there's something on the redo stack. We use the
+    // sidebar Undo so the round trip exercises the same toolbar wiring
+    // covered by the original #1761 scenario above.
+    await clickSidebarUndo(page);
+    await waitForPointsToMatch(
+      page,
+      sheetId,
+      markup.id,
+      initialPoints,
+      "expected sidebar Undo to restore the markup's original points before Redo",
+    );
+
+    // Now Redo via the sidebar button. If the `button-redo` onClick
+    // ever drops the `takeoffHistory.redo()` call (the wiring this
+    // test guards), the markup will not move forward and the
+    // `waitForPointsToMatch` below will time out. The exact-match
+    // assertion against `draggedPoints` (not just "different from
+    // initial") also catches a regression where Redo replays a stale
+    // or wrong snapshot.
+    await clickSidebarRedo(page);
+    await waitForPointsToMatch(
+      page,
+      sheetId,
+      markup.id,
+      draggedPoints,
+      "expected sidebar Redo to restore the dragged-to points after Undo",
+    );
+  });
+
+  // Task #1823 — Redo wiring (Ctrl+Y keyboard half). The bubble-phase
+  // handler in `use-takeoff-interactions.ts` matches both `Ctrl+Y` and
+  // `Ctrl+Shift+Z`; we assert the `Ctrl+Y` form here because that is
+  // the canonical Windows redo binding the toolbar tooltip advertises
+  // (`Redo (Ctrl+Y)`). A separate assertion of `Ctrl+Shift+Z` would
+  // exercise the same handler line and would not add coverage.
+  test("Ctrl+Y restores the dragged markup after Ctrl+Z of a body drag", async ({
+    page,
+    browserName,
+  }) => {
+    test.setTimeout(60_000);
+    await devLogin(page, "ADMIN");
+    const { sheetId, markup, initialPoints, centroid } = await seedWorkspace(
+      page,
+      Date.now() + 3,
+    );
+
+    await selectMarkup(page, centroid);
+
+    const dragEnd = {
+      x: centroid.x + BODY_DRAG_DELTA.dx,
+      y: centroid.y + BODY_DRAG_DELTA.dy,
+    };
+    await dragOnCanvas(page, centroid, dragEnd, browserName);
+    await waitForPointsToChange(page, sheetId, markup.id, initialPoints);
+    const afterDrag = await listMarkups(page, sheetId);
+    const draggedPoints = afterDrag.find((m) => m.id === markup.id)!.points;
+
+    // Ctrl+Z first to populate the redo stack (the global keyboard
+    // handler is mounted by `useTakeoffInteractions` and routes to
+    // `takeoffHistory.undo()`).
+    await page.keyboard.press("Control+z");
+    await waitForPointsToMatch(
+      page,
+      sheetId,
+      markup.id,
+      initialPoints,
+      "expected Ctrl+Z to restore the markup's original points before Redo",
+    );
+
+    // Ctrl+Y → `takeoffHistory.redo()` → re-issues the markup PATCH
+    // with the dragged-to points. If the keyboard binding regresses
+    // (e.g. the `key === 'y'` arm is dropped or the `event.preventDefault()`
+    // ordering swallows the dispatch) the `waitForPointsToMatch` below
+    // will time out.
+    await page.keyboard.press("Control+y");
+    await waitForPointsToMatch(
+      page,
+      sheetId,
+      markup.id,
+      draggedPoints,
+      "expected Ctrl+Y to restore the dragged-to points after Ctrl+Z",
+    );
+  });
+
+  // Task #1823 — Multi-select group drag → Undo round trip. Drives the
+  // `siblingIds.length > 0` branch of `commitMarkupBodyDrag`: a single
+  // `bulkUpdateMarkupsMutation.mutateAsync` PATCH carries both members
+  // (Task #1752), and a single `MARKUP_UPDATE_BATCH` history entry is
+  // pushed only after the bulk PATCH resolves (Task #1759). The undo
+  // path replays `applyMarkupBatchSnapshots` against the bulk endpoint
+  // (Task #1764), restoring every member's pre-drag points in one
+  // round-trip. If any link in that chain breaks — the bulk PATCH
+  // fails, the batch history entry is skipped, or the undo fan-out
+  // misses a sibling — at least one of the two `waitForPointsToMatch`
+  // assertions below times out.
+  test("Sidebar Undo restores both markups after a multi-select group drag", async ({
+    page,
+    browserName,
+  }) => {
+    test.setTimeout(60_000);
+
+    // Seed the first HIGHLIGHT through `seedWorkspace`, then add a
+    // second one on the same sheet via the API. Placing the second
+    // HIGHLIGHT to the right of the first leaves a clean 60 px gutter
+    // between their bounding boxes so a click on either centroid never
+    // accidentally lands inside the other.
+    await devLogin(page, "ADMIN");
+    const { sheetId, markup: markupA, initialPoints: pointsA, centroid: centroidA } =
+      await seedWorkspace(page, Date.now() + 4);
+
+    const POINTS_B: { x: number; y: number }[] = [
+      { x: 480, y: 220 },
+      { x: 620, y: 320 },
+    ];
+    const CENTROID_B = {
+      x: (POINTS_B[0].x + POINTS_B[1].x) / 2,
+      y: (POINTS_B[0].y + POINTS_B[1].y) / 2,
+    };
+    const markupB = await createSecondHighlightApi(page, sheetId, POINTS_B);
+
+    // The seeded sheet was loaded *before* markup B was POSTed, so
+    // React-Query's cached markup list is missing it. Refetching by
+    // navigating away and back would reset other state; the cleanest
+    // fix is to invalidate the cached list via a reload, which
+    // triggers a fresh GET on mount.
+    await page.reload();
+    await page.waitForLoadState("domcontentloaded");
+    await page
+      .locator(".konvajs-content canvas")
+      .first()
+      .waitFor({ state: "visible", timeout: 15_000 });
+
+    // Click markup A (selects it alone — properties panel opens with
+    // "Edit markup" header), then Shift+click markup B to extend the
+    // selection. The header flipping to "Edit 2 markups" is the
+    // canonical signal that `selectedMarkupIds.size === 2`, and is
+    // what gates the body drag onto the multi-select branch.
+    await selectMarkup(page, centroidA);
+    await shiftClickOnCanvas(page, CENTROID_B);
+    await expect(page.getByTestId("text-markup-edit-header")).toHaveText(
+      "Edit 2 markups",
+      { timeout: 10_000 },
+    );
+    // Give Konva one extra frame to flush the second member's
+    // `name="markup-drag-member-..."` Group prop so `onBodyDragStart`
+    // can find it via `layer.findOne(...)`. Without this the group
+    // drag occasionally falls back to a single-markup commit on
+    // slower machines.
+    await page.waitForTimeout(150);
+
+    // Drag markup A's body. The dragged Group is markup A; markup B
+    // is translated imperatively in `onBodyDragMove` by the same dx/dy
+    // and committed through the bulk PATCH branch.
+    const dragEnd = {
+      x: centroidA.x + BODY_DRAG_DELTA.dx,
+      y: centroidA.y + BODY_DRAG_DELTA.dy,
+    };
+    await dragOnCanvas(page, centroidA, dragEnd, browserName);
+
+    // Wait until both members report moved points on the server. We
+    // poll the *list* (not just one markup) so we never race the bulk
+    // PATCH lands → cache invalidates → fresh GET arrives sequence.
+    await expect
+      .poll(
+        async () => {
+          const list = await listMarkups(page, sheetId);
+          const a = list.find((m) => m.id === markupA.id);
+          const b = list.find((m) => m.id === markupB.id);
+          if (!a || !b) return null;
+          return { a: a.points, b: b.points };
+        },
+        {
+          message:
+            "expected the bulk group-drag PATCH to land for both selected markups",
+          timeout: 15_000,
+        },
+      )
+      .not.toEqual({ a: pointsA, b: POINTS_B });
+
+    // Sanity: both members must have translated by the same delta.
+    // This catches a regression where the bulk PATCH accidentally
+    // applies a per-markup transform (e.g. each member moved to the
+    // same absolute position) instead of a uniform translate.
+    const afterDrag = await listMarkups(page, sheetId);
+    const aMoved = afterDrag.find((m) => m.id === markupA.id)!;
+    const bMoved = afterDrag.find((m) => m.id === markupB.id)!;
+    const aDx = aMoved.points[0].x - pointsA[0].x;
+    const aDy = aMoved.points[0].y - pointsA[0].y;
+    const bDx = bMoved.points[0].x - POINTS_B[0].x;
+    const bDy = bMoved.points[0].y - POINTS_B[0].y;
+    expect(aDx).toBeCloseTo(bDx, 1);
+    expect(aDy).toBeCloseTo(bDy, 1);
+    // Both members must have actually moved (>0 delta) — guards
+    // against a no-op PATCH that would still satisfy the equality
+    // check above with zeros.
+    expect(Math.abs(aDx) + Math.abs(aDy)).toBeGreaterThan(0);
+
+    // Click the sidebar Undo. The single `MARKUP_UPDATE_BATCH` entry
+    // for the gesture replays via `applyMarkupBatchSnapshots`, which
+    // (Task #1764) collapses into one bulk PATCH back to the
+    // pre-drag points.
+    await clickSidebarUndo(page);
+
+    // Both members must snap back. We assert each one separately so
+    // the failure message identifies which side of the batch broke.
+    await waitForPointsToMatch(
+      page,
+      sheetId,
+      markupA.id,
+      pointsA,
+      "expected sidebar Undo to restore markup A's pre-group-drag points",
+    );
+    await waitForPointsToMatch(
+      page,
+      sheetId,
+      markupB.id,
+      POINTS_B,
+      "expected sidebar Undo to restore markup B's pre-group-drag points",
     );
   });
 });
