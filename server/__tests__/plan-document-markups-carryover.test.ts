@@ -1088,3 +1088,165 @@ describe("plan-markup-layers — copy-targets (Task #1722)", () => {
     expect(res.status).toBe(404);
   });
 });
+
+// Task #1805 — back out an accidental "Copy to sheet" by cascading
+// the layer deletion to the markups it brought along, restoring the
+// destination sheet to its pre-copy state. The same DELETE endpoint
+// without the cascade flag must keep the historical SET NULL
+// behaviour so existing callers (manual layer deletion from the
+// panel) are unaffected.
+describe("plan-markup-layers — cascade delete (Task #1805)", () => {
+  let undoTenant: Tenant;
+
+  beforeAll(async () => {
+    undoTenant = await setupTenant("undoCp");
+  }, 60_000);
+
+  it("DELETE ?cascade=1 removes the layer AND every markup that lived on it", async () => {
+    // Build a source layer with two markups, then copy it onto docB
+    // exactly the way the UI does. The destination should now have a
+    // "(copy)" layer with the same two markups attached.
+    const src = await apiPost(
+      `/api/plan-documents/${undoTenant.docA}/markup-layers`,
+      undoTenant.token,
+      { name: "Punch List" },
+    );
+    expect(src.status).toBe(201);
+    const sourceLayerId = src.body.id as string;
+
+    for (const pts of [
+      [{ x: 0.1, y: 0.1 }, { x: 0.2, y: 0.2 }],
+      [{ x: 0.3, y: 0.3 }, { x: 0.4, y: 0.4 }],
+    ]) {
+      const m = await apiPost(
+        `/api/plan-documents/${undoTenant.docA}/markups`,
+        undoTenant.token,
+        { pageNumber: 7, tool: "ARROW", points: pts, layerId: sourceLayerId },
+      );
+      expect(m.status).toBe(201);
+    }
+
+    const copy = await apiPost(
+      `/api/plan-markup-layers/${sourceLayerId}/copy-to-document`,
+      undoTenant.token,
+      { targetDocumentId: undoTenant.docB },
+    );
+    expect(copy.status).toBe(201);
+    const newLayerId = copy.body.layer.id as string;
+    expect(copy.body.markupsCopied).toBe(2);
+
+    // Sanity: destination really has the new layer + its markups.
+    const beforeLayers = await apiGet(
+      `/api/plan-documents/${undoTenant.docB}/markup-layers`,
+      undoTenant.token,
+    );
+    expect(
+      (beforeLayers.body as Array<{ id: string }>).some((l) => l.id === newLayerId),
+    ).toBe(true);
+    const beforeMarkups = await apiGet(
+      `/api/plan-documents/${undoTenant.docB}/markups?page=7`,
+      undoTenant.token,
+    );
+    expect(
+      (beforeMarkups.body as Array<{ layerId: string | null }>).filter(
+        (m) => m.layerId === newLayerId,
+      ).length,
+    ).toBe(2);
+
+    // Undo: the new layer disappears AND its markups are deleted
+    // outright (rather than re-parented to the destination's default
+    // layer). The response includes the count for observability.
+    const undo = await apiDelete(
+      `/api/plan-markup-layers/${newLayerId}?cascade=1`,
+      undoTenant.token,
+    );
+    expect(undo.status).toBe(200);
+    expect(undo.body.markupsDeleted).toBe(2);
+
+    const afterLayers = await apiGet(
+      `/api/plan-documents/${undoTenant.docB}/markup-layers`,
+      undoTenant.token,
+    );
+    expect(
+      (afterLayers.body as Array<{ id: string }>).some((l) => l.id === newLayerId),
+    ).toBe(false);
+
+    const afterMarkups = await apiGet(
+      `/api/plan-documents/${undoTenant.docB}/markups?page=7`,
+      undoTenant.token,
+    );
+    // No markup on page 7 should now belong to the deleted layer, AND
+    // crucially none of those markups should have been demoted to the
+    // default layer either — they're gone for good.
+    expect(
+      (afterMarkups.body as Array<{ layerId: string | null }>).some(
+        (m) => m.layerId === newLayerId,
+      ),
+    ).toBe(false);
+    // Source layer is untouched on docA.
+    const srcAfter = await apiGet(
+      `/api/plan-documents/${undoTenant.docA}/markup-layers`,
+      undoTenant.token,
+    );
+    const stillThere = (
+      srcAfter.body as Array<{ id: string; markupCount: number }>
+    ).find((l) => l.id === sourceLayerId);
+    expect(stillThere?.markupCount).toBe(2);
+  });
+
+  it("DELETE without cascade keeps the historical SET NULL behaviour", async () => {
+    // Plain layer + one markup; the DELETE call mirrors the manual
+    // delete from MarkupLayersPanel and must NOT remove the markup.
+    const src = await apiPost(
+      `/api/plan-documents/${undoTenant.docA}/markup-layers`,
+      undoTenant.token,
+      { name: "KeepMarkupsAround" },
+    );
+    expect(src.status).toBe(201);
+    const layerId = src.body.id as string;
+    const m = await apiPost(
+      `/api/plan-documents/${undoTenant.docA}/markups`,
+      undoTenant.token,
+      {
+        pageNumber: 8,
+        tool: "ARROW",
+        points: [{ x: 0, y: 0 }, { x: 0.1, y: 0.1 }],
+        layerId,
+      },
+    );
+    expect(m.status).toBe(201);
+
+    const del = await apiDelete(
+      `/api/plan-markup-layers/${layerId}`,
+      undoTenant.token,
+    );
+    expect(del.status).toBe(200);
+    expect(del.body.markupsDeleted).toBeUndefined();
+
+    const list = await apiGet(
+      `/api/plan-documents/${undoTenant.docA}/markups?page=8`,
+      undoTenant.token,
+    );
+    const orphan = (list.body as Array<{ id: string; layerId: string | null }>).find(
+      (x) => x.id === m.body.id,
+    );
+    expect(orphan).toBeTruthy();
+    expect(orphan!.layerId).toBeNull();
+  });
+
+  it("rejects cascade delete on the default layer (cannot be deleted at all)", async () => {
+    const layers = await apiGet(
+      `/api/plan-documents/${undoTenant.docA}/markup-layers`,
+      undoTenant.token,
+    );
+    const def = (layers.body as Array<{ id: string; isDefault: boolean }>).find(
+      (l) => l.isDefault,
+    );
+    expect(def).toBeTruthy();
+    const res = await apiDelete(
+      `/api/plan-markup-layers/${def!.id}?cascade=1`,
+      undoTenant.token,
+    );
+    expect(res.status).toBe(400);
+  });
+});

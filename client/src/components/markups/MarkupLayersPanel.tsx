@@ -36,6 +36,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
+
+// Task #1805 — how long the "Copy to sheet" success toast (and its
+// Undo button) stays on screen. Long enough for a user to notice the
+// slip and back out, short enough that a successful copy doesn't
+// linger forever.
+const COPY_TO_SHEET_UNDO_WINDOW_MS = 9000;
 
 // Task #1701 — custom drag-and-drop MIME type used by drop targets
 // (e.g. PageThumbnailStrip) to recognise a "copy this layer" drag and
@@ -267,17 +274,86 @@ export default function MarkupLayersPanel({
         queryKey: ["/api/plan-markup-layers", variables.layerId, "copy-targets"],
       });
       const dest = copyDestinations.find((d) => d.id === variables.targetDocumentId);
+      // Task #1805 — let the user undo an accidental copy from the
+      // success toast. The undo button calls the cascade-delete
+      // endpoint so the freshly-created destination layer AND the
+      // markups that were just copied with it are removed atomically,
+      // restoring the destination sheet to its prior state.
+      const newLayerId = data.layer.id;
+      const targetDocumentId = variables.targetDocumentId;
+      const sourceLayerId = variables.layerId;
       toast({
         title: `Copied "${data.layer.name}" to ${dest?.label ?? "sheet"}`,
         description:
           data.markupsCopied === 0
             ? "Layer was empty; an empty layer was created on the destination."
             : `${data.markupsCopied} markup${data.markupsCopied === 1 ? "" : "s"} copied.`,
+        duration: COPY_TO_SHEET_UNDO_WINDOW_MS,
+        action: (
+          <ToastAction
+            altText={`Undo copy of "${data.layer.name}"`}
+            onClick={() => {
+              undoCopyToSheetMutation.mutate({
+                newLayerId,
+                targetDocumentId,
+                sourceLayerId,
+                layerName: data.layer.name,
+              });
+            }}
+            data-testid={`button-undo-copy-layer-${newLayerId}`}
+          >
+            Undo
+          </ToastAction>
+        ),
       });
     },
     onError: (e: Error) =>
       toast({
         title: "Could not copy layer",
+        description: e.message,
+        variant: "destructive",
+      }),
+  });
+
+  // Task #1805 — back out a "Copy to sheet" action started by the
+  // mutation above. Uses the cascade=1 query param so the destination
+  // layer and every markup that was just copied with it are deleted
+  // together; the SET NULL fallback used by ordinary layer deletion
+  // would leave orphaned markups stranded on the destination sheet.
+  const undoCopyToSheetMutation = useMutation({
+    mutationFn: async ({ newLayerId }: {
+      newLayerId: string;
+      targetDocumentId: string;
+      sourceLayerId: string;
+      layerName: string;
+    }) => {
+      await apiRequest(
+        "DELETE",
+        `/api/plan-markup-layers/${encodeURIComponent(newLayerId)}?cascade=1`,
+      );
+    },
+    onSuccess: (_data, variables) => {
+      // Mirror the invalidations the original copy fired so the
+      // destination sheet's layer list and markup overlay both
+      // refresh, and the source layer's copy-targets summary forgets
+      // the just-undone duplicate so the next picker open is accurate.
+      queryClient.invalidateQueries({
+        queryKey: ["/api/plan-documents", variables.targetDocumentId, "markup-layers"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/plan-documents", variables.targetDocumentId, "markups"],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["/api/plan-markup-layers", variables.sourceLayerId, "copy-targets"],
+      });
+      toast({
+        title: `Undid copy of "${variables.layerName}"`,
+        description: "The destination layer and its copied markups were removed.",
+      });
+    },
+    onError: (e: Error) =>
+      toast({
+        title: "Could not undo copy",
         description: e.message,
         variant: "destructive",
       }),

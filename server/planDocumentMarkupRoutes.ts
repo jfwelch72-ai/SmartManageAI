@@ -1495,20 +1495,44 @@ router.delete(
         res.status(400).json({ error: "The default layer cannot be deleted" });
         return;
       }
-      // ON DELETE SET NULL on plan_document_markups.layer_id drops the
-      // affected markups back into the default bucket — exactly the
-      // behaviour the task spec calls for.
-      await db.delete(planMarkupLayers).where(eq(planMarkupLayers.id, layer.id));
+      // Task #1805 — opt-in cascade. Drives the "Undo" action on the
+      // copy-to-sheet success toast: the freshly-created destination
+      // layer AND every markup that was copied with it are removed in
+      // a single transaction, leaving the destination sheet exactly as
+      // it was before the accidental copy. Without `cascade`, the FK's
+      // SET NULL behaviour is preserved and orphaned markups fall back
+      // into the default bucket (Task #1662 semantics).
+      const cascade = String(req.query.cascade ?? "") === "1" ||
+        String(req.query.cascade ?? "").toLowerCase() === "true";
+      let markupsDeleted = 0;
+      if (cascade) {
+        await db.transaction(async (tx) => {
+          const removed = await tx
+            .delete(planDocumentMarkups)
+            .where(eq(planDocumentMarkups.layerId, layer.id))
+            .returning({ id: planDocumentMarkups.id });
+          markupsDeleted = removed.length;
+          await tx.delete(planMarkupLayers).where(eq(planMarkupLayers.id, layer.id));
+        });
+      } else {
+        // ON DELETE SET NULL on plan_document_markups.layer_id drops the
+        // affected markups back into the default bucket — exactly the
+        // behaviour the task spec calls for.
+        await db.delete(planMarkupLayers).where(eq(planMarkupLayers.id, layer.id));
+      }
       await logAudit(
         {
           userId: user.id,
           action: "DELETE",
           entityType: "planMarkupLayer",
           entityId: layer.id,
+          ...(cascade
+            ? { newValue: JSON.stringify({ cascade: true, markupsDeleted }) }
+            : {}),
         },
         req,
       );
-      res.json({ ok: true });
+      res.json({ ok: true, ...(cascade ? { markupsDeleted } : {}) });
     } catch (err) {
       next(err);
     }
