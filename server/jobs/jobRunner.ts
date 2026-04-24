@@ -8,9 +8,9 @@ import { recordJobMetrics, loadJobMetricsFromDb, pruneJobMetricsDb } from "../ut
 import { evaluateJobMetricAlerts, sendJobMetricAlertQuietHoursDigests, setRetentionPolicyUnsupportedPairsForAlerts } from "../utils/jobMetricAlerts";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
-import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, DOC_OVERDUE_REMINDER_DEFAULT_CAP, DOC_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, rfis, submittals, submittalReviews, messages, timeEntries, media, aiActionAudit, planDocuments, conversations, type InsertNotification } from "@shared/schema";
+import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, DOC_OVERDUE_REMINDER_DEFAULT_CAP, DOC_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, rfis, submittals, submittalReviews, messages, timeEntries, media, aiActionAudit, planDocuments, conversations, projectEmailDistributionLists, projectLogEmailSchedules, type InsertNotification } from "@shared/schema";
 import { getEffectivePermissions } from "../auth";
-import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull } from "drizzle-orm";
+import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull, ne } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
 import { importChartOfAccounts, exportCustomers, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "../integrations/providers/qbo";
 import { publishToPlatform, fetchEngagement } from "../social/publishService";
@@ -30,6 +30,7 @@ import { qboSyncEntityType } from "../integrations/providers/qbo/sync";
 import { processSagePeriodicSync } from "../integrations/providers/sage/sync";
 import { ensureAllEmailPushSubscriptions } from "../emailPushNotifications";
 import { sendEmail } from "../services/emailService";
+import { buildProjectLogPdfBuffer } from "../services/projectLogService";
 import { processDueExecutions } from "../services/sequenceService";
 import { geocodePendingProjects } from "../utils/geocodingService";
 import { isValidTimezone } from "@shared/timezones";
@@ -64,6 +65,10 @@ let jobMetricAlertsTask: ReturnType<typeof cron.schedule> | null = null;
 let jobMetricQuietDigestTask: ReturnType<typeof cron.schedule> | null = null;
 let portfolioKpiSnapshotTask: ReturnType<typeof cron.schedule> | null = null;
 let certifiedPayrollDigestTask: ReturnType<typeof cron.schedule> | null = null;
+// Task #1606: hourly sweep of `project_log_email_schedules`. Each row is
+// gated by its own cadence/weekday/hour/timezone — see
+// `processProjectLogEmailSchedules`.
+let projectLogEmailScheduleTask: ReturnType<typeof cron.schedule> | null = null;
 let swpppOverdueTask: ReturnType<typeof cron.schedule> | null = null;
 // Task #1599: nightly RFI / submittal-review overdue escalation sweeps.
 let rfiOverdueTask: ReturnType<typeof cron.schedule> | null = null;
@@ -409,6 +414,20 @@ export function startJobRunner() {
     }
   });
 
+  // Task #1606: hourly sweep of `project_log_email_schedules`. Each row
+  // is gated by its own cadence/weekday/hour/timezone inside the
+  // handler, so the cron itself stays a simple "tick every hour" — the
+  // worker decides which projects (if any) get emailed this hour.
+  projectLogEmailScheduleTask = cron.schedule("0 * * * *", async () => {
+    try {
+      await processProjectLogEmailSchedules();
+      recordJobOutcome("project_log_email_schedules", true);
+    } catch (err) {
+      recordJobOutcome("project_log_email_schedules", false);
+      logError("Project log email schedule sweep failed", { error: String(err) });
+    }
+  });
+
   // Task #1173: nightly sweep that finds OPEN SWPPP inspections whose
   // corrective action due date has passed and notifies the assigned
   // assignee + the project manager once per overdue cycle. Runs at 7am
@@ -679,6 +698,10 @@ export function stopJobRunner() {
     certifiedPayrollDigestTask.stop();
     certifiedPayrollDigestTask = null;
   }
+  if (projectLogEmailScheduleTask) {
+    projectLogEmailScheduleTask.stop();
+    projectLogEmailScheduleTask = null;
+  }
   if (swpppOverdueTask) {
     swpppOverdueTask.stop();
     swpppOverdueTask = null;
@@ -746,6 +769,12 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   // exited their quiet window so they can catch up on overnight alerts.
   job_metric_quiet_digest: { fn: async () => { await sendJobMetricAlertQuietHoursDigests({ recordSends: true }); }, description: "Send digest of job-metric alerts that fired while a Super Admin was in quiet hours", schedule: "*/15 * * * *" },
   certified_payroll_digest: { fn: () => processCertifiedPayrollWeeklyDigest(), description: "Email payroll administrators a digest of certified payroll PDFs (per-org cadence/time/timezone)", schedule: "0 * * * *" },
+  // Task #1606: per-project scheduled email of the RFI / submittal log
+  // PDF to the project's email distribution lists. Cadence + send time
+  // are stored on each row in `project_log_email_schedules` (default
+  // OFF), so existing projects see no behaviour change until someone
+  // opts in.
+  project_log_email_schedules: { fn: () => processProjectLogEmailSchedules(), description: "Email RFI / submittal log PDFs to project distribution lists on the per-project cadence configured in project_log_email_schedules", schedule: "0 * * * *" },
   swppp_overdue_corrective_actions: { fn: () => processSwpppOverdueCorrectiveActions(), description: "Notify assignees and project managers when SWPPP corrective actions pass their due date without being resolved", schedule: "0 7 * * *" },
   // Task #1599: nightly fan-out + daily reminder cap for overdue RFIs
   // (status IN ('SUBMITTED','UNDER_REVIEW','FORWARDED') AND date_required < now).
@@ -3728,6 +3757,175 @@ export async function processCertifiedPayrollWeeklyDigest(opts: { now?: Date } =
 
   if (totalDigests > 0) {
     logInfo("Certified payroll weekly digest sent", { notifications: totalDigests });
+  }
+}
+
+// ============================================================
+// Task #1606: per-project scheduled RFI / submittal log emails
+// ============================================================
+//
+// Each row in `project_log_email_schedules` represents one project +
+// log type (RFI or SUBMITTAL) and carries its own cadence, weekday,
+// hour, and timezone. The cron tick is hourly; this function decides
+// which rows are *due* this tick by mirroring the gating logic the
+// certified-payroll digest uses (Task #1181):
+//
+//   - cadence === "OFF"            → skip
+//   - local hour !== row.hour      → skip (cron is hour-precision)
+//   - WEEKLY/BIWEEKLY: weekday gate against the local weekday
+//   - BIWEEKLY: skip if lastSentAt < 13 days ago
+//   - DAILY/WEEKLY: skip if lastSentAt < 23 hours ago (idempotency
+//     against duplicate cron firings or manual re-runs)
+//
+// Recipients are derived from `project_email_distribution_lists` —
+// project-scoped lists for the project plus org-level lists with a
+// NULL projectId — so existing distribution-list management screens
+// already cover who gets what without a parallel "who do I email"
+// concept on the schedule row itself. If no list resolves to any
+// addresses we log + skip (no point materialising a PDF nobody
+// receives).
+//
+// On a successful send we stamp `lastSentAt` so the dedupe gates
+// above will keep us from double-firing.
+export async function processProjectLogEmailSchedules(opts: { now?: Date } = {}) {
+  const now = opts.now ?? new Date();
+
+  const schedules = await db
+    .select({
+      id: projectLogEmailSchedules.id,
+      organizationId: projectLogEmailSchedules.organizationId,
+      projectId: projectLogEmailSchedules.projectId,
+      logType: projectLogEmailSchedules.logType,
+      cadence: projectLogEmailSchedules.cadence,
+      weekday: projectLogEmailSchedules.weekday,
+      hour: projectLogEmailSchedules.hour,
+      timezone: projectLogEmailSchedules.timezone,
+      lastSentAt: projectLogEmailSchedules.lastSentAt,
+    })
+    .from(projectLogEmailSchedules)
+    .where(ne(projectLogEmailSchedules.cadence, "OFF"));
+
+  if (schedules.length === 0) return;
+
+  let totalSent = 0;
+
+  for (const sched of schedules) {
+    try {
+      const cadence = sched.cadence as "OFF" | "DAILY" | "WEEKLY" | "BIWEEKLY";
+      if (cadence === "OFF") continue;
+
+      const weekday = sched.weekday ?? 1;
+      const hour = sched.hour ?? 8;
+      const tz = isValidTimezone(sched.timezone) ? sched.timezone : "UTC";
+      const lastSentAt = sched.lastSentAt;
+
+      const local = getLocalDateParts(now, tz);
+      if (local.hour !== hour) continue;
+      if ((cadence === "WEEKLY" || cadence === "BIWEEKLY") && local.weekday !== weekday) continue;
+      if (cadence === "BIWEEKLY" && lastSentAt) {
+        const daysSince = (now.getTime() - new Date(lastSentAt).getTime()) / (24 * 60 * 60 * 1000);
+        if (daysSince < 13) continue;
+      }
+      if (lastSentAt) {
+        const hoursSince = (now.getTime() - new Date(lastSentAt).getTime()) / (60 * 60 * 1000);
+        if ((cadence === "DAILY" || cadence === "WEEKLY") && hoursSince < 23) continue;
+      }
+
+      const logType = sched.logType === "SUBMITTAL" ? "SUBMITTAL" : "RFI";
+
+      const [project] = await db
+        .select({
+          id: projects.id,
+          name: projects.name,
+          gcOrganizationId: projects.gcOrganizationId,
+        })
+        .from(projects)
+        .where(eq(projects.id, sched.projectId))
+        .limit(1);
+      if (!project) continue;
+
+      // Distribution lists: project-scoped + org-level fallback.
+      const lists = await db
+        .select({
+          contactEmails: projectEmailDistributionLists.contactEmails,
+          extraEmails: projectEmailDistributionLists.extraEmails,
+        })
+        .from(projectEmailDistributionLists)
+        .where(and(
+          eq(projectEmailDistributionLists.organizationId, sched.organizationId),
+          or(
+            eq(projectEmailDistributionLists.projectId, sched.projectId),
+            isNull(projectEmailDistributionLists.projectId),
+          ),
+        ));
+
+      const recipientSet = new Set<string>();
+      for (const l of lists) {
+        for (const e of l.contactEmails ?? []) {
+          if (e && e.includes("@")) recipientSet.add(e.trim().toLowerCase());
+        }
+        for (const e of l.extraEmails ?? []) {
+          if (e && e.includes("@")) recipientSet.add(e.trim().toLowerCase());
+        }
+      }
+
+      if (recipientSet.size === 0) {
+        logInfo("Project log email schedule has no recipients; skipping", {
+          scheduleId: sched.id,
+          projectId: sched.projectId,
+          logType,
+        });
+        continue;
+      }
+
+      const pdfBuffer = await buildProjectLogPdfBuffer(logType, {
+        id: project.id,
+        name: project.name,
+        gcOrganizationId: project.gcOrganizationId,
+      });
+
+      const logLabel = logType === "RFI" ? "RFI" : "Submittal";
+      const safeName = project.name.replace(/[^a-z0-9]+/gi, "_");
+      const filename = `${logType.toLowerCase()}-log-${safeName}.pdf`;
+      const subject = `${logLabel} log — ${project.name}`;
+      const text = `Attached is the latest ${logLabel} log for project "${project.name}".`;
+      const html = `<p>Attached is the latest ${logLabel} log for project <strong>${project.name}</strong>.</p>`;
+
+      const sent = await sendEmail({
+        to: Array.from(recipientSet),
+        subject,
+        text,
+        html,
+        attachments: [{ filename, content: pdfBuffer, contentType: "application/pdf" }],
+      });
+
+      if (!sent) {
+        logError("Project log email send failed", {
+          scheduleId: sched.id,
+          projectId: sched.projectId,
+          logType,
+        });
+        continue;
+      }
+
+      await db
+        .update(projectLogEmailSchedules)
+        .set({ lastSentAt: now, updatedAt: new Date() })
+        .where(eq(projectLogEmailSchedules.id, sched.id));
+
+      totalSent += 1;
+    } catch (err) {
+      logError("Project log email schedule iteration failed", {
+        scheduleId: sched.id,
+        projectId: sched.projectId,
+        logType: sched.logType,
+        error: String(err),
+      });
+    }
+  }
+
+  if (totalSent > 0) {
+    logInfo("Project log email schedules sent", { sent: totalSent });
   }
 }
 

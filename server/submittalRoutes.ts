@@ -424,7 +424,6 @@ import {
   users,
   crmOrganisations,
   rfis,
-  organizations,
 } from "@shared/schema";
 import { eq, and, desc, sql, asc, max, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
@@ -433,6 +432,7 @@ import { requireAuth, requireRole, requireRoleOrFeature, AuthRequest } from "./a
 import { getOrgIdForFilter } from "./orgFilter";
 import { notifyDocumentEvent } from "./services/documentNotificationService";
 import { generateSubmittalLogPdf } from "./services/logPdfService";
+import { fetchProjectBranding, fetchProjectSubmittalLogRows } from "./services/projectLogService";
 import { assertStorageKeyBelongsToOrg } from "./services/documentRevisionService";
 import { ObjectPermission } from "./objectAcl";
 import { notifyApprovers, notifySubmitter, notifyUsers } from "./services/approvalNotificationService";
@@ -2617,69 +2617,18 @@ router.get(
         return res.status(403).json({ error: "Access denied" });
       }
 
-      const rows = await db
-        .select({
-          id: submittals.id,
-          submittalNumber: submittals.submittalNumber,
-          subject: submittals.subject,
-          status: submittals.status,
-          specSection: submittals.specSection,
-          dateSubmitted: submittals.dateSubmitted,
-          dateRequired: submittals.dateRequired,
-          dateReviewed: submittals.dateReviewed,
-          reviewerName: submittals.reviewerName,
-          submittedByName: submittals.submittedByName,
-          updatedAt: submittals.updatedAt,
-        })
-        .from(submittals)
-        .where(eq(submittals.projectId, projectId))
-        .orderBy(desc(submittals.createdAt));
-
-      // First open review per submittal feeds ball-in-court; fall back
-      // to denormalized reviewerName when no open chain exists.
-      const openReviewMap = new Map<string, string>();
-      if (rows.length > 0) {
-        const openReviews = await db
-          .select({
-            submittalId: submittalReviews.submittalId,
-            reviewerName: submittalReviews.reviewerName,
-            sequenceOrder: submittalReviews.sequenceOrder,
-          })
-          .from(submittalReviews)
-          .innerJoin(submittals, eq(submittals.id, submittalReviews.submittalId))
-          .where(and(
-            eq(submittals.projectId, projectId),
-            inArray(submittalReviews.status, ["PENDING", "IN_REVIEW"]),
-          ))
-          .orderBy(submittalReviews.sequenceOrder);
-        for (const r of openReviews) {
-          if (!openReviewMap.has(r.submittalId)) {
-            openReviewMap.set(r.submittalId, r.reviewerName ?? "—");
-          }
-        }
-      }
-
-      const orgRow = project.gcOrganizationId
-        ? (await db
-            .select({ name: organizations.name, primaryColor: organizations.primaryColor })
-            .from(organizations)
-            .where(eq(organizations.id, project.gcOrganizationId))
-            .limit(1))[0]
-        : undefined;
-
-      const branding = orgRow
-        ? { organizationName: orgRow.name, primaryColor: orgRow.primaryColor ?? null }
-        : undefined;
+      // Task #1606: shared row + branding fetch in
+      // `services/projectLogService.ts` so the cron-driven scheduled
+      // log email reuses identical join logic (ball-in-court via the
+      // first open review, branding strip from the GC org row).
+      const [rows, branding] = await Promise.all([
+        fetchProjectSubmittalLogRows(projectId),
+        fetchProjectBranding(project.gcOrganizationId),
+      ]);
 
       const generatedByName = req.user
         ? `${req.user.firstName ?? ""} ${req.user.lastName ?? ""}`.trim() || req.user.email || null
         : null;
-
-      const ballInCourt = (r: typeof rows[number]): string | null => {
-        const closed = r.status === "APPROVED" || r.status === "REJECTED" || r.status === "CLOSED";
-        if (closed) return r.reviewerName ?? null;
-        return openReviewMap.get(r.id) ?? r.reviewerName ?? r.submittedByName ?? null;
-      };
 
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader(
@@ -2690,19 +2639,7 @@ router.get(
         branding,
         projectName: project.name,
         meta: { generatedByName },
-        rows: rows.map(r => ({
-          submittalNumber: r.submittalNumber,
-          subject: r.subject,
-          status: r.status,
-          specSection: r.specSection ?? null,
-          dateSubmitted: r.dateSubmitted ?? null,
-          dateRequired: r.dateRequired ?? null,
-          dateReviewed: r.dateReviewed ?? null,
-          reviewerName: r.reviewerName ?? null,
-          submittedByName: r.submittedByName ?? null,
-          ballInCourt: ballInCourt(r),
-          lastActivity: r.updatedAt ?? null,
-        })),
+        rows,
       });
       stream.pipe(res);
     } catch (error) {

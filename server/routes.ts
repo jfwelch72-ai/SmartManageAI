@@ -85,6 +85,7 @@ import punchListRoutes from "./punchListRoutes";
 import warrantyRoutes from "./warrantyRoutes";
 import aiOrchestrationRoutes from "./aiOrchestrationRoutes";
 import projectDistributionListRoutes from "./projectDistributionListRoutes";
+import projectLogEmailScheduleRoutes from "./projectLogEmailScheduleRoutes";
 import aiOnboardingRoutes from "./aiOnboardingRoutes";
 import scheduleRoutes from "./scheduleRoutes";
 import notesRoutes from "./notesRoutes";
@@ -309,6 +310,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Project-scoped reusable email distribution lists
   app.use("/api", projectDistributionListRoutes);
+  app.use("/api", projectLogEmailScheduleRoutes);
 
   // Register schedule management routes (CPM engine, baseline, resource loading, forecasting)
   app.use("/api", scheduleRoutes);

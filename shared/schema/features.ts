@@ -10392,6 +10392,58 @@ export type InsertProjectEmailDistributionList = z.infer<typeof insertProjectEma
 export type ProjectEmailDistributionList = typeof projectEmailDistributionLists.$inferSelect;
 
 // ============================================
+// PROJECT LOG EMAIL SCHEDULES (Task #1606)
+// Per-project schedule for emailing the RFI / submittal log PDF to a
+// project's distribution lists. Default cadence is OFF so an existing
+// project sees no behaviour change until someone opts in. Recipients
+// are derived from `project_email_distribution_lists` so existing list
+// management screens already cover who gets what.
+// ============================================
+export const projectLogEmailSchedules = pgTable("project_log_email_schedules", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
+  // 'RFI' | 'SUBMITTAL' — one row per (project, log type).
+  logType: text("log_type").notNull(),
+  // 'OFF' | 'DAILY' | 'WEEKLY' | 'BIWEEKLY' — same vocabulary as the
+  // certified payroll digest scheduler so admins see one consistent
+  // cadence picker across the app.
+  cadence: text("cadence").notNull().default("OFF"),
+  // 0 = Sunday … 6 = Saturday. Honoured for WEEKLY and BIWEEKLY only;
+  // DAILY ignores it. Default Monday matches the example in the task
+  // brief ("weekly Monday-morning RFI/submittal log").
+  weekday: integer("weekday").notNull().default(1),
+  // Local hour (0-23) the digest should fire at. The cron runs hourly
+  // and the worker compares the recipient timezone's local hour against
+  // this column, so a project in America/Los_Angeles can pick "8am"
+  // without coordinating with the server's wall-clock zone.
+  hour: integer("hour").notNull().default(8),
+  // IANA timezone identifier (e.g. "America/Los_Angeles"). Falls back
+  // to the server default when the value is invalid or null.
+  timezone: text("timezone").notNull().default("UTC"),
+  // Stamped after a successful send so the worker can dedupe (DAILY
+  // skips if <23h has elapsed) and BIWEEKLY can skip its off-week.
+  lastSentAt: timestamp("last_sent_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("project_log_email_schedules_org_idx").on(table.organizationId),
+  projectIdx: index("project_log_email_schedules_project_idx").on(table.projectId),
+  // One row per (project, log type) — the PUT endpoint upserts on this
+  // pair and the cron iterates over distinct rows so we never email the
+  // same log twice in the same firing.
+  uniqueProjectLogType: uniqueIndex("project_log_email_schedules_project_logtype_uniq").on(table.projectId, table.logType),
+}));
+export const insertProjectLogEmailScheduleSchema = createInsertSchema(projectLogEmailSchedules).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertProjectLogEmailSchedule = z.infer<typeof insertProjectLogEmailScheduleSchema>;
+export type ProjectLogEmailSchedule = typeof projectLogEmailSchedules.$inferSelect;
+
+export const PROJECT_LOG_EMAIL_LOG_TYPES = ["RFI", "SUBMITTAL"] as const;
+export type ProjectLogEmailLogType = typeof PROJECT_LOG_EMAIL_LOG_TYPES[number];
+export const PROJECT_LOG_EMAIL_CADENCES = ["OFF", "DAILY", "WEEKLY", "BIWEEKLY"] as const;
+export type ProjectLogEmailCadence = typeof PROJECT_LOG_EMAIL_CADENCES[number];
+
+// ============================================
 // GANTT PDF ALERT RECIPIENTS
 // Operator-managed list of email recipients for Gantt PDF queue/disconnect
 // outage alerts. When at least one row exists here, it overrides both the

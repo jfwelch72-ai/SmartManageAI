@@ -294,10 +294,8 @@ import {
   changeOrders,
   tmTickets,
   submittals,
-  organizations,
 } from "@shared/schema";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
-import { aliasedTable } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { z } from "zod";
 import { validateBody } from "./utils/validation";
@@ -305,6 +303,7 @@ import { requireAuth, requireRole, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { notifyDocumentEvent } from "./services/documentNotificationService";
 import { generateRfiLogPdf } from "./services/logPdfService";
+import { fetchProjectBranding, fetchProjectRfiLogRows } from "./services/projectLogService";
 import { assertStorageKeyBelongsToOrg } from "./services/documentRevisionService";
 
 const rfiPatchSchema = z.object({
@@ -1280,68 +1279,21 @@ router.get(
         return res.status(403).json({ error: "Access denied" });
       }
 
-      // Pull each RFI joined to its current "ball-in-court" user
-      // (forwarded-to wins over default-assigned), plus its updatedAt
-      // as the "last activity" timestamp. updatedAt is bumped by every
-      // mutation route on the rfis table — forwards, answers, status
-      // changes — so it's a reasonable proxy without a separate
-      // activity-table aggregate.
-      const assignedUser = aliasedTable(users, "rfi_assigned_user");
-      const forwardedUser = aliasedTable(users, "rfi_forwarded_user");
-      const rows = await db
-        .select({
-          rfiNumber: rfis.rfiNumber,
-          subject: rfis.subject,
-          status: rfis.status,
-          priority: rfis.priority,
-          dateSubmitted: rfis.dateSubmitted,
-          dateRequired: rfis.dateRequired,
-          dateAnswered: rfis.dateAnswered,
-          submittedByName: rfis.submittedByName,
-          answeredByName: rfis.answeredByName,
-          updatedAt: rfis.updatedAt,
-          assignedFirst: assignedUser.firstName,
-          assignedLast: assignedUser.lastName,
-          forwardedFirst: forwardedUser.firstName,
-          forwardedLast: forwardedUser.lastName,
-          externalAssigneeEmail: rfis.externalAssigneeEmail,
-        })
-        .from(rfis)
-        .leftJoin(assignedUser, eq(assignedUser.id, rfis.assignedToId))
-        .leftJoin(forwardedUser, eq(forwardedUser.id, rfis.forwardedToId))
-        .where(eq(rfis.projectId, projectId))
-        .orderBy(desc(rfis.createdAt));
-
-      const orgRow = project.gcOrganizationId
-        ? (await db
-            .select({ name: organizations.name, primaryColor: organizations.primaryColor })
-            .from(organizations)
-            .where(eq(organizations.id, project.gcOrganizationId))
-            .limit(1))[0]
-        : undefined;
-
-      const branding = orgRow
-        ? { organizationName: orgRow.name, primaryColor: orgRow.primaryColor ?? null }
-        : undefined;
+      // Task #1606: row + branding resolution lives in
+      // `services/projectLogService.ts` so the scheduled-email cron
+      // produces the same PDF without duplicating the join+ball-in-
+      // court logic. The route still streams chunks straight to the
+      // response (no in-memory buffer) by piping the generator's
+      // PassThrough directly — the cron is the only caller that
+      // materialises a Buffer.
+      const [rows, branding] = await Promise.all([
+        fetchProjectRfiLogRows(projectId),
+        fetchProjectBranding(project.gcOrganizationId),
+      ]);
 
       const generatedByName = req.user
         ? `${req.user.firstName ?? ""} ${req.user.lastName ?? ""}`.trim() || req.user.email || null
         : null;
-
-      const fullName = (first?: string | null, last?: string | null): string | null => {
-        const v = `${first ?? ""} ${last ?? ""}`.trim();
-        return v.length ? v : null;
-      };
-      const ballInCourt = (r: typeof rows[number]): string | null => {
-        const closed = r.status === "ANSWERED" || r.status === "CLOSED";
-        if (closed) return r.answeredByName ?? null;
-        return (
-          fullName(r.forwardedFirst, r.forwardedLast)
-          ?? fullName(r.assignedFirst, r.assignedLast)
-          ?? r.externalAssigneeEmail
-          ?? null
-        );
-      };
 
       res.setHeader("Content-Type", "application/pdf");
       res.setHeader(
@@ -1352,19 +1304,7 @@ router.get(
         branding,
         projectName: project.name,
         meta: { generatedByName },
-        rows: rows.map(r => ({
-          rfiNumber: r.rfiNumber,
-          subject: r.subject,
-          status: r.status,
-          priority: r.priority ?? null,
-          dateSubmitted: r.dateSubmitted ?? null,
-          dateRequired: r.dateRequired ?? null,
-          dateAnswered: r.dateAnswered ?? null,
-          submittedByName: r.submittedByName ?? null,
-          answeredByName: r.answeredByName ?? null,
-          ballInCourt: ballInCourt(r),
-          lastActivity: r.updatedAt ?? null,
-        })),
+        rows,
       });
       stream.pipe(res);
     } catch (error) {
