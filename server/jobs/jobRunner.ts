@@ -22,6 +22,7 @@ import { eventBus } from "../events";
 import { emailAccounts, emailCampaigns, emailCampaignContacts } from "@shared/schema";
 import { syncImapAccount, syncOutlookAccount, syncGmailAccount, drainAccountProviderPushes } from "../emailRoutes";
 import { processArchivedCertifiedPayrollPurge } from "./certifiedPayrollPurge";
+import { pruneProjectLogEmailScheduleAttempts } from "./projectLogEmailScheduleAttemptPrune";
 import { processFailedWageDecisionRetries, processStaleWageDecisions } from "../integrations/providers/dol_davis_bacon/sync";
 import { processMissingWageDecisionReminders } from "../services/davisBaconAdminNotifications";
 import { processIntegrationSyncRetries, recordSyncFailure, recordSyncSuccess } from "../integrations/syncRetry";
@@ -78,6 +79,10 @@ let wageDecisionRetryTask: ReturnType<typeof cron.schedule> | null = null;
 let wageDecisionMissingReminderTask: ReturnType<typeof cron.schedule> | null = null;
 let wageDecisionStaleRefreshTask: ReturnType<typeof cron.schedule> | null = null;
 let suppressionResetPruneTask: ReturnType<typeof cron.schedule> | null = null;
+// Task #1665: nightly retention sweep for the per-attempt history of
+// `project_log_email_schedules`. Runs in batches so it can't lock the
+// table on large tenants. See `projectLogEmailScheduleAttemptPrune.ts`.
+let projectLogEmailAttemptPruneTask: ReturnType<typeof cron.schedule> | null = null;
 
 /**
  * Task #1491 — Publish a per-tick succeeded/failed sample for a cron
@@ -557,6 +562,31 @@ export function startJobRunner() {
     }
   });
 
+  // Task #1665: nightly retention sweep for
+  // `project_log_email_schedule_attempts`. Every cron tick + manual
+  // send writes a row, but the project settings UI only ever surfaces
+  // the most recent 10 (max 50) per schedule, so anything older than
+  // PROJECT_LOG_EMAIL_ATTEMPT_DEFAULT_RETENTION_DAYS (90) is dead
+  // weight. Batched inside the helper so a large tenant can't hold
+  // long row-level locks. Runs at 04:00 UTC alongside the other
+  // nightly cleanup jobs.
+  projectLogEmailAttemptPruneTask = cron.schedule("0 4 * * *", async () => {
+    try {
+      const result = await pruneProjectLogEmailScheduleAttempts();
+      if (result.deleted > 0 || result.cappedAtMaxBatches) {
+        logInfo("Project log email attempt-history retention sweep", {
+          deleted: result.deleted,
+          batches: result.batches,
+          cappedAtMaxBatches: result.cappedAtMaxBatches,
+        });
+      }
+      recordJobOutcome("project_log_email_attempt_prune", true);
+    } catch (err) {
+      recordJobOutcome("project_log_email_attempt_prune", false);
+      logError("Project log email attempt-history retention sweep failed", { error: String(err) });
+    }
+  });
+
   // Task #1344: daily 08:00 UTC fan-out reminder to org admins about
   // projects whose Davis-Bacon wage decision has been missing for >24h.
   // The handler itself enforces a 1-per-project-per-week throttle so a
@@ -734,6 +764,10 @@ export function stopJobRunner() {
     suppressionResetPruneTask.stop();
     suppressionResetPruneTask = null;
   }
+  if (projectLogEmailAttemptPruneTask) {
+    projectLogEmailAttemptPruneTask.stop();
+    projectLogEmailAttemptPruneTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -805,6 +839,11 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   // Task #1512: bound the integration_suppression_resets table. Default
   // 90 days; configurable via INTEGRATION_SUPPRESSION_RESET_RETENTION_DAYS.
   suppression_reset_prune: { fn: async () => { await pruneSuppressionResets(); }, description: "Delete integration_suppression_resets rows older than INTEGRATION_SUPPRESSION_RESET_RETENTION_DAYS (default 90 days)", schedule: "45 3 * * *" },
+  // Task #1665: bound the per-attempt history of
+  // project_log_email_schedules. Default 90 days; configurable via
+  // PROJECT_LOG_EMAIL_ATTEMPT_RETENTION_DAYS. Batched inside the
+  // helper so a large tenant can't hold long row-level locks.
+  project_log_email_attempt_prune: { fn: async () => { await pruneProjectLogEmailScheduleAttempts(); }, description: "Delete project_log_email_schedule_attempts rows older than PROJECT_LOG_EMAIL_ATTEMPT_RETENTION_DAYS (default 90 days), in batches", schedule: "0 4 * * *" },
 };
 
 async function processOutbox() {
