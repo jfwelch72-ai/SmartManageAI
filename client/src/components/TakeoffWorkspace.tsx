@@ -33,7 +33,7 @@ import {
   sampleArcPoints,
   computeNetAreaInFt2,
 } from "@shared/utils/geometry";
-import { type Tool, validateHexColor, hexToRgba, TOOL_CONFIG } from "./takeoff/types";
+import { type Tool, type MeasurementType, validateHexColor, hexToRgba, TOOL_CONFIG } from "./takeoff/types";
 import { detectScaleFromText, type DetectedScale } from "@/lib/scaleDetection";
 import { useTakeoffData } from "@/hooks/use-takeoff-data";
 import { useTakeoffInteractions } from "@/hooks/use-takeoff-interactions";
@@ -998,7 +998,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             enriched.metadata = JSON.stringify(meta);
           }
         }
-        createMeasurementMutation.mutate(enriched);
+        createMeasurementMutation.mutate(enriched as Parameters<typeof createMeasurementMutation.mutate>[0]);
       },
     },
     aggregatedMeasurements,
@@ -2626,7 +2626,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               )}
               {conditions
                 .filter(c => c.id !== activeCondition?.id)
-                .sort((a, b) => (b.lastUsedAt || "").localeCompare(a.lastUsedAt || ""))
+                .sort((a, b) => {
+                  const bKey = b.lastUsedAt ? new Date(b.lastUsedAt).toISOString() : "";
+                  const aKey = a.lastUsedAt ? new Date(a.lastUsedAt).toISOString() : "";
+                  return bKey.localeCompare(aKey);
+                })
                 .slice(0, 8)
                 .map(c => (
                   <button
@@ -2655,7 +2659,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 if (createLinkMode?.step === "select-area") {
                   const stage = e.target.getStage();
                   const pos = stage?.getPointerPosition();
-                  if (pos) {
+                  if (stage && pos) {
                     const transform = stage.getAbsoluteTransform().copy().invert();
                     const point = transform.point(pos);
                     setCreateLinkMode({ ...createLinkMode, startPoint: point, endPoint: point });
@@ -2708,7 +2712,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 if (createLinkMode?.step === "select-area" && createLinkMode.startPoint) {
                   const stage = e.target.getStage();
                   const pos = stage?.getPointerPosition();
-                  if (pos) {
+                  if (stage && pos) {
                     const transform = stage.getAbsoluteTransform().copy().invert();
                     const point = transform.point(pos);
                     setCreateLinkMode({ ...createLinkMode, endPoint: point });
@@ -4039,7 +4043,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                       // restored in onDragEnd, then re-rendered with
                       // their new normalized points by the bulk PATCH.
                       if (selectedMarkupIds.size > 1) {
-                        for (const id of selectedMarkupIds) {
+                        for (const id of Array.from(selectedMarkupIds)) {
                           if (id === markup.id) continue;
                           const node = layer.findOne(`.markup-drag-member-${id}`);
                           if (node) {
@@ -5434,16 +5438,16 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             const offsetPts = pts.map((p: { x: number; y: number }) => ({ x: p.x + offset.x, y: p.y + offset.y }));
             createMeasurementMutation.mutate({
               sheetId: selectedSheet,
-              type: src.type,
+              type: src.type as MeasurementType,
               points: offsetPts,
               label: `${src.label || src.type} (copy)`,
               categoryId: src.categoryId,
               computedAreaFt2: src.computedAreaFt2,
-              computedLengthFt: src.computedLengthFt,
+              computedLengthFt: src.computedLengthFt ?? undefined,
               computedVolumeCy: src.computedVolumeCy,
               count: src.count,
-              metadata: src.metadata,
-            });
+              metadata: typeof src.metadata === "string" ? src.metadata : undefined,
+            } as Parameters<typeof createMeasurementMutation.mutate>[0]);
           });
           toast({ title: "Typical Stamped", description: `Placed ${sources.length} measurement(s) with offset` });
         }}
@@ -5457,7 +5461,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           setLabelHiddenCategories(prev => {
             const next = new Set(prev);
             if (next.has(catId)) next.delete(catId); else next.add(catId);
-            localStorage.setItem("takeoff-label-hidden-categories", JSON.stringify([...next]));
+            localStorage.setItem("takeoff-label-hidden-categories", JSON.stringify(Array.from(next)));
             return next;
           });
         }}

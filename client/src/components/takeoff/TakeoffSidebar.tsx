@@ -1621,7 +1621,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                               count: m.count ?? 1,
                               depth: m.depthFeet ?? 0,
                             };
-                            const fResult = evaluateFormula(meta.conditionFormula, fCtx);
+                            const fResult = evaluateFormula(String(meta.conditionFormula ?? ""), fCtx);
                             return (
                               <span className="text-[10px] font-mono text-violet-600 dark:text-violet-400" data-testid={`text-formula-qty-${m.id}`}>
                                 fx={fResult.toLocaleString(undefined, { maximumFractionDigits: 2 })}
@@ -1650,7 +1650,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                           {meta.unitCost && <span className="text-[10px] text-green-600 dark:text-green-400" data-testid={`text-unitcost-${m.id}`}>${Number(meta.unitCost).toFixed(2)}</span>}
                           {meta.costCodeId && <span className="text-[10px] text-blue-500" data-testid={`text-costcode-${m.id}`}>{meta.costCodeId}</span>}
                         </div>
-                        {meta.assemblyResults && Array.isArray(meta.assemblyResults) && meta.assemblyResults.length > 0 && (
+                        {Array.isArray(meta.assemblyResults) && meta.assemblyResults.length > 0 && (
                           <div className="mt-1 space-y-0.5 ml-1 border-l-2 border-violet-200 dark:border-violet-800 pl-2">
                             {meta.assemblyResults.map((ar: { name: string; quantity: number; unit: string; totalCost: number }, arIdx: number) => (
                               <div key={arIdx} className="flex items-center justify-between text-[10px] text-muted-foreground" data-testid={`assembly-line-${m.id}-${arIdx}`}>
@@ -1665,6 +1665,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                           let segProps: any[] = [];
                           try { const meta = typeof m.metadata === 'string' ? JSON.parse(m.metadata) : m.metadata; segProps = meta?.segmentProperties || []; } catch (err) { console.warn("[TakeoffSidebar] Failed to parse segment metadata:", err); }
                           if (points.length < 2 || !currentSheet?.scalePxPerFoot) return null;
+                          const scalePxPerFoot = currentSheet.scalePxPerFoot;
                           return (
                             <Collapsible>
                               <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground mt-1" data-testid={`button-expand-segments-${m.id}`}>
@@ -1681,7 +1682,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                                     const dx = p2.x - p1.x;
                                     const dy = p2.y - p1.y;
                                     const pxDist = Math.sqrt(dx * dx + dy * dy);
-                                    const segLenFt = pxDist / currentSheet.scalePxPerFoot;
+                                    const segLenFt = pxDist / scalePxPerFoot;
                                     return (
                                       <div
                                         key={i}
@@ -3265,7 +3266,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
               Measurement Summary Report
             </DialogTitle>
             <DialogDescription>
-              {currentSheet?.name ? `Sheet: ${currentSheet.name}` : "All measurements"} · {measurements.length} measurement{measurements.length !== 1 ? "s" : ""}
+              {currentSheet?.sheetName ? `Sheet: ${currentSheet.sheetName}` : "All measurements"} · {measurements.length} measurement{measurements.length !== 1 ? "s" : ""}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 print:space-y-2" id="measurement-summary-content">
@@ -3287,10 +3288,11 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                 return isNaN(n) ? "0" : n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
               };
               const getUnit = (m: typeof measurements[0]) => {
-                if (m.measurementType === "COUNT") return "ea";
-                if (m.measurementType === "AREA" || m.measurementType === "PITCHED_AREA" || m.measurementType === "SURFACE_AREA") return "sf";
-                if (m.measurementType === "VOLUME") return "cf";
-                return m.units || "lf";
+                const mt = (m as any).measurementType;
+                if (mt === "COUNT") return "ea";
+                if (mt === "AREA" || mt === "PITCHED_AREA" || mt === "SURFACE_AREA") return "sf";
+                if (mt === "VOLUME") return "cf";
+                return (m as any).units || "lf";
               };
               const renderGroup = (title: string, color: string | null, items: typeof measurements) => (
                 <div key={title} className="border rounded-lg overflow-hidden">
@@ -3312,13 +3314,13 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                     </thead>
                     <tbody>
                       {items.map(m => {
-                        const qty = Number(m.quantity || 0);
+                        const qty = Number((m as any).quantity || 0);
                         const unitCost = Number(m.unitCost || 0);
                         const total = qty * unitCost;
                         return (
                           <tr key={m.id} className="border-b last:border-b-0 hover:bg-muted/20">
-                            <td className="p-2 font-medium">{m.label || m.measurementType}</td>
-                            <td className="p-2 text-muted-foreground capitalize">{m.measurementType?.toLowerCase().replace(/_/g, " ")}</td>
+                            <td className="p-2 font-medium">{m.label || (m as any).measurementType}</td>
+                            <td className="p-2 text-muted-foreground capitalize">{(m as any).measurementType?.toLowerCase().replace(/_/g, " ")}</td>
                             <td className="p-2 text-right font-mono">{formatVal(qty)}</td>
                             <td className="p-2 text-right text-muted-foreground">{getUnit(m)}</td>
                             <td className="p-2 text-right font-mono">{unitCost > 0 ? `$${formatVal(unitCost)}` : "—"}</td>
@@ -3330,11 +3332,11 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                     <tfoot>
                       <tr className="border-t bg-muted/30">
                         <td colSpan={2} className="p-2 font-semibold">Subtotal</td>
-                        <td className="p-2 text-right font-mono font-semibold">{formatVal(items.reduce((s, m) => s + Number(m.quantity || 0), 0))}</td>
+                        <td className="p-2 text-right font-mono font-semibold">{formatVal(items.reduce((s, m) => s + Number((m as any).quantity || 0), 0))}</td>
                         <td className="p-2" />
                         <td className="p-2" />
                         <td className="p-2 text-right font-mono font-semibold">
-                          {(() => { const t = items.reduce((s, m) => s + Number(m.quantity || 0) * Number(m.unitCost || 0), 0); return t > 0 ? `$${formatVal(t)}` : "—"; })()}
+                          {(() => { const t = items.reduce((s, m) => s + Number((m as any).quantity || 0) * Number(m.unitCost || 0), 0); return t > 0 ? `$${formatVal(t)}` : "—"; })()}
                         </td>
                       </tr>
                     </tfoot>
@@ -3351,7 +3353,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                       <div className="text-right">
                         <span className="text-sm font-mono font-bold">
                           {(() => {
-                            const t = measurements.reduce((s, m) => s + Number(m.quantity || 0) * Number(m.unitCost || 0), 0);
+                            const t = measurements.reduce((s, m) => s + Number((m as any).quantity || 0) * Number(m.unitCost || 0), 0);
                             return t > 0 ? `$${formatVal(t)}` : "—";
                           })()}
                         </span>

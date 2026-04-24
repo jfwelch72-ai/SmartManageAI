@@ -54,9 +54,7 @@ function buildCreatePayload(m: TakeoffMeasurement, sheetId: string) {
     unitCost: m.unitCost ? String(m.unitCost) : undefined,
     costCodeId: m.costCodeId || undefined,
     color: m.color || undefined,
-    hostMeasurementId: m.hostMeasurementId || undefined,
     pitchRatio: m.pitchRatio ? String(m.pitchRatio) : undefined,
-    dropFeet: m.dropFeet ? String(m.dropFeet) : undefined,
     source: m.source || undefined,
     metadata: m.metadata || undefined,
   };

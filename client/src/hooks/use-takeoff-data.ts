@@ -7,7 +7,7 @@ import type { TakeoffSheet, TakeoffMeasurement, TakeoffMeasurementGroup, Quantit
 import type { PlanDocument, AddendumOverlayData, MeasurementType } from "@/components/takeoff/types";
 import { buildMarkupFailureSummary } from "@/components/markups/markup-failure-helpers";
 
-export type TakeoffMarkupWithAuthor = TakeoffMarkup & { authorName?: string | null; points: { x: number; y: number }[] };
+export type TakeoffMarkupWithAuthor = Omit<TakeoffMarkup, "points"> & { authorName?: string | null; points: { x: number; y: number }[] };
 
 type TakeoffContext =
   | { type: "project"; projectId: string; projectCode: string }
