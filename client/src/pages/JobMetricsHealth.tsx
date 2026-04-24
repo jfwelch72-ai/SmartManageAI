@@ -85,6 +85,21 @@ const ORPHAN_COUNTER_LABELS: Record<string, string> = {
   deleted: "Deleted",
 };
 
+// Task #1504 — stale-refresh chart counters. Mirrors the orphan-cleanup
+// chart treatment (Task #1464) so operators can spot a slow drift in
+// candidates / succeeded / failed across the rolling 24h window.
+const STALE_COUNTERS = ["candidates", "succeeded", "failed"] as const;
+const STALE_COUNTER_COLORS: Record<string, string> = {
+  candidates: "hsl(var(--chart-2))",
+  succeeded: "hsl(var(--chart-1))",
+  failed: "hsl(var(--chart-3))",
+};
+const STALE_COUNTER_LABELS: Record<string, string> = {
+  candidates: "Candidates",
+  succeeded: "Succeeded",
+  failed: "Failed",
+};
+
 function formatDuration(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
   const h = Math.floor(totalSec / 3600);
@@ -119,6 +134,7 @@ const WAGE_STALE_JOB = "wage_decision_stale_refresh";
 const WAGE_ORPHAN_LAST_RUN_KEY = ["/api/admin/jobs/wage_decision_orphan_sweep/last-run"] as const;
 const WAGE_ORPHAN_JOB = "wage_decision_orphan_sweep";
 const WAGE_ORPHAN_METRICS_KEY = ["/api/admin/metrics/jobs", WAGE_ORPHAN_JOB] as const;
+const WAGE_STALE_METRICS_KEY = ["/api/admin/metrics/jobs", WAGE_STALE_JOB] as const;
 const WAGE_RETRY_JOB = "wage_decision_retry";
 
 interface OrphanWageDecisionSweepResult {
@@ -238,6 +254,18 @@ export default function JobMetricsHealth() {
     refetchInterval: 30000,
   });
 
+  // Task #1504 — same rolling 24h sample series for the stale-refresh
+  // sweep so the card can render a `bucketSamples` + recharts trend
+  // chart matching the orphan-cleanup card.
+  const {
+    data: wageStaleMetrics,
+    isLoading: wageStaleMetricsLoading,
+    isError: wageStaleMetricsError,
+  } = useQuery<JobMetricsResponse>({
+    queryKey: WAGE_STALE_METRICS_KEY,
+    refetchInterval: 30000,
+  });
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [runningJob, setRunningJob] = useState<string | null>(null);
@@ -260,6 +288,7 @@ export default function JobMetricsHealth() {
       queryClient.invalidateQueries({ queryKey: WAGE_STALE_LAST_RUN_KEY });
       queryClient.invalidateQueries({ queryKey: WAGE_ORPHAN_LAST_RUN_KEY });
       queryClient.invalidateQueries({ queryKey: WAGE_ORPHAN_METRICS_KEY });
+      queryClient.invalidateQueries({ queryKey: WAGE_STALE_METRICS_KEY });
     },
     onError: (err: unknown, jobName) => {
       const description =
@@ -310,6 +339,15 @@ export default function JobMetricsHealth() {
     [wageOrphanMetrics]
   );
   const wageOrphanSampleCount = wageOrphanMetrics?.samples.length ?? 0;
+
+  const wageStaleChartData = useMemo(
+    () =>
+      wageStaleMetrics
+        ? bucketSamples(wageStaleMetrics.samples, STALE_COUNTERS)
+        : [],
+    [wageStaleMetrics]
+  );
+  const wageStaleSampleCount = wageStaleMetrics?.samples.length ?? 0;
 
   const totals = data?.totals ?? {};
   const latest = data?.latest ?? null;
@@ -496,6 +534,68 @@ export default function JobMetricsHealth() {
                     </div>
                   </div>
                 ))}
+              </div>
+              <div className="pt-2" data-testid="wage-stale-trend">
+                <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                  Last 24h trend
+                </div>
+                {wageStaleMetricsLoading ? (
+                  <Skeleton
+                    className="h-48 w-full"
+                    data-testid="skeleton-wage-stale-chart"
+                  />
+                ) : wageStaleMetricsError ? (
+                  <Alert
+                    variant="destructive"
+                    data-testid="alert-wage-stale-chart-error"
+                  >
+                    <XCircle className="h-4 w-4" />
+                    <AlertTitle>Failed to load stale-refresh trend</AlertTitle>
+                    <AlertDescription>
+                      Try refreshing or check server logs.
+                    </AlertDescription>
+                  </Alert>
+                ) : wageStaleSampleCount === 0 ? (
+                  <div
+                    className="h-48 flex items-center justify-center text-sm text-muted-foreground border rounded-md"
+                    data-testid="text-wage-stale-no-samples"
+                  >
+                    No samples recorded in the last 24h yet.
+                  </div>
+                ) : (
+                  <div
+                    className="h-48 w-full"
+                    data-testid="chart-wage-stale"
+                  >
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={wageStaleChartData}>
+                        <CartesianGrid
+                          strokeDasharray="3 3"
+                          className="stroke-muted"
+                        />
+                        <XAxis
+                          dataKey="label"
+                          tick={{ fontSize: 11 }}
+                          interval={2}
+                        />
+                        <YAxis
+                          tick={{ fontSize: 11 }}
+                          allowDecimals={false}
+                        />
+                        <Tooltip />
+                        <Legend wrapperStyle={{ fontSize: 12 }} />
+                        {STALE_COUNTERS.map((c) => (
+                          <Bar
+                            key={c}
+                            dataKey={c}
+                            name={STALE_COUNTER_LABELS[c]}
+                            fill={STALE_COUNTER_COLORS[c]}
+                          />
+                        ))}
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
               </div>
               {wageStaleLastRun.recent && wageStaleLastRun.recent.length > 1 && (
                 <div className="pt-2" data-testid="wage-stale-recent-history">
