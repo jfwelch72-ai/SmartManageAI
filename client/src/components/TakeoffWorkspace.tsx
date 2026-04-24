@@ -38,6 +38,7 @@ import { useTakeoffData } from "@/hooks/use-takeoff-data";
 import { useTakeoffInteractions } from "@/hooks/use-takeoff-interactions";
 import type { TakeoffCondition } from "@shared/schema";
 import { computeAssemblyResults, type FormulaContext } from "@shared/utils/assemblyFormula";
+import { commitMarkupBodyDrag, commitMarkupResize } from "./markups/markup-drag-commit";
 import { TakeoffToolbar } from "./takeoff/TakeoffToolbar";
 import { TakeoffSidebar } from "./takeoff/TakeoffSidebar";
 import { MeasurementTable } from "./takeoff/MeasurementTable";
@@ -3904,93 +3905,38 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                     e.target.getLayer()?.batchDraw();
                     const siblingIds = drag.siblings.map(s => s.id);
                     markupBodyDragRef.current = null;
-                    if (dx === 0 && dy === 0) return;
-                    // Task #1742 — fire a PATCH per selected member,
-                    // each with a `previous: { points }` payload so the
-                    // unified takeoff history can restore the gesture.
-                    // The sidebar Undo/Redo buttons and the
-                    // bubble-phase Cmd/Ctrl+Z handler in
-                    // `useTakeoffInteractions` then walk the same stack
-                    // alongside measurement edits in the correct order.
-                    //
-                    // Task #1755 — for a multi-select drag, push a
-                    // single MARKUP_UPDATE_BATCH entry up front
-                    // describing every member's before/after points so
-                    // one Undo press reverses the whole gesture and one
-                    // Redo press reapplies it.
-                    //
-                    // Task #1752 — multi-select drags now commit
-                    // through `bulkUpdateMarkupsMutation`, which fires
-                    // ONE PATCH for every member of the gesture and
-                    // invalidates the markups query exactly once. The
-                    // legacy fan-out path issued N parallel PATCHes
-                    // (each with its own invalidation refetch), which
-                    // scaled poorly with selection size. Single-markup
-                    // body drags (`siblingIds.length === 0`) still take
-                    // the per-id `updateMarkupMutation` so the
-                    // mutation's onSuccess can push exactly one
-                    // MARKUP_UPDATE history entry — no regression for
-                    // the common case.
-                    const newPts = rawPts.map(p => ({ x: p.x + dx, y: p.y + dy }));
-                    if (siblingIds.length === 0) {
-                      updateMarkupMutation.mutate({
-                        id: markup.id,
-                        points: newPts,
-                        previous: { points: rawPts },
-                      });
-                    } else {
-                      const beforeSnaps: { id: string; points: { x: number; y: number }[] }[] = [
-                        { id: markup.id, points: rawPts },
-                      ];
-                      const afterSnaps: { id: string; points: { x: number; y: number }[] }[] = [
-                        { id: markup.id, points: newPts },
-                      ];
-                      const bulkUpdates: { id: string; points: { x: number; y: number }[] }[] = [
-                        { id: markup.id, points: newPts },
-                      ];
-                      for (const id of siblingIds) {
-                        const m = markups.find((x: any) => x.id === id);
-                        if (!m) continue;
-                        const sPts = (typeof m.points === "string"
-                          ? JSON.parse(m.points)
-                          : m.points) as { x: number; y: number }[];
-                        if (!sPts || sPts.length === 0) continue;
-                        const sNewPts = sPts.map(p => ({ x: p.x + dx, y: p.y + dy }));
-                        beforeSnaps.push({ id, points: sPts });
-                        afterSnaps.push({ id, points: sNewPts });
-                        bulkUpdates.push({ id, points: sNewPts });
-                      }
-                      // Task #1759 — defer the MARKUP_UPDATE_BATCH
-                      // history push until the bulk PATCH actually
-                      // succeeds. `bulkUpdateMarkupsMutation` already
-                      // rolls the optimistic cache back on failure
-                      // (its `onError` restores `previousMarkups`), so
-                      // the only remaining failure-mode bug from the
-                      // pre-Task-#1752 parallel-PATCH world was the
-                      // phantom Undo entry: pushing the history entry
-                      // up front meant a failed group still left a
-                      // MARKUP_UPDATE_BATCH on the undo stack,
-                      // claiming a move that never happened, and Redo
-                      // would silently re-fire the failed payload.
-                      // Awaiting via `mutateAsync` and pushing only on
-                      // resolve closes that hole; the mutation's own
-                      // `onError` toast covers the failure case.
-                      const sheetIdForBatch = selectedSheet;
-                      bulkUpdateMarkupsMutation
-                        .mutateAsync({ updates: bulkUpdates })
-                        .then(() => {
-                          if (sheetIdForBatch) {
-                            takeoffHistory.pushMarkupUpdateBatchAction(beforeSnaps, afterSnaps, sheetIdForBatch);
-                          }
-                        })
-                        .catch(() => {
-                          // No-op: the mutation's onError handler
-                          // restores the optimistic cache snapshot
-                          // and surfaces the error toast. Skipping
-                          // the history push (above) is the only
-                          // additional Task #1759 obligation.
-                        });
-                    }
+                    // Task #1742 / #1755 / #1752 / #1759 — All of the
+                    // body-drag commit routing lives in
+                    // `commitMarkupBodyDrag` so it can be unit-tested
+                    // without standing up the Konva stage:
+                    //   - Single-markup drags fire one
+                    //     `updateMarkupMutation.mutate` with
+                    //     `previous: { points }` so the mutation's
+                    //     onSuccess records exactly one MARKUP_UPDATE
+                    //     history entry (#1742).
+                    //   - Multi-select drags fire ONE
+                    //     `bulkUpdateMarkupsMutation.mutateAsync` PATCH
+                    //     for the whole gesture (#1752 — one server
+                    //     round-trip and one cache invalidation instead
+                    //     of N), then push a single
+                    //     MARKUP_UPDATE_BATCH history entry (#1755) ONLY
+                    //     after the PATCH resolves (#1759 — prevents a
+                    //     phantom Undo entry when the bulk PATCH
+                    //     fails).
+                    // See `client/src/components/markups/markup-drag-commit.ts`
+                    // and `client/src/components/markups/__tests__/markup-drag-commit.test.ts`.
+                    void commitMarkupBodyDrag({
+                      markup,
+                      rawPts,
+                      dx,
+                      dy,
+                      siblingIds,
+                      markups,
+                      selectedSheet,
+                      updateMarkupMutation,
+                      bulkUpdateMarkupsMutation,
+                      takeoffHistory,
+                    });
                   };
                   const groupProps = isDraggable
                     ? {
@@ -4131,22 +4077,22 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                               const np = rawPts.map(p => ({ ...p }));
                               np[idx] = { x: e.target.x() + handleHalf, y: e.target.y() + handleHalf };
                               // Task #1754 — Capture the pre-resize points
-                              // before nulling the ref so we can pass them
-                              // as `previous` to `updateMarkupMutation`.
-                              // Without this the resize would not land on
-                              // the `useTakeoffHistory` stack and the
-                              // sidebar Undo / Cmd+Z would skip over it
-                              // (mirrors the body-drag fix from Task #1742).
+                              // before nulling the ref so `commitMarkupResize`
+                              // can forward them as `previous` to
+                              // `updateMarkupMutation`. Without this the
+                              // resize would not land on the
+                              // `useTakeoffHistory` stack and the sidebar
+                              // Undo / Cmd+Z would skip over it (mirrors
+                              // the body-drag fix from Task #1742).
                               const origPts = markupResizeRef.current?.origPts;
                               markupResizeRef.current = null;
                               setMarkupResizePreview({ id: markup.id, points: np });
-                              try {
-                                await updateMarkupMutation.mutateAsync({
-                                  id: markup.id,
-                                  points: np,
-                                  ...(origPts ? { previous: { points: origPts } } : {}),
-                                });
-                              } catch {}
+                              await commitMarkupResize({
+                                markupId: markup.id,
+                                newPts: np,
+                                origPts,
+                                updateMarkupMutation,
+                              });
                               setMarkupResizePreview(curr => (curr && curr.id === markup.id) ? null : curr);
                             }}
                             onMouseEnter={(e: any) => { const c = e.target.getStage()?.container(); if (c) c.style.cursor = "move"; }}
@@ -4238,22 +4184,22 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                               if (!markupResizeRef.current) { setMarkupResizePreview(null); return; }
                               const newPts = computeNewPts(c.name, e.target.x() + handleHalf, e.target.y() + handleHalf);
                               // Task #1754 — Capture the pre-resize points
-                              // before nulling the ref so we can pass them
-                              // as `previous` to `updateMarkupMutation`.
-                              // Without this the resize would not land on
-                              // the `useTakeoffHistory` stack and the
-                              // sidebar Undo / Cmd+Z would skip over it
-                              // (mirrors the body-drag fix from Task #1742).
+                              // before nulling the ref so `commitMarkupResize`
+                              // can forward them as `previous` to
+                              // `updateMarkupMutation`. Without this the
+                              // resize would not land on the
+                              // `useTakeoffHistory` stack and the sidebar
+                              // Undo / Cmd+Z would skip over it (mirrors
+                              // the body-drag fix from Task #1742).
                               const origPts = markupResizeRef.current.origPts;
                               markupResizeRef.current = null;
                               setMarkupResizePreview({ id: markup.id, points: newPts });
-                              try {
-                                await updateMarkupMutation.mutateAsync({
-                                  id: markup.id,
-                                  points: newPts,
-                                  previous: { points: origPts },
-                                });
-                              } catch {}
+                              await commitMarkupResize({
+                                markupId: markup.id,
+                                newPts,
+                                origPts,
+                                updateMarkupMutation,
+                              });
                               setMarkupResizePreview(curr => (curr && curr.id === markup.id) ? null : curr);
                             }}
                             onMouseEnter={(e: any) => { const con = e.target.getStage()?.container(); if (con) con.style.cursor = c.cursor; }}
