@@ -199,10 +199,87 @@ hash-based fast path the test DB does, implemented by
    actual schema state always stay in lock-step.
 3. **If the hashes match, skip everything** (~1-2s warm path). This is
    the common case: most merges don't touch `shared/schema/*`.
-4. **Otherwise run `drizzle-kit push --force`** to apply an additive
-   diff against the live DB, then stamp the new hash on success. This
-   is the rare path; we cap it at `DEV_SCHEMA_PUSH_TIMEOUT_MS` (default
-   180s) to keep a runaway introspection from hanging the merge.
+4. **Pre-introspect the live DB and exclude any "orphan" tables — i.e.
+   tables present in Postgres but not declared in `shared/schema/*` —
+   from drizzle-kit's view via a generated `tablesFilter` config**.
+   This is the critical step that keeps the push non-interactive; see
+   "Why we hide orphan tables from drizzle-kit" below.
+5. **Otherwise run `drizzle-kit push --force`** with the generated
+   filter config to apply an additive diff against the live DB, then
+   stamp the new hash on success. This is the rare path; we cap it at
+   `DEV_SCHEMA_PUSH_TIMEOUT_MS` (default 180s) to keep a runaway
+   introspection from hanging the merge. `stdin` is wired to
+   `/dev/null` rather than the parent TTY, so any unexpected
+   interactive prompt hangs until the timeout instead of silently
+   accepting a destructive default.
+
+### Why we hide orphan tables from drizzle-kit
+
+Several tables in the dev DB are owned by raw-SQL `ensure*Tables.ts`
+helpers that run from `server/utils/runStartupMigrations.ts` rather
+than being declared as Drizzle `pgTable`s. The biggest groups are:
+
+- The 12 `status_*` tables created by `ensureStatusPageTables` for the
+  internal status page (components, incidents, subscribers, probes,
+  ...).
+- `one_shot_jobs`, created by `oneShotJobRegistry.ts` and the various
+  one-shot scripts it serves.
+- A handful of historic project/report scratch tables
+  (`project_report_settings`, `project_spec_index`,
+  `mobile_exchange_codes`).
+- `_dev_schema_meta` itself, owned by `dev-schema-sync.ts`.
+
+To drizzle-kit, these look like tables that are *missing* from the
+declared schema. When the merge that triggered the sync also adds a
+brand-new pgTable on the schema side, `drizzle-kit push` interprets
+the (new schema table, missing DB table) pairing as a possible
+**rename** and pops up an interactive
+`Is <new_table> created or renamed from <orphan>?` select prompt.
+The post-merge runner has no TTY to answer it, so the push hangs
+until the wrapping `timeout 200` kills it.
+
+`scripts/dev-schema-sync.ts` defuses this by:
+
+1. Importing every `pgTable` exported from `shared/schema/*` via the
+   `PgTable` instanceof check + `getTableName` (same approach as
+   `server/utils/schemaDriftDetector.ts`).
+2. Querying `information_schema.tables` for every public table.
+3. Splitting tables that are present in the DB but missing from the
+   schema into two buckets, using the curated
+   `KNOWN_RAW_SQL_TABLE_ALLOWLIST` constant in the script:
+   - **Allowlisted orphans** (e.g. `status_*`, `one_shot_jobs`,
+     `_dev_schema_meta`) — added to the filter and ignored by push.
+   - **Unknown schema-missing tables** — treated as suspected drift.
+4. **If the unknown bucket is non-empty, the script ABORTS the push
+   with a non-zero exit, prints each unknown table, and explains the
+   two ways to remediate** (re-run from a TTY to answer the rename
+   prompt, or extend the allowlist if it's a new raw-SQL helper).
+   The schema hash is *not* stamped, so the next post-merge retries
+   automatically once the underlying issue is resolved. This is the
+   safety valve that keeps a real Drizzle rename from being silently
+   masked by the orphan filter.
+5. Otherwise it writes a transient `drizzle.config.mjs` (under
+   `node_modules/.cache/dev-schema-sync-*`) that mirrors the real
+   `drizzle.config.ts` but adds
+   `tablesFilter: ["!status_components", "!one_shot_jobs", ...]`.
+6. Invokes `drizzle-kit push --force --config=<temp>` against that
+   config. drizzle-kit applies the `tablesFilter` to **both** the
+   schema-side tables and the introspected DB-side tables, so the
+   orphans never enter the diff and no rename prompt fires.
+
+The transient config is scoped to this single push run — `npm run
+db:push`, `npm run db:studio`, and any direct drizzle-kit invocation
+still use the unfiltered `drizzle.config.ts` and see every table.
+
+### Adding a new raw-SQL helper
+
+If you add a new `ensure*Tables.ts` helper (or anything else that
+creates a public table outside of `shared/schema/*`), you must extend
+`KNOWN_RAW_SQL_TABLE_ALLOWLIST` in `scripts/dev-schema-sync.ts` with
+the table name (or a `prefix_*` glob for groups) and a `reason` that
+points at the helper. The post-merge run will fail loudly until you
+do, which is the intended behavior — anything missing from the
+allowlist could otherwise be a real schema rename in disguise.
 
 ### Why this replaces the old approach
 
