@@ -978,3 +978,113 @@ describe("plan-markup-layers — copy-to-document (Task #1701)", () => {
     expect([403, 404]).toContain(res.status);
   });
 });
+
+// Task #1722 — surface existing "(copy)" layers per sibling sheet so
+// the picker can warn before creating accidental duplicates.
+describe("plan-markup-layers — copy-targets (Task #1722)", () => {
+  let dupTenant: Tenant;
+  let dupOtherTenant: Tenant;
+
+  beforeAll(async () => {
+    dupTenant = await setupTenant("dupct");
+    dupOtherTenant = await setupTenant("dupct2");
+  }, 60_000);
+
+  it("returns existing copy counts and lastCopiedAt per destination", async () => {
+    const layer = await apiPost(
+      `/api/plan-documents/${dupTenant.docA}/markup-layers`,
+      dupTenant.token,
+      { name: "RFI Set", color: "#aabbcc" },
+    );
+    expect(layer.status).toBe(201);
+    const sourceLayerId = layer.body.id as string;
+
+    // No copies anywhere yet → empty array.
+    const before = await apiGet(
+      `/api/plan-markup-layers/${sourceLayerId}/copy-targets`,
+      dupTenant.token,
+    );
+    expect(before.status).toBe(200);
+    expect(before.body.targets).toEqual([]);
+
+    // Make two copies onto docB.
+    const c1 = await apiPost(
+      `/api/plan-markup-layers/${sourceLayerId}/copy-to-document`,
+      dupTenant.token,
+      { targetDocumentId: dupTenant.docB },
+    );
+    expect(c1.status).toBe(201);
+    expect(c1.body.layer.name).toBe("RFI Set (copy)");
+    const c2 = await apiPost(
+      `/api/plan-markup-layers/${sourceLayerId}/copy-to-document`,
+      dupTenant.token,
+      { targetDocumentId: dupTenant.docB },
+    );
+    expect(c2.status).toBe(201);
+    expect(c2.body.layer.name).toBe("RFI Set (copy 2)");
+
+    const after = await apiGet(
+      `/api/plan-markup-layers/${sourceLayerId}/copy-targets`,
+      dupTenant.token,
+    );
+    expect(after.status).toBe(200);
+    const targets = after.body.targets as Array<{
+      documentId: string;
+      existingCopyCount: number;
+      lastCopiedAt: string;
+    }>;
+    expect(targets.length).toBe(1);
+    expect(targets[0].documentId).toBe(dupTenant.docB);
+    expect(targets[0].existingCopyCount).toBe(2);
+    expect(typeof targets[0].lastCopiedAt).toBe("string");
+    expect(Number.isFinite(Date.parse(targets[0].lastCopiedAt))).toBe(true);
+  });
+
+  it("ignores layers whose name only partially matches the copy prefix", async () => {
+    const layer = await apiPost(
+      `/api/plan-documents/${dupTenant.docA}/markup-layers`,
+      dupTenant.token,
+      { name: "QA" },
+    );
+    expect(layer.status).toBe(201);
+
+    // Manually create a layer on docB whose name *starts with* the
+    // expected prefix but is not a real copy. The endpoint must NOT
+    // count it.
+    const decoy = await apiPost(
+      `/api/plan-documents/${dupTenant.docB}/markup-layers`,
+      dupTenant.token,
+      { name: "QA (copy on tuesday)" },
+    );
+    expect(decoy.status).toBe(201);
+
+    const res = await apiGet(
+      `/api/plan-markup-layers/${layer.body.id}/copy-targets`,
+      dupTenant.token,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.targets).toEqual([]);
+  });
+
+  it("denies cross-tenant copy-targets lookups", async () => {
+    const layer = await apiPost(
+      `/api/plan-documents/${dupTenant.docA}/markup-layers`,
+      dupTenant.token,
+      { name: "Private" },
+    );
+    expect(layer.status).toBe(201);
+    const res = await apiGet(
+      `/api/plan-markup-layers/${layer.body.id}/copy-targets`,
+      dupOtherTenant.token,
+    );
+    expect([403, 404]).toContain(res.status);
+  });
+
+  it("returns 404 for unknown layer ids", async () => {
+    const res = await apiGet(
+      `/api/plan-markup-layers/00000000-0000-0000-0000-000000000000/copy-targets`,
+      dupTenant.token,
+    );
+    expect(res.status).toBe(404);
+  });
+});

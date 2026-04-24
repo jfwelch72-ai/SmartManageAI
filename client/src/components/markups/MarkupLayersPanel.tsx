@@ -53,6 +53,21 @@ export interface MarkupLayer {
   markupCount: number;
 }
 
+/** Task #1722 — per-destination summary of how many "(copy)" layers
+ *  derived from a given source layer already exist on each sibling
+ *  sheet. The picker uses this to badge destinations the user has
+ *  already copied to and to confirm before creating yet another
+ *  duplicate. Documents with zero copies are omitted from the array
+ *  by the server; the client treats absence as zero. */
+interface CopyTarget {
+  documentId: string;
+  existingCopyCount: number;
+  lastCopiedAt: string;
+}
+interface CopyTargetsResponse {
+  targets: CopyTarget[];
+}
+
 /** Sibling sheet a user can copy a layer onto (Task #1701). The list
  *  is supplied by the parent (PlansTab) since destinations come from
  *  the project-document query, not from this layer-scoped panel. */
@@ -95,6 +110,11 @@ export default function MarkupLayersPanel({
   // visual affordance — the drop target is computed at drop time).
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  // Task #1722 — which layer's "Copy to sheet" menu is currently open.
+  // We use this to scope the existing-copy lookup query (a single
+  // request fired only when the user actually opens a picker, not on
+  // every layer render).
+  const [openCopyMenuLayerId, setOpenCopyMenuLayerId] = useState<string | null>(null);
   // Task #1702 — accessibility parity for the drag handle. Screen
   // reader users are notified of position changes via an aria-live
   // region; the message is set after a successful keyboard reorder.
@@ -114,6 +134,31 @@ export default function MarkupLayersPanel({
     },
     enabled: !!documentId,
   });
+
+  // Task #1722 — fetch the per-destination copy summary for whichever
+  // layer the user is currently considering. We scope by `openCopyMenuLayerId`
+  // so the request is only fired once the picker is actually opened —
+  // no per-layer waterfall on initial render.
+  const copyTargetsQueryKey = [
+    "/api/plan-markup-layers",
+    openCopyMenuLayerId ?? "",
+    "copy-targets",
+  ] as const;
+  const { data: copyTargetsData } = useQuery<CopyTargetsResponse>({
+    queryKey: copyTargetsQueryKey,
+    queryFn: async () => {
+      const r = await fetch(
+        `/api/plan-markup-layers/${encodeURIComponent(openCopyMenuLayerId!)}/copy-targets`,
+        { credentials: "include" },
+      );
+      if (!r.ok) return { targets: [] };
+      return r.json();
+    },
+    enabled: !!openCopyMenuLayerId,
+  });
+  const copyTargetsByDoc = new Map<string, CopyTarget>(
+    (copyTargetsData?.targets ?? []).map((t) => [t.documentId, t]),
+  );
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: layersQueryKey });
@@ -204,6 +249,12 @@ export default function MarkupLayersPanel({
           variables.targetDocumentId,
           "markups",
         ],
+      });
+      // Task #1722 — refresh the copy-targets summary so a follow-up
+      // open of the same picker reflects the new "(copy)" we just
+      // created (and surfaces the duplicate-warning on the next click).
+      queryClient.invalidateQueries({
+        queryKey: ["/api/plan-markup-layers", variables.layerId, "copy-targets"],
       });
       const dest = copyDestinations.find((d) => d.id === variables.targetDocumentId);
       toast({
@@ -493,7 +544,12 @@ export default function MarkupLayersPanel({
                    onto a `data-layer-drop-target` element (e.g. a
                    PageThumbnailStrip thumbnail) fires the same copy
                    mutation. */
-                <DropdownMenu>
+                <DropdownMenu
+                  open={openCopyMenuLayerId === l.id}
+                  onOpenChange={(open) =>
+                    setOpenCopyMenuLayerId(open ? l.id : null)
+                  }
+                >
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
@@ -542,20 +598,54 @@ export default function MarkupLayersPanel({
                         No other sheets available
                       </DropdownMenuItem>
                     ) : (
-                      copyDestinations.map((dest) => (
-                        <DropdownMenuItem
-                          key={dest.id}
-                          onSelect={() =>
-                            copyToSheetMutation.mutate({
-                              layerId: l.id,
-                              targetDocumentId: dest.id,
-                            })
-                          }
-                          data-testid={`menu-markup-layer-copy-${l.id}-to-${dest.id}`}
-                        >
-                          <span className="truncate">{dest.label}</span>
-                        </DropdownMenuItem>
-                      ))
+                      copyDestinations.map((dest) => {
+                        // Task #1722 — surface existing copies on each
+                        // destination row so users know whether the
+                        // click will create a duplicate. The lookup
+                        // is keyed off `openCopyMenuLayerId`, so the
+                        // map is only populated for the layer whose
+                        // menu is currently open.
+                        const existing = copyTargetsByDoc.get(dest.id);
+                        const existingCount = existing?.existingCopyCount ?? 0;
+                        return (
+                          <DropdownMenuItem
+                            key={dest.id}
+                            onSelect={(e) => {
+                              if (
+                                existingCount > 0 &&
+                                typeof window !== "undefined" &&
+                                !window.confirm(
+                                  `"${dest.label}" already has ${existingCount} ` +
+                                    `cop${existingCount === 1 ? "y" : "ies"} of "${l.name}". ` +
+                                    `Create another copy anyway?`,
+                                )
+                              ) {
+                                // Block the menu from closing on cancel
+                                // so the user can pick a different sheet.
+                                e.preventDefault();
+                                return;
+                              }
+                              copyToSheetMutation.mutate({
+                                layerId: l.id,
+                                targetDocumentId: dest.id,
+                              });
+                            }}
+                            data-testid={`menu-markup-layer-copy-${l.id}-to-${dest.id}`}
+                          >
+                            <span className="truncate flex-1">{dest.label}</span>
+                            {existingCount > 0 && (
+                              <span
+                                className="ml-2 text-muted-foreground text-[10px] whitespace-nowrap"
+                                data-testid={`badge-markup-layer-copy-existing-${l.id}-to-${dest.id}`}
+                              >
+                                {existingCount === 1
+                                  ? "1 copy"
+                                  : `${existingCount} copies`}
+                              </span>
+                            )}
+                          </DropdownMenuItem>
+                        );
+                      })
                     )}
                   </DropdownMenuContent>
                 </DropdownMenu>

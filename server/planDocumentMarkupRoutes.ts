@@ -1772,6 +1772,145 @@ router.post(
 );
 
 // ============================================================================
+// Task #1722 — LIST sibling sheets that already contain a copy of a given
+// source layer. Backs the "Copy to sheet" picker so users can see at a
+// glance which destinations would produce a duplicate "(copy)" /
+// "(copy 2)" / … layer if clicked again.
+//
+// The copy action is intentionally non-idempotent (each click creates a
+// fresh layer with a bumped suffix), so the picker has historically
+// given no hint that the user has already copied this layer somewhere.
+// This endpoint returns, per sibling document in the same project, how
+// many copies of the named source layer already exist there and when
+// the most recent one was created.
+//
+// Returned shape:
+//   { targets: [{ documentId, existingCopyCount, lastCopiedAt }] }
+//
+// Documents with zero matching copies are omitted from the array; the
+// client treats absence as zero.
+// ============================================================================
+router.get(
+  "/api/plan-markup-layers/:layerId/copy-targets",
+  requireAuth,
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const [sourceLayer] = await db
+        .select()
+        .from(planMarkupLayers)
+        .where(eq(planMarkupLayers.id, req.params.layerId))
+        .limit(1);
+      if (!sourceLayer) {
+        res.status(404).json({ error: "Layer not found" });
+        return;
+      }
+
+      const sourceAccess = await loadDocAndAssertOrg(
+        sourceLayer.planDocumentId,
+        req,
+      );
+      if (!sourceAccess.ok) {
+        res.status(sourceAccess.status).json({ error: sourceAccess.error });
+        return;
+      }
+
+      // No project = no siblings to scan (also matches the same-project
+      // guard enforced by the copy-to-document endpoint).
+      if (!sourceAccess.doc.projectId) {
+        res.json({ targets: [] });
+        return;
+      }
+
+      // Sibling docs: same project + same org, excluding the source doc.
+      const siblings = await db
+        .select({ id: planDocuments.id })
+        .from(planDocuments)
+        .where(
+          and(
+            eq(planDocuments.projectId, sourceAccess.doc.projectId),
+            eq(
+              planDocuments.organizationId,
+              sourceAccess.doc.organizationId!,
+            ),
+          ),
+        );
+      const siblingIds = siblings
+        .map((s) => s.id)
+        .filter((id) => id !== sourceAccess.doc.id);
+      if (siblingIds.length === 0) {
+        res.json({ targets: [] });
+        return;
+      }
+
+      // Pull every layer on a sibling doc whose name *starts with* the
+      // copy prefix. We then filter precisely in JS so we only count
+      // names matching exactly "<source> (copy)" or "<source> (copy N)"
+      // — never partial matches like "<source> (copy on tuesday)".
+      const escapedPrefix = `${sourceLayer.name} (copy`
+        .replace(/\\/g, "\\\\")
+        .replace(/%/g, "\\%")
+        .replace(/_/g, "\\_");
+      const likePattern = `${escapedPrefix}%`;
+
+      const matches = await db
+        .select({
+          planDocumentId: planMarkupLayers.planDocumentId,
+          name: planMarkupLayers.name,
+          createdAt: planMarkupLayers.createdAt,
+        })
+        .from(planMarkupLayers)
+        .where(
+          and(
+            inArray(planMarkupLayers.planDocumentId, siblingIds),
+            sql`${planMarkupLayers.name} LIKE ${likePattern} ESCAPE '\\'`,
+          ),
+        );
+
+      // RegExp anchored to the exact "(copy)" / "(copy N)" suffix, with
+      // the source name escaped so special characters are literal.
+      const escapedName = sourceLayer.name.replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&",
+      );
+      const copyRe = new RegExp(`^${escapedName} \\(copy(?: \\d+)?\\)$`);
+
+      const grouped = new Map<
+        string,
+        { count: number; lastCopiedAt: Date }
+      >();
+      for (const m of matches) {
+        if (!copyRe.test(m.name)) continue;
+        const createdAt = m.createdAt ?? new Date(0);
+        const existing = grouped.get(m.planDocumentId);
+        if (!existing) {
+          grouped.set(m.planDocumentId, {
+            count: 1,
+            lastCopiedAt: createdAt,
+          });
+        } else {
+          existing.count += 1;
+          if (createdAt > existing.lastCopiedAt) {
+            existing.lastCopiedAt = createdAt;
+          }
+        }
+      }
+
+      const targets = Array.from(grouped.entries()).map(
+        ([documentId, v]) => ({
+          documentId,
+          existingCopyCount: v.count,
+          lastCopiedAt: v.lastCopiedAt.toISOString(),
+        }),
+      );
+
+      res.json({ targets });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+// ============================================================================
 // LIST pins for a single plan_document. Convenience endpoint used by the
 // print page so it can fetch overlays without first resolving the
 // project code.
