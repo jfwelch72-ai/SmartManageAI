@@ -1399,6 +1399,36 @@ router.get(
       const includeMarkups = parseBoolFlag(req.query.includeMarkups, true);
       const includePins = parseBoolFlag(req.query.includePins, true);
 
+      // Task #1677 — accept an optional `layerIds` query param so the
+      // recipient can scope the export to a subset of named layers
+      // (e.g. just "QA/QC"). When provided, the explicit set wins and
+      // overrides per-user visibility. When *absent*, the print page
+      // falls back to honouring the requesting user's per-layer
+      // visibility toggles (i.e. "all layers currently visible to me"),
+      // matching what they see in the in-app viewer. We accept either
+      // repeated `?layerIds=a&layerIds=b` or a single `?layerIds=a,b,c`
+      // form so the URL stays human-friendly.
+      const layerIds: string[] = (() => {
+        const raw = req.query.layerIds;
+        const collected: string[] = [];
+        const push = (v: unknown) => {
+          if (typeof v !== "string") return;
+          for (const part of v.split(",")) {
+            const trimmed = part.trim();
+            // Loose validation — IDs are uuids or the "__default__"
+            // sentinel for legacy null-layer markups. Reject anything
+            // with characters that could break the print URL.
+            if (trimmed && /^[A-Za-z0-9_-]{1,64}$/.test(trimmed)) {
+              collected.push(trimmed);
+            }
+          }
+        };
+        if (Array.isArray(raw)) raw.forEach(push);
+        else if (raw !== undefined) push(raw);
+        // Dedupe while preserving order.
+        return Array.from(new Set(collected));
+      })();
+
       // Resolve origin so the print page can hit our own APIs.
       const protoHeader = (req.headers["x-forwarded-proto"] as string | undefined) || req.protocol;
       const proto = String(protoHeader).split(",")[0].trim() || "http";
@@ -1437,6 +1467,7 @@ router.get(
         authCookie: { name: cookieName, value: cookieValue },
         includeMarkups,
         includePins,
+        layerIds,
       });
 
       recordJobMetrics("plan_document_pdf_export", {

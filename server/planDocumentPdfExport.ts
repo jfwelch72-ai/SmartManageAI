@@ -131,6 +131,20 @@ export interface PlanPdfRenderOptions {
   authCookie?: { name: string; value: string };
   includeMarkups: boolean;
   includePins: boolean;
+  /**
+   * Task #1677 — optional per-layer filter. When supplied, only markups
+   * whose layer membership is in this set are rendered, and the
+   * explicit set overrides the requesting user's per-layer visibility
+   * preferences. The sentinel string "__default__" matches markups
+   * whose `layer_id` is NULL (legacy / pre-#1662 rows that fall back
+   * to the auto-created default layer for the sheet).
+   *
+   * When omitted (or empty), the print page falls back to honouring
+   * the requester's per-layer visibility flags (i.e. "all layers
+   * currently visible to me in the in-app viewer"). It does NOT
+   * unconditionally include every layer.
+   */
+  layerIds?: string[];
 }
 
 export async function renderPlanDocumentPdf(opts: PlanPdfRenderOptions): Promise<Buffer> {
@@ -169,6 +183,14 @@ export async function renderPlanDocumentPdf(opts: PlanPdfRenderOptions): Promise
       // documents (no need to rasterize 5,000 pages just to discover
       // the limit was exceeded — the server still throws below).
       url.searchParams.set("maxPages", String(MAX_PAGES));
+      // Task #1677 — forward the optional layer filter as a
+      // comma-separated list. When absent (or empty), the print page
+      // falls back to the requester's per-layer visibility flags
+      // ("all layers currently visible to me"); when present, this
+      // explicit set wins and overrides those flags.
+      if (opts.layerIds && opts.layerIds.length > 0) {
+        url.searchParams.set("layerIds", opts.layerIds.join(","));
+      }
 
       await page.goto(url.toString(), { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
 
