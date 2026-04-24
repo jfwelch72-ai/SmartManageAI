@@ -11,7 +11,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, FileText, RefreshCw, Plus, Loader2, Sparkles, Pencil, Trash2, Bell, BellOff } from "lucide-react";
+import { AlertTriangle, FileText, RefreshCw, Plus, Loader2, Sparkles, Pencil, Trash2, Bell, BellOff, Download } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 // Task #1398: lightweight fuzzy match used to surface near-duplicate
 // classifications when promoting a DOL feed row. Realistic typos like
@@ -627,6 +633,52 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
     },
   });
 
+  // Task #1481 — download a compliance report (CSV or PDF) of every
+  // classification's rate-change + acknowledgement metadata for the
+  // project's wage decision, scoped to every project in the org that
+  // references the same decision number.
+  const [exportingFormat, setExportingFormat] = useState<"csv" | "pdf" | null>(null);
+  const handleExportAcknowledgements = async (format: "csv" | "pdf") => {
+    if (!data?.wageDecision) return;
+    setExportingFormat(format);
+    try {
+      const url = `/api/payroll/wage-decisions/${encodeURIComponent(
+        data.wageDecision,
+      )}/acknowledgement-export?format=${format}`;
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) {
+        let msg = `Export failed (${res.status})`;
+        try {
+          const body = await res.json();
+          if (body?.error) msg = body.error;
+        } catch {
+          /* non-JSON error body — fall back to status */
+        }
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = blobUrl;
+      const stem = `wage-decision-acknowledgements-${data.wageDecision.replace(/[^A-Za-z0-9_-]+/g, "_")}-${new Date()
+        .toISOString()
+        .slice(0, 10)}`;
+      a.download = `${stem}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      toast({
+        title: "Export failed",
+        description: err instanceof Error ? err.message : "Could not export acknowledgement report",
+        variant: "destructive",
+      });
+    } finally {
+      setExportingFormat(null);
+    }
+  };
+
   const overrideMutation = useMutation({
     mutationFn: async (opts: { classificationIdOverride?: string; confirmCreate?: boolean } = {}) => {
       if (!overrideRow) throw new Error("No row selected");
@@ -898,6 +950,42 @@ function PrevailingWagePanel({ projectId }: { projectId: string }) {
                 )}
               </Button>
             )}
+            {/* Task #1481 — auditor-facing export of every classification's
+                rate-change + acknowledgement metadata for this wage
+                decision, scoped to every project in the org that
+                references it. CSV is the audit-binder default; PDF is
+                the printable variant. */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-2 text-xs"
+                  disabled={exportingFormat !== null}
+                  data-testid="button-export-acknowledgements"
+                >
+                  {exportingFormat ? (
+                    <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> Exporting...</>
+                  ) : (
+                    <><Download className="w-3.5 h-3.5 mr-1" /> Export acknowledgements</>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem
+                  onClick={() => handleExportAcknowledgements("csv")}
+                  data-testid="menu-export-acknowledgements-csv"
+                >
+                  Download CSV
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => handleExportAcknowledgements("pdf")}
+                  data-testid="menu-export-acknowledgements-pdf"
+                >
+                  Download PDF
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         )}
 
