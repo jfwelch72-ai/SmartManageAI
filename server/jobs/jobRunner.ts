@@ -8,7 +8,7 @@ import { recordJobMetrics, loadJobMetricsFromDb, pruneJobMetricsDb } from "../ut
 import { evaluateJobMetricAlerts, sendJobMetricAlertQuietHoursDigests } from "../utils/jobMetricAlerts";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
-import { integrationWebhookSubscriptions, retentionPolicies, auditLog, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, type InsertNotification } from "@shared/schema";
+import { integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, type InsertNotification } from "@shared/schema";
 import { getEffectivePermissions } from "../auth";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
@@ -832,6 +832,87 @@ export async function processRetentionPolicies() {
     policiesFailed,
     durationMs: Date.now() - startedAt,
   });
+}
+
+/**
+ * Task #1551 — per-run history record for the nightly retention policy
+ * sweep. Mirrors the shape of `OrphanWageDecisionSweepRecord` so the
+ * admin Jobs dashboard can render a "Last run" + "Recent runs" card
+ * using the same UI pattern.
+ */
+export const RETENTION_POLICY_SWEEP_JOB = "retention_policy_sweep";
+
+export interface RetentionPolicySweepResult {
+  deleted: number;
+  hardDeleted: number;
+  policiesProcessed: number;
+  policiesFailed: number;
+}
+
+export interface RetentionPolicySweepRecord {
+  ranAt: string;
+  durationMs: number;
+  result: RetentionPolicySweepResult;
+}
+
+function rowToRetentionSweepRecord(row: {
+  recordedAt: Date | string;
+  counters: unknown;
+}): RetentionPolicySweepRecord {
+  const c = (row.counters ?? {}) as Record<string, unknown>;
+  const num = (k: string): number => {
+    const v = c[k];
+    return typeof v === "number" && Number.isFinite(v) ? v : 0;
+  };
+  return {
+    ranAt: new Date(row.recordedAt).toISOString(),
+    durationMs: num("durationMs"),
+    result: {
+      deleted: num("deleted"),
+      hardDeleted: num("hardDeleted"),
+      policiesProcessed: num("policiesProcessed"),
+      policiesFailed: num("policiesFailed"),
+    },
+  };
+}
+
+export async function getLastRetentionPolicySweep(): Promise<RetentionPolicySweepRecord | null> {
+  try {
+    const [row] = await db
+      .select({
+        recordedAt: jobMetricSamples.recordedAt,
+        counters: jobMetricSamples.counters,
+      })
+      .from(jobMetricSamples)
+      .where(eq(jobMetricSamples.job, RETENTION_POLICY_SWEEP_JOB))
+      .orderBy(desc(jobMetricSamples.recordedAt))
+      .limit(1);
+    return row ? rowToRetentionSweepRecord(row) : null;
+  } catch (err) {
+    logError("Failed to load last retention policy sweep", { error: String(err) });
+    return null;
+  }
+}
+
+export async function getRecentRetentionPolicySweeps(
+  limit = 10,
+): Promise<RetentionPolicySweepRecord[]> {
+  const safeLimit = Math.max(1, Math.min(50, Math.floor(limit)));
+  try {
+    const rows = await db
+      .select({
+        recordedAt: jobMetricSamples.recordedAt,
+        counters: jobMetricSamples.counters,
+      })
+      .from(jobMetricSamples)
+      .where(eq(jobMetricSamples.job, RETENTION_POLICY_SWEEP_JOB))
+      .orderBy(desc(jobMetricSamples.recordedAt))
+      .limit(safeLimit);
+    return rows.map(rowToRetentionSweepRecord);
+  } catch (err) {
+    logError("Failed to load recent retention policy sweeps", { error: String(err) });
+    return [];
+  }
 }
 
 function computeNextRunAt(frequency: string): Date {

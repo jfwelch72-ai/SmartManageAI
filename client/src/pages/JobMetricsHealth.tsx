@@ -137,6 +137,50 @@ const WAGE_ORPHAN_METRICS_KEY = ["/api/admin/metrics/jobs", WAGE_ORPHAN_JOB] as 
 const WAGE_STALE_METRICS_KEY = ["/api/admin/metrics/jobs", WAGE_STALE_JOB] as const;
 const WAGE_RETRY_JOB = "wage_decision_retry";
 
+// Task #1551 — last-run history endpoints + job names for the two
+// nightly cleanup jobs that publish counters via `recordJobMetrics`.
+const RETENTION_SWEEP_LAST_RUN_KEY = ["/api/admin/jobs/retention_policy_sweep/last-run"] as const;
+const RETENTION_SWEEP_JOB = "retention_policy_sweep";
+const PAYROLL_PURGE_LAST_RUN_KEY = ["/api/admin/jobs/certified_payroll_purge/last-run"] as const;
+const PAYROLL_PURGE_JOB = "certified_payroll_purge";
+
+interface RetentionPolicySweepResult {
+  deleted: number;
+  hardDeleted: number;
+  policiesProcessed: number;
+  policiesFailed: number;
+}
+
+interface RetentionPolicySweepRecord {
+  ranAt: string;
+  durationMs: number;
+  result: RetentionPolicySweepResult;
+}
+
+interface RetentionPolicySweepResponse {
+  lastRun: RetentionPolicySweepRecord | null;
+  recent?: RetentionPolicySweepRecord[];
+}
+
+interface CertifiedPayrollPurgeResult {
+  deleted: number;
+  hardDeleted: number;
+  storageDeleted: number;
+  storageFailures: number;
+  orgsProcessed: number;
+}
+
+interface CertifiedPayrollPurgeRecord {
+  ranAt: string;
+  durationMs: number;
+  result: CertifiedPayrollPurgeResult;
+}
+
+interface CertifiedPayrollPurgeResponse {
+  lastRun: CertifiedPayrollPurgeRecord | null;
+  recent?: CertifiedPayrollPurgeRecord[];
+}
+
 interface OrphanWageDecisionSweepResult {
   candidates: number;
   deleted: number;
@@ -232,6 +276,25 @@ export default function JobMetricsHealth() {
     refetchInterval: 30000,
   });
 
+  // Task #1551 — last-run + recent-runs history for the two nightly
+  // cleanup jobs (retention sweep, certified-payroll purge). Same
+  // endpoint shape as the wage-decision orphan sweep.
+  const {
+    data: retentionSweepLastRun,
+    isLoading: retentionSweepLoading,
+  } = useQuery<RetentionPolicySweepResponse>({
+    queryKey: RETENTION_SWEEP_LAST_RUN_KEY,
+    refetchInterval: 30000,
+  });
+
+  const {
+    data: payrollPurgeLastRun,
+    isLoading: payrollPurgeLoading,
+  } = useQuery<CertifiedPayrollPurgeResponse>({
+    queryKey: PAYROLL_PURGE_LAST_RUN_KEY,
+    refetchInterval: 30000,
+  });
+
   // Task #1429 — orphan-row cleanup runs inside the wage-decision retry
   // sweep but its counters are tracked separately so operators can see
   // at a glance whether the retention window is doing what they expect.
@@ -289,6 +352,8 @@ export default function JobMetricsHealth() {
       queryClient.invalidateQueries({ queryKey: WAGE_ORPHAN_LAST_RUN_KEY });
       queryClient.invalidateQueries({ queryKey: WAGE_ORPHAN_METRICS_KEY });
       queryClient.invalidateQueries({ queryKey: WAGE_STALE_METRICS_KEY });
+      queryClient.invalidateQueries({ queryKey: RETENTION_SWEEP_LAST_RUN_KEY });
+      queryClient.invalidateQueries({ queryKey: PAYROLL_PURGE_LAST_RUN_KEY });
     },
     onError: (err: unknown, jobName) => {
       const description =
@@ -774,6 +839,233 @@ export default function JobMetricsHealth() {
                         <span>
                           cand {s.result.candidates} · del {s.result.deleted} ·{" "}
                           {s.durationMs}ms
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Task #1551 — nightly retention sweep last-run + recent runs. */}
+      <Card data-testid="card-retention-policy-sweep">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Trash2 className="h-4 w-4" /> Retention policy sweep
+              </CardTitle>
+              <CardDescription>
+                Nightly sweep at 02:00 UTC that applies every enabled
+                retention policy (currently audit-log purges) and records per-run
+                deletion counts. Use “Run now” to execute the sweep on demand.
+                Super Admin only.
+              </CardDescription>
+            </div>
+            <Button
+              onClick={() => runJobMutation.mutate(RETENTION_SWEEP_JOB)}
+              disabled={runJobMutation.isPending}
+              data-testid="button-run-retention-policy-sweep"
+            >
+              <RefreshCw
+                className={`h-4 w-4 mr-1 ${
+                  runJobMutation.isPending && runningJob === RETENTION_SWEEP_JOB
+                    ? "animate-spin"
+                    : ""
+                }`}
+              />
+              {runJobMutation.isPending && runningJob === RETENTION_SWEEP_JOB
+                ? "Running…"
+                : "Run now"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {retentionSweepLoading ? (
+            <Skeleton className="h-24 w-full" data-testid="skeleton-retention-sweep" />
+          ) : !retentionSweepLastRun?.lastRun ? (
+            <div
+              className="text-sm text-muted-foreground"
+              data-testid="text-retention-sweep-no-run"
+            >
+              No retention sweep has been recorded yet. The job runs nightly at
+              02:00 UTC — use “Run now” to trigger it immediately, or add an
+              enabled retention policy first.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="text-sm text-muted-foreground">
+                Last sweep:{" "}
+                <span className="font-medium text-foreground" data-testid="text-retention-sweep-ran-at">
+                  {new Date(retentionSweepLastRun.lastRun.ranAt).toLocaleString()}
+                </span>{" "}
+                <span data-testid="text-retention-sweep-relative">
+                  ({formatRelative(new Date(retentionSweepLastRun.lastRun.ranAt).getTime())})
+                </span>{" "}
+                · finished in{" "}
+                <span data-testid="text-retention-sweep-duration">
+                  {retentionSweepLastRun.lastRun.durationMs}ms
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                {(
+                  [
+                    ["deleted", "Rows deleted"],
+                    ["hardDeleted", "Hard-deleted"],
+                    ["policiesProcessed", "Policies processed"],
+                    ["policiesFailed", "Policies failed"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <div key={key} data-testid={`stat-retention-sweep-${key}`}>
+                    <div className="text-muted-foreground">{label}</div>
+                    <div
+                      className="font-medium text-lg"
+                      data-testid={`text-retention-sweep-${key}`}
+                    >
+                      {retentionSweepLastRun.lastRun!.result[key]}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {retentionSweepLastRun.recent && retentionSweepLastRun.recent.length > 1 && (
+                <div className="pt-2" data-testid="retention-sweep-recent-history">
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                    Recent sweeps
+                  </div>
+                  <div className="text-xs border rounded-md divide-y">
+                    {retentionSweepLastRun.recent.slice(0, 10).map((s, idx) => (
+                      <div
+                        key={`${s.ranAt}-${idx}`}
+                        className="flex items-center justify-between gap-2 px-2 py-1"
+                        data-testid={`row-retention-sweep-recent-${idx}`}
+                      >
+                        <span className="text-muted-foreground">
+                          {new Date(s.ranAt).toLocaleString()}
+                        </span>
+                        <span>
+                          del {s.result.deleted} · hard {s.result.hardDeleted} ·{" "}
+                          policies {s.result.policiesProcessed}
+                          {s.result.policiesFailed > 0
+                            ? ` · failed ${s.result.policiesFailed}`
+                            : ""}{" "}
+                          · {s.durationMs}ms
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Task #1551 — nightly certified-payroll auto-purge last-run + recent runs. */}
+      <Card data-testid="card-certified-payroll-purge">
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Trash2 className="h-4 w-4" /> Certified payroll auto-purge
+              </CardTitle>
+              <CardDescription>
+                Nightly job that hard-deletes archived certified payroll PDFs
+                (and their object-storage blobs) once they pass each org's
+                <code> archived_report_retention_days</code> window. Storage
+                deletes are attempted before the DB row is dropped; rows whose
+                blob delete fails are retried on the next tick. Super Admin only.
+              </CardDescription>
+            </div>
+            <Button
+              onClick={() => runJobMutation.mutate(PAYROLL_PURGE_JOB)}
+              disabled={runJobMutation.isPending}
+              data-testid="button-run-certified-payroll-purge"
+            >
+              <RefreshCw
+                className={`h-4 w-4 mr-1 ${
+                  runJobMutation.isPending && runningJob === PAYROLL_PURGE_JOB
+                    ? "animate-spin"
+                    : ""
+                }`}
+              />
+              {runJobMutation.isPending && runningJob === PAYROLL_PURGE_JOB
+                ? "Running…"
+                : "Run now"}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {payrollPurgeLoading ? (
+            <Skeleton className="h-24 w-full" data-testid="skeleton-payroll-purge" />
+          ) : !payrollPurgeLastRun?.lastRun ? (
+            <div
+              className="text-sm text-muted-foreground"
+              data-testid="text-payroll-purge-no-run"
+            >
+              No certified-payroll purge has been recorded yet. The job runs
+              nightly — use “Run now” to trigger it immediately, or wait until
+              an org has archived reports older than its retention window.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="text-sm text-muted-foreground">
+                Last purge:{" "}
+                <span className="font-medium text-foreground" data-testid="text-payroll-purge-ran-at">
+                  {new Date(payrollPurgeLastRun.lastRun.ranAt).toLocaleString()}
+                </span>{" "}
+                <span data-testid="text-payroll-purge-relative">
+                  ({formatRelative(new Date(payrollPurgeLastRun.lastRun.ranAt).getTime())})
+                </span>{" "}
+                · finished in{" "}
+                <span data-testid="text-payroll-purge-duration">
+                  {payrollPurgeLastRun.lastRun.durationMs}ms
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-sm">
+                {(
+                  [
+                    ["deleted", "Rows deleted"],
+                    ["hardDeleted", "Hard-deleted"],
+                    ["storageDeleted", "Storage deleted"],
+                    ["storageFailures", "Storage failures"],
+                    ["orgsProcessed", "Orgs processed"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <div key={key} data-testid={`stat-payroll-purge-${key}`}>
+                    <div className="text-muted-foreground">{label}</div>
+                    <div
+                      className="font-medium text-lg"
+                      data-testid={`text-payroll-purge-${key}`}
+                    >
+                      {payrollPurgeLastRun.lastRun!.result[key]}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {payrollPurgeLastRun.recent && payrollPurgeLastRun.recent.length > 1 && (
+                <div className="pt-2" data-testid="payroll-purge-recent-history">
+                  <div className="text-xs uppercase tracking-wide text-muted-foreground mb-1">
+                    Recent purges
+                  </div>
+                  <div className="text-xs border rounded-md divide-y">
+                    {payrollPurgeLastRun.recent.slice(0, 10).map((s, idx) => (
+                      <div
+                        key={`${s.ranAt}-${idx}`}
+                        className="flex items-center justify-between gap-2 px-2 py-1"
+                        data-testid={`row-payroll-purge-recent-${idx}`}
+                      >
+                        <span className="text-muted-foreground">
+                          {new Date(s.ranAt).toLocaleString()}
+                        </span>
+                        <span>
+                          del {s.result.deleted} · storage {s.result.storageDeleted}
+                          {s.result.storageFailures > 0
+                            ? ` · fail ${s.result.storageFailures}`
+                            : ""}{" "}
+                          · orgs {s.result.orgsProcessed} · {s.durationMs}ms
                         </span>
                       </div>
                     ))}

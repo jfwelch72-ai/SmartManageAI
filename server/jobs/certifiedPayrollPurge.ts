@@ -30,13 +30,94 @@
  */
 
 import { db } from "../db";
-import { and, eq, inArray, lte, sql, asc } from "drizzle-orm";
-import { certifiedPayrollReports, organizationPayrollSettings, users } from "@shared/schema";
+import { and, eq, inArray, lte, sql, asc, desc } from "drizzle-orm";
+import { certifiedPayrollReports, organizationPayrollSettings, users, jobMetricSamples } from "@shared/schema";
 import { logAudit } from "../auditLogger";
 import { logError, logInfo, logWarn } from "../utils/logger";
 import { recordJobMetrics } from "../utils/jobMetrics";
 
 export const CERTIFIED_PAYROLL_PURGE_JOB = "certified_payroll_purge";
+
+/**
+ * Task #1551 — per-run history record for the nightly certified-payroll
+ * purge sweep. Mirrors the shape of `OrphanWageDecisionSweepRecord` so
+ * the admin Jobs dashboard can render a "Last run" + "Recent runs" card
+ * using the same UI pattern.
+ */
+export interface CertifiedPayrollPurgeResult {
+  deleted: number;
+  hardDeleted: number;
+  storageDeleted: number;
+  storageFailures: number;
+  orgsProcessed: number;
+}
+
+export interface CertifiedPayrollPurgeRecord {
+  ranAt: string;
+  durationMs: number;
+  result: CertifiedPayrollPurgeResult;
+}
+
+function rowToCertifiedPayrollPurgeRecord(row: {
+  recordedAt: Date | string;
+  counters: unknown;
+}): CertifiedPayrollPurgeRecord {
+  const c = (row.counters ?? {}) as Record<string, unknown>;
+  const num = (k: string): number => {
+    const v = c[k];
+    return typeof v === "number" && Number.isFinite(v) ? v : 0;
+  };
+  return {
+    ranAt: new Date(row.recordedAt).toISOString(),
+    durationMs: num("durationMs"),
+    result: {
+      deleted: num("deleted"),
+      hardDeleted: num("hardDeleted"),
+      storageDeleted: num("storageDeleted"),
+      storageFailures: num("storageFailures"),
+      orgsProcessed: num("orgsProcessed"),
+    },
+  };
+}
+
+export async function getLastCertifiedPayrollPurge(): Promise<CertifiedPayrollPurgeRecord | null> {
+  try {
+    const [row] = await db
+      .select({
+        recordedAt: jobMetricSamples.recordedAt,
+        counters: jobMetricSamples.counters,
+      })
+      .from(jobMetricSamples)
+      .where(eq(jobMetricSamples.job, CERTIFIED_PAYROLL_PURGE_JOB))
+      .orderBy(desc(jobMetricSamples.recordedAt))
+      .limit(1);
+    return row ? rowToCertifiedPayrollPurgeRecord(row) : null;
+  } catch (err) {
+    logError("Failed to load last certified payroll purge", { error: String(err) });
+    return null;
+  }
+}
+
+export async function getRecentCertifiedPayrollPurges(
+  limit = 10,
+): Promise<CertifiedPayrollPurgeRecord[]> {
+  const safeLimit = Math.max(1, Math.min(50, Math.floor(limit)));
+  try {
+    const rows = await db
+      .select({
+        recordedAt: jobMetricSamples.recordedAt,
+        counters: jobMetricSamples.counters,
+      })
+      .from(jobMetricSamples)
+      .where(eq(jobMetricSamples.job, CERTIFIED_PAYROLL_PURGE_JOB))
+      .orderBy(desc(jobMetricSamples.recordedAt))
+      .limit(safeLimit);
+    return rows.map(rowToCertifiedPayrollPurgeRecord);
+  } catch (err) {
+    logError("Failed to load recent certified payroll purges", { error: String(err) });
+    return [];
+  }
+}
 
 export async function processArchivedCertifiedPayrollPurge(opts: { now?: Date } = {}): Promise<{
   orgsProcessed: number;

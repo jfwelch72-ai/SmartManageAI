@@ -1250,6 +1250,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   );
 
+  // Task #1551 — surface the most recent `retention_policy_sweep` runs
+  // on the admin Jobs dashboard so an operator can see at a glance how
+  // many rows the nightly sweep cleared and whether the policy count is
+  // drifting. Mirrors the wage-decision orphan sweep endpoint.
+  app.get(
+    "/api/admin/jobs/retention_policy_sweep/last-run",
+    requireAuth,
+    requireRole("SUPER_ADMIN"),
+    async (_req: AuthRequest, res: Response, next: NextFunction) => {
+      try {
+        const {
+          getLastRetentionPolicySweep,
+          getRecentRetentionPolicySweeps,
+        } = await import("./jobs/jobRunner");
+        const [lastRun, recent] = await Promise.all([
+          getLastRetentionPolicySweep(),
+          getRecentRetentionPolicySweeps(10),
+        ]);
+        res.json({ lastRun, recent });
+      } catch (err: any) {
+        next(err);
+      }
+    },
+  );
+
+  // Task #1551 — same pattern for the certified-payroll auto-purge so
+  // operators can monitor row/storage deletion counts and watch for
+  // accumulating storage failures without grepping logs.
+  app.get(
+    "/api/admin/jobs/certified_payroll_purge/last-run",
+    requireAuth,
+    requireRole("SUPER_ADMIN"),
+    async (_req: AuthRequest, res: Response, next: NextFunction) => {
+      try {
+        const {
+          getLastCertifiedPayrollPurge,
+          getRecentCertifiedPayrollPurges,
+        } = await import("./jobs/certifiedPayrollPurge");
+        const [lastRun, recent] = await Promise.all([
+          getLastCertifiedPayrollPurge(),
+          getRecentCertifiedPayrollPurges(10),
+        ]);
+        res.json({ lastRun, recent });
+      } catch (err: any) {
+        next(err);
+      }
+    },
+  );
+
   app.post("/api/admin/jobs/:jobName/run", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const { jobName } = req.params;
