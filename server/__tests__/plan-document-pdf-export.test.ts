@@ -43,9 +43,43 @@ import {
   organizations,
   projects,
   planDocuments,
+  planMarkupLayers,
+  planDocumentMarkups,
 } from "@shared/schema";
 import { generateToken } from "../auth";
 import { getJobMetrics } from "../utils/jobMetrics";
+
+// Task #1704 — extract text from a printed PDF so we can assert on the
+// HTML legend strip + the per-page test manifest of included markups
+// that the layered test print page surfaces. Mirrors the helper used
+// by `wh347-recent-rate-change.test.ts` (pdfjs legacy build, system
+// fonts off, standard fonts pulled from the bundled directory).
+async function extractPdfText(buf: Buffer): Promise<string> {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  const nodePath = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const here = nodePath.dirname(fileURLToPath(import.meta.url));
+  const standardFontDataUrl =
+    nodePath.resolve(here, "../../node_modules/pdfjs-dist/standard_fonts/") + "/";
+  const data = new Uint8Array(buf);
+  const doc = await pdfjs.getDocument({
+    data,
+    useSystemFonts: false,
+    disableFontFace: true,
+    isEvalSupported: false,
+    standardFontDataUrl,
+  }).promise;
+  const parts: string[] = [];
+  for (let p = 1; p <= doc.numPages; p++) {
+    const page = await doc.getPage(p);
+    const content = await page.getTextContent();
+    for (const item of content.items as Array<{ str?: string }>) {
+      if (typeof item.str === "string") parts.push(item.str);
+    }
+  }
+  await doc.destroy();
+  return parts.join("\n");
+}
 
 const TEST_PREFIX = "__plandoc_export_e2e__";
 
@@ -85,8 +119,14 @@ if (CHROMIUM_PATH) {
 }
 
 interface DocBehavior {
-  /** Either a fixture PDF buffer to rasterize, or `oversized` for the 413 path. */
-  mode: "render" | "oversized";
+  /**
+   * Either a fixture PDF buffer to rasterize ("render"), the 413 path
+   * ("oversized"), or the layered-export path ("layered" — Task #1704)
+   * which fetches markups + layers from the real APIs and renders an
+   * HTML legend strip + per-markup manifest so a route-level export can
+   * be asserted via pdf.js text extraction.
+   */
+  mode: "render" | "oversized" | "layered";
   fixture?: Buffer;
 }
 
@@ -105,6 +145,19 @@ let tenant: Tenant;
 
 let docOk: { id: string; expectedPages: number } = { id: "", expectedPages: 0 };
 let docTooBig: { id: string } = { id: "" };
+
+// Task #1704 — fixture for the layered-export coverage. Two named layers
+// (one included, one excluded by ?layerIds=…) and one TEXT markup on
+// each so we can assert the legend lists the included layer + the
+// per-page manifest only mentions the included markup.
+interface LayeredFixture {
+  docId: string;
+  includedLayer: { id: string; name: string; color: string };
+  excludedLayer: { id: string; name: string; color: string };
+  includedMarkupText: string;
+  excludedMarkupText: string;
+}
+let docLayered: LayeredFixture | null = null;
 
 async function makeFixturePdf(pageCount: number): Promise<Buffer> {
   const doc = await PDFDocument.create();
@@ -179,6 +232,12 @@ async function cleanup(): Promise<void> {
     const docSub = sql`(SELECT id FROM plan_documents WHERE project_id IN ${projSub})`;
     await db.execute(sql`DELETE FROM plan_document_markups WHERE plan_document_id IN ${docSub}`).catch(() => {});
     await db.execute(sql`DELETE FROM plan_pins WHERE plan_document_id IN ${docSub}`).catch(() => {});
+    // Task #1704 — explicit visibility + layer cleanup so a partial
+    // failure doesn't leave dangling FK rows pointing at the doc.
+    await db.execute(
+      sql`DELETE FROM plan_markup_layer_visibility WHERE layer_id IN (SELECT id FROM plan_markup_layers WHERE plan_document_id IN ${docSub})`,
+    ).catch(() => {});
+    await db.execute(sql`DELETE FROM plan_markup_layers WHERE plan_document_id IN ${docSub}`).catch(() => {});
     await db.execute(sql`DELETE FROM plan_documents WHERE project_id IN ${projSub}`).catch(() => {});
     await db.execute(sql`DELETE FROM projects WHERE gc_organization_id = ${orgId}`).catch(() => {});
     await db.execute(sql`DELETE FROM users WHERE organization_id = ${orgId}`).catch(() => {});
@@ -193,6 +252,17 @@ function buildTestPrintPageHtml(): string {
   .page { display: block; break-after: page; page-break-after: always; padding: 16px; }
   .page canvas { display: block; max-width: 100%; }
   .page .label { font-weight: bold; margin-top: 8px; }
+  /* Task #1704 — keep the layered footers visually compact so they
+     fit on the same printed page as the rasterised canvas above. */
+  .plan-pdf-legend {
+    font-size: 9px; padding: 6px 12px;
+    border-top: 1px solid #cbd5e1; background: #f8fafc;
+    color: #0f172a;
+  }
+  .plan-pdf-legend .label { font-weight: 600; margin-right: 6px; }
+  .plan-pdf-legend .chip { margin-right: 10px; }
+  .plan-pdf-markup-manifest { font-size: 10px; padding: 4px 12px; color: #0f172a; }
+  .plan-pdf-markup-manifest .row { white-space: nowrap; }
 </style></head><body>
 <div id="root"></div>
 <script type="module">
@@ -202,6 +272,13 @@ function buildTestPrintPageHtml(): string {
   const url = new URL(window.location.href);
   const id = decodeURIComponent(url.pathname.split("/").pop() || "");
   const maxPages = parseInt(url.searchParams.get("maxPages") || "0", 10) || Infinity;
+  // Task #1704 — mirror the layerIds parsing in PlanDocumentPrintPage.tsx
+  // so the test print page applies the same effective-set logic the real
+  // print page does. Comma-separated ids; empty/missing means "all".
+  const layerIdFilterRaw = url.searchParams.get("layerIds") || "";
+  const layerIdFilter = layerIdFilterRaw
+    ? new Set(layerIdFilterRaw.split(",").map((s) => s.trim()).filter(Boolean))
+    : null;
 
   (async () => {
     try {
@@ -228,6 +305,55 @@ function buildTestPrintPageHtml(): string {
         return;
       }
 
+      // Task #1704 — for "layered" mode, fetch markups + layers from the
+      // real APIs (auth flows in via the cookie the export route forwards
+      // to the headless browser) and resolve the inclusion set the same
+      // way PlanDocumentPrintPage.tsx does. We then surface (a) an HTML
+      // "Layers included:" footer for the legend assertion and (b) a
+      // per-page manifest of included markups so a regression that
+      // accidentally drops the layer filter or mis-resolves layer color
+      // is detectable via pdf.js text extraction.
+      let markups = [];
+      let layers = [];
+      if (behavior.mode === "layered") {
+        const [mRes, lRes] = await Promise.all([
+          fetch("/api/plan-documents/" + encodeURIComponent(id) + "/markups", { credentials: "include" }),
+          fetch("/api/plan-documents/" + encodeURIComponent(id) + "/markup-layers", { credentials: "include" }),
+        ]);
+        if (!mRes.ok) throw new Error("markups fetch failed: " + mRes.status);
+        if (!lRes.ok) throw new Error("layers fetch failed: " + lRes.status);
+        markups = await mRes.json();
+        layers = await lRes.json();
+      }
+
+      const layersById = new Map();
+      for (const l of layers) layersById.set(l.id, l);
+      const defaultLayer = layers.find((l) => l.isDefault) || null;
+      let effectiveIncluded;
+      if (layerIdFilter) {
+        effectiveIncluded = new Set();
+        for (const lid of layerIdFilter) {
+          if (lid === "__default__") {
+            if (defaultLayer) effectiveIncluded.add(defaultLayer.id);
+          } else {
+            effectiveIncluded.add(lid);
+          }
+        }
+      } else {
+        effectiveIncluded = new Set(
+          layers.filter((l) => l.isVisible !== false).map((l) => l.id),
+        );
+      }
+      const includedLayers = layers
+        .filter((l) => effectiveIncluded.has(l.id))
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name));
+      function isLayerIncluded(layerId) {
+        const resolved = layerId == null ? (defaultLayer ? defaultLayer.id : null) : layerId;
+        if (!resolved) return !layerIdFilter;
+        return effectiveIncluded.has(resolved);
+      }
+
       const root = document.getElementById("root");
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
@@ -244,6 +370,60 @@ function buildTestPrintPageHtml(): string {
         label.textContent = "PRINTED-FIXTURE-PAGE-" + i;
         wrap.appendChild(canvas);
         wrap.appendChild(label);
+
+        if (behavior.mode === "layered") {
+          // Per-page manifest of markups that survived the layer filter.
+          // Each row carries the markup text + its resolved layer name +
+          // color so a regression mis-resolving either is caught by a
+          // single text snapshot.
+          const pageMarkups = markups.filter(
+            (m) => m.pageNumber === i && isLayerIncluded(m.layerId),
+          );
+          const manifest = document.createElement("div");
+          manifest.className = "plan-pdf-markup-manifest";
+          manifest.setAttribute("data-testid", "plan-pdf-markup-manifest");
+          for (const m of pageMarkups) {
+            const row = document.createElement("div");
+            row.className = "row";
+            const layer = m.layerId
+              ? layersById.get(m.layerId) || defaultLayer
+              : defaultLayer;
+            const layerName = layer ? layer.name : "(unlayered)";
+            const layerColor = layer ? layer.color || "" : "";
+            row.textContent = "MARKUP:" + (m.text || m.id) +
+              " | LAYER:" + layerName +
+              " | COLOR:" + layerColor;
+            manifest.appendChild(row);
+          }
+          wrap.appendChild(manifest);
+
+          // Legend strip — mirrors PlanDocumentPrintPage.tsx's
+          // renderLegendFooter contract: a "Layers included:" label
+          // followed by one chip per included layer carrying the layer
+          // name. The chip color is recorded in the manifest above.
+          const legend = document.createElement("div");
+          legend.className = "plan-pdf-legend";
+          legend.setAttribute("data-testid", "plan-pdf-legend");
+          const lbl = document.createElement("span");
+          lbl.className = "label";
+          lbl.textContent = "Layers included:";
+          legend.appendChild(lbl);
+          if (includedLayers.length === 0) {
+            const none = document.createElement("span");
+            none.className = "chip";
+            none.textContent = "(none)";
+            legend.appendChild(none);
+          } else {
+            for (const layer of includedLayers) {
+              const chip = document.createElement("span");
+              chip.className = "chip";
+              chip.textContent = layer.name;
+              legend.appendChild(chip);
+            }
+          }
+          wrap.appendChild(legend);
+        }
+
         root.appendChild(wrap);
       }
       requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -278,6 +458,10 @@ function mountTestPrintPage(target: Express): void {
     }
     if (behavior.mode === "oversized") {
       res.json({ mode: "oversized", pageCount: 501 });
+      return;
+    }
+    if (behavior.mode === "layered") {
+      res.json({ mode: "layered" });
       return;
     }
     res.json({ mode: "render" });
@@ -329,7 +513,91 @@ beforeAll(async () => {
 
   docTooBig.id = await createDoc("toobig");
   docBehaviors.set(docTooBig.id, { mode: "oversized" });
-}, 120_000);
+
+  // Task #1704 — seed a plan document with two named layers and one
+  // markup on each so the layered export test can verify the legend
+  // strip lists the included layer and that markups from the excluded
+  // layer are filtered out of the printed PDF.
+  const layeredDocId = await createDoc("layered");
+  const [includedLayerRow] = await db
+    .insert(planMarkupLayers)
+    .values({
+      organizationId: tenant.orgId,
+      planDocumentId: layeredDocId,
+      name: "QA-REVIEW-LAYER-A",
+      color: "#1d4ed8",
+      sortOrder: 1,
+      isDefault: false,
+      createdById: tenant.userId,
+    })
+    .returning();
+  const [excludedLayerRow] = await db
+    .insert(planMarkupLayers)
+    .values({
+      organizationId: tenant.orgId,
+      planDocumentId: layeredDocId,
+      name: "DESIGN-LAYER-B",
+      color: "#b91c1c",
+      sortOrder: 2,
+      isDefault: false,
+      createdById: tenant.userId,
+    })
+    .returning();
+
+  const includedMarkupText = "INCLUDED-MARKUP-TEXT-A";
+  const excludedMarkupText = "EXCLUDED-MARKUP-TEXT-B";
+  await db.insert(planDocumentMarkups).values([
+    {
+      organizationId: tenant.orgId,
+      projectId: tenant.projectId,
+      planDocumentId: layeredDocId,
+      pageNumber: 1,
+      tool: "TEXT",
+      points: JSON.stringify([{ x: 0.1, y: 0.1 }]),
+      color: "#000000",
+      thickness: 2,
+      text: includedMarkupText,
+      createdBy: tenant.userId,
+      layerId: includedLayerRow.id,
+    },
+    {
+      organizationId: tenant.orgId,
+      projectId: tenant.projectId,
+      planDocumentId: layeredDocId,
+      pageNumber: 1,
+      tool: "TEXT",
+      points: JSON.stringify([{ x: 0.5, y: 0.5 }]),
+      color: "#000000",
+      thickness: 2,
+      text: excludedMarkupText,
+      createdBy: tenant.userId,
+      layerId: excludedLayerRow.id,
+    },
+  ]);
+
+  // Use a single-page fixture so the layered assertions stay focused
+  // on a single legend + manifest block. Reusing the 2-page `fixture`
+  // would force us to assert against the markups that only live on
+  // page 1, complicating the manifest text expectations.
+  const layeredFixturePdf = await makeFixturePdf(1);
+  docBehaviors.set(layeredDocId, { mode: "layered", fixture: layeredFixturePdf });
+
+  docLayered = {
+    docId: layeredDocId,
+    includedLayer: {
+      id: includedLayerRow.id,
+      name: includedLayerRow.name,
+      color: includedLayerRow.color,
+    },
+    excludedLayer: {
+      id: excludedLayerRow.id,
+      name: excludedLayerRow.name,
+      color: excludedLayerRow.color,
+    },
+    includedMarkupText,
+    excludedMarkupText,
+  };
+}, 180_000);
 
 afterAll(async () => {
   await cleanup();
@@ -397,6 +665,67 @@ describe("Task #1612 — /api/plan-documents/:id/export.pdf end-to-end (real Chr
     expect(metrics.totals.ok ?? 0).toBe(okBefore);
     expect(metrics.latest?.counters.error).toBe(1);
   }, 120_000);
+
+  // ============================================================================
+  // Task #1704 — verify the layered export path: when ?layerIds=<one-layer>
+  // is supplied, the printed PDF must
+  //   1. carry the legend strip ("Layers included:" + the included layer's
+  //      name) and
+  //   2. contain only the included layer's markups (i.e. omit the excluded
+  //      layer's markups + name from the printed output).
+  // The test print page in this file mirrors PlanDocumentPrintPage.tsx's
+  // inclusion logic and surfaces the chip color via the per-page manifest
+  // so a regression that drops a chip or returns the wrong color is
+  // detectable via pdf.js text extraction.
+  // ============================================================================
+  itIfChromium(
+    "scopes the printed PDF to ?layerIds=… — legend lists the included layer and excluded markups disappear",
+    async () => {
+      if (!docLayered) throw new Error("layered fixture not initialised");
+      const fixture = docLayered;
+
+      const res = await request(app)
+        .get(
+          `/api/plan-documents/${fixture.docId}/export.pdf?layerIds=${encodeURIComponent(fixture.includedLayer.id)}`,
+        )
+        .set("Cookie", `auth_token=${tenant.token}`)
+        .buffer(true)
+        .parse((response, callback) => {
+          const chunks: Buffer[] = [];
+          response.on("data", (chunk: Buffer) => chunks.push(chunk));
+          response.on("end", () => callback(null, Buffer.concat(chunks)));
+          response.on("error", (err) => callback(err, Buffer.alloc(0)));
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.headers["content-type"]).toContain("application/pdf");
+      const body = res.body as Buffer;
+      expect(Buffer.isBuffer(body)).toBe(true);
+      expect(body.subarray(0, 5).toString("ascii")).toBe("%PDF-");
+
+      const text = await extractPdfText(body);
+
+      // Legend strip (the "Layers included:" footer in PlanDocumentPrintPage)
+      // must be present and must name the included layer.
+      expect(text).toContain("Layers included:");
+      expect(text).toContain(fixture.includedLayer.name);
+
+      // The excluded layer must NOT appear in the legend (the layer
+      // filter dropped it) and the per-page manifest must show only
+      // the included markup, proving filter + chip resolution work
+      // end-to-end.
+      expect(text).not.toContain(fixture.excludedLayer.name);
+      expect(text).toContain(`MARKUP:${fixture.includedMarkupText}`);
+      expect(text).not.toContain(`MARKUP:${fixture.excludedMarkupText}`);
+
+      // Chip color check — a regression that resolves the wrong layer
+      // for the included markup would surface here as the wrong hex
+      // string in the manifest row.
+      expect(text).toContain(`COLOR:${fixture.includedLayer.color}`);
+      expect(text).not.toContain(`COLOR:${fixture.excludedLayer.color}`);
+    },
+    180_000,
+  );
 });
 
 if (!CHROMIUM_PATH) {
