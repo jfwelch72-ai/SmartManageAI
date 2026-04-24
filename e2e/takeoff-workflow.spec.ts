@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { installCsrf } from "./helpers/csrf";
+import { uploadFixturePdf } from "./helpers/uploadFixturePdf";
 
 const BASE_URL =
   process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
@@ -104,11 +105,13 @@ test.describe("Takeoff Workflow - Playwright E2E", () => {
     expect(bodyText).toContain(bidCode);
 
     // --- Upload plans and create sheets ---
+    const plan1Upload = await uploadFixturePdf(page, { baseUrl: BASE_URL });
     const planRes = await page.request.post(
       `${BASE_URL}/api/bids/${bidId}/takeoff/plans`,
       {
         data: {
-          fileUrl: "https://example.com/test-plan-pw.pdf",
+          fileUrl: plan1Upload.objectKey,
+          objectKey: plan1Upload.objectKey,
           fileName: "PW Test Plan Sheet 1",
         },
       }
@@ -120,11 +123,13 @@ test.describe("Takeoff Workflow - Playwright E2E", () => {
     expect(planBody.sheets[0].sheetName).toBe("PW Test Plan Sheet 1");
     expect(planBody.sheets[0].bidId).toBe(bidId);
 
+    const plan2Upload = await uploadFixturePdf(page, { baseUrl: BASE_URL });
     const plan2Res = await page.request.post(
       `${BASE_URL}/api/bids/${bidId}/takeoff/plans`,
       {
         data: {
-          fileUrl: "https://example.com/test-plan-pw-2.pdf",
+          fileUrl: plan2Upload.objectKey,
+          objectKey: plan2Upload.objectKey,
           fileName: "PW Test Plan Sheet 2",
         },
       }
@@ -527,11 +532,13 @@ test.describe("Takeoff Workflow - Playwright E2E", () => {
     const bid = await createRes.json();
     const bidId = bid.id;
 
+    const authPlanUpload = await uploadFixturePdf(page, { baseUrl: BASE_URL });
     const planRes = await page.request.post(
       `${BASE_URL}/api/bids/${bidId}/takeoff/plans`,
       {
         data: {
-          fileUrl: "https://example.com/auth-test.pdf",
+          fileUrl: authPlanUpload.objectKey,
+          objectKey: authPlanUpload.objectKey,
           fileName: "Auth Test Sheet",
         },
       }

@@ -1,6 +1,6 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
-import { PDFDocument } from "pdf-lib";
 import { authedRequest, getCsrfHeader } from "./helpers/csrf";
+import { getMinimalPdf, uploadFixturePdf } from "./helpers/uploadFixturePdf";
 
 const BASE_URL = process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
 
@@ -67,18 +67,6 @@ function unwrapRfi(entry: RfiListEntry): RfiResponse {
   return "rfi" in entry ? entry.rfi : entry;
 }
 
-// ─── Minimal PDF generated once per worker (used to stub the stream) ───────
-let cachedPdf: Buffer | null = null;
-async function getMinimalPdf(): Promise<Buffer> {
-  if (cachedPdf) return cachedPdf;
-  const doc = await PDFDocument.create();
-  const page = doc.addPage([600, 800]);
-  page.drawText("E2E Test Plan", { x: 50, y: 750, size: 20 });
-  const bytes = await doc.save();
-  cachedPdf = Buffer.from(bytes);
-  return cachedPdf;
-}
-
 async function stubPlanStream(page: Page) {
   const buf = await getMinimalPdf();
   await page.route(/\/api\/projects\/[^/]+\/documents\/[^/]+\/stream$/, async (route: Route) => {
@@ -107,13 +95,14 @@ async function createPlanDocument(
   projectId: string,
   suffix: string | number,
 ): Promise<PlanDocumentResponse> {
+  const { objectKey } = await uploadFixturePdf(page, { baseUrl: BASE_URL });
   const res = await authedRequest(page, "POST", `${BASE_URL}/api/documents`, {
     data: {
       projectId,
       type: "PLANS",
       title: `PW Pin Plan ${suffix}`,
       fileName: `pw-pin-plan-${suffix}.pdf`,
-      fileUrl: `https://example.com/pw-pin-plan-${suffix}.pdf`,
+      fileUrl: objectKey,
       mimeType: "application/pdf",
     },
   });
@@ -195,14 +184,14 @@ async function createHarnessPlanDocument(
   projectId: string,
   title: string,
 ): Promise<PlanDocumentResponse> {
+  const { objectKey } = await uploadFixturePdf(page, { baseUrl: BASE_URL });
   const headers = await getCsrfHeader(page);
   const r = await page.request.post(`${BASE_URL}/api/documents`, {
     data: {
       projectId,
       title,
       fileName: `${title}.pdf`,
-      // Non-storage URL → trySetObjectEntityAclPolicy returns it as-is, no real upload needed.
-      fileUrl: "https://example.com/pin-test-fixture.pdf",
+      fileUrl: objectKey,
       type: "PLANS",
       mimeType: "application/pdf",
     },

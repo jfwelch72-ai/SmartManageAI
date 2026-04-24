@@ -20,8 +20,8 @@
  * code actually wires up. This test exercises that gesture.
  */
 import { test, expect, type Page, type Route } from "@playwright/test";
-import { PDFDocument } from "pdf-lib";
 import { authedRequest, getCsrfHeader, installCsrf } from "./helpers/csrf";
+import { getMinimalPdf, uploadFixturePdf } from "./helpers/uploadFixturePdf";
 
 const BASE_URL =
   process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
@@ -51,20 +51,10 @@ interface MarkupResponse {
   groupId?: string | null;
 }
 
-// ─── Minimal PDF (cached per worker) ────────────────────────────────────────
-let cachedPdf: Buffer | null = null;
-async function getMinimalPdf(): Promise<Buffer> {
-  if (cachedPdf) return cachedPdf;
-  const doc = await PDFDocument.create();
-  const page = doc.addPage([600, 800]);
-  page.drawText("Group-drag E2E", { x: 50, y: 750, size: 20 });
-  const bytes = await doc.save();
-  cachedPdf = Buffer.from(bytes);
-  return cachedPdf;
-}
+const PDF_LABEL = "Group-drag E2E";
 
 async function stubPlanStream(page: Page) {
-  const buf = await getMinimalPdf();
+  const buf = await getMinimalPdf(PDF_LABEL);
   await page.route(
     /\/api\/projects\/[^/]+\/documents\/[^/]+\/stream$/,
     async (route: Route) => {
@@ -102,58 +92,15 @@ async function createProject(
   return (await r.json()) as ProjectResponse;
 }
 
-async function uploadFixturePdf(page: Page): Promise<string> {
-  // Reserve an upload_intents row + presigned PUT URL, then actually
-  // upload the fixture PDF bytes so the object exists in storage.
-  // POST /api/documents calls trySetObjectEntityAclPolicy which loads
-  // the file and sets an ACL on it — that requires the object to be
-  // present (not just the upload intent). The in-browser route stub on
-  // `…/stream` means the test never depends on serving these bytes
-  // back; it just needs the object to physically exist so the create
-  // call succeeds.
-  const r = await authedRequest(page, "POST", `${BASE_URL}/api/objects/upload`, {
-    data: {
-      contentType: "application/pdf",
-      fileSize: (await getMinimalPdf()).length,
-      fileType: "DOCUMENT",
-    },
-  });
-  if (r.status() !== 200) {
-    throw new Error(
-      `Upload intent reserve failed (${r.status()}): ${await r.text()}`,
-    );
-  }
-  const { uploadURL, objectKey } = (await r.json()) as {
-    uploadURL: string;
-    objectKey: string;
-  };
-  if (!uploadURL || !objectKey) {
-    throw new Error("Upload intent response missing uploadURL / objectKey");
-  }
-
-  const pdf = await getMinimalPdf();
-  const putRes = await page.request.put(uploadURL, {
-    data: pdf,
-    headers: { "Content-Type": "application/pdf" },
-  });
-  // Object stores legitimately return 200 / 201 / 204 on a successful
-  // presigned PUT (GCS / S3 / R2 differ). Accept all three so this
-  // helper isn't brittle across storage backends.
-  const putStatus = putRes.status();
-  if (putStatus !== 200 && putStatus !== 201 && putStatus !== 204) {
-    throw new Error(
-      `Presigned PUT failed (${putStatus}): ${await putRes.text()}`,
-    );
-  }
-  return objectKey;
-}
-
 async function createPlanDocument(
   page: Page,
   projectId: string,
   suffix: string | number,
 ): Promise<PlanDocumentResponse> {
-  const objectKey = await uploadFixturePdf(page);
+  const { objectKey } = await uploadFixturePdf(page, {
+    baseUrl: BASE_URL,
+    label: PDF_LABEL,
+  });
   const r = await authedRequest(page, "POST", `${BASE_URL}/api/documents`, {
     data: {
       projectId,
