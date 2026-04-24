@@ -139,6 +139,21 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   useEffect(() => {
     try { sessionStorage.setItem("plan-pin-count-mode", pinCountMode); } catch {}
   }, [pinCountMode]);
+  const [pinClusteringEnabled, setPinClusteringEnabled] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    try {
+      const v = sessionStorage.getItem("plan-pin-clustering");
+      if (v === "off") return false;
+      return true;
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      sessionStorage.setItem("plan-pin-clustering", pinClusteringEnabled ? "on" : "off");
+    } catch {}
+  }, [pinClusteringEnabled]);
   const { data: sheets = [] } = useQuery<TakeoffSheet[]>({
     queryKey: ["/api/projects", project?.id, "takeoff", "sheets"],
     enabled: !!project?.id,
@@ -2097,6 +2112,8 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                           onChange={setPinFilter}
                           pinModeActive={pinModeActive}
                           onTogglePinMode={() => setPinModeActive((v) => !v)}
+                          clusteringEnabled={pinClusteringEnabled}
+                          onToggleClustering={() => setPinClusteringEnabled((v) => !v)}
                         />
                         <div className="ml-auto flex items-center gap-1 text-xs">
                           <span className="text-muted-foreground">Counts:</span>
@@ -2154,6 +2171,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                   pageNumber={pageNumber}
                                   filter={pinFilter}
                                   onOpenSource={handleOpenPinSource}
+                                  clusteringEnabled={pinClusteringEnabled}
                                 />
                                 <PlanMarkupLayer
                                   documentId={doc.id}

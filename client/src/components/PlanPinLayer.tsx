@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
-import { AlertCircle, Wrench, FileCheck, X, Trash2, Move } from "lucide-react";
+import { AlertCircle, Wrench, FileCheck, X, Trash2, Move, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -42,11 +42,13 @@ export interface PinFilter {
   openOnly: boolean;
 }
 
-const PIN_STYLE: Record<PinType, { icon: typeof AlertCircle; color: string; bg: string; label: string }> = {
-  RFI: { icon: AlertCircle, color: "text-white", bg: "bg-red-500", label: "RFI" },
-  PUNCH: { icon: Wrench, color: "text-white", bg: "bg-orange-500", label: "Punch" },
-  SUBMITTAL: { icon: FileCheck, color: "text-white", bg: "bg-blue-500", label: "Submittal" },
+const PIN_STYLE: Record<PinType, { icon: typeof AlertCircle; color: string; bg: string; label: string; hex: string }> = {
+  RFI: { icon: AlertCircle, color: "text-white", bg: "bg-red-500", label: "RFI", hex: "#ef4444" },
+  PUNCH: { icon: Wrench, color: "text-white", bg: "bg-orange-500", label: "Punch", hex: "#f97316" },
+  SUBMITTAL: { icon: FileCheck, color: "text-white", bg: "bg-blue-500", label: "Submittal", hex: "#3b82f6" },
 };
+
+const CLUSTER_RADIUS_PX = 36;
 
 const OPEN_STATUSES = new Set([
   "OPEN", "DRAFT", "SUBMITTED", "UNDER_REVIEW", "FORWARDED", "IN_PROGRESS", "PENDING",
@@ -73,6 +75,48 @@ interface PlanPinLayerProps {
   pageNumber: number;
   filter: PinFilter;
   onOpenSource?: (pin: PlanPin) => void;
+  clusteringEnabled?: boolean;
+}
+
+interface PinCluster {
+  id: string;
+  pins: PlanPin[];
+  cx: number;
+  cy: number;
+}
+
+function clusterPins(pins: PlanPin[], canvasW: number, canvasH: number, radiusPx: number): PinCluster[] {
+  if (canvasW <= 0 || canvasH <= 0) {
+    return pins.map((p) => ({ id: p.id, pins: [p], cx: p.x, cy: p.y }));
+  }
+  const clusters: PinCluster[] = [];
+  for (const pin of pins) {
+    let best: PinCluster | null = null;
+    let bestDist = Infinity;
+    for (const c of clusters) {
+      const dx = (pin.x - c.cx) * canvasW;
+      const dy = (pin.y - c.cy) * canvasH;
+      const d = Math.hypot(dx, dy);
+      if (d < radiusPx && d < bestDist) {
+        best = c;
+        bestDist = d;
+      }
+    }
+    if (best) {
+      best.pins.push(pin);
+      const n = best.pins.length;
+      best.cx = best.pins.reduce((s, p) => s + p.x, 0) / n;
+      best.cy = best.pins.reduce((s, p) => s + p.y, 0) / n;
+    } else {
+      clusters.push({ id: pin.id, pins: [pin], cx: pin.x, cy: pin.y });
+    }
+  }
+  for (const c of clusters) {
+    if (c.pins.length > 1) {
+      c.id = "cluster-" + c.pins.map((p) => p.id).sort().join("-");
+    }
+  }
+  return clusters;
 }
 
 export function PlanPinLayer({
@@ -82,6 +126,7 @@ export function PlanPinLayer({
   pageNumber,
   filter,
   onOpenSource,
+  clusteringEnabled = true,
 }: PlanPinLayerProps) {
   const { toast } = useToast();
 
@@ -220,25 +265,187 @@ export function PlanPinLayer({
     });
   }, [pins, filter, metaMap]);
 
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [containerSize, setContainerSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => setContainerSize({ w: el.clientWidth, h: el.clientHeight });
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const clusters = useMemo(() => {
+    if (!clusteringEnabled) {
+      return visiblePins.map<PinCluster>((p) => ({ id: p.id, pins: [p], cx: p.x, cy: p.y }));
+    }
+    return clusterPins(visiblePins, containerSize.w, containerSize.h, CLUSTER_RADIUS_PX);
+  }, [visiblePins, containerSize.w, containerSize.h, clusteringEnabled]);
+
   return (
-    <>
-      {visiblePins.map((pin) => (
-        <PinItem
-          key={pin.id}
-          pin={pin}
-          meta={metaMap.get(pin.refId)}
-          onOpenSource={onOpenSource}
-          onDelete={(id) => deleteMutation.mutate(id)}
-          deletePending={deleteMutation.isPending}
-          onMove={(id, x, y, onError) => moveMutation.mutate({ pinId: id, x, y, onError })}
-          onMoveToPage={(id, pageNumber, planDocumentId) =>
-            movePageMutation.mutate({ pinId: id, pageNumber, planDocumentId })
-          }
-          movePagePending={movePageMutation.isPending}
-          documents={movableDocs}
-        />
-      ))}
-    </>
+    <div ref={containerRef} className="absolute inset-0 pointer-events-none" data-testid="plan-pin-layer">
+      {clusters.map((c) =>
+        c.pins.length > 1 ? (
+          <ClusterMarker
+            key={c.id}
+            cluster={c}
+            metaMap={metaMap}
+            onOpenSource={onOpenSource}
+          />
+        ) : (
+          <PinItem
+            key={c.pins[0].id}
+            pin={c.pins[0]}
+            meta={metaMap.get(c.pins[0].refId)}
+            onOpenSource={onOpenSource}
+            onDelete={(id) => deleteMutation.mutate(id)}
+            deletePending={deleteMutation.isPending}
+            onMove={(id, x, y, onError) => moveMutation.mutate({ pinId: id, x, y, onError })}
+            onMoveToPage={(id, pageNumber, planDocumentId) =>
+              movePageMutation.mutate({ pinId: id, pageNumber, planDocumentId })
+            }
+            movePagePending={movePageMutation.isPending}
+            documents={movableDocs}
+          />
+        ),
+      )}
+    </div>
+  );
+}
+
+interface ClusterMarkerProps {
+  cluster: PinCluster;
+  metaMap: Map<string, PinMeta>;
+  onOpenSource?: (pin: PlanPin) => void;
+}
+
+function ClusterMarker({ cluster, metaMap, onOpenSource }: ClusterMarkerProps) {
+  const total = cluster.pins.length;
+  const counts: Record<PinType, number> = { RFI: 0, PUNCH: 0, SUBMITTAL: 0 };
+  for (const p of cluster.pins) counts[p.pinType] += 1;
+  const sorted = (Object.entries(counts) as [PinType, number][])
+    .filter(([, n]) => n > 0)
+    .sort((a, b) => b[1] - a[1]);
+
+  const style: React.CSSProperties = {
+    left: `${cluster.cx * 100}%`,
+    top: `${cluster.cy * 100}%`,
+  };
+  if (sorted.length === 1 || sorted[0][1] / total > 0.5) {
+    style.backgroundColor = PIN_STYLE[sorted[0][0]].hex;
+  } else {
+    const stops: string[] = [];
+    let acc = 0;
+    for (const [type, n] of sorted) {
+      const start = (acc / total) * 360;
+      acc += n;
+      const end = (acc / total) * 360;
+      stops.push(`${PIN_STYLE[type].hex} ${start}deg ${end}deg`);
+    }
+    style.background = `conic-gradient(${stops.join(", ")})`;
+  }
+
+  const size = total >= 100 ? 40 : total >= 10 ? 36 : 32;
+  style.width = `${size}px`;
+  style.height = `${size}px`;
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          className={cn(
+            "absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto",
+            "flex items-center justify-center rounded-full shadow-md hover:scale-110 transition-transform",
+            "border-2 border-white text-white font-semibold",
+          )}
+          style={style}
+          title={`${total} pins in this area`}
+          data-testid={`plan-pin-cluster-${cluster.id}`}
+        >
+          <Layers className="absolute opacity-30 w-4 h-4" />
+          <span
+            className="relative text-xs leading-none drop-shadow"
+            data-testid={`plan-pin-cluster-count-${cluster.id}`}
+          >
+            {total > 999 ? "999+" : total}
+          </span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="top"
+        className="w-72 p-2 text-sm"
+        data-testid={`plan-pin-cluster-popover-${cluster.id}`}
+      >
+        <div className="px-1 pb-2 mb-1 border-b">
+          <div className="font-medium text-xs text-muted-foreground">
+            {total} pins in this area
+          </div>
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            {sorted.map(([type, n]) => {
+              const sd = PIN_STYLE[type];
+              return (
+                <Badge
+                  key={type}
+                  variant="outline"
+                  className="text-[10px] h-4 px-1 gap-1"
+                  data-testid={`plan-pin-cluster-type-${cluster.id}-${type}`}
+                >
+                  <span
+                    className="inline-block w-2 h-2 rounded-full"
+                    style={{ backgroundColor: sd.hex }}
+                  />
+                  {sd.label}: {n}
+                </Badge>
+              );
+            })}
+          </div>
+        </div>
+        <div className="max-h-64 overflow-y-auto -mr-1 pr-1">
+          {cluster.pins.map((pin) => {
+            const sd = PIN_STYLE[pin.pinType];
+            const Icon = sd.icon;
+            const meta = metaMap.get(pin.refId);
+            return (
+              <button
+                key={pin.id}
+                type="button"
+                className="w-full flex items-start gap-2 px-2 py-1.5 rounded hover:bg-accent text-left"
+                onClick={() => onOpenSource?.(pin)}
+                data-testid={`plan-pin-cluster-item-${pin.id}`}
+              >
+                <span
+                  className={cn("inline-flex items-center justify-center w-5 h-5 rounded shrink-0", sd.bg)}
+                >
+                  <Icon className="w-3 h-3 text-white" />
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-xs font-medium truncate">
+                    {meta?.title || `${sd.label} pin`}
+                  </span>
+                  <span className="flex items-center gap-1 mt-0.5">
+                    <Badge variant="outline" className="text-[9px] h-3.5 px-1">
+                      {sd.label}
+                    </Badge>
+                    {meta?.status && (
+                      <Badge variant="secondary" className="text-[9px] h-3.5 px-1">
+                        {meta.status}
+                      </Badge>
+                    )}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        <div className="text-[10px] text-muted-foreground mt-2 px-1">
+          Tip: zoom in to break this cluster into individual pins.
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -731,9 +938,18 @@ interface PinFilterChipsProps {
   onChange: (f: PinFilter) => void;
   pinModeActive: boolean;
   onTogglePinMode: () => void;
+  clusteringEnabled?: boolean;
+  onToggleClustering?: () => void;
 }
 
-export function PinFilterChips({ filter, onChange, pinModeActive, onTogglePinMode }: PinFilterChipsProps) {
+export function PinFilterChips({
+  filter,
+  onChange,
+  pinModeActive,
+  onTogglePinMode,
+  clusteringEnabled,
+  onToggleClustering,
+}: PinFilterChipsProps) {
   const chip = (label: string, active: boolean, onClick: () => void, testId: string) => (
     <button
       onClick={onClick}
@@ -764,6 +980,17 @@ export function PinFilterChips({ filter, onChange, pinModeActive, onTogglePinMod
       {chip("Submittals", filter.type === "SUBMITTAL", () => onChange({ ...filter, type: "SUBMITTAL" }), "chip-filter-submittal")}
       <span className="w-px h-5 bg-border mx-1" />
       {chip("Open only", filter.openOnly, () => onChange({ ...filter, openOnly: !filter.openOnly }), "chip-filter-open")}
+      {onToggleClustering && (
+        <>
+          <span className="w-px h-5 bg-border mx-1" />
+          {chip(
+            "Cluster pins",
+            !!clusteringEnabled,
+            onToggleClustering,
+            "chip-filter-cluster",
+          )}
+        </>
+      )}
     </div>
   );
 }
