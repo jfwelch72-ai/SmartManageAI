@@ -47,6 +47,7 @@ import {
   getCrmTranscriptBackfillOperatorContact,
   getLatestCrmTranscriptBackfillTestAlert,
   aggregateRecentCrmTranscriptBackfillAlertFailures,
+  findQuietCrmTranscriptBackfillOrgsSince,
   listCrmTranscriptBackfillAlertDeliveries,
   listOrgAdminAlertFailureModes,
   updateOrgAdminAlertFailureMode,
@@ -4404,10 +4405,23 @@ router.get(
         }));
 
       if (crossOrg) {
+        // Task #1548 — also fetch "quiet" orgs (had backfill activity in
+        // the window but produced ZERO alert delivery rows) so platform
+        // support can spot tenants whose alert pipeline may be silently
+        // broken without org-switching to find them.
+        const quietOrgEntries =
+          await findQuietCrmTranscriptBackfillOrgsSince(since);
+
         // Enrich each org entry with display name/slug so the UI can render
         // a useful per-tenant table without making N follow-up requests.
-        const orgIds = aggregates.map((a) => a.organizationId);
-        const orgRows = orgIds.length
+        // We resolve names for both the "noisy" failure orgs and the
+        // "quiet" orgs in a single round trip.
+        const failureOrgIds = aggregates.map((a) => a.organizationId);
+        const quietOrgIds = quietOrgEntries.map((q) => q.organizationId);
+        const allOrgIds = Array.from(
+          new Set([...failureOrgIds, ...quietOrgIds]),
+        );
+        const orgRows = allOrgIds.length
           ? await db
               .select({
                 id: organizations.id,
@@ -4415,7 +4429,7 @@ router.get(
                 slug: organizations.slug,
               })
               .from(organizations)
-              .where(inArray(organizations.id, orgIds))
+              .where(inArray(organizations.id, allOrgIds))
           : [];
         const orgById = new Map(orgRows.map((o) => [o.id, o]));
 
@@ -4449,6 +4463,30 @@ router.get(
           { total: 0, slackCount: 0, emailCount: 0 },
         );
 
+        // Task #1548 — enrich and order quiet orgs by most-recent activity
+        // (fresh activity = more interesting to investigate first), with
+        // a deterministic name tiebreak so the UI stays stable between
+        // refreshes.
+        const quietOrgs = quietOrgEntries
+          .map((q) => {
+            const meta = orgById.get(q.organizationId);
+            return {
+              organizationId: q.organizationId,
+              organizationName: meta?.name ?? null,
+              organizationSlug: meta?.slug ?? null,
+              jobsInWindow: q.jobsInWindow,
+              lastJobAt: q.lastJobAt.toISOString(),
+            };
+          })
+          .sort((a, b) => {
+            const at = new Date(a.lastJobAt).getTime();
+            const bt = new Date(b.lastJobAt).getTime();
+            if (bt !== at) return bt - at;
+            const an = (a.organizationName ?? a.organizationId).toLowerCase();
+            const bn = (b.organizationName ?? b.organizationId).toLowerCase();
+            return an.localeCompare(bn);
+          });
+
         return res.json({
           crossOrg: true,
           windowHours,
@@ -4457,6 +4495,7 @@ router.get(
           slackCount: totals.slackCount,
           emailCount: totals.emailCount,
           orgs,
+          quietOrgs,
         });
       }
 

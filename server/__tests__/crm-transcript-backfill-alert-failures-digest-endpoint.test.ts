@@ -35,6 +35,7 @@ import {
   organizations,
   users,
   crmTranscriptBackfillAlertDeliveries,
+  crmTranscriptBackfillJobs,
 } from "@shared/schema";
 import { generateToken } from "../auth";
 
@@ -300,6 +301,14 @@ type CrossOrgDigestResponse = {
     slackCount: number;
     emailCount: number;
     recentFailures: DigestRecentFailure[];
+  }>;
+  // Task #1548 — orgs with backfill activity but zero alert deliveries.
+  quietOrgs: Array<{
+    organizationId: string;
+    organizationName: string | null;
+    organizationSlug: string | null;
+    jobsInWindow: number;
+    lastJobAt: string;
   }>;
 };
 
@@ -643,6 +652,176 @@ describe("GET /api/crm/calls/transcripts/backfill/alert-failures-digest", () => 
       // And the per-channel counts add up to the overall total — i.e. every
       // counted failure is exactly one of slack/email.
       expect(body.total).toBe(body.slackCount + body.emailCount);
+    });
+
+    // Task #1548 — quiet-orgs branch: orgs that ran transcript backfill in
+    // the window but produced ZERO alert deliveries are surfaced separately
+    // so platform support can spot tenants whose alert pipeline may be
+    // silently broken without org-switching to find them.
+    describe("quietOrgs (Task #1548)", () => {
+      let quietOrgId: string;
+      let quietAdminId: string;
+      let noisyOrgId: string;
+      let noisyAdminId: string;
+      const seededJobIds: string[] = [];
+
+      beforeAll(async () => {
+        const quiet = await makeOrgAndAdmin("quiet");
+        quietOrgId = quiet.orgId;
+        quietAdminId = quiet.admin.id;
+        const noisy = await makeOrgAndAdmin("noisy");
+        noisyOrgId = noisy.orgId;
+        noisyAdminId = noisy.admin.id;
+
+        const now = Date.now();
+        const hour = 60 * 60 * 1000;
+
+        // Quiet org: a backfill job inside the 24h window, NO deliveries.
+        const quietJobId = `quiet-job-${SUFFIX}`;
+        seededJobIds.push(quietJobId);
+        await db.insert(crmTranscriptBackfillJobs).values({
+          id: quietJobId,
+          organizationId: quietOrgId,
+          status: "COMPLETED",
+          total: 5,
+          processed: 5,
+          succeeded: 5,
+          failed: 0,
+          errors: [],
+          startedAt: new Date(now - 3 * hour),
+          heartbeatAt: new Date(now - 2 * hour),
+          completedAt: new Date(now - 2 * hour),
+        });
+
+        // Noisy org: a backfill job inside the window AND a delivery row.
+        // Must NOT appear in quietOrgs since the alert pipeline is alive.
+        const noisyJobId = `noisy-job-${SUFFIX}`;
+        seededJobIds.push(noisyJobId);
+        await db.insert(crmTranscriptBackfillJobs).values({
+          id: noisyJobId,
+          organizationId: noisyOrgId,
+          status: "COMPLETED",
+          total: 3,
+          processed: 3,
+          succeeded: 3,
+          failed: 0,
+          errors: [],
+          startedAt: new Date(now - 4 * hour),
+          heartbeatAt: new Date(now - 1 * hour),
+          completedAt: new Date(now - 1 * hour),
+        });
+        await seedDelivery({
+          orgId: noisyOrgId,
+          jobId: noisyJobId,
+          channel: "slack",
+          status: "success",
+          attemptedAt: new Date(now - 1 * hour),
+        });
+
+        // An ANCIENT job for the quiet org (well outside the 24h window)
+        // must NOT cause it to be flagged as quiet in the 24h view.
+        const ancientJobId = `quiet-ancient-job-${SUFFIX}`;
+        seededJobIds.push(ancientJobId);
+        await db.insert(crmTranscriptBackfillJobs).values({
+          id: ancientJobId,
+          organizationId: quietOrgId,
+          status: "COMPLETED",
+          total: 1,
+          processed: 1,
+          succeeded: 1,
+          failed: 0,
+          errors: [],
+          startedAt: new Date(now - 30 * 24 * hour),
+          heartbeatAt: new Date(now - 30 * 24 * hour),
+          completedAt: new Date(now - 30 * 24 * hour),
+        });
+      }, 60_000);
+
+      afterAll(async () => {
+        try {
+          await db
+            .delete(crmTranscriptBackfillJobs)
+            .where(inArray(crmTranscriptBackfillJobs.id, seededJobIds))
+            .catch(() => {});
+          await db
+            .delete(users)
+            .where(inArray(users.id, [quietAdminId, noisyAdminId]))
+            .catch(() => {});
+          await db
+            .delete(organizations)
+            .where(inArray(organizations.id, [quietOrgId, noisyOrgId]))
+            .catch(() => {});
+        } catch {
+          /* non-fatal */
+        }
+      }, 30_000);
+
+      it("includes orgs with in-window backfill activity but zero deliveries, and excludes orgs with any deliveries", async () => {
+        const res = await request(app)
+          .get(ENDPOINT)
+          .query({ crossOrg: "true" })
+          .set("Cookie", superAdminCookie);
+        expect(res.status).toBe(200);
+        const body = res.body as CrossOrgDigestResponse;
+        expect(Array.isArray(body.quietOrgs)).toBe(true);
+
+        const quietIds = body.quietOrgs.map((q) => q.organizationId);
+        expect(quietIds).toContain(quietOrgId);
+        // The "noisy" org has a delivery row in the window, so it must
+        // not show up in the silent-pipeline list even though it ran a
+        // backfill in the same window.
+        expect(quietIds).not.toContain(noisyOrgId);
+        // Orgs that had failure rows in the window are by definition not
+        // quiet either — orgA & orgB seeded above must be excluded.
+        expect(quietIds).not.toContain(orgAId);
+        expect(quietIds).not.toContain(orgBId);
+
+        const quietEntry = body.quietOrgs.find(
+          (q) => q.organizationId === quietOrgId,
+        )!;
+        // Org-enrichment join populates the display name/slug.
+        expect(quietEntry.organizationName).toBe(`${TEST_ORG_PREFIX}quiet`);
+        expect(quietEntry.organizationSlug).toBe(
+          `${TEST_ORG_PREFIX}quiet`.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        );
+        // Job-count reflects only the in-window job, not the ancient one.
+        expect(quietEntry.jobsInWindow).toBe(1);
+        // lastJobAt is serialized to an ISO string.
+        expect(typeof quietEntry.lastJobAt).toBe("string");
+        expect(new Date(quietEntry.lastJobAt).toISOString()).toBe(
+          quietEntry.lastJobAt,
+        );
+      });
+
+      it("widens to 7d so an out-of-24h job for a quiet org is included once the window covers it", async () => {
+        // We didn't seed a quiet job in the 24h-168h slice for these orgs,
+        // so this primarily pins the contract that windowHours flows
+        // through into the quiet-orgs computation too. The 30d-old ancient
+        // job for the quiet org also stays out because we only widen to
+        // 168h here.
+        const res = await request(app)
+          .get(ENDPOINT)
+          .query({ crossOrg: "true", windowHours: 168 })
+          .set("Cookie", superAdminCookie);
+        expect(res.status).toBe(200);
+        const body = res.body as CrossOrgDigestResponse;
+        expect(body.windowHours).toBe(168);
+        const quietIds = body.quietOrgs.map((q) => q.organizationId);
+        // Still in (its 24h-window job is also inside 168h).
+        expect(quietIds).toContain(quietOrgId);
+        // Still excluded (had a delivery row in the same widened window).
+        expect(quietIds).not.toContain(noisyOrgId);
+      });
+
+      it("omits quietOrgs from the single-org (non-cross-org) response shape", async () => {
+        const res = await request(app)
+          .get(ENDPOINT)
+          .set("Cookie", adminACookie);
+        expect(res.status).toBe(200);
+        expect(
+          (res.body as Partial<CrossOrgDigestResponse>).quietOrgs,
+        ).toBeUndefined();
+      });
     });
 
     it("treats anything other than the literal string 'true' as opt-out (e.g. 'TRUE', '1') so super-admins get the single-org shape", async () => {

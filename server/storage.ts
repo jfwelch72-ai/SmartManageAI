@@ -1856,6 +1856,85 @@ export async function aggregateRecentCrmTranscriptBackfillAlertFailures(
   return Array.from(byOrg.values());
 }
 
+// Task #1548 — companion helper for the SUPER_ADMIN cross-org alert-failure
+// breakdown. The aggregator above only surfaces orgs that actually had at
+// least one *failure* in the window. That's great for triage but hides a
+// related signal: orgs that ran transcript backfill jobs in the same window
+// yet produced ZERO alert delivery rows (success OR failure). Those are the
+// orgs whose alert pipeline may be silently broken — the worker isn't even
+// attempting a dispatch — so platform support needs to know about them
+// without org-switching to find them. Returns one entry per "quiet" org
+// (had backfill activity in the window, no alert deliveries in the window),
+// with a small bit of context the UI can render alongside the per-org name.
+export type CrmTranscriptBackfillQuietOrgEntry = {
+  organizationId: string;
+  jobsInWindow: number;
+  lastJobAt: Date;
+};
+
+export async function findQuietCrmTranscriptBackfillOrgsSince(
+  since: Date,
+): Promise<CrmTranscriptBackfillQuietOrgEntry[]> {
+  // "Backfill activity in the window" means a job that started, was
+  // updated (heartbeat), or completed at any point inside the window.
+  // OR-ing the three timestamps catches: short jobs that started and
+  // completed in-window, long-running jobs that started before the
+  // window but are still beating, and jobs that finished in-window
+  // after starting earlier.
+  const activityRows = await db
+    .select({
+      organizationId: crmTranscriptBackfillJobs.organizationId,
+      jobsInWindow: sql<number>`count(*)::int`.as("jobs_in_window"),
+      lastJobAt: sql<Date>`greatest(
+        max(${crmTranscriptBackfillJobs.startedAt}),
+        max(${crmTranscriptBackfillJobs.heartbeatAt}),
+        coalesce(max(${crmTranscriptBackfillJobs.completedAt}), to_timestamp(0))
+      )`.as("last_job_at"),
+    })
+    .from(crmTranscriptBackfillJobs)
+    .where(
+      or(
+        gte(crmTranscriptBackfillJobs.startedAt, since),
+        gte(crmTranscriptBackfillJobs.heartbeatAt, since),
+        gte(crmTranscriptBackfillJobs.completedAt, since),
+      ),
+    )
+    .groupBy(crmTranscriptBackfillJobs.organizationId);
+
+  if (activityRows.length === 0) return [];
+
+  const orgIds = activityRows.map((r) => r.organizationId);
+  // Orgs with ANY delivery row (success OR failure) in the window — these
+  // are the "noisy" orgs whose alert pipeline is observably alive. We
+  // subtract them to isolate the quiet ones.
+  const deliveryRows = await db
+    .selectDistinct({
+      organizationId: crmTranscriptBackfillAlertDeliveries.organizationId,
+    })
+    .from(crmTranscriptBackfillAlertDeliveries)
+    .where(
+      and(
+        gte(crmTranscriptBackfillAlertDeliveries.attemptedAt, since),
+        inArray(
+          crmTranscriptBackfillAlertDeliveries.organizationId,
+          orgIds,
+        ),
+      ),
+    );
+  const noisyOrgIds = new Set(deliveryRows.map((r) => r.organizationId));
+
+  return activityRows
+    .filter((r) => !noisyOrgIds.has(r.organizationId))
+    .map((r) => ({
+      organizationId: r.organizationId,
+      jobsInWindow: Number(r.jobsInWindow ?? 0),
+      lastJobAt:
+        r.lastJobAt instanceof Date
+          ? r.lastJobAt
+          : new Date(r.lastJobAt as unknown as string),
+    }));
+}
+
 // ---------------------------------------------------------------------------
 // Task #1067 — persisted dedupe ledger for alert-failure fan-out emails.
 //

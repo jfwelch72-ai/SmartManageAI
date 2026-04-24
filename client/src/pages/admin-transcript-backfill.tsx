@@ -5273,6 +5273,18 @@ interface BackfillAlertFailuresDigest {
     emailCount: number;
     recentFailures: BackfillAlertFailureRow[];
   }>;
+  // Task #1548 — orgs that ran transcript backfill jobs in the window but
+  // produced ZERO alert delivery rows (success OR failure). Surfaced so
+  // platform support can spot tenants whose alert pipeline may be
+  // silently broken without org-switching to find them. Only present in
+  // cross-org mode.
+  quietOrgs?: Array<{
+    organizationId: string;
+    organizationName: string | null;
+    organizationSlug: string | null;
+    jobsInWindow: number;
+    lastJobAt: string;
+  }>;
 }
 
 const FAILURES_DIGEST_WINDOWS: Array<{
@@ -5339,8 +5351,13 @@ export function BackfillAlertFailuresDigestCard({
   const data = failuresQuery.data;
   const failures = data?.recentFailures ?? [];
   const orgs = data?.orgs ?? [];
+  const quietOrgs = data?.quietOrgs ?? [];
   const isCrossOrgView = !!data?.crossOrg;
   const [expandedOrgId, setExpandedOrgId] = useState<string | null>(null);
+  // Task #1548 — the quiet-orgs section is collapsed by default to keep the
+  // failure breakdown above the fold. Platform support expands it only
+  // when investigating a "silent" tenant.
+  const [quietOrgsExpanded, setQuietOrgsExpanded] = useState<boolean>(false);
 
   // Task #1518 — download the cross-org breakdown as CSV. Two datasets:
   // the per-org rollup (matches what's rendered in the table above) and the
@@ -5560,7 +5577,8 @@ export function BackfillAlertFailuresDigestCard({
             </div>
 
             {isCrossOrgView ? (
-              orgs.length === 0 ? (
+              <>
+              {orgs.length === 0 ? (
                 <div
                   className="text-sm text-muted-foreground"
                   data-testid="text-alert-failures-digest-orgs-empty"
@@ -5701,7 +5719,103 @@ export function BackfillAlertFailuresDigestCard({
                     );
                   })}
                 </div>
-              )
+              )}
+              {/* Task #1548 — collapsed list of orgs that ran backfill in
+                  the window but produced ZERO alert delivery rows. These
+                  are the "silent" tenants whose alert pipeline may be
+                  broken, so platform support can investigate before the
+                  next failure-free window hides the issue entirely. */}
+              {quietOrgs.length > 0 && (
+                <div
+                  className="rounded-md border bg-muted/20"
+                  data-testid="section-alert-failures-digest-quiet-orgs"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setQuietOrgsExpanded((v) => !v)}
+                    className="w-full flex items-center gap-2 p-2.5 text-left text-sm font-medium hover:bg-muted/40 rounded-md"
+                    data-testid="button-toggle-quiet-orgs"
+                    aria-expanded={quietOrgsExpanded}
+                    title={
+                      quietOrgsExpanded
+                        ? "Hide quiet orgs"
+                        : "Show quiet orgs"
+                    }
+                  >
+                    {quietOrgsExpanded ? (
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    ) : (
+                      <ChevronRight className="h-3.5 w-3.5" />
+                    )}
+                    <span>Quiet orgs in this window</span>
+                    <Badge
+                      variant="secondary"
+                      data-testid="badge-quiet-orgs-count"
+                    >
+                      {quietOrgs.length}
+                    </Badge>
+                    <span className="text-xs font-normal text-muted-foreground">
+                      ran backfill but reported no alert deliveries
+                    </span>
+                  </button>
+                  {quietOrgsExpanded && (
+                    <div
+                      className="border-t divide-y"
+                      data-testid="list-quiet-orgs"
+                    >
+                      {quietOrgs.map((q) => {
+                        const display =
+                          q.organizationName ||
+                          q.organizationSlug ||
+                          q.organizationId;
+                        return (
+                          <div
+                            key={q.organizationId}
+                            className="p-2.5 flex flex-wrap items-center gap-2"
+                            data-testid={`row-quiet-org-${q.organizationId}`}
+                          >
+                            <span
+                              className="text-sm font-medium"
+                              data-testid={`text-quiet-org-name-${q.organizationId}`}
+                            >
+                              {display}
+                            </span>
+                            <Badge
+                              variant="outline"
+                              data-testid={`badge-quiet-org-jobs-${q.organizationId}`}
+                            >
+                              {q.jobsInWindow} job
+                              {q.jobsInWindow === 1 ? "" : "s"}
+                            </Badge>
+                            <span
+                              className="text-xs text-muted-foreground"
+                              data-testid={`text-quiet-org-last-job-${q.organizationId}`}
+                              title={q.lastJobAt}
+                            >
+                              last activity {format(new Date(q.lastJobAt), "PPpp")}
+                            </span>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              className="ml-auto h-7 px-2 text-xs"
+                              onClick={() =>
+                                onSelectOrg(q.organizationId)
+                              }
+                              data-testid={`button-filter-quiet-org-${q.organizationId}`}
+                              title="Filter the history table to this organization"
+                            >
+                              <ArrowRight className="h-3 w-3 mr-1" />
+                              View this org
+                            </Button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+              </>
             ) : failures.length === 0 ? (
               <div
                 className="text-sm text-muted-foreground"
