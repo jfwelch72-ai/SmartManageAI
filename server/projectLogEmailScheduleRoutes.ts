@@ -27,7 +27,7 @@
  */
 import { Router } from "express";
 import { z } from "zod";
-import { and, desc, eq, gte, inArray, isNull, ne, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import {
   PROJECT_LOG_EMAIL_CADENCES,
@@ -57,6 +57,20 @@ import { logError, logInfo } from "./utils/logger";
 const router = Router();
 
 const logTypeParam = z.enum(PROJECT_LOG_EMAIL_LOG_TYPES);
+
+// Task #1680 — rolling window (in days) used by the GET endpoint to
+// compute "X failed sends in the last 30 days" alongside the existing
+// `consecutiveFailureCount` streak. The streak resets to zero on any
+// successful send, so a schedule that fails three times, recovers,
+// then fails three more times looks identical to a brand-new outage —
+// this rolling count is what lets admins distinguish a chronically
+// flaky pipeline from a one-off transport blip. 30 days fits well
+// inside the 90-day retention default for
+// `project_log_email_schedule_attempts`
+// (see `server/jobs/projectLogEmailScheduleAttemptPrune.ts`); if an
+// operator tightens retention below this value the count would
+// naturally under-report, which is the operator's explicit choice.
+const ROLLING_FAILURE_WINDOW_DAYS = 30;
 
 const upsertSchema = z.object({
   cadence: z.enum(PROJECT_LOG_EMAIL_CADENCES),
@@ -181,6 +195,57 @@ router.get(
         return ordered;
       }
 
+      // Task #1680 — rolling 30-day failure tally per schedule. The
+      // existing `consecutiveFailureCount` column resets to 0 on every
+      // SUCCESS, which makes a chronically-flaky pipeline (fails 3,
+      // recovers, fails 3 more) look identical to a brand-new outage.
+      // Aggregating against the immutable `project_log_email_schedule_attempts`
+      // history (Task #1652) gives admins "12 failed sends in the last
+      // 30 days" alongside the streak so they can prioritise repeat
+      // offenders over one-off transport blips.
+      //
+      // We do this server-side in a single GROUP BY query (rather than
+      // per-row) so adding the surface here costs one extra round-trip
+      // per page load no matter how many schedule rows the project has.
+      // The schedule_id × created_at index already exists for the
+      // history endpoint, so this aggregation reuses that.
+      const persistedScheduleIds = rows
+        .map((r) => r.id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0);
+      const rollingFailureBySchedule = new Map<string, number>();
+      if (persistedScheduleIds.length > 0) {
+        const windowStart = new Date(
+          Date.now() - ROLLING_FAILURE_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+        );
+        const failureRows = await db
+          .select({
+            scheduleId: projectLogEmailScheduleAttempts.scheduleId,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(projectLogEmailScheduleAttempts)
+          .where(and(
+            // Defense-in-depth tenant scope so a stale or cross-tenant
+            // schedule id pointer can never sum into another org's
+            // counts. The schedule list above is already org-scoped,
+            // so this only matters if a future caller widens the rows
+            // selection without also widening this clause.
+            eq(projectLogEmailScheduleAttempts.organizationId, organizationId),
+            inArray(projectLogEmailScheduleAttempts.scheduleId, persistedScheduleIds),
+            inArray(projectLogEmailScheduleAttempts.status, ["FAILURE", "NO_RECIPIENTS"]),
+            gte(projectLogEmailScheduleAttempts.createdAt, windowStart),
+          ))
+          .groupBy(projectLogEmailScheduleAttempts.scheduleId);
+        for (const f of failureRows) {
+          // count() is bigint over the wire; the ::int cast keeps it
+          // a JS number, but coerce defensively in case the driver
+          // ever surfaces a string.
+          const n = typeof f.count === "number" ? f.count : Number(f.count);
+          if (Number.isFinite(n) && n > 0) {
+            rollingFailureBySchedule.set(f.scheduleId, n);
+          }
+        }
+      }
+
       const byType = new Map(rows.map((r) => [r.logType, r]));
       // Always return both log types; missing rows surface as the
       // default-OFF schedule the worker would also infer. Task #1622
@@ -197,6 +262,14 @@ router.get(
             // recipient set so the card can render the dedupe message
             // without re-implementing the join client-side.
             failureNotificationRecipients: recipientsFor(existing.lastEditedById),
+            // Task #1680 — rolling 30-day failure count, aggregated from
+            // the per-attempt history so the card can render
+            // "X failed sends in the last 30 days" alongside the
+            // existing consecutive-failure streak. 0 when no failures
+            // happened in the window (or when retention pruned the
+            // history).
+            rollingFailureCount30d: rollingFailureBySchedule.get(existing.id) ?? 0,
+            rollingFailureWindowDays: ROLLING_FAILURE_WINDOW_DAYS,
           };
         }
         return {
@@ -223,6 +296,13 @@ router.get(
           // so the failure streak is 0. Surface it explicitly so the
           // client doesn't have to defensively probe for the field.
           consecutiveFailureCount: 0,
+          // Task #1680 — default-OFF rows have no schedule id and so
+          // no attempt history to aggregate against. Surface the
+          // rolling count as 0 (matching the streak's contract) so the
+          // client can render with the same code path it uses for
+          // persisted rows that simply haven't failed recently.
+          rollingFailureCount30d: 0,
+          rollingFailureWindowDays: ROLLING_FAILURE_WINDOW_DAYS,
           createdAt: null,
           updatedAt: null,
           // Task #1649 — even on the default OFF row, the PM (if any)

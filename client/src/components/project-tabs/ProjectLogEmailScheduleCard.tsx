@@ -52,6 +52,18 @@ interface ScheduleRow {
   // times in a row" badge so admins can spot a chronically broken
   // schedule before the worker's backstop notification escalates.
   consecutiveFailureCount: number;
+  // Task #1680 — rolling count of FAILURE / NO_RECIPIENTS attempts in
+  // the last `rollingFailureWindowDays` days, computed server-side
+  // from the immutable per-attempt history. The streak above resets to
+  // 0 on every SUCCESS, so this is the signal admins use to
+  // distinguish a chronically flaky pipeline (12 failures in 30 days,
+  // even though some of them recovered) from a one-off transport blip
+  // (a single failed send last night that cleared up at the next
+  // tick). Surfaced as a separate badge that stays visible after a
+  // recovery so the chronic problem doesn't disappear from the card
+  // the moment one send happens to land.
+  rollingFailureCount30d: number;
+  rollingFailureWindowDays: number;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -342,6 +354,7 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast, failureThresh
             testIdSuffix={testIdSuffix}
             failureThreshold={failureThreshold}
           />
+          <RollingFailureBadge schedule={schedule} testIdSuffix={testIdSuffix} />
         </div>
       </div>
 
@@ -644,6 +657,50 @@ function AttemptFailureDetail({
 // Task #1664's per-row Retry button now lives on the shared component
 // behind an optional `retry` prop, which the project settings card
 // supplies (and the dashboard's read-only popover omits).
+
+// Task #1680 — chronic-failure indicator that surfaces "X failed sends
+// in the last 30 days" beside the per-attempt status badge. Hidden when
+// the rolling count is 0 so a healthy schedule stays visually quiet.
+// Crucially this badge stays visible even when the most recent attempt
+// was a SUCCESS — that's the whole point of distinguishing chronic vs
+// flaky pipelines from the existing `ConsecutiveFailureBadge` (which
+// resets to 0 on any successful send and so disappears the moment a
+// flaky schedule lands one tick). Styled neutrally (outline only) when
+// the most recent attempt succeeded so admins read it as informational
+// history rather than an active red-alert; styled with amber emphasis
+// when failures are still happening to draw the eye toward an
+// unresolved problem.
+function RollingFailureBadge({
+  schedule,
+  testIdSuffix,
+}: {
+  schedule: ScheduleRow;
+  testIdSuffix: string;
+}) {
+  const count = schedule.rollingFailureCount30d ?? 0;
+  if (count <= 0) return null;
+  const windowDays = schedule.rollingFailureWindowDays || 30;
+  const label = `${count} failed send${count === 1 ? "" : "s"} in the last ${windowDays} days`;
+  const recovered = schedule.lastAttemptStatus === "SUCCESS";
+  const title = recovered
+    ? `This schedule has recovered, but ${count} send${count === 1 ? "" : "s"} failed in the last ${windowDays} days. A chronically flaky pipeline is worth investigating even after a successful tick.`
+    : `This schedule has had ${count} failed send${count === 1 ? "" : "s"} in the last ${windowDays} days. Use this to distinguish a chronic problem from a one-off transport blip.`;
+
+  return (
+    <Badge
+      variant="outline"
+      className={
+        recovered
+          ? "border-muted-foreground/40 text-muted-foreground"
+          : "border-amber-500 text-amber-700 dark:text-amber-400"
+      }
+      data-testid={`badge-rolling-failures-${testIdSuffix}`}
+      title={title}
+    >
+      <MailWarning className="w-3 h-3 mr-1" /> {label}
+    </Badge>
+  );
+}
 
 // Task #1667 — at-a-glance streak indicator beside the per-attempt
 // status badge. Hidden when the streak is 0 (no signal worth showing

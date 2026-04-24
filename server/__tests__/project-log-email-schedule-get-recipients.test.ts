@@ -119,6 +119,13 @@ function queueSchedules(rows: Row[]) {
 function queueUsers(rows: Row[]) {
   (selectByTable["users"] ??= []).push(rows);
 }
+// Task #1680 — the GET endpoint runs an aggregate against the
+// per-attempt history when there is at least one persisted schedule
+// row. Tests use this helper to seed `[{ scheduleId, count }]` shaped
+// rows that mimic the GROUP BY result.
+function queueScheduleAttempts(rows: Row[]) {
+  (selectByTable["project_log_email_schedule_attempts"] ??= []).push(rows);
+}
 
 const PROJECT_ID = "11111111-1111-1111-1111-111111111111";
 const ORG_ID = "22222222-2222-2222-2222-222222222222";
@@ -431,5 +438,154 @@ describe("GET /api/projects/:projectId/log-email-schedules — failure streak su
       if (original === undefined) delete process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
       else process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD = original;
     }
+  });
+});
+
+// Task #1680 — the GET endpoint surfaces a rolling 30-day failure
+// count per schedule, computed from the immutable per-attempt history.
+// This sits beside the existing `consecutiveFailureCount` streak so
+// admins can tell apart a chronically flaky pipeline (where the streak
+// keeps resetting on the occasional successful tick) from a one-off
+// transport blip.
+describe("GET /api/projects/:projectId/log-email-schedules — rolling 30-day failure surfacing", () => {
+  it("decorates persisted rows with rollingFailureCount30d from the attempts aggregate", async () => {
+    queueProject([{
+      id: PROJECT_ID,
+      name: "Bridge 7",
+      gcOrganizationId: ORG_ID,
+      projectManagerId: null,
+    }]);
+    queueSchedules([
+      {
+        id: "s-rfi",
+        organizationId: ORG_ID,
+        projectId: PROJECT_ID,
+        logType: "RFI",
+        cadence: "WEEKLY",
+        weekday: 1,
+        hour: 8,
+        timezone: "UTC",
+        lastEditedById: null,
+        consecutiveFailureCount: 0,
+      },
+      {
+        id: "s-sub",
+        organizationId: ORG_ID,
+        projectId: PROJECT_ID,
+        logType: "SUBMITTAL",
+        cadence: "WEEKLY",
+        weekday: 1,
+        hour: 8,
+        timezone: "UTC",
+        lastEditedById: null,
+        consecutiveFailureCount: 0,
+      },
+    ]);
+    // Aggregate result: only the RFI schedule has failures in the
+    // window. The SUBMITTAL row should still surface 0, not undefined.
+    queueScheduleAttempts([
+      { scheduleId: "s-rfi", count: 12 },
+    ]);
+
+    const res = await authedGet();
+    expect(res.status).toBe(200);
+    const rfi = res.body.schedules.find((s: any) => s.logType === "RFI");
+    const sub = res.body.schedules.find((s: any) => s.logType === "SUBMITTAL");
+    expect(rfi.rollingFailureCount30d).toBe(12);
+    expect(rfi.rollingFailureWindowDays).toBe(30);
+    expect(sub.rollingFailureCount30d).toBe(0);
+    expect(sub.rollingFailureWindowDays).toBe(30);
+  });
+
+  it("synthesizes 0 for default-OFF rows even when no attempts query runs", async () => {
+    queueProject([{
+      id: PROJECT_ID,
+      name: "Bridge 7",
+      gcOrganizationId: ORG_ID,
+      projectManagerId: null,
+    }]);
+    // No persisted schedule rows at all: the route must skip the
+    // attempts aggregate entirely and still return both default-OFF
+    // synthesized rows with rollingFailureCount30d = 0.
+    queueSchedules([]);
+
+    const res = await authedGet();
+    expect(res.status).toBe(200);
+    expect(res.body.schedules).toHaveLength(2);
+    for (const s of res.body.schedules) {
+      expect(s.rollingFailureCount30d).toBe(0);
+      expect(s.rollingFailureWindowDays).toBe(30);
+    }
+  });
+
+  it("coerces stringified count() output (driver bigint quirk) to a number", async () => {
+    queueProject([{
+      id: PROJECT_ID,
+      name: "Bridge 7",
+      gcOrganizationId: ORG_ID,
+      projectManagerId: null,
+    }]);
+    queueSchedules([
+      {
+        id: "s-rfi",
+        organizationId: ORG_ID,
+        projectId: PROJECT_ID,
+        logType: "RFI",
+        cadence: "WEEKLY",
+        weekday: 1,
+        hour: 8,
+        timezone: "UTC",
+        lastEditedById: null,
+        consecutiveFailureCount: 0,
+      },
+    ]);
+    // Some Postgres drivers return count() as a string even after an
+    // ::int cast — defend against that so the client can render the
+    // value directly without re-parsing.
+    queueScheduleAttempts([
+      { scheduleId: "s-rfi", count: "7" },
+    ]);
+
+    const res = await authedGet();
+    const rfi = res.body.schedules.find((s: any) => s.logType === "RFI");
+    expect(rfi.rollingFailureCount30d).toBe(7);
+  });
+
+  it("keeps the rolling count visible even after a successful recovery (chronic vs flaky)", async () => {
+    // Mirrors the brief's core motivating case: the schedule's most
+    // recent attempt was a SUCCESS (so consecutiveFailureCount is 0
+    // and the streak badge would disappear), but it has chronically
+    // failed throughout the window. The rolling count must still
+    // surface so admins can prioritise the chronic problem.
+    queueProject([{
+      id: PROJECT_ID,
+      name: "Bridge 7",
+      gcOrganizationId: ORG_ID,
+      projectManagerId: null,
+    }]);
+    queueSchedules([
+      {
+        id: "s-rfi",
+        organizationId: ORG_ID,
+        projectId: PROJECT_ID,
+        logType: "RFI",
+        cadence: "WEEKLY",
+        weekday: 1,
+        hour: 8,
+        timezone: "UTC",
+        lastEditedById: null,
+        consecutiveFailureCount: 0,
+        lastAttemptStatus: "SUCCESS",
+      },
+    ]);
+    queueScheduleAttempts([
+      { scheduleId: "s-rfi", count: 9 },
+    ]);
+
+    const res = await authedGet();
+    const rfi = res.body.schedules.find((s: any) => s.logType === "RFI");
+    expect(rfi.consecutiveFailureCount).toBe(0);
+    expect(rfi.lastAttemptStatus).toBe("SUCCESS");
+    expect(rfi.rollingFailureCount30d).toBe(9);
   });
 });
