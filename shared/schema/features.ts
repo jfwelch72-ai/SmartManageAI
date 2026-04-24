@@ -7676,17 +7676,26 @@ export const insertRetentionPolicySchema = createInsertSchema(retentionPolicies)
 export type InsertRetentionPolicy = z.infer<typeof insertRetentionPolicySchema>;
 export type RetentionPolicy = typeof retentionPolicies.$inferSelect;
 
-// Task #1552 — the retention sweep in `server/jobs/jobRunner.ts` only has
-// a real implementation for a small subset of (entityType, action) pairs.
-// Anything outside this list is a no-op at sweep time, so we surface it
-// as a warning + `policiesUnsupported` counter on the backend, and flag
-// the combo on the admin UI so operators don't silently configure a
-// no-op policy. Keep this in sync with `processRetentionPolicies`.
+// Task #1552 / #1572 — the retention sweep in `server/jobs/jobRunner.ts`
+// only has a real implementation for the (entityType, action) pairs in
+// this list. Anything outside it is a no-op at sweep time, so we
+// surface it as a warning + `policiesUnsupported` counter on the
+// backend, and flag the combo on the admin UI so operators don't
+// silently configure a no-op policy. Keep this in sync with
+// `processRetentionPolicies`.
 export const SUPPORTED_RETENTION_POLICY_COMBOS: ReadonlyArray<{
   entityType: (typeof retentionEntityTypeEnum.enumValues)[number];
   action: (typeof retentionActionEnum.enumValues)[number];
 }> = [
   { entityType: "AUDIT_LOGS", action: "DELETE" },
+  { entityType: "AI_ACTIONS", action: "DELETE" },
+  { entityType: "AI_ACTIONS", action: "ANONYMIZE" },
+  { entityType: "DOCUMENTS", action: "DELETE" },
+  { entityType: "TIME_ENTRIES", action: "DELETE" },
+  { entityType: "TIME_ENTRIES", action: "ANONYMIZE" },
+  { entityType: "MESSAGES", action: "DELETE" },
+  { entityType: "MESSAGES", action: "ANONYMIZE" },
+  { entityType: "FILE_UPLOADS", action: "DELETE" },
 ];
 
 export function isSupportedRetentionPolicyCombo(

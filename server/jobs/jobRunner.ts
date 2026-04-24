@@ -8,7 +8,7 @@ import { recordJobMetrics, loadJobMetricsFromDb, pruneJobMetricsDb } from "../ut
 import { evaluateJobMetricAlerts, sendJobMetricAlertQuietHoursDigests, setRetentionPolicyUnsupportedPairsForAlerts } from "../utils/jobMetricAlerts";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
-import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, type InsertNotification } from "@shared/schema";
+import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, messages, timeEntries, media, aiActionAudit, planDocuments, conversations, type InsertNotification } from "@shared/schema";
 import { getEffectivePermissions } from "../auth";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
@@ -808,18 +808,204 @@ export async function processRetentionPolicies() {
       const cutoff = new Date(Date.now() - policy.retentionDays * 24 * 60 * 60 * 1000);
       let policyDeleted = 0;
 
+      // Task #1572 — every retention mutation MUST be scoped to the
+      // policy's own organization. Without this, an enabled policy in
+      // org A would delete/anonymize rows belonging to every other
+      // org in the database. Each branch below derives the per-tenant
+      // predicate from `policy.organizationId`, either directly (when
+      // the target table carries `organization_id`) or via an
+      // `inArray(...subselect)` through the canonical parent table
+      // (`projects.gcOrganizationId`, `conversations.organizationId`,
+      // `users.organizationId`).
+      const orgId = policy.organizationId;
+      // Subselects of org-owned parent IDs. Wrapped in helpers so the
+      // same predicate is reused by the count + mutation paths and
+      // can't drift.
+      const orgProjectIds = db
+        .select({ id: projects.id })
+        .from(projects)
+        .where(eq(projects.gcOrganizationId, orgId));
+      const orgConversationIds = db
+        .select({ id: conversations.id })
+        .from(conversations)
+        .where(eq(conversations.organizationId, orgId));
+      const orgUserIds = db
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.organizationId, orgId));
+
       if (policy.entityType === "AUDIT_LOGS" && policy.action === "DELETE") {
         // `.returning({ id })` so we can publish a per-policy delete
         // count to the job-metrics surface — the spike rule in
         // jobMetricAlerts.ts (Task #1502) compares this counter against
         // a 5x baseline / 25-row floor.
+        // Tenant scoping: audit_log carries no organizationId column,
+        // so we narrow via `users.organizationId`. NOTE: `audit_log`
+        // schema marks `user_id` as NOT NULL (every row is attributed
+        // to an actor), so this scoping covers all rows. If a future
+        // schema change relaxes that constraint to allow system /
+        // unattributed events, those rows would fall outside any
+        // org policy and would need a separate platform-level sweep.
         const removed = await db
           .delete(auditLog)
-          .where(lt(auditLog.createdAt, cutoff))
+          .where(and(
+            lt(auditLog.createdAt, cutoff),
+            inArray(auditLog.userId, orgUserIds),
+          ))
           .returning({ id: auditLog.id });
         policyDeleted = removed.length;
         // AUDIT_LOGS DELETE is a true hard-delete (no soft-delete column
         // on this table), so `hardDeleted` mirrors `deleted`.
+        deleted += policyDeleted;
+        hardDeleted += policyDeleted;
+      } else if (policy.entityType === "AI_ACTIONS" && policy.action === "DELETE") {
+        // Task #1572 — drop expired AI action audit rows entirely,
+        // scoped to the policy's organization.
+        const removed = await db
+          .delete(aiActionAudit)
+          .where(and(
+            eq(aiActionAudit.organizationId, orgId),
+            lt(aiActionAudit.createdAt, cutoff),
+          ))
+          .returning({ id: aiActionAudit.id });
+        policyDeleted = removed.length;
+        deleted += policyDeleted;
+        hardDeleted += policyDeleted;
+      } else if (policy.entityType === "AI_ACTIONS" && policy.action === "ANONYMIZE") {
+        // Task #1572 — keep the row for usage stats but scrub the
+        // identifying / free-text columns (actor, prompt rationale,
+        // input/output refs, approver). Scoped to the policy's
+        // organization. Predicate matches rows where ANY redactable
+        // field is still populated, so a row with `actorUserId = null`
+        // but a non-empty `rationale` is still anonymized (privacy
+        // gap flagged in code review).
+        const updated = await db
+          .update(aiActionAudit)
+          .set({
+            actorUserId: null,
+            rationale: null,
+            inputRefs: null,
+            outputRefs: null,
+            approvedByUserId: null,
+          })
+          .where(and(
+            eq(aiActionAudit.organizationId, orgId),
+            lt(aiActionAudit.createdAt, cutoff),
+            or(
+              isNotNull(aiActionAudit.actorUserId),
+              isNotNull(aiActionAudit.rationale),
+              isNotNull(aiActionAudit.inputRefs),
+              isNotNull(aiActionAudit.outputRefs),
+              isNotNull(aiActionAudit.approvedByUserId),
+            ),
+          ))
+          .returning({ id: aiActionAudit.id });
+        policyDeleted = updated.length;
+        // ANONYMIZE keeps the row, so it counts toward `deleted`
+        // (rows-affected) but NOT `hardDeleted`.
+        deleted += policyDeleted;
+      } else if (policy.entityType === "DOCUMENTS" && policy.action === "DELETE") {
+        // Task #1572 — drop expired plan_documents rows belonging to
+        // this org. plan_documents.organizationId is set on every row
+        // (per the schema comment), covering both PROJECT- and
+        // ORG-scoped documents. Object-storage cleanup is handled by
+        // the orphan-upload sweep, so we only remove the metadata row.
+        const removed = await db
+          .delete(planDocuments)
+          .where(and(
+            eq(planDocuments.organizationId, orgId),
+            lt(planDocuments.uploadedAt, cutoff),
+          ))
+          .returning({ id: planDocuments.id });
+        policyDeleted = removed.length;
+        deleted += policyDeleted;
+        hardDeleted += policyDeleted;
+      } else if (policy.entityType === "TIME_ENTRIES" && policy.action === "DELETE") {
+        // Task #1572 — hard-delete time entries past their retention
+        // window, scoped to projects owned by the policy's org via
+        // `projects.gcOrganizationId`. Note: customers usually want to
+        // ANONYMIZE these instead, since they may still need totals
+        // for payroll history; DELETE is offered for completeness.
+        const removed = await db
+          .delete(timeEntries)
+          .where(and(
+            lt(timeEntries.createdAt, cutoff),
+            inArray(timeEntries.projectId, orgProjectIds),
+          ))
+          .returning({ id: timeEntries.id });
+        policyDeleted = removed.length;
+        deleted += policyDeleted;
+        hardDeleted += policyDeleted;
+      } else if (policy.entityType === "TIME_ENTRIES" && policy.action === "ANONYMIZE") {
+        // Task #1572 — keep the structural row (so payroll totals stay
+        // intact) but strip the free-text PII columns. Scoped via
+        // projects.gcOrganizationId.
+        const updated = await db
+          .update(timeEntries)
+          .set({
+            notes: null,
+            rejectionReason: null,
+            updatedAt: new Date(),
+          })
+          .where(and(
+            lt(timeEntries.createdAt, cutoff),
+            inArray(timeEntries.projectId, orgProjectIds),
+            or(isNotNull(timeEntries.notes), isNotNull(timeEntries.rejectionReason)),
+          ))
+          .returning({ id: timeEntries.id });
+        policyDeleted = updated.length;
+        deleted += policyDeleted;
+      } else if (policy.entityType === "MESSAGES" && policy.action === "DELETE") {
+        // Task #1572 — hard-delete expired messages owned by this
+        // org's conversations. Reactions and read receipts cascade on
+        // the `messages` FK so they go with it.
+        const removed = await db
+          .delete(messages)
+          .where(and(
+            lt(messages.createdAt, cutoff),
+            inArray(messages.conversationId, orgConversationIds),
+          ))
+          .returning({ id: messages.id });
+        policyDeleted = removed.length;
+        deleted += policyDeleted;
+        hardDeleted += policyDeleted;
+      } else if (policy.entityType === "MESSAGES" && policy.action === "ANONYMIZE") {
+        // Task #1572 — keep the row but scrub the body, attachments
+        // and voice memo refs, and flip `isDeleted` so the chat UI
+        // hides it. We skip rows that were already redacted to avoid
+        // counting them again. Scoped via conversations.organizationId.
+        const updated = await db
+          .update(messages)
+          .set({
+            content: "[redacted]",
+            attachmentUrl: null,
+            attachmentName: null,
+            attachmentType: null,
+            attachmentSize: null,
+            voiceUrl: null,
+            voiceDurationSeconds: null,
+            isDeleted: true,
+          })
+          .where(and(
+            lt(messages.createdAt, cutoff),
+            eq(messages.isDeleted, false),
+            inArray(messages.conversationId, orgConversationIds),
+          ))
+          .returning({ id: messages.id });
+        policyDeleted = updated.length;
+        deleted += policyDeleted;
+      } else if (policy.entityType === "FILE_UPLOADS" && policy.action === "DELETE") {
+        // Task #1572 — drop expired media rows owned by this org's
+        // projects. Object-storage cleanup for the underlying file is
+        // handled by the orphan-upload sweep.
+        const removed = await db
+          .delete(media)
+          .where(and(
+            lt(media.uploadedAt, cutoff),
+            inArray(media.projectId, orgProjectIds),
+          ))
+          .returning({ id: media.id });
+        policyDeleted = removed.length;
         deleted += policyDeleted;
         hardDeleted += policyDeleted;
       } else if (!isSupportedRetentionPolicyCombo(policy.entityType, policy.action)) {
