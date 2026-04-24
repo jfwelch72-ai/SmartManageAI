@@ -48,7 +48,7 @@ import { Router } from "express";
 import { db } from "./db";
 import { notificationChannelPrefs, notificationTypePrefs, notificationTypeEnum, jobMetricAlertEvents } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
-import { desc, eq, gte } from "drizzle-orm";
+import { and, desc, eq, gte } from "drizzle-orm";
 import { z } from "zod";
 import { isValidE164, isTwilioConfigured } from "./services/smsService";
 import { isValidTeamsWebhookUrl } from "./services/teamsService";
@@ -576,6 +576,181 @@ router.get("/api/notifications/mute/davis-bacon-auto-sync-failed", async (req, r
     next(error);
   }
 });
+
+/**
+ * Task #1731 — Discoverability shim for the daily failures digest mute
+ * setting. Admins can already toggle delivery from the standard
+ * notification preferences page (it's a per-user `notification_type_prefs`
+ * row for `PROJECT_LOG_EMAIL_FAILURES_DIGEST`), but the failures
+ * dashboard at `/admin/log-email-failures` is the natural place an admin
+ * thinks "stop nagging me about this". These endpoints back a small
+ * subscription card on that dashboard so the admin can mute / unmute
+ * either channel inline without leaving the page — and without
+ * accidentally disabling the more important per-failure ping
+ * (`PROJECT_LOG_EMAIL_FAILED`) on the standard prefs page.
+ *
+ * Auth: ADMIN / SUPER_ADMIN only — those are the only roles the digest
+ * job (`processProjectLogEmailFailuresDigest` in `server/jobs/jobRunner.ts`)
+ * actually delivers to. MANAGER / SUPERINTENDENT can view the dashboard
+ * but never receive the digest, so giving them a toggle would write a
+ * pref row that does nothing.
+ *
+ * Storage: writes the same `notification_type_prefs` row the existing
+ * settings page upserts via `PUT /api/notifications/preferences`, so
+ * the channel resolver in `notificationDelivery.ts` (and the in-app
+ * feed filter in `notificationService.ts`) honor the mute identically.
+ *
+ * Email default = channel `emailEnabled` when no override row exists;
+ * in-app default = `true` (NULL on the override row means "not
+ * configured", which the feed filter passes through). Both match the
+ * semantics of the existing settings page.
+ */
+const FAILURES_DIGEST_TYPE = "PROJECT_LOG_EMAIL_FAILURES_DIGEST" as const;
+
+const failuresDigestSubscriptionBodySchema = z
+  .object({
+    emailEnabled: z.boolean().optional(),
+    inAppEnabled: z.boolean().optional(),
+  })
+  .refine(
+    (v) => v.emailEnabled !== undefined || v.inAppEnabled !== undefined,
+    { message: "At least one of emailEnabled or inAppEnabled must be provided" },
+  );
+
+router.get(
+  "/api/notifications/preferences/log-email-failures-digest",
+  requireAuth,
+  requireRole("SUPER_ADMIN", "ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const userId = req.user!.id;
+
+      const [channelRow] = await db
+        .select()
+        .from(notificationChannelPrefs)
+        .where(eq(notificationChannelPrefs.userId, userId))
+        .limit(1);
+
+      const [typeRow] = await db
+        .select()
+        .from(notificationTypePrefs)
+        .where(
+          and(
+            eq(notificationTypePrefs.userId, userId),
+            eq(notificationTypePrefs.notificationType, FAILURES_DIGEST_TYPE),
+          ),
+        )
+        .limit(1);
+
+      // Channel email is OFF by default until the user opts in via the
+      // standard settings page — same behavior as `loadEffectivePrefs`
+      // in `notificationDelivery.ts`.
+      const channelEmailEnabled = channelRow?.emailEnabled ?? false;
+
+      // Effective email = override (if set) ELSE channel email. The
+      // override row's `emailEnabled` is a non-nullable column so we
+      // can read it directly when the row exists.
+      const emailEnabled = typeRow ? typeRow.emailEnabled : channelEmailEnabled;
+
+      // Effective in-app: NULL means "not configured" → defaults to
+      // delivered (Task #1260). Only an explicit `false` mutes the row.
+      const inAppEnabled = typeRow?.inAppEnabled === false ? false : true;
+
+      res.json({
+        notificationType: FAILURES_DIGEST_TYPE,
+        emailEnabled,
+        inAppEnabled,
+        channelEmailEnabled,
+        // Surface the raw stored values so the UI can distinguish
+        // "muted because channel email is off" from "muted because the
+        // user explicitly disabled this type".
+        emailOverride: typeRow ? typeRow.emailEnabled : null,
+        inAppOverride: typeRow ? typeRow.inAppEnabled : null,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+router.put(
+  "/api/notifications/preferences/log-email-failures-digest",
+  requireAuth,
+  requireRole("SUPER_ADMIN", "ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const userId = req.user!.id;
+
+      const parsed = failuresDigestSubscriptionBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Invalid digest subscription payload",
+          details: parsed.error.flatten(),
+        });
+      }
+
+      const { emailEnabled, inAppEnabled } = parsed.data;
+      const now = new Date();
+
+      // Seed the insert row from the user's channel-level settings so
+      // the unspecified channels (sms / push / teams / slack) keep
+      // matching their channel defaults — same first-insert behavior
+      // as the standard `PUT /api/notifications/preferences` endpoint.
+      // The digest itself only delivers via email and in-app, so these
+      // values don't change the digest's reach today, but they keep
+      // the override row a faithful snapshot of "user wanted everything
+      // else to follow the channel default".
+      const [channelRow] = await db
+        .select()
+        .from(notificationChannelPrefs)
+        .where(eq(notificationChannelPrefs.userId, userId))
+        .limit(1);
+
+      const insertEmail = emailEnabled ?? channelRow?.emailEnabled ?? false;
+      const insertInApp = inAppEnabled ?? null;
+
+      // Build the ON CONFLICT update set lazily so we only touch the
+      // columns the caller explicitly toggled — that way a user who
+      // mutes just the email channel here doesn't accidentally clobber
+      // a previously-configured `inAppEnabled` value (and vice versa).
+      const updateSet: Record<string, unknown> = { updatedAt: now };
+      if (emailEnabled !== undefined) updateSet.emailEnabled = emailEnabled;
+      if (inAppEnabled !== undefined) updateSet.inAppEnabled = inAppEnabled;
+
+      await db
+        .insert(notificationTypePrefs)
+        .values({
+          userId,
+          notificationType: FAILURES_DIGEST_TYPE,
+          emailEnabled: insertEmail,
+          smsEnabled: channelRow?.smsEnabled ?? false,
+          pushEnabled: channelRow?.pushEnabled ?? false,
+          teamsEnabled: channelRow?.teamsEnabled ?? false,
+          slackEnabled: channelRow?.slackEnabled ?? false,
+          inAppEnabled: insertInApp,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [notificationTypePrefs.userId, notificationTypePrefs.notificationType],
+          set: updateSet,
+        });
+
+      logInfo("Project log email failures digest subscription updated", {
+        userId,
+        emailEnabled: emailEnabled ?? null,
+        inAppEnabled: inAppEnabled ?? null,
+        source: "failures_dashboard",
+      });
+
+      res.json({ success: true });
+    } catch (error) {
+      logError("Failed to update project log email failures digest subscription", {
+        error: String(error),
+      });
+      next(error);
+    }
+  },
+);
 
 /**
  * Task #1408 — One-click "mute Davis-Bacon wage rate change alerts" link

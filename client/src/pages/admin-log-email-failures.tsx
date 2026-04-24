@@ -48,9 +48,12 @@ import {
 } from "@/components/ui/popover";
 import {
   AlertCircle,
+  Bell,
+  BellOff,
   ExternalLink,
   History,
   Loader2,
+  Mail,
   MailWarning,
   Send,
 } from "lucide-react";
@@ -63,6 +66,8 @@ import {
 } from "@/components/log-email/RecentAttempts";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/use-auth";
+import { Switch } from "@/components/ui/switch";
 
 // Mirrors the row shape returned by `GET /api/log-email-schedule-failures`.
 // The endpoint already filters to FAILURE/NO_RECIPIENTS, so we don't need
@@ -236,6 +241,202 @@ export function __resetResendCooldownForTests() {
   lastResendAt.clear();
 }
 
+/**
+ * Task #1731 — Inline mute / unmute control for the current admin's
+ * subscription to the daily failures digest
+ * (`PROJECT_LOG_EMAIL_FAILURES_DIGEST`).
+ *
+ * Surfaces the same per-user `notification_type_prefs` row the standard
+ * notification settings page upserts, so the channel resolver in
+ * `notificationDelivery.ts` (and the in-app feed filter) honor the
+ * mute identically — admins don't need to leave the dashboard, and
+ * they're nudged toward muting the *digest* instead of the more
+ * important per-failure ping (`PROJECT_LOG_EMAIL_FAILED`) on the full
+ * settings page.
+ *
+ * Only rendered for ADMIN / SUPER_ADMIN — the digest job
+ * (`processProjectLogEmailFailuresDigest`) only delivers to those
+ * roles, so a switch for MANAGER / SUPERINTENDENT would write a pref
+ * row that does nothing.
+ */
+interface DigestSubscriptionResponse {
+  notificationType: string;
+  emailEnabled: boolean;
+  inAppEnabled: boolean;
+  channelEmailEnabled: boolean;
+  emailOverride: boolean | null;
+  inAppOverride: boolean | null;
+}
+
+function DigestSubscriptionCard() {
+  const { toast } = useToast();
+  const { data, isLoading, isError } = useQuery<DigestSubscriptionResponse>({
+    queryKey: ["/api/notifications/preferences/log-email-failures-digest"],
+  });
+
+  const mutation = useMutation({
+    mutationFn: async (patch: { emailEnabled?: boolean; inAppEnabled?: boolean }) => {
+      const res = await apiRequest(
+        "PUT",
+        "/api/notifications/preferences/log-email-failures-digest",
+        patch,
+      );
+      return res.json() as Promise<{ success: boolean }>;
+    },
+    onSuccess: (_data, patch) => {
+      // Refresh the subscription card so the switches reflect the
+      // server's persisted state (and any defaults the server filled
+      // in when the override row was first created).
+      queryClient.invalidateQueries({
+        queryKey: ["/api/notifications/preferences/log-email-failures-digest"],
+      });
+      // Also invalidate the standard prefs query so the Notifications
+      // settings page picks up the change next time it mounts.
+      queryClient.invalidateQueries({ queryKey: ["/api/notifications/preferences"] });
+
+      const label = patch.emailEnabled !== undefined ? "Email" : "In-app";
+      const enabled =
+        patch.emailEnabled !== undefined ? patch.emailEnabled : patch.inAppEnabled;
+      toast({
+        title: enabled ? `${label} digest re-enabled` : `${label} digest muted`,
+        description: enabled
+          ? `You'll receive the daily failures digest ${label.toLowerCase()}.`
+          : `The daily failures digest will no longer be delivered ${label.toLowerCase()}.`,
+      });
+    },
+    onError: (err) => {
+      toast({
+        title: "Couldn't update your digest subscription",
+        description: err instanceof Error ? err.message : "Please try again in a moment.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <Card data-testid="card-digest-subscription">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Bell className="h-4 w-4" /> Daily failures digest
+          </CardTitle>
+          <CardDescription>Loading your subscription…</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-9 w-full" data-testid="loading-digest-subscription" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (isError || !data) {
+    // Non-fatal: the page is still useful without this card. Show a
+    // muted hint with a deep-link to the full settings page so the
+    // admin still has a path to mute the digest.
+    return (
+      <Card data-testid="card-digest-subscription">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <Bell className="h-4 w-4" /> Daily failures digest
+          </CardTitle>
+          <CardDescription>
+            Couldn't load your subscription right now.{" "}
+            <Link
+              href="/settings/notifications"
+              className="underline"
+              data-testid="link-digest-subscription-fallback"
+            >
+              Manage in notification settings
+            </Link>
+            .
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  const { emailEnabled, inAppEnabled, channelEmailEnabled } = data;
+  const bothMuted = !emailEnabled && !inAppEnabled;
+  const StatusIcon = bothMuted ? BellOff : Bell;
+
+  return (
+    <Card data-testid="card-digest-subscription">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base flex items-center gap-2">
+          <StatusIcon className="h-4 w-4" />
+          Daily failures digest
+        </CardTitle>
+        <CardDescription>
+          {bothMuted ? (
+            <span data-testid="text-digest-subscription-status">
+              You've muted the daily summary of these failures. The
+              per-failure ping (sent the moment a schedule first breaks)
+              is unaffected.
+            </span>
+          ) : (
+            <span data-testid="text-digest-subscription-status">
+              You're subscribed to a daily summary of these failures.
+              Mute either channel below — your per-failure ping is
+              unaffected.
+            </span>
+          )}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
+          <div className="flex items-center justify-between sm:justify-start gap-3 flex-1">
+            <div className="flex items-center gap-2">
+              <Mail className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm">Email</span>
+            </div>
+            <Switch
+              checked={emailEnabled}
+              disabled={mutation.isPending}
+              onCheckedChange={(checked) => mutation.mutate({ emailEnabled: checked })}
+              data-testid="switch-digest-email"
+              aria-label="Email me the daily failures digest"
+            />
+          </div>
+          <div className="flex items-center justify-between sm:justify-start gap-3 flex-1">
+            <div className="flex items-center gap-2">
+              <Bell className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm">In-app</span>
+            </div>
+            <Switch
+              checked={inAppEnabled}
+              disabled={mutation.isPending}
+              onCheckedChange={(checked) => mutation.mutate({ inAppEnabled: checked })}
+              data-testid="switch-digest-in-app"
+              aria-label="Show the daily failures digest in my in-app feed"
+            />
+          </div>
+          <Link
+            href="/settings/notifications"
+            className="text-xs text-muted-foreground underline whitespace-nowrap"
+            data-testid="link-digest-manage-settings"
+          >
+            Manage notification settings
+          </Link>
+        </div>
+        {emailEnabled && !channelEmailEnabled && (
+          // The override forces email on for the digest type, but the
+          // channel-level master switch is off. The notification
+          // service still respects the override, so digests will be
+          // emailed; we just call it out so the admin doesn't think
+          // their channel-level "no email" preference is being ignored.
+          <p
+            className="text-xs text-muted-foreground mt-3"
+            data-testid="text-digest-channel-email-off"
+          >
+            Heads up: your channel-level email is off, but this digest
+            override keeps the daily summary arriving in your inbox.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function FailureStatusBadge({ status, rowKey }: { status: LogEmailAttemptStatus; rowKey: string }) {
   if (status === "NO_RECIPIENTS") {
     return (
@@ -256,6 +457,14 @@ function FailureStatusBadge({ status, rowKey }: { status: LogEmailAttemptStatus;
 }
 
 export default function AdminLogEmailFailuresPage() {
+  const { user: authUser } = useAuth();
+  // Task #1731 — Only ADMIN / SUPER_ADMIN actually receive the daily
+  // failures digest, so the mute card is only meaningful for them.
+  // MANAGER / SUPERINTENDENT can still browse the dashboard but won't
+  // see (or write to) a pref row that does nothing.
+  const role = authUser?.effectiveRole || authUser?.role;
+  const canManageDigestSubscription = role === "ADMIN" || role === "SUPER_ADMIN";
+
   const { data, isLoading, isError, refetch, isFetching } = useQuery<{
     failures: FailureRow[];
   }>({
@@ -287,6 +496,8 @@ export default function AdminLogEmailFailuresPage() {
           {isFetching ? "Refreshing…" : "Refresh"}
         </Button>
       </div>
+
+      {canManageDigestSubscription && <DigestSubscriptionCard />}
 
       <Card>
         <CardHeader>
