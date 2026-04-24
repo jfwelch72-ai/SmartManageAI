@@ -1122,87 +1122,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   );
 
-  // Task #1413: Super-Admin one-click trigger for the exhausted sync retry
-  // alerts backfill (Task #1405). Mirrors the certified-payroll re-run
-  // endpoint above so admins don't need to drop into psql to delete the
-  // `one_shot_jobs` ledger row when they need to re-fan summary alerts
-  // (e.g. after a notification provider outage or for staging re-tests).
-  // Reuses `clearOneShotJob` and `runExhaustedSyncRetryAlertsBackfillOnce`
-  // so the production safety guarantees (idempotent atomic claim, ledger
-  // bookkeeping, failure-doesn't-mark-done) are preserved.
-  app.post(
-    "/api/admin/jobs/exhausted-sync-retry-alerts-backfill/run",
-    requireAuth,
-    requireRole("SUPER_ADMIN"),
-    async (req: AuthRequest, res: Response, next: NextFunction) => {
-      try {
-        const body = (req.body ?? {}) as { clearLedger?: unknown };
-        // Default to clearing the ledger: the once-runner short-circuits
-        // when the ledger row already exists, so without clearing the
-        // re-run would just be a no-op SELECT.
-        const clearLedger = body.clearLedger !== false;
-
-        const { clearOneShotJob } = await import(
-          "./utils/runCertifiedPayrollBackfillOnce"
-        );
-        const {
-          runExhaustedSyncRetryAlertsBackfillOnce,
-          JOB_NAME,
-        } = await import("./utils/runExhaustedSyncRetryAlertsBackfillOnce");
-
-        let ledgerCleared = false;
-        if (clearLedger) {
-          ledgerCleared = await clearOneShotJob(JOB_NAME);
-        }
-
-        const start = Date.now();
-        const result = await runExhaustedSyncRetryAlertsBackfillOnce();
-        const durationMs = Date.now() - start;
-
-        const { logAudit } = await import("./auditLogger");
-        const summary =
-          result.status === "completed"
-            ? `claimedRows=${result.stats.claimedRows}, ` +
-              `groupsNotified=${result.stats.groupsNotified}, ` +
-              `groupsWithoutAdmins=${result.stats.groupsWithoutAdmins}, ` +
-              `recipients=${result.stats.recipients}`
-            : `status=${result.status}`;
-        await logAudit(
-          {
-            userId: req.user!.id,
-            action: "EXECUTE",
-            entityType: "background_job",
-            entityId: JOB_NAME,
-            newValue:
-              `Manual exhausted sync retry alerts backfill ` +
-              `(clearLedger=${clearLedger}, ledgerCleared=${ledgerCleared}, ` +
-              `${summary}, durationMs=${durationMs})`,
-          },
-          req,
-        );
-
-        logInfo(
-          `[admin] exhausted_sync_retry_alerts_backfill manual run by ${req.user!.id} ` +
-            `(clearLedger=${clearLedger}, ledgerCleared=${ledgerCleared}) — ` +
-            `${summary}, ${durationMs}ms`,
-        );
-
-        res.json({
-          job: JOB_NAME,
-          status: result.status,
-          durationMs,
-          ledgerCleared,
-          stats: result.status === "completed" ? result.stats : null,
-          error:
-            result.status === "failed" || result.status === "bookkeeping_error"
-              ? result.error
-              : null,
-        });
-      } catch (err: any) {
-        next(err);
-      }
-    },
-  );
+  // Task #1413's bespoke `POST /api/admin/jobs/exhausted-sync-retry-alerts-
+  // backfill/run` endpoint was retired in Task #1490 once the generic
+  // one-shot jobs admin API below covered the same re-fan flow. Use
+  // `POST /api/admin/jobs/one-shot/backfill_exhausted_sync_retry_alerts_v1/rerun`
+  // instead.
 
   // Task #1448 — Generic "one-shot jobs" admin API. Lists every job
   // registered via `registerOneShotJob` joined with its `one_shot_jobs`
