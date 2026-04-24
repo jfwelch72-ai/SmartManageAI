@@ -241,10 +241,122 @@ test.describe("Takeoff markup drawing - Playwright E2E", () => {
     expect(text.text).toBe("E2E label");
     expect(text.points.length).toBe(1);
 
-    // Reload the workspace and confirm the persisted markups render again
-    // (the takeoff page re-fetches /markups and feeds them back into the
-    // Konva Stage). This guards against regressions where saving works
-    // but the re-render path drops the new shapes.
+    // === EDIT a markup =====================================================
+    // Switch back to the Select tool so clicking a shape opens the edit
+    // panel (the renderer only sets `listening` on shapes when the active
+    // tool is "select"). Then click inside the rectangle (drawn at world
+    // coords (260,130)->(360,230)) at its centroid.
+    await page.getByTestId("button-tool-select").click();
+    await clickOnCanvas(page, { x: 310, y: 180 });
+    const editPanel = page.getByTestId("panel-markup-properties");
+    await editPanel.waitFor({ state: "visible", timeout: 10_000 });
+
+    // Change the rectangle's color and thickness, then save. The color
+    // and range inputs are React-controlled, so we use the native value
+    // setter so React's internal value tracker actually fires onChange
+    // (just setting `.value` and dispatching events is a no-op here).
+    const newRectColor = "#00aa55";
+    const newRectThickness = 6;
+    const setReactInputValue = async (
+      locator: ReturnType<typeof editPanel.getByTestId>,
+      value: string,
+    ) => {
+      await locator.evaluate((el, v) => {
+        const input = el as HTMLInputElement;
+        const proto = Object.getPrototypeOf(input);
+        const setter = Object.getOwnPropertyDescriptor(proto, "value")?.set;
+        if (setter) setter.call(input, v);
+        else input.value = v;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+      }, value);
+    };
+    await setReactInputValue(
+      editPanel.getByTestId("input-markup-color"),
+      newRectColor,
+    );
+    await setReactInputValue(
+      editPanel.getByTestId("input-markup-thickness"),
+      String(newRectThickness),
+    );
+    await page.getByTestId("button-save-markup-edit").click();
+    await editPanel.waitFor({ state: "hidden", timeout: 10_000 });
+
+    // Confirm the rectangle edit landed via the API before reloading.
+    await expect
+      .poll(
+        async () => {
+          const list = await listMarkups(page, sheetId);
+          const r = list.find((m) => m.tool === "RECTANGLE");
+          return r ? { color: r.color, thickness: r.thickness } : null;
+        },
+        {
+          message: "rectangle edit (color+thickness) should persist",
+          timeout: 10_000,
+        },
+      )
+      .toEqual({ color: newRectColor, thickness: newRectThickness });
+
+    // Now edit the TEXT markup's label. We seed selection by setting the
+    // edit-draft state via a click; because the Konva Text glyph is small
+    // (~12px tall) we sweep a few offsets around the anchor (300, 380)
+    // until the panel opens, instead of relying on a single pixel-perfect
+    // click on a glyph stroke.
+    const newTextLabel = "Edited E2E label";
+    const textHitOffsets = [
+      { x: 304, y: 386 },
+      { x: 308, y: 386 },
+      { x: 302, y: 384 },
+      { x: 306, y: 388 },
+      { x: 312, y: 386 },
+      { x: 300, y: 386 },
+    ];
+    let textPanelOpen = false;
+    for (const offset of textHitOffsets) {
+      await clickOnCanvas(page, offset);
+      try {
+        await editPanel.waitFor({ state: "visible", timeout: 1500 });
+        // Confirm we selected the TEXT (panel shows the Label input only
+        // for TEXT markups). If not, dismiss and try again.
+        const labelInputCount = await editPanel
+          .getByTestId("input-markup-text")
+          .count();
+        if (labelInputCount > 0) {
+          textPanelOpen = true;
+          break;
+        }
+        await page
+          .getByTestId("button-cancel-markup-edit")
+          .click()
+          .catch(() => undefined);
+        await editPanel
+          .waitFor({ state: "hidden", timeout: 2000 })
+          .catch(() => undefined);
+      } catch {
+        // panel didn't open; try the next offset
+      }
+    }
+    expect(textPanelOpen).toBe(true);
+
+    await editPanel.getByTestId("input-markup-text").fill(newTextLabel);
+    await page.getByTestId("button-save-markup-edit").click();
+    await editPanel.waitFor({ state: "hidden", timeout: 10_000 });
+
+    await expect
+      .poll(
+        async () => {
+          const list = await listMarkups(page, sheetId);
+          return list.find((m) => m.tool === "TEXT")?.text ?? null;
+        },
+        { message: "text label edit should persist", timeout: 10_000 },
+      )
+      .toBe(newTextLabel);
+
+    // Reload the workspace and confirm the persisted markups (including
+    // the edits) render again. The takeoff page re-fetches /markups and
+    // feeds them back into the Konva Stage; this guards against
+    // regressions where saving works but the re-render path drops the
+    // new shapes or the edited fields.
     await page.reload();
     await page.waitForLoadState("domcontentloaded");
     await page
@@ -253,5 +365,10 @@ test.describe("Takeoff markup drawing - Playwright E2E", () => {
       .waitFor({ state: "visible", timeout: 15_000 });
     const reloaded = await listMarkups(page, sheetId);
     expect(reloaded.length).toBe(6);
+    const reloadedRect = reloaded.find((m) => m.tool === "RECTANGLE")!;
+    expect(reloadedRect.color).toBe(newRectColor);
+    expect(reloadedRect.thickness).toBe(newRectThickness);
+    const reloadedText = reloaded.find((m) => m.tool === "TEXT")!;
+    expect(reloadedText.text).toBe(newTextLabel);
   });
 });
