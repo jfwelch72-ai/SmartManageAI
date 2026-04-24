@@ -56,6 +56,10 @@ export default function MarkupLayersPanel({
   // visual affordance — the drop target is computed at drop time).
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
+  // Task #1702 — accessibility parity for the drag handle. Screen
+  // reader users are notified of position changes via an aria-live
+  // region; the message is set after a successful keyboard reorder.
+  const [liveMessage, setLiveMessage] = useState<string>("");
 
   const layersQueryKey = ["/api/plan-documents", documentId, "markup-layers"] as const;
 
@@ -173,6 +177,37 @@ export default function MarkupLayersPanel({
     if (updates.length > 0) reorderMutation.mutate(updates);
   };
 
+  // Task #1702 — keyboard equivalent of the drag interaction. Moves
+  // `sourceId` one slot up (-1) or down (+1), reusing the same
+  // `reorder` path so PATCH semantics and optimistic updates match
+  // drag-and-drop exactly. Announces the new position via aria-live.
+  const reorderByKeyboard = (sourceId: string, direction: -1 | 1) => {
+    const current = queryClient.getQueryData<MarkupLayer[]>(layersQueryKey) || layers;
+    const fromIdx = current.findIndex((l) => l.id === sourceId);
+    if (fromIdx === -1) return;
+    const moved = current[fromIdx];
+    const toIdx = fromIdx + direction;
+    if (toIdx < 0 || toIdx >= current.length) {
+      // At the boundary — announce so screen reader users know the
+      // keypress was received but had no effect.
+      setLiveMessage(`${moved.name} is already at position ${fromIdx + 1} of ${current.length}`);
+      return;
+    }
+    // `reorder` interprets targetId as "drop before this layer" (or
+    // null = drop at end). Going up: drop before the current toIdx.
+    // Going down: after splicing out the source, the next layer is at
+    // toIdx + 1 in the original array, so drop before that one (or at
+    // end if there isn't one).
+    const targetId =
+      direction === -1
+        ? current[toIdx].id
+        : toIdx + 1 < current.length
+          ? current[toIdx + 1].id
+          : null;
+    reorder(sourceId, targetId);
+    setLiveMessage(`Moved ${moved.name} to position ${toIdx + 1} of ${current.length}`);
+  };
+
   const toggleVisibility = (layer: MarkupLayer) => {
     const nextVisible = !layer.isVisible;
     // Optimistic local update so the canvas reflects the toggle without
@@ -194,6 +229,18 @@ export default function MarkupLayersPanel({
         <span className="text-muted-foreground" data-testid="text-markup-layers-count">
           {layers.length}
         </span>
+      </div>
+
+      {/* Task #1702 — aria-live region announces keyboard reorders to
+          screen readers. Visually hidden via sr-only. */}
+      <div
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+        data-testid="text-markup-layer-live"
+      >
+        {liveMessage}
       </div>
 
       <div className="max-h-48 overflow-y-auto divide-y">
@@ -257,9 +304,24 @@ export default function MarkupLayersPanel({
                   setDraggingId(null);
                   setDragOverId(null);
                 }}
+                onKeyDown={(e) => {
+                  // Task #1702 — Alt+ArrowUp/Down moves the focused
+                  // layer one slot. We intentionally require Alt so
+                  // the arrow keys remain available for browser /
+                  // assistive-tech default navigation.
+                  if (isRenaming) return;
+                  if (!e.altKey) return;
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    reorderByKeyboard(l.id, -1);
+                  } else if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    reorderByKeyboard(l.id, 1);
+                  }
+                }}
                 className="text-muted-foreground hover:text-foreground cursor-grab active:cursor-grabbing"
-                aria-label={`Drag to reorder layer ${l.name}`}
-                title="Drag to reorder"
+                aria-label={`Reorder layer ${l.name}. Drag, or press Alt+Arrow Up or Alt+Arrow Down to move.`}
+                title="Drag, or use Alt+Arrow Up/Down to reorder"
                 data-testid={`button-markup-layer-drag-${l.id}`}
               >
                 <GripVertical className="w-3.5 h-3.5" />
