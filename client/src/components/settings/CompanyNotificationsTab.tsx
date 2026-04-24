@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -19,6 +19,10 @@ import { Textarea } from "@/components/ui/textarea";
 import type { PayrollSettings } from "./types";
 import { DAYS_OF_WEEK, DIGEST_CADENCES, DIGEST_WEEKDAYS, COMMON_TIMEZONES } from "./types";
 import { useIntegrationStatus } from "@/hooks/use-integration-status";
+import {
+  computeNextFailuresDigestFire,
+  formatNextFailuresDigestFire,
+} from "./failuresDigestSchedule";
 
 export function CompanyNotificationsTab() {
   const { user } = useAuth();
@@ -235,6 +239,30 @@ export function CompanyNotificationsTab() {
       });
     }
   }, [projectLogEmailSettings]);
+  // Task #1749 — live "Next digest:" preview computed from the form's
+  // current values. Re-renders whenever the admin tweaks any of the
+  // four schedule controls so they get immediate feedback that the
+  // schedule is wired correctly.
+  const nextFailuresDigestFire = useMemo(() => {
+    return computeNextFailuresDigestFire({
+      cadence: projectLogEmailForm.failuresDigestCadence,
+      weekday: projectLogEmailForm.failuresDigestWeekday,
+      hour: projectLogEmailForm.failuresDigestHour,
+      timezone: projectLogEmailForm.failuresDigestTimezone,
+    });
+  }, [
+    projectLogEmailForm.failuresDigestCadence,
+    projectLogEmailForm.failuresDigestWeekday,
+    projectLogEmailForm.failuresDigestHour,
+    projectLogEmailForm.failuresDigestTimezone,
+  ]);
+  const nextFailuresDigestLabel = nextFailuresDigestFire
+    ? formatNextFailuresDigestFire(
+        nextFailuresDigestFire,
+        projectLogEmailForm.failuresDigestTimezone,
+      )
+    : null;
+
   const updateProjectLogEmailMutation = useMutation({
     mutationFn: async (data: typeof projectLogEmailForm) => {
       // Send `null` when reverting to the global default, otherwise
@@ -1261,6 +1289,44 @@ export function CompanyNotificationsTab() {
                         ping and the streak alert above.
                       </p>
                     )}
+
+                    {/*
+                      Task #1749 — live preview of the next-scheduled
+                      digest fire time, computed client-side from the
+                      form's current values so admins get immediate
+                      feedback as they tweak the controls. Cron fires
+                      hourly (`0 * * * *`) and the org-level gate
+                      matches local hour (and weekday for WEEKLY), so
+                      the next fire is the soonest top-of-hour where
+                      both gates pass.
+                    */}
+                    <div
+                      className="rounded border border-dashed border-border bg-background px-3 py-2 text-sm"
+                      data-testid="section-project-log-email-failures-digest-next"
+                    >
+                      <span className="font-medium">Next digest: </span>
+                      {projectLogEmailForm.failuresDigestCadence === "OFF" ? (
+                        <span
+                          className="text-muted-foreground"
+                          data-testid="text-project-log-email-failures-digest-next"
+                        >
+                          Digest disabled
+                        </span>
+                      ) : nextFailuresDigestLabel ? (
+                        <span
+                          data-testid="text-project-log-email-failures-digest-next"
+                        >
+                          {nextFailuresDigestLabel}
+                        </span>
+                      ) : (
+                        <span
+                          className="text-muted-foreground"
+                          data-testid="text-project-log-email-failures-digest-next"
+                        >
+                          Unable to compute next send time
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {canEditProjectLogEmailThreshold ? (
