@@ -168,6 +168,17 @@ export const organizationPayrollSettings = pgTable("organization_payroll_setting
   certifiedPayrollDigestHour: integer("certified_payroll_digest_hour").notNull().default(8),
   certifiedPayrollDigestTimezone: text("certified_payroll_digest_timezone").notNull().default("UTC"),
   certifiedPayrollDigestLastSentAt: timestamp("certified_payroll_digest_last_sent_at"),
+  // Task #1485: per-org policy gating certified-payroll PDF generation
+  // when one or more classifications on the pay run have unacknowledged
+  // Davis-Bacon rate-change records.
+  //   BLOCK → 409 unless every affected classification has been acknowledged
+  //   WARN  → 412 once; the UI shows a confirm dialog and the request can
+  //           be retried with `?acknowledged=true` after the PM confirms
+  //   OFF   → no gate, generation proceeds even with unacknowledged flags
+  // Defaults to WARN so existing orgs get a soft confirm without breaking
+  // their current sign-off workflow. Per-project override lives on
+  // `projects.rateChangeSigningPolicy`.
+  rateChangeSigningPolicy: text("rate_change_signing_policy").notNull().default("WARN"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -176,6 +187,10 @@ export const organizationPayrollSettings = pgTable("organization_payroll_setting
 
 export const CERTIFIED_PAYROLL_DIGEST_CADENCES = ["OFF", "DAILY", "WEEKLY", "BIWEEKLY"] as const;
 export type CertifiedPayrollDigestCadence = typeof CERTIFIED_PAYROLL_DIGEST_CADENCES[number];
+
+// Task #1485 — allowed values for the certified-payroll signing gate.
+export const RATE_CHANGE_SIGNING_POLICIES = ["OFF", "WARN", "BLOCK"] as const;
+export type RateChangeSigningPolicy = typeof RATE_CHANGE_SIGNING_POLICIES[number];
 
 export const insertOrganizationPayrollSettingsSchema = createInsertSchema(organizationPayrollSettings).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOrganizationPayrollSettings = z.infer<typeof insertOrganizationPayrollSettingsSchema>;
@@ -559,6 +574,10 @@ export const projects = pgTable("projects", {
   // and the UI surfaces a warning if the referenced determination has not yet
   // been imported via the DOL/SAM.gov Davis-Bacon sync.
   wageDecision: text("wage_decision"),
+  // Task #1485: per-project override of the org-level
+  // `rateChangeSigningPolicy`. NULL → fall back to the org default.
+  // Allowed values: 'OFF' | 'WARN' | 'BLOCK'.
+  rateChangeSigningPolicy: text("rate_change_signing_policy"),
   // Task #900: first-class portfolio rollup dimensions. Optional free-form
   // labels for Program (e.g. "Highway 87 Corridor") and Division (e.g.
   // "Northern Region") plus an explicit trade type. When null,

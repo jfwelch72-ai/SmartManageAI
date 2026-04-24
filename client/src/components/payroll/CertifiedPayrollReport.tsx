@@ -4,6 +4,16 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -340,10 +350,29 @@ function buildProjectHtml(pr: ProjectReport): string {
   `;
 }
 
+// Task #1485: shape of the 412/409 payload returned by the certified-payroll
+// PDF endpoint when there are unacknowledged Davis-Bacon rate changes.
+interface SigningGatePayload {
+  error: string;
+  code: "RATE_CHANGE_BLOCKED" | "RATE_CHANGE_CONFIRM_REQUIRED";
+  policy: "OFF" | "WARN" | "BLOCK";
+  recentRateChanges: Array<{
+    projectId: string;
+    projectName: string;
+    normalizedClassification: string;
+    changeKind: string;
+    detectedAt: string | null;
+  }>;
+  affectedProjects: Array<{ projectId: string; policy: "OFF" | "WARN" | "BLOCK" }>;
+}
+
 export default function CertifiedPayrollReportView({ payRunId, payRunNumber }: { payRunId: string; payRunNumber: string | null }) {
   const isMobile = useIsMobile();
   const [variant, setVariant] = useState<string>("");
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  // Task #1485: holds the 412 payload while the soft-confirm dialog is open.
+  // Resolving the dialog re-runs the download with `acknowledged=true`.
+  const [signingConfirm, setSigningConfirm] = useState<SigningGatePayload | null>(null);
 
   const { data: report, isLoading } = useQuery<CertifiedReport>({
     queryKey: ["/api/payroll/pay-runs", payRunId, "certified-report"],
@@ -425,15 +454,46 @@ export default function CertifiedPayrollReportView({ payRunId, payRunNumber }: {
   const projectReports = report?.projectReports || [];
   const hasMultipleProjects = projectReports.length > 1;
 
-  const downloadPdf = async () => {
+  const downloadPdf = async (acknowledgeRateChanges = false) => {
     if (!payRunId) return;
     setDownloadingPdf(true);
     try {
       const params = new URLSearchParams();
       if (variant) params.set("variant", variant);
+      // Task #1485: when the PM has confirmed the soft-confirm dialog (or
+      // is retrying after one), pass `acknowledged=true` so the server-side
+      // signing gate lets the PDF generate.
+      if (acknowledgeRateChanges) params.set("acknowledged", "true");
       const qs = params.toString();
       const url = `/api/payroll/pay-runs/${payRunId}/certified-payroll-pdf${qs ? `?${qs}` : ""}`;
       const resp = await fetch(url, { credentials: "include" });
+      // Task #1485: handle the certified-payroll signing gate.
+      //   412 → soft-confirm policy (WARN). Show a dialog summarizing the
+      //         affected classifications; on confirm, retry with
+      //         `acknowledged=true` so the PDF actually generates.
+      //   409 → hard-block policy (BLOCK). PM must acknowledge the
+      //         rate-change flags via the banner first; surface a toast
+      //         with a pointer to that workflow.
+      if (resp.status === 412 || resp.status === 409) {
+        let payload: SigningGatePayload | null = null;
+        try {
+          payload = (await resp.json()) as SigningGatePayload;
+        } catch {
+          payload = null;
+        }
+        if (resp.status === 412 && payload) {
+          setSigningConfirm(payload);
+          return;
+        }
+        toast({
+          title: "Signing blocked",
+          description:
+            payload?.error
+            || "Davis-Bacon rate changes must be acknowledged before signing this certified payroll.",
+          variant: "destructive",
+        });
+        return;
+      }
       if (!resp.ok) {
         const text = await resp.text();
         throw new Error(text || `Failed to generate PDF (${resp.status})`);
@@ -450,7 +510,11 @@ export default function CertifiedPayrollReportView({ payRunId, payRunNumber }: {
       a.remove();
       URL.revokeObjectURL(objectUrl);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to download PDF");
+      toast({
+        title: "Download failed",
+        description: err instanceof Error ? err.message : "Failed to download PDF",
+        variant: "destructive",
+      });
     } finally {
       setDownloadingPdf(false);
     }
@@ -588,7 +652,7 @@ export default function CertifiedPayrollReportView({ payRunId, payRunNumber }: {
                 ))}
               </SelectContent>
             </Select>
-            <Button variant="default" size="sm" onClick={downloadPdf} disabled={downloadingPdf} data-testid="button-download-pdf">
+            <Button variant="default" size="sm" onClick={() => downloadPdf(false)} disabled={downloadingPdf} data-testid="button-download-pdf">
               <FileDown className="w-4 h-4 mr-1" /> {downloadingPdf ? "Generating…" : "Download PDF"}
             </Button>
             <Button variant="outline" size="sm" onClick={exportCSV} data-testid="button-export-csv">
@@ -763,6 +827,68 @@ export default function CertifiedPayrollReportView({ payRunId, payRunNumber }: {
           </div>
         </CardContent>
       </Card>
+
+      {/* Task #1485: soft-confirm dialog shown when the certified-payroll
+          PDF endpoint returns 412 because one or more classifications on
+          this pay run have unacknowledged Davis-Bacon rate changes and the
+          org/project policy is WARN. Confirming retries the download with
+          `acknowledged=true` so the PDF actually generates. */}
+      <AlertDialog
+        open={!!signingConfirm}
+        onOpenChange={(open) => {
+          if (!open) setSigningConfirm(null);
+        }}
+      >
+        <AlertDialogContent data-testid="dialog-signing-rate-change-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Davis-Bacon rate changes not yet acknowledged</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm">
+                <p>
+                  {signingConfirm?.error
+                    || "One or more classifications on this pay run have a Davis-Bacon rate change that hasn't been acknowledged."}
+                </p>
+                {signingConfirm && signingConfirm.recentRateChanges.length > 0 && (
+                  <ul
+                    className="mt-1 max-h-40 overflow-y-auto rounded border border-muted bg-muted/30 p-2 text-xs"
+                    data-testid="list-signing-rate-change-classifications"
+                  >
+                    {signingConfirm.recentRateChanges.map((rc, i) => (
+                      <li key={`${rc.projectId}-${rc.normalizedClassification}-${i}`}>
+                        <span className="font-medium">{rc.projectName || rc.projectId}</span>:{" "}
+                        <span className="font-mono">{rc.normalizedClassification}</span>{" "}
+                        <span className="text-muted-foreground">
+                          ({rc.changeKind}
+                          {rc.detectedAt ? `, ${rc.detectedAt.slice(0, 10)}` : ""})
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Confirming will sign and download the PDF anyway. To suppress this prompt
+                  permanently, switch the rate-change signing policy to OFF; to require an explicit
+                  acknowledgement before signing, switch it to BLOCK.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-signing-rate-change-cancel">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="button-signing-rate-change-confirm"
+              onClick={() => {
+                setSigningConfirm(null);
+                void downloadPdf(true);
+              }}
+            >
+              Sign anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

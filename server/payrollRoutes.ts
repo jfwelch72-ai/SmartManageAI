@@ -4051,6 +4051,95 @@ router.get("/api/payroll/pay-runs/:id/certified-payroll-pdf", requireAuth, async
       }
     }
 
+    // Task #1485: certified-payroll signing gate. If any project on this
+    // pay run has unacknowledged Davis-Bacon rate changes AND the effective
+    // policy is BLOCK/WARN, refuse to generate the PDF unless the caller
+    // explicitly acknowledges the warning by passing `?acknowledged=true`.
+    //
+    //   BLOCK  → 409 (PM must acknowledge the rate-change flags first)
+    //   WARN   → 412 (UI shows a confirm dialog and retries with ?acknowledged=true)
+    //   OFF    → no gate
+    //
+    // Mirrors the certified-report JSON `recentRateChanges` payload so the
+    // client can render the affected classifications next to the prompt.
+    if (pdfRateChangeRowMap.size > 0) {
+      // Always compute the effective policy when there is at least one
+      // unacknowledged Davis-Bacon rate-change row on this pay run. The
+      // `?acknowledged=true` query flag may only short-circuit a WARN
+      // gate (the soft-confirm path); a BLOCK gate has to be cleared by
+      // acknowledging the underlying flag from the prevailing-wage panel.
+      const acknowledged = req.query.acknowledged === "true"
+        || req.query.acknowledged === "1"
+        || (typeof req.query.acknowledgeRateChanges === "string" && req.query.acknowledgeRateChanges === "true");
+
+      const [orgPayrollSettingsForGate] = await db
+        .select({ rateChangeSigningPolicy: organizationPayrollSettings.rateChangeSigningPolicy })
+        .from(organizationPayrollSettings)
+        .where(eq(organizationPayrollSettings.organizationId, orgId))
+        .limit(1);
+      const orgPolicy = (orgPayrollSettingsForGate?.rateChangeSigningPolicy || "WARN").toUpperCase();
+
+      const projectsWithUnackKeys = new Set<string>();
+      for (const k of Array.from(pdfRateChangeRowMap.keys())) {
+        const [projId] = k.split(":", 1);
+        if (projId) projectsWithUnackKeys.add(projId);
+      }
+      const projectsWithUnack = Array.from(projectsWithUnackKeys);
+
+      let projectOverrideMap = new Map<string, string | null>();
+      if (projectsWithUnack.length > 0) {
+        const overrideRows = await db
+          .select({
+            id: projects.id,
+            policy: projects.rateChangeSigningPolicy,
+          })
+          .from(projects)
+          .where(and(eq(projects.gcOrganizationId, orgId), inArray(projects.id, projectsWithUnack)));
+        for (const r of overrideRows) {
+          projectOverrideMap.set(r.id, r.policy);
+        }
+      }
+
+      const policyRank: Record<string, number> = { OFF: 0, WARN: 1, BLOCK: 2 };
+      let effective: "OFF" | "WARN" | "BLOCK" = "OFF";
+      const affected: Array<{ projectId: string; policy: "OFF" | "WARN" | "BLOCK" }> = [];
+      for (const projId of projectsWithUnack) {
+        const override = projectOverrideMap.get(projId);
+        const raw = ((override ?? orgPolicy) || "WARN").toUpperCase();
+        const policy = (["OFF", "WARN", "BLOCK"].includes(raw) ? raw : "WARN") as "OFF" | "WARN" | "BLOCK";
+        affected.push({ projectId: projId, policy });
+        if (policyRank[policy] > policyRank[effective]) effective = policy;
+      }
+
+      // OFF -> never gate.
+      // WARN -> 412 unless the caller passed ?acknowledged=true (soft-confirm).
+      // BLOCK -> 409 always; the only way out is to clear the underlying flag.
+      const shouldBlock = effective === "BLOCK" || (effective === "WARN" && !acknowledged);
+      if (shouldBlock) {
+        const recentRateChanges = Array.from(pdfRateChangeRowMap.entries()).map(([key, change]) => {
+          const [projId, ...rest] = key.split(":");
+          return {
+            projectId: projId,
+            projectName: projectNameMap.get(projId) || "",
+            normalizedClassification: rest.join(":"),
+            changeKind: change.changeKind,
+            detectedAt: change.detectedAt,
+          };
+        });
+        const status = effective === "BLOCK" ? 409 : 412;
+        return res.status(status).json({
+          error:
+            effective === "BLOCK"
+              ? "Davis-Bacon rate changes must be acknowledged before signing this certified payroll."
+              : "Davis-Bacon rate changes detected — confirm acknowledgement to continue signing.",
+          code: effective === "BLOCK" ? "RATE_CHANGE_BLOCKED" : "RATE_CHANGE_CONFIRM_REQUIRED",
+          policy: effective,
+          recentRateChanges,
+          affectedProjects: affected,
+        });
+      }
+    }
+
     const employees = lineItems.map(item => {
       const userId = item.lineItem.userId;
       const classification = classNameMap.get(userId) || "Laborer";

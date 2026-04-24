@@ -41,6 +41,7 @@ import { ensurePayrollFormVariantColumn } from "./ensurePayrollFormVariantColumn
 import { ensureCertifiedPayrollArchiveColumns } from "./ensureCertifiedPayrollArchiveColumns";
 import { ensureCertifiedPayrollArchivedRetention } from "./ensureCertifiedPayrollArchivedRetention";
 import { ensureCertifiedPayrollDigestScheduleColumns } from "./ensureCertifiedPayrollDigestScheduleColumns";
+import { ensureRateChangeSigningPolicyColumns } from "./ensureRateChangeSigningPolicyColumns";
 import { ensureMaterialCertColumns } from "./ensureMaterialCertColumns";
 import { ensureHeavyCivilDocumentColumns } from "./ensureHeavyCivilDocumentColumns";
 import { ensurePlanDocumentsOrgScope } from "./ensurePlanDocumentsOrgScope";
@@ -184,6 +185,9 @@ const migrations: MigrationStep[] = [
   { name: "certified_payroll_archive_columns", category: "ADD_COLUMN", fn: ensureCertifiedPayrollArchiveColumns },
   { name: "certified_payroll_archived_retention", category: "ADD_COLUMN", fn: ensureCertifiedPayrollArchivedRetention },
   { name: "certified_payroll_digest_schedule_columns", category: "ADD_COLUMN", fn: ensureCertifiedPayrollDigestScheduleColumns },
+  // Task #1485 — per-org + per-project policy column gating certified-payroll
+  // PDF generation when there are unacknowledged Davis-Bacon rate changes.
+  { name: "rate_change_signing_policy_columns", category: "ADD_COLUMN", fn: ensureRateChangeSigningPolicyColumns },
   { name: "material_cert_submit_columns", category: "ADD_COLUMN", fn: ensureMaterialCertColumns },
   { name: "heavy_civil_enum_values", category: "ADD_ENUM", fn: ensureHeavyCivilEnumValues },
   { name: "project_health_snapshot_columns", category: "ADD_COLUMN", fn: ensureProjectHealthSnapshotColumns },
