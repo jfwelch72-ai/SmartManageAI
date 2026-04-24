@@ -61,6 +61,13 @@ interface StubOpts {
   projectId: string;
 }
 
+interface StubHandles {
+  /** How many times the GET attempts endpoint has been hit. */
+  getAttemptsHits: () => number;
+  /** How many times the POST send-now endpoint has been hit. */
+  getSendNowHits: () => number;
+}
+
 const ATTEMPTS = [
   {
     id: "att-recent-1",
@@ -84,7 +91,9 @@ const ATTEMPTS = [
   },
 ];
 
-async function stubScheduleEndpoints(page: Page, opts: StubOpts) {
+async function stubScheduleEndpoints(page: Page, opts: StubOpts): Promise<StubHandles> {
+  let attemptsHits = 0;
+  let sendNowHits = 0;
   // The card's outer query — needs at least one schedule with a
   // non-null id, otherwise the `<RecentAttemptsCollapsible>` is not
   // rendered (matches the production guard in the card).
@@ -146,6 +155,7 @@ async function stubScheduleEndpoints(page: Page, opts: StubOpts) {
     new RegExp(`/api/projects/${opts.projectId}/log-email-schedules/RFI/attempts(\\?.*)?$`),
     async (route: Route) => {
       if (route.request().method() !== "GET") return route.fallback();
+      attemptsHits += 1;
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -153,6 +163,50 @@ async function stubScheduleEndpoints(page: Page, opts: StubOpts) {
       });
     },
   );
+
+  // Task #1714 — POST send-now stub. The Retry button on each
+  // FAILURE row is wired to the same mutation as the card's main
+  // "Send now" button, so all retry-driven traffic lands here.
+  // Returning a SUCCESS shape lets the card's onSuccess path fire
+  // (success toast + cache invalidation of both the schedule list
+  // and the per-schedule attempts list).
+  await page.route(
+    new RegExp(`/api/projects/${opts.projectId}/log-email-schedules/RFI/send-now$`),
+    async (route: Route) => {
+      if (route.request().method() !== "POST") return route.fallback();
+      sendNowHits += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          result: { status: "SUCCESS", error: null, recipientCount: 3 },
+          schedule: {
+            id: "sched-rfi-stub",
+            organizationId: "org-stub",
+            projectId: opts.projectId,
+            logType: "RFI",
+            cadence: "DAILY",
+            weekday: 1,
+            hour: 8,
+            timezone: "UTC",
+            lastSentAt: "2026-04-23T08:00:00.000Z",
+            lastAttemptAt: "2026-04-23T08:00:00.000Z",
+            lastAttemptStatus: "SUCCESS",
+            lastAttemptError: null,
+            lastAttemptRecipientCount: 3,
+            consecutiveFailureCount: 0,
+            createdAt: "2026-04-01T00:00:00.000Z",
+            updatedAt: "2026-04-23T08:00:00.000Z",
+          },
+        }),
+      });
+    },
+  );
+
+  return {
+    getAttemptsHits: () => attemptsHits,
+    getSendNowHits: () => sendNowHits,
+  };
 }
 
 test.describe("Project settings card — Recent attempts collapsible (Task #1692)", () => {
@@ -207,5 +261,146 @@ test.describe("Project settings card — Recent attempts collapsible (Task #1692
     // both directions, not just opens.
     await toggle.click();
     await expect(failureRow).toHaveCount(0);
+  });
+
+  /**
+   * Task #1714 — end-to-end coverage for the per-row Retry button
+   * added in Task #1664. The button reuses the card's `sendNowMutation`
+   * (POST .../send-now) and on success fires the same toast +
+   * invalidates both the schedule list and the per-schedule attempts
+   * list. Without this spec, a regression in that wiring (e.g.
+   * passing the wrong logType, dropping the cache invalidation) would
+   * only be caught by manual QA.
+   */
+  test("clicking Retry on a failure row issues the send-now POST and re-fetches the attempts list", async ({
+    page,
+  }) => {
+    const project = await createProject(page);
+    const handles = await stubScheduleEndpoints(page, { projectId: project.id });
+
+    await page.goto(`${BASE_URL}/projects/${project.code}?tab=progress-reports`, {
+      waitUntil: "domcontentloaded",
+    });
+
+    await expect(page.getByTestId("card-log-email-schedule")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    // Open the collapsible so the FAILURE row (and its Retry button)
+    // mounts. The body lazy-loads via React Query so wait until the
+    // stubbed attempt rows arrive before continuing.
+    await page.getByTestId("button-toggle-attempt-history-rfi").click();
+    await expect(
+      page.getByTestId(`row-attempt-rfi-${ATTEMPTS[0].id}`),
+    ).toBeVisible();
+    // First fetch from the lazy load — the post-retry refetch should
+    // bump this counter.
+    expect(handles.getAttemptsHits()).toBeGreaterThanOrEqual(1);
+    const attemptsBefore = handles.getAttemptsHits();
+
+    // SUCCESS row has no Retry button — the action column only renders
+    // a button on FAILURE rows. Guard that here so the test fails fast
+    // if the retry contract ever leaks onto non-failure rows.
+    await expect(
+      page.getByTestId(`button-retry-attempt-${ATTEMPTS[1].id}`),
+    ).toHaveCount(0);
+
+    const retry = page.getByTestId(`button-retry-attempt-${ATTEMPTS[0].id}`);
+    await expect(retry).toBeVisible();
+    await expect(retry).toBeEnabled();
+
+    // Click Retry and verify the POST landed at the same endpoint
+    // the card's main "Send now" button uses.
+    await Promise.all([
+      page.waitForRequest(
+        (req) =>
+          req.method() === "POST" &&
+          /\/api\/projects\/[^/]+\/log-email-schedules\/RFI\/send-now$/.test(
+            req.url(),
+          ),
+      ),
+      retry.click(),
+    ]);
+    expect(handles.getSendNowHits()).toBe(1);
+
+    // Success toast — the card's onSuccess path renders a "Log emailed"
+    // toast (LOG_TYPE_LABELS[RFI]) when the stubbed result is SUCCESS.
+    await expect(page.getByText(/Log emailed/i).first()).toBeVisible({
+      timeout: 10_000,
+    });
+
+    // The attempts query is invalidated on success, so React Query
+    // should hit the GET attempts endpoint again. Poll instead of
+    // asserting once — invalidation → refetch is async.
+    await expect
+      .poll(() => handles.getAttemptsHits(), { timeout: 10_000 })
+      .toBeGreaterThan(attemptsBefore);
+  });
+
+  /**
+   * Task #1714 — the project settings card disables Retry while
+   * there are unsaved cadence edits in the same row, mirroring the
+   * `disabledReason: "Save your unsaved changes first…"` guard the
+   * card's main "Send now" button already has. Without this guard a
+   * user could change the cadence in the row, click Retry, and
+   * unintentionally send with the *saved* (stale) configuration.
+   */
+  test("disables Retry while there are unsaved cadence edits in the row", async ({
+    page,
+  }) => {
+    const project = await createProject(page);
+    const handles = await stubScheduleEndpoints(page, { projectId: project.id });
+
+    await page.goto(`${BASE_URL}/projects/${project.code}?tab=progress-reports`, {
+      waitUntil: "domcontentloaded",
+    });
+
+    await expect(page.getByTestId("card-log-email-schedule")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await page.getByTestId("button-toggle-attempt-history-rfi").click();
+    const retry = page.getByTestId(`button-retry-attempt-${ATTEMPTS[0].id}`);
+    await expect(retry).toBeVisible();
+    await expect(retry).toBeEnabled();
+
+    // Dirty the row by switching cadence DAILY → WEEKLY. Radix
+    // renders the SelectContent into a portal, so click the trigger
+    // first then the option by its testid.
+    await page.getByTestId("select-cadence-rfi").click();
+    await page.getByTestId("option-cadence-rfi-weekly").click();
+
+    // The card's `dirty` flag flips and is propagated through to the
+    // shared RecentAttemptsTable as `retry.disabled` — the button
+    // should disable and surface the Save-first hint via its title
+    // attribute.
+    await expect(retry).toBeDisabled();
+    await expect(retry).toHaveAttribute(
+      "title",
+      /Save your unsaved changes first/i,
+    );
+
+    // Defensive: a disabled click must NOT fire the POST. Force the
+    // click past the disabled guard so we're testing the actual
+    // pointer-events / disabled wiring rather than Playwright
+    // refusing to click on our behalf.
+    await retry.click({ force: true }).catch(() => undefined);
+    // Wait for *any* send-now POST with a short timeout. Expect the
+    // wait to time out — that's how we prove no request was issued.
+    // More robust than a single-instant counter check because the
+    // fetch could be in-flight at the moment we sample.
+    const sawPost = await page
+      .waitForRequest(
+        (req) =>
+          req.method() === "POST" &&
+          /\/api\/projects\/[^/]+\/log-email-schedules\/RFI\/send-now$/.test(
+            req.url(),
+          ),
+        { timeout: 1_000 },
+      )
+      .then(() => true)
+      .catch(() => false);
+    expect(sawPost).toBe(false);
+    expect(handles.getSendNowHits()).toBe(0);
   });
 });
