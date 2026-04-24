@@ -45,6 +45,11 @@ interface ScheduleRow {
   lastAttemptStatus: AttemptStatus | null;
   lastAttemptError: string | null;
   lastAttemptRecipientCount: number | null;
+  // Task #1667 — running tally of consecutive FAILURE / NO_RECIPIENTS
+  // attempts since the last SUCCESS. Surfaced inline as a "Failed N
+  // times in a row" badge so admins can spot a chronically broken
+  // schedule before the worker's backstop notification escalates.
+  consecutiveFailureCount: number;
   createdAt: string | null;
   updatedAt: string | null;
 }
@@ -76,7 +81,7 @@ export default function ProjectLogEmailScheduleCard({ projectId }: ProjectLogEma
   const { toast } = useToast();
   const queryKey = useMemo(() => ["/api/projects", projectId, "log-email-schedules"] as const, [projectId]);
 
-  const { data, isLoading, isError } = useQuery<{ schedules: ScheduleRow[] }>({
+  const { data, isLoading, isError } = useQuery<{ schedules: ScheduleRow[]; failureThreshold: number }>({
     queryKey,
     enabled: !!projectId,
   });
@@ -115,6 +120,12 @@ export default function ProjectLogEmailScheduleCard({ projectId }: ProjectLogEma
   }
 
   const schedules = data?.schedules ?? [];
+  // Task #1667 — clamp the env-driven threshold to a sane minimum so a
+  // malformed server response (or an old client cached against a new
+  // server) can't accidentally render the streak badge as "red" on the
+  // very first failure. The server already coerces invalid env values
+  // back to the default 3, so this is purely defense-in-depth.
+  const failureThreshold = Math.max(1, Number(data?.failureThreshold ?? 3) || 3);
 
   return (
     <Card data-testid="card-log-email-schedule">
@@ -130,7 +141,14 @@ export default function ProjectLogEmailScheduleCard({ projectId }: ProjectLogEma
       </CardHeader>
       <CardContent className="space-y-4">
         {schedules.map((s) => (
-          <ScheduleRowEditor key={s.logType} projectId={projectId} schedule={s} queryKey={queryKey} toast={toast} />
+          <ScheduleRowEditor
+            key={s.logType}
+            projectId={projectId}
+            schedule={s}
+            queryKey={queryKey}
+            toast={toast}
+            failureThreshold={failureThreshold}
+          />
         ))}
       </CardContent>
     </Card>
@@ -142,9 +160,12 @@ interface ScheduleRowEditorProps {
   schedule: ScheduleRow;
   queryKey: readonly unknown[];
   toast: ReturnType<typeof useToast>["toast"];
+  // Task #1667 — env-driven repeated-failure threshold. Used solely to
+  // pick the streak badge's color (amber below threshold, red at/above).
+  failureThreshold: number;
 }
 
-function ScheduleRowEditor({ projectId, schedule, queryKey, toast }: ScheduleRowEditorProps) {
+function ScheduleRowEditor({ projectId, schedule, queryKey, toast, failureThreshold }: ScheduleRowEditorProps) {
   const [cadence, setCadence] = useState<Cadence>(schedule.cadence);
   const [weekday, setWeekday] = useState<number>(schedule.weekday);
   const [hour, setHour] = useState<number>(schedule.hour);
@@ -267,10 +288,21 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast }: ScheduleRow
               : <span data-testid={`text-last-sent-${testIdSuffix}`}>No successful send yet.</span>}
           </p>
         </div>
-        <AttemptStatusBadge schedule={schedule} testIdSuffix={testIdSuffix} />
+        <div className="flex items-center gap-2 flex-wrap">
+          <AttemptStatusBadge schedule={schedule} testIdSuffix={testIdSuffix} />
+          <ConsecutiveFailureBadge
+            schedule={schedule}
+            testIdSuffix={testIdSuffix}
+            failureThreshold={failureThreshold}
+          />
+        </div>
       </div>
 
-      <AttemptFailureDetail schedule={schedule} testIdSuffix={testIdSuffix} />
+      <AttemptFailureDetail
+        schedule={schedule}
+        testIdSuffix={testIdSuffix}
+        failureThreshold={failureThreshold}
+      />
 
       {/* Task #1652 — collapsible audit trail of the most recent
           attempts (cron + manual). Only mounted when the schedule
@@ -434,7 +466,15 @@ function AttemptStatusBadge({ schedule, testIdSuffix }: { schedule: ScheduleRow;
   );
 }
 
-function AttemptFailureDetail({ schedule, testIdSuffix }: { schedule: ScheduleRow; testIdSuffix: string }) {
+function AttemptFailureDetail({
+  schedule,
+  testIdSuffix,
+  failureThreshold,
+}: {
+  schedule: ScheduleRow;
+  testIdSuffix: string;
+  failureThreshold: number;
+}) {
   const status = schedule.lastAttemptStatus;
   if (status !== "FAILURE" && status !== "NO_RECIPIENTS") return null;
 
@@ -444,6 +484,13 @@ function AttemptFailureDetail({ schedule, testIdSuffix }: { schedule: ScheduleRo
     : "rounded-md border border-amber-400/60 bg-amber-50 dark:bg-amber-950/30 p-3 text-sm space-y-1";
   const headlineClass = isFailure ? "font-medium text-destructive" : "font-medium text-amber-800 dark:text-amber-300";
   const headline = isFailure ? "Last send failed" : "Last send had no recipients";
+
+  // Task #1667 — when the failure detail panel is already on screen,
+  // surface the streak inline so admins reading the reason also see
+  // how persistent the problem is. The badge above this panel keeps
+  // the at-a-glance signal; this line spells it out in context.
+  const streak = schedule.consecutiveFailureCount ?? 0;
+  const streakAtOrAboveThreshold = streak >= failureThreshold;
 
   return (
     <div className={wrapperClass} data-testid={`alert-attempt-failure-${testIdSuffix}`}>
@@ -457,6 +504,21 @@ function AttemptFailureDetail({ schedule, testIdSuffix }: { schedule: ScheduleRo
       {schedule.lastAttemptError && (
         <p className="text-muted-foreground break-words" data-testid={`text-attempt-error-${testIdSuffix}`}>
           Reason: {schedule.lastAttemptError}
+        </p>
+      )}
+      {streak > 1 && (
+        <p
+          className={
+            streakAtOrAboveThreshold
+              ? "font-medium text-destructive"
+              : "font-medium text-amber-800 dark:text-amber-300"
+          }
+          data-testid={`text-attempt-streak-${testIdSuffix}`}
+        >
+          Failed {streak} times in a row
+          {streakAtOrAboveThreshold && (
+            <> · org admins have been notified</>
+          )}
         </p>
       )}
       {isFailure ? (
@@ -617,6 +679,57 @@ function AttemptHistoryBadge({ status, attemptId }: { status: AttemptStatus; att
   return (
     <Badge variant="destructive" data-testid={`badge-attempt-status-${attemptId}`}>
       <AlertCircle className="w-3 h-3 mr-1" /> Failed
+    </Badge>
+  );
+}
+
+// Task #1667 — at-a-glance streak indicator beside the per-attempt
+// status badge. Hidden when the streak is 0 (no signal worth showing
+// for a healthy schedule). Amber while the streak is below the
+// configured PROJECT_LOG_EMAIL_FAILURE_THRESHOLD so admins can fix the
+// schedule before the worker fans out the org-wide backstop
+// notification; flips to red once the streak reaches/exceeds the
+// threshold to mirror the worker's escalation. The threshold itself
+// is env-driven and surfaced by the GET endpoint, so this badge always
+// matches the worker's actual behaviour even after an env override.
+function ConsecutiveFailureBadge({
+  schedule,
+  testIdSuffix,
+  failureThreshold,
+}: {
+  schedule: ScheduleRow;
+  testIdSuffix: string;
+  failureThreshold: number;
+}) {
+  const streak = schedule.consecutiveFailureCount ?? 0;
+  if (streak <= 0) return null;
+
+  const atOrAboveThreshold = streak >= failureThreshold;
+  const label = `Failed ${streak} time${streak === 1 ? "" : "s"} in a row`;
+  const title = atOrAboveThreshold
+    ? `This schedule has failed ${streak} consecutive sends — at or above the configured alert threshold of ${failureThreshold}, so org admins have been notified.`
+    : `This schedule has failed ${streak} consecutive send${streak === 1 ? "" : "s"}. Org admins are notified once the streak reaches ${failureThreshold}.`;
+
+  if (atOrAboveThreshold) {
+    return (
+      <Badge
+        variant="destructive"
+        data-testid={`badge-failure-streak-${testIdSuffix}`}
+        title={title}
+      >
+        <AlertCircle className="w-3 h-3 mr-1" /> {label}
+      </Badge>
+    );
+  }
+
+  return (
+    <Badge
+      variant="outline"
+      className="border-amber-500 text-amber-700 dark:text-amber-400"
+      data-testid={`badge-failure-streak-${testIdSuffix}`}
+      title={title}
+    >
+      <AlertCircle className="w-3 h-3 mr-1" /> {label}
     </Badge>
   );
 }

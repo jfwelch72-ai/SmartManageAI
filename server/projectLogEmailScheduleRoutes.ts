@@ -34,7 +34,7 @@ import {
 } from "@shared/schema";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { isValidTimezone } from "@shared/timezones";
-import { executeProjectLogEmailScheduleSend } from "./jobs/jobRunner";
+import { executeProjectLogEmailScheduleSend, getProjectLogEmailFailureThreshold } from "./jobs/jobRunner";
 import { buildProjectLogPdfBuffer } from "./services/projectLogService";
 import { sendEmailWithResult } from "./services/emailService";
 import { logError, logInfo } from "./utils/logger";
@@ -204,6 +204,10 @@ router.get(
           lastEditedById: null,
           lastFailureNotifiedAt: null,
           lastFailureNotifiedStatus: null,
+          // Task #1667 — default-OFF rows have never been attempted,
+          // so the failure streak is 0. Surface it explicitly so the
+          // client doesn't have to defensively probe for the field.
+          consecutiveFailureCount: 0,
           createdAt: null,
           updatedAt: null,
           // Task #1649 — even on the default OFF row, the PM (if any)
@@ -214,7 +218,13 @@ router.get(
         };
       });
 
-      res.json({ schedules });
+      // Task #1667 — surface the env-driven repeated-failure
+      // threshold so the client can color the streak badge
+      // (amber below the threshold, red at/above it) without
+      // having to hardcode a magic number that could drift away
+      // from the worker's `getProjectLogEmailFailureThreshold`.
+      const failureThreshold = getProjectLogEmailFailureThreshold();
+      res.json({ schedules, failureThreshold });
     } catch (err) {
       next(err);
     }

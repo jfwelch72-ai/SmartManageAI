@@ -331,3 +331,105 @@ describe("GET /api/projects/:projectId/log-email-schedules — failure notificat
     expect(rfi.failureNotificationRecipients).toEqual([]);
   });
 });
+
+// Task #1667 — the GET endpoint surfaces (a) the per-row
+// `consecutiveFailureCount` so the project settings card can render
+// "Failed N times in a row", and (b) a top-level `failureThreshold`
+// so the card can color the badge to match the worker's escalation.
+describe("GET /api/projects/:projectId/log-email-schedules — failure streak surfacing", () => {
+  it("includes consecutiveFailureCount on persisted rows and 0 on default-OFF rows", async () => {
+    queueProject([{
+      id: PROJECT_ID,
+      name: "Bridge 7",
+      gcOrganizationId: ORG_ID,
+      projectManagerId: null,
+    }]);
+    queueSchedules([
+      {
+        id: "s-rfi",
+        organizationId: ORG_ID,
+        projectId: PROJECT_ID,
+        logType: "RFI",
+        cadence: "WEEKLY",
+        weekday: 1,
+        hour: 8,
+        timezone: "UTC",
+        lastEditedById: null,
+        consecutiveFailureCount: 2,
+      },
+    ]);
+
+    const res = await authedGet();
+    expect(res.status).toBe(200);
+    const rfi = res.body.schedules.find((s: any) => s.logType === "RFI");
+    expect(rfi.consecutiveFailureCount).toBe(2);
+    // The default-OFF SUBMITTAL row was not persisted; the route must
+    // synthesize a 0 streak so the client doesn't have to defensively
+    // probe for an undefined value.
+    const submittal = res.body.schedules.find((s: any) => s.logType === "SUBMITTAL");
+    expect(submittal.consecutiveFailureCount).toBe(0);
+  });
+
+  it("surfaces the env-driven failureThreshold (default 3)", async () => {
+    const original = process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
+    delete process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
+    try {
+      queueProject([{
+        id: PROJECT_ID,
+        name: "Bridge 7",
+        gcOrganizationId: ORG_ID,
+        projectManagerId: null,
+      }]);
+      queueSchedules([]);
+
+      const res = await authedGet();
+      expect(res.status).toBe(200);
+      expect(res.body.failureThreshold).toBe(3);
+    } finally {
+      if (original === undefined) delete process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
+      else process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD = original;
+    }
+  });
+
+  it("respects PROJECT_LOG_EMAIL_FAILURE_THRESHOLD env override", async () => {
+    const original = process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
+    process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD = "5";
+    try {
+      queueProject([{
+        id: PROJECT_ID,
+        name: "Bridge 7",
+        gcOrganizationId: ORG_ID,
+        projectManagerId: null,
+      }]);
+      queueSchedules([]);
+
+      const res = await authedGet();
+      expect(res.status).toBe(200);
+      expect(res.body.failureThreshold).toBe(5);
+    } finally {
+      if (original === undefined) delete process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
+      else process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD = original;
+    }
+  });
+
+  it("falls back to the default threshold when the env override is malformed", async () => {
+    const original = process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
+    process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD = "not-a-number";
+    try {
+      queueProject([{
+        id: PROJECT_ID,
+        name: "Bridge 7",
+        gcOrganizationId: ORG_ID,
+        projectManagerId: null,
+      }]);
+      queueSchedules([]);
+
+      const res = await authedGet();
+      expect(res.status).toBe(200);
+      expect(res.body.failureThreshold).toBe(3);
+    } finally {
+      if (original === undefined) delete process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
+      else process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD = original;
+    }
+  });
+});

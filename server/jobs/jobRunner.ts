@@ -4461,7 +4461,7 @@ async function maybeNotifyProjectLogEmailFailure(args: {
 // re-crosses, which is exactly the "it broke again" signal we want.
 const PROJECT_LOG_EMAIL_FAILURE_DEFAULT_THRESHOLD = 3;
 
-function getProjectLogEmailFailureThreshold(): number {
+export function getProjectLogEmailFailureThreshold(): number {
   const raw = process.env.PROJECT_LOG_EMAIL_FAILURE_THRESHOLD;
   if (!raw) return PROJECT_LOG_EMAIL_FAILURE_DEFAULT_THRESHOLD;
   // Guardrails: the env value must be a *whole positive integer* —
