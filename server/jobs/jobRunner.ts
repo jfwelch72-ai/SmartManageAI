@@ -3,12 +3,12 @@ import crypto from "crypto";
 import * as outboxService from "../integrations/outboxService";
 import * as webhookService from "../integrations/webhookService";
 import * as connectionService from "../integrations/connectionService";
-import { logInfo, logError } from "../utils/logger";
+import { logInfo, logError, logWarn } from "../utils/logger";
 import { recordJobMetrics, loadJobMetricsFromDb, pruneJobMetricsDb } from "../utils/jobMetrics";
 import { evaluateJobMetricAlerts, sendJobMetricAlertQuietHoursDigests } from "../utils/jobMetricAlerts";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
-import { integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, type InsertNotification } from "@shared/schema";
+import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, type InsertNotification } from "@shared/schema";
 import { getEffectivePermissions } from "../auth";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
@@ -763,6 +763,12 @@ export async function processRetentionPolicies() {
   let hardDeleted = 0;
   let policiesProcessed = 0;
   let policiesFailed = 0;
+  // Task #1552 — every (entityType, action) combination outside the
+  // supported set in `SUPPORTED_RETENTION_POLICY_COMBOS` is currently a
+  // no-op at sweep time. We surface those as a separate counter so
+  // operators can see in the dashboard exactly how many policies are
+  // silently doing nothing, and we log a warning per offender.
+  let policiesUnsupported = 0;
 
   const policies = await db.select()
     .from(retentionPolicies)
@@ -778,6 +784,7 @@ export async function processRetentionPolicies() {
       hardDeleted: 0,
       policiesProcessed: 0,
       policiesFailed: 0,
+      policiesUnsupported: 0,
       durationMs: Date.now() - startedAt,
     });
     return;
@@ -804,6 +811,22 @@ export async function processRetentionPolicies() {
         // on this table), so `hardDeleted` mirrors `deleted`.
         deleted += policyDeleted;
         hardDeleted += policyDeleted;
+      } else if (!isSupportedRetentionPolicyCombo(policy.entityType, policy.action)) {
+        // Task #1552 — flag the no-op so operators don't think a
+        // misconfigured policy (e.g. NOTIFICATIONS+DELETE) is actually
+        // running. We still bump `lastRunAt` below so the row's "last
+        // attempt" timestamp stays accurate, but this policy does NOT
+        // count toward `policiesProcessed`.
+        policiesUnsupported += 1;
+        logWarn("Retention policy skipped: unsupported entityType/action", {
+          policyId: policy.id,
+          entityType: policy.entityType,
+          action: policy.action,
+        });
+        await db.update(retentionPolicies)
+          .set({ lastRunAt: new Date(), updatedAt: new Date() })
+          .where(eq(retentionPolicies.id, policy.id));
+        continue;
       }
 
       await db.update(retentionPolicies)
@@ -825,11 +848,14 @@ export async function processRetentionPolicies() {
   // Task #1523 — surface per-run counts so operators see the nightly
   // history on the Jobs dashboard and the Task #1502 over-delete spike
   // rules can fire end-to-end.
+  // Task #1552 — `policiesUnsupported` shows how many enabled policies
+  // had no real implementation this run.
   recordJobMetrics("retention_policy_sweep", {
     deleted,
     hardDeleted,
     policiesProcessed,
     policiesFailed,
+    policiesUnsupported,
     durationMs: Date.now() - startedAt,
   });
 }

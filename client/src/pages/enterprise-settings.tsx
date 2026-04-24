@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { Shield, Key, Clock, Database, Lock, FileText, Users, AlertTriangle, Plus, Save, Play, Trash2 } from "lucide-react";
 import { FeatureGate } from "@/components/FeatureGate";
+import { isSupportedRetentionPolicyCombo } from "@shared/schema";
 
 type Tab = "sso" | "session" | "retention" | "privacy";
 
@@ -328,10 +329,29 @@ function DataRetentionTab() {
                 </tr>
               </thead>
               <tbody>
-                {policies.map((p: any) => (
+                {policies.map((p: any) => {
+                  const effectiveAction = getEditValue(p.id, "action", p.action) as string;
+                  // Task #1552 — flag combos with no real implementation
+                  // in the nightly sweep so operators don't silently
+                  // configure a no-op policy (e.g. NOTIFICATIONS+DELETE).
+                  const isUnsupported = !isSupportedRetentionPolicyCombo(p.entityType, effectiveAction);
+                  return (
                   <tr key={p.id} className="border-b" data-testid={`row-policy-${p.id}`}>
                     <td className="py-3 pr-4">
-                      <Badge variant="outline">{p.entityType}</Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline">{p.entityType}</Badge>
+                        {isUnsupported && (
+                          <Badge
+                            variant="destructive"
+                            className="gap-1"
+                            title={`The nightly sweep does not implement ${p.entityType} + ${effectiveAction}. This policy will not delete or archive any rows.`}
+                            data-testid={`badge-unsupported-policy-${p.id}`}
+                          >
+                            <AlertTriangle className="h-3 w-3" />
+                            No-op
+                          </Badge>
+                        )}
+                      </div>
                     </td>
                     <td className="py-3 pr-4">
                       <Input
@@ -347,7 +367,7 @@ function DataRetentionTab() {
                     </td>
                     <td className="py-3 pr-4">
                       <Select
-                        value={getEditValue(p.id, "action", p.action) as string}
+                        value={effectiveAction}
                         onValueChange={(v) => setEditedPolicies((prev) => ({
                           ...prev,
                           [p.id]: { ...prev[p.id], action: v },
@@ -362,6 +382,14 @@ function DataRetentionTab() {
                           <SelectItem value="ANONYMIZE">Anonymize</SelectItem>
                         </SelectContent>
                       </Select>
+                      {isUnsupported && (
+                        <p
+                          className="mt-1 text-xs text-destructive"
+                          data-testid={`text-unsupported-policy-hint-${p.id}`}
+                        >
+                          Not implemented yet — this combination will be skipped at run time.
+                        </p>
+                      )}
                     </td>
                     <td className="py-3 pr-4">
                       <Badge variant={p.enabled ? "default" : "secondary"}>{p.enabled ? "Enabled" : "Disabled"}</Badge>
@@ -381,7 +409,8 @@ function DataRetentionTab() {
                       </Button>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

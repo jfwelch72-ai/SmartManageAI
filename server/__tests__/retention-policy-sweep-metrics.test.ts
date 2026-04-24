@@ -170,6 +170,76 @@ describe("processRetentionPolicies metrics (Task #1523)", () => {
     expect(metrics.samples[0].counters.policiesFailed).toBe(0);
   });
 
+  it("records `policiesUnsupported` and warns when a policy has an unimplemented (entityType, action) combo (Task #1552)", async () => {
+    // NOTIFICATIONS+DELETE has no implementation in
+    // `processRetentionPolicies` — before Task #1552 this silently
+    // contributed `0` to the deletion counters and counted as a
+    // "processed" policy in the dashboard. The sweep must now bucket
+    // it as `policiesUnsupported` and emit a warning so operators
+    // notice the misconfiguration.
+    policyRows.push(
+      {
+        id: "policy-audit-90d",
+        enabled: true,
+        entityType: "AUDIT_LOGS",
+        action: "DELETE",
+        retentionDays: 90,
+      },
+      {
+        id: "policy-notifications-30d",
+        enabled: true,
+        entityType: "NOTIFICATIONS",
+        action: "DELETE",
+        retentionDays: 30,
+      },
+      {
+        id: "policy-audit-archive",
+        enabled: true,
+        entityType: "AUDIT_LOGS",
+        action: "ARCHIVE",
+        retentionDays: 365,
+      },
+    );
+    auditRows.push({ id: "audit-1", createdAt: new Date("2024-01-01T00:00:00Z") });
+
+    const { processRetentionPolicies } = await import("../jobs/jobRunner");
+    const { resetJobMetrics, getJobMetrics } = await import("../utils/jobMetrics");
+    const { logWarn } = await import("../utils/logger");
+    resetJobMetrics();
+    (logWarn as ReturnType<typeof vi.fn>).mockClear();
+
+    await processRetentionPolicies();
+
+    const metrics = getJobMetrics("retention_policy_sweep");
+    expect(metrics.samples).toHaveLength(1);
+    const counters = metrics.samples[0].counters;
+    expect(counters.deleted).toBe(1);
+    expect(counters.hardDeleted).toBe(1);
+    // Only the supported AUDIT_LOGS+DELETE policy actually ran — the
+    // other two are no-ops and must NOT inflate `policiesProcessed`.
+    expect(counters.policiesProcessed).toBe(1);
+    expect(counters.policiesFailed).toBe(0);
+    expect(counters.policiesUnsupported).toBe(2);
+    // All three rows still get their `lastRunAt` bumped (so the UI's
+    // "last attempt" timestamp stays accurate).
+    expect(updateCalls).toBe(3);
+    // Each unsupported policy should produce its own warning so
+    // operators can find the offender in the logs.
+    expect((logWarn as ReturnType<typeof vi.fn>).mock.calls.length).toBe(2);
+  });
+
+  it("records `policiesUnsupported: 0` on the empty-policies path (Task #1552)", async () => {
+    const { processRetentionPolicies } = await import("../jobs/jobRunner");
+    const { resetJobMetrics, getJobMetrics } = await import("../utils/jobMetrics");
+    resetJobMetrics();
+
+    await processRetentionPolicies();
+
+    const metrics = getJobMetrics("retention_policy_sweep");
+    expect(metrics.samples).toHaveLength(1);
+    expect(metrics.samples[0].counters.policiesUnsupported).toBe(0);
+  });
+
   it("records zero deletions when an enabled policy matches no rows", async () => {
     policyRows.push({
       id: "policy-audit-90d",
