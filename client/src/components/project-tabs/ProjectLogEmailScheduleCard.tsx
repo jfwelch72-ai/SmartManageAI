@@ -33,6 +33,30 @@ type Cadence = "OFF" | "DAILY" | "WEEKLY" | "BIWEEKLY";
 type LogType = "RFI" | "SUBMITTAL";
 type AttemptStatus = "SUCCESS" | "FAILURE" | "NO_RECIPIENTS";
 
+/**
+ * Task #1733 — client-side cooldown that mirrors the server's 30s
+ * `send-now` debounce (see `server/projectLogEmailScheduleRoutes.ts`).
+ * After any 2xx response we disable the "Send now" button for 30s and
+ * surface a "Cooldown Ns…" countdown so a single admin doesn't fire
+ * back-to-back clicks and trip the destructive "Please wait N seconds"
+ * 429 toast on their own action. The 429 fallback toast still covers
+ * cross-tab and cross-admin races. Mirrors the implementation on the
+ * org-wide failures dashboard (Task #1716, see
+ * `client/src/pages/admin-log-email-failures.tsx`).
+ *
+ * The timestamp lives in a module-level Map so it survives the row
+ * briefly remounting (e.g. when the parent query refetches after the
+ * send mutation invalidates its cache).
+ */
+const SEND_NOW_COOLDOWN_MS = 30_000;
+const lastSendNowAt = new Map<string, number>();
+
+// Test-only escape hatch so unit tests can clear the in-memory cooldown
+// map between cases without resorting to module re-imports.
+export function __resetSendNowCooldownForTests() {
+  lastSendNowAt.clear();
+}
+
 interface ScheduleRow {
   id: string | null;
   organizationId: string;
@@ -193,6 +217,23 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast, failureThresh
     setTimezone(schedule.timezone);
   }, [schedule.cadence, schedule.weekday, schedule.hour, schedule.timezone]);
 
+  // Task #1733 — derive the remaining client-side cooldown from the
+  // module-level Map. `now` ticks once per second only while a cooldown
+  // is active so the countdown label updates and the button re-enables
+  // itself when the window elapses.
+  const cooldownKey = `${projectId}:${schedule.logType}`;
+  const [now, setNow] = useState(() => Date.now());
+  const lastAt = lastSendNowAt.get(cooldownKey);
+  const remainingCooldownMs =
+    lastAt !== undefined ? Math.max(0, SEND_NOW_COOLDOWN_MS - (now - lastAt)) : 0;
+  const cooldownSeconds = Math.ceil(remainingCooldownMs / 1000);
+  const isCoolingDown = remainingCooldownMs > 0;
+  useEffect(() => {
+    if (!isCoolingDown) return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [isCoolingDown]);
+
   const saveMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest(
@@ -229,6 +270,13 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast, failureThresh
       }>;
     },
     onSuccess: (data) => {
+      // Task #1733 — the server only reaches this branch after
+      // successfully consuming its own 30s debounce slot, so start the
+      // matching client-side cooldown for every 2xx outcome (SUCCESS /
+      // NO_RECIPIENTS / transport FAILURE / PROJECT_NOT_FOUND).
+      lastSendNowAt.set(cooldownKey, Date.now());
+      setNow(Date.now());
+
       const { status, error, recipientCount } = data.result;
       const label = LOG_TYPE_LABELS[schedule.logType];
       if (status === "SUCCESS") {
@@ -318,8 +366,17 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast, failureThresh
   const canSendNow = schedule.cadence !== "OFF" && schedule.id !== null;
   // Disable the button while there are unsaved cadence/recipient
   // edits — sending the *current saved* configuration after the user
-  // has just changed it would be misleading.
-  const sendNowDisabled = !canSendNow || dirty || sendNowMutation.isPending || saveMutation.isPending;
+  // has just changed it would be misleading. Task #1733 also disables
+  // it during the client-side cooldown that mirrors the server's 30s
+  // debounce, so the button reflects the real "I can fire this now"
+  // state instead of looking ready and then surfacing a destructive
+  // 429 toast.
+  const sendNowDisabled =
+    !canSendNow ||
+    dirty ||
+    sendNowMutation.isPending ||
+    saveMutation.isPending ||
+    isCoolingDown;
 
   // Task #1679 — the "Reset streak" button only makes sense when
   // there's actually a streak on the row. We also require a
@@ -395,7 +452,9 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast, failureThresh
                   disabled: sendNowDisabled,
                   disabledReason: dirty
                     ? "Save your unsaved changes first, then retry."
-                    : null,
+                    : isCoolingDown
+                      ? `Cooldown ${cooldownSeconds}s…`
+                      : null,
                 }
               : null
           }
@@ -500,7 +559,9 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast, failureThresh
             title={
               dirty
                 ? "Save your changes first, then trigger a manual send."
-                : `Email the ${LOG_TYPE_LABELS[schedule.logType].toLowerCase()} now using the saved cadence's recipients.`
+                : isCoolingDown
+                  ? `Waiting for the ${SEND_NOW_COOLDOWN_MS / 1000}s server-side debounce — ${cooldownSeconds}s remaining.`
+                  : `Email the ${LOG_TYPE_LABELS[schedule.logType].toLowerCase()} now using the saved cadence's recipients.`
             }
           >
             {sendNowMutation.isPending ? (
@@ -508,7 +569,7 @@ function ScheduleRowEditor({ projectId, schedule, queryKey, toast, failureThresh
             ) : (
               <Send className="w-3 h-3 mr-2" />
             )}
-            Send now
+            {isCoolingDown ? `Cooldown ${cooldownSeconds}s…` : "Send now"}
           </Button>
         )}
         <Button
