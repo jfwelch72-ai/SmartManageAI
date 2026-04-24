@@ -274,24 +274,44 @@ export default function MyWorkPage() {
   const isManager =
     user?.role === "ADMIN" || user?.role === "MANAGER" || user?.role === "SUPERINTENDENT" || user?.role === "SUPER_ADMIN";
 
+  const groupingStorageKey = (v: ViewType) => `my-work-grouping:${v}`;
+  const readGroupingForView = (v: ViewType): Grouping => {
+    if (typeof window === "undefined") return "none";
+    const perView = window.localStorage.getItem(groupingStorageKey(v));
+    if (GROUPING_OPTIONS.includes(perView as Grouping)) return perView as Grouping;
+    // Migrate legacy single key: seed table view with the old value, then drop it.
+    const legacy = window.localStorage.getItem("my-work-grouping");
+    if (legacy && GROUPING_OPTIONS.includes(legacy as Grouping)) {
+      if (v === "table") {
+        try {
+          window.localStorage.setItem(groupingStorageKey("table"), legacy);
+          window.localStorage.removeItem("my-work-grouping");
+        } catch {}
+        return legacy as Grouping;
+      }
+    }
+    return "none";
+  };
+
   const [view, setView] = useState<ViewType>(() => {
     if (typeof window === "undefined") return "table";
     const saved = window.localStorage.getItem("my-work-view");
     return saved === "kanban" || saved === "calendar" || saved === "table" ? (saved as ViewType) : "table";
   });
+
+  const [grouping, setGrouping] = useState<Grouping>(() => readGroupingForView(
+    (typeof window !== "undefined" && (window.localStorage.getItem("my-work-view") as ViewType)) || "table",
+  ));
+
   const handleViewChange = (v: ViewType) => {
     setView(v);
     if (typeof window !== "undefined") window.localStorage.setItem("my-work-view", v);
+    setGrouping(readGroupingForView(v));
   };
 
-  const [grouping, setGrouping] = useState<Grouping>(() => {
-    if (typeof window === "undefined") return "none";
-    const saved = window.localStorage.getItem("my-work-grouping");
-    return GROUPING_OPTIONS.includes(saved as Grouping) ? (saved as Grouping) : "none";
-  });
-  const handleGroupingChange = (g: Grouping) => {
+  const handleGroupingChange = (g: Grouping, targetView: ViewType = view) => {
     setGrouping(g);
-    if (typeof window !== "undefined") window.localStorage.setItem("my-work-grouping", g);
+    if (typeof window !== "undefined") window.localStorage.setItem(groupingStorageKey(targetView), g);
   };
 
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
@@ -544,11 +564,12 @@ export default function MyWorkPage() {
             extraFields={["grouping"]}
             current={{ view, filters, extras: { grouping } }}
             onApply={(applied) => {
-              handleViewChange(applied.view === "map" ? "table" : applied.view);
+              const nextView: ViewType = applied.view === "map" ? "table" : applied.view;
+              handleViewChange(nextView);
               setFilters({ ...DEFAULT_FILTERS, ...(applied.filters as Partial<Filters>) });
               const g = applied.extras?.grouping;
               if (typeof g === "string" && (GROUPING_OPTIONS as readonly string[]).includes(g)) {
-                handleGroupingChange(g as Grouping);
+                handleGroupingChange(g as Grouping, nextView);
               }
             }}
           />
