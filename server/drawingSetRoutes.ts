@@ -339,6 +339,109 @@ router.get("/drawing-sets/:setId/compare", requireAuth, async (req: AuthRequest,
   }
 });
 
+// Task #1894 — atomic "Re-pin all to latest" action. The Compare dialog
+// (and the per-card stale badge) surface a one-click "Update N stale
+// sheets" button. The previous client-side approach rebuilt the entire
+// pinned-items list and POST'd `/items/bulk`, which could collide with
+// the unique (drawing_set_id, sheet_id) constraint and fail with HTTP
+// 409 whenever the latest revision of a stale row was already pinned as
+// another item in the same set.
+//
+// This endpoint:
+//   * scopes the set to the caller's organization (404 otherwise);
+//   * derives stale items from `(sheet.sheet_name → latest active sheet)`;
+//   * within a single transaction:
+//       - deletes stale items whose latest is already pinned in the set
+//         (avoiding the 23505 dedupe collision);
+//       - updates the remaining stale items in-place to the latest
+//         sheet id (which preserves their `pinned_at` ordering);
+//   * returns `{ updated, replaced, removed }` so the client toast can
+//     report the exact number of sheets that were re-pinned.
+//
+// Non-stale pinned items are left untouched, satisfying the
+// "without losing other pinned selections" requirement.
+router.post("/drawing-sets/:setId/repin-stale", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res, next) => {
+  try {
+    const orgId = getOrgId(req, res);
+    if (!orgId) return;
+
+    const [set] = await db.select().from(drawingSets)
+      .where(and(
+        eq(drawingSets.id, req.params.setId),
+        eq(drawingSets.organizationId, orgId)
+      ));
+    if (!set) return res.status(404).json({ error: "Drawing set not found" });
+
+    const items = await db.select().from(drawingSetItems)
+      .where(eq(drawingSetItems.drawingSetId, req.params.setId));
+    if (items.length === 0) return res.json({ updated: 0, replaced: 0, removed: 0 });
+
+    const sheetIds = items.map((i) => i.sheetId);
+    const pinnedSheets = await db.select().from(takeoffSheets)
+      .where(inArray(takeoffSheets.id, sheetIds));
+    const pinnedMap = new Map(pinnedSheets.map((s) => [s.id, s]));
+
+    const allProjectSheets = await db.select().from(takeoffSheets)
+      .where(eq(takeoffSheets.projectId, set.projectId));
+    const activeByName = new Map<string, typeof allProjectSheets[0]>();
+    for (const s of allProjectSheets) {
+      if (s.isActive && s.sheetName) activeByName.set(s.sheetName, s);
+    }
+
+    // Track which sheetIds are currently pinned in this set so we can
+    // dedupe before issuing UPDATE/DELETE statements (avoids the unique
+    // constraint conflict that would otherwise surface as HTTP 409).
+    const currentPinnedIds = new Set(items.map((i) => i.sheetId));
+    const itemsToDelete: string[] = [];
+    const itemsToUpdate: Array<{ id: string; newSheetId: string }> = [];
+
+    for (const item of items) {
+      const pinnedSheet = pinnedMap.get(item.sheetId);
+      if (!pinnedSheet?.sheetName) continue;
+      const latest = activeByName.get(pinnedSheet.sheetName);
+      if (!latest || latest.id === item.sheetId) continue; // already up-to-date or nothing to swap to
+      if (currentPinnedIds.has(latest.id)) {
+        // Latest revision is already pinned as a separate item — drop the
+        // stale row instead of trying (and failing) to update into a
+        // duplicate (drawingSetId, sheetId) pair.
+        itemsToDelete.push(item.id);
+        currentPinnedIds.delete(item.sheetId);
+      } else {
+        itemsToUpdate.push({ id: item.id, newSheetId: latest.id });
+        currentPinnedIds.delete(item.sheetId);
+        currentPinnedIds.add(latest.id);
+      }
+    }
+
+    if (itemsToDelete.length === 0 && itemsToUpdate.length === 0) {
+      return res.json({ updated: 0, replaced: 0, removed: 0 });
+    }
+
+    await db.transaction(async (tx) => {
+      if (itemsToDelete.length > 0) {
+        await tx.delete(drawingSetItems)
+          .where(inArray(drawingSetItems.id, itemsToDelete));
+      }
+      for (const u of itemsToUpdate) {
+        await tx.update(drawingSetItems)
+          .set({ sheetId: u.newSheetId, revisionId: null })
+          .where(eq(drawingSetItems.id, u.id));
+      }
+    });
+
+    res.json({
+      updated: itemsToDelete.length + itemsToUpdate.length,
+      replaced: itemsToUpdate.length,
+      removed: itemsToDelete.length,
+    });
+  } catch (err: any) {
+    if (err?.code === "23505") {
+      return res.status(409).json({ error: "Sheet already in this drawing set" });
+    }
+    next(err);
+  }
+});
+
 router.get("/drawing-sets/:setId/sheet-status", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const orgId = getOrgId(req, res);

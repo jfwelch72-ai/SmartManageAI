@@ -433,13 +433,12 @@ const CompareSetDialog = memo(function CompareSetDialog({
     },
   });
 
-  // Task #1880 — accept-latest mutation re-pins one or more sheets in this
-  // set to their newer active revisions. We rebuild the full pinned-items
-  // list (swapping stale sheetIds for their latest counterparts) and send
-  // it through the existing bulk endpoint, mirroring the bulk-replace
-  // pattern in ManageSetDialog. After success we invalidate the compare,
-  // items, and sheet-status queries so the dialog and underlying sheet
-  // list immediately reflect the new pinned state.
+  // Task #1880 — accept-latest (single row) mutation re-pins one stale
+  // sheet to its newer active revision. We rebuild the full pinned-items
+  // list with that one swap applied and send it through the existing bulk
+  // endpoint. After success we invalidate the compare, items, and
+  // sheet-status queries so the dialog and underlying sheet list
+  // immediately reflect the new pinned state.
   const acceptLatestMutation = useMutation({
     mutationFn: async ({ swaps }: { swaps: Map<string, string> }) => {
       if (!compareData) throw new Error("No compare data loaded");
@@ -471,6 +470,45 @@ const CompareSetDialog = memo(function CompareSetDialog({
     },
     onSettled: () => {
       setAcceptingItemId(null);
+    },
+  });
+
+  // Task #1894 — "Re-pin all stale to latest" mutation hits a dedicated
+  // server endpoint (`/repin-stale`) that recomputes stale rows
+  // server-side and updates them atomically inside a transaction. This
+  // avoids the unique-constraint (HTTP 409) hazard the previous
+  // client-side bulk-replace approach had whenever the latest revision
+  // of one stale row was already pinned as another item in the set.
+  const repinStaleMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(
+        "POST",
+        `/api/projects/drawing-sets/${setId}/repin-stale`,
+      );
+      return res.json() as Promise<{ updated: number; replaced: number; removed: number }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "compare"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "sheet-status"] });
+      const count = data?.updated ?? 0;
+      toast({
+        title:
+          count === 0
+            ? "No stale sheets to update"
+            : count === 1
+              ? "Re-pinned 1 sheet to latest"
+              : `Re-pinned ${count} sheets to latest`,
+      });
+    },
+    onError: (err: unknown) => {
+      toast({
+        title: "Error",
+        description: bulkPinErrorDescription(err, {}),
+        variant: "destructive",
+      });
+    },
+    onSettled: () => {
       setAcceptingAll(false);
     },
   });
@@ -488,16 +526,13 @@ const CompareSetDialog = memo(function CompareSetDialog({
 
   const handleAcceptAllNewer = useCallback(() => {
     if (!compareData) return;
-    const swaps = new Map<string, string>();
-    for (const row of compareData.comparison) {
-      if (row.hasNewerRevision && row.latestSheetId) {
-        swaps.set(row.itemId, row.latestSheetId);
-      }
-    }
-    if (swaps.size === 0) return;
+    const hasAny = compareData.comparison.some(
+      (row) => row.hasNewerRevision && row.latestSheetId,
+    );
+    if (!hasAny) return;
     setAcceptingAll(true);
-    acceptLatestMutation.mutate({ swaps });
-  }, [compareData, acceptLatestMutation]);
+    repinStaleMutation.mutate();
+  }, [compareData, repinStaleMutation]);
 
   const newerCount = useMemo(
     () =>
@@ -535,11 +570,17 @@ const CompareSetDialog = memo(function CompareSetDialog({
                         ? "1 sheet has a newer revision available."
                         : `${newerCount} sheets have newer revisions available.`}
                     </span>
+                    {/* Task #1894 — one-click "Re-pin to latest" focuses on
+                        only the stale rows (driven by the new server
+                        endpoint) so non-stale pinned items are preserved. */}
                     <Button
                       size="sm"
                       variant="default"
                       onClick={handleAcceptAllNewer}
-                      disabled={acceptLatestMutation.isPending}
+                      disabled={
+                        acceptLatestMutation.isPending ||
+                        repinStaleMutation.isPending
+                      }
                       data-testid="button-accept-all-newer"
                     >
                       {acceptingAll ? (
@@ -547,7 +588,7 @@ const CompareSetDialog = memo(function CompareSetDialog({
                       ) : (
                         <Check className="w-3.5 h-3.5 mr-1" />
                       )}
-                      Accept all newer ({newerCount})
+                      Re-pin {newerCount} stale to latest
                     </Button>
                   </div>
                 )}
@@ -558,7 +599,10 @@ const CompareSetDialog = memo(function CompareSetDialog({
                       item={item}
                       onAcceptLatest={handleAcceptLatest}
                       isAccepting={acceptingItemId === item.itemId}
-                      canAccept={!acceptLatestMutation.isPending}
+                      canAccept={
+                        !acceptLatestMutation.isPending &&
+                        !repinStaleMutation.isPending
+                      }
                     />
                   ))}
                 </div>
@@ -575,27 +619,67 @@ const CompareSetDialog = memo(function CompareSetDialog({
   );
 });
 
-// Task #1879 — Per-card "out of date" indicator. Reuses the existing
-// `/compare` query (and its query key) so opening the compare dialog
-// after viewing the badge serves cached data and avoids a second round
-// trip. Shows nothing while loading or when the set has no pinned
-// sheets, an amber "N newer" badge when one or more pinned sheets have
-// a newer revision available, and a green "Up to date" badge otherwise.
+// Task #1879 / #1894 — Per-card "out of date" indicator. Reuses the
+// existing `/compare` query (and its query key) so opening the compare
+// dialog after viewing the badge serves cached data and avoids a second
+// round trip. Shows nothing while loading or when the set has no pinned
+// sheets, an amber "N newer available" badge (paired with an admin-only
+// one-click "Re-pin to latest" button per Task #1894) when one or more
+// pinned sheets have a newer revision available, and a green "Up to
+// date" badge otherwise.
 interface SetStaleBadgeProps {
   setId: string;
   onOpenCompare: (setId: string) => void;
+  canRepin: boolean;
 }
 
 const SetStaleBadge = memo(function SetStaleBadge({
   setId,
   onOpenCompare,
+  canRepin,
 }: SetStaleBadgeProps) {
+  const { toast } = useToast();
   const { data, isLoading } = useQuery<ComparisonResult>({
     queryKey: ["/api/projects", "drawing-sets", setId, "compare"],
     queryFn: async () => {
       const res = await fetch(`/api/projects/drawing-sets/${setId}/compare`);
       if (!res.ok) throw new Error("Failed to compare");
       return res.json();
+    },
+  });
+
+  // Task #1894 — one-click "Re-pin to latest" action surfaced directly
+  // from the per-card stale badge so users can resolve staleness without
+  // first opening the Compare dialog. Posts to the dedicated server
+  // endpoint which dedupes/scopes atomically (no HTTP 409 hazard).
+  const repinStaleMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest(
+        "POST",
+        `/api/projects/drawing-sets/${setId}/repin-stale`,
+      );
+      return res.json() as Promise<{ updated: number; replaced: number; removed: number }>;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "compare"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "items"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "sheet-status"] });
+      const count = result?.updated ?? 0;
+      toast({
+        title:
+          count === 0
+            ? "No stale sheets to update"
+            : count === 1
+              ? "Re-pinned 1 sheet to latest"
+              : `Re-pinned ${count} sheets to latest`,
+      });
+    },
+    onError: (err: unknown) => {
+      toast({
+        title: "Error",
+        description: bulkPinErrorDescription(err, {}),
+        variant: "destructive",
+      });
     },
   });
 
@@ -620,35 +704,76 @@ const SetStaleBadge = memo(function SetStaleBadge({
     [onOpenCompare, setId],
   );
 
+  const handleRepinClick = useCallback(
+    (e: ReactMouseEvent) => {
+      e.stopPropagation();
+      if (repinStaleMutation.isPending) return;
+      repinStaleMutation.mutate();
+    },
+    [repinStaleMutation],
+  );
+
   if (isLoading || !data || data.comparison.length === 0) return null;
 
   const newerCount = data.comparison.filter((c) => c.hasNewerRevision).length;
+  // Only rows with an actual `latestSheetId` are actionable for re-pin.
+  const actionableNewerCount = data.comparison.filter(
+    (c) => c.hasNewerRevision && c.latestSheetId,
+  ).length;
   const totalPinned = data.comparison.length;
 
   if (newerCount > 0) {
     return (
       <TooltipProvider delayDuration={200}>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Badge
-              variant="outline"
-              role="button"
-              tabIndex={0}
-              onClick={handleClick}
-              onKeyDown={handleKeyDown}
-              className="text-xs border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400 cursor-pointer hover-elevate active-elevate-2"
-              data-testid={`badge-set-stale-${setId}`}
-            >
-              <AlertTriangle className="w-3 h-3 mr-0.5" />
-              {newerCount} newer available
-            </Badge>
-          </TooltipTrigger>
-          <TooltipContent>
-            {newerCount} of {totalPinned} pinned{" "}
-            {totalPinned === 1 ? "sheet has" : "sheets have"} a newer revision
-            available. Click to compare.
-          </TooltipContent>
-        </Tooltip>
+        <div className="flex items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge
+                variant="outline"
+                role="button"
+                tabIndex={0}
+                onClick={handleClick}
+                onKeyDown={handleKeyDown}
+                className="text-xs border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400 cursor-pointer hover-elevate active-elevate-2"
+                data-testid={`badge-set-stale-${setId}`}
+              >
+                <AlertTriangle className="w-3 h-3 mr-0.5" />
+                {newerCount} newer available
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              {newerCount} of {totalPinned} pinned{" "}
+              {totalPinned === 1 ? "sheet has" : "sheets have"} a newer revision
+              available. Click to compare.
+            </TooltipContent>
+          </Tooltip>
+          {canRepin && actionableNewerCount > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-5 px-1.5 text-xs gap-0.5 border-amber-400 text-amber-700 dark:text-amber-400"
+                  onClick={handleRepinClick}
+                  disabled={repinStaleMutation.isPending}
+                  data-testid={`button-repin-stale-${setId}`}
+                >
+                  {repinStaleMutation.isPending ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <Check className="w-3 h-3" />
+                  )}
+                  Re-pin to latest
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                Replace only the {actionableNewerCount} stale{" "}
+                {actionableNewerCount === 1 ? "sheet" : "sheets"} with the
+                latest active revision. Other pinned sheets are left untouched.
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
       </TooltipProvider>
     );
   }
@@ -833,6 +958,7 @@ export default function DrawingSetsPanel({
                       <SetStaleBadge
                         setId={set.id}
                         onOpenCompare={handleOpenCompare}
+                        canRepin={isAdmin}
                       />
                     </div>
                     {set.description && (

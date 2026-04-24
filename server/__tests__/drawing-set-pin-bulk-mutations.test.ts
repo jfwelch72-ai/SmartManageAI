@@ -455,3 +455,151 @@ describe("Task #1683 — swap-to-latest delete-then-add sequence", () => {
     expect(dupOld.status).toBe(409);
   });
 });
+
+// Task #1894 — POST /api/projects/drawing-sets/:setId/repin-stale
+// One-click "Re-pin all to latest" action surfaced from the new stale
+// badge and the Compare dialog. The endpoint must:
+//   * enforce auth + canEditProjects (no anonymous / FIELD_WORKER access);
+//   * scope by organization (404 for cross-org sets);
+//   * only swap stale rows in-place (preserves non-stale pinned items);
+//   * survive the dedupe edge case where the latest revision of one
+//     stale row is already pinned as another item — without HTTP 409.
+describe("Task #1894 — POST /api/projects/drawing-sets/:setId/repin-stale", () => {
+  it("rejects unauthenticated callers with 401", async () => {
+    const res = await request(app)
+      .post(`/api/projects/drawing-sets/${seed.drawingSetId}/repin-stale`);
+    expect(res.status).toBe(401);
+  });
+
+  it("rejects FIELD_WORKER role with 403", async () => {
+    const res = await request(app)
+      .post(`/api/projects/drawing-sets/${seed.drawingSetId}/repin-stale`)
+      .set("Cookie", `auth_token=${seed.fieldWorkerToken}`);
+    expect(res.status).toBe(403);
+  });
+
+  it("returns 404 for a drawing set in another organization", async () => {
+    const slug = `${TEST_PREFIX}other-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const [otherOrg] = await db.insert(organizations).values({
+      name: `Other ${slug}`,
+      slug,
+      tradeType: "GENERAL_CONTRACTOR",
+      onboardingStatus: "COMPLETED",
+      isActive: true,
+    }).returning();
+    const [otherProj] = await db.insert(projects).values({
+      name: `Other Proj ${slug}`,
+      code: `${TEST_PREFIX}OP-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      clientName: "x",
+      gcOrganizationId: otherOrg.id,
+      status: "ACTIVE",
+    }).returning();
+    const [otherSet] = await db.insert(drawingSets).values({
+      projectId: otherProj.id,
+      organizationId: otherOrg.id,
+      name: `Other Set ${slug}`,
+      description: null,
+      isPrimary: false,
+      createdByUserId: null,
+    }).returning();
+
+    const res = await request(app)
+      .post(`/api/projects/drawing-sets/${otherSet.id}/repin-stale`)
+      .set("Cookie", `auth_token=${seed.adminToken}`);
+    expect(res.status).toBe(404);
+  });
+
+  it("returns updated:0 when there are no pinned items", async () => {
+    const res = await request(app)
+      .post(`/api/projects/drawing-sets/${seed.drawingSetId}/repin-stale`)
+      .set("Cookie", `auth_token=${seed.adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ updated: 0, replaced: 0, removed: 0 });
+  });
+
+  it("returns updated:0 when no pinned items are stale", async () => {
+    // Pin only the up-to-date sheet (sheet B is active, no superseding revision).
+    await request(app)
+      .post(`/api/projects/drawing-sets/${seed.drawingSetId}/items`)
+      .set("Cookie", `auth_token=${seed.adminToken}`)
+      .set("Content-Type", "application/json")
+      .send({ sheetId: seed.sheetBId })
+      .expect(201);
+
+    const res = await request(app)
+      .post(`/api/projects/drawing-sets/${seed.drawingSetId}/repin-stale`)
+      .set("Cookie", `auth_token=${seed.adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ updated: 0, replaced: 0, removed: 0 });
+
+    const rows = await db.select().from(drawingSetItems)
+      .where(eq(drawingSetItems.drawingSetId, seed.drawingSetId));
+    expect(rows.map((r) => r.sheetId)).toEqual([seed.sheetBId]);
+  });
+
+  it("swaps stale rows in-place to the latest active revision, leaving non-stale pinned items untouched", async () => {
+    // Pin a stale row (Av1) and a non-stale row (B).
+    await request(app)
+      .post(`/api/projects/drawing-sets/${seed.drawingSetId}/items`)
+      .set("Cookie", `auth_token=${seed.adminToken}`)
+      .set("Content-Type", "application/json")
+      .send({ sheetId: seed.sheetAId })
+      .expect(201);
+    await request(app)
+      .post(`/api/projects/drawing-sets/${seed.drawingSetId}/items`)
+      .set("Cookie", `auth_token=${seed.adminToken}`)
+      .set("Content-Type", "application/json")
+      .send({ sheetId: seed.sheetBId })
+      .expect(201);
+
+    const before = await db.select().from(drawingSetItems)
+      .where(eq(drawingSetItems.drawingSetId, seed.drawingSetId));
+    const staleItemId = before.find((r) => r.sheetId === seed.sheetAId)!.id;
+    const nonStaleItemId = before.find((r) => r.sheetId === seed.sheetBId)!.id;
+
+    const res = await request(app)
+      .post(`/api/projects/drawing-sets/${seed.drawingSetId}/repin-stale`)
+      .set("Cookie", `auth_token=${seed.adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ updated: 1, replaced: 1, removed: 0 });
+
+    const after = await db.select().from(drawingSetItems)
+      .where(eq(drawingSetItems.drawingSetId, seed.drawingSetId));
+    const sheetIds = new Set(after.map((r) => r.sheetId));
+    expect(sheetIds).toEqual(new Set([seed.sheetAv2Id, seed.sheetBId]));
+    // Stale row was updated in place (same item id, new sheet id).
+    const swapped = after.find((r) => r.id === staleItemId);
+    expect(swapped?.sheetId).toBe(seed.sheetAv2Id);
+    // Non-stale row is identical (same item id, same sheet id).
+    const untouched = after.find((r) => r.id === nonStaleItemId);
+    expect(untouched?.sheetId).toBe(seed.sheetBId);
+  });
+
+  it("dedupes the stale row instead of failing with 409 when its latest is already pinned in the set", async () => {
+    // Pin both Av1 (stale) AND Av2 (the latest revision sharing the same
+    // sheetName). A naive bulk-replace would try to insert two rows with
+    // sheetId=Av2, hitting the unique (set, sheet) constraint and 409'ing.
+    await request(app)
+      .post(`/api/projects/drawing-sets/${seed.drawingSetId}/items`)
+      .set("Cookie", `auth_token=${seed.adminToken}`)
+      .set("Content-Type", "application/json")
+      .send({ sheetId: seed.sheetAId })
+      .expect(201);
+    await request(app)
+      .post(`/api/projects/drawing-sets/${seed.drawingSetId}/items`)
+      .set("Cookie", `auth_token=${seed.adminToken}`)
+      .set("Content-Type", "application/json")
+      .send({ sheetId: seed.sheetAv2Id })
+      .expect(201);
+
+    const res = await request(app)
+      .post(`/api/projects/drawing-sets/${seed.drawingSetId}/repin-stale`)
+      .set("Cookie", `auth_token=${seed.adminToken}`);
+    expect(res.status).toBe(200);
+    expect(res.body).toMatchObject({ updated: 1, replaced: 0, removed: 1 });
+
+    const rows = await db.select().from(drawingSetItems)
+      .where(eq(drawingSetItems.drawingSetId, seed.drawingSetId));
+    expect(rows.map((r) => r.sheetId)).toEqual([seed.sheetAv2Id]);
+  });
+});
