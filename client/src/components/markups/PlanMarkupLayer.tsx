@@ -16,6 +16,7 @@ import { Trash2 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import MarkupRenderer, { type MarkupShape, type MarkupTool } from "./MarkupRenderer";
+import { MarkupTextInput } from "@/components/takeoff/MarkupTextInput";
 
 export interface PlanMarkupLayerProps {
   documentId: string;
@@ -28,6 +29,13 @@ export interface PlanMarkupLayerProps {
   thickness: number;
   /** Author's display name, used for the optimistic insert. */
   currentUserId?: string;
+  /**
+   * Task #1653 — lets the layer reset the toolbar selection. Used to
+   * deselect the TEXT tool after the user cancels or submits a blank
+   * label, so the cursor returns to its default state instead of being
+   * stuck in TEXT mode.
+   */
+  onChangeTool?: (tool: MarkupTool | null) => void;
 }
 
 interface ServerMarkup extends MarkupShape {
@@ -47,13 +55,17 @@ export default function PlanMarkupLayer({
   activeTool,
   color,
   thickness,
+  onChangeTool,
 }: PlanMarkupLayerProps) {
   const { toast } = useToast();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [draft, setDraft] = useState<MarkupShape | null>(null);
   const drawingRef = useRef(false);
-  // For TEXT, hold the prompted value until a pointerdown lands the shape.
-  const pendingTextRef = useRef<string | null>(null);
+  // Task #1653 — anchor for the in-canvas text input that replaces the
+  // legacy `window.prompt()` flow. Coordinates are normalized 0-1 to
+  // match `MarkupShape.points`; we denormalize when positioning the
+  // floating input.
+  const [textInputAnchor, setTextInputAnchor] = useState<{ x: number; y: number } | null>(null);
 
   const { data: markups = [] } = useQuery<ServerMarkup[]>({
     queryKey: ["/api/plan-documents", documentId, "markups", pageNumber],
@@ -128,24 +140,11 @@ export default function PlanMarkupLayer({
       }
       drawingRef.current = true;
       if (activeTool === "TEXT") {
-        const text =
-          pendingTextRef.current ??
-          (typeof window !== "undefined" ? window.prompt("Text:") : "");
-        pendingTextRef.current = null;
-        if (text == null || text === "") {
-          drawingRef.current = false;
-          return;
-        }
-        const shape: MarkupShape = {
-          id: makeId(),
-          tool: "TEXT",
-          points: [point],
-          color,
-          thickness,
-          text,
-        };
-        createMutation.mutate(shape);
+        // Task #1653 — open the in-canvas text input at the click point
+        // instead of the legacy `window.prompt()` modal. The shape is
+        // created when the user submits the input.
         drawingRef.current = false;
+        setTextInputAnchor(point);
         return;
       }
       setDraft({
@@ -156,7 +155,7 @@ export default function PlanMarkupLayer({
         thickness,
       });
     },
-    [activeTool, color, thickness, createMutation],
+    [activeTool, color, thickness],
   );
 
   const handlePointerMove = useCallback(
@@ -187,18 +186,61 @@ export default function PlanMarkupLayer({
     setDraft(null);
   }, [draft, createMutation]);
 
+  // Task #1653 — submit / cancel handlers for the in-canvas text input.
+  // `MarkupTextInput` trims internally and routes blank values through
+  // `onCancel`. Per the task acceptance criteria, cancelling or
+  // submitting blank text closes the editor *and* deselects the TEXT
+  // tool so the user is not left stuck in text-placement mode. A real
+  // submission creates the markup and leaves the tool active so the
+  // user can keep dropping labels — this matches the bid-side takeoff
+  // workspace, where submitting a label keeps `markup_text` selected.
+  const handleTextSubmit = useCallback(
+    (text: string) => {
+      const anchor = textInputAnchor;
+      setTextInputAnchor(null);
+      const trimmed = (text || "").trim();
+      if (!anchor || !trimmed) {
+        onChangeTool?.(null);
+        return;
+      }
+      createMutation.mutate({
+        id: makeId(),
+        tool: "TEXT",
+        points: [anchor],
+        color,
+        thickness,
+        text: trimmed,
+      });
+    },
+    [textInputAnchor, color, thickness, createMutation, onChangeTool],
+  );
+
+  const handleTextCancel = useCallback(() => {
+    setTextInputAnchor(null);
+    onChangeTool?.(null);
+  }, [onChangeTool]);
+
+  // Pixel position for the floating text input. Clamped to the canvas
+  // so it never opens fully off-screen at the edges.
+  const textInputPosition = useMemo(() => {
+    if (!textInputAnchor || canvasWidth <= 0 || canvasHeight <= 0) return null;
+    const left = Math.max(4, Math.min(textInputAnchor.x * canvasWidth, canvasWidth - 260));
+    const top = Math.max(4, Math.min(textInputAnchor.y * canvasHeight, canvasHeight - 40));
+    return { left, top };
+  }, [textInputAnchor, canvasWidth, canvasHeight]);
+
   if (canvasWidth <= 0 || canvasHeight <= 0) return null;
 
   return (
     <div
       className="absolute inset-0"
       style={{
-        // Capture pointer events only when a draw/select tool is active
-        // or a markup is currently selected. Otherwise stay transparent
-        // so the underlying PdfPreview keeps pin-drop, pan, and zoom.
-        // (To select existing markups in browse mode, pick the SELECT
-        // tool from the toolbar.)
-        pointerEvents: activeTool || selectedId ? "auto" : "none",
+        // Capture pointer events only when a draw/select tool is active,
+        // a markup is currently selected, or the in-canvas text input is
+        // open. Otherwise stay transparent so the underlying PdfPreview
+        // keeps pin-drop, pan, and zoom. (To select existing markups in
+        // browse mode, pick the SELECT tool from the toolbar.)
+        pointerEvents: activeTool || selectedId || textInputAnchor ? "auto" : "none",
       }}
       data-testid="plan-markup-layer"
     >
@@ -226,6 +268,15 @@ export default function PlanMarkupLayer({
         >
           <Trash2 className="w-4 h-4" />
         </button>
+      )}
+      {textInputPosition && (
+        <MarkupTextInput
+          key={`${textInputPosition.left},${textInputPosition.top}`}
+          left={textInputPosition.left}
+          top={textInputPosition.top}
+          onSubmit={handleTextSubmit}
+          onCancel={handleTextCancel}
+        />
       )}
     </div>
   );

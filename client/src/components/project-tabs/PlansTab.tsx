@@ -2163,6 +2163,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                   activeTool={markupTool}
                                   color={markupColor}
                                   thickness={markupThickness}
+                                  onChangeTool={setMarkupTool}
                                 />
                                 {pickerPosition && pendingPin && pendingPin.pageNumber === pageNumber && !isMobilePin && (
                                   <PinPicker
