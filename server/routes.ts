@@ -1156,6 +1156,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ledgerCleared: outcome.ledgerCleared,
             durationMs: outcome.durationMs,
             errorText: outcome.error,
+            // Task #1871 — capture per-run stats (e.g. row counts
+            // from the restore-style audit backfill) so the admin
+            // history reflects how much work each invocation did.
+            details: outcome.details ?? null,
             startedAt,
             finishedAt,
           });

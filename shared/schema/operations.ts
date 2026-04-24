@@ -1471,6 +1471,14 @@ export const oneShotJobRuns = pgTable("one_shot_job_runs", {
   ledgerCleared: boolean("ledger_cleared").notNull(),
   durationMs: integer("duration_ms").notNull(),
   errorText: text("error_text"),
+  // Task #1871 — structured payload for one-shot runs that produce
+  // counts or other stats worth surfacing in the admin "One-shot
+  // jobs" history (e.g. the restore-style audit backfill records
+  // how many audit_log rows it promoted to action='RESTORE'). Kept
+  // as JSONB so future runners can store arbitrary stats without a
+  // schema change. Nullable so legacy rows + runners that produce
+  // no extra detail keep working unchanged.
+  details: jsonb("details"),
   startedAt: timestamp("started_at").notNull(),
   finishedAt: timestamp("finished_at").notNull(),
   createdAt: timestamp("created_at").notNull().defaultNow(),

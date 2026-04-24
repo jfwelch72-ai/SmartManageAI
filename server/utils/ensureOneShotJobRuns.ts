@@ -33,6 +33,13 @@ export async function ensureOneShotJobRuns(): Promise<void> {
     await db.execute(sql.raw(
       `CREATE INDEX IF NOT EXISTS one_shot_job_runs_started_at_idx ON one_shot_job_runs(started_at)`,
     ));
+    // Task #1871 — additive details column for one-shot runs that
+    // surface counts / stats (e.g. the restore-style audit backfill
+    // recording how many audit_log rows it promoted). Idempotent
+    // ADD COLUMN IF NOT EXISTS keeps long-lived deployments happy.
+    await db.execute(sql.raw(
+      `ALTER TABLE one_shot_job_runs ADD COLUMN IF NOT EXISTS details jsonb`,
+    ));
     console.log("[migration] one_shot_job_runs ensured");
   } catch (err) {
     logError(

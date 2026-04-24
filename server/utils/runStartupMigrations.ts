@@ -129,6 +129,7 @@ import { ensureCrmAndReportingTables } from "./ensureCrmAndReportingTables";
 import { ensureCrmTranscriptBackfillAlertResendCooldownsTable } from "./ensureCrmTranscriptBackfillAlertResendCooldownsTable";
 import { runCertifiedPayrollBackfillOnce } from "./runCertifiedPayrollBackfillOnce";
 import { runExhaustedSyncRetryAlertsBackfillOnce } from "./runExhaustedSyncRetryAlertsBackfillOnce";
+import { runRestoreAuditBackfillOnce } from "./runRestoreAuditBackfillOnce";
 import { ensureSovStatusEnumValues } from "./ensureSovStatusEnumValues";
 import { ensureAuditActionEnumValues } from "./ensureAuditActionEnumValues";
 import { ensureCalendarEventTypeEnumValues } from "./ensureCalendarEventTypeEnumValues";
@@ -396,6 +397,15 @@ const migrations: MigrationStep[] = [
   // so the marker column exists. Idempotent: a `one_shot_jobs` ledger row
   // makes subsequent startups a single SELECT.
   { name: "exhausted_sync_retry_alerts_backfill_once", category: "ALTER_TABLE", fn: runExhaustedSyncRetryAlertsBackfillOnce },
+  // Task #1871 — one-shot promotion of legacy plan-document-markup
+  // restore audit rows (which used the pre-#1847 `op: "restore"`
+  // JSON shim under action='UPDATE'/'CREATE') to the dedicated
+  // `action='RESTORE'` enum value so audit search covers older
+  // entries. Must run AFTER `audit_action_enum_values` so RESTORE
+  // exists, AND AFTER `one_shot_job_runs` so the coverage row
+  // insert succeeds. Idempotent: a `one_shot_jobs` ledger row
+  // makes subsequent startups a single SELECT.
+  { name: "restore_style_audit_rows_backfill_once", category: "ALTER_TABLE", fn: runRestoreAuditBackfillOnce },
   // Task #1119 — audit log for trade-preset applications shown on the
   // Feature Flags tab (Last applied: <preset> on <date> by <user>).
   { name: "feature_flag_preset_applications_table", category: "CREATE_TABLE", fn: ensureFeatureFlagPresetApplicationsTable },
