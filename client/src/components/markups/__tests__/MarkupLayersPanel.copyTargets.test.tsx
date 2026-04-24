@@ -309,6 +309,67 @@ describe("MarkupLayersPanel copy-targets badges + confirm (Task #1722)", () => {
     ).toBeNull();
   });
 
+  it("refreshes the 'last copied' label on a 30s interval while the picker stays open (Task #1848)", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const baseTime = new Date("2026-04-24T12:00:00.000Z").getTime();
+      vi.setSystemTime(baseTime);
+
+      // 30s before the test starts → "just now" on the first render.
+      const lastCopiedAt = new Date(baseTime - 30_000).toISOString();
+      fetchMock.mockImplementation(async (url: string) => {
+        if (typeof url === "string" && url.includes("/copy-targets")) {
+          return new Response(
+            JSON.stringify({
+              targets: [
+                {
+                  documentId: "doc-b",
+                  existingCopyCount: 1,
+                  lastCopiedAt,
+                },
+              ],
+            }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response("[]", { status: 200 });
+      });
+
+      renderPanel();
+      fireEvent.click(screen.getByTestId("button-markup-layer-copy-L-rfi"));
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId(
+            "text-markup-layer-copy-last-copied-L-rfi-to-doc-b",
+          ).textContent,
+        ).toBe("just now");
+      });
+
+      // No new network requests should be issued by the relabel — we
+      // snapshot the call count and assert it doesn't move when the
+      // tick fires.
+      const fetchCallsBefore = fetchMock.mock.calls.length;
+
+      // Jump ~2 minutes into the future and let the 30s interval fire.
+      await act(async () => {
+        vi.setSystemTime(baseTime + 2 * 60 * 1000);
+        vi.advanceTimersByTime(30_000);
+      });
+
+      await waitFor(() => {
+        expect(
+          screen.getByTestId(
+            "text-markup-layer-copy-last-copied-L-rfi-to-doc-b",
+          ).textContent,
+        ).toMatch(/minute(s)? ago/);
+      });
+      expect(fetchMock.mock.calls.length).toBe(fetchCallsBefore);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("does NOT confirm for destinations with zero existing copies", async () => {
     renderPanel();
     fireEvent.click(screen.getByTestId("button-markup-layer-copy-L-rfi"));

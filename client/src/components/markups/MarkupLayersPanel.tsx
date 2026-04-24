@@ -10,7 +10,7 @@
  * auto-materialises a single "Default" layer so this panel always has
  * at least one row and no UI changes are forced on existing users.
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { formatDistanceToNow, parseISO } from "date-fns";
 import {
@@ -176,6 +176,23 @@ export default function MarkupLayersPanel({
     if (Date.now() - parsed.getTime() < 60_000) return "just now";
     return formatDistanceToNow(parsed, { addSuffix: true });
   };
+
+  // Task #1848 — the "last copied" labels above are derived from
+  // `Date.now()` at render time, so they otherwise only refresh when
+  // something else triggers a re-render. If the user keeps the copy
+  // picker open for several minutes the strings ("just now",
+  // "2 minutes ago", ...) go stale. Tick a render-only counter every
+  // 30s while the picker is visible so the labels stay honest, without
+  // re-fetching `/copy-targets` or doing any work when the menu is
+  // closed.
+  const [, setRelativeTimeTick] = useState(0);
+  useEffect(() => {
+    if (!openCopyMenuLayerId) return;
+    const id = setInterval(() => {
+      setRelativeTimeTick((t) => t + 1);
+    }, 30_000);
+    return () => clearInterval(id);
+  }, [openCopyMenuLayerId]);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: layersQueryKey });
