@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { SecurityBanner, ProviderCardGrid, TokenStatusBadge, SecurityDetailsPane
 import { IntegrationSyncPanel } from "@/components/integrations/IntegrationSyncPanel";
 import { AccountMappingPanel, SyncSchedulePanel } from "@/components/integrations/QboMappingPanel";
 import { SageMappingPanel } from "@/components/integrations/SageMappingPanel";
+import { SageConnectDialog } from "@/components/integrations/SageConnectDialog";
 import { WebhookConfigPanel } from "@/components/integrations/WebhookConfigPanel";
 import { StackCTSyncPanel } from "@/components/integrations/StackCTSyncPanel";
 import { SyncRetryPanel } from "@/components/integrations/SyncRetryPanel";
@@ -55,6 +56,9 @@ function StackCTConnectButton() {
 
 export default function IntegrationsPage({ embedded }: { embedded?: boolean } = {}) {
   const { toast } = useToast();
+  // Task #1603 — Sage Intacct uses a credentials dialog (not OAuth) so
+  // admins can capture per-tenant Web Services credentials inline.
+  const [sageDialogOpen, setSageDialogOpen] = useState(false);
 
   const { data: providers, isLoading: providersLoading } = useQuery<Provider[]>({
     queryKey: ["/api/integrations/providers"],
@@ -191,11 +195,34 @@ export default function IntegrationsPage({ embedded }: { embedded?: boolean } = 
       <ProviderCardGrid
         providers={providers || []}
         connections={connections || []}
-        onConnect={(key) => connectMutation.mutate(key)}
+        onConnect={(key) => {
+          // Task #1603 — Sage Intacct collects credentials via dialog
+          // instead of triggering the OAuth scaffold.
+          if (key === "sage_intacct") {
+            setSageDialogOpen(true);
+            return;
+          }
+          connectMutation.mutate(key);
+        }}
         onDisconnect={(id) => disconnectMutation.mutate(id)}
-        onAuthorize={(id) => authorizeMutation.mutate(id)}
+        onAuthorize={(id) => {
+          const target = (connections || []).find((c) => c.id === id);
+          if (target?.provider === "sage_intacct") {
+            setSageDialogOpen(true);
+            return;
+          }
+          authorizeMutation.mutate(id);
+        }}
         connectPending={connectMutation.isPending}
         disconnectPending={disconnectMutation.isPending}
+      />
+
+      <SageConnectDialog
+        open={sageDialogOpen}
+        onOpenChange={setSageDialogOpen}
+        existingConnection={(connections || []).find(
+          (c) => c.provider === "sage_intacct" && c.status !== "disconnected",
+        )}
       />
 
       <Separator />

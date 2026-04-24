@@ -629,7 +629,9 @@ export function ProviderCardGrid({
               )}
               {isPending && isOAuth && (
                 <p className="text-xs text-yellow-600 dark:text-yellow-400">
-                  Authorization required — click below to complete setup.
+                  {provider.key === "sage_intacct"
+                    ? "Credentials required — click below to enter Web Services details."
+                    : "Authorization required — click below to complete setup."}
                 </p>
               )}
               {conn ? (
@@ -641,7 +643,7 @@ export function ProviderCardGrid({
                       data-testid={`button-authorize-${provider.key}`}
                     >
                       <Link2 className="h-4 w-4 mr-2" />
-                      Authorize
+                      {provider.key === "sage_intacct" ? "Configure credentials" : "Authorize"}
                     </Button>
                   )}
                   <Button

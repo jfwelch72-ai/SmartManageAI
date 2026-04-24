@@ -24,6 +24,7 @@ import {
   getTrackedSageInvoiceRecordIds,
 } from "./integrations/providers/sage";
 import { getIdMapping } from "./integrations/idMapping";
+import { sageRequest, resolveSageCredentials } from "./integrations/providers/sage/xmlGateway";
 import { parseEbsxJson, importBidPackage, exportEstimateAsEbsx } from "./integrations/providers/aashtoware";
 import { importWageDetermination, listSuppressedFailureNotifications, resetSuppressedFailureNotification, resetAllSuppressedFailureNotifications } from "./integrations/providers/dol_davis_bacon";
 import { searchDirectory as searchDbeDirectory, refreshCertifications as refreshDbeCertifications, verifyCertification as verifyDbeCertification } from "./integrations/providers/dbe_directory";
@@ -1867,6 +1868,28 @@ async function loadActiveSageConnection(orgId: string): Promise<IntegrationConne
   } as IntegrationConnection;
 }
 
+// Task #1603 — Find any non-disconnected Sage connection for the org so the
+// /sage/credentials endpoint can attach Web Services credentials to a
+// freshly-created (status=pending) row, not just an already-active one.
+async function loadAnySageConnection(orgId: string): Promise<IntegrationConnection | null> {
+  const rows = await db
+    .select()
+    .from(integrationConnections)
+    .where(and(
+      eq(integrationConnections.organizationId, orgId),
+      eq(integrationConnections.provider, "sage_intacct"),
+    ));
+  // Prefer active, then pending/error, ignore disconnected.
+  const candidate =
+    rows.find((r) => r.status === "active") ||
+    rows.find((r) => r.status !== "disconnected");
+  if (!candidate) return null;
+  return {
+    ...candidate,
+    metadata: decryptMetadata((candidate.metadata ?? {}) as Record<string, any>),
+  } as IntegrationConnection;
+}
+
 // Build a SageInvoiceInput from the local pay-application identified by
 // `:invoiceId`. Only APPROVED pay applications are exportable; everything
 // else returns null so the route surfaces 404. Customer ref prefers the
@@ -1940,7 +1963,12 @@ function requireSageEnabledOrFail(res: any): boolean {
 // Securely upsert per-tenant Sage Web Services credentials. Accepts the
 // userId/userPassword/companyId/locationId in an authenticated POST body
 // (TLS only) instead of via OAuth state. The password is encrypted at
-// rest via encryptMetadata.
+// rest via encryptMetadata. Task #1603 — auto-creates a pending Sage
+// connection on first use, runs a probe call against the Sage XML
+// Gateway with the freshly-supplied credentials, and only flips the
+// connection to status=active when the probe succeeds. Bad credentials
+// surface immediately to the admin instead of failing later inside a
+// background sync.
 router.post("/sage/credentials", requireAuth, async (req, res, next) => {
   try {
     const user = (req as any).user;
@@ -1948,32 +1976,154 @@ router.post("/sage/credentials", requireAuth, async (req, res, next) => {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
     if (!requireSageEnabledOrFail(res)) return;
-    const conn = await loadActiveSageConnection(user.organizationId);
-    if (!conn) return res.status(404).json({ error: "No active Sage Intacct connection" });
+
     const { userId, userPassword, companyId, locationId } = req.body || {};
+    if (typeof companyId !== "string" || companyId.length === 0) {
+      return res.status(400).json({ error: "companyId is required" });
+    }
     if (typeof userId !== "string" || userId.length === 0) {
       return res.status(400).json({ error: "userId is required" });
     }
     if (typeof userPassword !== "string" || userPassword.length === 0) {
       return res.status(400).json({ error: "userPassword is required" });
     }
+
+    // Reuse an existing connection (active/pending/error) or create a
+    // new pending row so the integrations page can stand up Sage Intacct
+    // end-to-end without a separate OAuth dance or DB-level setup.
+    let conn = await loadAnySageConnection(user.organizationId);
+    if (!conn) {
+      const providerImpl = getProvider("sage_intacct");
+      const created = await connectionService.createConnection(
+        user.organizationId,
+        "sage_intacct",
+        providerImpl?.displayName || "Sage Intacct Construction",
+        user.id,
+      );
+      logIntegrationAudit("connection.created", {
+        orgId: user.organizationId,
+        connectionId: created.id,
+        provider: "sage_intacct",
+        userId: user.id,
+      });
+      conn = { ...created, metadata: {} } as IntegrationConnection;
+    }
+
     const existing = (conn.metadata ?? {}) as Record<string, any>;
-    const merged = {
+    const merged: Record<string, any> = {
       ...existing,
       userId,
       userPassword,
-      ...(typeof companyId === "string" && companyId.length > 0 ? { companyId } : {}),
-      ...(typeof locationId === "string" ? { locationId } : {}),
+      companyId,
     };
+    if (typeof locationId === "string" && locationId.length > 0) {
+      merged.locationId = locationId;
+    } else {
+      delete merged.locationId;
+    }
+
+    // Probe the Sage XML Gateway with the supplied credentials. We use a
+    // trivial readByQuery against COMPANY (always present) so a 401-style
+    // auth failure or a wrong companyId is surfaced inline. The probe
+    // runs against the *plaintext* merged metadata so we don't have to
+    // round-trip through encryptMetadata first.
+    let probeError: string | undefined;
+    try {
+      const credentials = resolveSageCredentials(merged);
+      const probe = await sageRequest(
+        credentials,
+        [
+          {
+            name: "readByQuery",
+            body: {
+              object: "COMPANY",
+              query: "",
+              fields: "COMPANY_ID,COMPANY_NAME",
+              pagesize: "1",
+              returnFormat: "xml",
+            },
+            controlId: "sage-credentials-probe",
+          },
+        ],
+        // Keep the probe fast — admin is sitting on the Connect dialog.
+        { timeoutMs: 15_000, maxAttempts: 1 },
+      );
+      if (!probe.success) {
+        probeError =
+          probe.errors?.[0]?.message || "Sage Intacct probe failed (no detail returned)";
+      }
+    } catch (err) {
+      probeError = err instanceof Error ? err.message : String(err);
+    }
+
+    if (probeError) {
+      // Bug-class guard: never overwrite a previously-working connection's
+      // metadata with unverified credentials. Only update lastSyncError so
+      // the admin sees the inline failure and the existing sync stays
+      // alive. For pending/error rows we likewise leave prior metadata
+      // intact — the admin can retry without us persisting a known-bad
+      // password to the encrypted store.
+      const keepActive = conn.status === "active";
+      const nextStatus: "active" | "pending" = keepActive ? "active" : "pending";
+      await db
+        .update(integrationConnections)
+        .set({
+          status: nextStatus,
+          lastSyncError: probeError,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(integrationConnections.id, conn.id),
+          eq(integrationConnections.organizationId, user.organizationId),
+        ));
+
+      logIntegrationAudit("security.auth_attempt_failed", {
+        orgId: user.organizationId,
+        connectionId: conn.id,
+        provider: "sage_intacct",
+        userId: user.id,
+        meta: { event: "sage_credential_probe_failed", error: probeError },
+      });
+      return res.status(400).json({
+        error: `Sage Intacct credential probe failed: ${probeError}`,
+        detail: probeError,
+        connectionId: conn.id,
+      });
+    }
+
+    // Probe succeeded — safe to persist the (now-verified) credentials
+    // and flip the connection to active in a single update.
     const encrypted = encryptMetadata(merged);
     await db
       .update(integrationConnections)
-      .set({ metadata: encrypted, updatedAt: new Date() })
+      .set({
+        metadata: encrypted,
+        status: "active",
+        lastSyncError: null,
+        updatedAt: new Date(),
+      })
       .where(and(
         eq(integrationConnections.id, conn.id),
         eq(integrationConnections.organizationId, user.organizationId),
       ));
-    res.status(204).send();
+
+    logIntegrationAudit("security.credentials_changed", {
+      orgId: user.organizationId,
+      connectionId: conn.id,
+      provider: "sage_intacct",
+      userId: user.id,
+      meta: { event: "sage_credentials_upserted" },
+    });
+    if (conn.status !== "active") {
+      logIntegrationAudit("connection.authorized", {
+        orgId: user.organizationId,
+        connectionId: conn.id,
+        provider: "sage_intacct",
+        userId: user.id,
+      });
+    }
+
+    res.status(200).json({ ok: true, connectionId: conn.id, status: "active" });
   } catch (err) {
     next(err);
   }
