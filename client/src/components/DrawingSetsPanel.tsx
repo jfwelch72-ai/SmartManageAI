@@ -1,4 +1,5 @@
 import { memo, useCallback, useMemo, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { bulkPinErrorDescription } from "@/lib/drawingSetErrors";
@@ -12,6 +13,12 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
@@ -407,6 +414,111 @@ const CompareSetDialog = memo(function CompareSetDialog({
   );
 });
 
+// Task #1879 — Per-card "out of date" indicator. Reuses the existing
+// `/compare` query (and its query key) so opening the compare dialog
+// after viewing the badge serves cached data and avoids a second round
+// trip. Shows nothing while loading or when the set has no pinned
+// sheets, an amber "N newer" badge when one or more pinned sheets have
+// a newer revision available, and a green "Up to date" badge otherwise.
+interface SetStaleBadgeProps {
+  setId: string;
+  onOpenCompare: (setId: string) => void;
+}
+
+const SetStaleBadge = memo(function SetStaleBadge({
+  setId,
+  onOpenCompare,
+}: SetStaleBadgeProps) {
+  const { data, isLoading } = useQuery<ComparisonResult>({
+    queryKey: ["/api/projects", "drawing-sets", setId, "compare"],
+    queryFn: async () => {
+      const res = await fetch(`/api/projects/drawing-sets/${setId}/compare`);
+      if (!res.ok) throw new Error("Failed to compare");
+      return res.json();
+    },
+  });
+
+  // Hooks must be declared unconditionally (above any early return) so the
+  // hook order stays stable across renders — see Task #1879 fix.
+  const handleClick = useCallback(
+    (e: ReactMouseEvent) => {
+      e.stopPropagation();
+      onOpenCompare(setId);
+    },
+    [onOpenCompare, setId],
+  );
+
+  const handleKeyDown = useCallback(
+    (e: ReactKeyboardEvent) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        e.stopPropagation();
+        onOpenCompare(setId);
+      }
+    },
+    [onOpenCompare, setId],
+  );
+
+  if (isLoading || !data || data.comparison.length === 0) return null;
+
+  const newerCount = data.comparison.filter((c) => c.hasNewerRevision).length;
+  const totalPinned = data.comparison.length;
+
+  if (newerCount > 0) {
+    return (
+      <TooltipProvider delayDuration={200}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Badge
+              variant="outline"
+              role="button"
+              tabIndex={0}
+              onClick={handleClick}
+              onKeyDown={handleKeyDown}
+              className="text-xs border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-400 cursor-pointer hover-elevate active-elevate-2"
+              data-testid={`badge-set-stale-${setId}`}
+            >
+              <AlertTriangle className="w-3 h-3 mr-0.5" />
+              {newerCount} newer available
+            </Badge>
+          </TooltipTrigger>
+          <TooltipContent>
+            {newerCount} of {totalPinned} pinned{" "}
+            {totalPinned === 1 ? "sheet has" : "sheets have"} a newer revision
+            available. Click to compare.
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+    );
+  }
+
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Badge
+            variant="outline"
+            role="button"
+            tabIndex={0}
+            onClick={handleClick}
+            onKeyDown={handleKeyDown}
+            className="text-xs border-green-400 text-green-700 dark:text-green-400 cursor-pointer hover-elevate active-elevate-2"
+            data-testid={`badge-set-uptodate-${setId}`}
+          >
+            <Check className="w-3 h-3 mr-0.5" />
+            Up to date
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent>
+          All {totalPinned} pinned{" "}
+          {totalPinned === 1 ? "sheet matches" : "sheets match"} the latest
+          active revision. Click to compare.
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+});
+
 export default function DrawingSetsPanel({
   projectId,
   sheets,
@@ -490,6 +602,12 @@ export default function DrawingSetsPanel({
 
   const handleCloseManage = useCallback(() => setManageSetId(null), []);
   const handleCloseCompare = useCallback(() => setCompareSetId(null), []);
+  // Task #1879 — stable handler so the per-card stale badge stays
+  // memoized across parent re-renders.
+  const handleOpenCompare = useCallback(
+    (id: string) => setCompareSetId(id),
+    [],
+  );
   // Task #1812 — pass the set name to the dialog so its bulk-replace error
   // toast can name the offending set (via bulkPinErrorDescription) when the
   // backend rejects a duplicate pin with HTTP 409.
@@ -551,6 +669,10 @@ export default function DrawingSetsPanel({
                       {activeSetId === set.id && (
                         <Badge className="text-xs">Active View</Badge>
                       )}
+                      <SetStaleBadge
+                        setId={set.id}
+                        onOpenCompare={handleOpenCompare}
+                      />
                     </div>
                     {set.description && (
                       <p className="text-xs text-muted-foreground mt-0.5 truncate">{set.description}</p>
