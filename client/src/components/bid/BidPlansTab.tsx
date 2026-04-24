@@ -182,14 +182,17 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
   const [deleteSheetId, setDeleteSheetId] = useState<string | null>(null);
   const [previewDocId, setPreviewDocId] = useState<string | null>(null);
 
-  // Task #1696 — Replay handler used by the gear menus on both the
-  // takeoff pane and the PDF preview pane. The bid tour anchors live
-  // inside `<TakeoffWorkspace>`, so we close the preview first and
-  // wait a tick for the takeoff toolbar to remount before Joyride
-  // starts — otherwise the first step's `[data-testid="button-tool-pan"]`
-  // target won't exist in the DOM and Joyride would silently skip it.
+  // Task #1696 — Replay handler used by the gear menus on the takeoff
+  // pane, the PDF/image preview header, the BIM preview header, and
+  // the Split View top bar (Task #1727). The bid tour anchors live
+  // inside `<TakeoffWorkspace>`, so we close any preview / split-view
+  // mode first and wait a tick for the takeoff toolbar to remount
+  // before Joyride starts — otherwise the first step's
+  // `[data-testid="button-tool-pan"]` target won't exist in the DOM
+  // and Joyride would silently skip it.
   const handleReplayTour = useCallback(() => {
     setPreviewDocId(null);
+    setSplitViewMode(false);
     window.setTimeout(() => startBidPlansTour(), 250);
   }, [startBidPlansTour]);
   const bidSheetStorageKey = bidId ? `takeoff-sheet-${bidId}` : null;
@@ -1449,6 +1452,17 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                     <X className="w-3 h-3" />
                     Exit Split
                   </Button>
+                  {/* Task #1727 — Same view-settings menu as the
+                      takeoff pane so users can replay the tour or
+                      flip the labeled-toolbar pref while in Split
+                      View. The replay handler exits split mode first
+                      so the Joyride targets in `<TakeoffWorkspace>`
+                      are mounted in the takeoff pane. */}
+                  <BidPlansViewSettingsMenu
+                    labeled={labeledToolbar}
+                    onToggleLabeled={toggleLabeledToolbar}
+                    onReplayTour={handleReplayTour}
+                  />
                 </div>
                 <div className="flex-1 min-h-0 overflow-hidden">
                   <WidgetErrorBoundary fallbackTitle="Takeoff Workspace">
@@ -1565,6 +1579,18 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                         <Columns2 className="w-3.5 h-3.5" />
                         Split View
                       </Button>
+                      {/* Task #1727 — Same view-settings menu as the
+                          takeoff pane / standard preview header so
+                          users can replay the tour or flip the
+                          labeled-toolbar pref from the BIM viewer
+                          too. The replay handler closes the BIM
+                          preview first so the Joyride targets in
+                          `<TakeoffWorkspace>` are mounted. */}
+                      <BidPlansViewSettingsMenu
+                        labeled={labeledToolbar}
+                        onToggleLabeled={toggleLabeledToolbar}
+                        onReplayTour={handleReplayTour}
+                      />
                     </div>
                     <div className="flex-1 min-h-0 overflow-hidden">
                       <Suspense fallback={
@@ -1597,6 +1623,15 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                         <X className="w-3.5 h-3.5" /> Back to Takeoff
                       </Button>
                       <span className="text-sm font-medium truncate flex-1">{doc.title || doc.fileName}</span>
+                      {/* Task #1727 — Keep the view-settings gear
+                          available even while the BIM preview URL is
+                          still loading, so the tour replay isn't
+                          blocked by a slow signed-URL fetch. */}
+                      <BidPlansViewSettingsMenu
+                        labeled={labeledToolbar}
+                        onToggleLabeled={toggleLabeledToolbar}
+                        onReplayTour={handleReplayTour}
+                      />
                     </div>
                     <div className="flex items-center justify-center h-full">
                       <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
