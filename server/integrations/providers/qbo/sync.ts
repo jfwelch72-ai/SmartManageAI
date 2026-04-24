@@ -5,6 +5,10 @@ import { integrationSyncState, qboAccountMappings, payRuns, payRunLineItems, sub
 import { eq, and, inArray, isNotNull } from "drizzle-orm";
 import { logInfo, logError, logWarn } from "../../../utils/logger";
 import { registerSyncRetryHandler } from "../../syncRetry";
+// QBO and Sage share the same exported-id tracking shape. The helpers
+// live in `server/integrations/idMapping.ts`; both providers consume the
+// same source so cache + idempotency behaviour can never diverge.
+import { getExportedIds, trackExportedId } from "../../idMapping";
 
 function getQboBaseUrl(): string {
   return process.env.QBO_ENVIRONMENT === "production"
@@ -139,52 +143,6 @@ async function getOrCreateVendor(realmId: string, accessToken: string, vendorNam
     DisplayName: vendorName,
   });
   return result?.Vendor?.Id;
-}
-
-async function getExportedIds(connectionId: string, entityType: string): Promise<Set<string>> {
-  const [state] = await db.select().from(integrationSyncState)
-    .where(and(
-      eq(integrationSyncState.connectionId, connectionId),
-      eq(integrationSyncState.entityType, entityType)
-    ));
-
-  const meta = state?.metadata as any;
-  return new Set(meta?.exportedIds || []);
-}
-
-async function trackExportedId(connectionId: string, organizationId: string, entityType: string, newId: string, qboId?: string): Promise<void> {
-  const [existing] = await db.select().from(integrationSyncState)
-    .where(and(
-      eq(integrationSyncState.connectionId, connectionId),
-      eq(integrationSyncState.entityType, entityType)
-    ));
-
-  const meta = existing?.metadata as any || {};
-  const exportedIds = meta.exportedIds || [];
-  const idMapping = meta.idMapping || {};
-
-  if (!exportedIds.includes(newId)) {
-    exportedIds.push(newId);
-  }
-  if (qboId) {
-    idMapping[newId] = qboId;
-  }
-
-  const updatedMeta = { ...meta, exportedIds, idMapping, lastExportAt: new Date().toISOString() };
-
-  if (existing) {
-    await db.update(integrationSyncState)
-      .set({ metadata: updatedMeta, lastSyncAt: new Date(), updatedAt: new Date() })
-      .where(eq(integrationSyncState.id, existing.id));
-  } else {
-    await db.insert(integrationSyncState).values({
-      organizationId,
-      connectionId,
-      entityType,
-      metadata: updatedMeta,
-      lastSyncAt: new Date(),
-    });
-  }
 }
 
 export async function importChartOfAccounts(

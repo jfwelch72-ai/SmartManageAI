@@ -267,4 +267,8 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   // Task #1599 — per-org cap + cadence for the document-control overdue
   // sweeps (mirrors the SWPPP per-org policy column pair).
   "0057_doc_overdue_reminder_settings.sql": { helper: "ensureDocOverdueReminderSettings" },
+  // Task #1600 — Sage Intacct chart-of-accounts mapping table that
+  // backs the admin Sage mapping panel and the periodic XML Gateway
+  // sync. Mirrored at boot by ensureSageAccountMappingsTable.
+  "0057_sage_account_mappings.sql": { helper: "ensureSageAccountMappingsTable" },
 };

@@ -27,6 +27,7 @@ import { processMissingWageDecisionReminders } from "../services/davisBaconAdmin
 import { processIntegrationSyncRetries, recordSyncFailure, recordSyncSuccess } from "../integrations/syncRetry";
 import { pruneSuppressionResets } from "../integrations/audit";
 import { qboSyncEntityType } from "../integrations/providers/qbo/sync";
+import { processSagePeriodicSync } from "../integrations/providers/sage/sync";
 import { ensureAllEmailPushSubscriptions } from "../emailPushNotifications";
 import { sendEmail } from "../services/emailService";
 import { processDueExecutions } from "../services/sequenceService";
@@ -760,6 +761,10 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   // backoff schedule, so running both would double-trigger retries.
   wage_decision_retry: { fn: async () => { await processFailedWageDecisionRetries(); }, description: "[legacy alias] Davis-Bacon-only wage-decision retry sweep — superseded by integration_sync_retry; manual trigger only" },
   integration_sync_retry: { fn: async () => { await processIntegrationSyncRetries(); }, description: "Re-attempt every failed integration sync (Davis-Bacon, QBO, etc.) whose backoff window is due", schedule: "*/5 * * * *" },
+  // Task #1600 — every 4h pull Sage Intacct chart of accounts + payment
+  // status snapshots for each active sage_intacct connection (gated by
+  // the INTEGRATION_SAGE feature flag inside processSagePeriodicSync).
+  sage_periodic_sync: { fn: async () => { await processSagePeriodicSync(); }, description: "Sage Intacct periodic sync — refresh chart of accounts and payment status for every active connection (gated by INTEGRATION_SAGE)", schedule: "0 */4 * * *" },
   // Task #1344: daily fan-out to org admins of any project whose Davis-Bacon
   // wage decision has been missing from the cache for >24h. Throttled inside
   // the handler to one reminder per project per week, so a daily cadence

@@ -9,13 +9,20 @@ import * as outboxService from "./integrations/outboxService";
 import { logInfo, logError } from "./utils/logger";
 import { getCanonicalBaseUrl } from "./utils/routeHelpers";
 import { eq, and, desc, isNotNull, isNull, inArray } from "drizzle-orm";
-import { integrationConnections, type IntegrationConnection, integrationSyncState, integrationSyncAlertMutes, qboAccountMappings, qboSyncSchedules, zapierWebhooks, ZAPIER_EVENT_TYPES, projects, users as usersTable } from "@shared/schema";
+import { integrationConnections, type IntegrationConnection, integrationSyncState, integrationSyncAlertMutes, qboAccountMappings, qboSyncSchedules, sageAccountMappings, zapierWebhooks, ZAPIER_EVENT_TYPES, projects, users as usersTable, payApplications, sovLineItems, scheduleOfValues } from "@shared/schema";
 import { verifyIntegrationSyncMuteToken } from "./utils/integrationSyncMuteToken";
 import { db } from "./db";
-import { decryptMetadata } from "./integrations/encryption";
+import { decryptMetadata, encryptMetadata } from "./integrations/encryption";
 import type { AuthRequest } from "./auth";
 import { importChartOfAccounts, exportCustomers, exportInvoice, importPaymentStatus, exportPayroll, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "./integrations/providers/qbo";
 import { exportHaulTickets, exportSuretyPremiums, exportCertifiedPayroll } from "./integrations/providers/qbo/sync";
+import {
+  importChartOfAccounts as sageImportChartOfAccounts,
+  exportCustomers as sageExportCustomers,
+  exportInvoice as sageExportInvoice,
+  importPaymentStatus as sageImportPaymentStatus,
+  getTrackedSageInvoiceRecordIds,
+} from "./integrations/providers/sage";
 import { parseEbsxJson, importBidPackage, exportEstimateAsEbsx } from "./integrations/providers/aashtoware";
 import { importWageDetermination, listSuppressedFailureNotifications, resetSuppressedFailureNotification, resetAllSuppressedFailureNotifications } from "./integrations/providers/dol_davis_bacon";
 import { searchDirectory as searchDbeDirectory, refreshCertifications as refreshDbeCertifications, verifyCertification as verifyDbeCertification } from "./integrations/providers/dbe_directory";
@@ -573,6 +580,8 @@ const syncSchema = z.object({
     "payroll", "subcontractor_payments", "purchase_orders", "reconcile_payments",
     // QBO heavy-civil
     "haul_tickets", "surety_premiums", "certified_payroll",
+    // Sage Intacct
+    "sage_chart_of_accounts", "sage_customers", "sage_invoice", "sage_payment_status",
     // AASHTOWare ebsx
     "ebsx_import", "ebsx_export",
     // DOL Davis-Bacon
@@ -593,6 +602,12 @@ const QBO_OPERATIONS = new Set([
 ]);
 const PROVIDER_OPERATIONS: Record<string, Set<string>> = {
   qbo: QBO_OPERATIONS,
+  sage_intacct: new Set([
+    "sage_chart_of_accounts",
+    "sage_customers",
+    "sage_invoice",
+    "sage_payment_status",
+  ]),
   aashtoware: new Set(["ebsx_import", "ebsx_export"]),
   dol_davis_bacon: new Set(["wage_determination"]),
   dbe_directory: new Set(["dbe_lookup", "dbe_refresh", "dbe_verify"]),
@@ -628,6 +643,21 @@ router.post("/connections/:id/sync", requireAuth, async (req, res, next) => {
     }
     if (!allowed.has(operation)) {
       return res.status(400).json({ error: `Operation '${operation}' is not supported by provider '${connection.provider}'.` });
+    }
+
+    if (connection.provider === "sage_intacct") {
+      if (process.env.INTEGRATION_SAGE !== "true") {
+        return res.status(403).json({
+          error: "Sage Intacct sync is disabled. Enable INTEGRATION_SAGE to use this integration.",
+        });
+      }
+      // Sage operations are ADMIN-only even via the unified dispatcher,
+      // matching the named /sage/* routes.
+      if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+        return res.status(403).json({
+          error: "Sage Intacct operations require SUPER_ADMIN or ADMIN role.",
+        });
+      }
     }
 
     const metadata = (connection.metadata as Record<string, any>) || {};
@@ -725,6 +755,24 @@ router.post("/connections/:id/sync", requireAuth, async (req, res, next) => {
       case "surety_verify":
         result = await verifyOrganizationBonds(connection, { bondIds: data?.bondIds, dryRun });
         break;
+      case "sage_chart_of_accounts":
+        result = await sageImportChartOfAccounts(connection, dryRun);
+        break;
+      case "sage_customers":
+        result = await sageExportCustomers(connection, data?.customers || [], dryRun);
+        break;
+      case "sage_invoice":
+        if (!data?.invoice) return res.status(400).json({ error: "Invoice data required" });
+        result = await sageExportInvoice(connection, data.invoice, dryRun);
+        break;
+      case "sage_payment_status": {
+        let pmtIds: string[] = Array.isArray(data?.invoiceIds) ? data.invoiceIds : [];
+        if (pmtIds.length === 0) {
+          pmtIds = (await getTrackedSageInvoiceRecordIds(connection.id)).slice(0, 200);
+        }
+        result = await sageImportPaymentStatus(connection, pmtIds);
+        break;
+      }
     }
 
     const duration = Date.now() - startTime;
@@ -1600,6 +1648,439 @@ router.post("/connections/:id/account-mappings/auto-map", requireAuth, async (re
     }
 
     res.json({ suggestions, created, total: costCodes.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Sage Intacct chart-of-accounts mapping CRUD (parallel to QBO).
+
+router.get("/connections/:id/sage-account-mappings", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    if (!requireSageEnabledOrFail(res)) return;
+    const connection = await connectionService.getConnection(req.params.id, user.organizationId);
+    if (!connection) return res.status(404).json({ error: "Connection not found" });
+    if (connection.provider !== "sage_intacct") {
+      return res.status(400).json({ error: "Connection is not a Sage Intacct connection" });
+    }
+
+    const mappings = await db.select().from(sageAccountMappings)
+      .where(and(
+        eq(sageAccountMappings.connectionId, connection.id),
+        eq(sageAccountMappings.organizationId, user.organizationId),
+      ));
+    res.json(mappings);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/connections/:id/sage-account-mappings", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    if (!requireSageEnabledOrFail(res)) return;
+    const connection = await connectionService.getConnection(req.params.id, user.organizationId);
+    if (!connection) return res.status(404).json({ error: "Connection not found" });
+    if (connection.provider !== "sage_intacct") {
+      return res.status(400).json({ error: "Connection is not a Sage Intacct connection" });
+    }
+
+    const { costCode, sageAccountId, sageAccountName, mappingType } = req.body || {};
+    if (!costCode || !sageAccountId || !sageAccountName) {
+      return res.status(400).json({ error: "costCode, sageAccountId, and sageAccountName are required" });
+    }
+
+    const existing = await db.select().from(sageAccountMappings)
+      .where(and(
+        eq(sageAccountMappings.connectionId, connection.id),
+        eq(sageAccountMappings.organizationId, user.organizationId),
+        eq(sageAccountMappings.costCode, costCode),
+        eq(sageAccountMappings.mappingType, mappingType || "cost_code"),
+      ));
+
+    if (existing.length > 0) {
+      await db.update(sageAccountMappings)
+        .set({ sageAccountId, sageAccountName, updatedAt: new Date() })
+        .where(eq(sageAccountMappings.id, existing[0].id));
+      logIntegrationAudit("sync.sage_mapping.updated", {
+        orgId: user.organizationId,
+        connectionId: connection.id,
+        provider: "sage_intacct",
+        userId: user.id,
+        meta: { costCode, sageAccountId },
+      });
+      res.json({ ...existing[0], sageAccountId, sageAccountName });
+    } else {
+      const [mapping] = await db.insert(sageAccountMappings).values({
+        organizationId: user.organizationId,
+        connectionId: connection.id,
+        costCode,
+        sageAccountId,
+        sageAccountName,
+        mappingType: mappingType || "cost_code",
+      }).returning();
+      logIntegrationAudit("sync.sage_mapping.created", {
+        orgId: user.organizationId,
+        connectionId: connection.id,
+        provider: "sage_intacct",
+        userId: user.id,
+        meta: { costCode, sageAccountId },
+      });
+      res.json(mapping);
+    }
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.delete("/connections/:id/sage-account-mappings/:mappingId", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    if (!requireSageEnabledOrFail(res)) return;
+
+    await db.delete(sageAccountMappings)
+      .where(and(
+        eq(sageAccountMappings.id, req.params.mappingId),
+        eq(sageAccountMappings.organizationId, user.organizationId),
+      ));
+    logIntegrationAudit("sync.sage_mapping.deleted", {
+      orgId: user.organizationId,
+      connectionId: req.params.id,
+      provider: "sage_intacct",
+      userId: user.id,
+      meta: { mappingId: req.params.mappingId },
+    });
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/connections/:id/sage-account-mappings/auto-map", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    if (!requireSageEnabledOrFail(res)) return;
+    const connection = await connectionService.getConnection(req.params.id, user.organizationId);
+    if (!connection) return res.status(404).json({ error: "Connection not found" });
+    if (connection.provider !== "sage_intacct") {
+      return res.status(400).json({ error: "Connection is not a Sage Intacct connection" });
+    }
+
+    const [coaState] = await db.select().from(integrationSyncState)
+      .where(and(
+        eq(integrationSyncState.connectionId, connection.id),
+        eq(integrationSyncState.entityType, "chart_of_accounts"),
+      ));
+    if (!coaState) {
+      return res.status(400).json({ error: "Chart of Accounts must be synced first" });
+    }
+
+    const accounts = (coaState.metadata as any)?.accounts || [];
+    const { costCodes } = req.body || {};
+    if (!Array.isArray(costCodes) || costCodes.length === 0) {
+      return res.status(400).json({ error: "costCodes array is required" });
+    }
+
+    const suggestions: Array<{ costCode: string; sageAccountId: string; sageAccountName: string; confidence: string }> = [];
+    let created = 0;
+
+    for (const code of costCodes) {
+      const codeLower = String(code).toLowerCase().replace(/[-_]/g, " ");
+      let best: { sageId: string; name: string; score: number } | null = null;
+      for (const acct of accounts) {
+        const acctName = String(acct.name || acct.accountNumber || "").toLowerCase();
+        if (!acctName) continue;
+        if (acctName === codeLower) {
+          best = { sageId: acct.sageId, name: acct.name, score: 1 };
+          break;
+        }
+        if (acctName.includes(codeLower) || codeLower.includes(acctName)) {
+          if (!best || 0.5 > best.score) best = { sageId: acct.sageId, name: acct.name, score: 0.5 };
+        }
+      }
+      if (best) {
+        const existing = await db.select().from(sageAccountMappings)
+          .where(and(
+            eq(sageAccountMappings.connectionId, connection.id),
+            eq(sageAccountMappings.organizationId, user.organizationId),
+            eq(sageAccountMappings.costCode, String(code)),
+            eq(sageAccountMappings.mappingType, "cost_code"),
+          ));
+        if (existing.length === 0) {
+          await db.insert(sageAccountMappings).values({
+            organizationId: user.organizationId,
+            connectionId: connection.id,
+            costCode: String(code),
+            sageAccountId: best.sageId,
+            sageAccountName: best.name,
+            mappingType: "cost_code",
+          });
+          created++;
+        }
+        suggestions.push({
+          costCode: String(code),
+          sageAccountId: best.sageId,
+          sageAccountName: best.name,
+          confidence: best.score === 1 ? "exact" : "partial",
+        });
+      }
+    }
+
+    res.json({ suggestions, created, total: costCodes.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Sage Intacct — named operation routes (delegate to sync.ts helpers).
+// All require requireAuth + RBAC + INTEGRATION_SAGE=true.
+
+async function loadActiveSageConnection(orgId: string): Promise<IntegrationConnection | null> {
+  const [conn] = await db
+    .select()
+    .from(integrationConnections)
+    .where(and(
+      eq(integrationConnections.organizationId, orgId),
+      eq(integrationConnections.provider, "sage_intacct"),
+      eq(integrationConnections.status, "active"),
+    ));
+  if (!conn) return null;
+  // sync helpers + xmlGateway expect plaintext userPassword/accessToken;
+  // the row's metadata is encrypted at rest by encryptMetadata.
+  return {
+    ...conn,
+    metadata: decryptMetadata((conn.metadata ?? {}) as Record<string, any>),
+  } as IntegrationConnection;
+}
+
+// Build a SageInvoiceInput from the local pay-application identified by
+// `:invoiceId`. Only APPROVED pay applications are exportable; everything
+// else returns null so the route surfaces 404. Customer ref prefers the
+// project's `gcOrganizationId` (matches what `exportCustomers` exports as
+// CUSTOMERID) and falls back to a sanitised `clientName` slug.
+async function resolveSageInvoiceFromPayApplication(
+  payApplicationId: string,
+  organizationId: string,
+): Promise<{
+  customerRef: string;
+  lineItems: Array<{ description: string; amount: number; costCode?: string }>;
+  dueDate?: string;
+  docNumber?: string;
+  invoiceDate?: string;
+  localInvoiceId?: string;
+} | null> {
+  const [pa] = await db
+    .select()
+    .from(payApplications)
+    .where(and(
+      eq(payApplications.id, payApplicationId),
+      eq(payApplications.organizationId, organizationId),
+    ));
+  if (!pa) return null;
+  if (pa.status !== "APPROVED") return null;
+
+  const [project] = await db
+    .select()
+    .from(projects)
+    .where(eq(projects.id, pa.projectId));
+  if (!project) return null;
+
+  const items = await db
+    .select()
+    .from(sovLineItems)
+    .where(eq(sovLineItems.sovId, pa.sovId));
+
+  const lineItems = items
+    .map((it) => ({
+      description: it.description,
+      amount: Number(it.thisPeriodCompleted ?? 0) + Number(it.materialsStored ?? 0),
+      ...(it.itemCode ? { costCode: it.itemCode } : {}),
+    }))
+    .filter((it) => it.amount > 0);
+
+  if (lineItems.length === 0) return null;
+
+  const customerRef =
+    (project.gcOrganizationId && String(project.gcOrganizationId)) ||
+    String(project.clientName || "").trim().replace(/[^A-Za-z0-9_-]+/g, "-").slice(0, 40) ||
+    "UNASSIGNED";
+
+  return {
+    customerRef,
+    lineItems,
+    ...(pa.periodTo ? { dueDate: String(pa.periodTo) } : {}),
+    docNumber: `PA-${pa.applicationNumber}`,
+    invoiceDate: new Date().toISOString().slice(0, 10),
+    localInvoiceId: pa.id,
+  };
+}
+
+function requireSageEnabledOrFail(res: any): boolean {
+  if (process.env.INTEGRATION_SAGE !== "true") {
+    res.status(403).json({ error: "Sage Intacct integration is disabled (INTEGRATION_SAGE=false)" });
+    return false;
+  }
+  return true;
+}
+
+// Securely upsert per-tenant Sage Web Services credentials. Accepts the
+// userId/userPassword/companyId/locationId in an authenticated POST body
+// (TLS only) instead of via OAuth state. The password is encrypted at
+// rest via encryptMetadata.
+router.post("/sage/credentials", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    if (!requireSageEnabledOrFail(res)) return;
+    const conn = await loadActiveSageConnection(user.organizationId);
+    if (!conn) return res.status(404).json({ error: "No active Sage Intacct connection" });
+    const { userId, userPassword, companyId, locationId } = req.body || {};
+    if (typeof userId !== "string" || userId.length === 0) {
+      return res.status(400).json({ error: "userId is required" });
+    }
+    if (typeof userPassword !== "string" || userPassword.length === 0) {
+      return res.status(400).json({ error: "userPassword is required" });
+    }
+    const existing = (conn.metadata ?? {}) as Record<string, any>;
+    const merged = {
+      ...existing,
+      userId,
+      userPassword,
+      ...(typeof companyId === "string" && companyId.length > 0 ? { companyId } : {}),
+      ...(typeof locationId === "string" ? { locationId } : {}),
+    };
+    const encrypted = encryptMetadata(merged);
+    await db
+      .update(integrationConnections)
+      .set({ metadata: encrypted, updatedAt: new Date() })
+      .where(and(
+        eq(integrationConnections.id, conn.id),
+        eq(integrationConnections.organizationId, user.organizationId),
+      ));
+    res.status(204).send();
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/sage/sync-coa", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    if (!requireSageEnabledOrFail(res)) return;
+    const conn = await loadActiveSageConnection(user.organizationId);
+    if (!conn) return res.status(404).json({ error: "No active Sage Intacct connection" });
+    const dryRun = req.body?.dryRun === true;
+    const result = await sageImportChartOfAccounts(conn, dryRun);
+    res.status(result.success ? 200 : 502).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/sage/export-customers", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    if (!requireSageEnabledOrFail(res)) return;
+    const conn = await loadActiveSageConnection(user.organizationId);
+    if (!conn) return res.status(404).json({ error: "No active Sage Intacct connection" });
+    const dryRun = req.body?.dryRun === true;
+    const customers = Array.isArray(req.body?.customers) ? req.body.customers : [];
+    const result = await sageExportCustomers(conn, customers, dryRun);
+    res.status(result.success ? 200 : 502).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/sage/export-invoice/:invoiceId", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    if (!requireSageEnabledOrFail(res)) return;
+    const conn = await loadActiveSageConnection(user.organizationId);
+    if (!conn) return res.status(404).json({ error: "No active Sage Intacct connection" });
+
+    const invoice = await resolveSageInvoiceFromPayApplication(
+      req.params.invoiceId,
+      user.organizationId,
+    );
+    if (!invoice) {
+      return res.status(404).json({ error: "Pay application not found or not approved for billing" });
+    }
+
+    const dryRun = req.body?.dryRun === true;
+    const result = await sageExportInvoice(conn, invoice, dryRun);
+    res.status(result.success ? 200 : 502).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/sage/import-payments", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    if (!requireSageEnabledOrFail(res)) return;
+    const conn = await loadActiveSageConnection(user.organizationId);
+    if (!conn) return res.status(404).json({ error: "No active Sage Intacct connection" });
+    let invoiceIds: string[] = Array.isArray(req.body?.invoiceIds) ? req.body.invoiceIds : [];
+    if (invoiceIds.length === 0) {
+      invoiceIds = (await getTrackedSageInvoiceRecordIds(conn.id)).slice(0, 200);
+    }
+    const result = await sageImportPaymentStatus(conn, invoiceIds);
+    res.status(result.success ? 200 : 502).json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Returns the cached Sage chart-of-accounts for the admin mapping panel.
+router.get("/connections/:id/sage-accounts", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    if (!["SUPER_ADMIN", "ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Insufficient permissions" });
+    }
+    if (!requireSageEnabledOrFail(res)) return;
+    const connection = await connectionService.getConnection(req.params.id, user.organizationId);
+    if (!connection) return res.status(404).json({ error: "Connection not found" });
+    if (connection.provider !== "sage_intacct") {
+      return res.status(400).json({ error: "Connection is not a Sage Intacct connection" });
+    }
+
+    const [state] = await db.select().from(integrationSyncState)
+      .where(and(
+        eq(integrationSyncState.connectionId, connection.id),
+        eq(integrationSyncState.entityType, "chart_of_accounts"),
+      ));
+    const accounts = (state?.metadata as any)?.accounts || [];
+    const syncedAt = (state?.metadata as any)?.syncedAt || null;
+    res.json({ accounts, syncedAt });
   } catch (err) {
     next(err);
   }

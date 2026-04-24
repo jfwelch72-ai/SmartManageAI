@@ -11,6 +11,7 @@ import { ensureIntegrationSyncStateFailureColumns } from "./ensureIntegrationSyn
 import { ensureIntegrationSyncStateExhaustedNotifiedColumn } from "./ensureIntegrationSyncStateExhaustedNotifiedColumn";
 import { ensureIntegrationSyncAlertMutes } from "./ensureIntegrationSyncAlertMutes";
 import { ensureWageDecisionRateChanges } from "./ensureWageDecisionRateChanges";
+import { ensureSageAccountMappingsTable } from "./ensureSageAccountMappingsTable";
 import { ensureWageDecisionRateChangeAcknowledgements } from "./ensureWageDecisionRateChangeAcknowledgements";
 import { ensureOneShotJobRuns } from "./ensureOneShotJobRuns";
 import { ensureEstimateCategoryEnumValues } from "./ensureEstimateCategoryEnumValues";
@@ -158,6 +159,10 @@ const migrations: MigrationStep[] = [
   // Replaces the previous practice of regex-parsing the audit_log
   // newValue string in the admin "One-shot jobs" panel.
   { name: "one_shot_job_runs", category: "CREATE_TABLE", fn: ensureOneShotJobRuns },
+  // Task #1600 — Sage Intacct chart-of-accounts mapping table mirroring
+  // qbo_account_mappings so the admin Sage mapping panel can map
+  // SmartManageAI cost codes onto Sage GL accounts.
+  { name: "sage_account_mappings", category: "CREATE_TABLE", fn: ensureSageAccountMappingsTable },
   { name: "estimate_category_enum_values", category: "ADD_ENUM", fn: ensureEstimateCategoryEnumValues },
   // Task #1144 — close baseline-migration gaps for ALTER TYPE ADD VALUE
   // operations that `reconcileSchemaDrift` cannot replay (it creates missing

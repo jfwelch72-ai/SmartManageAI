@@ -11,6 +11,7 @@ import type { Provider, Connection } from "@/components/integrations/types";
 import { SecurityBanner, ProviderCardGrid, TokenStatusBadge, SecurityDetailsPanel, SecurityAuditPanel } from "@/components/integrations/IntegrationProviderCard";
 import { IntegrationSyncPanel } from "@/components/integrations/IntegrationSyncPanel";
 import { AccountMappingPanel, SyncSchedulePanel } from "@/components/integrations/QboMappingPanel";
+import { SageMappingPanel } from "@/components/integrations/SageMappingPanel";
 import { WebhookConfigPanel } from "@/components/integrations/WebhookConfigPanel";
 import { StackCTSyncPanel } from "@/components/integrations/StackCTSyncPanel";
 import { SyncRetryPanel } from "@/components/integrations/SyncRetryPanel";
@@ -150,6 +151,7 @@ export default function IntegrationsPage({ embedded }: { embedded?: boolean } = 
 
   const activeConnections = (connections || []).filter(c => c.status === "active");
   const qboConnection = activeConnections.find(c => c.provider === "qbo");
+  const sageConnection = activeConnections.find(c => c.provider === "sage_intacct");
   const zapierConnection = activeConnections.find(c => c.provider === "zapier");
   const stackctConnection = (connections || []).find(c => c.provider === "stackct" && c.status !== "disconnected");
 
@@ -216,6 +218,13 @@ export default function IntegrationsPage({ embedded }: { embedded?: boolean } = 
             </CardContent>
           </Card>
         </div>
+      )}
+
+      {sageConnection && (
+        <>
+          <Separator />
+          <SageMappingPanel connection={sageConnection} />
+        </>
       )}
 
       <Separator />

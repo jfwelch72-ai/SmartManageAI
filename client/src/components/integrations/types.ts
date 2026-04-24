@@ -82,6 +82,22 @@ export interface QboAccount {
   active: boolean;
 }
 
+export interface SageAccountMapping {
+  id: string;
+  costCode: string;
+  sageAccountId: string;
+  sageAccountName: string;
+  mappingType: string;
+}
+
+export interface SageAccount {
+  sageId: string;
+  accountNumber: string;
+  name: string;
+  accountType: string;
+  status: string;
+}
+
 export interface SyncSchedule {
   id: string;
   operation: string;
@@ -137,6 +153,7 @@ export interface SuppressionResetsResponse {
 
 export const PROVIDER_DESCRIPTIONS: Record<string, string> = {
   qbo: "Sync invoices, customers, and chart of accounts with QuickBooks Online.",
+  sage_intacct: "Sync invoices, customers, and chart of accounts with Sage Intacct Construction (Phase A — feature flagged).",
   google: "Connect Gmail and Google Calendar for email ingestion and scheduling.",
   microsoft: "Integrate Outlook mail and Microsoft 365 Calendar.",
   docusign: "Send contracts and change orders for electronic signature.",

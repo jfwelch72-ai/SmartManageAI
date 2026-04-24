@@ -54,13 +54,19 @@ export const sageProvider: IntegrationProvider = {
         throw new Error(`Sage token exchange failed: ${response.status}`);
       }
       const data = await response.json();
+      // Per-tenant Web Services user credentials (userId/userPassword) are
+      // never accepted via OAuth state; admins POST them to the
+      // `/sage/credentials` endpoint over TLS after authorization.
       return {
         accessToken: data.access_token,
         refreshToken: data.refresh_token,
         expiresAt: new Date(Date.now() + (data.expires_in || 3600) * 1000),
         scope: data.scope || "",
         tokenType: data.token_type || "Bearer",
-        raw: { companyId: data.company_id || stateData.companyId },
+        raw: {
+          companyId: data.company_id || stateData.companyId,
+          locationId: stateData.locationId,
+        },
       };
     } catch (err) {
       clearTimeout(timeout);
@@ -87,12 +93,19 @@ export const sageProvider: IntegrationProvider = {
     });
     if (!response.ok) throw new Error(`Sage token refresh failed: ${response.status}`);
     const data = await response.json();
+    // storeConnectionTokens overwrites metadata with `raw`, so carry the
+    // per-tenant Web Services credentials forward across the refresh.
     return {
       accessToken: data.access_token,
       refreshToken: data.refresh_token || metadata.refreshToken,
       expiresAt: new Date(Date.now() + (data.expires_in || 3600) * 1000),
       tokenType: data.token_type || "Bearer",
-      raw: { companyId: metadata.companyId },
+      raw: {
+        companyId: metadata.companyId,
+        userId: metadata.userId,
+        userPassword: metadata.userPassword,
+        locationId: metadata.locationId,
+      },
     };
   },
 

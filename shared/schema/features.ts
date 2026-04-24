@@ -7370,6 +7370,31 @@ export const insertQboSyncScheduleSchema = createInsertSchema(qboSyncSchedules).
 export type InsertQboSyncSchedule = z.infer<typeof insertQboSyncScheduleSchema>;
 export type QboSyncSchedule = typeof qboSyncSchedules.$inferSelect;
 
+// Task #1600 — Sage Intacct chart-of-accounts mapping (parallel to qbo_account_mappings).
+// Records the per-(connection, costCode, mappingType) Sage GL account a SmartManageAI
+// cost code should post against when journalising payroll, A/P, and other expenses
+// via the Sage Intacct XML Gateway. Same shape as qbo_account_mappings so the
+// admin Sage mapping panel can re-use the QBO panel's CRUD/auto-map workflow.
+export const sageAccountMappings = pgTable("sage_account_mappings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  connectionId: varchar("connection_id").notNull().references(() => integrationConnections.id, { onDelete: "cascade" }),
+  costCode: text("cost_code").notNull(),
+  sageAccountId: text("sage_account_id").notNull(),
+  sageAccountName: text("sage_account_name").notNull(),
+  mappingType: text("mapping_type").notNull().default("cost_code"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("sage_account_mappings_org_idx").on(table.organizationId),
+  connectionIdx: index("sage_account_mappings_connection_idx").on(table.connectionId),
+  uniqueMapping: unique("sage_account_mappings_unique").on(table.organizationId, table.connectionId, table.costCode, table.mappingType),
+}));
+
+export const insertSageAccountMappingSchema = createInsertSchema(sageAccountMappings).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertSageAccountMapping = z.infer<typeof insertSageAccountMappingSchema>;
+export type SageAccountMapping = typeof sageAccountMappings.$inferSelect;
+
 // Table 4b: zapier_webhooks – outgoing webhook configs for the Zapier provider
 export const zapierWebhooks = pgTable("zapier_webhooks", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
