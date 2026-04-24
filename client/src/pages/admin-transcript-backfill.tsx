@@ -5332,9 +5332,10 @@ export function BackfillAlertFailuresDigestCard({
   const [crossOrg, setCrossOrg] = useState<boolean>(isSuperAdmin);
   const effectiveCrossOrg = isSuperAdmin && crossOrg;
   // Task #1518 — separate "exporting" flags per dataset so platform support
-  // can trigger one CSV without disabling the other button.
+  // can trigger one CSV without disabling the other button. Task #1568
+  // adds the "quiet" branch alongside summary + samples.
   const [exportingDataset, setExportingDataset] = useState<
-    "summary" | "samples" | null
+    "summary" | "samples" | "quiet" | null
   >(null);
   const queryKey = failuresDigestKey(windowHours, effectiveCrossOrg);
   const failuresQuery = useQuery<BackfillAlertFailuresDigest>({
@@ -5359,12 +5360,15 @@ export function BackfillAlertFailuresDigestCard({
   // when investigating a "silent" tenant.
   const [quietOrgsExpanded, setQuietOrgsExpanded] = useState<boolean>(false);
 
-  // Task #1518 — download the cross-org breakdown as CSV. Two datasets:
-  // the per-org rollup (matches what's rendered in the table above) and the
-  // per-org recent failure samples for deeper incident review. Server enforces
-  // SUPER_ADMIN + crossOrg=true; we mirror that gating here so the buttons
-  // only appear when the cross-org view is active.
-  const handleExportCsv = async (dataset: "summary" | "samples") => {
+  // Task #1518 — download the cross-org breakdown as CSV. Three datasets
+  // (Task #1568 adds "quiet"):
+  //   - summary: the per-org rollup that matches the table above
+  //   - samples: the per-org recent failure samples for deeper incident review
+  //   - quiet:   orgs that ran backfill in the window but produced ZERO alert
+  //              deliveries — pairs with the in-card "Quiet orgs" section
+  // Server enforces SUPER_ADMIN + crossOrg=true; we mirror that gating here
+  // so the buttons only appear when the cross-org view is active.
+  const handleExportCsv = async (dataset: "summary" | "samples" | "quiet") => {
     setExportingDataset(dataset);
     try {
       const params = new URLSearchParams({
@@ -5448,6 +5452,30 @@ export function BackfillAlertFailuresDigestCard({
                     <Download className="h-4 w-4 mr-2" />
                   )}
                   Samples CSV
+                </Button>
+                {/* Task #1568 — third export branch for the silent-pipeline
+                    list. Disabled when there are no quiet orgs in the
+                    window so platform support doesn't download an empty
+                    CSV by accident. */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleExportCsv("quiet")}
+                  disabled={
+                    failuresQuery.isLoading ||
+                    failuresQuery.isError ||
+                    exportingDataset !== null ||
+                    quietOrgs.length === 0
+                  }
+                  data-testid="button-export-alert-failures-digest-quiet-csv"
+                  title="Download the orgs that ran backfill but produced zero alert deliveries"
+                >
+                  {exportingDataset === "quiet" ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4 mr-2" />
+                  )}
+                  Quiet orgs CSV
                 </Button>
               </>
             )}

@@ -4528,6 +4528,9 @@ router.get(
 // single-org view already covers org-scoped admins.
 //   - dataset=summary (default): one row per org with totals
 //   - dataset=samples: one row per recent failure sample, joined to the org
+//   - dataset=quiet (Task #1568): one row per org that ran backfill in the
+//     window but produced ZERO alert deliveries — the "silent pipeline"
+//     signal the JSON digest already surfaces in its quietOrgs section
 router.get(
   "/api/crm/calls/transcripts/backfill/alert-failures-digest.csv",
   requireAuth,
@@ -4556,18 +4559,41 @@ router.get(
         Math.max(Number.isFinite(rawSample) ? rawSample : 20, 1),
         50,
       );
-      const dataset =
-        String(req.query.dataset ?? "summary") === "samples"
+      // Task #1568 — third dataset: "quiet" exports the orgs that ran
+      // backfill in the window but produced ZERO alert deliveries. Mirrors
+      // the "Quiet orgs in this window" section the JSON digest already
+      // surfaces (Task #1548) so platform support can attach the silent-
+      // pipeline signal to incident reviews alongside the failure data.
+      const rawDataset = String(req.query.dataset ?? "summary");
+      const dataset: "summary" | "samples" | "quiet" =
+        rawDataset === "samples"
           ? "samples"
-          : "summary";
+          : rawDataset === "quiet"
+            ? "quiet"
+            : "summary";
       const since = new Date(Date.now() - windowHours * 60 * 60 * 1000);
       const generatedAt = new Date();
 
+      // The quiet dataset doesn't need the failure aggregator — skip the
+      // (potentially expensive) failure scan when we know we won't read
+      // it. We still load org metadata below using the quiet entries'
+      // org ids so we can render names/slugs in the CSV.
       const aggregates =
-        await aggregateRecentCrmTranscriptBackfillAlertFailures(since, {
-          recentSampleLimit,
-        });
-      const orgIds = aggregates.map((a) => a.organizationId);
+        dataset === "quiet"
+          ? []
+          : await aggregateRecentCrmTranscriptBackfillAlertFailures(since, {
+              recentSampleLimit,
+            });
+      const quietEntries =
+        dataset === "quiet"
+          ? await findQuietCrmTranscriptBackfillOrgsSince(since)
+          : [];
+      const orgIds = Array.from(
+        new Set([
+          ...aggregates.map((a) => a.organizationId),
+          ...quietEntries.map((q) => q.organizationId),
+        ]),
+      );
       const orgRows = orgIds.length
         ? await db
             .select({
@@ -4599,6 +4625,21 @@ router.get(
       const sinceIso = since.toISOString();
       const generatedAtIso = generatedAt.toISOString();
       const windowLabel = `${windowHours}h`;
+
+      // Task #1568 — quiet orgs are sorted by most-recent activity so the
+      // CSV opens with the freshest "silent" tenants first, matching the
+      // ordering the JSON digest already returns to the UI. Name tiebreak
+      // keeps the file deterministic between consecutive downloads.
+      const sortedQuietEntries = [...quietEntries].sort((a, b) => {
+        const at = a.lastJobAt.getTime();
+        const bt = b.lastJobAt.getTime();
+        if (bt !== at) return bt - at;
+        const am = orgById.get(a.organizationId);
+        const bm = orgById.get(b.organizationId);
+        const an = (am?.name ?? a.organizationId).toLowerCase();
+        const bn = (bm?.name ?? b.organizationId).toLowerCase();
+        return an.localeCompare(bn);
+      });
 
       let lines: string[];
       let filenameSuffix: string;
@@ -4640,6 +4681,40 @@ router.get(
           }
         }
         filenameSuffix = "samples";
+      } else if (dataset === "quiet") {
+        // Task #1568 — one row per "quiet" org so platform support can
+        // attach the silent-pipeline list to the same incident review they
+        // attach the failure summary to. jobs_in_window / last_job_at
+        // mirror the JSON digest fields exactly.
+        const HEADERS = [
+          "organization_id",
+          "organization_name",
+          "organization_slug",
+          "jobs_in_window",
+          "last_job_at",
+          "window_hours",
+          "since",
+          "generated_at",
+        ];
+        lines = [HEADERS.join(",")];
+        for (const entry of sortedQuietEntries) {
+          const meta = orgById.get(entry.organizationId);
+          lines.push(
+            [
+              entry.organizationId,
+              meta?.name ?? "",
+              meta?.slug ?? "",
+              entry.jobsInWindow,
+              entry.lastJobAt.toISOString(),
+              windowHours,
+              sinceIso,
+              generatedAtIso,
+            ]
+              .map(escapeCsv)
+              .join(","),
+          );
+        }
+        filenameSuffix = "quiet";
       } else {
         const HEADERS = [
           "organization_id",
@@ -4691,7 +4766,14 @@ router.get(
       // write never blocks the download, and only on the success path so
       // we don't pollute the trail with rows for callers that 4xx'd above.
       try {
-        const orgRowCount = sortedAggregates.length;
+        // Task #1568 — for the new quiet dataset the "org row count" is
+        // the number of quiet orgs exported, not the failure-aggregate
+        // count (which is empty for that dataset). Sample row count stays
+        // zero outside the samples branch.
+        const orgRowCount =
+          dataset === "quiet"
+            ? sortedQuietEntries.length
+            : sortedAggregates.length;
         const sampleRowCount =
           dataset === "samples"
             ? sortedAggregates.reduce(
