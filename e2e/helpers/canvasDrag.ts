@@ -32,8 +32,17 @@
  * threshold clears without collapsing into a click; pass an
  * `intermediate` array to override that with a custom path (e.g. the
  * FREEHAND tool that needs a real curve recorded).
+ *
+ * Task #1887: every gesture is wrapped in a `test.step` with a
+ * descriptive title and a JSON attachment that records the resolved
+ * from/to points, intermediate waypoints, engine tuning, and (for
+ * canvas-relative drags) the canvas bounding box. When a spec flakes
+ * the Playwright HTML report shows the actual coordinates inline, so
+ * we no longer have to re-run with extra logging to figure out whether
+ * Konva missed the drag-distance threshold or the click landed on the
+ * wrong shape.
  */
-import type { Locator, Page } from "@playwright/test";
+import { test, type Locator, type Page } from "@playwright/test";
 
 export interface Point {
   x: number;
@@ -95,11 +104,37 @@ export interface DragOptions {
   preMoves?: boolean;
 }
 
+/** Format a point as a compact `(x, y)` string for step titles. */
+function fmtPoint(p: Point): string {
+  return `(${p.x.toFixed(1)}, ${p.y.toFixed(1)})`;
+}
+
+/**
+ * Attach a JSON blob describing the gesture to the active test step.
+ *
+ * Wrapped in try/catch so the helpers stay usable from contexts where
+ * `test.info()` isn't available (e.g. global setup, ad-hoc scripts).
+ */
+async function attachGesture(name: string, payload: unknown): Promise<void> {
+  try {
+    await test.info().attach(name, {
+      body: JSON.stringify(payload, null, 2),
+      contentType: "application/json",
+    });
+  } catch {
+    // Outside a Playwright test runtime — skip the attachment silently.
+  }
+}
+
 /**
  * Drag the mouse from `from` to `to` in viewport pixel coordinates.
  *
  * The helper applies engine-aware step counts and waits so the same
  * call site behaves consistently on Chromium, Firefox, and WebKit.
+ *
+ * Wrapped in a `test.step` so the resolved gesture (from/to,
+ * intermediate waypoints, tuning) shows up inline in the Playwright
+ * HTML report when an assertion downstream fails.
  */
 export async function dragSequence(
   page: Page,
@@ -109,40 +144,73 @@ export async function dragSequence(
   options: DragOptions = {},
 ): Promise<void> {
   const { intermediate, preMoves = true } = options;
-  const { interStep, finalStep, interWait, edgeWait, postUpWait } =
-    getDragTuning(browserName);
+  const tuning = getDragTuning(browserName);
+  const { interStep, finalStep, interWait, edgeWait, postUpWait } = tuning;
 
-  // Two `mouse.move()` calls so WebKit reliably dispatches the initial
-  // mousemove before the synthetic mousedown lands.
-  await page.mouse.move(from.x, from.y);
-  await page.mouse.move(from.x, from.y);
-  await page.mouse.down();
-  await page.waitForTimeout(edgeWait);
-
+  // Resolve the path up-front so the trace records what actually got
+  // dispatched (not just what the caller asked for).
+  let waypoints: Point[];
+  let waypointSource: "custom" | "preMoves" | "none";
   if (intermediate && intermediate.length > 0) {
-    for (const p of intermediate) {
+    waypoints = intermediate;
+    waypointSource = "custom";
+  } else if (preMoves) {
+    waypoints = [
+      { x: from.x + 8, y: from.y + 6 },
+      { x: from.x + 20, y: from.y + 14 },
+    ];
+    waypointSource = "preMoves";
+  } else {
+    waypoints = [];
+    waypointSource = "none";
+  }
+
+  const stepTitle =
+    `canvasDrag.dragSequence ${browserName} ` +
+    `${fmtPoint(from)} → ${fmtPoint(to)} ` +
+    `[${waypoints.length} waypoint${waypoints.length === 1 ? "" : "s"}]`;
+
+  await test.step(stepTitle, async () => {
+    await attachGesture("canvas-drag.gesture", {
+      kind: "dragSequence",
+      browserName,
+      from,
+      to,
+      waypoints,
+      waypointSource,
+      preMoves,
+      tuning,
+    });
+
+    // Two `mouse.move()` calls so WebKit reliably dispatches the initial
+    // mousemove before the synthetic mousedown lands.
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.waitForTimeout(edgeWait);
+
+    for (const p of waypoints) {
       await page.mouse.move(p.x, p.y, { steps: interStep });
       await page.waitForTimeout(interWait);
     }
-  } else if (preMoves) {
-    // Two short pre-moves clear Konva's drag-distance threshold without
-    // collapsing into a click.
-    await page.mouse.move(from.x + 8, from.y + 6, { steps: interStep });
-    await page.waitForTimeout(interWait);
-    await page.mouse.move(from.x + 20, from.y + 14, { steps: interStep });
-    await page.waitForTimeout(interWait);
-  }
 
-  await page.mouse.move(to.x, to.y, { steps: finalStep });
-  await page.waitForTimeout(edgeWait);
-  await page.mouse.up();
-  await page.waitForTimeout(postUpWait);
+    await page.mouse.move(to.x, to.y, { steps: finalStep });
+    await page.waitForTimeout(edgeWait);
+    await page.mouse.up();
+    await page.waitForTimeout(postUpWait);
+  });
 }
 
 /**
  * Drag the mouse on a Konva canvas (or any element) using
  * canvas-relative coordinates. Resolves the canvas's bounding box
  * once and then delegates to `dragSequence`.
+ *
+ * Wrapped in a `test.step` so the trace records both the
+ * canvas-relative gesture the spec asked for and the resolved canvas
+ * bounding box. That makes it possible to tell at a glance whether a
+ * failing click landed on the wrong shape because the canvas moved or
+ * because the relative coordinates were off.
  */
 export async function dragOnCanvas(
   page: Page,
@@ -152,19 +220,52 @@ export async function dragOnCanvas(
   browserName: string,
   options: DragOptions = {},
 ): Promise<void> {
-  const box = await canvas.boundingBox();
-  if (!box) throw new Error("Canvas has no bounding box");
-  const offset = (p: Point): Point => ({ x: box.x + p.x, y: box.y + p.y });
-  await dragSequence(
-    page,
-    offset(start),
-    offset(end),
-    browserName,
-    {
-      ...options,
-      intermediate: options.intermediate?.map(offset),
-    },
-  );
+  const stepTitle =
+    `canvasDrag.dragOnCanvas ${browserName} ` +
+    `${fmtPoint(start)} → ${fmtPoint(end)} (canvas-relative)`;
+
+  await test.step(stepTitle, async () => {
+    const box = await canvas.boundingBox();
+    if (!box) {
+      await attachGesture("canvas-drag.gesture", {
+        kind: "dragOnCanvas",
+        browserName,
+        start,
+        end,
+        error: "Canvas has no bounding box",
+      });
+      throw new Error("Canvas has no bounding box");
+    }
+    const offset = (p: Point): Point => ({ x: box.x + p.x, y: box.y + p.y });
+    const resolvedStart = offset(start);
+    const resolvedEnd = offset(end);
+    const resolvedIntermediate = options.intermediate?.map(offset);
+
+    await attachGesture("canvas-drag.gesture", {
+      kind: "dragOnCanvas",
+      browserName,
+      canvasBoundingBox: box,
+      relative: { start, end, intermediate: options.intermediate ?? null },
+      resolved: {
+        from: resolvedStart,
+        to: resolvedEnd,
+        intermediate: resolvedIntermediate ?? null,
+      },
+      preMoves: options.preMoves ?? true,
+      tuning: getDragTuning(browserName),
+    });
+
+    await dragSequence(
+      page,
+      resolvedStart,
+      resolvedEnd,
+      browserName,
+      {
+        ...options,
+        intermediate: resolvedIntermediate,
+      },
+    );
+  });
 }
 
 /**
