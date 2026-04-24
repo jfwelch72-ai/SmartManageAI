@@ -22,6 +22,7 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { authedRequest, getCsrfHeader, installCsrf } from "./helpers/csrf";
 import { getMinimalPdf, uploadFixturePdf } from "./helpers/uploadFixturePdf";
+import { dragSequence, getDragTuning } from "./helpers/canvasDrag";
 
 const BASE_URL =
   process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
@@ -169,6 +170,7 @@ test.describe("PlanMarkupLayer — group drag E2E (Task #1707)", () => {
 
   test("multi-select two markups, drag one, both move and persist after reload", async ({
     page,
+    browserName,
   }) => {
     test.setTimeout(120_000);
 
@@ -265,8 +267,12 @@ test.describe("PlanMarkupLayer — group drag E2E (Task #1707)", () => {
     // shift-extension. `lastSelected` in PlanMarkupLayer iterates the
     // selectedIds Set in insertion order, so the toolbar testid uses
     // the FIRST-clicked markup's id (here: A) even after B is added.
+    // Two move calls so WebKit reliably dispatches the initial
+    // mousemove before the click sequence.
+    const { clickHoldWait } = getDragTuning(browserName);
     await page.mouse.move(ptA.x, ptA.y);
-    await page.mouse.click(ptA.x, ptA.y);
+    await page.mouse.move(ptA.x, ptA.y);
+    await page.mouse.click(ptA.x, ptA.y, { delay: clickHoldWait });
     await expect(
       page.getByTestId(`markup-selection-toolbar-${markupA.id}`),
     ).toBeVisible({ timeout: 10_000 });
@@ -277,7 +283,8 @@ test.describe("PlanMarkupLayer — group drag E2E (Task #1707)", () => {
     // Shift through the native dispatch.
     await page.keyboard.down("Shift");
     await page.mouse.move(ptB.x, ptB.y);
-    await page.mouse.click(ptB.x, ptB.y);
+    await page.mouse.move(ptB.x, ptB.y);
+    await page.mouse.click(ptB.x, ptB.y, { delay: clickHoldWait });
     await page.keyboard.up("Shift");
 
     // When ≥2 markups are selected the Group button appears inside the
@@ -291,19 +298,19 @@ test.describe("PlanMarkupLayer — group drag E2E (Task #1707)", () => {
     // `onDragEnd` only after the mouse pointer has moved past Konva's
     // internal drag-distance threshold, so we step through several
     // intermediate positions before releasing. Keep the delta modest so
-    // the drag endpoint stays inside the visible canvas.
+    // the drag endpoint stays inside the visible canvas. The shared
+    // `dragSequence` helper picks engine-aware step counts and waits
+    // (Chromium vs Firefox/WebKit) — see `e2e/helpers/canvasDrag.ts`.
     const DELTA_PX = { dx: 80, dy: 50 };
     const dragFrom = ptB;
     const dragTo = { x: ptB.x + DELTA_PX.dx, y: ptB.y + DELTA_PX.dy };
 
-    await page.mouse.move(dragFrom.x, dragFrom.y);
-    await page.mouse.down();
-    // Two short pre-moves to clear Konva's drag threshold without
-    // triggering a click.
-    await page.mouse.move(dragFrom.x + 10, dragFrom.y + 10, { steps: 4 });
-    await page.mouse.move(dragFrom.x + 30, dragFrom.y + 20, { steps: 4 });
-    await page.mouse.move(dragTo.x, dragTo.y, { steps: 12 });
-    await page.mouse.up();
+    await dragSequence(page, dragFrom, dragTo, browserName, {
+      intermediate: [
+        { x: dragFrom.x + 10, y: dragFrom.y + 10 },
+        { x: dragFrom.x + 30, y: dragFrom.y + 20 },
+      ],
+    });
 
     // Convert the pixel delta to the same normalized delta the client
     // sends in the bulk PATCH payload.

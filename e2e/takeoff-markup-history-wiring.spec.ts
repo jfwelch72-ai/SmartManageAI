@@ -51,6 +51,11 @@
  */
 import { test, expect, type Page } from "@playwright/test";
 import { installCsrf } from "./helpers/csrf";
+import {
+  clickOnCanvas as clickOnCanvasHelper,
+  dragOnCanvas as dragOnCanvasHelper,
+  type Point,
+} from "./helpers/canvasDrag";
 
 const BASE_URL =
   process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
@@ -110,58 +115,21 @@ async function createMarkupApi(
   return (await res.json()) as MarkupResponse;
 }
 
-async function getCanvasBox(page: Page) {
-  const canvas = page.locator(".konvajs-content canvas").first();
-  await canvas.waitFor({ state: "visible", timeout: 15_000 });
-  const box = await canvas.boundingBox();
-  if (!box) throw new Error("Konva canvas has no bounding box");
-  return box;
+function canvasLocator(page: Page) {
+  return page.locator(".konvajs-content canvas").first();
 }
 
-async function clickOnCanvas(page: Page, point: { x: number; y: number }) {
-  const box = await getCanvasBox(page);
-  // Two move calls so WebKit reliably dispatches the initial mousemove
-  // before the click sequence — mirrors the helper in
-  // takeoff-markup-drawing.spec.ts / takeoff-markup-undo.spec.ts.
-  await page.mouse.move(box.x + point.x, box.y + point.y);
-  await page.mouse.move(box.x + point.x, box.y + point.y);
-  await page.mouse.down();
-  await page.waitForTimeout(30);
-  await page.mouse.up();
+async function clickOnCanvas(page: Page, point: Point) {
+  await clickOnCanvasHelper(page, canvasLocator(page), point);
 }
 
 async function dragOnCanvas(
   page: Page,
-  start: { x: number; y: number },
-  end: { x: number; y: number },
+  start: Point,
+  end: Point,
   browserName: string,
 ) {
-  // WebKit / Firefox dispatch synthetic mousemoves less aggressively than
-  // Chromium, so bump step counts and waits to keep Konva's drag pipeline
-  // deterministic across engines (matches the sibling drawing/undo specs).
-  const isChromium = browserName === "chromium";
-  const interStep = isChromium ? 4 : 8;
-  const finalStep = isChromium ? 12 : 20;
-  const interWait = isChromium ? 25 : 50;
-  const edgeWait = isChromium ? 60 : 120;
-
-  const box = await getCanvasBox(page);
-  const sx = box.x + start.x;
-  const sy = box.y + start.y;
-  await page.mouse.move(sx, sy);
-  await page.mouse.move(sx, sy);
-  await page.mouse.down();
-  await page.waitForTimeout(edgeWait);
-  // Two short pre-moves clear Konva's drag-distance threshold without
-  // collapsing into a click.
-  await page.mouse.move(sx + 8, sy + 6, { steps: interStep });
-  await page.waitForTimeout(interWait);
-  await page.mouse.move(sx + 20, sy + 14, { steps: interStep });
-  await page.waitForTimeout(interWait);
-  await page.mouse.move(box.x + end.x, box.y + end.y, { steps: finalStep });
-  await page.waitForTimeout(edgeWait);
-  await page.mouse.up();
-  await page.waitForTimeout(isChromium ? 120 : 200);
+  await dragOnCanvasHelper(page, canvasLocator(page), start, end, browserName);
 }
 
 interface SeededWorkspace {
@@ -399,7 +367,8 @@ async function shiftClickOnCanvas(
   // because Playwright issues a synthetic-only modifier overlay that
   // doesn't propagate to `window.event` for Konva's listener.
   // Mirrors the plan-side `plan-markup-group-drag.spec.ts` pattern.
-  const box = await getCanvasBox(page);
+  const box = await canvasLocator(page).boundingBox();
+  if (!box) throw new Error("Konva canvas has no bounding box");
   await page.keyboard.down("Shift");
   try {
     await page.mouse.move(box.x + point.x, box.y + point.y);

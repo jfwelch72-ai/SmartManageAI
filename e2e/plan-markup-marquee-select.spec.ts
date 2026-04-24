@@ -22,8 +22,9 @@
  * happens to live on a shared dev document.
  */
 import { test, expect, type Page, type Route } from "@playwright/test";
-import { authedRequest, getCsrfHeader, installCsrf } from "./helpers/csrf";
+import { authedRequest, installCsrf } from "./helpers/csrf";
 import { getMinimalPdf, uploadFixturePdf } from "./helpers/uploadFixturePdf";
+import { dragSequence, getDragTuning } from "./helpers/canvasDrag";
 
 const BASE_URL =
   process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
@@ -155,6 +156,7 @@ test.describe("PlanMarkupLayer — marquee selection E2E (Task #1738)", () => {
 
   test("marquee drag selects intersecting markups; click clears; tighter drag selects only what it crosses", async ({
     page,
+    browserName,
   }) => {
     test.setTimeout(120_000);
 
@@ -250,16 +252,28 @@ test.describe("PlanMarkupLayer — marquee selection E2E (Task #1738)", () => {
     // ───────────────────────── Case 1: marquee selects A + B ─────────────────────────
     // Drag a marquee that covers BOTH markup A and markup B but stays
     // clear of markup C. Coordinates: from (0.02, 0.02) to (0.35, 0.18).
+    // The marquee assertion has to fire while the mouse is still down,
+    // so we drive the gesture by hand here (rather than letting the
+    // shared `dragSequence` helper release it). Step counts/waits are
+    // taken from `getDragTuning` so the gesture stays deterministic on
+    // Firefox / WebKit (synthetic mousemove dispatch is less aggressive
+    // there than on Chromium).
     {
       const start = px(0.02, 0.02);
       const end = px(0.35, 0.18);
+      const { interStep, finalStep, interWait, edgeWait, postUpWait } =
+        getDragTuning(browserName);
 
       await page.mouse.move(start.x, start.y);
+      await page.mouse.move(start.x, start.y);
       await page.mouse.down();
+      await page.waitForTimeout(edgeWait);
       // Stepped pre-move so the gesture clears the MARQUEE_MIN_DRAG_PX
       // threshold before we check for the marquee div.
-      await page.mouse.move(start.x + 10, start.y + 10, { steps: 4 });
-      await page.mouse.move(end.x, end.y, { steps: 12 });
+      await page.mouse.move(start.x + 10, start.y + 10, { steps: interStep });
+      await page.waitForTimeout(interWait);
+      await page.mouse.move(end.x, end.y, { steps: finalStep });
+      await page.waitForTimeout(edgeWait);
 
       // While the mouse is still down, the marquee overlay rectangle
       // must be in the DOM with a non-zero size.
@@ -268,6 +282,7 @@ test.describe("PlanMarkupLayer — marquee selection E2E (Task #1738)", () => {
       });
 
       await page.mouse.up();
+      await page.waitForTimeout(postUpWait);
 
       // After release, the marquee div is removed.
       await expect(page.getByTestId("markup-marquee")).toHaveCount(0, {
@@ -295,7 +310,10 @@ test.describe("PlanMarkupLayer — marquee selection E2E (Task #1738)", () => {
     // selection should be wiped out (no marquee, no Shift, plain click).
     {
       const empty = px(0.50, 0.40);
-      await page.mouse.click(empty.x, empty.y);
+      const { clickHoldWait } = getDragTuning(browserName);
+      await page.mouse.move(empty.x, empty.y);
+      await page.mouse.move(empty.x, empty.y);
+      await page.mouse.click(empty.x, empty.y, { delay: clickHoldWait });
 
       await expect(
         page.getByTestId(`markup-selection-toolbar-${markupA.id}`),
@@ -313,11 +331,9 @@ test.describe("PlanMarkupLayer — marquee selection E2E (Task #1738)", () => {
     {
       const start = px(0.02, 0.02);
       const end = px(0.18, 0.13);
-      await page.mouse.move(start.x, start.y);
-      await page.mouse.down();
-      await page.mouse.move(start.x + 10, start.y + 10, { steps: 4 });
-      await page.mouse.move(end.x, end.y, { steps: 12 });
-      await page.mouse.up();
+      await dragSequence(page, start, end, browserName, {
+        intermediate: [{ x: start.x + 10, y: start.y + 10 }],
+      });
 
       // Only A is selected → its toolbar is visible, the multi-select
       // Group button is NOT shown (selectionCount === 1), and B and C

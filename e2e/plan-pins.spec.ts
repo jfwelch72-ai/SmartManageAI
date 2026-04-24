@@ -1,6 +1,7 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { authedRequest, getCsrfHeader } from "./helpers/csrf";
 import { getMinimalPdf, uploadFixturePdf } from "./helpers/uploadFixturePdf";
+import { dragSequence } from "./helpers/canvasDrag";
 
 const BASE_URL = process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
 
@@ -282,7 +283,7 @@ function harnessUrl(h: Harness, width = 800, height = 600) {
 
 // ─── Drag and move tests (Task #602) ────────────────────────────────────────
 test.describe("PlanPin drag and move (Task #602)", () => {
-  test("drag persists new x/y after page reload", async ({ page }) => {
+  test("drag persists new x/y after page reload", async ({ page, browserName }) => {
     await devLogin(page, "ADMIN");
     const h = await setupHarness(page, "drag");
 
@@ -305,12 +306,14 @@ test.describe("PlanPin drag and move (Task #602)", () => {
     const startX = pinBox!.x + pinBox!.width / 2;
     const startY = pinBox!.y + pinBox!.height / 2;
 
-    await page.mouse.move(startX, startY);
-    await page.mouse.down();
-    // Multiple intermediate moves so the drag threshold is exceeded.
-    await page.mouse.move(startX + 20, startY + 20, { steps: 5 });
-    await page.mouse.move(targetX, targetY, { steps: 10 });
-    await page.mouse.up();
+    // Engine-aware step counts/waits (see `e2e/helpers/canvasDrag.ts`).
+    await dragSequence(
+      page,
+      { x: startX, y: startY },
+      { x: targetX, y: targetY },
+      browserName,
+      { intermediate: [{ x: startX + 20, y: startY + 20 }] },
+    );
 
     // Wait for the PATCH to flush; the pin's reported coords should update.
     await expect.poll(async () => {
@@ -361,7 +364,7 @@ test.describe("PlanPin drag and move (Task #602)", () => {
     expect(same.y).toBeCloseTo(0.25, 5);
   });
 
-  test("coordinates clamp to 0..1 when the pointer leaves the page bounds", async ({ page }) => {
+  test("coordinates clamp to 0..1 when the pointer leaves the page bounds", async ({ page, browserName }) => {
     await devLogin(page, "ADMIN");
     const h = await setupHarness(page, "clamp");
 
@@ -380,11 +383,13 @@ test.describe("PlanPin drag and move (Task #602)", () => {
     const farX = box.x + box.width + 500;
     const farY = box.y + box.height + 500;
 
-    await page.mouse.move(startX, startY);
-    await page.mouse.down();
-    await page.mouse.move(startX + 10, startY + 10, { steps: 3 });
-    await page.mouse.move(farX, farY, { steps: 10 });
-    await page.mouse.up();
+    await dragSequence(
+      page,
+      { x: startX, y: startY },
+      { x: farX, y: farY },
+      browserName,
+      { intermediate: [{ x: startX + 10, y: startY + 10 }] },
+    );
 
     await expect.poll(async () => {
       const pins = await listPins(page, h.projectCode, h.documentId);
@@ -410,11 +415,13 @@ test.describe("PlanPin drag and move (Task #602)", () => {
     const negX = box.x - 500;
     const negY = box.y - 500;
 
-    await page.mouse.move(sx2, sy2);
-    await page.mouse.down();
-    await page.mouse.move(sx2 - 10, sy2 - 10, { steps: 3 });
-    await page.mouse.move(negX, negY, { steps: 10 });
-    await page.mouse.up();
+    await dragSequence(
+      page,
+      { x: sx2, y: sy2 },
+      { x: negX, y: negY },
+      browserName,
+      { intermediate: [{ x: sx2 - 10, y: sy2 - 10 }] },
+    );
 
     await expect.poll(async () => {
       const pins = await listPins(page, h.projectCode, h.documentId);

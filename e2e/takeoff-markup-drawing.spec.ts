@@ -1,5 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
 import { installCsrf } from "./helpers/csrf";
+import {
+  clickOnCanvas as clickOnCanvasHelper,
+  dragOnCanvas as dragOnCanvasHelper,
+  type Point,
+} from "./helpers/canvasDrag";
 
 const BASE_URL =
   process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
@@ -62,60 +67,24 @@ async function selectMarkupTool(page: Page, toolId: string) {
   });
 }
 
-async function getCanvasBox(page: Page) {
-  const canvas = page.locator(".konvajs-content canvas").first();
-  await canvas.waitFor({ state: "visible" });
-  const box = await canvas.boundingBox();
-  if (!box) throw new Error("Konva canvas has no bounding box");
-  return box;
+function canvasLocator(page: Page) {
+  return page.locator(".konvajs-content canvas").first();
 }
 
 async function dragOnCanvas(
   page: Page,
-  start: { x: number; y: number },
-  end: { x: number; y: number },
-  intermediate: { x: number; y: number }[] = [],
+  start: Point,
+  end: Point,
+  intermediate: Point[] = [],
   browserName: string = "chromium",
 ) {
-  // WebKit / Firefox dispatch synthetic mousemove events less aggressively than
-  // Chromium when `steps` is small, which can starve Konva's mousemove handler
-  // (especially for the FREEHAND tool that records every move). Bump step
-  // counts and waits for the non-chromium engines to keep the canvas drawing
-  // path deterministic.
-  const isChromium = browserName === "chromium";
-  const interStep = isChromium ? 4 : 8;
-  const finalStep = isChromium ? 8 : 16;
-  const interWait = isChromium ? 20 : 40;
-  const edgeWait = isChromium ? 50 : 100;
-
-  const box = await getCanvasBox(page);
-  const sx = box.x + start.x;
-  const sy = box.y + start.y;
-  // Hover first so WebKit registers the cursor inside the canvas before the
-  // synthetic mousedown.
-  await page.mouse.move(sx, sy);
-  await page.mouse.move(sx, sy);
-  await page.mouse.down();
-  await page.waitForTimeout(edgeWait);
-  for (const p of intermediate) {
-    await page.mouse.move(box.x + p.x, box.y + p.y, { steps: interStep });
-    await page.waitForTimeout(interWait);
-  }
-  await page.mouse.move(box.x + end.x, box.y + end.y, { steps: finalStep });
-  await page.waitForTimeout(edgeWait);
-  await page.mouse.up();
-  await page.waitForTimeout(isChromium ? 100 : 150);
+  await dragOnCanvasHelper(page, canvasLocator(page), start, end, browserName, {
+    intermediate: intermediate.length > 0 ? intermediate : undefined,
+  });
 }
 
-async function clickOnCanvas(page: Page, point: { x: number; y: number }) {
-  const box = await getCanvasBox(page);
-  // Two move calls so WebKit reliably dispatches the initial mousemove before
-  // the click sequence.
-  await page.mouse.move(box.x + point.x, box.y + point.y);
-  await page.mouse.move(box.x + point.x, box.y + point.y);
-  await page.mouse.down();
-  await page.waitForTimeout(30);
-  await page.mouse.up();
+async function clickOnCanvas(page: Page, point: Point) {
+  await clickOnCanvasHelper(page, canvasLocator(page), point);
 }
 
 async function waitForMarkupCount(
