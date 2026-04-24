@@ -424,13 +424,15 @@ import {
   users,
   crmOrganisations,
   rfis,
+  organizations,
 } from "@shared/schema";
-import { eq, and, desc, sql, asc, max } from "drizzle-orm";
+import { eq, and, desc, sql, asc, max, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { z } from "zod";
 import { requireAuth, requireRole, requireRoleOrFeature, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { notifyDocumentEvent } from "./services/documentNotificationService";
+import { generateSubmittalLogPdf } from "./services/logPdfService";
 import { assertStorageKeyBelongsToOrg } from "./services/documentRevisionService";
 import { ObjectPermission } from "./objectAcl";
 import { notifyApprovers, notifySubmitter, notifyUsers } from "./services/approvalNotificationService";
@@ -1667,7 +1669,7 @@ router.delete("/submittals/:id/attachments/:attachmentId", requireAuth, requireR
 
 // ==================== Chain Advancement Service ====================
 
-async function advanceChain(submittalId: string, actorUserId: string, organizationId?: string): Promise<void> {
+export async function advanceChain(submittalId: string, actorUserId: string, organizationId?: string): Promise<void> {
   const [submittal] = await db
     .select()
     .from(submittals)
@@ -1778,6 +1780,14 @@ async function advanceChain(submittalId: string, actorUserId: string, organizati
       })
       .where(eq(submittalReviews.id, nextPending.id));
 
+    // Bump submittals.updatedAt so mobile sync picks up the parent
+    // row alongside the activated review (mobile delta filters on
+    // submittals.updatedAt, not just on submittal_reviews).
+    await db
+      .update(submittals)
+      .set({ updatedAt: new Date() })
+      .where(eq(submittals.id, submittalId));
+
     await db.insert(submittalActivity).values({
       submittalId,
       userId: actorUserId,
@@ -1785,6 +1795,7 @@ async function advanceChain(submittalId: string, actorUserId: string, organizati
       action: `Review advanced to ${nextPending.reviewerName} (${nextPending.reviewerRole})`,
     });
 
+    // Internal in-app/native push when the next reviewer is a user.
     if (nextPending.reviewerId) {
       await notifyUsers([nextPending.reviewerId], {
         type: "GENERAL",
@@ -1793,6 +1804,42 @@ async function advanceChain(submittalId: string, actorUserId: string, organizati
         relatedEntityId: submittalId,
         relatedEntityType: "submittal",
       }, organizationId);
+    }
+
+    // External portal-link email when the next review row is an
+    // email-only A/E reviewer (no reviewerId). Mirrors the manual
+    // /start route — both paths now activate external reviewers.
+    if (!nextPending.reviewerId && nextPending.reviewerEmail) {
+      try {
+        const itemCountRow = await db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(submittalItems)
+          .where(eq(submittalItems.submittalId, submittalId));
+        const itemCount = itemCountRow[0]?.count ?? 0;
+
+        await notifyDocumentEvent(
+          "SUBMITTAL",
+          submittalId,
+          submittal.organizationId,
+          submittal.projectId,
+          actorUserId,
+          [],
+          `Submittal ${submittal.submittalNumber} "${submittal.subject}" is awaiting your review`,
+          submittal.submittalNumber,
+          {
+            email: nextPending.reviewerEmail,
+            documentNumber: submittal.submittalNumber,
+            documentSubject: submittal.subject,
+            kind: "SUBMITTAL_REVIEW",
+            inviterName: nextPending.reviewerName ?? "Project team",
+            dueDate: submittal.dateRequired ?? null,
+            itemCount,
+          },
+        );
+      } catch (err) {
+        // Email/notification failure must not block chain advancement.
+        // notifyDocumentEvent already logs internally.
+      }
     }
 
     if (submittal.submittedById) {
@@ -2006,15 +2053,41 @@ router.post("/submittals/:id/reviews/:reviewId/start", requireAuth, requireRoleO
       action: `Review started — ${targetReview.reviewerName} (${targetReview.reviewerRole})`,
     });
 
-    if (targetReview.reviewerId) {
-      await notifyUsers([targetReview.reviewerId], {
-        type: "GENERAL",
-        title: "Your Review Is Required",
-        message: `Submittal ${existing.submittal.submittalNumber} "${existing.submittal.subject}" is awaiting your review`,
-        relatedEntityId: id,
-        relatedEntityType: "submittal",
-      }, req.user?.organizationId);
-    }
+    // Task #1599 — single fanout call. Routes (a) the in-app + native
+    // push notification to the internal reviewer (when present) AND
+    // (b) the external portal-link email to an A/E reviewer recorded
+    // by email-only on the review row. Both paths flow through
+    // notifyDocumentEvent so audit + EXTERNAL_DOC_EMAIL gating stay
+    // unified, mirroring the RFI forward branch.
+    // Item count for the email body — gives the external reviewer a
+    // quick scope hint before they open the portal.
+    const [itemCountRow] = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(submittalItems)
+      .where(eq(submittalItems.submittalId, id));
+    const itemCount = itemCountRow?.count ?? 0;
+
+    notifyDocumentEvent(
+      "SUBMITTAL",
+      id,
+      existing.submittal.organizationId,
+      existing.submittal.projectId,
+      user.id,
+      targetReview.reviewerId ? [targetReview.reviewerId] : [],
+      `Submittal ${existing.submittal.submittalNumber} "${existing.submittal.subject}" is awaiting your review`,
+      existing.submittal.submittalNumber,
+      targetReview.reviewerEmail
+        ? {
+            email: targetReview.reviewerEmail,
+            documentNumber: existing.submittal.submittalNumber,
+            documentSubject: existing.submittal.subject,
+            kind: "SUBMITTAL_REVIEW",
+            inviterName: `${user.firstName} ${user.lastName}`,
+            dueDate: existing.submittal.dateRequired ?? null,
+            itemCount,
+          }
+        : null,
+    );
 
     res.json(updatedReview);
   } catch (error) {
@@ -2515,5 +2588,127 @@ router.post("/submittals/:id/resubmit", requireAuth, requireRoleOrFeature(["SUPE
     next(error);
   }
 });
+
+// Task #1599 — Submittal Log PDF export. Project-scoped, manager-only,
+// streams a PDFKit document directly to the response (no temp file).
+router.get(
+  "/projects/:projectId/submittals/log.pdf",
+  requireAuth,
+  // Task #1599 — Field superintendents own the submittal workflow at
+  // the jobsite level alongside PMs, so they get the log export too.
+  requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { projectId } = req.params;
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
+      if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+      const [project] = await db
+        .select({
+          id: projects.id,
+          name: projects.name,
+          gcOrganizationId: projects.gcOrganizationId,
+        })
+        .from(projects)
+        .where(eq(projects.id, projectId))
+        .limit(1);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (shouldFilter && orgId && project.gcOrganizationId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      const rows = await db
+        .select({
+          id: submittals.id,
+          submittalNumber: submittals.submittalNumber,
+          subject: submittals.subject,
+          status: submittals.status,
+          specSection: submittals.specSection,
+          dateSubmitted: submittals.dateSubmitted,
+          dateRequired: submittals.dateRequired,
+          dateReviewed: submittals.dateReviewed,
+          reviewerName: submittals.reviewerName,
+          submittedByName: submittals.submittedByName,
+          updatedAt: submittals.updatedAt,
+        })
+        .from(submittals)
+        .where(eq(submittals.projectId, projectId))
+        .orderBy(desc(submittals.createdAt));
+
+      // First open review per submittal feeds ball-in-court; fall back
+      // to denormalized reviewerName when no open chain exists.
+      const openReviewMap = new Map<string, string>();
+      if (rows.length > 0) {
+        const openReviews = await db
+          .select({
+            submittalId: submittalReviews.submittalId,
+            reviewerName: submittalReviews.reviewerName,
+            sequenceOrder: submittalReviews.sequenceOrder,
+          })
+          .from(submittalReviews)
+          .innerJoin(submittals, eq(submittals.id, submittalReviews.submittalId))
+          .where(and(
+            eq(submittals.projectId, projectId),
+            inArray(submittalReviews.status, ["PENDING", "IN_REVIEW"]),
+          ))
+          .orderBy(submittalReviews.sequenceOrder);
+        for (const r of openReviews) {
+          if (!openReviewMap.has(r.submittalId)) {
+            openReviewMap.set(r.submittalId, r.reviewerName ?? "—");
+          }
+        }
+      }
+
+      const orgRow = project.gcOrganizationId
+        ? (await db
+            .select({ name: organizations.name, primaryColor: organizations.primaryColor })
+            .from(organizations)
+            .where(eq(organizations.id, project.gcOrganizationId))
+            .limit(1))[0]
+        : undefined;
+
+      const branding = orgRow
+        ? { organizationName: orgRow.name, primaryColor: orgRow.primaryColor ?? null }
+        : undefined;
+
+      const generatedByName = req.user
+        ? `${req.user.firstName ?? ""} ${req.user.lastName ?? ""}`.trim() || req.user.email || null
+        : null;
+
+      const ballInCourt = (r: typeof rows[number]): string | null => {
+        const closed = r.status === "APPROVED" || r.status === "REJECTED" || r.status === "CLOSED";
+        if (closed) return r.reviewerName ?? null;
+        return openReviewMap.get(r.id) ?? r.reviewerName ?? r.submittedByName ?? null;
+      };
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="submittal-log-${project.name.replace(/[^a-z0-9]+/gi, "_")}.pdf"`,
+      );
+      const stream = generateSubmittalLogPdf({
+        branding,
+        projectName: project.name,
+        meta: { generatedByName },
+        rows: rows.map(r => ({
+          submittalNumber: r.submittalNumber,
+          subject: r.subject,
+          status: r.status,
+          specSection: r.specSection ?? null,
+          dateSubmitted: r.dateSubmitted ?? null,
+          dateRequired: r.dateRequired ?? null,
+          dateReviewed: r.dateReviewed ?? null,
+          reviewerName: r.reviewerName ?? null,
+          submittedByName: r.submittedByName ?? null,
+          ballInCourt: ballInCourt(r),
+          lastActivity: r.updatedAt ?? null,
+        })),
+      });
+      stream.pipe(res);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 export default router;

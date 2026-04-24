@@ -294,14 +294,17 @@ import {
   changeOrders,
   tmTickets,
   submittals,
+  organizations,
 } from "@shared/schema";
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
+import { aliasedTable } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { z } from "zod";
 import { validateBody } from "./utils/validation";
 import { requireAuth, requireRole, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { notifyDocumentEvent } from "./services/documentNotificationService";
+import { generateRfiLogPdf } from "./services/logPdfService";
 import { assertStorageKeyBelongsToOrg } from "./services/documentRevisionService";
 
 const rfiPatchSchema = z.object({
@@ -740,7 +743,13 @@ router.post("/rfi/:id/forward", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
     const { forwardedToId } = validated;
 
     const [forwardedToUser] = await db
-      .select({ id: users.id, firstName: users.firstName, lastName: users.lastName })
+      .select({
+        id: users.id,
+        firstName: users.firstName,
+        lastName: users.lastName,
+        email: users.email,
+        role: users.role,
+      })
       .from(users)
       .where(eq(users.id, forwardedToId))
       .limit(1);
@@ -764,7 +773,34 @@ router.post("/rfi/:id/forward", requireAuth, requireRole("SUPER_ADMIN", "ADMIN",
     const forwardedToName = `${forwardedToUser.firstName} ${forwardedToUser.lastName}`;
     await createActivityEntry(rfi.id, user.id, `${user.firstName} ${user.lastName}`, `RFI Forwarded to ${forwardedToName}`);
 
-    notifyDocumentEvent("RFI", rfi.id, rfi.organizationId, rfi.projectId, user.id, [forwardedToId], `RFI Forwarded to you: ${rfi.subject}`, rfi.rfiNumber);
+    // Task #1599 — single fanout call covers (a) the in-app/native push
+    // for the internal forwarded-to user AND (b) the external portal-link
+    // email when EITHER the RFI carries an externalAssigneeEmail OR the
+    // forwarded-to user is a VENDOR (external A/E / sub-consultant
+    // account in our tenant). EXTERNAL_DOC_EMAIL feature flag still
+    // gates the actual send inside externalDocEmailService.
+    const externalEmail = rfi.externalAssigneeEmail
+      ?? (forwardedToUser.role === "VENDOR" ? forwardedToUser.email : null);
+
+    notifyDocumentEvent(
+      "RFI",
+      rfi.id,
+      rfi.organizationId,
+      rfi.projectId,
+      user.id,
+      [forwardedToId],
+      `RFI Forwarded to you: ${rfi.subject}`,
+      rfi.rfiNumber,
+      externalEmail
+        ? {
+            email: externalEmail,
+            documentNumber: rfi.rfiNumber,
+            documentSubject: rfi.subject,
+            kind: "RFI_FORWARD",
+            inviterName: `${user.firstName} ${user.lastName}`,
+          }
+        : null,
+    );
 
     res.json(updated);
   } catch (error) {
@@ -1213,5 +1249,128 @@ router.delete("/rfi/:id/attachments/:attachmentId", requireAuth, requireRole("SU
     next(error);
   }
 });
+
+// Task #1599 — RFI Log PDF export. Project-scoped, manager-only,
+// streams a PDFKit document directly to the response (no temp file).
+router.get(
+  "/projects/:projectId/rfis/log.pdf",
+  requireAuth,
+  // Task #1599 — log PDFs back the desktop "Download log (PDF)" button
+  // and need to be reachable by anyone running a project, not just
+  // SUPER_ADMIN / ADMIN / MANAGER. Field superintendents own the
+  // RFI workflow at the jobsite level, so they get the export too.
+  requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { projectId } = req.params;
+      const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req as AuthRequest);
+      if (mustDenyAccess) return res.status(403).json({ error: "Access denied" });
+
+      const [project] = await db
+        .select({
+          id: projects.id,
+          name: projects.name,
+          gcOrganizationId: projects.gcOrganizationId,
+        })
+        .from(projects)
+        .where(eq(projects.id, projectId))
+        .limit(1);
+      if (!project) return res.status(404).json({ error: "Project not found" });
+      if (shouldFilter && orgId && project.gcOrganizationId !== orgId) {
+        return res.status(403).json({ error: "Access denied" });
+      }
+
+      // Pull each RFI joined to its current "ball-in-court" user
+      // (forwarded-to wins over default-assigned), plus its updatedAt
+      // as the "last activity" timestamp. updatedAt is bumped by every
+      // mutation route on the rfis table — forwards, answers, status
+      // changes — so it's a reasonable proxy without a separate
+      // activity-table aggregate.
+      const assignedUser = aliasedTable(users, "rfi_assigned_user");
+      const forwardedUser = aliasedTable(users, "rfi_forwarded_user");
+      const rows = await db
+        .select({
+          rfiNumber: rfis.rfiNumber,
+          subject: rfis.subject,
+          status: rfis.status,
+          priority: rfis.priority,
+          dateSubmitted: rfis.dateSubmitted,
+          dateRequired: rfis.dateRequired,
+          dateAnswered: rfis.dateAnswered,
+          submittedByName: rfis.submittedByName,
+          answeredByName: rfis.answeredByName,
+          updatedAt: rfis.updatedAt,
+          assignedFirst: assignedUser.firstName,
+          assignedLast: assignedUser.lastName,
+          forwardedFirst: forwardedUser.firstName,
+          forwardedLast: forwardedUser.lastName,
+          externalAssigneeEmail: rfis.externalAssigneeEmail,
+        })
+        .from(rfis)
+        .leftJoin(assignedUser, eq(assignedUser.id, rfis.assignedToId))
+        .leftJoin(forwardedUser, eq(forwardedUser.id, rfis.forwardedToId))
+        .where(eq(rfis.projectId, projectId))
+        .orderBy(desc(rfis.createdAt));
+
+      const orgRow = project.gcOrganizationId
+        ? (await db
+            .select({ name: organizations.name, primaryColor: organizations.primaryColor })
+            .from(organizations)
+            .where(eq(organizations.id, project.gcOrganizationId))
+            .limit(1))[0]
+        : undefined;
+
+      const branding = orgRow
+        ? { organizationName: orgRow.name, primaryColor: orgRow.primaryColor ?? null }
+        : undefined;
+
+      const generatedByName = req.user
+        ? `${req.user.firstName ?? ""} ${req.user.lastName ?? ""}`.trim() || req.user.email || null
+        : null;
+
+      const fullName = (first?: string | null, last?: string | null): string | null => {
+        const v = `${first ?? ""} ${last ?? ""}`.trim();
+        return v.length ? v : null;
+      };
+      const ballInCourt = (r: typeof rows[number]): string | null => {
+        const closed = r.status === "ANSWERED" || r.status === "CLOSED";
+        if (closed) return r.answeredByName ?? null;
+        return (
+          fullName(r.forwardedFirst, r.forwardedLast)
+          ?? fullName(r.assignedFirst, r.assignedLast)
+          ?? r.externalAssigneeEmail
+          ?? null
+        );
+      };
+
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="rfi-log-${project.name.replace(/[^a-z0-9]+/gi, "_")}.pdf"`,
+      );
+      const stream = generateRfiLogPdf({
+        branding,
+        projectName: project.name,
+        meta: { generatedByName },
+        rows: rows.map(r => ({
+          rfiNumber: r.rfiNumber,
+          subject: r.subject,
+          status: r.status,
+          priority: r.priority ?? null,
+          dateSubmitted: r.dateSubmitted ?? null,
+          dateRequired: r.dateRequired ?? null,
+          dateAnswered: r.dateAnswered ?? null,
+          submittedByName: r.submittedByName ?? null,
+          answeredByName: r.answeredByName ?? null,
+          ballInCourt: ballInCourt(r),
+          lastActivity: r.updatedAt ?? null,
+        })),
+      });
+      stream.pipe(res);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 export default router;

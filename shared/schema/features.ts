@@ -51,6 +51,11 @@ export const FEATURE_FLAG_KEYS = [
   "MASS_HAUL_ANALYZER",
   "DOT_PROGRESS_ESTIMATE",
   "HEAVY_CIVIL_PRESET",
+  // Task #1599: gates outbound emails to external architects/engineers
+  // (no internal user account) when a submittal review is activated for
+  // them or an RFI is forwarded to an external assignee. Default OFF so
+  // existing tenants don't unexpectedly start emailing strangers.
+  "EXTERNAL_DOC_EMAIL",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -99,6 +104,7 @@ export const FEATURE_FLAG_LABELS: Record<FeatureFlagKey, string> = {
   MASS_HAUL_ANALYZER: "Mass Haul Analyzer",
   DOT_PROGRESS_ESTIMATE: "DOT Progress Estimate",
   HEAVY_CIVIL_PRESET: "Heavy Civil Preset",
+  EXTERNAL_DOC_EMAIL: "External Document Email Delivery",
 };
 
 export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
@@ -145,6 +151,7 @@ export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
   MASS_HAUL_ANALYZER: "Cut/fill balance and mass-haul diagrams for earthwork projects.",
   DOT_PROGRESS_ESTIMATE: "Generate state-DOT-style monthly progress estimate PDFs grouped by spec section.",
   HEAVY_CIVIL_PRESET: "Activate the heavy-civil dashboard layout, bundled features, and DOT-focused defaults for this organization.",
+  EXTERNAL_DOC_EMAIL: "Send Resend emails to external architects/engineers for submittal reviews and forwarded RFIs, including a secure tokenized portal link.",
 };
 
 export const FEATURE_FLAG_CATEGORIES = [
@@ -210,6 +217,7 @@ export const FEATURE_FLAG_CATEGORY_MAP: Record<FeatureFlagKey, FeatureFlagCatego
   MASS_HAUL_ANALYZER: "Heavy Civil & DOT",
   DOT_PROGRESS_ESTIMATE: "Heavy Civil & DOT",
   HEAVY_CIVIL_PRESET: "Heavy Civil & DOT",
+  EXTERNAL_DOC_EMAIL: "Core Platform",
 };
 
 export const HEAVY_CIVIL_TRADE_TYPES: readonly string[] = [
@@ -255,6 +263,8 @@ export const DISABLED_BY_DEFAULT_FLAGS: readonly FeatureFlagKey[] = [
   "MASS_HAUL_ANALYZER",
   "DOT_PROGRESS_ESTIMATE",
   "HEAVY_CIVIL_PRESET",
+  // Task #1599: external email branch is opt-in.
+  "EXTERNAL_DOC_EMAIL",
 ] as const;
 
 export const aiSettings = pgTable("ai_settings", {
@@ -6459,6 +6469,18 @@ export const rfis = pgTable("rfis", {
   forwardedAt: timestamp("forwarded_at"),
   closedAt: timestamp("closed_at"),
   closedById: varchar("closed_by_id").references(() => users.id),
+  // Task #1599: per-RFI dedupe marker + counter for the nightly overdue
+  // escalation sweep (mirrors the SWPPP corrective-action pattern in
+  // `processSwpppOverdueCorrectiveActions`). The initial fanout sets
+  // the marker; daily follow-ups bump the counter until the per-org cap
+  // is hit. Resolving the RFI (status -> ANSWERED/CLOSED) takes it out
+  // of the SELECT so reminders stop naturally.
+  lastOverdueNotifiedAt: timestamp("last_overdue_notified_at"),
+  overdueReminderCount: integer("overdue_reminder_count").notNull().default(0),
+  // Task #1599: lets a forwarded RFI go to an external A/E who has no
+  // internal user account. Used in combination with the EXTERNAL_DOC_EMAIL
+  // feature flag and a tokenized portal link.
+  externalAssigneeEmail: text("external_assignee_email"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -6667,6 +6689,18 @@ export const submittalReviews = pgTable("submittal_reviews", {
   stampAction: text("stamp_action"),
   dateAssigned: timestamp("date_assigned"),
   dateReviewed: timestamp("date_reviewed"),
+  // Task #1599: per-review dedupe marker + counter for the nightly
+  // overdue escalation sweep. Only the *active* chain step (status
+  // IN_REVIEW) is overdue-eligible — PENDING rows are future steps the
+  // chain has not yet activated. Mirrors the SWPPP pattern; resolving
+  // the active review (any non-IN_REVIEW status) removes it from the
+  // SELECT so reminders stop naturally.
+  lastOverdueNotifiedAt: timestamp("last_overdue_notified_at"),
+  overdueReminderCount: integer("overdue_reminder_count").notNull().default(0),
+  // Task #1599: lets the multi-party review chain route to an external
+  // A/E who has no internal user account. Used in combination with the
+  // EXTERNAL_DOC_EMAIL feature flag and a tokenized portal link.
+  reviewerEmail: text("reviewer_email"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   submittalIdx: index("submittal_reviews_submittal_idx").on(table.submittalId),

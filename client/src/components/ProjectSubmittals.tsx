@@ -20,6 +20,7 @@ import {
   Clock,
   AlertTriangle,
   Send,
+  Download,
 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { format } from "date-fns";
@@ -158,10 +159,24 @@ export default function ProjectSubmittals({ projectId, projectCode, userRole }: 
           <h2 className="text-lg font-semibold" data-testid="proj-sub-text-section-title">Submittals</h2>
           <p className="text-sm text-muted-foreground">Manage submittals for this project</p>
         </div>
-        <Button onClick={() => setShowCreateDialog(true)} data-testid="proj-sub-button-create-submittal">
-          <Plus className="h-4 w-4 mr-2" />
-          Create Submittal
-        </Button>
+        <div className="flex items-center gap-2">
+          {["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole) && (
+            <Button
+              variant="outline"
+              asChild
+              data-testid="proj-sub-button-download-log"
+            >
+              <a href={`/api/projects/${projectId}/submittals/log.pdf`} target="_blank" rel="noopener noreferrer">
+                <Download className="h-4 w-4 mr-2" />
+                Download log (PDF)
+              </a>
+            </Button>
+          )}
+          <Button onClick={() => setShowCreateDialog(true)} data-testid="proj-sub-button-create-submittal">
+            <Plus className="h-4 w-4 mr-2" />
+            Create Submittal
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

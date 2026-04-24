@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  HelpCircle, Plus, Eye, CheckCircle2, XCircle, AlertTriangle, Clock, FileQuestion,
+  HelpCircle, Plus, Eye, CheckCircle2, XCircle, AlertTriangle, Clock, FileQuestion, Download,
 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
 import { format } from "date-fns";
@@ -111,9 +111,22 @@ export default function ProjectRFIs({ projectId, projectCode, userRole }: Projec
           <h3 className="text-lg font-semibold">RFIs</h3>
           <Badge variant="secondary" data-testid="proj-badge-rfi-count">{stats?.total ?? 0} total</Badge>
         </div>
-        <Button onClick={() => setShowCreateDialog(true)} data-testid="proj-button-create-rfi">
-          <Plus className="h-4 w-4 mr-2" />Create RFI
-        </Button>
+        <div className="flex items-center gap-2">
+          {["ADMIN", "MANAGER", "SUPERINTENDENT"].includes(userRole) && (
+            <Button
+              variant="outline"
+              asChild
+              data-testid="proj-button-download-rfi-log"
+            >
+              <a href={`/api/projects/${projectId}/rfis/log.pdf`} target="_blank" rel="noopener noreferrer">
+                <Download className="h-4 w-4 mr-2" />Download log (PDF)
+              </a>
+            </Button>
+          )}
+          <Button onClick={() => setShowCreateDialog(true)} data-testid="proj-button-create-rfi">
+            <Plus className="h-4 w-4 mr-2" />Create RFI
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">

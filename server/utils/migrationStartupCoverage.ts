@@ -256,4 +256,15 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   // admin one-shot jobs panel. New CREATE TABLE + indexes mirrored by
   // ensureOneShotJobRuns.
   "0056_one_shot_job_runs.sql": { helper: "ensureOneShotJobRuns" },
+  // Task #1599 — per-RFI dedupe marker + counter for the nightly RFI
+  // overdue escalation sweep, plus an external-assignee email column
+  // for the EXTERNAL_DOC_EMAIL fanout. Mirrored at boot by
+  // ensureRfiOverdueColumns so fresh checkouts don't need drizzle-kit.
+  "0057_rfi_overdue_columns.sql": { helper: "ensureRfiOverdueColumns" },
+  // Task #1599 — same per-row bookkeeping for submittal_reviews + a
+  // reviewer_email column for external A/E reviewers.
+  "0057_submittal_review_overdue_columns.sql": { helper: "ensureSubmittalReviewOverdueColumns" },
+  // Task #1599 — per-org cap + cadence for the document-control overdue
+  // sweeps (mirrors the SWPPP per-org policy column pair).
+  "0057_doc_overdue_reminder_settings.sql": { helper: "ensureDocOverdueReminderSettings" },
 };

@@ -94,6 +94,9 @@ import { ensureProjectKpiSnapshotsTable } from "./ensureProjectKpiSnapshotsTable
 import { ensureSwpppCorrectiveActionStatus } from "./ensureSwpppCorrectiveActionStatus";
 import { ensureSwpppOverdueNotificationColumn } from "./ensureSwpppOverdueNotificationColumn";
 import { ensureSwpppOverdueReminderSettings } from "./ensureSwpppOverdueReminderSettings";
+import { ensureRfiOverdueColumns } from "./ensureRfiOverdueColumns";
+import { ensureSubmittalReviewOverdueColumns } from "./ensureSubmittalReviewOverdueColumns";
+import { ensureDocOverdueReminderSettings } from "./ensureDocOverdueReminderSettings";
 import { ensureCrmTranscriptBackfillJobsTable } from "./ensureCrmTranscriptBackfillJobsTable";
 import { ensureCrmTranscriptBackfillNotificationSettingsTable } from "./ensureCrmTranscriptBackfillNotificationSettingsTable";
 import { ensureFeatureFlagPresetApplicationsTable } from "./ensureFeatureFlagPresetApplicationsTable";
@@ -254,6 +257,17 @@ const migrations: MigrationStep[] = [
   { name: "swppp_overdue_notification_column", category: "ADD_COLUMN", fn: ensureSwpppOverdueNotificationColumn },
   // Task #1286 — per-org SWPPP overdue reminder cap + interval columns.
   { name: "swppp_overdue_reminder_settings", category: "ADD_COLUMN", fn: ensureSwpppOverdueReminderSettings },
+  // Task #1599 — per-RFI dedupe marker + counter for the nightly RFI
+  // overdue escalation sweep, plus an external-assignee email column
+  // for the EXTERNAL_DOC_EMAIL fanout. Idempotent ADD COLUMN IF NOT
+  // EXISTS so existing deployments pick them up on boot.
+  { name: "rfi_overdue_columns", category: "ADD_COLUMN", fn: ensureRfiOverdueColumns },
+  // Task #1599 — same per-row bookkeeping for submittal_reviews + a
+  // reviewer_email column for external A/E reviewers.
+  { name: "submittal_review_overdue_columns", category: "ADD_COLUMN", fn: ensureSubmittalReviewOverdueColumns },
+  // Task #1599 — per-org cap + cadence for the document-control
+  // overdue sweeps (mirrors the SWPPP per-org policy column pair).
+  { name: "doc_overdue_reminder_settings", category: "ADD_COLUMN", fn: ensureDocOverdueReminderSettings },
   { name: "crm_transcript_backfill_jobs_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillJobsTable },
   { name: "crm_transcript_backfill_notification_settings_table", category: "CREATE_TABLE", fn: ensureCrmTranscriptBackfillNotificationSettingsTable },
   // Task #1022 — must run AFTER the jobs table since it FK-references it.

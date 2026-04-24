@@ -79,6 +79,12 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   Public API at `/api/v1/public` (Bearer/X-API-Key auth, scoped permissions, per-key rate limits, request logging, HMAC-signed outbound webhooks). Developer Portal UI at `/developer-portal`.
 *   @node-saml/node-saml
 
+## Submittals & RFI Production Field Workflow (Task #1599)
+- Nightly overdue escalation crons in `server/jobs/jobRunner.ts` (`processRfiOverdueNotifications`, `processSubmittalReviewOverdueNotifications`) mirror the SWPPP sweep (per-org cap + interval, dedupe marker + reminder counter). Both registered at `0 7 * * *`.
+- `server/services/externalDocEmailService.ts` — gated by per-org `EXTERNAL_DOC_EMAIL` flag (default OFF). Resolves recipient via `crm_contacts` join, mints a 90-day `subcontractor_portal_tokens` row, and sends a Resend email with a `/sub-portal?token=…` deep link. Wired into RFI forward (`server/rfiRoutes.ts`) and submittal review-start (`server/submittalRoutes.ts`).
+- `server/services/logPdfService.ts` + `GET /api/projects/:projectId/(rfis|submittals)/log.pdf` — PDFKit log endpoints (manager-auth + org-scoped). "Download log (PDF)" buttons on the desktop `ProjectRFIs` and `ProjectSubmittals` tabs.
+- Mobile: `mobile/src/screens/Submittals.tsx` field stamp UI (queues `SUBMITTAL_STAMP` via outbox); pull adds `submittals` to the cache; `server/mobileSyncRoutes.ts` push handler updates `submittal_reviews` (status = stamp action) + writes `submittal_activity`.
+
 ## Native Mobile Field App
 - `mobile/` — Expo + React Native (TypeScript) field app: offline-first SQLite cache + outbox, sync coordinator against `mobileSyncRoutes`, push tokens via Expo, SSO with the same `auth_token` cookie. Screens: daily reports, time clock (GPS), photos, punch list, RFI, inspections, drawings, conflicts.
 - `server/services/nativePushService.ts` — sends Expo push to all `mobileDevices.pushToken` for a user. Wired into `notificationDelivery.deliverPush` so any event that already triggers web push also reaches native.

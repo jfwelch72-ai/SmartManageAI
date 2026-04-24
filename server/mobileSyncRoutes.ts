@@ -2,10 +2,11 @@ import { logError } from "./utils/logger";
 import { Router } from "express";
 import { db } from "./db";
 import { requireAuth, type AuthRequest } from "./auth";
-import { mobileDevices, offlineSyncQueue, mobilePendingUploads, projects, timeClockShifts, haulTickets, dailyInspectorReports, swpppInspections, rfis, dailyReports, media, punchListItems, projectInspections } from "@shared/schema";
-import { eq, and, count, max, desc, gte } from "drizzle-orm";
+import { mobileDevices, offlineSyncQueue, mobilePendingUploads, projects, timeClockShifts, haulTickets, dailyInspectorReports, swpppInspections, rfis, dailyReports, media, punchListItems, projectInspections, submittals, submittalReviews, submittalActivity } from "@shared/schema";
+import { eq, and, count, max, desc, gte, inArray, or } from "drizzle-orm";
 import { z } from "zod";
 import crypto from "crypto";
+import { advanceChain } from "./submittalRoutes";
 
 const router = Router();
 
@@ -410,6 +411,80 @@ router.get("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest,
       ))
       .limit(100);
 
+    // Task #1599: pull submittals the user actually participates in —
+    // either as the submitter OR as a (current/past) reviewer. This
+    // keeps the mobile cache focused on the user's own work instead of
+    // sending the whole org's submittal log over LTE.
+    const reviewedSubmittalIds = await db.selectDistinct({
+      submittalId: submittalReviews.submittalId,
+    })
+      .from(submittalReviews)
+      .where(and(
+        eq(submittalReviews.organizationId, organizationId),
+        eq(submittalReviews.reviewerId, userId),
+      ));
+    const involvedIds = reviewedSubmittalIds.map(r => r.submittalId);
+
+    const submittalChanges = involvedIds.length === 0
+      ? await db.select()
+          .from(submittals)
+          .where(and(
+            eq(submittals.organizationId, organizationId),
+            eq(submittals.submittedById, userId),
+            gte(submittals.updatedAt, syncTime),
+          ))
+          .limit(100)
+      : await db.select()
+          .from(submittals)
+          .where(and(
+            eq(submittals.organizationId, organizationId),
+            gte(submittals.updatedAt, syncTime),
+            or(
+              eq(submittals.submittedById, userId),
+              inArray(submittals.id, involvedIds),
+            ),
+          ))
+          .limit(100);
+
+    // Task #1599: pull the FULL review chain for every submittal the
+    // user can see in this delta — submitter OR any-time reviewer —
+    // so the mobile Submittals screen can render the complete chain
+    // detail (past steps with their stamps, the active IN_REVIEW row,
+    // and future PENDING steps for context). We derive the chain set
+    // from `submittalChanges` (the actual submittals returned to the
+    // device) rather than only from reviewer-derived `involvedIds` so
+    // submitter-only users — who never appear as a reviewerId — also
+    // get the full chain context for their own submittals.
+    //
+    // This is read-only data for display; stamp authorization is
+    // still enforced server-side in the SUBMITTAL_STAMP push handler,
+    // which only accepts updates to rows the current user owns AND
+    // whose status is IN_REVIEW (so a PENDING future step can never
+    // be stamped out of sequence even if it appears in this pull).
+    const visibleSubmittalIds = submittalChanges.map((s) => s.id);
+    const submittalReviewChanges = visibleSubmittalIds.length === 0
+      ? []
+      : await db.select({
+          id: submittalReviews.id,
+          submittalId: submittalReviews.submittalId,
+          organizationId: submittalReviews.organizationId,
+          reviewerRole: submittalReviews.reviewerRole,
+          reviewerId: submittalReviews.reviewerId,
+          reviewerName: submittalReviews.reviewerName,
+          sequenceOrder: submittalReviews.sequenceOrder,
+          status: submittalReviews.status,
+          comments: submittalReviews.comments,
+          stampAction: submittalReviews.stampAction,
+          dateAssigned: submittalReviews.dateAssigned,
+          dateReviewed: submittalReviews.dateReviewed,
+        })
+          .from(submittalReviews)
+          .where(and(
+            eq(submittalReviews.organizationId, organizationId),
+            inArray(submittalReviews.submittalId, visibleSubmittalIds),
+          ))
+          .limit(500);
+
     // Task #807: pull-down delta for the field-action entities now that
     // the POST handler persists them to first-class tables. Without these
     // sections the mobile cache could drift from the server (e.g. office
@@ -515,6 +590,8 @@ router.get("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest,
         dailyInspectorReports: idrChanges,
         swpppInspections: swpppChanges,
         rfis: rfiChanges,
+        submittals: submittalChanges,
+        submittalReviews: submittalReviewChanges,
         dailyReports: dailyReportChanges,
         photos: photoChanges,
         punchItems: punchChanges,
@@ -553,6 +630,16 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
         inspections?: Array<{ localId: string; [k: string]: unknown }>;
         dailyReports?: Array<{ localId: string; [k: string]: unknown }>;
         drawingMarkups?: Array<{ localId: string; [k: string]: unknown }>;
+        // Task #1599: offline-queued submittal review stamps. Each entry
+        // is keyed by submittal review id and carries the action enum.
+        submittalStamps?: Array<{
+          localId: string;
+          submittalId: string;
+          reviewId: string;
+          action: string;
+          comments?: string;
+          [k: string]: unknown;
+        }>;
       };
     };
     // CRITICAL: mobile_pending_uploads.device_id is a FK to mobileDevices.id
@@ -591,7 +678,8 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
       inspections: ProcessedItem[];
       dailyReports: ProcessedItem[];
       drawingMarkups: ProcessedItem[];
-    } = { timeClockEvents: [], dailyLogs: [], photos: [], haulTickets: [], dailyInspectorReports: [], swpppInspections: [], attachments: [], punchItems: [], rfis: [], inspections: [], dailyReports: [], drawingMarkups: [] };
+      submittalStamps: ProcessedItem[];
+    } = { timeClockEvents: [], dailyLogs: [], photos: [], haulTickets: [], dailyInspectorReports: [], swpppInspections: [], attachments: [], punchItems: [], rfis: [], inspections: [], dailyReports: [], drawingMarkups: [], submittalStamps: [] };
     const conflicts: ConflictItem[] = [];
 
     if (changes?.timeClockEvents) {
@@ -1009,6 +1097,99 @@ router.post("/api/ai-features/mobile/sync", requireAuth, async (req: AuthRequest
     }
 
     await queuePending(changes?.drawingMarkups, "DRAWING_MARKUP", processed.drawingMarkups);
+
+    // ---- SUBMITTAL_STAMP ---------------------------------------------------
+    // Apply queued review stamps from the field reviewer's device.
+    if (Array.isArray(changes?.submittalStamps)) {
+      const ALLOWED = ["APPROVED", "APPROVED_AS_NOTED", "REJECTED", "REVISE_AND_RESUBMIT"] as const;
+      for (const stamp of changes.submittalStamps) {
+        if (!stamp?.localId) continue;
+        if (await alreadyPersisted("SUBMITTAL_STAMP", stamp.localId)) {
+          processed.submittalStamps.push({ localId: stamp.localId, status: "DUPLICATE" });
+          continue;
+        }
+        const reviewId = typeof stamp.reviewId === "string" ? stamp.reviewId : null;
+        const submittalId = typeof stamp.submittalId === "string" ? stamp.submittalId : null;
+        const action = typeof stamp.action === "string" ? stamp.action : null;
+        if (!reviewId || !submittalId || !action || !(ALLOWED as readonly string[]).includes(action)) {
+          processed.submittalStamps.push({ localId: stamp.localId, status: "FAILED" });
+          continue;
+        }
+        try {
+          // Strict authorization: the review must (a) belong to this
+          // tenant, (b) be on the supplied submittal, (c) be assigned
+          // to *this* user, and (d) still be open (PENDING/IN_REVIEW).
+          // A tampered mobile payload that points at someone else's
+          // review row, a closed review, or a row in another tenant
+          // will not match and we return FAILED instead of touching
+          // anything. This is a single SELECT so we can rely on the
+          // result for both authz and the activity-row lookup.
+          // Match the web stamp route exactly: only the currently
+          // ACTIVE review row (status === "IN_REVIEW") may be stamped.
+          // Allowing PENDING here would let a downstream reviewer act
+          // before the chain has reached them, breaking sequence
+          // integrity and short-circuiting the workflow.
+          const [reviewRow] = await db
+            .select({
+              id: submittalReviews.id,
+              submittalId: submittalReviews.submittalId,
+              status: submittalReviews.status,
+              reviewerId: submittalReviews.reviewerId,
+              reviewerName: submittalReviews.reviewerName,
+            })
+            .from(submittalReviews)
+            .innerJoin(submittals, eq(submittals.id, submittalReviews.submittalId))
+            .where(and(
+              eq(submittalReviews.id, reviewId),
+              eq(submittalReviews.submittalId, submittalId),
+              eq(submittalReviews.organizationId, organizationId),
+              eq(submittals.organizationId, organizationId),
+              eq(submittalReviews.reviewerId, userId),
+              eq(submittalReviews.status, "IN_REVIEW"),
+            ))
+            .limit(1);
+          if (!reviewRow) {
+            processed.submittalStamps.push({ localId: stamp.localId, status: "FAILED" });
+            continue;
+          }
+          const comments = typeof stamp.comments === "string" ? stamp.comments : null;
+          // The four allowed action values are also valid
+          // submittal_review_status enum members.
+          await db
+            .update(submittalReviews)
+            .set({
+              status: action as "APPROVED" | "APPROVED_AS_NOTED" | "REJECTED" | "REVISE_AND_RESUBMIT",
+              stampAction: action,
+              comments,
+              dateReviewed: new Date(),
+            })
+            .where(and(
+              eq(submittalReviews.id, reviewId),
+              eq(submittalReviews.organizationId, organizationId),
+              eq(submittalReviews.reviewerId, userId),
+              eq(submittalReviews.status, "IN_REVIEW"),
+            ));
+          await db.insert(submittalActivity).values({
+            submittalId,
+            userId,
+            userName: req.user?.firstName ? `${req.user.firstName} ${req.user.lastName ?? ""}`.trim() : null,
+            action: `Stamp queued from mobile — ${action}`,
+            comment: comments,
+          });
+          // Drive the same post-stamp orchestration the web route uses:
+          // advance to the next reviewer, roll up status when chain
+          // completes, and notify the next reviewer (internal push or
+          // external portal-link email). Without this, mobile-originated
+          // stamps would dead-end mid-chain.
+          await advanceChain(submittalId, userId, organizationId);
+          await markPersisted("SUBMITTAL_STAMP", stamp.localId, stamp);
+          processed.submittalStamps.push({ localId: stamp.localId, status: "SAVED" });
+        } catch (err) {
+          logError(err, { route: "mobile-sync SUBMITTAL_STAMP persist", localId: stamp.localId });
+          processed.submittalStamps.push({ localId: stamp.localId, status: "FAILED" });
+        }
+      }
+    }
 
     res.json({
       success: true,

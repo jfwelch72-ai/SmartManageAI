@@ -8,6 +8,7 @@ import { TimeClockScreen } from "@/screens/TimeClock";
 import { PhotosScreen } from "@/screens/Photos";
 import { PunchListScreen } from "@/screens/PunchList";
 import { RFIScreen } from "@/screens/RFI";
+import { SubmittalsScreen } from "@/screens/Submittals";
 import { InspectionsScreen } from "@/screens/Inspections";
 import { DrawingsScreen } from "@/screens/Drawings";
 import { ConflictsScreen } from "@/screens/Conflicts";
@@ -47,6 +48,7 @@ export function RootNavigator() {
     >
       <Stack.Screen name="Tabs" component={FieldTabs} options={{ headerShown: false }} />
       <Stack.Screen name="RFI" component={RFIScreen} options={{ title: "RFIs" }} />
+      <Stack.Screen name="Submittals" component={SubmittalsScreen} options={{ title: "Submittals" }} />
       <Stack.Screen name="Inspections" component={InspectionsScreen} />
       <Stack.Screen name="Drawings" component={DrawingsScreen} />
       <Stack.Screen name="Conflicts" component={ConflictsScreen} options={{ title: "Sync Conflicts" }} />

@@ -77,6 +77,13 @@ const SERVER_FIELD_BY_ENTITY: Record<SyncEntityType, string> = {
   RFI: "rfis",
   INSPECTION: "inspections",
   DRAWING_MARKUP: "drawingMarkups",
+  // Task #1599 — submittal cache rows are pulled, never pushed; reviews
+  // are also pull-only (the user's open assignments); stamps are pushed
+  // under their own server field. All three entries are required so the
+  // SyncEntityType ↔ field map is total (TS exhaustiveness).
+  SUBMITTAL: "submittals",
+  SUBMITTAL_REVIEW: "submittalReviews",
+  SUBMITTAL_STAMP: "submittalStamps",
 };
 
 export async function pull(): Promise<number> {
@@ -96,6 +103,13 @@ export async function pull(): Promise<number> {
       photos?: CacheableRow[];
       punchItems?: CacheableRow[];
       inspections?: CacheableRow[];
+      // Task #1599: submittals + the user's open review assignments
+      // join the pull-down so the mobile reviewer can stamp offline
+      // without typing UUIDs. Both keys are optional (server omits
+      // them when the tenant has no submittals / the user is not a
+      // reviewer on any open chain).
+      submittals?: CacheableRow[];
+      submittalReviews?: CacheableRow[];
       projects?: { created?: CacheableRow[]; updated?: CacheableRow[] };
     };
   };
@@ -112,6 +126,11 @@ export async function pull(): Promise<number> {
     ["photos", "PHOTO"],
     ["punchItems", "PUNCH_ITEM"],
     ["inspections", "INSPECTION"],
+    // Task #1599: pulled submittals + reviews are cached so the mobile
+    // stamp screen can resolve `reviewId` from the user's open
+    // assignments without manual entry.
+    ["submittals", "SUBMITTAL"],
+    ["submittalReviews", "SUBMITTAL_REVIEW"],
   ];
   for (const [k, entityType] of map) {
     const items = (res.changes?.[k] as CacheableRow[] | undefined) ?? [];

@@ -8,7 +8,7 @@ import { recordJobMetrics, loadJobMetricsFromDb, pruneJobMetricsDb } from "../ut
 import { evaluateJobMetricAlerts, sendJobMetricAlertQuietHoursDigests, setRetentionPolicyUnsupportedPairsForAlerts } from "../utils/jobMetricAlerts";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
-import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, messages, timeEntries, media, aiActionAudit, planDocuments, conversations, type InsertNotification } from "@shared/schema";
+import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, DOC_OVERDUE_REMINDER_DEFAULT_CAP, DOC_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, rfis, submittals, submittalReviews, messages, timeEntries, media, aiActionAudit, planDocuments, conversations, type InsertNotification } from "@shared/schema";
 import { getEffectivePermissions } from "../auth";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
@@ -64,6 +64,9 @@ let jobMetricQuietDigestTask: ReturnType<typeof cron.schedule> | null = null;
 let portfolioKpiSnapshotTask: ReturnType<typeof cron.schedule> | null = null;
 let certifiedPayrollDigestTask: ReturnType<typeof cron.schedule> | null = null;
 let swpppOverdueTask: ReturnType<typeof cron.schedule> | null = null;
+// Task #1599: nightly RFI / submittal-review overdue escalation sweeps.
+let rfiOverdueTask: ReturnType<typeof cron.schedule> | null = null;
+let submittalReviewOverdueTask: ReturnType<typeof cron.schedule> | null = null;
 let certifiedPayrollPurgeTask: ReturnType<typeof cron.schedule> | null = null;
 let wageDecisionRetryTask: ReturnType<typeof cron.schedule> | null = null;
 let wageDecisionMissingReminderTask: ReturnType<typeof cron.schedule> | null = null;
@@ -419,6 +422,35 @@ export function startJobRunner() {
     }
   });
 
+  // Task #1599: nightly sweep that finds open RFIs whose `dateRequired`
+  // has passed and notifies the assignee + project manager. Same 7am
+  // cadence as the SWPPP sweep and uses the same per-row dedupe marker
+  // + counter pattern so each overdue cycle generates one initial
+  // fanout plus N follow-up reminders (per-org cap).
+  rfiOverdueTask = cron.schedule("0 7 * * *", async () => {
+    try {
+      await processRfiOverdueNotifications();
+      recordJobOutcome("rfi_overdue_notifications", true);
+    } catch (err) {
+      recordJobOutcome("rfi_overdue_notifications", false);
+      logError("RFI overdue notification sweep failed", { error: String(err) });
+    }
+  });
+
+  // Task #1599: companion sweep for submittal_reviews. The PENDING /
+  // IN_REVIEW review whose parent submittal is past its date_required
+  // is what we treat as overdue; the assigned reviewer + project
+  // manager get the fanout.
+  submittalReviewOverdueTask = cron.schedule("0 7 * * *", async () => {
+    try {
+      await processSubmittalReviewOverdueNotifications();
+      recordJobOutcome("submittal_overdue_notifications", true);
+    } catch (err) {
+      recordJobOutcome("submittal_overdue_notifications", false);
+      logError("Submittal review overdue notification sweep failed", { error: String(err) });
+    }
+  });
+
   // Task #1178: nightly cleanup at 03:30 UTC — hard-deletes archived
   // certified payroll PDFs (and their object-storage blobs) older than
   // each org's configured retention window. Runs after the 02:00 retention
@@ -650,6 +682,14 @@ export function stopJobRunner() {
     swpppOverdueTask.stop();
     swpppOverdueTask = null;
   }
+  if (rfiOverdueTask) {
+    rfiOverdueTask.stop();
+    rfiOverdueTask = null;
+  }
+  if (submittalReviewOverdueTask) {
+    submittalReviewOverdueTask.stop();
+    submittalReviewOverdueTask = null;
+  }
   if (certifiedPayrollPurgeTask) {
     certifiedPayrollPurgeTask.stop();
     certifiedPayrollPurgeTask = null;
@@ -706,6 +746,12 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   job_metric_quiet_digest: { fn: async () => { await sendJobMetricAlertQuietHoursDigests({ recordSends: true }); }, description: "Send digest of job-metric alerts that fired while a Super Admin was in quiet hours", schedule: "*/15 * * * *" },
   certified_payroll_digest: { fn: () => processCertifiedPayrollWeeklyDigest(), description: "Email payroll administrators a digest of certified payroll PDFs (per-org cadence/time/timezone)", schedule: "0 * * * *" },
   swppp_overdue_corrective_actions: { fn: () => processSwpppOverdueCorrectiveActions(), description: "Notify assignees and project managers when SWPPP corrective actions pass their due date without being resolved", schedule: "0 7 * * *" },
+  // Task #1599: nightly fan-out + daily reminder cap for overdue RFIs
+  // (status IN ('SUBMITTED','UNDER_REVIEW','FORWARDED') AND date_required < now).
+  rfi_overdue_notifications: { fn: () => processRfiOverdueNotifications(), description: "Notify RFI assignees and project managers when an RFI passes its required-by date without being answered", schedule: "0 7 * * *" },
+  // Task #1599: same pattern for submittal_reviews whose parent
+  // submittal's date_required has passed.
+  submittal_overdue_notifications: { fn: () => processSubmittalReviewOverdueNotifications(), description: "Notify submittal reviewers and project managers when a PENDING/IN_REVIEW review's parent submittal passes its required-by date", schedule: "0 7 * * *" },
   certified_payroll_purge: { fn: async () => { await processArchivedCertifiedPayrollPurge(); }, description: "Hard-delete archived certified payroll PDFs (and object-storage files) older than each org's retention window (default 3 years)", schedule: "30 3 * * *" },
   // Legacy alias: kept so admin "Run job now" affordances and tests can
   // still invoke a Davis-Bacon-only sweep, but no longer scheduled on
@@ -3900,6 +3946,317 @@ export async function processSwpppOverdueCorrectiveActions(opts: { now?: Date } 
     logInfo("SWPPP overdue corrective action notifications sent", {
       notifications: notifs.length,
       inspections: initialNotifiedIds.length + followupNotifiedIds.length,
+      initialFanouts: initialNotifiedIds.length,
+      followupReminders: followupNotifiedIds.length,
+    });
+  }
+}
+
+// ============================================================
+// Task #1599: RFI / submittal-review overdue notifications
+// ============================================================
+//
+// Mirrors `processSwpppOverdueCorrectiveActions` above. Two parallel
+// sweeps share a single per-org policy on `organizations`:
+//   - doc_overdue_reminder_max_count   (default 5)
+//   - doc_overdue_reminder_interval_hours (default 22)
+// ...so an admin can dial the document-control escalation cadence
+// independently of the SWPPP cadence.
+//
+// An RFI is "overdue" when:
+//   - status IN ('SUBMITTED','UNDER_REVIEW','FORWARDED'); AND
+//   - dateRequired IS NOT NULL AND dateRequired < now.
+//
+// A submittal_review is "overdue" when:
+//   - the review row's status IN ('PENDING','IN_REVIEW'); AND
+//   - the parent submittal.dateRequired < now.
+//
+// Both sweeps fan one notification per recipient per fanout (assignee
+// + PM, deduped). Initial fanout stamps lastOverdueNotifiedAt; daily
+// follow-ups bump overdueReminderCount until the per-org cap is hit.
+// Resolving the row (RFI -> ANSWERED/CLOSED, review -> any non-pending
+// status) takes it out of the SELECT so reminders stop naturally.
+
+const DOC_OVERDUE_REMINDER_CAP = Math.max(
+  1,
+  Number.parseInt(
+    process.env.DOC_OVERDUE_REMINDER_CAP ?? String(DOC_OVERDUE_REMINDER_DEFAULT_CAP),
+    10,
+  ) || DOC_OVERDUE_REMINDER_DEFAULT_CAP,
+);
+const DOC_OVERDUE_REMINDER_INTERVAL_HOURS = DOC_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS;
+
+const RFI_OVERDUE_OPEN_STATUSES = ["SUBMITTED", "UNDER_REVIEW", "FORWARDED"] as const;
+// Only the *active* chain step (IN_REVIEW) is overdue-eligible. PENDING
+// rows are future steps the chain has not yet activated, so the assigned
+// reviewer is not yet ball-in-court and pinging them would be noise.
+export const SUBMITTAL_REVIEW_OPEN_STATUSES = ["IN_REVIEW"] as const;
+
+export async function processRfiOverdueNotifications(opts: { now?: Date } = {}) {
+  const now = opts.now ?? new Date();
+
+  // Per-org cap + interval (Task #1599) joined in. COALESCE guards
+  // against any DB drift where the columns are missing or NULL despite
+  // the NOT NULL DEFAULT — same pattern as the SWPPP sweep.
+  const orgCapExpr = sql<number>`COALESCE(${organizations.docOverdueReminderMaxCount}, ${DOC_OVERDUE_REMINDER_CAP})`;
+  const orgIntervalExpr = sql<number>`COALESCE(${organizations.docOverdueReminderIntervalHours}, ${DOC_OVERDUE_REMINDER_INTERVAL_HOURS})`;
+
+  const overdue = await db
+    .select({
+      id: rfis.id,
+      organizationId: rfis.organizationId,
+      projectId: rfis.projectId,
+      rfiNumber: rfis.rfiNumber,
+      subject: rfis.subject,
+      status: rfis.status,
+      dateRequired: rfis.dateRequired,
+      assignedToId: rfis.assignedToId,
+      forwardedToId: rfis.forwardedToId,
+      submittedById: rfis.submittedById,
+      lastOverdueNotifiedAt: rfis.lastOverdueNotifiedAt,
+      overdueReminderCount: rfis.overdueReminderCount,
+      reminderMaxCount: orgCapExpr,
+      reminderIntervalHours: orgIntervalExpr,
+    })
+    .from(rfis)
+    .innerJoin(organizations, eq(rfis.organizationId, organizations.id))
+    .where(and(
+      inArray(rfis.status, RFI_OVERDUE_OPEN_STATUSES as unknown as string[]),
+      isNotNull(rfis.dateRequired),
+      lt(rfis.dateRequired, now),
+      or(
+        isNull(rfis.lastOverdueNotifiedAt),
+        and(
+          sql`${rfis.overdueReminderCount} < ${orgCapExpr}`,
+          sql`${rfis.lastOverdueNotifiedAt} <= (${now}::timestamp - (${orgIntervalExpr} * interval '1 hour'))`,
+        ),
+      ),
+    ));
+
+  if (overdue.length === 0) return;
+
+  const projectIds = Array.from(new Set(overdue.map((r) => r.projectId)));
+  const orgIds = Array.from(new Set(overdue.map((r) => r.organizationId)));
+  const projectRows = projectIds.length
+    ? await db
+        .select({ id: projects.id, organizationId: projects.gcOrganizationId, name: projects.name, projectManagerId: projects.projectManagerId })
+        .from(projects)
+        .where(and(inArray(projects.id, projectIds), inArray(projects.gcOrganizationId, orgIds)))
+    : [];
+  const projectByKey = new Map(projectRows.map((p) => [`${p.organizationId}::${p.id}`, p]));
+
+  const notifs: InsertNotification[] = [];
+  const initialNotifiedIds: string[] = [];
+  const followupNotifiedIds: string[] = [];
+
+  for (const item of overdue) {
+    const proj = projectByKey.get(`${item.organizationId}::${item.projectId}`);
+    const projectName = proj?.name ?? "(Unknown project)";
+    const dueDate = item.dateRequired ? new Date(item.dateRequired) : null;
+    const dueStr = dueDate ? dueDate.toISOString().slice(0, 10) : "";
+    const daysOverdue = dueDate
+      ? Math.max(0, Math.floor((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - Date.UTC(dueDate.getUTCFullYear(), dueDate.getUTCMonth(), dueDate.getUTCDate())) / (1000 * 60 * 60 * 24)))
+      : 0;
+
+    const recipientIds = new Set<string>();
+    // Forwarded RFIs route to the forwarded-to user as the active
+    // assignee for this hop; otherwise the originally-assigned user.
+    if (item.status === "FORWARDED" && item.forwardedToId) recipientIds.add(item.forwardedToId);
+    else if (item.assignedToId) recipientIds.add(item.assignedToId);
+    if (proj?.projectManagerId) recipientIds.add(proj.projectManagerId);
+
+    const isFollowUp = item.lastOverdueNotifiedAt != null;
+    if (recipientIds.size === 0) {
+      // Nothing to notify — still mark as notified so we don't re-scan
+      // every night. Same defensive policy as the SWPPP sweep.
+      if (isFollowUp) followupNotifiedIds.push(item.id);
+      else initialNotifiedIds.push(item.id);
+      continue;
+    }
+
+    const overdueLabel = daysOverdue > 0
+      ? `${daysOverdue} day${daysOverdue === 1 ? "" : "s"} overdue`
+      : "overdue";
+    const followupNumber = (item.overdueReminderCount ?? 0) + 1;
+    const orgReminderCap = Number(item.reminderMaxCount ?? DOC_OVERDUE_REMINDER_CAP) || DOC_OVERDUE_REMINDER_CAP;
+    const reminderTag = isFollowUp ? ` (Reminder ${followupNumber} of ${orgReminderCap})` : "";
+    const subjectLabel = (item.subject ?? "").trim().slice(0, 200) || "(no subject)";
+    const title = `RFI #${item.rfiNumber} ${overdueLabel}: ${projectName}${reminderTag}`;
+    const message = `${projectName} — RFI #${item.rfiNumber} (${subjectLabel}) was due ${dueStr || "(no date)"} (${overdueLabel}).`;
+
+    for (const userId of recipientIds) {
+      notifs.push({
+        userId,
+        organizationId: item.organizationId,
+        type: "GENERAL" as const,
+        title,
+        message,
+        relatedEntityType: "RFI",
+        relatedEntityId: item.id,
+      });
+    }
+    if (isFollowUp) followupNotifiedIds.push(item.id);
+    else initialNotifiedIds.push(item.id);
+  }
+
+  if (notifs.length > 0) {
+    await insertNotifications(notifs);
+  }
+
+  if (initialNotifiedIds.length > 0) {
+    await db
+      .update(rfis)
+      .set({ lastOverdueNotifiedAt: now })
+      .where(inArray(rfis.id, initialNotifiedIds));
+  }
+  if (followupNotifiedIds.length > 0) {
+    await db
+      .update(rfis)
+      .set({
+        lastOverdueNotifiedAt: now,
+        overdueReminderCount: sql`${rfis.overdueReminderCount} + 1`,
+      })
+      .where(inArray(rfis.id, followupNotifiedIds));
+  }
+
+  if (notifs.length > 0) {
+    logInfo("RFI overdue notifications sent", {
+      notifications: notifs.length,
+      rfis: initialNotifiedIds.length + followupNotifiedIds.length,
+      initialFanouts: initialNotifiedIds.length,
+      followupReminders: followupNotifiedIds.length,
+    });
+  }
+}
+
+export async function processSubmittalReviewOverdueNotifications(opts: { now?: Date } = {}) {
+  const now = opts.now ?? new Date();
+
+  const orgCapExpr = sql<number>`COALESCE(${organizations.docOverdueReminderMaxCount}, ${DOC_OVERDUE_REMINDER_CAP})`;
+  const orgIntervalExpr = sql<number>`COALESCE(${organizations.docOverdueReminderIntervalHours}, ${DOC_OVERDUE_REMINDER_INTERVAL_HOURS})`;
+
+  // The "due" timestamp lives on the parent submittal, not the review
+  // row, so we join through to pull `dateRequired`. submittal_reviews
+  // doesn't have a project_id either — also pulled from the parent.
+  const overdue = await db
+    .select({
+      id: submittalReviews.id,
+      organizationId: submittalReviews.organizationId,
+      submittalId: submittalReviews.submittalId,
+      reviewerId: submittalReviews.reviewerId,
+      reviewerName: submittalReviews.reviewerName,
+      sequenceOrder: submittalReviews.sequenceOrder,
+      status: submittalReviews.status,
+      lastOverdueNotifiedAt: submittalReviews.lastOverdueNotifiedAt,
+      overdueReminderCount: submittalReviews.overdueReminderCount,
+      submittalNumber: submittals.submittalNumber,
+      submittalSubject: submittals.subject,
+      projectId: submittals.projectId,
+      dateRequired: submittals.dateRequired,
+      reminderMaxCount: orgCapExpr,
+      reminderIntervalHours: orgIntervalExpr,
+    })
+    .from(submittalReviews)
+    .innerJoin(submittals, eq(submittalReviews.submittalId, submittals.id))
+    .innerJoin(organizations, eq(submittalReviews.organizationId, organizations.id))
+    .where(and(
+      inArray(submittalReviews.status, SUBMITTAL_REVIEW_OPEN_STATUSES as unknown as string[]),
+      isNotNull(submittals.dateRequired),
+      lt(submittals.dateRequired, now),
+      or(
+        isNull(submittalReviews.lastOverdueNotifiedAt),
+        and(
+          sql`${submittalReviews.overdueReminderCount} < ${orgCapExpr}`,
+          sql`${submittalReviews.lastOverdueNotifiedAt} <= (${now}::timestamp - (${orgIntervalExpr} * interval '1 hour'))`,
+        ),
+      ),
+    ));
+
+  if (overdue.length === 0) return;
+
+  const projectIds = Array.from(new Set(overdue.map((r) => r.projectId)));
+  const orgIds = Array.from(new Set(overdue.map((r) => r.organizationId)));
+  const projectRows = projectIds.length
+    ? await db
+        .select({ id: projects.id, organizationId: projects.gcOrganizationId, name: projects.name, projectManagerId: projects.projectManagerId })
+        .from(projects)
+        .where(and(inArray(projects.id, projectIds), inArray(projects.gcOrganizationId, orgIds)))
+    : [];
+  const projectByKey = new Map(projectRows.map((p) => [`${p.organizationId}::${p.id}`, p]));
+
+  const notifs: InsertNotification[] = [];
+  const initialNotifiedIds: string[] = [];
+  const followupNotifiedIds: string[] = [];
+
+  for (const item of overdue) {
+    const proj = projectByKey.get(`${item.organizationId}::${item.projectId}`);
+    const projectName = proj?.name ?? "(Unknown project)";
+    const dueDate = item.dateRequired ? new Date(item.dateRequired) : null;
+    const dueStr = dueDate ? dueDate.toISOString().slice(0, 10) : "";
+    const daysOverdue = dueDate
+      ? Math.max(0, Math.floor((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - Date.UTC(dueDate.getUTCFullYear(), dueDate.getUTCMonth(), dueDate.getUTCDate())) / (1000 * 60 * 60 * 24)))
+      : 0;
+
+    const recipientIds = new Set<string>();
+    if (item.reviewerId) recipientIds.add(item.reviewerId);
+    if (proj?.projectManagerId) recipientIds.add(proj.projectManagerId);
+
+    const isFollowUp = item.lastOverdueNotifiedAt != null;
+    if (recipientIds.size === 0) {
+      if (isFollowUp) followupNotifiedIds.push(item.id);
+      else initialNotifiedIds.push(item.id);
+      continue;
+    }
+
+    const overdueLabel = daysOverdue > 0
+      ? `${daysOverdue} day${daysOverdue === 1 ? "" : "s"} overdue`
+      : "overdue";
+    const followupNumber = (item.overdueReminderCount ?? 0) + 1;
+    const orgReminderCap = Number(item.reminderMaxCount ?? DOC_OVERDUE_REMINDER_CAP) || DOC_OVERDUE_REMINDER_CAP;
+    const reminderTag = isFollowUp ? ` (Reminder ${followupNumber} of ${orgReminderCap})` : "";
+    const subjectLabel = (item.submittalSubject ?? "").trim().slice(0, 200) || "(no subject)";
+    const title = `Submittal #${item.submittalNumber} review ${overdueLabel}: ${projectName}${reminderTag}`;
+    const message = `${projectName} — Submittal #${item.submittalNumber} (${subjectLabel}) — review by ${item.reviewerName ?? "(unassigned)"} (step ${item.sequenceOrder}) was due ${dueStr || "(no date)"} (${overdueLabel}).`;
+
+    for (const userId of recipientIds) {
+      notifs.push({
+        userId,
+        organizationId: item.organizationId,
+        type: "GENERAL" as const,
+        title,
+        message,
+        relatedEntityType: "SUBMITTAL_REVIEW",
+        relatedEntityId: item.id,
+      });
+    }
+    if (isFollowUp) followupNotifiedIds.push(item.id);
+    else initialNotifiedIds.push(item.id);
+  }
+
+  if (notifs.length > 0) {
+    await insertNotifications(notifs);
+  }
+
+  if (initialNotifiedIds.length > 0) {
+    await db
+      .update(submittalReviews)
+      .set({ lastOverdueNotifiedAt: now })
+      .where(inArray(submittalReviews.id, initialNotifiedIds));
+  }
+  if (followupNotifiedIds.length > 0) {
+    await db
+      .update(submittalReviews)
+      .set({
+        lastOverdueNotifiedAt: now,
+        overdueReminderCount: sql`${submittalReviews.overdueReminderCount} + 1`,
+      })
+      .where(inArray(submittalReviews.id, followupNotifiedIds));
+  }
+
+  if (notifs.length > 0) {
+    logInfo("Submittal review overdue notifications sent", {
+      notifications: notifs.length,
+      reviews: initialNotifiedIds.length + followupNotifiedIds.length,
       initialFanouts: initialNotifiedIds.length,
       followupReminders: followupNotifiedIds.length,
     });

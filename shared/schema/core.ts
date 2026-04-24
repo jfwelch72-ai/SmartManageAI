@@ -48,12 +48,24 @@ export const organizations = pgTable("organizations", {
   // down per organization without touching env vars or shipping code.
   swpppOverdueReminderMaxCount: integer("swppp_overdue_reminder_max_count").notNull().default(5),
   swpppOverdueReminderIntervalHours: integer("swppp_overdue_reminder_interval_hours").notNull().default(22),
+  // Task #1599: per-org escalation policy for the nightly RFI and
+  // submittal-review overdue sweeps (see processRfiOverdueNotifications
+  // and processSubmittalReviewOverdueNotifications in
+  // server/jobs/jobRunner.ts). Defaults mirror the SWPPP cadence so
+  // upgrading is a no-op for existing orgs.
+  docOverdueReminderMaxCount: integer("doc_overdue_reminder_max_count").notNull().default(5),
+  docOverdueReminderIntervalHours: integer("doc_overdue_reminder_interval_hours").notNull().default(22),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
 export const SWPPP_OVERDUE_REMINDER_DEFAULT_CAP = 5;
 export const SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS = 22;
+// Task #1599: shared defaults for the RFI / submittal overdue sweeps.
+// Kept separate from the SWPPP defaults so heavy-civil tenants can tune
+// document-control escalation independently of erosion-control.
+export const DOC_OVERDUE_REMINDER_DEFAULT_CAP = 5;
+export const DOC_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS = 22;
 export const SWPPP_OVERDUE_REMINDER_MAX_CAP = 365;
 export const SWPPP_OVERDUE_REMINDER_MIN_INTERVAL_HOURS = 1;
 export const SWPPP_OVERDUE_REMINDER_MAX_INTERVAL_HOURS = 24 * 30;
