@@ -888,6 +888,165 @@ router.patch("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthRequ
   }
 });
 
+// Task #1832 — Bulk DELETE for multi-select markup deletion. Mirrors
+// the bulk PATCH endpoint above (collapsing N parallel per-id calls
+// into a single transactional round-trip) and matches the symmetric
+// `/api/plan-documents/:docId/markups/bulk` shape on the plan-document
+// side. Per-row authorization is identical to the per-id DELETE
+// handler below: SUPER_ADMIN bypasses org checks; ADMIN / MANAGER may
+// delete any row in their org; FIELD_WORKER / ESTIMATOR / etc. may only
+// delete rows they authored. Cross-org rows are rejected up-front
+// (403) before the transaction opens, so a bad payload can never
+// partially apply.
+//
+// Failure responses mirror the bulk PATCH structured shape so the
+// client can name the offending markup ids in toasts and flash them
+// on the canvas:
+//   - 404 not_found (with `failedMarkupIds` listing the missing ids)
+//   - 403 access_denied / not_owner (with `failedMarkupIds` and
+//     `failuresByReason` enumerating each cause)
+//   - 400 validation (with `failedMarkupIds` mapped from the offending
+//     entry indices)
+//
+// Route MUST be registered before `/api/takeoff/markups/:markupId`
+// or Express will route "bulk" into `:markupId`.
+router.delete("/api/takeoff/markups/bulk", requireAuth, async (req: AuthRequest, res, next) => {
+  const startedAt = Date.now();
+  let batchCount = 0;
+  try {
+    const { takeoffMarkups } = await import("@shared/schema");
+    const { z } = await import("zod");
+    const { inArray } = await import("drizzle-orm");
+
+    const bulkSchema = z.object({
+      ids: z.array(z.string().min(1)).min(1).max(500),
+    });
+
+    const validated = bulkSchema.parse(req.body);
+    // De-duplicate caller-supplied ids so a payload that lists the
+    // same row twice doesn't trip the `rows.length !== ids.length`
+    // not-found check below.
+    const ids = Array.from(new Set(validated.ids));
+    batchCount = ids.length;
+
+    const rows = await db
+      .select()
+      .from(takeoffMarkups)
+      .where(inArray(takeoffMarkups.id, ids));
+
+    if (rows.length !== ids.length) {
+      const present = new Set(rows.map((r) => r.id));
+      const missing = ids.filter((id) => !present.has(id));
+      res.status(404).json({
+        error: "Some markups could not be deleted because they no longer exist",
+        reason: "not_found",
+        failedMarkupIds: missing,
+      });
+      return;
+    }
+
+    const userRole = req.user!.role;
+    const userId = req.user!.id;
+    const orgId = req.user!.organizationId;
+    const isSuperAdmin = userRole === "SUPER_ADMIN";
+    const isAdminOrManager = isSuperAdmin || userRole === "ADMIN" || userRole === "MANAGER";
+
+    const crossOrg: string[] = [];
+    const notOwner: string[] = [];
+    for (const r of rows) {
+      if (!isSuperAdmin && r.organizationId !== orgId) crossOrg.push(r.id);
+      if (!isAdminOrManager && r.createdBy !== userId) notOwner.push(r.id);
+    }
+    const groups: Array<{
+      reason: "access_denied" | "not_owner";
+      ids: string[];
+      message: string;
+    }> = [];
+    if (crossOrg.length > 0) {
+      groups.push({
+        reason: "access_denied",
+        ids: crossOrg,
+        message: "Some markups belong to another organization and were not deleted",
+      });
+    }
+    if (notOwner.length > 0) {
+      groups.push({
+        reason: "not_owner",
+        ids: notOwner,
+        message: "Some markups were created by another user — only the author or a manager can delete them",
+      });
+    }
+    if (groups.length > 0) {
+      const allFailed = Array.from(new Set(groups.flatMap((g) => g.ids)));
+      const dominant = groups.reduce((acc, g) => (g.ids.length > acc.ids.length ? g : acc));
+      res.status(403).json({
+        error: groups.map((g) => g.message).join("; "),
+        reason: dominant.reason,
+        failedMarkupIds: allFailed,
+        failuresByReason: groups.map((g) => ({
+          reason: g.reason,
+          failedMarkupIds: g.ids,
+          message: g.message,
+        })),
+      });
+      return;
+    }
+
+    await db.transaction(async (tx) => {
+      const whereClause = isSuperAdmin
+        ? inArray(takeoffMarkups.id, ids)
+        : and(inArray(takeoffMarkups.id, ids), eq(takeoffMarkups.organizationId, orgId!));
+      const deleted = await tx
+        .delete(takeoffMarkups)
+        .where(whereClause)
+        .returning({ id: takeoffMarkups.id });
+      // Defensive: if a concurrent writer removed any of the rows
+      // between the SELECT above and the DELETE here, the row count
+      // will diverge. Throw to roll the transaction back so the
+      // caller never sees a "partially succeeded" delete (the whole
+      // point of this route over fan-out per-id DELETEs).
+      if (deleted.length !== ids.length) {
+        throw new Error("Bulk delete affected fewer rows than expected");
+      }
+    });
+
+    recordJobMetrics("takeoff_markups_bulk_delete", {
+      ok: 1,
+      count: batchCount,
+      ms: Date.now() - startedAt,
+    });
+    res.json({ ok: true, count: ids.length, deletedIds: ids });
+  } catch (error: any) {
+    recordJobMetrics("takeoff_markups_bulk_delete", {
+      error: 1,
+      count: batchCount,
+      ms: Date.now() - startedAt,
+    });
+    logError("Error bulk-deleting markups:", {}, error instanceof Error ? error : new Error(String(error)));
+    if (error?.name === "ZodError") {
+      const submittedIds = Array.isArray(req.body?.ids) ? req.body.ids : [];
+      const failedIndices = new Set<number>();
+      for (const issue of (error.errors || [])) {
+        const path = Array.isArray(issue?.path) ? issue.path : [];
+        if (path[0] === "ids" && typeof path[1] === "number") {
+          failedIndices.add(path[1]);
+        }
+      }
+      const failedMarkupIds = Array.from(failedIndices)
+        .map((i) => submittedIds[i])
+        .filter((id): id is string => typeof id === "string" && id.length > 0);
+      res.status(400).json({
+        error: "Invalid bulk delete",
+        reason: "validation",
+        failedMarkupIds,
+        details: error.errors,
+      });
+      return;
+    }
+    next(error);
+  }
+});
+
 // Delete a markup
 router.delete("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthRequest, res, next) => {
   try {

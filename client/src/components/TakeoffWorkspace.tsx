@@ -502,7 +502,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     sheetsQueryKey,
     importPlanMutation, supersedeSheetMutation, createMeasurementMutation,
     updateMeasurementMutation, deleteMeasurementMutation,
-    createMarkupMutation, updateMarkupMutation, bulkUpdateMarkupsMutation, deleteMarkupMutation,
+    createMarkupMutation, updateMarkupMutation, bulkUpdateMarkupsMutation, deleteMarkupMutation, bulkDeleteMarkupsMutation,
     createSheetLinkMutation, deleteSheetLinkMutation, detectLinksMutation,
     saveCategoryMutation, deleteCategoryMutation,
     renameSheetMutation, duplicateSheetMutation,
@@ -5209,7 +5209,35 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 >
                   Delete
                 </Button>
-              ) : <div />}
+              ) : (
+                // Task #1832 — Multi-select delete now collapses N parallel
+                // per-id `deleteMarkupMutation` calls into one bulk DELETE
+                // round-trip. The server runs the removal in a transaction
+                // so a mid-flight failure rolls back atomically (no
+                // half-deleted group). Disabled while the bulk request is
+                // in flight to keep accidental double-clicks from racing
+                // against the optimistic cache strip.
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  disabled={bulkDeleteMarkupsMutation.isPending}
+                  onClick={async () => {
+                    try {
+                      await bulkDeleteMarkupsMutation.mutateAsync(
+                        selectedMarkups.map((m) => m.id),
+                      );
+                      close();
+                    } catch (err) {
+                      console.warn("[Takeoff] Failed to bulk-delete markups:", err);
+                    }
+                  }}
+                  data-testid="button-delete-markups-bulk"
+                >
+                  {bulkDeleteMarkupsMutation.isPending
+                    ? "Deleting..."
+                    : `Delete ${selectedMarkups.length} markups`}
+                </Button>
+              )}
               <div className="flex items-center gap-2">
                 <Button variant="outline" size="sm" onClick={close} data-testid="button-cancel-markup-edit">Cancel</Button>
                 <MarkupStylingPopoverSaveButton

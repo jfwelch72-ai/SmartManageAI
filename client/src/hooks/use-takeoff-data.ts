@@ -706,6 +706,54 @@ export function useTakeoffData({
     },
   });
 
+  // Task #1832 — Bulk DELETE collapses N parallel per-id `deleteMarkupMutation`
+  // calls into a single transactional round-trip. The optimistic cache update
+  // strips every selected markup immediately so the canvas stops rendering
+  // them; the server runs the removal inside one transaction so a mid-flight
+  // failure rolls back atomically (no half-deleted group). On error we
+  // restore the cache snapshot, surface a structured toast naming the
+  // offending ids when the server returns them, and keep the original
+  // selection for the user to retry.
+  const bulkDeleteMarkupsMutation = useMutation({
+    mutationFn: async (markupIds: string[]) => {
+      const res = await apiRequest("DELETE", "/api/takeoff/markups/bulk", { ids: markupIds });
+      return res.json() as Promise<{ ok: boolean; count: number; deletedIds: string[] }>;
+    },
+    onMutate: async (markupIds) => {
+      const queryKey = ["/api/takeoff/sheets", selectedSheet, "markups"];
+      await queryClient.cancelQueries({ queryKey });
+      const previousMarkups = queryClient.getQueryData<TakeoffMarkupWithAuthor[]>(queryKey);
+      const ids = new Set(markupIds);
+      const deletedSnapshots = (previousMarkups || []).filter((m) => ids.has(m.id));
+      queryClient.setQueryData<TakeoffMarkupWithAuthor[]>(queryKey, (old) =>
+        old ? old.filter((m) => !ids.has(m.id)) : old,
+      );
+      return { previousMarkups, queryKey, deletedSnapshots };
+    },
+    onSuccess: (_data, _vars, ctx) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "markups"] });
+      // Push one history entry per deleted markup so existing Undo
+      // semantics (per-row recreate) keep working unchanged.
+      if (selectedSheet && ctx?.deletedSnapshots) {
+        for (const m of ctx.deletedSnapshots) {
+          takeoffHistory.pushMarkupAction("MARKUP_DELETE", m as any, selectedSheet);
+        }
+      }
+      const count = ctx?.deletedSnapshots.length ?? 0;
+      toast({ title: count === 1 ? "Markup deleted" : `${count} markups deleted` });
+    },
+    onError: (error: any, _vars, ctx) => {
+      if (ctx?.previousMarkups) {
+        queryClient.setQueryData(ctx.queryKey, ctx.previousMarkups);
+      }
+      const description =
+        (typeof error === "object" && error && typeof error.message === "string"
+          ? error.message
+          : null) || "Failed to delete markups";
+      toast({ title: "Error", description, variant: "destructive" });
+    },
+  });
+
   const reorderSheetsMutation = useMutation({
     mutationFn: async (order: { id: string; sheetIndex: number }[]) => {
       const url = isBid
@@ -962,6 +1010,7 @@ export function useTakeoffData({
     updateMarkupMutation,
     bulkUpdateMarkupsMutation,
     deleteMarkupMutation,
+    bulkDeleteMarkupsMutation,
     createSheetLinkMutation,
     deleteSheetLinkMutation,
     detectLinksMutation,
