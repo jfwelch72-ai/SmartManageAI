@@ -5,6 +5,7 @@ import PlanMarkupLayer from "@/components/markups/PlanMarkupLayer";
 import PlanMarkupToolbar from "@/components/markups/PlanMarkupToolbar";
 import type { MarkupTool } from "@/components/markups/MarkupRenderer";
 import CarryoverAnnotationsDialog from "@/components/markups/CarryoverAnnotationsDialog";
+import { findSupersededPdfDoc, uploadOutcomeToast } from "@/components/project-tabs/planRevisionMatch";
 import SheetJumpPalette, { useSheetJumpPaletteHotkey, type SheetJumpResult } from "@/components/SheetJumpPalette";
 import { useLocation } from "wouter";
 import { Badge } from "@/components/ui/badge";
@@ -699,36 +700,107 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
     window.open(`/api/projects/${projectCode}/documents/${docId}/stream`, "_blank");
   };
 
-  const handleObjectUploadComplete = (result: any) => {
+  const handleObjectUploadComplete = async (result: any) => {
     if (!result.successful?.length) {
       toast({ title: "Error", description: "No file uploaded", variant: "destructive" });
       return;
     }
     const isSingle = result.successful.length === 1;
-    result.successful.forEach((uploaded: any) => {
+
+    // Task #1610 — snapshot the current PDF documents *before* the new uploads
+    // are persisted so we can detect a revision-supersedes-prior-document
+    // relationship and auto-prompt the user to carry pins/markups forward.
+    const existingPdfDocs = documents.filter((d: any) =>
+      d.mimeType?.includes("pdf") || d.fileName?.toLowerCase?.().endsWith(".pdf"),
+    );
+
+    let firstSupersedeContext: {
+      fromDocumentId: string;
+      toDocumentId: string;
+      fromLabel?: string;
+      toLabel?: string;
+    } | null = null;
+    let savedCount = 0;
+    let failedCount = 0;
+
+    await Promise.all(result.successful.map(async (uploaded: any) => {
       const file = uploaded.data as File;
       const fileUrl = uploaded.uploadURL?.split("?")[0] || "";
       const baseName = file.name.replace(/\.[^/.]+$/, "");
       const title = isSingle && documentTitle.trim() ? documentTitle.trim() : baseName;
-      apiRequest("POST", "/api/documents", {
-        projectId: project?.id,
-        title,
-        type: documentType,
-        fileUrl,
-        fileName: file.name,
-        fileSize: file.size,
-        mimeType: file.type,
-        objectKey: fileUrl,
-      }).then(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "documents"] });
-        toast({ title: "Document uploaded" });
-        setDocumentTitle("");
-      }).catch(() => {
-        toast({ title: "Error", description: "Failed to save document", variant: "destructive" });
-      });
-    });
-    if (result.successful.length > 1) {
-      toast({ title: `${result.successful.length} files uploaded`, description: "All documents have been added." });
+      try {
+        const res = await apiRequest("POST", "/api/documents", {
+          projectId: project?.id,
+          title,
+          type: documentType,
+          fileUrl,
+          fileName: file.name,
+          fileSize: file.size,
+          mimeType: file.type,
+          objectKey: fileUrl,
+        });
+        const newDoc = await res.json().catch(() => null);
+        if (!newDoc || typeof newDoc.id !== "string") {
+          // The save succeeded HTTP-wise but the response was malformed —
+          // treat as a failure for outcome reporting so the user sees an
+          // accurate toast rather than a silent "uploaded" message.
+          failedCount++;
+          return;
+        }
+        savedCount++;
+
+        // Task #1610 — if the new upload looks like a revision of an existing
+        // PDF (same normalized title or filename), capture the best candidate
+        // so we can prompt the user to carry annotations forward. The prompt
+        // itself is opened *after* all uploads finish, and only for the first
+        // detected supersede so a multi-file upload doesn't bury the user
+        // under back-to-back dialogs. Restricted to PLANS uploads because
+        // pins/markups are a plan-sheet concept; specs and supporting PDFs
+        // can still use the manual "Carry over annotations…" menu.
+        const isPdf =
+          file.type?.includes("pdf") || file.name.toLowerCase().endsWith(".pdf");
+        const isPlansUpload = documentType === "PLANS";
+        if (isPdf && isPlansUpload && !firstSupersedeContext) {
+          const supersededDoc = findSupersededPdfDoc(
+            { title, fileName: file.name },
+            existingPdfDocs,
+          );
+          if (supersededDoc) {
+            firstSupersedeContext = {
+              fromDocumentId: supersededDoc.id,
+              toDocumentId: newDoc.id,
+              fromLabel: supersededDoc.title || supersededDoc.fileName,
+              toLabel: title || file.name,
+            };
+          }
+        }
+      } catch {
+        failedCount++;
+      }
+    }));
+
+    // Always invalidate the documents list — even on partial failure some
+    // rows may have been created and the list needs to reflect that.
+    queryClient.invalidateQueries({ queryKey: ["/api/projects", projectCode, "documents"] });
+
+    // Surface the actual outcome. Only clear the in-progress title when at
+    // least one document was saved, so a single-file failure leaves the
+    // user's typed title intact for retry.
+    if (savedCount > 0) {
+      setDocumentTitle("");
+    }
+    const outcome = uploadOutcomeToast(savedCount, failedCount);
+    if (outcome) {
+      toast(outcome);
+    }
+
+    // Task #1610 — auto-prompt happens last so the success toast appears first
+    // and the dialog is the user's next action. Skipping never blocks the
+    // upload (the document is already saved at this point) and choosing
+    // "Carry over" calls the same idempotent endpoint as the manual menu.
+    if (firstSupersedeContext && !carryoverOpen) {
+      setCarryoverContext(firstSupersedeContext);
+      setCarryoverOpen(true);
     }
   };
 
