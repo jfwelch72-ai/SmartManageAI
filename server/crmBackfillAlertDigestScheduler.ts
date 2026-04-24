@@ -15,8 +15,10 @@ import {
  * baseline view in addition to the real-time fan-out, and surfaces trends
  * (e.g. the same webhook failing intermittently) that single emails hide.
  *
- * Runs once a day at 07:00 server time. Orgs with zero failures in the
- * window receive nothing.
+ * Runs once a day at 07:00 server time. Orgs receive a digest if they
+ * had any alert delivery failures in the window OR — added in Task
+ * #1569 — if they ran transcript backfill but produced ZERO alert
+ * deliveries (silent pipeline). Fully healthy orgs receive nothing.
  */
 export class CrmBackfillAlertDigestScheduler {
   private task: ReturnType<typeof cron.schedule> | null = null;

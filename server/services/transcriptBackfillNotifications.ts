@@ -20,11 +20,13 @@ import { logInfo, logWarn } from "../utils/logger";
 import { createHash } from "crypto";
 import {
   aggregateRecentCrmTranscriptBackfillAlertFailures,
+  findQuietCrmTranscriptBackfillOrgsSince,
   getCrmTranscriptBackfillAlertDelivery,
   getCrmTranscriptBackfillJob,
   getCrmTranscriptBackfillNotificationSettings,
   getCrmTranscriptBackfillOperatorContact,
   getCrmTranscriptBackfillTestAlertUsageSummary,
+  getOrganizationDisplayInfoByIds,
   listCrmTranscriptBackfillAlertDeliveries,
   listOrgAdminsForAlertFailureFallback,
   pruneAlertFallbackSentBefore,
@@ -41,6 +43,7 @@ import {
   type CrmTranscriptBackfillAlertDelivery,
   type CrmTranscriptBackfillAlertFailureDigestEntry,
   type CrmTranscriptBackfillOperatorContact,
+  type CrmTranscriptBackfillQuietOrgEntry,
   type OrgAdminFailureFallbackRecipient,
 } from "../storage";
 
@@ -1542,8 +1545,12 @@ export async function resendBackfillAlertDelivery(
 // email with no overall context. This digest aggregates the previous 24h
 // of `crm_transcript_backfill_alert_deliveries` failure rows per org and
 // sends one summary email per day to the same admins the real-time
-// fallback uses (so admin opt-outs still apply). Orgs with zero failures
-// in the window are skipped entirely — the digest is silent on quiet days.
+// fallback uses (so admin opt-outs still apply).
+//
+// Task #1569 — the dispatcher also emails admins of "quiet" orgs (had
+// transcript-backfill activity in the window but produced ZERO alert
+// delivery rows). On a fully healthy day — no failures AND no quiet
+// orgs — no email is sent.
 // ---------------------------------------------------------------------------
 
 export type AlertFailureDigestContent = {
@@ -1555,14 +1562,42 @@ export type AlertFailureDigestContent = {
   historyUrl: string;
 };
 
+// Task #1569 — per-org context for the "Quiet orgs in the last 24h" section
+// of the digest email. Mirrors the in-app card added in Task #1548 so
+// platform support catches silent pipelines from their inbox without
+// opening the admin page on a quiet day.
+export type AlertFailureDigestQuietOrg = {
+  organizationId: string;
+  organizationName: string | null;
+  organizationSlug: string | null;
+  jobsInWindow: number;
+  lastJobAt: Date;
+};
+
 export type AlertFailureDigestInput = {
   entry: CrmTranscriptBackfillAlertFailureDigestEntry;
   /** Window length in hours (e.g. 24). Used in the summary wording. */
   windowHours: number;
+  /**
+   * Task #1569 — orgs that ran transcript backfill in the window but
+   * produced ZERO alert delivery rows. When non-empty, the digest renders
+   * an extra "Quiet orgs in the last 24h" section. The section is omitted
+   * entirely when empty so healthy days don't grow the email.
+   */
+  quietOrgs?: AlertFailureDigestQuietOrg[];
 };
 
 function pluralizeFailures(n: number): string {
+  if (n === 0) return "no alert delivery failures";
   return n === 1 ? "1 alert delivery failed" : `${n} alert deliveries failed`;
+}
+
+function pluralizeQuietOrgs(n: number): string {
+  return n === 1 ? "1 quiet org" : `${n} quiet orgs`;
+}
+
+function describeQuietOrg(q: AlertFailureDigestQuietOrg): string {
+  return q.organizationName || q.organizationSlug || q.organizationId;
 }
 
 function describeChannelBreakdown(slack: number, email: number): string {
@@ -1580,11 +1615,25 @@ export function buildAlertFailureDigestContent(
     ? `${baseUrl}/admin/transcript-backfill`
     : "/admin/transcript-backfill";
   const { entry, windowHours } = input;
+  const quietOrgs = input.quietOrgs ?? [];
   const breakdown = describeChannelBreakdown(entry.slackCount, entry.emailCount);
-  const summary =
+  const failurePart =
     `${pluralizeFailures(entry.total)} in the last ${windowHours}h` +
     (breakdown ? ` — ${breakdown}.` : ".");
-  const subject = `[CRM] Daily transcript backfill alert digest — ${pluralizeFailures(entry.total)}`;
+  // Task #1569 — when the org has no failures but the alert pipeline has
+  // gone silent, lead with the quiet-orgs signal in the summary so admins
+  // immediately see why they're getting an email on an otherwise quiet day.
+  const quietPart =
+    quietOrgs.length > 0
+      ? ` ${pluralizeQuietOrgs(quietOrgs.length)} ran backfill but reported no alert deliveries.`
+      : "";
+  const summary = failurePart + quietPart;
+  // Task #1569 — give "quiet pipeline" digests a distinct subject so they
+  // don't all read as "0 alert deliveries failed" in admins' inboxes.
+  const subject =
+    entry.total === 0 && quietOrgs.length > 0
+      ? `[CRM] Daily transcript backfill alert digest — ${pluralizeQuietOrgs(quietOrgs.length)} silent`
+      : `[CRM] Daily transcript backfill alert digest — ${pluralizeFailures(entry.total)}`;
 
   const escape = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -1595,6 +1644,16 @@ export function buildAlertFailureDigestContent(
     const job = f.jobId ? ` (job ${f.jobId})` : "";
     const err = f.errorMessage ? ` — ${f.errorMessage}` : "";
     return `  • ${when}  ${channel} → ${f.recipientSummary || "(none)"}${job}${err}`;
+  });
+
+  // Task #1569 — text rendering of the quiet-orgs section. Each line
+  // mirrors the in-app card (Task #1548): org name, jobs-in-window count,
+  // last activity timestamp.
+  const quietLines = quietOrgs.map((q) => {
+    const name = describeQuietOrg(q);
+    const jobs = `${q.jobsInWindow} job${q.jobsInWindow === 1 ? "" : "s"}`;
+    const last = q.lastJobAt.toISOString();
+    return `  • ${name} — ${jobs} in window, last activity ${last}`;
   });
 
   const text = [
@@ -1608,6 +1667,11 @@ export function buildAlertFailureDigestContent(
       ? `Most recent failures (up to ${entry.recentFailures.length}):`
       : null,
     ...recentLines,
+    quietOrgs.length > 0 ? "" : null,
+    quietOrgs.length > 0
+      ? `Quiet orgs in the last ${windowHours}h (ran backfill, no alert deliveries):`
+      : null,
+    ...quietLines,
     "",
     `Open the admin transcript-backfill page to review delivery history:`,
     historyUrl,
@@ -1624,6 +1688,20 @@ export function buildAlertFailureDigestContent(
           <td style="padding:4px 8px;border-top:1px solid #e5e7eb;">${escape(f.recipientSummary || "(none)")}</td>
           <td style="padding:4px 8px;border-top:1px solid #e5e7eb;">${escape(f.errorMessage ?? "")}</td>
           <td style="padding:4px 8px;border-top:1px solid #e5e7eb;">${f.jobId ? `<code>${escape(f.jobId)}</code>` : ""}</td>
+        </tr>`,
+    )
+    .join("");
+
+  // Task #1569 — HTML rendering of the quiet-orgs section. Same columns
+  // as the in-app card (org, jobs-in-window, last activity) so the email
+  // and the dashboard stay visually aligned.
+  const quietRows = quietOrgs
+    .map(
+      (q) => `
+        <tr>
+          <td style="padding:4px 8px;border-top:1px solid #e5e7eb;">${escape(describeQuietOrg(q))}</td>
+          <td style="padding:4px 8px;border-top:1px solid #e5e7eb;">${q.jobsInWindow}</td>
+          <td style="padding:4px 8px;border-top:1px solid #e5e7eb;white-space:nowrap;">${escape(q.lastJobAt.toISOString())}</td>
         </tr>`,
     )
     .join("");
@@ -1653,6 +1731,21 @@ export function buildAlertFailureDigestContent(
         </table>`
           : ""
       }
+      ${
+        quietOrgs.length > 0
+          ? `<p style="margin:16px 0 4px;"><strong>Quiet orgs in the last ${windowHours}h</strong> <span style="color:#6b7280;font-weight:normal;">— ran backfill but reported no alert deliveries</span></p>
+        <table cellspacing="0" cellpadding="0" style="border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="background:#f3f4f6;text-align:left;">
+              <th style="padding:4px 8px;">Organization</th>
+              <th style="padding:4px 8px;">Jobs in window</th>
+              <th style="padding:4px 8px;">Last activity</th>
+            </tr>
+          </thead>
+          <tbody>${quietRows}</tbody>
+        </table>`
+          : ""
+      }
       <p style="margin:16px 0 0;">
         <a href="${escape(historyUrl)}" style="color:#2563eb;">Open the admin transcript-backfill page</a>
         to review delivery history.
@@ -1669,6 +1762,13 @@ export type AlertFailureDigestRunSummary = {
   orgsNotified: number;
   emailsSent: number;
   totalFailures: number;
+  // Task #1569 — number of quiet-ONLY orgs (had backfill activity in the
+  // window, zero alert deliveries, AND no failure rollup) that received a
+  // synthetic silent-pipeline digest as a result of the new dispatch loop.
+  // Quiet orgs that overlap with the failure aggregator are counted under
+  // `orgsNotified` instead since they piggyback on their existing failure
+  // digest (the quiet section is appended; no second email is sent).
+  quietOrgs: number;
   // Task #1082 — set to the cutoff date used to prune the persisted
   // `alert_fallback_sent` ledger after the digest run completes, or null
   // if the prune step was skipped or failed.
@@ -1708,56 +1808,178 @@ export async function runAlertFailureDigest(
     { recentSampleLimit: options.recentSampleLimit ?? 10 },
   );
 
+  // Task #1569 — also fetch the "quiet" orgs (had backfill activity in
+  // the window but zero alert delivery rows). These are the silent
+  // pipelines surfaced by the in-app card added in Task #1548; the
+  // digest now emails their admins too so the signal isn't trapped
+  // behind the dashboard. A storage failure here must not block the
+  // failure rollup, which is the more critical signal.
+  let quietOrgEntries: CrmTranscriptBackfillQuietOrgEntry[] = [];
+  try {
+    quietOrgEntries = await findQuietCrmTranscriptBackfillOrgsSince(since);
+  } catch (err) {
+    logWarn(
+      "transcriptBackfillNotifications: quiet-orgs lookup failed; digest will run without quiet section",
+      { error: err instanceof Error ? err.message : String(err) },
+    );
+  }
+
+  // Task #1569 — resolve display names for both failure orgs and quiet
+  // orgs in a single batch lookup so each digest can render the friendly
+  // name (matching the in-app card). A lookup failure simply degrades
+  // each section to org-id-only labels; we don't bail.
+  const failureOrgIds = aggregates.map((a) => a.organizationId);
+  const quietOrgIds = quietOrgEntries.map((q) => q.organizationId);
+  const allOrgIds = Array.from(new Set([...failureOrgIds, ...quietOrgIds]));
+  let orgInfoById = new Map<
+    string,
+    { name: string | null; slug: string | null }
+  >();
+  if (allOrgIds.length > 0) {
+    try {
+      orgInfoById = await getOrganizationDisplayInfoByIds(allOrgIds);
+    } catch (err) {
+      logWarn(
+        "transcriptBackfillNotifications: org display lookup failed; digest will fall back to org ids",
+        { error: err instanceof Error ? err.message : String(err) },
+      );
+    }
+  }
+  const buildQuietOrg = (
+    q: CrmTranscriptBackfillQuietOrgEntry,
+  ): AlertFailureDigestQuietOrg => {
+    const meta = orgInfoById.get(q.organizationId);
+    return {
+      organizationId: q.organizationId,
+      organizationName: meta?.name ?? null,
+      organizationSlug: meta?.slug ?? null,
+      jobsInWindow: q.jobsInWindow,
+      lastJobAt: q.lastJobAt,
+    };
+  };
+
+  // Index quiet orgs by id so we can attach a per-org quiet entry to its
+  // own digest below. Quiet orgs by definition have no deliveries (success
+  // OR failure), so the overlap with failure orgs should be empty in
+  // practice — but if a quiet org somehow also appears in the failure
+  // aggregator, attaching its quiet context is the safer behavior.
+  const quietByOrgId = new Map<string, CrmTranscriptBackfillQuietOrgEntry>(
+    quietOrgEntries.map((q) => [q.organizationId, q]),
+  );
+  const failureOrgIdSet = new Set(failureOrgIds);
+
   let orgsNotified = 0;
   let emailsSent = 0;
   let totalFailures = 0;
+  let quietOrgsNotified = 0;
+
+  // Helper: dispatch a digest for a single org. Returns true if the email
+  // was accepted by the transport, false otherwise. Per-org failures are
+  // isolated so one bad org never blocks the rest.
+  const dispatchOne = async (
+    entry: CrmTranscriptBackfillAlertFailureDigestEntry,
+    orgQuietOrgs: AlertFailureDigestQuietOrg[],
+  ): Promise<{ sent: boolean; recipientCount: number }> => {
+    // Task #1076: only deliver the daily rollup to admins who opted into
+    // the digest stream (mode `digest` or `both`). Real-time-only / none
+    // recipients are skipped here.
+    const admins = await listOrgAdminsForAlertFailureFallback(
+      entry.organizationId,
+      undefined,
+      "digest",
+    );
+    if (admins.length === 0) {
+      logInfo(
+        "transcriptBackfillNotifications: digest skipped (no eligible admins)",
+        {
+          orgId: entry.organizationId,
+          total: entry.total,
+          quietOrgCount: orgQuietOrgs.length,
+        },
+      );
+      return { sent: false, recipientCount: 0 };
+    }
+    const content = buildAlertFailureDigestContent({
+      entry,
+      windowHours,
+      quietOrgs: orgQuietOrgs,
+    });
+    const ok = await sendEmail({
+      to: admins.map((a) => a.email),
+      subject: content.subject,
+      text: content.text,
+      html: content.html,
+    });
+    if (!ok) {
+      logWarn(
+        "transcriptBackfillNotifications: digest email transport returned non-success",
+        {
+          orgId: entry.organizationId,
+          total: entry.total,
+          quietOrgCount: orgQuietOrgs.length,
+        },
+      );
+      return { sent: false, recipientCount: 0 };
+    }
+    logInfo("transcriptBackfillNotifications: digest dispatched", {
+      orgId: entry.organizationId,
+      total: entry.total,
+      slackCount: entry.slackCount,
+      emailCount: entry.emailCount,
+      quietOrgCount: orgQuietOrgs.length,
+      adminCount: admins.length,
+    });
+    return { sent: true, recipientCount: admins.length };
+  };
 
   for (const entry of aggregates) {
     totalFailures += entry.total;
     try {
-      // Task #1076: only deliver the daily rollup to admins who opted into
-      // the digest stream (mode `digest` or `both`). Real-time-only / none
-      // recipients are skipped here.
-      const admins = await listOrgAdminsForAlertFailureFallback(
-        entry.organizationId,
-        undefined,
-        "digest",
-      );
-      if (admins.length === 0) {
-        logInfo(
-          "transcriptBackfillNotifications: digest skipped (no eligible admins)",
-          { orgId: entry.organizationId, total: entry.total },
-        );
-        continue;
+      const ownQuiet = quietByOrgId.get(entry.organizationId);
+      const orgQuietOrgs = ownQuiet ? [buildQuietOrg(ownQuiet)] : [];
+      const result = await dispatchOne(entry, orgQuietOrgs);
+      if (result.sent) {
+        orgsNotified += 1;
+        emailsSent += result.recipientCount;
       }
-      const content = buildAlertFailureDigestContent({ entry, windowHours });
-      const ok = await sendEmail({
-        to: admins.map((a) => a.email),
-        subject: content.subject,
-        text: content.text,
-        html: content.html,
-      });
-      if (!ok) {
-        logWarn(
-          "transcriptBackfillNotifications: digest email transport returned non-success",
-          { orgId: entry.organizationId, total: entry.total },
-        );
-        continue;
-      }
-      orgsNotified += 1;
-      emailsSent += admins.length;
-      logInfo("transcriptBackfillNotifications: digest dispatched", {
-        orgId: entry.organizationId,
-        total: entry.total,
-        slackCount: entry.slackCount,
-        emailCount: entry.emailCount,
-        adminCount: admins.length,
-      });
     } catch (err) {
       logWarn("transcriptBackfillNotifications: digest dispatch threw", {
         orgId: entry.organizationId,
         error: err instanceof Error ? err.message : String(err),
       });
+    }
+  }
+
+  // Task #1569 — quiet-only orgs: orgs that ran backfill in the window
+  // but produced zero alert deliveries AND have no failure rollup. They
+  // wouldn't otherwise receive a digest, but they're exactly the silent
+  // pipelines platform support needs to catch — so we synthesize a
+  // zero-failure entry and dispatch a digest dominated by the quiet
+  // section. Per-org failures are isolated as above.
+  for (const quiet of quietOrgEntries) {
+    if (failureOrgIdSet.has(quiet.organizationId)) continue;
+    try {
+      const syntheticEntry: CrmTranscriptBackfillAlertFailureDigestEntry = {
+        organizationId: quiet.organizationId,
+        total: 0,
+        slackCount: 0,
+        emailCount: 0,
+        recentFailures: [],
+      };
+      const result = await dispatchOne(syntheticEntry, [buildQuietOrg(quiet)]);
+      if (result.sent) {
+        orgsNotified += 1;
+        emailsSent += result.recipientCount;
+        quietOrgsNotified += 1;
+      }
+    } catch (err) {
+      logWarn(
+        "transcriptBackfillNotifications: quiet-org digest dispatch threw",
+        {
+          orgId: quiet.organizationId,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      );
     }
   }
 
@@ -1808,6 +2030,7 @@ export async function runAlertFailureDigest(
     orgsNotified,
     emailsSent,
     totalFailures,
+    quietOrgs: quietOrgsNotified,
     prunedBefore,
     resendCooldownPrunedBefore,
   };

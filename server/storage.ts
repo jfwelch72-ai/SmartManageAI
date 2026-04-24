@@ -1935,6 +1935,34 @@ export async function findQuietCrmTranscriptBackfillOrgsSince(
     }));
 }
 
+// Task #1569 — small batch lookup for the daily transcript-backfill alert
+// digest so it can render the friendly org name (matching the in-app card
+// added in Task #1548) without making one round trip per org. Returns a Map
+// keyed by organization id; missing ids are simply absent from the map.
+export type OrganizationDisplayInfo = {
+  name: string | null;
+  slug: string | null;
+};
+
+export async function getOrganizationDisplayInfoByIds(
+  ids: string[],
+): Promise<Map<string, OrganizationDisplayInfo>> {
+  const out = new Map<string, OrganizationDisplayInfo>();
+  if (ids.length === 0) return out;
+  const rows = await db
+    .select({
+      id: organizations.id,
+      name: organizations.name,
+      slug: organizations.slug,
+    })
+    .from(organizations)
+    .where(inArray(organizations.id, ids));
+  for (const r of rows) {
+    out.set(r.id, { name: r.name ?? null, slug: r.slug ?? null });
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------
 // Task #1067 — persisted dedupe ledger for alert-failure fan-out emails.
 //

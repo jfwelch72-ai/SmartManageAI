@@ -13,6 +13,8 @@ const {
   mockRecordDelivery,
   mockPruneAlertFallbackSentBefore,
   mockPruneBackfillAlertResendCooldownsBefore,
+  mockFindQuietOrgs,
+  mockGetOrgInfo,
 } = vi.hoisted(() => ({
   mockAggregateFailures: vi.fn(),
   mockListOrgAdmins: vi.fn(),
@@ -23,10 +25,18 @@ const {
   mockPruneBackfillAlertResendCooldownsBefore: vi
     .fn()
     .mockResolvedValue(undefined),
+  // Task #1569 — quiet-orgs lookup + display-info batch lookup used by
+  // `runAlertFailureDigest` to render the new "Quiet orgs in the last 24h"
+  // section. Defaults to "no quiet orgs" so existing tests (which only
+  // exercise the failure path) keep their original behavior.
+  mockFindQuietOrgs: vi.fn().mockResolvedValue([]),
+  mockGetOrgInfo: vi.fn().mockResolvedValue(new Map()),
 }));
 
 vi.mock("../storage", () => ({
   aggregateRecentCrmTranscriptBackfillAlertFailures: mockAggregateFailures,
+  findQuietCrmTranscriptBackfillOrgsSince: mockFindQuietOrgs,
+  getOrganizationDisplayInfoByIds: mockGetOrgInfo,
   listOrgAdminsForAlertFailureFallback: mockListOrgAdmins,
   getCrmTranscriptBackfillNotificationSettings: mockGetSettings,
   recordCrmTranscriptBackfillAlertDelivery: mockRecordDelivery,
@@ -189,6 +199,13 @@ describe("runAlertFailureDigest (Task #1065)", () => {
     mockPruneAlertFallbackSentBefore.mockResolvedValue(undefined);
     mockPruneBackfillAlertResendCooldownsBefore.mockReset();
     mockPruneBackfillAlertResendCooldownsBefore.mockResolvedValue(undefined);
+    // Task #1569 — default the new lookups to "nothing quiet" so existing
+    // tests keep behaving as before. Tests that exercise the new path
+    // override these.
+    mockFindQuietOrgs.mockReset();
+    mockFindQuietOrgs.mockResolvedValue([]);
+    mockGetOrgInfo.mockReset();
+    mockGetOrgInfo.mockResolvedValue(new Map());
   });
 
   it("is a no-op when no orgs had failures in the window", async () => {
@@ -201,6 +218,7 @@ describe("runAlertFailureDigest (Task #1065)", () => {
       orgsNotified: 0,
       emailsSent: 0,
       totalFailures: 0,
+      quietOrgs: 0,
       prunedBefore: new Date("2026-04-15T12:00:00.000Z"),
       resendCooldownPrunedBefore: new Date("2026-04-21T12:00:00.000Z"),
     });
@@ -336,5 +354,232 @@ describe("runAlertFailureDigest (Task #1065)", () => {
     // The fallback-sent prune is independent and still runs successfully.
     expect(summary.prunedBefore).not.toBeNull();
     expect(mockPruneBackfillAlertResendCooldownsBefore).toHaveBeenCalledTimes(1);
+  });
+
+  // Task #1569 — quiet orgs (had backfill activity in the window but ZERO
+  // alert deliveries) should now also receive a digest so platform support
+  // catches silent pipelines from their inbox.
+  describe("quiet orgs (Task #1569)", () => {
+    const quietEntry = {
+      organizationId: "org-quiet",
+      jobsInWindow: 5,
+      lastJobAt: new Date("2026-04-22T11:30:00.000Z"),
+    };
+
+    it("dispatches a digest to quiet-only orgs even when they have no failures", async () => {
+      mockAggregateFailures.mockResolvedValue([]);
+      mockFindQuietOrgs.mockResolvedValue([quietEntry]);
+      mockGetOrgInfo.mockResolvedValue(
+        new Map([
+          ["org-quiet", { name: "Acme Construction", slug: "acme" }],
+        ]),
+      );
+      mockListOrgAdmins.mockResolvedValue([adminA]);
+
+      const summary = await runAlertFailureDigest();
+
+      expect(summary.orgsNotified).toBe(1);
+      expect(summary.quietOrgs).toBe(1);
+      expect(summary.totalFailures).toBe(0);
+      expect(mockSendEmail).toHaveBeenCalledTimes(1);
+      const sent = mockSendEmail.mock.calls[0][0];
+      expect(sent.to).toEqual(["a@example.com"]);
+      // Subject leans on the quiet-pipeline phrasing rather than "0 failures"
+      // so admins immediately recognize the signal in their inbox.
+      expect(sent.subject).toContain("silent");
+      expect(sent.subject).not.toContain("0 alert deliveries failed");
+      // Both bodies surface the org name + jobs-in-window + last activity.
+      expect(sent.text).toContain("Quiet orgs in the last 24h");
+      expect(sent.text).toContain("Acme Construction");
+      expect(sent.text).toContain("5 jobs");
+      expect(sent.text).toContain("2026-04-22T11:30:00.000Z");
+      expect(sent.html).toContain("Quiet orgs in the last 24h");
+      expect(sent.html).toContain("Acme Construction");
+    });
+
+    it("skips quiet orgs that are already in the failure rollup to avoid double-emailing", async () => {
+      mockAggregateFailures.mockResolvedValue([baseEntry]);
+      // Pretend the same org appears in both lists (defensive — quiet orgs
+      // by definition have no deliveries, so this is theoretical).
+      mockFindQuietOrgs.mockResolvedValue([
+        { ...quietEntry, organizationId: "org-1" },
+      ]);
+      mockListOrgAdmins.mockResolvedValue([adminA]);
+
+      const summary = await runAlertFailureDigest();
+
+      // The failure dispatch fires once and includes the quiet section
+      // attached to that org's own digest. The quiet-only loop must NOT
+      // also dispatch a second email for the same org.
+      expect(mockSendEmail).toHaveBeenCalledTimes(1);
+      expect(summary.orgsNotified).toBe(1);
+      expect(summary.quietOrgs).toBe(0);
+      const sent = mockSendEmail.mock.calls[0][0];
+      // The failure subject still wins for orgs with failures, but the
+      // body now includes the quiet-orgs section.
+      expect(sent.subject).toContain("3 alert deliveries failed");
+      expect(sent.text).toContain("Quiet orgs in the last 24h");
+    });
+
+    it("dispatches a separate digest per quiet org when multiple are silent", async () => {
+      mockAggregateFailures.mockResolvedValue([]);
+      mockFindQuietOrgs.mockResolvedValue([
+        quietEntry,
+        {
+          organizationId: "org-quiet-2",
+          jobsInWindow: 1,
+          lastJobAt: new Date("2026-04-22T08:00:00.000Z"),
+        },
+      ]);
+      mockGetOrgInfo.mockResolvedValue(
+        new Map([
+          ["org-quiet", { name: "Acme", slug: "acme" }],
+          ["org-quiet-2", { name: "Beta Builders", slug: "beta" }],
+        ]),
+      );
+      mockListOrgAdmins.mockResolvedValue([adminA]);
+
+      const summary = await runAlertFailureDigest();
+
+      expect(summary.quietOrgs).toBe(2);
+      expect(summary.orgsNotified).toBe(2);
+      expect(mockSendEmail).toHaveBeenCalledTimes(2);
+      expect(mockListOrgAdmins).toHaveBeenCalledWith(
+        "org-quiet",
+        undefined,
+        "digest",
+      );
+      expect(mockListOrgAdmins).toHaveBeenCalledWith(
+        "org-quiet-2",
+        undefined,
+        "digest",
+      );
+    });
+
+    it("falls back to the org id when the display lookup yields nothing", async () => {
+      mockAggregateFailures.mockResolvedValue([]);
+      mockFindQuietOrgs.mockResolvedValue([quietEntry]);
+      // No display info available for the org.
+      mockGetOrgInfo.mockResolvedValue(new Map());
+      mockListOrgAdmins.mockResolvedValue([adminA]);
+
+      await runAlertFailureDigest();
+      const sent = mockSendEmail.mock.calls[0][0];
+      expect(sent.text).toContain("org-quiet");
+    });
+
+    it("still runs the failure dispatch when the quiet-orgs lookup throws", async () => {
+      mockAggregateFailures.mockResolvedValue([baseEntry]);
+      mockFindQuietOrgs.mockRejectedValue(new Error("db down"));
+      mockListOrgAdmins.mockResolvedValue([adminA]);
+
+      const summary = await runAlertFailureDigest();
+
+      expect(summary.orgsNotified).toBe(1);
+      expect(summary.quietOrgs).toBe(0);
+      expect(mockSendEmail).toHaveBeenCalledTimes(1);
+      // The dispatched failure email has no quiet section since the lookup
+      // failed (degrades gracefully rather than blocking the run).
+      const sent = mockSendEmail.mock.calls[0][0];
+      expect(sent.text).not.toContain("Quiet orgs in the last 24h");
+    });
+
+    it("skips quiet orgs with no eligible admins", async () => {
+      mockAggregateFailures.mockResolvedValue([]);
+      mockFindQuietOrgs.mockResolvedValue([quietEntry]);
+      mockListOrgAdmins.mockResolvedValue([]);
+
+      const summary = await runAlertFailureDigest();
+      expect(summary.quietOrgs).toBe(0);
+      expect(summary.orgsNotified).toBe(0);
+      expect(mockSendEmail).not.toHaveBeenCalled();
+    });
+
+    it("isolates a thrown quiet-org dispatch from the others", async () => {
+      mockAggregateFailures.mockResolvedValue([]);
+      mockFindQuietOrgs.mockResolvedValue([
+        quietEntry,
+        {
+          organizationId: "org-quiet-2",
+          jobsInWindow: 2,
+          lastJobAt: new Date("2026-04-22T09:00:00.000Z"),
+        },
+      ]);
+      mockListOrgAdmins.mockImplementation(async (orgId: string) => {
+        if (orgId === "org-quiet") throw new Error("db down");
+        return [adminA];
+      });
+
+      const summary = await runAlertFailureDigest();
+      expect(summary.quietOrgs).toBe(1);
+      expect(summary.orgsNotified).toBe(1);
+    });
+  });
+});
+
+describe("buildAlertFailureDigestContent quiet section (Task #1569)", () => {
+  const baseEmptyEntry = {
+    organizationId: "org-q",
+    total: 0,
+    slackCount: 0,
+    emailCount: 0,
+    recentFailures: [],
+  };
+
+  it("renders a 'silent' subject and quiet-orgs body when only quiet orgs are present", () => {
+    const content = buildAlertFailureDigestContent({
+      entry: baseEmptyEntry,
+      windowHours: 24,
+      quietOrgs: [
+        {
+          organizationId: "org-q",
+          organizationName: "Acme",
+          organizationSlug: "acme",
+          jobsInWindow: 4,
+          lastJobAt: new Date("2026-04-22T10:00:00.000Z"),
+        },
+      ],
+    });
+    expect(content.subject).toBe(
+      "[CRM] Daily transcript backfill alert digest — 1 quiet org silent",
+    );
+    expect(content.summary).toContain(
+      "1 quiet org ran backfill but reported no alert deliveries",
+    );
+    expect(content.text).toContain("Quiet orgs in the last 24h");
+    expect(content.text).toContain("Acme — 4 jobs in window");
+    expect(content.html).toContain("Quiet orgs in the last 24h");
+    expect(content.html).toContain("Acme");
+  });
+
+  it("omits the quiet section entirely when the list is empty", () => {
+    const content = buildAlertFailureDigestContent({
+      entry: baseEntry,
+      windowHours: 24,
+      quietOrgs: [],
+    });
+    expect(content.text).not.toContain("Quiet orgs in the last 24h");
+    expect(content.html).not.toContain("Quiet orgs in the last 24h");
+    // Failure subject is unchanged so existing real-time-failure-only
+    // deliveries keep their original phrasing.
+    expect(content.subject).toContain("3 alert deliveries failed");
+  });
+
+  it("escapes HTML in the org name", () => {
+    const content = buildAlertFailureDigestContent({
+      entry: baseEmptyEntry,
+      windowHours: 24,
+      quietOrgs: [
+        {
+          organizationId: "org-q",
+          organizationName: "<script>",
+          organizationSlug: null,
+          jobsInWindow: 1,
+          lastJobAt: new Date("2026-04-22T10:00:00.000Z"),
+        },
+      ],
+    });
+    expect(content.html).not.toContain("<script>");
+    expect(content.html).toContain("&lt;script&gt;");
   });
 });
