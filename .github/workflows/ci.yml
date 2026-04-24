@@ -201,6 +201,78 @@ jobs:
           path: test-results/
           retention-days: 14
 
+  e2e-webkit-takeoff:
+    # Task #1889 — Dedicated Safari-only gate for the takeoff history wiring,
+    # so a WebKit regression in those two specs blocks merge as its own
+    # required check (alongside the broader `e2e-canvas-firefox-webkit` job
+    # added in Task #1886, which runs the same two specs as part of a wider
+    # Firefox+WebKit canvas suite).
+    name: E2E WebKit (Takeoff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: development
+      ENABLE_DEV_SEED: "true"
+      PORT: "5000"
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/app_test
+      SESSION_SECRET: ci-session-secret-do-not-use-in-prod
+      JWT_SECRET: ci-jwt-secret-do-not-use-in-prod
+      CI: "true"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright WebKit browser
+        run: npx playwright install --with-deps webkit
+
+      - name: Push database schema
+        run: npm run db:push -- --force
+
+      - name: Run takeoff specs against WebKit
+        run: npx playwright test --project=webkit e2e/takeoff-markup-undo.spec.ts e2e/takeoff-markup-history-wiring.spec.ts
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-webkit-takeoff
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-webkit-takeoff
+          path: test-results/
+          retention-days: 14
+
   cloud-import-security:
     # Task #1507 — Run the cloud-import SSRF + size guard suites on every PR
     # so a regression to `safeDownload` or the `POST /api/documents/from-cloud`
