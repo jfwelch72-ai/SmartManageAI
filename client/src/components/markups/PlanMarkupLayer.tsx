@@ -60,7 +60,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Trash2, Group as GroupIcon, Ungroup } from "lucide-react";
+import { Trash2, Group as GroupIcon, Ungroup, Undo2 } from "lucide-react";
 import type { KonvaEventObject, Node as KonvaNode } from "konva/lib/Node";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -407,6 +407,16 @@ export default function PlanMarkupLayer({
   undoStackRef.current = undoStack;
   redoStackRef.current = redoStack;
 
+  // Task #1775 — Ids of the most recent batch of soft-deleted markups.
+  // Drives the floating "Undo delete" toolbar button so the user has a
+  // one-click affordance even if they don't know the Ctrl+Z shortcut.
+  // Cleared on a successful restore, on a fresh edit (the next forward
+  // mutation supersedes the prior delete), and when the page/document
+  // changes (a stale undo against a different sheet would silently
+  // resurface a markup the user never see). The banner also auto-hides
+  // after 8s so it never lingers indefinitely.
+  const [lastDeletedIds, setLastDeletedIds] = useState<string[] | null>(null);
+
   // Task #1737 — Helper that pushes a fresh history entry onto the
   // undo stack and clears the redo stack (the standard undo-history
   // contract: any new edit invalidates pending redo entries). The
@@ -421,6 +431,14 @@ export default function PlanMarkupLayer({
         : next;
     });
     setRedoStack([]);
+    // Task #1775 — Any forward edit (create / move / group / ungroup
+    // / delete) supersedes the previously-shown "Undo delete" banner.
+    // Clearing here keeps the contract documented on `lastDeletedIds`
+    // exact: the banner only ever points at the *most recent* delete.
+    // For a back-to-back delete, `deleteSelection` sets a fresh
+    // `lastDeletedIds` immediately after this call, so the banner
+    // appears for the new batch without flicker.
+    setLastDeletedIds(null);
   }, []);
   // Task #1653 — anchor for the in-canvas text input that replaces the
   // legacy `window.prompt()` flow. Coordinates are normalized 0-1 to
@@ -602,6 +620,16 @@ export default function PlanMarkupLayer({
           markups: snapshots,
           count: snapshots.length,
         });
+        // Task #1775 — Surface the one-click "Undo delete" toolbar
+        // banner. Records the just-deleted ids; pressing Undo POSTs
+        // the new `/restore` route per id, which clears `deleted_at`
+        // on each row and brings the original id, layer, and group
+        // back verbatim. Set BEFORE the `invalidate()` so the cache
+        // refetch never races the banner state.
+        setLastDeletedIds(snapshots.map((s) => s.id));
+        // Task #1770 — refetch after the bulk delete lands so the
+        // canvas reflects the server-confirmed state (the optimistic
+        // cache strip above runs before the server round-trip).
         invalidate();
       } catch {
         if (previous) queryClient.setQueryData(queryKey, previous);
@@ -610,6 +638,68 @@ export default function PlanMarkupLayer({
     },
     [markups, documentId, pageNumber, bulkDeleteMutation, pushHistory, invalidate],
   );
+
+  // Task #1775 — Per-id RESTORE for the toolbar's "Undo delete" button.
+  // Soft-delete means the row was never removed; this just clears
+  // `deleted_at`, which is why we don't have to ship any of the
+  // markup's payload. The mutation fans out one POST per id (matching
+  // how the toolbar's delete fans out one DELETE per id), and uses
+  // `Promise.allSettled` rather than `Promise.all` so a single failed
+  // restore (e.g. row already permanently purged, or the user lost
+  // permission to restore one of the rows) doesn't abort the rest of
+  // the batch — we surface a toast describing the partial-failure
+  // count and still bring back whatever did succeed.
+  const restoreDeletedMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const results = await Promise.allSettled(
+        ids.map((id) =>
+          apiRequest(
+            "POST",
+            `/api/plan-document-markups/${encodeURIComponent(id)}/restore`,
+          ),
+        ),
+      );
+      const failed = results.filter(
+        (r): r is PromiseRejectedResult => r.status === "rejected",
+      );
+      return { total: ids.length, failed: failed.length };
+    },
+    onSuccess: ({ total, failed }) => {
+      // Always clear the banner — the user pressed Undo, the work is
+      // done (modulo whatever partial failures we report below). Any
+      // restored rows reappear as the cache refetches.
+      setLastDeletedIds(null);
+      invalidate();
+      if (failed > 0) {
+        toast({
+          title: "Some markups could not be restored",
+          description: `${total - failed} of ${total} markups were brought back.`,
+          variant: "destructive",
+        });
+      }
+    },
+    onError: (e: Error) =>
+      toast({
+        title: "Could not undo delete",
+        description: e.message,
+        variant: "destructive",
+      }),
+  });
+
+  // Task #1775 — Auto-dismiss the "Undo delete" banner after 8s so a
+  // stale undo token can't accidentally resurface a markup the user
+  // moved on from. Also wipe it whenever the user navigates to a
+  // different document or page — restoring a row from a different
+  // sheet would silently push it back onto a context the user can't
+  // see.
+  useEffect(() => {
+    if (!lastDeletedIds || lastDeletedIds.length === 0) return;
+    const t = setTimeout(() => setLastDeletedIds(null), 8_000);
+    return () => clearTimeout(t);
+  }, [lastDeletedIds]);
+  useEffect(() => {
+    setLastDeletedIds(null);
+  }, [documentId, pageNumber]);
 
   // Task #1662 — group / ungroup mutations. Group expands the user's
   // current selection (plus any siblings already sharing groups with
@@ -1593,6 +1683,35 @@ export default function PlanMarkupLayer({
           onSubmit={handleTextSubmit}
           onCancel={handleTextCancel}
         />
+      )}
+      {lastDeletedIds && lastDeletedIds.length > 0 && (
+        // Task #1775 — One-click "Undo delete" toolbar button. Anchored
+        // top-center so it doesn't collide with the right-edge toolbox
+        // or the per-shape selection toolbar that hangs above the
+        // selection. `pointer-events-auto` is required because the
+        // outer wrapper toggles to `pointer-events: none` whenever no
+        // tool is active and nothing is selected — this button has to
+        // stay clickable in either state so the user can always undo a
+        // fresh delete.
+        <div
+          className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-auto"
+          data-testid="markup-undo-delete-banner"
+        >
+          <button
+            type="button"
+            className="flex items-center gap-2 bg-background border border-border shadow-md rounded-full pl-3 pr-4 py-1.5 text-sm hover:bg-accent disabled:opacity-60"
+            onClick={() => restoreDeletedMutation.mutate(lastDeletedIds)}
+            disabled={restoreDeletedMutation.isPending}
+            data-testid="button-markup-undo-delete"
+          >
+            <Undo2 className="w-4 h-4" />
+            <span>
+              {restoreDeletedMutation.isPending
+                ? "Restoring…"
+                : `Undo delete${lastDeletedIds.length > 1 ? ` (${lastDeletedIds.length})` : ""}`}
+            </span>
+          </button>
+        </div>
       )}
     </div>
   );

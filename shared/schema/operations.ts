@@ -1927,6 +1927,15 @@ export const planDocumentMarkups = pgTable("plan_document_markups", {
   // group_id move and delete together as one unit. Ungrouping sets
   // this to NULL on every member.
   groupId: varchar("group_id"),
+  // Task #1775: soft-delete column. NULL means "live"; a non-null
+  // timestamp means the row was deleted at that instant. The DELETE
+  // route stamps it (rather than removing the row) so the new
+  // `POST /api/plan-document-markups/:id/restore` route can clear it
+  // and bring the markup back with its original id, layer, group, and
+  // every other column intact. Every read path filters
+  // `deleted_at IS NULL` so soft-deleted rows are invisible to LIST,
+  // counts, group/ungroup, bulk-move, carryover, and copy-to-sheet.
+  deletedAt: timestamp("deleted_at"),
 }, (table) => ({
   docPageIdx: index("plan_document_markups_doc_page_idx").on(table.planDocumentId, table.pageNumber),
   orgIdx: index("plan_document_markups_org_idx").on(table.organizationId),
@@ -1939,6 +1948,9 @@ export const planDocumentMarkups = pgTable("plan_document_markups", {
 export const insertPlanDocumentMarkupSchema = createInsertSchema(planDocumentMarkups).omit({
   id: true,
   createdAt: true,
+  // Task #1775 — soft-delete column is server-managed (DELETE stamps it,
+  // restore clears it); never accept it on an insert payload.
+  deletedAt: true,
 });
 export type InsertPlanDocumentMarkup = z.infer<typeof insertPlanDocumentMarkupSchema>;
 export type PlanDocumentMarkup = typeof planDocumentMarkups.$inferSelect;

@@ -11,7 +11,7 @@
 
 import { Router, type Response, type NextFunction } from "express";
 import { db } from "./db";
-import { eq, and, inArray, sql } from "drizzle-orm";
+import { eq, and, inArray, isNull, sql } from "drizzle-orm";
 import {
   planDocumentMarkups,
   planDocuments,
@@ -141,7 +141,14 @@ router.get(
         return;
       }
 
-      const conds = [eq(planDocumentMarkups.planDocumentId, req.params.docId)];
+      // Task #1775 — exclude soft-deleted rows from every read path so
+      // a deleted markup is invisible until the restore endpoint clears
+      // its `deleted_at`. This is the LIST endpoint the canvas + the
+      // headless print page (PDF export) both consume.
+      const conds = [
+        eq(planDocumentMarkups.planDocumentId, req.params.docId),
+        isNull(planDocumentMarkups.deletedAt),
+      ];
       const { page } = req.query;
       if (typeof page === "string" && page) {
         const n = parseInt(page, 10);
@@ -345,7 +352,17 @@ router.delete(
         return;
       }
 
-      await db.delete(planDocumentMarkups).where(eq(planDocumentMarkups.id, m.id));
+      // Task #1775 — soft-delete: stamp `deleted_at` instead of removing
+      // the row so the new `POST /api/plan-document-markups/:id/restore`
+      // endpoint can clear the column and bring the markup back with
+      // its original id, layer, group, points, and every other column
+      // intact. Idempotent on an already-deleted row: re-stamping just
+      // updates the timestamp, the response is still 200, and a stale
+      // double-DELETE never errors out.
+      await db
+        .update(planDocumentMarkups)
+        .set({ deletedAt: new Date() })
+        .where(eq(planDocumentMarkups.id, m.id));
 
       await logAudit(
         {
@@ -493,10 +510,19 @@ router.patch(
       }
       const body = bulkPatchPointsBody.parse(req.body || {});
       const ids = body.updates.map((u) => u.id);
+      // Task #1775 — soft-deleted rows are invisible to the move
+      // endpoint, so a stale drag against a row that was just deleted
+      // surfaces as a clean 404 (same response a hard-delete would
+      // produce) rather than silently mutating an undead row.
       const rows = await db
         .select()
         .from(planDocumentMarkups)
-        .where(inArray(planDocumentMarkups.id, ids));
+        .where(
+          and(
+            inArray(planDocumentMarkups.id, ids),
+            isNull(planDocumentMarkups.deletedAt),
+          ),
+        );
       if (rows.length !== ids.length) {
         res.status(404).json({ error: "One or more markups were not found" });
         return;
@@ -708,10 +734,18 @@ router.post(
         return;
       }
       const body = groupBody.parse(req.body || {});
+      // Task #1775 — soft-deleted rows can never be members of a group;
+      // filtering here makes a stale Group click against a deleted
+      // member return 404 instead of silently grouping a deleted row.
       const rows = await db
         .select()
         .from(planDocumentMarkups)
-        .where(inArray(planDocumentMarkups.id, body.markupIds));
+        .where(
+          and(
+            inArray(planDocumentMarkups.id, body.markupIds),
+            isNull(planDocumentMarkups.deletedAt),
+          ),
+        );
       // Reject if any markup belongs to another doc/org — keeps groups
       // from spanning sheets or tenants.
       for (const r of rows) {
@@ -774,11 +808,18 @@ router.post(
         return;
       }
       const body = ungroupBody.parse(req.body || {});
+      // Task #1775 — soft-deleted rows are excluded from the ungroup
+      // surface as well; only live rows have a groupId worth clearing.
       const targets = body.markupIds && body.markupIds.length > 0
         ? await db
             .select()
             .from(planDocumentMarkups)
-            .where(inArray(planDocumentMarkups.id, body.markupIds))
+            .where(
+              and(
+                inArray(planDocumentMarkups.id, body.markupIds),
+                isNull(planDocumentMarkups.deletedAt),
+              ),
+            )
         : await db
             .select()
             .from(planDocumentMarkups)
@@ -786,6 +827,7 @@ router.post(
               and(
                 eq(planDocumentMarkups.planDocumentId, access.doc.id),
                 eq(planDocumentMarkups.groupId, body.groupId!),
+                isNull(planDocumentMarkups.deletedAt),
               ),
             );
       for (const r of targets) {
@@ -929,10 +971,33 @@ router.post(
             layerId: m.layerId ?? null,
             groupId: m.groupId ?? null,
           };
+          // Task #1775 — the DELETE handler now soft-deletes (stamps
+          // `deleted_at`) instead of removing the row, so a restore of
+          // a row that the caller deleted in this same session would
+          // collide on the primary key. Switch the conflict policy to
+          // DO UPDATE so the existing row is "undeleted" by clearing
+          // `deleted_at` and refreshed from the snapshot. The original
+          // id, layer, group, and downstream references survive
+          // because the row never went away. New ids (the rare case
+          // where the snapshot belongs to a row that was hard-deleted
+          // before #1775 shipped) still INSERT cleanly.
           const rows = await tx
             .insert(planDocumentMarkups)
             .values(values)
-            .onConflictDoNothing({ target: planDocumentMarkups.id })
+            .onConflictDoUpdate({
+              target: planDocumentMarkups.id,
+              set: {
+                deletedAt: null,
+                pageNumber: values.pageNumber,
+                tool: values.tool,
+                points: values.points,
+                color: values.color,
+                thickness: values.thickness,
+                text: values.text,
+                layerId: values.layerId,
+                groupId: values.groupId,
+              },
+            })
             .returning();
           if (rows[0]) inserted.push(rows[0]);
         }
@@ -979,6 +1044,98 @@ router.post(
 );
 
 // ============================================================================
+// Task #1775 — Per-id RESTORE for the new soft-delete flow. The DELETE
+// route now stamps `deleted_at` rather than removing the row, so the
+// restore is just a single UPDATE that clears the column. The original
+// id, layer, group, points, color, thickness, text, and createdBy all
+// survive intact because the row never went away — that's the whole
+// point of soft-delete vs the cached-snapshot bulk restore (Task #1737).
+//
+// Powers the toolbar's one-click "Undo delete" button. RBAC mirrors the
+// DELETE handler exactly: same role-set, same per-row owner-or-manager
+// check, same cross-org guard, so undoing a delete can never grant a
+// caller permission they didn't have to delete the row in the first
+// place. Idempotent on a row that's already live (already-cleared
+// `deleted_at` just stays NULL).
+// ============================================================================
+router.post(
+  "/api/plan-document-markups/:id/restore",
+  requireAuth,
+  requireRole(...MARKUP_AUTHOR_ROLES),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    const startedAt = Date.now();
+    try {
+      // Look up the row including soft-deleted ones so the restore can
+      // find a trashed markup. (Every other read path filters
+      // `deleted_at IS NULL`; this is the single endpoint that must
+      // see across that filter.)
+      const [m] = await db
+        .select()
+        .from(planDocumentMarkups)
+        .where(eq(planDocumentMarkups.id, req.params.id))
+        .limit(1);
+      if (!m) {
+        res.status(404).json({ error: "Markup not found" });
+        return;
+      }
+
+      const user = req.user!;
+      const isSuperAdmin = user.role === "SUPER_ADMIN";
+      const isAdminOrManager =
+        isSuperAdmin || user.role === "ADMIN" || user.role === "MANAGER";
+      const isOwner = m.createdBy === user.id;
+
+      if (!isSuperAdmin && m.organizationId !== user.organizationId) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
+      if (!isOwner && !isAdminOrManager) {
+        res
+          .status(403)
+          .json({ error: "You can only restore your own markups" });
+        return;
+      }
+
+      const [restored] = await db
+        .update(planDocumentMarkups)
+        .set({ deletedAt: null })
+        .where(eq(planDocumentMarkups.id, m.id))
+        .returning();
+
+      // Log under "UPDATE" because the auditAction enum doesn't have a
+      // dedicated RESTORE value yet; the newValue payload describes
+      // the operation explicitly so the audit trail is still searchable.
+      await logAudit(
+        {
+          userId: user.id,
+          action: "UPDATE",
+          entityType: "planDocumentMarkup",
+          entityId: m.id,
+          newValue: JSON.stringify({ op: "restore", deletedAt: null }),
+        },
+        req,
+      );
+
+      recordJobMetrics("plan_document_markups_restore_one", {
+        ok: 1,
+        ms: Date.now() - startedAt,
+      });
+
+      res.json({
+        ok: true,
+        markup: { ...restored, points: safeParsePoints(restored.points) },
+      });
+    } catch (err) {
+      recordJobMetrics("plan_document_markups_restore_one", {
+        error: 1,
+        ms: Date.now() - startedAt,
+      });
+      next(err);
+    }
+  },
+);
+
+// ============================================================================
 // Task #1737 — Bulk SET groupId per markup. Powers the "undo group" /
 // "undo ungroup" / "redo group" / "redo ungroup" paths. Each entry on
 // the undo stack remembers the pre-mutation groupId per markup so this
@@ -1013,10 +1170,19 @@ router.post(
       }
       const body = groupAssignmentsBody.parse(req.body || {});
       const ids = body.assignments.map((a) => a.id);
+      // Task #1775 — soft-deleted rows cannot have their group
+      // membership rewritten; the bulk restore endpoint must run first
+      // to bring them back. Filter here so the response is a clean 404
+      // rather than a silent UPDATE on an undead row.
       const rows = await db
         .select()
         .from(planDocumentMarkups)
-        .where(inArray(planDocumentMarkups.id, ids));
+        .where(
+          and(
+            inArray(planDocumentMarkups.id, ids),
+            isNull(planDocumentMarkups.deletedAt),
+          ),
+        );
       if (rows.length !== ids.length) {
         res.status(404).json({ error: "One or more markups were not found" });
         return;
@@ -1141,6 +1307,9 @@ router.get(
 
       // Per-layer counts so the panel can render "QA/QC (12)" without
       // a second round-trip.
+      // Task #1775 — soft-deleted rows must not inflate the per-layer
+      // count, otherwise the panel would still show "QA/QC (12)" even
+      // after the user trashes every member.
       const counts = layerIds.length === 0 ? [] : await db
         .select({
           layerId: planDocumentMarkups.layerId,
@@ -1151,6 +1320,7 @@ router.get(
           and(
             eq(planDocumentMarkups.planDocumentId, access.doc.id),
             inArray(planDocumentMarkups.layerId, layerIds),
+            isNull(planDocumentMarkups.deletedAt),
           ),
         )
         .groupBy(planDocumentMarkups.layerId);
@@ -1491,10 +1661,20 @@ router.post(
         }
 
         if (body.includeMarkups) {
+          // Task #1775 — never carry over soft-deleted rows from the
+          // source revision. The user's intent on hitting "carry
+          // markups over" is to bring forward the visible state of
+          // the prior sheet; trashed rows are explicitly out of that
+          // visible set.
           const sourceMarkups = await tx
             .select()
             .from(planDocumentMarkups)
-            .where(eq(planDocumentMarkups.planDocumentId, body.fromDocumentId));
+            .where(
+              and(
+                eq(planDocumentMarkups.planDocumentId, body.fromDocumentId),
+                isNull(planDocumentMarkups.deletedAt),
+              ),
+            );
 
           const primaryMarkups = sourceMarkups.filter((m) => !m.sourceMarkupId);
           if (primaryMarkups.length > 0) {
@@ -1797,6 +1977,9 @@ router.post(
         // *all* rows (not just primaries) because a layer may have
         // been built up over several revisions; the user expects the
         // visible state of the layer to be replicated verbatim.
+        // Task #1775 — copy-to-sheet must never duplicate soft-deleted
+        // rows onto the destination layer. The user expects the
+        // visible state of the source layer.
         const sourceMarkups = await tx
           .select()
           .from(planDocumentMarkups)
@@ -1804,6 +1987,7 @@ router.post(
             and(
               eq(planDocumentMarkups.planDocumentId, sourceAccess.doc.id),
               eq(planDocumentMarkups.layerId, sourceLayer.id),
+              isNull(planDocumentMarkups.deletedAt),
             ),
           );
 

@@ -77,6 +77,18 @@ export async function ensurePlanDocumentMarkupsTable(): Promise<void> {
       ON "plan_document_markups"("group_id")
     `);
 
+    // Task #1775: soft-delete column for one-click "Undo plan-markup
+    // delete". The DELETE route stamps this column instead of removing
+    // the row so the new per-id restore endpoint can clear it and
+    // bring the markup back with id/layer/group/points/etc all intact.
+    // Nullable + added via ALTER so existing deployments pick it up
+    // without a backfill (every existing row stays "live" because the
+    // column defaults to NULL).
+    await db.execute(sql`
+      ALTER TABLE "plan_document_markups"
+      ADD COLUMN IF NOT EXISTS "deleted_at" timestamp
+    `);
+
     console.log("[migration] plan_document_markups table ready");
   } catch (err) {
     logError(

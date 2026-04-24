@@ -1,25 +1,18 @@
 /**
- * Task #1740 — End-to-end coverage for the delete-and-restore round-trip
- * on plan-document markups.
+ * Task #1740 / Task #1775 — End-to-end coverage for the delete-and-restore
+ * round-trip on plan-document markups.
  *
  * Task #1725 already locks down the group-move Undo round-trip against
  * `PATCH /api/plan-documents/:docId/markups/bulk`. The other destructive
- * plan-markup operation — `DELETE /api/plan-document-markups/:id`
- * (single, and any future "restore from trash" path that re-creates a
- * trashed markup through the public POST route) — had no equivalent
- * end-to-end coverage. This suite seeds a markup, deletes it through
- * the public DELETE route, re-creates it through the same public POST
- * route the toolbar would use to restore, and asserts the resulting DB
- * row's `points`, `color`, `thickness`, `tool`, `layer_id`, and
- * `group_id` columns equal the originals — closing the same class of
- * regression for the delete flow that #1725 closed for the move flow.
- *
- * The "bulk" half of the destructive surface is exercised by
- * round-tripping two markups in sequence (the public DELETE route is
- * per-id, but the toolbar's "delete selected group" gesture issues one
- * DELETE per member; restoring then issues one POST per member plus a
- * single `/markup-groups` call to re-stitch the group). That mirrors
- * the contract the UI relies on today.
+ * plan-markup operation — `DELETE /api/plan-document-markups/:id` —
+ * historically had to be undone by a multi-step "POST recreate +
+ * /markup-groups re-stitch" dance because the DELETE handler hard-removed
+ * the row. Task #1775 reworked the DELETE handler to soft-delete (stamp
+ * `deleted_at`) and added a new `POST /api/plan-document-markups/:id/restore`
+ * route that simply clears the column. The round-trip is therefore now
+ * a SINGLE per-id call, and every persisted column — including the
+ * original id, layer_id, AND group_id — survives unchanged. This suite
+ * proves that contract.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Server } from "http";
@@ -167,11 +160,12 @@ afterAll(async () => {
 }, 30_000);
 
 /**
- * Read the persisted columns we care about straight from the DB and
- * parse the JSON `points` blob. We bypass the API list route on purpose
- * — a regression that happens to round-trip through the read path
- * (e.g. a stray transformer) cannot mask a real persistence bug if we
- * inspect the columns directly.
+ * Read every persisted column we care about straight from the DB so a
+ * regression that happens to round-trip through the read path (e.g. a
+ * stray transformer, or — Task #1775 — a missing `deleted_at IS NULL`
+ * filter on the LIST endpoint) cannot mask a real persistence bug.
+ * `deletedAt` is included so the suite can prove the soft-delete +
+ * restore flow actually toggles the column on the same row.
  */
 async function readRowFromDb(id: string): Promise<{
   id: string;
@@ -181,6 +175,7 @@ async function readRowFromDb(id: string): Promise<{
   thickness: number;
   layerId: string | null;
   groupId: string | null;
+  deletedAt: Date | null;
 } | null> {
   const [row] = await db
     .select({
@@ -191,6 +186,7 @@ async function readRowFromDb(id: string): Promise<{
       thickness: planDocumentMarkups.thickness,
       layerId: planDocumentMarkups.layerId,
       groupId: planDocumentMarkups.groupId,
+      deletedAt: planDocumentMarkups.deletedAt,
     })
     .from(planDocumentMarkups)
     .where(eq(planDocumentMarkups.id, id))
@@ -206,11 +202,12 @@ async function readRowFromDb(id: string): Promise<{
     thickness: row.thickness,
     layerId: row.layerId,
     groupId: row.groupId,
+    deletedAt: row.deletedAt,
   };
 }
 
-describe("plan_document_markups — delete + restore round-trips through the public API (Task #1740)", () => {
-  it("re-creating a deleted markup via POST restores every persisted column", async () => {
+describe("plan_document_markups — delete + restore round-trips through the public API (Task #1740 / Task #1775)", () => {
+  it("a deleted grouped markup can be restored via POST /:id/restore with id, layer, AND group all preserved", async () => {
     // Seed a custom layer so we can prove the layer assignment survives
     // the round-trip (rather than silently snapping back to the default).
     const layerRes = await apiPost(
@@ -283,8 +280,11 @@ describe("plan_document_markups — delete + restore round-trips through the pub
     expect(originalA!.layerId).toBe(layerId);
     expect(originalA!.groupId).toBe(groupId);
     expect(originalB!.groupId).toBe(groupId);
+    // Sanity: live rows have a NULL `deleted_at` column.
+    expect(originalA!.deletedAt).toBeNull();
+    expect(originalB!.deletedAt).toBeNull();
 
-    // ---- Delete (single + bulk-by-iteration) ----
+    // ---- Soft-delete (single + bulk-by-iteration) ----
     // The public surface only exposes a per-id DELETE today, so the
     // toolbar's "delete selected group" gesture issues one request per
     // member. We mirror that here.
@@ -299,96 +299,93 @@ describe("plan_document_markups — delete + restore round-trips through the pub
     expect(delA.status).toBe(200);
     expect(delB.status).toBe(200);
 
-    // Sanity check: both rows are actually gone from the DB so the
-    // restore step has something to re-create.
-    expect(await readRowFromDb(a.id)).toBeNull();
-    expect(await readRowFromDb(b.id)).toBeNull();
+    // Soft-delete: the rows still exist in the DB but `deleted_at` is
+    // now stamped. The LIST endpoint must NOT return them.
+    const afterDelA = await readRowFromDb(a.id);
+    const afterDelB = await readRowFromDb(b.id);
+    expect(afterDelA).toBeTruthy();
+    expect(afterDelB).toBeTruthy();
+    expect(afterDelA!.deletedAt).toBeInstanceOf(Date);
+    expect(afterDelB!.deletedAt).toBeInstanceOf(Date);
 
-    // ---- Restore through the same public POST route ----
-    // This is the exact payload a "restore from trash" affordance would
-    // re-fire from a cached snapshot of the deleted rows.
-    const restoreA = await apiPost(
-      `/api/plan-documents/${tenant.docId}/markups`,
+    const listAfterDel = await apiGet(
+      `/api/plan-documents/${tenant.docId}/markups?page=3`,
       tenant.token,
-      {
-        pageNumber: 3,
-        tool: originalA!.tool,
-        points: originalA!.points,
-        color: originalA!.color,
-        thickness: originalA!.thickness,
-        layerId: originalA!.layerId,
-      },
+    );
+    expect(listAfterDel.status).toBe(200);
+    const listIdsAfterDel = (listAfterDel.body as MarkupResponse[]).map((m) => m.id);
+    expect(listIdsAfterDel).not.toContain(a.id);
+    expect(listIdsAfterDel).not.toContain(b.id);
+
+    // ---- One-click restore via the new per-id route ----
+    // The toolbar's "Undo delete" affordance issues one POST per
+    // soft-deleted id. Each call clears `deleted_at` on its row; no
+    // payload is required, no group re-stitch is required, the
+    // original id / layer_id / group_id all survive intact.
+    const restoreA = await apiPost(
+      `/api/plan-document-markups/${a.id}/restore`,
+      tenant.token,
     );
     const restoreB = await apiPost(
-      `/api/plan-documents/${tenant.docId}/markups`,
+      `/api/plan-document-markups/${b.id}/restore`,
       tenant.token,
-      {
-        pageNumber: 3,
-        tool: originalB!.tool,
-        points: originalB!.points,
-        color: originalB!.color,
-        thickness: originalB!.thickness,
-        layerId: originalB!.layerId,
-      },
     );
-    expect(restoreA.status).toBe(201);
-    expect(restoreB.status).toBe(201);
-    const newA = restoreA.body as MarkupResponse;
-    const newB = restoreB.body as MarkupResponse;
-
-    // The POST route does not (intentionally) accept a `groupId` —
-    // `createMarkupBody` in server/planDocumentMarkupRoutes.ts hard-codes
-    // `groupId: null` on insert. So restoring a grouped markup is a
-    // two-step contract: re-create each member via POST, then stitch
-    // them back together via the existing `/markup-groups` route (the
-    // same path the UI uses for any new group). The new group_id will
-    // therefore be a FRESH uuid, NOT the original one — so the column
-    // assertion below checks the equivalence relation (both restored
-    // rows share the same non-null group_id) rather than strict id
-    // parity. A future "restore from trash" endpoint that preserves the
-    // original group_id would tighten this to strict equality.
-    const regroup = await apiPost(
-      `/api/plan-documents/${tenant.docId}/markup-groups`,
-      tenant.token,
-      { markupIds: [newA.id, newB.id] },
-    );
-    expect(regroup.status).toBe(200);
-    const newGroupId = regroup.body.groupId as string;
-    expect(newGroupId).toBeTruthy();
+    expect(restoreA.status).toBe(200);
+    expect(restoreB.status).toBe(200);
+    expect((restoreA.body as { ok: boolean }).ok).toBe(true);
+    expect((restoreB.body as { ok: boolean }).ok).toBe(true);
 
     // ---- Verify every persisted column matches the original row ----
-    const restoredA = await readRowFromDb(newA.id);
-    const restoredB = await readRowFromDb(newB.id);
+    // Including STRICT id and group_id parity, which the old
+    // "POST recreate + regroup" round-trip could not provide.
+    const restoredA = await readRowFromDb(a.id);
+    const restoredB = await readRowFromDb(b.id);
     expect(restoredA).toBeTruthy();
     expect(restoredB).toBeTruthy();
 
+    expect(restoredA!.id).toBe(originalA!.id);
     expect(restoredA!.tool).toBe(originalA!.tool);
     expect(restoredA!.points).toEqual(originalA!.points);
     expect(restoredA!.color).toBe(originalA!.color);
     expect(restoredA!.thickness).toBe(originalA!.thickness);
     expect(restoredA!.layerId).toBe(originalA!.layerId);
-    // group_id is RECONSTITUTED, not restored: the stitched id is a
-    // fresh uuid and will not equal the original `groupId` snapshot.
-    // What we lock down is the contract that both restored members
-    // belong to the same non-null group again — that is the property
-    // group-aware UI gestures (move/select/delete) actually rely on.
-    expect(restoredA!.groupId).toBe(newGroupId);
-    expect(restoredB!.groupId).toBe(newGroupId);
-    expect(restoredA!.groupId).not.toBe(originalA!.groupId);
+    // STRICT group_id parity — the soft-delete restore brings the
+    // exact same group membership back, no fresh uuid required.
+    expect(restoredA!.groupId).toBe(originalA!.groupId);
+    expect(restoredA!.deletedAt).toBeNull();
 
+    expect(restoredB!.id).toBe(originalB!.id);
     expect(restoredB!.tool).toBe(originalB!.tool);
     expect(restoredB!.points).toEqual(originalB!.points);
     expect(restoredB!.color).toBe(originalB!.color);
     expect(restoredB!.thickness).toBe(originalB!.thickness);
     expect(restoredB!.layerId).toBe(originalB!.layerId);
+    expect(restoredB!.groupId).toBe(originalB!.groupId);
+    expect(restoredB!.deletedAt).toBeNull();
+
+    // And the LIST endpoint returns them again — exactly once each.
+    const listAfterRestore = await apiGet(
+      `/api/plan-documents/${tenant.docId}/markups?page=3`,
+      tenant.token,
+    );
+    expect(listAfterRestore.status).toBe(200);
+    const matchesA = (listAfterRestore.body as MarkupResponse[]).filter(
+      (m) => m.id === a.id,
+    );
+    const matchesB = (listAfterRestore.body as MarkupResponse[]).filter(
+      (m) => m.id === b.id,
+    );
+    expect(matchesA).toHaveLength(1);
+    expect(matchesB).toHaveLength(1);
+    expect(matchesA[0].groupId).toBe(originalA!.groupId);
+    expect(matchesB[0].groupId).toBe(originalB!.groupId);
   });
 
-  it("a solo markup (default layer, no group) round-trips through delete + restore", async () => {
+  it("a solo markup (default layer, no group) round-trips through delete + restore with id preserved", async () => {
     // Edge case: the most common toolbar gesture is a single-shape
     // delete, where layer_id ends up pointing at the auto-materialised
     // default layer and group_id is NULL. Both paths must round-trip
-    // unchanged so the restore button never silently re-parents to a
-    // different layer or accidentally creates a singleton group.
+    // unchanged and the restored row must keep its original id.
     const seed = {
       pageNumber: 4,
       tool: "RECTANGLE" as const,
@@ -412,46 +409,76 @@ describe("plan_document_markups — delete + restore round-trips through the pub
     expect(original).toBeTruthy();
     expect(original!.groupId).toBeNull();
     expect(original!.layerId).toBeTruthy();
+    expect(original!.deletedAt).toBeNull();
 
     const del = await apiDelete(
       `/api/plan-document-markups/${m.id}`,
       tenant.token,
     );
     expect(del.status).toBe(200);
-    expect(await readRowFromDb(m.id)).toBeNull();
+    const afterDel = await readRowFromDb(m.id);
+    expect(afterDel).toBeTruthy();
+    expect(afterDel!.deletedAt).toBeInstanceOf(Date);
 
     const restored = await apiPost(
-      `/api/plan-documents/${tenant.docId}/markups`,
+      `/api/plan-document-markups/${m.id}/restore`,
       tenant.token,
-      {
-        pageNumber: 4,
-        tool: original!.tool,
-        points: original!.points,
-        color: original!.color,
-        thickness: original!.thickness,
-        layerId: original!.layerId,
-      },
     );
-    expect(restored.status).toBe(201);
-    const newRow = await readRowFromDb((restored.body as MarkupResponse).id);
+    expect(restored.status).toBe(200);
+
+    const newRow = await readRowFromDb(m.id);
     expect(newRow).toBeTruthy();
+    expect(newRow!.id).toBe(original!.id);
     expect(newRow!.tool).toBe(original!.tool);
     expect(newRow!.points).toEqual(original!.points);
     expect(newRow!.color).toBe(original!.color);
     expect(newRow!.thickness).toBe(original!.thickness);
     expect(newRow!.layerId).toBe(original!.layerId);
     expect(newRow!.groupId).toBeNull();
+    expect(newRow!.deletedAt).toBeNull();
 
     // And it shows up on the public LIST endpoint exactly once — a
-    // restore must never produce a duplicate row from the same payload.
+    // restore must never produce a duplicate row from the same id.
     const list = await apiGet(
       `/api/plan-documents/${tenant.docId}/markups?page=4`,
       tenant.token,
     );
     expect(list.status).toBe(200);
     const matches = (list.body as MarkupResponse[]).filter(
-      (x) => x.id === (restored.body as MarkupResponse).id,
+      (x) => x.id === m.id,
     );
     expect(matches).toHaveLength(1);
+  });
+
+  it("restoring a row that is already live is a no-op (idempotent double-click)", async () => {
+    // The toolbar's "Undo delete" button might fire twice on a
+    // double-click or after a stale cache — the restore endpoint must
+    // be idempotent so the second call returns 200 without error.
+    const seed = {
+      pageNumber: 5,
+      tool: "ARROW" as const,
+      points: [
+        { x: 0.1, y: 0.1 },
+        { x: 0.2, y: 0.2 },
+      ],
+      color: "#0ea5e9",
+      thickness: 3,
+    };
+    const created = await apiPost(
+      `/api/plan-documents/${tenant.docId}/markups`,
+      tenant.token,
+      seed,
+    );
+    expect(created.status).toBe(201);
+    const m = created.body as MarkupResponse;
+
+    // No prior delete — restore on a live row should still succeed.
+    const restored = await apiPost(
+      `/api/plan-document-markups/${m.id}/restore`,
+      tenant.token,
+    );
+    expect(restored.status).toBe(200);
+    const row = await readRowFromDb(m.id);
+    expect(row!.deletedAt).toBeNull();
   });
 });
