@@ -8,7 +8,7 @@ import { recordJobMetrics, loadJobMetricsFromDb, pruneJobMetricsDb } from "../ut
 import { evaluateJobMetricAlerts, sendJobMetricAlertQuietHoursDigests, setRetentionPolicyUnsupportedPairsForAlerts } from "../utils/jobMetricAlerts";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
-import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, DOC_OVERDUE_REMINDER_DEFAULT_CAP, DOC_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, rfis, submittals, submittalReviews, messages, timeEntries, media, aiActionAudit, planDocuments, conversations, projectEmailDistributionLists, projectLogEmailSchedules, projectLogEmailScheduleAttempts, type InsertNotification } from "@shared/schema";
+import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, DOC_OVERDUE_REMINDER_DEFAULT_CAP, DOC_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_CADENCE, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_WEEKDAY, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_HOUR, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_TIMEZONE, rfis, submittals, submittalReviews, messages, timeEntries, media, aiActionAudit, planDocuments, conversations, projectEmailDistributionLists, projectLogEmailSchedules, projectLogEmailScheduleAttempts, type InsertNotification } from "@shared/schema";
 import { getEffectivePermissions } from "../auth";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull, ne } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
@@ -438,15 +438,20 @@ export function startJobRunner() {
     }
   });
 
-  // Task #1715: daily digest to org ADMIN / SUPER_ADMIN users
-  // summarising every schedule whose latest attempt was
-  // FAILURE / NO_RECIPIENTS — same conditions as the rows on
-  // /admin/log-email-failures. Catches broken distribution lists
-  // proactively so admins don't have to remember to open the
-  // dashboard. Runs once a day at 8am UTC; the per-org dedupe inside
-  // the handler ensures a re-run within the same day (manual fire,
-  // boot during the firing minute) doesn't re-send.
-  projectLogEmailFailuresDigestTask = cron.schedule("0 8 * * *", async () => {
+  // Task #1715: digest to org ADMIN / SUPER_ADMIN users summarising
+  // every schedule whose latest attempt was FAILURE / NO_RECIPIENTS —
+  // same conditions as the rows on /admin/log-email-failures. Catches
+  // broken distribution lists proactively so admins don't have to
+  // remember to open the dashboard.
+  //
+  // Task #1732: cron now ticks hourly. Each org has its own
+  // cadence/hour/weekday/timezone (columns on `organizations`,
+  // defaults DAILY @ 08:00 UTC) and the per-org gate inside the
+  // handler picks which orgs (if any) actually fan out on each tick.
+  // The dedupe sentinel inside the handler ensures a re-run within
+  // the same local day (manual fire, boot during the firing minute)
+  // doesn't re-send.
+  projectLogEmailFailuresDigestTask = cron.schedule("0 * * * *", async () => {
     try {
       await processProjectLogEmailFailuresDigest();
       recordJobOutcome("project_log_email_failures_digest", true);
@@ -4829,16 +4834,22 @@ async function maybeNotifyProjectLogEmailRepeatedFailure(args: {
 // the standard notification settings page. No new opt-out plumbing is
 // required.
 //
-// Dedupe: a `relatedEntityId` of "YYYY-MM-DD" lets us keep this
-// helper idempotent — re-running on the same UTC day only inserts
-// rows for orgs that haven't already received that day's digest. We
-// rely on the `notifications` table itself for the dedupe sentinel
-// rather than adding a new column to `organizations`, which keeps the
-// schema surface area unchanged and means a manual rerun (e.g.
-// operator firing the cron from a debug endpoint) is safe.
+// Dedupe: a `relatedEntityId` of "YYYY-MM-DD" (in the org's local
+// timezone) lets us keep this helper idempotent — re-running on the
+// same local day only inserts rows for orgs that haven't already
+// received that day's digest. We rely on the `notifications` table
+// itself for the dedupe sentinel rather than adding a new column to
+// `organizations`, which keeps the schema surface area smaller and
+// means a manual rerun (e.g. operator firing the cron from a debug
+// endpoint) is safe.
+//
+// Task #1732: this function now ticks hourly and consults per-org
+// cadence / weekday / hour / timezone columns on `organizations` to
+// decide which orgs (if any) actually fan out on this tick. The
+// defaults — DAILY at 08:00 UTC — preserve the original behavior for
+// orgs that have never touched the new settings.
 export async function processProjectLogEmailFailuresDigest(opts: { now?: Date } = {}) {
   const now = opts.now ?? new Date();
-  const dayKey = now.toISOString().slice(0, 10);
 
   // Pull every failing schedule in one sweep, joined with the project
   // row so the digest body can render "Project name (code)" without a
@@ -4882,11 +4893,68 @@ export async function processProjectLogEmailFailuresDigest(opts: { now?: Date } 
     else byOrg.set(row.organizationId, [row]);
   }
 
+  // Task #1732: load per-org schedule overrides for every org with
+  // failures in one round-trip. Orgs missing a row (shouldn't happen
+  // in production since FK-tied, but defensive in tests where the
+  // mock select returns []) fall back to the column defaults: DAILY
+  // at 08:00 in UTC.
+  const orgIds = Array.from(byOrg.keys());
+  const orgSettingsRows = orgIds.length > 0
+    ? await db
+        .select({
+          id: organizations.id,
+          cadence: organizations.projectLogEmailFailuresDigestCadence,
+          weekday: organizations.projectLogEmailFailuresDigestWeekday,
+          hour: organizations.projectLogEmailFailuresDigestHour,
+          timezone: organizations.projectLogEmailFailuresDigestTimezone,
+        })
+        .from(organizations)
+        .where(inArray(organizations.id, orgIds))
+    : [];
+  const orgSettingsById = new Map<string, {
+    cadence: string;
+    weekday: number;
+    hour: number;
+    timezone: string;
+  }>();
+  for (const row of orgSettingsRows) {
+    orgSettingsById.set(row.id, {
+      cadence: row.cadence ?? PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_CADENCE,
+      weekday: row.weekday ?? PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_WEEKDAY,
+      hour: row.hour ?? PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_HOUR,
+      timezone: row.timezone ?? PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_TIMEZONE,
+    });
+  }
+
   let totalNotifications = 0;
   let totalOrgsNotified = 0;
 
   for (const [organizationId, rows] of byOrg) {
     try {
+      // Task #1732: per-org schedule gate. Defaults (DAILY @ 08:00 UTC)
+      // apply when the org row is missing or any column is unexpectedly
+      // null, preserving the original hard-coded behavior for orgs that
+      // haven't touched the new settings.
+      const settings = orgSettingsById.get(organizationId) ?? {
+        cadence: PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_CADENCE,
+        weekday: PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_WEEKDAY,
+        hour: PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_HOUR,
+        timezone: PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_TIMEZONE,
+      };
+      if (settings.cadence === "OFF") continue;
+      const local = getLocalDateParts(now, settings.timezone);
+      if (local.hour !== settings.hour) continue;
+      if (settings.cadence === "WEEKLY" && local.weekday !== settings.weekday) continue;
+
+      // Dedupe sentinel: org's local calendar date. With the per-org
+      // hour/weekday gate above, the handler can only fire once per
+      // local day per org, so a YYYY-MM-DD key is enough to make a
+      // re-run within the same firing hour (manual debug invocation,
+      // boot during the firing minute) idempotent.
+      const dayKey = `${local.year.toString().padStart(4, "0")}-${local.month
+        .toString()
+        .padStart(2, "0")}-${local.day.toString().padStart(2, "0")}`;
+
       // Idempotency: skip orgs that already received today's digest.
       // Querying the notifications table directly keeps the dedupe
       // information close to where the row is written and avoids a

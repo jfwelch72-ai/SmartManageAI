@@ -111,6 +111,15 @@ function queueExistingDigest(rows: Row[]) {
 function queueAdmins(rows: Row[]) {
   (selectByTable["users"] ??= []).push(rows);
 }
+// Task #1732 — per-org schedule overrides for the failures-digest
+// fan-out are loaded in one round-trip after the failures sweep and
+// before the per-org loop. Tests that don't queue an organizations
+// row still exercise the column defaults (DAILY @ 08:00 UTC) via
+// the in-handler fallback; this helper is for tests that want to
+// pin a specific cadence/hour/weekday/timezone for an org.
+function queueOrgSettings(rows: Row[]) {
+  (selectByTable["organizations"] ??= []).push(rows);
+}
 
 const ORG_A = "org-aaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const ORG_B = "org-bbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
@@ -343,5 +352,168 @@ describe("processProjectLogEmailFailuresDigest", () => {
     expect(batch[0].message).toContain("Project 99");
     // Items past the cap are not rendered inline (only the footer).
     expect(batch[0].message).not.toContain("Project 100 — ");
+  });
+
+  // -----------------------------------------------------------
+  // Task #1732 — per-org schedule (cadence + weekday + hour + tz)
+  // -----------------------------------------------------------
+  // The handler is now invoked hourly; the per-org gate inside
+  // decides which orgs (if any) actually fan out on each tick.
+  // These cases lock in the gating behavior so a future refactor
+  // can't silently regress it.
+
+  it("skips orgs whose digest cadence is OFF", async () => {
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueFailures([
+      {
+        scheduleId: "sched-1",
+        organizationId: ORG_A,
+        projectId: "proj-1",
+        projectName: "Bridge 7",
+        projectCode: "BR-7",
+        logType: "RFI",
+        cadence: "DAILY",
+        lastAttemptAt: new Date("2026-04-19T08:00:00Z"),
+        lastAttemptStatus: "FAILURE",
+        lastAttemptError: "Bounced",
+        lastAttemptRecipientCount: 3,
+        consecutiveFailureCount: 2,
+      },
+    ]);
+    queueOrgSettings([
+      { id: ORG_A, cadence: "OFF", weekday: 1, hour: 8, timezone: "UTC" },
+    ]);
+
+    await processProjectLogEmailFailuresDigest({ now });
+
+    expect(insertedNotifications).toHaveLength(0);
+  });
+
+  it("skips orgs when the current local hour does not match the configured hour", async () => {
+    // Tick fires at 08:00 UTC but org wants the digest at 09:00 UTC.
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueFailures([
+      {
+        scheduleId: "sched-1",
+        organizationId: ORG_A,
+        projectId: "proj-1",
+        projectName: "Bridge 7",
+        projectCode: "BR-7",
+        logType: "RFI",
+        cadence: "DAILY",
+        lastAttemptAt: new Date("2026-04-19T08:00:00Z"),
+        lastAttemptStatus: "FAILURE",
+        lastAttemptError: "Bounced",
+        lastAttemptRecipientCount: 3,
+        consecutiveFailureCount: 2,
+      },
+    ]);
+    queueOrgSettings([
+      { id: ORG_A, cadence: "DAILY", weekday: 1, hour: 9, timezone: "UTC" },
+    ]);
+
+    await processProjectLogEmailFailuresDigest({ now });
+
+    expect(insertedNotifications).toHaveLength(0);
+  });
+
+  it("respects the org's local timezone when gating on the configured hour", async () => {
+    // 12:00 UTC is 08:00 in America/New_York during EDT (UTC-4 in
+    // April). Org wants the digest at 08:00 NY time, so this tick
+    // fires even though the server's UTC hour (12) is not 8.
+    const now = new Date("2026-04-20T12:00:00Z");
+    queueFailures([
+      {
+        scheduleId: "sched-1",
+        organizationId: ORG_A,
+        projectId: "proj-1",
+        projectName: "Bridge 7",
+        projectCode: "BR-7",
+        logType: "RFI",
+        cadence: "DAILY",
+        lastAttemptAt: new Date("2026-04-19T08:00:00Z"),
+        lastAttemptStatus: "FAILURE",
+        lastAttemptError: "Bounced",
+        lastAttemptRecipientCount: 3,
+        consecutiveFailureCount: 2,
+      },
+    ]);
+    queueOrgSettings([
+      { id: ORG_A, cadence: "DAILY", weekday: 1, hour: 8, timezone: "America/New_York" },
+    ]);
+    queueExistingDigest([]);
+    queueAdmins([{ id: "admin-NY" }]);
+
+    await processProjectLogEmailFailuresDigest({ now });
+
+    expect(insertedNotifications).toHaveLength(1);
+    const batch = insertedNotifications[0] as Array<{
+      relatedEntityId: string;
+      organizationId: string;
+    }>;
+    expect(batch[0].organizationId).toBe(ORG_A);
+    // Local date in NY (UTC-4 during EDT) at 13:00 UTC is still
+    // April 20th — dedupe key uses the *local* date so two orgs
+    // in different zones can't accidentally share an entityId.
+    expect(batch[0].relatedEntityId).toBe("2026-04-20");
+  });
+
+  it("only fires WEEKLY orgs on the configured weekday", async () => {
+    // 2026-04-20 is a Monday (weekday=1). Org configured for Tuesday
+    // (weekday=2) should be skipped even though hour matches.
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueFailures([
+      {
+        scheduleId: "sched-1",
+        organizationId: ORG_A,
+        projectId: "proj-1",
+        projectName: "Bridge 7",
+        projectCode: "BR-7",
+        logType: "RFI",
+        cadence: "DAILY",
+        lastAttemptAt: new Date("2026-04-19T08:00:00Z"),
+        lastAttemptStatus: "FAILURE",
+        lastAttemptError: "Bounced",
+        lastAttemptRecipientCount: 3,
+        consecutiveFailureCount: 2,
+      },
+    ]);
+    queueOrgSettings([
+      { id: ORG_A, cadence: "WEEKLY", weekday: 2, hour: 8, timezone: "UTC" },
+    ]);
+
+    await processProjectLogEmailFailuresDigest({ now });
+
+    expect(insertedNotifications).toHaveLength(0);
+  });
+
+  it("fires WEEKLY orgs when the current local weekday matches", async () => {
+    // 2026-04-20 is a Monday (weekday=1). Org configured for Monday.
+    const now = new Date("2026-04-20T08:00:00Z");
+    queueFailures([
+      {
+        scheduleId: "sched-1",
+        organizationId: ORG_A,
+        projectId: "proj-1",
+        projectName: "Bridge 7",
+        projectCode: "BR-7",
+        logType: "RFI",
+        cadence: "DAILY",
+        lastAttemptAt: new Date("2026-04-19T08:00:00Z"),
+        lastAttemptStatus: "FAILURE",
+        lastAttemptError: "Bounced",
+        lastAttemptRecipientCount: 3,
+        consecutiveFailureCount: 2,
+      },
+    ]);
+    queueOrgSettings([
+      { id: ORG_A, cadence: "WEEKLY", weekday: 1, hour: 8, timezone: "UTC" },
+    ]);
+    queueExistingDigest([]);
+    queueAdmins([{ id: "admin-1" }]);
+
+    await processProjectLogEmailFailuresDigest({ now });
+
+    expect(insertedNotifications).toHaveLength(1);
   });
 });

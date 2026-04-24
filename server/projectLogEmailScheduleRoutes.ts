@@ -29,6 +29,11 @@ import {
   PROJECT_LOG_EMAIL_FAILURE_DEFAULT_THRESHOLD,
   PROJECT_LOG_EMAIL_FAILURE_MAX_THRESHOLD,
   PROJECT_LOG_EMAIL_FAILURE_MIN_THRESHOLD,
+  PROJECT_LOG_EMAIL_FAILURES_DIGEST_CADENCES,
+  PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_CADENCE,
+  PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_HOUR,
+  PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_TIMEZONE,
+  PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_WEEKDAY,
   organizations,
   projectEmailDistributionLists,
   projectLogEmailSchedules,
@@ -888,15 +893,34 @@ const FAILURE_THRESHOLD_READ_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERI
 const FAILURE_THRESHOLD_WRITE_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER"] as const;
 
 const failureThresholdUpsertSchema = z.object({
-  // Nullable — passing `null` (or omitting) is the canonical
-  // "clear my override, use the global default" gesture so admins
-  // can revert without having to remember what the platform default
-  // was.
+  // Nullable AND optional. Passing `null` is the canonical "clear
+  // my override, use the global default" gesture so admins can
+  // revert without having to remember what the platform default
+  // was. Omitting the key entirely (undefined) means "leave the
+  // threshold alone" — required so digest-only API clients (Task
+  // #1732) don't have to round-trip the existing threshold value
+  // just to tweak the cadence/hour/timezone.
   threshold: z.number()
     .int()
     .min(PROJECT_LOG_EMAIL_FAILURE_MIN_THRESHOLD)
     .max(PROJECT_LOG_EMAIL_FAILURE_MAX_THRESHOLD)
-    .nullable(),
+    .nullable()
+    .optional(),
+  // Task #1732 — per-org schedule for the failures-digest fan-out.
+  // The four fields ride on the same PUT as the threshold so the
+  // settings card can save everything in one round-trip. Optional
+  // so a client that only edits the threshold (or vice-versa) does
+  // not have to re-send the other half — when omitted the
+  // corresponding column is left untouched.
+  failuresDigestCadence: z.enum(PROJECT_LOG_EMAIL_FAILURES_DIGEST_CADENCES).optional(),
+  failuresDigestWeekday: z.number().int().min(0).max(6).optional(),
+  failuresDigestHour: z.number().int().min(0).max(23).optional(),
+  failuresDigestTimezone: z
+    .string()
+    .min(1)
+    .max(100)
+    .refine((tz) => isValidTimezone(tz), { message: "Invalid IANA timezone" })
+    .optional(),
 });
 
 router.get(
@@ -912,6 +936,11 @@ router.get(
         .select({
           id: organizations.id,
           failureThreshold: organizations.projectLogEmailFailureThreshold,
+          // Task #1732 — per-org schedule for the failures-digest fan-out.
+          failuresDigestCadence: organizations.projectLogEmailFailuresDigestCadence,
+          failuresDigestWeekday: organizations.projectLogEmailFailuresDigestWeekday,
+          failuresDigestHour: organizations.projectLogEmailFailuresDigestHour,
+          failuresDigestTimezone: organizations.projectLogEmailFailuresDigestTimezone,
         })
         .from(organizations)
         .where(eq(organizations.id, organizationId))
@@ -1007,6 +1036,23 @@ router.get(
         },
         streakingSchedules: streakingRows,
         streakingCutoff: streakCutoff,
+        // Task #1732 — per-org schedule for the failures-digest fan-out.
+        // The shipped default (DAILY @ 08:00 UTC) preserves the original
+        // hard-coded behavior and is also what the form falls back to
+        // when an admin opens the card without ever having saved.
+        failuresDigest: {
+          cadence: row.failuresDigestCadence ?? PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_CADENCE,
+          weekday: row.failuresDigestWeekday ?? PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_WEEKDAY,
+          hour: row.failuresDigestHour ?? PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_HOUR,
+          timezone: row.failuresDigestTimezone ?? PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_TIMEZONE,
+          allowedCadences: PROJECT_LOG_EMAIL_FAILURES_DIGEST_CADENCES,
+          defaults: {
+            cadence: PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_CADENCE,
+            weekday: PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_WEEKDAY,
+            hour: PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_HOUR,
+            timezone: PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_TIMEZONE,
+          },
+        },
       });
     } catch (err) {
       next(err);
@@ -1031,29 +1077,64 @@ router.put(
         });
       }
 
+      // Task #1732 — only assign columns the client actually sent,
+      // so a partial PUT (e.g. just the threshold, or just the
+      // digest schedule) leaves the unrelated fields untouched.
+      // `threshold` is intentionally optional (undefined skips the
+      // column entirely); passing `null` clears the override.
+      const updateSet: Record<string, unknown> = {
+        updatedAt: new Date(),
+      };
+      if (parsed.data.threshold !== undefined) {
+        updateSet.projectLogEmailFailureThreshold = parsed.data.threshold;
+      }
+      if (parsed.data.failuresDigestCadence !== undefined) {
+        updateSet.projectLogEmailFailuresDigestCadence = parsed.data.failuresDigestCadence;
+      }
+      if (parsed.data.failuresDigestWeekday !== undefined) {
+        updateSet.projectLogEmailFailuresDigestWeekday = parsed.data.failuresDigestWeekday;
+      }
+      if (parsed.data.failuresDigestHour !== undefined) {
+        updateSet.projectLogEmailFailuresDigestHour = parsed.data.failuresDigestHour;
+      }
+      if (parsed.data.failuresDigestTimezone !== undefined) {
+        updateSet.projectLogEmailFailuresDigestTimezone = parsed.data.failuresDigestTimezone;
+      }
+
       const [updated] = await db
         .update(organizations)
-        .set({
-          projectLogEmailFailureThreshold: parsed.data.threshold,
-          updatedAt: new Date(),
-        })
+        .set(updateSet)
         .where(eq(organizations.id, organizationId))
         .returning({
           id: organizations.id,
           failureThreshold: organizations.projectLogEmailFailureThreshold,
+          failuresDigestCadence: organizations.projectLogEmailFailuresDigestCadence,
+          failuresDigestWeekday: organizations.projectLogEmailFailuresDigestWeekday,
+          failuresDigestHour: organizations.projectLogEmailFailuresDigestHour,
+          failuresDigestTimezone: organizations.projectLogEmailFailuresDigestTimezone,
         });
 
       if (!updated) return res.status(404).json({ error: "Organization not found" });
 
-      logInfo("Project log email failure threshold updated", {
+      logInfo("Project log email org settings updated", {
         organizationId,
         actorId: req.user?.id ?? null,
-        threshold: parsed.data.threshold,
+        threshold: parsed.data.threshold ?? null,
+        failuresDigestCadence: parsed.data.failuresDigestCadence ?? null,
+        failuresDigestWeekday: parsed.data.failuresDigestWeekday ?? null,
+        failuresDigestHour: parsed.data.failuresDigestHour ?? null,
+        failuresDigestTimezone: parsed.data.failuresDigestTimezone ?? null,
       });
 
       res.json({
         organizationId: updated.id,
         failureThreshold: updated.failureThreshold,
+        failuresDigest: {
+          cadence: updated.failuresDigestCadence,
+          weekday: updated.failuresDigestWeekday,
+          hour: updated.failuresDigestHour,
+          timezone: updated.failuresDigestTimezone,
+        },
       });
     } catch (err) {
       next(err);

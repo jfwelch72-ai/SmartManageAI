@@ -72,6 +72,7 @@ import { ensureProjectLogEmailAttemptTracking } from "./ensureProjectLogEmailAtt
 import { ensureProjectLogEmailFailureNotifications } from "./ensureProjectLogEmailFailureNotifications";
 import { ensureProjectLogEmailConsecutiveFailures } from "./ensureProjectLogEmailConsecutiveFailures";
 import { ensureProjectLogEmailFailureThresholdSetting } from "./ensureProjectLogEmailFailureThresholdSetting";
+import { ensureProjectLogEmailFailuresDigestSchedule } from "./ensureProjectLogEmailFailuresDigestSchedule";
 import { ensureProjectLogEmailScheduleAttemptsTable } from "./ensureProjectLogEmailScheduleAttemptsTable";
 import { ensureGanttPdfRenderSamplesTable } from "./ensureGanttPdfRenderSamplesTable";
 import { ensurePortfolioPdfRenderSamplesTable } from "./ensurePortfolioPdfRenderSamplesTable";
@@ -268,6 +269,11 @@ const migrations: MigrationStep[] = [
   // for that org's schedules only. Lets each org dial in its own
   // tolerance without redeploying.
   { name: "project_log_email_failure_threshold_setting", category: "ADD_COLUMN", fn: ensureProjectLogEmailFailureThresholdSetting },
+  // Task #1732 — per-org schedule (cadence + weekday + hour + timezone)
+  // for the project-log-email failures-digest fan-out. Defaults preserve
+  // the original 08:00 UTC daily behavior, so existing orgs upgrade as a
+  // no-op.
+  { name: "project_log_email_failures_digest_schedule", category: "ADD_COLUMN", fn: ensureProjectLogEmailFailuresDigestSchedule },
   // Task #1652 — append-only per-schedule send history so admins can
   // audit every cron tick + manual send (status, error, recipient
   // count, triggered-by) instead of only seeing the most recent

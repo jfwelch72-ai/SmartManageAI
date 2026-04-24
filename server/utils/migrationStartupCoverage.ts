@@ -321,4 +321,12 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   "0062_project_log_email_failure_threshold_setting.sql": {
     helper: "ensureProjectLogEmailFailureThresholdSetting",
   },
+  // Task #1732 — per-org schedule (cadence + weekday + hour + timezone)
+  // for the project-log-email failures-digest fan-out
+  // (`processProjectLogEmailFailuresDigest`). Defaults preserve the
+  // original "08:00 UTC daily" behavior so existing orgs upgrade as a
+  // no-op. Mirrored at boot by ensureProjectLogEmailFailuresDigestSchedule.
+  "0063_project_log_email_failures_digest_schedule.sql": {
+    helper: "ensureProjectLogEmailFailuresDigestSchedule",
+  },
 };

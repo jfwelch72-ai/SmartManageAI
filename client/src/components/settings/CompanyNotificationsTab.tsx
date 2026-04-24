@@ -170,6 +170,23 @@ export function CompanyNotificationsTab() {
       lastAttemptStatus: string | null;
     }>;
     streakingCutoff: number;
+    // Task #1732 — per-org schedule for the failures-digest fan-out
+    // (`processProjectLogEmailFailuresDigest`). Defaults preserve the
+    // original "08:00 UTC daily" behavior so existing orgs see no
+    // change until they edit the card.
+    failuresDigest: {
+      cadence: "OFF" | "DAILY" | "WEEKLY";
+      weekday: number;
+      hour: number;
+      timezone: string;
+      allowedCadences: ReadonlyArray<"OFF" | "DAILY" | "WEEKLY">;
+      defaults: {
+        cadence: "OFF" | "DAILY" | "WEEKLY";
+        weekday: number;
+        hour: number;
+        timezone: string;
+      };
+    };
   };
   const { data: projectLogEmailSettings, isLoading: loadingProjectLogEmail } =
     useQuery<ProjectLogEmailSettings>({
@@ -190,32 +207,56 @@ export function CompanyNotificationsTab() {
   const [projectLogEmailForm, setProjectLogEmailForm] = useState<{
     useGlobalDefault: boolean;
     threshold: number;
-  }>({ useGlobalDefault: true, threshold: 3 });
+    // Task #1732 — per-org failures-digest schedule. Defaults match
+    // the column defaults shipped with the migration so the form
+    // renders sensibly even before the GET response arrives.
+    failuresDigestCadence: "OFF" | "DAILY" | "WEEKLY";
+    failuresDigestWeekday: number;
+    failuresDigestHour: number;
+    failuresDigestTimezone: string;
+  }>({
+    useGlobalDefault: true,
+    threshold: 3,
+    failuresDigestCadence: "DAILY",
+    failuresDigestWeekday: 1,
+    failuresDigestHour: 8,
+    failuresDigestTimezone: "UTC",
+  });
   useEffect(() => {
     if (projectLogEmailSettings) {
       setProjectLogEmailForm({
         useGlobalDefault: projectLogEmailSettings.failureThreshold === null,
         threshold: projectLogEmailSettings.failureThreshold
           ?? projectLogEmailSettings.defaults.globalDefault,
+        failuresDigestCadence: projectLogEmailSettings.failuresDigest.cadence,
+        failuresDigestWeekday: projectLogEmailSettings.failuresDigest.weekday,
+        failuresDigestHour: projectLogEmailSettings.failuresDigest.hour,
+        failuresDigestTimezone: projectLogEmailSettings.failuresDigest.timezone,
       });
     }
   }, [projectLogEmailSettings]);
   const updateProjectLogEmailMutation = useMutation({
     mutationFn: async (data: typeof projectLogEmailForm) => {
       // Send `null` when reverting to the global default, otherwise
-      // the chosen integer. The PUT endpoint validates bounds.
+      // the chosen integer. The PUT endpoint validates bounds. The
+      // four digest fields ride on the same payload so a single Save
+      // commits both halves of the card.
       return await apiRequest("PUT", "/api/organizations/project-log-email-settings", {
         threshold: data.useGlobalDefault ? null : data.threshold,
+        failuresDigestCadence: data.failuresDigestCadence,
+        failuresDigestWeekday: data.failuresDigestWeekday,
+        failuresDigestHour: data.failuresDigestHour,
+        failuresDigestTimezone: data.failuresDigestTimezone,
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/organizations/project-log-email-settings"] });
-      toast({ title: "Repeated-failure alert threshold updated" });
+      toast({ title: "Scheduled log email settings updated" });
     },
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.message || "Failed to update repeated-failure alert threshold",
+        description: error.message || "Failed to update scheduled log email settings",
         variant: "destructive",
       });
     },
@@ -1049,6 +1090,179 @@ export function CompanyNotificationsTab() {
                     )}
                   </div>
 
+                  {/*
+                    Task #1732 — per-org schedule for the daily failures-digest
+                    fan-out (`processProjectLogEmailFailuresDigest`). Defaults
+                    preserve the original 08:00 UTC daily behavior so existing
+                    orgs see no change until they edit the controls below.
+                  */}
+                  <div
+                    className="rounded-md border border-border bg-muted/40 p-4 space-y-4"
+                    data-testid="section-project-log-email-failures-digest"
+                  >
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-semibold">
+                        Failures-digest schedule
+                      </h4>
+                      <p className="text-xs text-muted-foreground">
+                        Roll-up email of every scheduled log that's currently
+                        failing or has no recipients, sent to all admins. The
+                        per-failure ping and the streak alert above run
+                        independently — this knob only controls the digest.
+                      </p>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="project-log-email-failures-digest-cadence">
+                        Send the digest
+                      </Label>
+                      <Select
+                        value={projectLogEmailForm.failuresDigestCadence}
+                        disabled={!canEditProjectLogEmailThreshold}
+                        onValueChange={(value) =>
+                          setProjectLogEmailForm((prev) => ({
+                            ...prev,
+                            failuresDigestCadence: value as "OFF" | "DAILY" | "WEEKLY",
+                          }))
+                        }
+                      >
+                        <SelectTrigger
+                          id="project-log-email-failures-digest-cadence"
+                          data-testid="select-project-log-email-failures-digest-cadence"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="OFF" data-testid="option-failures-digest-cadence-off">
+                            Off — don't send the digest
+                          </SelectItem>
+                          <SelectItem value="DAILY" data-testid="option-failures-digest-cadence-daily">
+                            Daily
+                          </SelectItem>
+                          <SelectItem value="WEEKLY" data-testid="option-failures-digest-cadence-weekly">
+                            Weekly
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {projectLogEmailForm.failuresDigestCadence !== "OFF" ? (
+                      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                        {projectLogEmailForm.failuresDigestCadence === "WEEKLY" ? (
+                          <div className="space-y-2">
+                            <Label htmlFor="project-log-email-failures-digest-weekday">
+                              Day of week
+                            </Label>
+                            <Select
+                              value={String(projectLogEmailForm.failuresDigestWeekday)}
+                              disabled={!canEditProjectLogEmailThreshold}
+                              onValueChange={(value) =>
+                                setProjectLogEmailForm((prev) => ({
+                                  ...prev,
+                                  failuresDigestWeekday: parseInt(value, 10),
+                                }))
+                              }
+                            >
+                              <SelectTrigger
+                                id="project-log-email-failures-digest-weekday"
+                                data-testid="select-project-log-email-failures-digest-weekday"
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {DIGEST_WEEKDAYS.map((d) => (
+                                  <SelectItem
+                                    key={d.value}
+                                    value={String(d.value)}
+                                    data-testid={`option-failures-digest-weekday-${d.value}`}
+                                  >
+                                    {d.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ) : null}
+
+                        <div className="space-y-2">
+                          <Label htmlFor="project-log-email-failures-digest-hour">
+                            Local hour
+                          </Label>
+                          <Select
+                            value={String(projectLogEmailForm.failuresDigestHour)}
+                            disabled={!canEditProjectLogEmailThreshold}
+                            onValueChange={(value) =>
+                              setProjectLogEmailForm((prev) => ({
+                                ...prev,
+                                failuresDigestHour: parseInt(value, 10),
+                              }))
+                            }
+                          >
+                            <SelectTrigger
+                              id="project-log-email-failures-digest-hour"
+                              data-testid="select-project-log-email-failures-digest-hour"
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Array.from({ length: 24 }, (_, h) => (
+                                <SelectItem
+                                  key={h}
+                                  value={String(h)}
+                                  data-testid={`option-failures-digest-hour-${h}`}
+                                >
+                                  {h.toString().padStart(2, "0")}:00
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="project-log-email-failures-digest-timezone">
+                            Timezone
+                          </Label>
+                          <Select
+                            value={projectLogEmailForm.failuresDigestTimezone}
+                            disabled={!canEditProjectLogEmailThreshold}
+                            onValueChange={(value) =>
+                              setProjectLogEmailForm((prev) => ({
+                                ...prev,
+                                failuresDigestTimezone: value,
+                              }))
+                            }
+                          >
+                            <SelectTrigger
+                              id="project-log-email-failures-digest-timezone"
+                              data-testid="select-project-log-email-failures-digest-timezone"
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent className="max-h-72">
+                              {COMMON_TIMEZONES.map((tz) => (
+                                <SelectItem
+                                  key={tz}
+                                  value={tz}
+                                  data-testid={`option-failures-digest-timezone-${tz.replace(/\//g, "-")}`}
+                                >
+                                  {tz}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                    ) : (
+                      <p
+                        className="text-xs text-muted-foreground"
+                        data-testid="text-project-log-email-failures-digest-off-notice"
+                      >
+                        The digest is disabled. Admins still get the per-failure
+                        ping and the streak alert above.
+                      </p>
+                    )}
+                  </div>
+
                   {canEditProjectLogEmailThreshold ? (
                     <div className="flex justify-end">
                       <Button
@@ -1062,7 +1276,7 @@ export function CompanyNotificationsTab() {
                             Saving...
                           </>
                         ) : (
-                          "Save Alert Threshold"
+                          "Save Settings"
                         )}
                       </Button>
                     </div>
@@ -1071,7 +1285,7 @@ export function CompanyNotificationsTab() {
                       className="text-xs text-muted-foreground text-right"
                       data-testid="text-project-log-email-readonly-notice"
                     >
-                      Read-only — your role cannot change this setting.
+                      Read-only — your role cannot change these settings.
                     </p>
                   )}
                 </>

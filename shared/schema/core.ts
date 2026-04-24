@@ -65,6 +65,20 @@ export const organizations = pgTable("organizations", {
   // each org can dial in how aggressively they want to be paged about
   // a quietly-broken distribution list without redeploying.
   projectLogEmailFailureThreshold: integer("project_log_email_failure_threshold"),
+  // Task #1732 — per-org schedule for the daily failures-digest fan-out
+  // (`processProjectLogEmailFailuresDigest` in server/jobs/jobRunner.ts).
+  // Defaults preserve the original hard-coded behavior of a daily
+  // 08:00 UTC fire so existing orgs keep their digest unchanged.
+  // Cadence options:
+  //   OFF    → digest disabled for this org
+  //   DAILY  → fire every day at the chosen local hour
+  //   WEEKLY → fire on the chosen weekday at the chosen local hour
+  // The digest itself remains hourly-cron-driven; the per-org gate
+  // inside the handler picks which orgs (if any) fire on each tick.
+  projectLogEmailFailuresDigestCadence: text("project_log_email_failures_digest_cadence").notNull().default("DAILY"),
+  projectLogEmailFailuresDigestWeekday: integer("project_log_email_failures_digest_weekday").notNull().default(1),
+  projectLogEmailFailuresDigestHour: integer("project_log_email_failures_digest_hour").notNull().default(8),
+  projectLogEmailFailuresDigestTimezone: text("project_log_email_failures_digest_timezone").notNull().default("UTC"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -90,6 +104,19 @@ export const SWPPP_OVERDUE_REMINDER_MAX_INTERVAL_HOURS = 24 * 30;
 export const PROJECT_LOG_EMAIL_FAILURE_DEFAULT_THRESHOLD = 3;
 export const PROJECT_LOG_EMAIL_FAILURE_MIN_THRESHOLD = 1;
 export const PROJECT_LOG_EMAIL_FAILURE_MAX_THRESHOLD = 50;
+
+// Task #1732 — allowed values + defaults for the per-org failures-digest
+// schedule. Mirrors the certified-payroll digest knobs but without
+// BIWEEKLY since the digest is purely an awareness nudge — orgs that
+// want a quieter cadence can pick WEEKLY, and chronically-broken
+// schedules also surface in the per-failure ping (Task #1637) and
+// the on-failure backstop (Task #1651).
+export const PROJECT_LOG_EMAIL_FAILURES_DIGEST_CADENCES = ["OFF", "DAILY", "WEEKLY"] as const;
+export type ProjectLogEmailFailuresDigestCadence = typeof PROJECT_LOG_EMAIL_FAILURES_DIGEST_CADENCES[number];
+export const PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_CADENCE: ProjectLogEmailFailuresDigestCadence = "DAILY";
+export const PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_WEEKDAY = 1; // Monday
+export const PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_HOUR = 8;
+export const PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_TIMEZONE = "UTC";
 
 export const insertOrganizationSchema = createInsertSchema(organizations).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertOrganization = z.infer<typeof insertOrganizationSchema>;
