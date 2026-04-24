@@ -486,6 +486,35 @@ export function useTakeoffData({
       const result = await res.json();
       return { result, id, updates, previous };
     },
+    // Task #1735 — Optimistically rewrite the cached markup before the
+    // PATCH lands so a body drag does not snap back to its pre-drag
+    // location for the few hundred ms between drag-end and the
+    // invalidation refetch. The Konva group's position is reset to the
+    // origin on drag-end (`e.target.position({...})` in
+    // TakeoffWorkspace.onBodyDragEnd), so the new pixel location is
+    // only visible if the cache already holds the translated points.
+    // Mirrors the bulkMoveMutation onMutate/onError pattern used by
+    // PlanMarkupLayer for plan-side group drags.
+    onMutate: async ({ id, color, thickness, text, points }) => {
+      const queryKey = ["/api/takeoff/sheets", selectedSheet, "markups"];
+      await queryClient.cancelQueries({ queryKey });
+      const previousMarkups = queryClient.getQueryData<TakeoffMarkupWithAuthor[]>(queryKey);
+      if (previousMarkups) {
+        queryClient.setQueryData<TakeoffMarkupWithAuthor[]>(queryKey, (old) => {
+          if (!old) return old;
+          return old.map((m) => {
+            if (m.id !== id) return m;
+            const next = { ...m };
+            if (color !== undefined) next.color = color;
+            if (thickness !== undefined) next.thickness = thickness;
+            if (text !== undefined) next.text = text;
+            if (points !== undefined) next.points = points;
+            return next;
+          });
+        });
+      }
+      return { previousMarkups, queryKey };
+    },
     onSuccess: ({ id, updates, previous }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "markups"] });
       if (selectedSheet && previous) {
@@ -509,7 +538,13 @@ export function useTakeoffData({
         }
       }
     },
-    onError: () => {
+    onError: (_error, _vars, ctx) => {
+      // Task #1735 — Roll the cache back to its pre-drag points so the
+      // markup returns to its real location instead of being stranded
+      // at the failed optimistic position.
+      if (ctx?.previousMarkups) {
+        queryClient.setQueryData(ctx.queryKey, ctx.previousMarkups);
+      }
       toast({ title: "Error", description: "Failed to update markup", variant: "destructive" });
     },
   });
