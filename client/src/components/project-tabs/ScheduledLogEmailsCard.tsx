@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Mail, Loader2 } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 import { COMMON_TIMEZONES } from "@shared/timezones";
 import {
   PROJECT_LOG_EMAIL_CADENCES,
@@ -205,11 +206,28 @@ function ScheduleRowEditor({ projectId, logType, initial }: ScheduleRowEditorPro
           </div>
           <p className="text-xs text-muted-foreground">{LOG_TYPE_DESCRIPTIONS[logType]}</p>
         </div>
-        <div
-          className="text-xs text-muted-foreground whitespace-nowrap"
-          data-testid={`text-log-email-status-${lowerType}`}
-        >
-          {initial.cadence === "OFF" ? "Currently: Off" : `Currently: ${CADENCE_LABELS[initial.cadence]}`}
+        <div className="text-xs text-muted-foreground text-right space-y-0.5">
+          <div
+            className="whitespace-nowrap"
+            data-testid={`text-log-email-status-${lowerType}`}
+          >
+            {initial.cadence === "OFF" ? "Currently: Off" : `Currently: ${CADENCE_LABELS[initial.cadence]}`}
+          </div>
+          {initial.lastSentAt ? (
+            <div
+              className="whitespace-nowrap"
+              data-testid={`text-log-email-last-sent-${lowerType}`}
+            >
+              Last sent: {formatDistanceToNow(new Date(initial.lastSentAt), { addSuffix: true })}
+            </div>
+          ) : initial.cadence !== "OFF" ? (
+            <div
+              className="whitespace-nowrap"
+              data-testid={`text-log-email-last-sent-${lowerType}`}
+            >
+              Hasn't sent yet
+            </div>
+          ) : null}
         </div>
       </div>
 
