@@ -4225,9 +4225,6 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                   if (isOnlySelected && tool !== "TEXT") {
                     const handleHalf = 6 / stageScale;
                     const handleStroke = 1.5 / stageScale;
-                    const commitResize = (newPts: { x: number; y: number }[]) => {
-                      updateMarkupMutation.mutate({ id: markup.id, points: newPts });
-                    };
                     if (tool === "ARROW") {
                       [0, rawPts.length - 1].forEach((idx, i) => {
                         handles.push(
