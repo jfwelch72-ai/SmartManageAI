@@ -20,7 +20,7 @@
  * other org-admin pages); the backend additionally enforces its own
  * role gate.
  */
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
@@ -99,7 +99,20 @@ interface FailureRow {
  * before retrying. The per-schedule attempts cache is also invalidated
  * so any open "View history" popover refreshes to include the attempt
  * row this send just wrote.
+ *
+ * Task #1716 — per-row UX cooldown that mirrors the server's 30s
+ * debounce. After any 2xx response (the server consumed the debounce
+ * regardless of the resulting attempt outcome) we disable the button
+ * with a "Cooldown Ns…" label until the window elapses. The 429
+ * fallback toast is still the source of truth for cross-tab and
+ * cross-admin races — this just keeps a single admin from being
+ * surprised by their own back-to-back clicks. The timestamp lives in a
+ * module-level Map so it survives the row briefly unmounting (e.g. when
+ * the failures list refreshes and the row temporarily drops off).
  */
+const SEND_NOW_COOLDOWN_MS = 30_000;
+const lastResendAt = new Map<string, number>();
+
 function ResendNowButton({
   projectId,
   logType,
@@ -112,6 +125,24 @@ function ResendNowButton({
   rowKey: string;
 }) {
   const { toast } = useToast();
+  const cooldownKey = `${projectId}:${logType}`;
+  const [now, setNow] = useState(() => Date.now());
+
+  const lastAt = lastResendAt.get(cooldownKey);
+  const remainingMs =
+    lastAt !== undefined ? Math.max(0, SEND_NOW_COOLDOWN_MS - (now - lastAt)) : 0;
+  const cooldownSeconds = Math.ceil(remainingMs / 1000);
+  const isCoolingDown = remainingMs > 0;
+
+  // Tick once a second while cooling down so the countdown label
+  // updates and the button re-enables itself when the window elapses.
+  // No interval runs when there's no active cooldown.
+  useEffect(() => {
+    if (!isCoolingDown) return;
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [isCoolingDown]);
+
   const mutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest(
@@ -127,6 +158,13 @@ function ResendNowButton({
       }>;
     },
     onSuccess: (data) => {
+      // The server only reaches this branch after successfully consuming
+      // its own 30s debounce slot, so start the matching client-side
+      // cooldown for every 2xx outcome (SUCCESS / NO_RECIPIENTS /
+      // transport FAILURE / PROJECT_NOT_FOUND).
+      lastResendAt.set(cooldownKey, Date.now());
+      setNow(Date.now());
+
       const { status, error, recipientCount } = data.result;
       if (status === "SUCCESS") {
         toast({
@@ -155,7 +193,10 @@ function ResendNowButton({
     onError: (err) => {
       // The 30s debounce returns 429 with the wait-time message — the
       // shared apiRequest helper surfaces it as `err.message`, so the
-      // admin sees the exact "Please wait N seconds" copy.
+      // admin sees the exact "Please wait N seconds" copy. We don't
+      // start the local cooldown here because the request didn't
+      // consume the server slot (somebody else already did), and the
+      // toast already explains the wait.
       toast({
         title: "Couldn't resend the log",
         description: err instanceof Error ? err.message : "Please try again in a moment.",
@@ -164,23 +205,35 @@ function ResendNowButton({
     },
   });
 
+  const disabled = mutation.isPending || isCoolingDown;
+
   return (
     <Button
       variant="ghost"
       size="sm"
-      disabled={mutation.isPending}
+      disabled={disabled}
       onClick={() => mutation.mutate()}
       data-testid={`button-resend-now-${rowKey}`}
-      title={`Re-run the scheduled send for ${projectName} (${logType}) now.`}
+      title={
+        isCoolingDown
+          ? `Waiting for the ${SEND_NOW_COOLDOWN_MS / 1000}s server-side debounce — ${cooldownSeconds}s remaining.`
+          : `Re-run the scheduled send for ${projectName} (${logType}) now.`
+      }
     >
       {mutation.isPending ? (
         <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
       ) : (
         <Send className="w-3.5 h-3.5 mr-1" />
       )}
-      Resend now
+      {isCoolingDown ? `Cooldown ${cooldownSeconds}s…` : "Resend now"}
     </Button>
   );
+}
+
+// Test-only escape hatch so unit tests can clear the in-memory cooldown
+// map between cases without resorting to module re-imports.
+export function __resetResendCooldownForTests() {
+  lastResendAt.clear();
 }
 
 function FailureStatusBadge({ status, rowKey }: { status: LogEmailAttemptStatus; rowKey: string }) {

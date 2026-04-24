@@ -166,6 +166,47 @@ test.describe("Admin scheduled email failures dashboard (Task #1666)", () => {
     );
   });
 
+  test("disables Resend now with a per-row cooldown countdown after a successful click (Task #1716)", async ({
+    page,
+  }) => {
+    // Stub the send-now endpoint to return a SUCCESS outcome so the
+    // mutation's onSuccess path fires and the cooldown starts.
+    await page.route(
+      new RegExp(
+        `/api/projects/${PROJECT_A_ID}/log-email-schedules/RFI/send-now$`,
+      ),
+      async (route) => {
+        if (route.request().method() !== "POST") return route.fallback();
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            result: { status: "SUCCESS", error: null, recipientCount: 3 },
+          }),
+        });
+      },
+    );
+
+    await page.goto(`${BASE_URL}/admin/log-email-failures`, {
+      waitUntil: "domcontentloaded",
+    });
+
+    const rowAKey = `${PROJECT_A_ID}-RFI`;
+    const button = page.getByTestId(`button-resend-now-${rowAKey}`);
+    await expect(button).toBeVisible({ timeout: 30_000 });
+    await expect(button).toHaveText(/Resend now/);
+    await expect(button).toBeEnabled();
+
+    await button.click();
+
+    // After the success response the button should disable itself and
+    // swap to the "Cooldown Ns…" countdown label. We don't assert the
+    // exact remaining seconds (timing-sensitive) — just that the
+    // countdown copy appears and the button is disabled.
+    await expect(button).toBeDisabled();
+    await expect(button).toHaveText(/Cooldown \d+s…/, { timeout: 5_000 });
+  });
+
   test("renders the empty state when there are no failures", async ({ page }) => {
     // Override the stub from beforeEach to return an empty list.
     await page.route(
