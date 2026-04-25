@@ -24,8 +24,20 @@ import { render, screen, act, cleanup, fireEvent } from "@testing-library/react"
 
 type Listener = (...args: unknown[]) => unknown;
 
+interface SignPartArgs {
+  uploadId: string;
+  partNumber: number;
+  body?: { size: number };
+  key?: string;
+  signal?: AbortSignal;
+}
+
 interface AwsS3PluginOptions {
-  getUploadParameters?: (file: {
+  shouldUseMultipart: (file: { size?: number }) => boolean;
+  limit: number;
+  retryDelays: number[];
+  getChunkSize: (file: { size?: number }) => number;
+  getUploadParameters: (file: {
     id?: string;
     name?: string;
     type?: string;
@@ -36,6 +48,26 @@ interface AwsS3PluginOptions {
     intentId?: string;
     objectKey?: string;
   }>;
+  createMultipartUpload: (file: {
+    type?: string;
+    size?: number;
+  }) => Promise<{ uploadId: string; key: string }>;
+  listParts: (
+    file: unknown,
+    args: { uploadId: string; key: string },
+  ) => Promise<Array<{ PartNumber: number; ETag: string; Size: number }>>;
+  signPart: (
+    file: unknown,
+    args: SignPartArgs,
+  ) => Promise<{ url: string; headers?: Record<string, string> }>;
+  completeMultipartUpload: (
+    file: unknown,
+    args: { uploadId: string; key: string; parts: unknown[] },
+  ) => Promise<{ location: string }>;
+  abortMultipartUpload: (
+    file: unknown,
+    args: { uploadId: string; key: string },
+  ) => Promise<void>;
 }
 
 interface MockUppyInstance {
@@ -45,7 +77,7 @@ interface MockUppyInstance {
   pauseAll: ReturnType<typeof vi.fn>;
   resumeAll: ReturnType<typeof vi.fn>;
   cancelAll: ReturnType<typeof vi.fn>;
-  use: (plugin: unknown, options?: AwsS3PluginOptions) => MockUppyInstance;
+  use: (plugin?: unknown, opts?: AwsS3PluginOptions) => MockUppyInstance;
   on: (event: string, handler: Listener) => MockUppyInstance;
   off: (event: string, handler: Listener) => MockUppyInstance;
   getFiles: () => Array<{ id: string; name: string; type: string; size: number }>;
@@ -66,9 +98,12 @@ const { mockToast, mockUppyInstances, MockUppyClass } = vi.hoisted(() => {
   class MockUppy implements MockUppyInstance {
     handlers = new Map<string, Listener[]>();
     files: Array<{ id: string; name: string; type: string; size: number }> = [];
-    // Captured by `use()` so tests can drive the production-side
-    // `getUploadParameters` callback (which is what populates the internal
-    // file.id → intentId map the post-upload `complete` handler depends on).
+    // Captured by `use()` so tests can both:
+    //   • drive the production-side `getUploadParameters` callback (which
+    //     populates the internal file.id → intentId map the post-upload
+    //     `complete` handler depends on); and
+    //   • directly invoke the multipart sign/list/abort/complete callbacks
+    //     and assert their `apiRequest(method, url, body)` triples.
     awsS3Options: AwsS3PluginOptions | null = null;
     pauseAll = vi.fn(() => this.emit("pause-all"));
     resumeAll = vi.fn(() => this.emit("resume-all"));
@@ -78,12 +113,15 @@ const { mockToast, mockUppyInstances, MockUppyClass } = vi.hoisted(() => {
       instances.push(this);
     }
 
-    use(_plugin: unknown, options?: AwsS3PluginOptions): this {
-      // The component only registers one plugin (AwsS3) with options that
-      // include `getUploadParameters`. Capture it so tests can simulate the
-      // pre-upload fan-out that seeds the intentId map.
-      if (options && typeof options.getUploadParameters === "function") {
-        this.awsS3Options = options;
+    use(_plugin?: unknown, opts?: AwsS3PluginOptions): this {
+      // The component only registers one plugin (AwsS3). Capture its
+      // options so tests can both drive `getUploadParameters` (Task #2014)
+      // and invoke the multipart sign/list/abort/complete callbacks
+      // (Task #2015) directly. We gate on `getUploadParameters` because
+      // it's the canonical signal that this is the AwsS3 options object
+      // (and not some other future plugin's config).
+      if (opts && typeof opts.getUploadParameters === "function") {
+        this.awsS3Options = opts;
       }
       return this;
     }
@@ -182,6 +220,23 @@ vi.mock("@uppy/core", () => ({
 }));
 
 import { ObjectUploader, LARGE_UPLOAD_THRESHOLD } from "@/components/ObjectUploader";
+import { apiRequest } from "@/lib/queryClient";
+
+const mockedApiRequest = vi.mocked(apiRequest);
+
+function jsonResponse(body: unknown): Response {
+  // Minimal Response stand-in; the production callbacks only call `.json()`.
+  return {
+    json: async () => body,
+  } as unknown as Response;
+}
+
+function getAwsS3Options(uppy: MockUppyInstance): AwsS3PluginOptions {
+  if (!uppy.awsS3Options) {
+    throw new Error("AwsS3 plugin options were not captured by the mock Uppy");
+  }
+  return uppy.awsS3Options;
+}
 
 function getLatestUppy(): MockUppyInstance {
   const instance = mockUppyInstances[mockUppyInstances.length - 1];
@@ -226,6 +281,7 @@ function emitProgress(
 beforeEach(() => {
   mockUppyInstances.length = 0;
   mockToast.mockReset();
+  mockedApiRequest.mockReset();
   cleanup();
   // Pin the clock so the throttled progress dispatch is deterministic
   // and so we can advance time precisely with vi.advanceTimersByTime().
@@ -705,5 +761,256 @@ describe("ObjectUploader — post-upload confirm fan-out", () => {
     expect(
       apiRequestMock.mock.calls.filter(([, url]) => url === "/api/objects/confirm"),
     ).toHaveLength(0);
+  });
+});
+
+/**
+ * Task #2015 — Tests for the AwsS3 multipart sign/list/abort/complete
+ * callbacks and the chunk-size policy.
+ *
+ * These callbacks shape the wire contract between the browser and
+ * `/api/objects/multipart/*`. A typo in the URL template, a wrong
+ * query string, or a swapped HTTP method would otherwise only be
+ * caught by manually uploading a multi-GB file. We capture the
+ * options object that `<ObjectUploader>` passes to `uppy.use(AwsS3, …)`
+ * via the mock Uppy class and invoke each callback directly, asserting
+ * the exact `apiRequest(method, url, body)` triple.
+ */
+describe("ObjectUploader — getChunkSize policy", () => {
+  // The four documented thresholds:
+  //   • size > 5 GB        → 64 MB chunks
+  //   • size > 1 GB        → 32 MB chunks
+  //   • size > 256 MB      → 16 MB chunks
+  //   • everything smaller →  8 MB chunks (default)
+  const KB = 1024;
+  const MB = 1024 * KB;
+  const GB = 1024 * MB;
+
+  it("returns 64 MB chunks for files larger than 5 GB", () => {
+    render(<ObjectUploader testId="uploader">Upload</ObjectUploader>);
+    const opts = getAwsS3Options(getLatestUppy());
+
+    expect(opts.getChunkSize({ size: 5 * GB + 1 })).toBe(64 * MB);
+    expect(opts.getChunkSize({ size: 20 * GB })).toBe(64 * MB);
+  });
+
+  it("returns 32 MB chunks for files larger than 1 GB but not exceeding 5 GB", () => {
+    render(<ObjectUploader testId="uploader">Upload</ObjectUploader>);
+    const opts = getAwsS3Options(getLatestUppy());
+
+    expect(opts.getChunkSize({ size: 1 * GB + 1 })).toBe(32 * MB);
+    expect(opts.getChunkSize({ size: 5 * GB })).toBe(32 * MB);
+  });
+
+  it("returns 16 MB chunks for files larger than 256 MB but not exceeding 1 GB", () => {
+    render(<ObjectUploader testId="uploader">Upload</ObjectUploader>);
+    const opts = getAwsS3Options(getLatestUppy());
+
+    expect(opts.getChunkSize({ size: 256 * MB + 1 })).toBe(16 * MB);
+    expect(opts.getChunkSize({ size: 1 * GB })).toBe(16 * MB);
+  });
+
+  it("returns the 8 MB default for files at or below 256 MB (and missing sizes)", () => {
+    render(<ObjectUploader testId="uploader">Upload</ObjectUploader>);
+    const opts = getAwsS3Options(getLatestUppy());
+
+    expect(opts.getChunkSize({ size: 256 * MB })).toBe(8 * MB);
+    expect(opts.getChunkSize({ size: 50 * MB })).toBe(8 * MB);
+    expect(opts.getChunkSize({ size: 0 })).toBe(8 * MB);
+    expect(opts.getChunkSize({})).toBe(8 * MB);
+  });
+});
+
+describe("ObjectUploader — multipart createMultipartUpload callback", () => {
+  it("POSTs to /api/objects/multipart with contentType, fileSize, and the resolved fileType", async () => {
+    render(
+      <ObjectUploader testId="uploader" fileType="LIDAR">
+        Upload
+      </ObjectUploader>,
+    );
+    const opts = getAwsS3Options(getLatestUppy());
+
+    mockedApiRequest.mockResolvedValueOnce(
+      jsonResponse({ uploadId: "uid-123", key: "uploads/abc.zip" }),
+    );
+
+    const result = await opts.createMultipartUpload({
+      type: "application/zip",
+      size: 700 * 1024 * 1024,
+    });
+
+    expect(mockedApiRequest).toHaveBeenCalledTimes(1);
+    expect(mockedApiRequest).toHaveBeenCalledWith("POST", "/api/objects/multipart", {
+      contentType: "application/zip",
+      fileSize: 700 * 1024 * 1024,
+      fileType: "LIDAR",
+    });
+    expect(result).toEqual({ uploadId: "uid-123", key: "uploads/abc.zip" });
+  });
+
+  it("falls back to application/octet-stream + size 0 + DOCUMENT when fields are missing", async () => {
+    render(<ObjectUploader testId="uploader">Upload</ObjectUploader>);
+    const opts = getAwsS3Options(getLatestUppy());
+
+    mockedApiRequest.mockResolvedValueOnce(
+      jsonResponse({ uploadId: "uid-defaults", key: "uploads/k" }),
+    );
+
+    await opts.createMultipartUpload({});
+
+    expect(mockedApiRequest).toHaveBeenCalledWith("POST", "/api/objects/multipart", {
+      contentType: "application/octet-stream",
+      fileSize: 0,
+      fileType: "DOCUMENT",
+    });
+  });
+});
+
+describe("ObjectUploader — multipart listParts callback", () => {
+  it("GETs /api/objects/multipart/{uploadId} with no body and returns the parts array", async () => {
+    render(<ObjectUploader testId="uploader">Upload</ObjectUploader>);
+    const opts = getAwsS3Options(getLatestUppy());
+
+    const fakeParts = [
+      { PartNumber: 1, ETag: "etag-1", Size: 8 * 1024 * 1024 },
+      { PartNumber: 2, ETag: "etag-2", Size: 8 * 1024 * 1024 },
+    ];
+    mockedApiRequest.mockResolvedValueOnce(jsonResponse({ parts: fakeParts }));
+
+    const parts = await opts.listParts(
+      { id: "f1" },
+      { uploadId: "uid-xyz", key: "uploads/abc" },
+    );
+
+    expect(mockedApiRequest).toHaveBeenCalledTimes(1);
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "/api/objects/multipart/uid-xyz",
+      undefined,
+    );
+    expect(parts).toEqual(fakeParts);
+  });
+});
+
+describe("ObjectUploader — multipart signPart callback", () => {
+  it("GETs /api/objects/multipart/{uploadId}/{partNumber}?chunkSize={size} when a body is supplied", async () => {
+    render(<ObjectUploader testId="uploader">Upload</ObjectUploader>);
+    const opts = getAwsS3Options(getLatestUppy());
+
+    mockedApiRequest.mockResolvedValueOnce(
+      jsonResponse({
+        url: "https://s3.example/sign?part=7",
+        headers: { "x-amz-content-sha256": "UNSIGNED-PAYLOAD" },
+      }),
+    );
+
+    const result = await opts.signPart(
+      { id: "f1" },
+      { uploadId: "uid-1", partNumber: 7, body: { size: 9_437_184 } },
+    );
+
+    expect(mockedApiRequest).toHaveBeenCalledTimes(1);
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "/api/objects/multipart/uid-1/7?chunkSize=9437184",
+      undefined,
+    );
+    expect(result).toEqual({
+      url: "https://s3.example/sign?part=7",
+      headers: { "x-amz-content-sha256": "UNSIGNED-PAYLOAD" },
+    });
+  });
+
+  it("omits the ?chunkSize query string entirely when no body is provided", async () => {
+    render(<ObjectUploader testId="uploader">Upload</ObjectUploader>);
+    const opts = getAwsS3Options(getLatestUppy());
+
+    mockedApiRequest.mockResolvedValueOnce(
+      jsonResponse({ url: "https://s3.example/sign?part=2" }),
+    );
+
+    const result = await opts.signPart(
+      { id: "f1" },
+      { uploadId: "uid-2", partNumber: 2 },
+    );
+
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "GET",
+      "/api/objects/multipart/uid-2/2",
+      undefined,
+    );
+    // Headers default to undefined when the server omits them.
+    expect(result).toEqual({
+      url: "https://s3.example/sign?part=2",
+      headers: undefined,
+    });
+  });
+});
+
+describe("ObjectUploader — multipart completeMultipartUpload callback", () => {
+  it("POSTs to /api/objects/multipart/{uploadId}/complete with an empty body and returns the location", async () => {
+    render(<ObjectUploader testId="uploader">Upload</ObjectUploader>);
+    const opts = getAwsS3Options(getLatestUppy());
+
+    mockedApiRequest.mockResolvedValueOnce(
+      jsonResponse({ location: "https://s3.example/uploads/abc.zip" }),
+    );
+
+    const result = await opts.completeMultipartUpload(
+      { id: "f1" },
+      { uploadId: "uid-99", key: "uploads/abc.zip", parts: [] },
+    );
+
+    expect(mockedApiRequest).toHaveBeenCalledTimes(1);
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "POST",
+      "/api/objects/multipart/uid-99/complete",
+      {},
+    );
+    expect(result).toEqual({ location: "https://s3.example/uploads/abc.zip" });
+  });
+});
+
+describe("ObjectUploader — multipart abortMultipartUpload callback", () => {
+  it("DELETEs /api/objects/multipart/{uploadId} with no body on the happy path", async () => {
+    render(<ObjectUploader testId="uploader">Upload</ObjectUploader>);
+    const opts = getAwsS3Options(getLatestUppy());
+
+    mockedApiRequest.mockResolvedValueOnce(jsonResponse({ ok: true }));
+
+    await opts.abortMultipartUpload(
+      { id: "f1" },
+      { uploadId: "uid-abort", key: "uploads/abc.zip" },
+    );
+
+    expect(mockedApiRequest).toHaveBeenCalledTimes(1);
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "DELETE",
+      "/api/objects/multipart/uid-abort",
+      undefined,
+    );
+  });
+
+  it("swallows errors from apiRequest so a failed abort never surfaces to Uppy", async () => {
+    render(<ObjectUploader testId="uploader">Upload</ObjectUploader>);
+    const opts = getAwsS3Options(getLatestUppy());
+
+    mockedApiRequest.mockRejectedValueOnce(new Error("503 Service Unavailable"));
+
+    // Critical: the production callback chains `.catch(() => {})`, so even
+    // a failing DELETE must resolve without throwing — Uppy treats abort
+    // as best-effort cleanup.
+    await expect(
+      opts.abortMultipartUpload(
+        { id: "f1" },
+        { uploadId: "uid-broken", key: "uploads/abc.zip" },
+      ),
+    ).resolves.toBeUndefined();
+
+    expect(mockedApiRequest).toHaveBeenCalledWith(
+      "DELETE",
+      "/api/objects/multipart/uid-broken",
+      undefined,
+    );
   });
 });
