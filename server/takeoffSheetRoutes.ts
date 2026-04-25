@@ -9,6 +9,7 @@ import { logAudit, logCreate } from "./auditLogger";
 import { sanitizeShortText } from "./sanitization";
 import { verifyOrgAccess } from "./orgFilter";
 import { verifySheetAccess, isMeasurementLocked } from "./takeoffHelpers";
+import { getPdfPageCountFromGcs } from "./utils/pdfPageCount";
 
 const router = Router();
 
@@ -54,7 +55,6 @@ router.post("/api/bids/:bidId/takeoff/import-plan", requireAuth, requireRole("AD
 
     let pageCount = 1;
     const isPdf = document.mimeType?.includes("pdf") || document.fileName?.toLowerCase().endsWith(".pdf");
-    const PDF_PAGE_COUNT_MAX_BYTES = 500 * 1024 * 1024;
 
     if (isPdf && document.objectKey) {
       try {
@@ -63,16 +63,12 @@ router.post("/api/bids/:bidId/takeoff/import-plan", requireAuth, requireRole("AD
         const objectFile = await objectStorageService.getObjectEntityFile(document.objectKey);
         const [metadata] = await objectFile.getMetadata();
         const fileSize = parseInt(metadata.size as string) || 0;
-        if (fileSize > PDF_PAGE_COUNT_MAX_BYTES) {
-          logError("Skipping PDF page count for large file", { size: fileSize, fileName: document.fileName });
-          pageCount = 1;
-        } else {
-          const [pdfBuffer] = await objectFile.download();
-          const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-          const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer), useSystemFonts: true });
-          const pdfDoc = await loadingTask.promise;
-          pageCount = pdfDoc.numPages;
-        }
+        const detected = await getPdfPageCountFromGcs(objectFile, {
+          fileSize,
+          fileName: document.fileName,
+          loggerContext: { route: "bids/import-plan", bidId: bid.id, documentId },
+        });
+        if (detected && detected > 0) pageCount = detected;
       } catch (error) {
         logError("Error processing PDF (falling back to single page):", {}, error instanceof Error ? error : new Error(String(error)));
         pageCount = 1;
@@ -133,11 +129,14 @@ router.post("/api/bids/:bidId/takeoff/plans", requireAuth, requireRole("ADMIN", 
           }
         }
         if (gcsFile) {
-          const [pdfBuffer] = await gcsFile.download();
-          const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-          const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer), useSystemFonts: true });
-          const pdfDoc = await loadingTask.promise;
-          pageCount = pdfDoc.numPages;
+          const [metadata] = await gcsFile.getMetadata();
+          const fileSize = parseInt(metadata.size as string) || 0;
+          const detected = await getPdfPageCountFromGcs(gcsFile, {
+            fileSize,
+            fileName,
+            loggerContext: { route: "bids/takeoff/plans", bidId: bid.id },
+          });
+          if (detected && detected > 0) pageCount = detected;
         }
       } catch (error) {
         logError("Error reading PDF page count for direct upload:", {}, error instanceof Error ? error : new Error(String(error)));
@@ -747,31 +746,19 @@ router.post("/api/projects/:projectId/takeoff/import-plan", requireAuth, async (
       return;
     }
 
-    const PDF_PAGE_COUNT_MAX_BYTES = 500 * 1024 * 1024;
     try {
       const { ObjectStorageService } = await import("./objectStorage");
       const objectStorageService = new ObjectStorageService();
       const objectFile = await objectStorageService.getObjectEntityFile(document.objectKey);
 
-      // Check file size first; skip parsing for very large files
       const [metadata] = await objectFile.getMetadata();
       const fileSize = parseInt(metadata.size as string) || 0;
-      if (fileSize > PDF_PAGE_COUNT_MAX_BYTES) {
-        logError("Skipping PDF page count for large file", { size: fileSize, fileName: document.fileName });
-        pageCount = 1;
-      } else {
-        // Download PDF to buffer using GCS File.download() method
-        const [pdfBuffer] = await objectFile.download();
-
-        // Load PDF with pdfjs-dist
-        const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-        const loadingTask = pdfjsLib.getDocument({
-          data: new Uint8Array(pdfBuffer),
-          useSystemFonts: true,
-        });
-        const pdfDoc = await loadingTask.promise;
-        pageCount = pdfDoc.numPages;
-      }
+      const detected = await getPdfPageCountFromGcs(objectFile, {
+        fileSize,
+        fileName: document.fileName,
+        loggerContext: { route: "projects/import-plan", projectId, documentId },
+      });
+      if (detected && detected > 0) pageCount = detected;
     } catch (error) {
       logError("Error processing PDF (falling back to single page):", {}, error instanceof Error ? error : new Error(String(error)));
       pageCount = 1;
@@ -857,7 +844,6 @@ router.post("/api/projects/:projectId/takeoff/plans", requireAuth, requireRole("
 
     let pageCount = 1;
     const isPdf = fileName?.toLowerCase().endsWith(".pdf");
-    const PDF_PAGE_COUNT_MAX_BYTES = 500 * 1024 * 1024;
     if (isPdf) {
       try {
         const { ObjectStorageService, objectStorageClient } = await import("./objectStorage");
@@ -882,15 +868,12 @@ router.post("/api/projects/:projectId/takeoff/plans", requireAuth, requireRole("
         if (gcsFile) {
           const [metadata] = await gcsFile.getMetadata();
           const fileSize = parseInt(metadata.size as string) || 0;
-          if (fileSize > PDF_PAGE_COUNT_MAX_BYTES) {
-            logError("Skipping PDF page count for large file", { size: fileSize, fileName });
-          } else {
-            const [pdfBuffer] = await gcsFile.download();
-            const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-            const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer), useSystemFonts: true });
-            const pdfDoc = await loadingTask.promise;
-            pageCount = pdfDoc.numPages;
-          }
+          const detected = await getPdfPageCountFromGcs(gcsFile, {
+            fileSize,
+            fileName,
+            loggerContext: { route: "projects/takeoff/plans", projectId },
+          });
+          if (detected && detected > 0) pageCount = detected;
         }
       } catch (error) {
         logError("Error reading PDF page count for direct upload:", {}, error instanceof Error ? error : new Error(String(error)));
