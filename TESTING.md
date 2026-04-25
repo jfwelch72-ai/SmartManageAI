@@ -68,11 +68,36 @@ The bundled WebKit needs a one-time fix for two reasons:
    which clobbers the nix-store paths in `$REPLIT_LD_LIBRARY_PATH` where
    `libjpeg.so.8`, `libpsl.so.5`, and `libnghttp2.so.14` live (see the
    `libjpeg8`, `libpsl`, and `nghttp2` entries near the top of
-   `replit.nix`).
+   `replit.nix` — last verified still required on webkit-2272 /
+   Playwright 1.59.1, see Task #1908).
 2. Playwright's pre-launch `validateDependenciesLinux` runs `ldd` against
    the binary *before* the wrapper executes, so it bails with a misleading
    "Host system is missing dependencies" error even though the libs are
    reachable at runtime.
+
+### Re-checking after a Playwright bump (Task #1908)
+
+After `@playwright/test` is upgraded and a new `webkit-NNNN` is laid down
+under `$XDG_CACHE_HOME/ms-playwright`, run this to see which (if any) of
+the three libs are still missing from the bundled WebKit:
+
+```bash
+for d in minibrowser-gtk minibrowser-wpe; do
+  W="$XDG_CACHE_HOME/ms-playwright/$(ls "$XDG_CACHE_HOME/ms-playwright" \
+    | grep ^webkit- | sort -r | head -n1)/$d"
+  echo "=== $d ==="
+  LD_LIBRARY_PATH="$W/lib:$W/sys/lib" \
+    env -u REPLIT_LD_LIBRARY_PATH ldd "$W/bin/MiniBrowser" \
+    | grep -E 'libjpeg\.so\.8|libpsl\.so\.5|libnghttp2\.so\.14' || echo '(none)'
+done
+```
+
+If any of the three libs no longer appear as "not found" — Playwright
+has either bundled them inside the WebKit zip or switched to a
+statically-linked MiniBrowser — drop the corresponding `replit.nix`
+entry, then run `bash scripts/setup-playwright-webkit.sh` and
+`npx playwright test --project=webkit e2e/takeoff-markup-undo.spec.ts`
+to confirm the WebKit project still launches end-to-end.
 
 ## One-shot setup (per workspace)
 

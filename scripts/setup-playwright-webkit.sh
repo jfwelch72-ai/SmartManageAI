@@ -15,6 +15,18 @@
 # Playwright zip *overwrites* LD_LIBRARY_PATH instead of appending to it, so
 # the runtime loader never sees those nix-store paths.
 #
+# Task #1908 — Re-verify after every Playwright/WebKit bump that those three
+# libs are still missing from the bundled WebKit, and drop any entry from
+# `replit.nix` that the new bundle resolves on its own. Recipe:
+#   for d in minibrowser-gtk minibrowser-wpe; do
+#     W="$XDG_CACHE_HOME/ms-playwright/$(ls "$XDG_CACHE_HOME/ms-playwright" | grep ^webkit- | sort -r | head -n1)/$d"
+#     LD_LIBRARY_PATH="$W/lib:$W/sys/lib" \
+#       env -u REPLIT_LD_LIBRARY_PATH ldd "$W/bin/MiniBrowser" \
+#       | grep -E 'libjpeg\.so\.8|libpsl\.so\.5|libnghttp2\.so\.14'
+#   done
+# Last verified missing on webkit-2272 (Playwright 1.59.1) — all three
+# `replit.nix` entries are still required.
+#
 # This script:
 #   1. Installs Playwright's WebKit binary if it isn't already present
 #      (PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1 because the validator

@@ -8,15 +8,16 @@ const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
 // Task #1866 — In the Replit dev container, Playwright's bundled WebKit
 // links against `libjpeg.so.8`, `libpsl.so.5`, and `libnghttp2.so.14`,
 // which live under `$REPLIT_LD_LIBRARY_PATH` (see `replit.nix` for the
-// `libjpeg8`, `libpsl`, and `nghttp2` deps). The `MiniBrowser` shell
-// wrapper that ships in the playwright-webkit zip is patched by
-// `scripts/setup-playwright-webkit.sh` so it appends those nix-store
-// paths at launch — but Playwright's pre-launch host-requirements
-// validator (`validateDependenciesLinux`) inspects the binary with
-// `ldd` *before* the wrapper runs and bails with a "Host system is
-// missing dependencies" error. Skipping that validator on Replit is
-// safe because the patched wrapper resolves every required lib at
-// runtime; on CI (Ubuntu) the libs are already in the standard
+// `libjpeg8`, `libpsl`, and `nghttp2` deps — last verified still
+// required on webkit-2272 / Playwright 1.59.1 per Task #1908). The
+// `MiniBrowser` shell wrapper that ships in the playwright-webkit zip
+// is patched by `scripts/setup-playwright-webkit.sh` so it appends
+// those nix-store paths at launch — but Playwright's pre-launch
+// host-requirements validator (`validateDependenciesLinux`) inspects
+// the binary with `ldd` *before* the wrapper runs and bails with a
+// "Host system is missing dependencies" error. Skipping that validator
+// on Replit is safe because the patched wrapper resolves every required
+// lib at runtime; on CI (Ubuntu) the libs are already in the standard
 // `/usr/lib/x86_64-linux-gnu` paths so the validator passes regardless.
 //
 // Task #1890 — `globalSetup` (below) re-applies the MiniBrowser patch
