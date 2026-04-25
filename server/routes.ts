@@ -783,12 +783,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
     requireAuth,
     requireRole("SUPER_ADMIN"),
     async (_req: AuthRequest, res: Response) => {
-      const { getPoolStats, getRecentPoolExhaustedEvents, POOL_EXHAUSTED_BUFFER_SIZE } =
-        await import("./utils/poolHealth");
+      const {
+        getPoolStats,
+        getRecentPoolExhaustedEvents,
+        POOL_EXHAUSTED_BUFFER_SIZE,
+        WAITING_SATURATION_SAMPLES,
+        POOL_HEALTH_JOB,
+      } = await import("./utils/poolHealth");
       res.json({
         stats: getPoolStats(),
         events: getRecentPoolExhaustedEvents(),
         bufferSize: POOL_EXHAUSTED_BUFFER_SIZE,
+        // Task #2009 — surface the per-job synthetic name and the
+        // saturation-sample threshold so the Job Metrics dashboard can
+        // explain in tooltips what "waitingSaturated" actually means
+        // (and which env var operators can tune to change the cadence).
+        job: POOL_HEALTH_JOB,
+        waitingSaturationSamples: WAITING_SATURATION_SAMPLES,
       });
     },
   );

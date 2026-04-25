@@ -29,6 +29,13 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import {
+  Tooltip as UITooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Info } from "lucide-react";
 
 interface JobMetricSample {
   timestamp: number;
@@ -179,7 +186,20 @@ function counterKeys(job: JobMetricsResponse): string[] {
   return Array.from(set).sort();
 }
 
-function JobCard({ job, range, activeAlerts }: { job: JobMetricsResponse; range: RangeKey; activeAlerts: number }) {
+function JobCard({
+  job,
+  range,
+  activeAlerts,
+  waitingSaturationSamples,
+}: {
+  job: JobMetricsResponse;
+  range: RangeKey;
+  activeAlerts: number;
+  // Task #2009 — Only meaningful for the `pool_health` job. Forwarded
+  // from `/api/admin/metrics/pool` so the per-counter tooltip can name
+  // the configured threshold.
+  waitingSaturationSamples?: number;
+}) {
   const counters = useMemo(() => counterKeys(job), [job]);
   const chartData = useMemo(() => bucketSamples(job.samples, counters, range), [job, counters, range]);
   const sampleCount = job.samples.length;
@@ -191,6 +211,13 @@ function JobCard({ job, range, activeAlerts }: { job: JobMetricsResponse; range:
   // distinguish "occasionally slow" from "chronically over-budget"
   // without scanning the per-counter grid.
   const skippedTotal = job.totals.skipped ?? 0;
+  // Task #2009 — `pool_health` is a synthetic job published by the
+  // pool-starvation sampler. Surface its rolling counts as header
+  // badges so operators see "exhausted" / "waitingSaturated" episodes
+  // at a glance without scanning the per-counter grid.
+  const isPoolHealth = job.job === POOL_HEALTH_JOB;
+  const poolExhaustedTotal = isPoolHealth ? job.totals.exhausted ?? 0 : 0;
+  const poolWaitingSaturatedTotal = isPoolHealth ? job.totals.waitingSaturated ?? 0 : 0;
 
   return (
     <Card data-testid={`card-job-${job.job}`} className={activeAlerts > 0 ? "border-destructive" : undefined}>
@@ -217,13 +244,43 @@ function JobCard({ job, range, activeAlerts }: { job: JobMetricsResponse; range:
                   <AlertTriangle className="h-3 w-3" /> {skippedTotal} skipped
                 </Badge>
               )}
+              {isPoolHealth && poolExhaustedTotal > 0 && (
+                <Badge
+                  variant="destructive"
+                  className="gap-1"
+                  title="pg.Pool connection-acquisition timeouts observed in the visible window."
+                  data-testid={`badge-pool-health-exhausted-${job.job}`}
+                >
+                  <AlertTriangle className="h-3 w-3" /> {poolExhaustedTotal} exhausted
+                </Badge>
+              )}
+              {isPoolHealth && poolWaitingSaturatedTotal > 0 && (
+                <Badge
+                  variant="outline"
+                  className="gap-1 border-amber-500 text-amber-700 dark:text-amber-300"
+                  title="Saturation episodes — sustained `waiting > 0` for several consecutive sampler ticks."
+                  data-testid={`badge-pool-health-saturated-${job.job}`}
+                >
+                  <AlertTriangle className="h-3 w-3" /> {poolWaitingSaturatedTotal} saturated
+                </Badge>
+              )}
             </CardTitle>
             <CardDescription>
               Window: {formatDuration(job.windowMs)} · Samples:{" "}
-              <span data-testid={`text-sample-count-${job.job}`}>{sampleCount}</span> · Last tick:{" "}
+              <span data-testid={`text-sample-count-${job.job}`}>{sampleCount}</span> ·{" "}
+              {isPoolHealth ? "Last sampler heartbeat" : "Last tick"}:{" "}
               <span data-testid={`text-last-tick-${job.job}`}>
                 {formatRelative(job.latest?.timestamp ?? null)}
               </span>
+              {isPoolHealth && (
+                <span data-testid={`text-pool-health-saturation-config-${job.job}`}>
+                  {" · Saturated after "}
+                  {typeof waitingSaturationSamples === "number" && waitingSaturationSamples > 0
+                    ? waitingSaturationSamples
+                    : "N"}
+                  {" consecutive `waiting > 0` samples (POOL_HEALTH_WAITING_SATURATION_SAMPLES)"}
+                </span>
+              )}
             </CardDescription>
           </div>
         </div>
@@ -239,31 +296,88 @@ function JobCard({ job, range, activeAlerts }: { job: JobMetricsResponse; range:
         ) : (
           <>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 text-sm">
-              {counters.map((c, idx) => (
-                <div key={c} data-testid={`stat-${job.job}-${c}`}>
+              {counters.map((c, idx) => {
+                const meta = getCounterMeta(job.job, c, waitingSaturationSamples);
+                const labelNode = (
                   <div className="flex items-center gap-2 text-muted-foreground">
                     <span
                       className="inline-block h-2 w-2 rounded-full"
                       style={{ backgroundColor: COUNTER_PALETTE[idx % COUNTER_PALETTE.length] }}
                     />
-                    {c}
+                    <span>{c}</span>
+                    {meta?.isGauge && (
+                      <span
+                        className="text-[10px] uppercase tracking-wide text-muted-foreground/80"
+                        data-testid={`text-counter-kind-${job.job}-${c}`}
+                      >
+                        gauge
+                      </span>
+                    )}
+                    {meta?.tooltip && (
+                      <UITooltip>
+                        <TooltipTrigger asChild>
+                          <button
+                            type="button"
+                            className="inline-flex h-4 w-4 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                            aria-label={`About ${c}`}
+                            data-testid={`tooltip-trigger-counter-${job.job}-${c}`}
+                          >
+                            <Info className="h-3 w-3" />
+                          </button>
+                        </TooltipTrigger>
+                        <TooltipContent
+                          side="top"
+                          className="max-w-xs text-xs leading-relaxed"
+                          data-testid={`tooltip-content-counter-${job.job}-${c}`}
+                        >
+                          {meta.tooltip}
+                        </TooltipContent>
+                      </UITooltip>
+                    )}
                   </div>
-                  <div
-                    className="font-medium text-lg"
-                    data-testid={`text-total-${job.job}-${c}`}
-                  >
-                    {job.totals[c] ?? 0}
+                );
+                return (
+                  <div key={c} data-testid={`stat-${job.job}-${c}`}>
+                    {labelNode}
+                    {meta?.isGauge ? (
+                      <>
+                        <div
+                          className="font-medium text-lg text-muted-foreground"
+                          data-testid={`text-total-${job.job}-${c}`}
+                          title="Window totals are not meaningful for gauge counters."
+                        >
+                          —
+                        </div>
+                        {job.latest && (
+                          <div
+                            className="text-xs text-muted-foreground"
+                            data-testid={`text-latest-${job.job}-${c}`}
+                          >
+                            Last sample: {job.latest.counters[c] ?? 0}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <div
+                          className="font-medium text-lg"
+                          data-testid={`text-total-${job.job}-${c}`}
+                        >
+                          {job.totals[c] ?? 0}
+                        </div>
+                        {job.latest && (
+                          <div
+                            className="text-xs text-muted-foreground"
+                            data-testid={`text-latest-${job.job}-${c}`}
+                          >
+                            Last tick: {job.latest.counters[c] ?? 0}
+                          </div>
+                        )}
+                      </>
+                    )}
                   </div>
-                  {job.latest && (
-                    <div
-                      className="text-xs text-muted-foreground"
-                      data-testid={`text-latest-${job.job}-${c}`}
-                    >
-                      Last tick: {job.latest.counters[c] ?? 0}
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
 
             {sampleCount === 0 ? (
@@ -392,6 +506,74 @@ interface PoolHealthResponse {
   stats: PoolStats;
   events: PoolExhaustedEvent[];
   bufferSize: number;
+  // Task #2009 — populated by `/api/admin/metrics/pool` so the
+  // `pool_health` JobCard can name the env var operators tweak to
+  // change how many consecutive `waiting > 0` samples count as
+  // "saturated" before publishing the next `waitingSaturated` event.
+  job?: string;
+  waitingSaturationSamples?: number;
+}
+
+// Task #2009 — Synthetic job name published by `samplePoolHealth` /
+// `recordPoolExhaustedEvent` in `server/utils/poolHealth.ts`. Lives
+// here as a constant so the dashboard can scope its specialised
+// tooltips to just that job-card without lifting strings around.
+const POOL_HEALTH_JOB = "pool_health";
+
+interface CounterMeta {
+  // Tooltip text shown next to the counter label and on the per-tick
+  // value. `null` means "no extra explanation needed".
+  tooltip: string | null;
+  // When true, the counter is a *gauge* (instantaneous reading stamped
+  // on each sample) rather than a counter that accumulates. Summing it
+  // across the window is meaningless, so the JobCard hides the rolled-up
+  // total and labels the value as a gauge.
+  isGauge?: boolean;
+}
+
+// Task #2009 — Per-counter explainers for the synthetic `pool_health`
+// job-card. Other jobs continue to render their counters with the
+// default label/tooltip-less treatment.
+function getCounterMeta(
+  job: string,
+  counter: string,
+  waitingSaturationSamples: number | undefined,
+): CounterMeta | undefined {
+  if (job !== POOL_HEALTH_JOB) return undefined;
+  const samplesLabel =
+    typeof waitingSaturationSamples === "number" && waitingSaturationSamples > 0
+      ? `${waitingSaturationSamples} consecutive sampler tick${waitingSaturationSamples === 1 ? "" : "s"}`
+      : "several consecutive sampler ticks";
+  switch (counter) {
+    case "exhausted":
+      return {
+        tooltip:
+          "Each `pool_exhausted` event observed by the job runner — a connection-acquisition timeout from the shared pg.Pool. The per-job alert default pages Super Admins as soon as the trailing-hour count clears POOL_HEALTH_EXHAUSTED_FLOOR_PER_HOUR.",
+      };
+    case "waitingSaturated":
+      return {
+        tooltip: `Published when waiting > 0 for ${samplesLabel}. Configurable via POOL_HEALTH_WAITING_SATURATION_SAMPLES (default 3 ≈ ~3 minutes at the 1-minute sampler cadence). Each saturation episode publishes one event; the alert engine's dedupe window suppresses repeats.`,
+      };
+    case "sampled":
+      return {
+        tooltip:
+          "Heartbeat — exactly 1 per `samplePoolHealth` tick (every minute). The per-job stall rule pages if no heartbeat lands for an hour, so the dashboard knows when the sampler itself stops reporting.",
+      };
+    case "waiting":
+      return {
+        tooltip:
+          "Live gauge stamped on each sample (pg.Pool.waitingCount at sample time). Window totals sum the gauges and are not meaningful — see the Postgres pool health panel below for the current value.",
+        isGauge: true,
+      };
+    case "active":
+      return {
+        tooltip:
+          "Live gauge stamped on each sample (active = totalCount − idleCount at sample time). Window totals sum the gauges and are not meaningful — see the Postgres pool health panel below for the current value.",
+        isGauge: true,
+      };
+    default:
+      return undefined;
+  }
 }
 
 function formatTimestampFull(ts: number): string {
@@ -1674,6 +1856,11 @@ export default function JobMetricsDashboard() {
 
   const jobs = (data?.jobs ?? []).slice().sort((a, b) => a.job.localeCompare(b.job));
   const activeByJob = alertsData?.activeByJob ?? {};
+  // Task #2009 — Forward the configured saturation-samples threshold
+  // to JobCard so the per-counter tooltip on `pool_health` /
+  // `waitingSaturated` can name the live value rather than a hard-coded
+  // "default 3" placeholder.
+  const waitingSaturationSamples = poolData?.waitingSaturationSamples;
 
   const rangeDescription =
     range === "24h"
@@ -1683,6 +1870,7 @@ export default function JobMetricsDashboard() {
       : "Last 30 days (daily buckets)";
 
   return (
+    <TooltipProvider delayDuration={150}>
     <div className="container mx-auto p-4 sm:p-6 space-y-6">
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <div className="flex items-center gap-3">
@@ -1764,7 +1952,13 @@ export default function JobMetricsDashboard() {
       ) : (
         <div className="grid gap-4 md:grid-cols-2" data-testid="grid-jobs">
           {jobs.map((job) => (
-            <JobCard key={job.job} job={job} range={range} activeAlerts={activeByJob[job.job] ?? 0} />
+            <JobCard
+              key={job.job}
+              job={job}
+              range={range}
+              activeAlerts={activeByJob[job.job] ?? 0}
+              waitingSaturationSamples={waitingSaturationSamples}
+            />
           ))}
         </div>
       )}
@@ -1784,5 +1978,6 @@ export default function JobMetricsDashboard() {
 
       <DigestsPanel data={digestsData} />
     </div>
+    </TooltipProvider>
   );
 }
