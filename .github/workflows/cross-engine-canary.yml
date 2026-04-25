@@ -1,0 +1,177 @@
+name: Cross-Engine Canary (Playwright)
+
+# Task #1977 — A small "canary" subset of the Konva/Radix-heavy Playwright
+# specs is now exercised against Chromium, Firefox, and WebKit so engine-
+# specific regressions surface before users see them. The broader
+# `e2e-canvas-firefox-webkit` job in `ci.yml` (added in Task #1886, sharded in
+# Task #1896) already covers a wider 6-spec slice on Firefox + WebKit on
+# every PR; this workflow narrows the slice to the three specs that have
+# historically silently regressed between manual sweeps and adds Chromium so
+# all three engines run the same canary together. Two trigger modes:
+#
+#   * `pull_request` with `paths:` — only fires when the changed files touch
+#     `e2e/**` or `client/src/components/takeoff/**`, so most PRs do not pay
+#     the cost of three browser installs but a PR that does touch the
+#     canvas/takeoff surface gets a green/red signal on the engines that
+#     have historically broken in silence.
+#
+#   * `schedule:` — a nightly cron run catches engine drift on `main` even
+#     when no PR happens to touch the listed paths (e.g. an upstream
+#     Playwright/WebKit version bump or a Konva regression triggered by a
+#     change to a parent component). Cron is in UTC.
+#
+#   * `workflow_dispatch` — manual button so a maintainer can re-run the
+#     canary on demand (e.g. after merging an unrelated infra change that
+#     could affect browser launch).
+#
+# When any matrix leg fails, the `Surface failing engine in job summary`
+# step writes a clearly-labeled block to `$GITHUB_STEP_SUMMARY` so a
+# triager scanning the run page sees *which* engine broke without having
+# to drill into per-job logs first.
+
+on:
+  pull_request:
+    branches: [main, master]
+    paths:
+      - 'e2e/**'
+      - 'client/src/components/takeoff/**'
+      # Re-run the canary if the workflow itself or the Playwright config
+      # changes — both can change what the canary actually exercises.
+      - '.github/workflows/cross-engine-canary.yml'
+      - 'playwright.config.ts'
+      - 'playwright.global-setup.ts'
+  schedule:
+    # 07:30 UTC every day (~midnight Pacific) so a fresh signal is waiting
+    # at the start of the US workday.
+    - cron: '30 7 * * *'
+  workflow_dispatch:
+
+jobs:
+  cross-engine-canary:
+    name: Cross-Engine Canary (${{ matrix.project }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    strategy:
+      # Don't cancel the other engines when one fails — a triager needs to
+      # know whether a regression is engine-specific or affects all three,
+      # which requires every leg to finish.
+      fail-fast: false
+      matrix:
+        project: [chromium, firefox, webkit]
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: development
+      ENABLE_DEV_SEED: "true"
+      PORT: "5000"
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/app_test
+      SESSION_SECRET: ci-session-secret-do-not-use-in-prod
+      JWT_SECRET: ci-jwt-secret-do-not-use-in-prod
+      CI: "true"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright ${{ matrix.project }} with system deps
+        # Each matrix leg only needs its own engine binary — installing all
+        # three would waste ~300MB of download/extract per runner and
+        # nothing on this leg uses the other engines.
+        run: npx playwright install --with-deps ${{ matrix.project }}
+
+      - name: Push database schema
+        run: npm run db:push -- --force
+
+      - name: Run cross-engine canary specs (${{ matrix.project }})
+        # `--retries=1` matches the `e2e-canvas-firefox-webkit` policy added
+        # in Task #1910: a real engine regression still fails the job, but
+        # a one-off Konva pointer-timing flake doesn't wake the team.
+        # Listing the specs explicitly (instead of relying on a `testMatch`
+        # tag) keeps the canary subset visible at the call site so anyone
+        # adjusting the list reads the same file.
+        run: |
+          npx playwright test \
+            --project=${{ matrix.project }} \
+            --retries=1 \
+            e2e/takeoff-markup-undo.spec.ts \
+            e2e/plan-markup-group-drag.spec.ts \
+            e2e/takeoff-markup-drawing.spec.ts
+
+      - name: Surface failing engine in job summary
+        # `if: failure()` only runs when an earlier step in this leg failed.
+        # Writing to `$GITHUB_STEP_SUMMARY` puts a clearly-labeled block on
+        # the run page so a triager sees which engine broke without
+        # opening per-job logs. Each matrix leg writes its own summary, so
+        # if (e.g.) only WebKit fails the run page shows one red summary
+        # naming WebKit and two green legs for Chromium/Firefox.
+        if: failure()
+        run: |
+          {
+            echo "## Cross-Engine Canary failed on **${{ matrix.project }}**"
+            echo ""
+            echo "Engine: \`${{ matrix.project }}\`"
+            echo ""
+            echo "Specs exercised by this leg:"
+            echo ""
+            echo "- \`e2e/takeoff-markup-undo.spec.ts\`"
+            echo "- \`e2e/plan-markup-group-drag.spec.ts\`"
+            echo "- \`e2e/takeoff-markup-drawing.spec.ts\`"
+            echo ""
+            echo "Open the **playwright-report-canary-${{ matrix.project }}** artifact at the bottom of this run for the full HTML report (traces, screenshots, and videos for the failed assertions are attached)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          # Per-engine artifact name so all three reports coexist on the
+          # run page and a triager can open just the failing engine's
+          # report without sifting through the others.
+          name: playwright-report-canary-${{ matrix.project }}
+          path: playwright-report/
+          retention-days: 14
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results-canary-${{ matrix.project }}
+          path: test-results/
+          retention-days: 14
+
+      # Task #1909 pattern — only post Slack on scheduled (nightly cron)
+      # failures; PR failures are already visible to the PR author via the
+      # GitHub UI, and this workflow has no `push` trigger so a push branch
+      # is intentionally absent from the gate. The composite no-ops cleanly
+      # when `SLACK_WEBHOOK_URL` is unset (forks, pre-secret-config repos).
+      - name: Notify Slack on Cross-Engine Canary failure (nightly only)
+        if: failure() && github.event_name == 'schedule'
+        uses: ./.github/actions/notify-slack-on-failure
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          job-name: Cross-Engine Canary (${{ matrix.project }})
+          artifact-name: playwright-report-canary-${{ matrix.project }}
