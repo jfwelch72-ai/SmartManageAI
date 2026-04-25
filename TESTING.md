@@ -60,7 +60,50 @@ DROP DATABASE heliumdb_test;
 
 # Running Playwright (`npm run test:e2e`) on Replit
 
-Chromium and Firefox work out of the box on the Replit dev container.
+Chromium ships with the workspace and works as soon as `replit.nix` is
+applied. **Firefox** and **WebKit** are not downloaded by default — both
+need a one-time install to land their binaries under
+`$XDG_CACHE_HOME/ms-playwright` (which on Replit is
+`/home/runner/workspace/.cache/ms-playwright`):
+
+```bash
+# One-time per workspace (also re-run after a Playwright version bump):
+bash scripts/setup-playwright-firefox.sh  # installs Firefox (no patch needed)
+bash scripts/setup-playwright-webkit.sh   # installs *and* patches WebKit
+```
+
+Both helpers are also wired into `scripts/post-merge.sh`, so a fresh
+clone or a `@playwright/test` version bump auto-provisions the missing
+binaries on the next merge — manual invocation is only needed if you've
+just run `npm install` and want to use the firefox/webkit projects
+before the next merge cycle.
+
+Both helper scripts internally set
+`PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1` while running `npx
+playwright install`. That's because Playwright's post-install
+host-requirements validator runs `ldd` against the bundled binary using
+its default search path and bails since Replit's container has no
+`/usr/lib/x86_64-linux-gnu`. The libraries Firefox/WebKit actually need
+at runtime (`libgtk-3.so.0`, `libxcb-shm.so.0`, `libgstreamer-1.0.so.0`,
+…) are pinned in `replit.nix` and exposed via
+`$REPLIT_LD_LIBRARY_PATH`, so the binaries launch fine once installed.
+`playwright.config.ts` sets the same skip flag automatically when
+`$REPLIT_LD_LIBRARY_PATH` is present, so `npx playwright test
+--project=firefox` and `--project=webkit` work without any extra env
+override at test time.
+
+Once the binaries are installed, run a single spec across all three
+engines (Konva/Radix-heavy specs are good cross-engine canaries):
+
+```bash
+npx playwright test e2e/takeoff-markup-undo.spec.ts                  # all 3 projects
+npx playwright test --project=firefox e2e/takeoff-markup-undo.spec.ts
+npx playwright test --project=webkit  e2e/takeoff-markup-undo.spec.ts
+```
+
+The remainder of this section covers the WebKit-specific shell-wrapper
+fix; Firefox needs no patching beyond the install step above.
+
 The bundled WebKit needs a one-time fix for two reasons:
 
 1. Playwright's WebKit zip ships a `MiniBrowser` shell wrapper that

@@ -29,3 +29,16 @@ timeout 200 npx tsx scripts/dev-schema-sync.ts 2>&1 \
 # Failures are tolerated so a Playwright cache hiccup never blocks merges.
 timeout 60 bash scripts/setup-playwright-webkit.sh 2>&1 \
   || echo "[post-merge] playwright webkit setup skipped or failed (run scripts/setup-playwright-webkit.sh manually)"
+
+# Task #1826 — keep Playwright's bundled Firefox installed on the Replit
+# dev container. Firefox needs no patching (every runtime lib it needs
+# is already in $REPLIT_LD_LIBRARY_PATH via replit.nix), but `npx
+# playwright install` needs PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS=1
+# here because the post-install ldd check uses the Ubuntu default search
+# path. The setup script is idempotent: it exits in <100ms when the
+# expected firefox-NNNN revision is already on disk, and only fetches
+# when @playwright/test is bumped to a version that ships a newer
+# Firefox revision. Failures are tolerated so a Playwright cache hiccup
+# never blocks merges.
+timeout 120 bash scripts/setup-playwright-firefox.sh 2>&1 \
+  || echo "[post-merge] playwright firefox setup skipped or failed (run scripts/setup-playwright-firefox.sh manually)"
