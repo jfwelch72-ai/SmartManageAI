@@ -150,13 +150,25 @@ beforeEach(async () => {
     ]]),
   };
   vi.resetModules();
+  // Task #1831 — install an in-memory rate-limit store before the
+  // routes module loads so the new `consumeRateLimit` helper doesn't
+  // try to issue real `INSERT ... ON CONFLICT` statements through
+  // the dbMock above (which only knows how to return `{ rows: [] }`
+  // and would therefore make every claim succeed, breaking the 429
+  // rate-limit test below). Importing the rate-limit module here
+  // primes the cache; the routes module then reuses the same module
+  // instance and so picks up the in-memory store automatically.
+  const rateLimitStore = await import("../utils/rateLimitStore");
+  rateLimitStore.__setRateLimitStoreForTests(
+    rateLimitStore.createInMemoryRateLimitStore(),
+  );
   const mod = await import("../projectLogEmailScheduleRoutes");
   app = makeApp(mod.default);
-  // Wipe the module-level rate limiter so each test starts from a
-  // clean slate. Without this the second test in a row would see the
-  // first test's clock and 429 unexpectedly.
+  // Wipe the rate-limit store so each test starts from a clean
+  // slate. Without this the second test in a row would see the first
+  // test's clock and 429 unexpectedly.
   resetDebounce = (mod as any).__resetTestDigestDebounceForTests;
-  resetDebounce?.();
+  await resetDebounce?.();
 });
 
 function authedHeaders(role = "ADMIN") {

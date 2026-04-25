@@ -57,6 +57,10 @@ import {
 import { buildProjectLogPdfBuffer } from "./services/projectLogService";
 import { sendEmailWithResult } from "./services/emailService";
 import { logError, logInfo } from "./utils/logger";
+import {
+  consumeRateLimit,
+  resetRateLimitStore,
+} from "./utils/rateLimitStore";
 
 const router = Router();
 
@@ -458,41 +462,24 @@ router.get(
   },
 );
 
-// Task #1638 — in-memory per-schedule debounce so the "Send now" button
-// can't be hammered (whether by a frantic admin clicking 30 times, a
-// flaky network retrying the POST, or a script). Keyed by the schedule
-// row id (or by `<projectId>:<logType>` when the schedule row hasn't
-// been persisted yet, which shouldn't actually happen because the UI
-// only shows the button when cadence != OFF). 30s is the same window
-// the front-end disables the button for after a click — this is the
+// Task #1638 — per-schedule debounce so the "Send now" button can't be
+// hammered (whether by a frantic admin clicking 30 times, a flaky
+// network retrying the POST, or a script). Keyed by the schedule row
+// id (prefixed below to share a global rate-limit table without
+// colliding with other limiters). 30s is the same window the
+// front-end disables the button for after a click — this is the
 // server-side defense for anyone who skips the UI.
+//
+// Task #1831 — the timestamp now lives in `rate_limit_state` (Postgres)
+// instead of a module-level `Map`. Per-process Maps silently broke
+// the moment the deployment ran more than one replica: each pod had
+// its own Map, so a click that round-robined to a different pod saw
+// an empty bucket and was allowed through. The `consumeRateLimit`
+// helper performs the decision in a single `INSERT ... ON CONFLICT
+// DO UPDATE ... WHERE` statement so two replicas racing on the same
+// schedule still produce exactly one allowed claim and one 429.
 const SEND_NOW_DEBOUNCE_MS = 30_000;
-const sendNowLastInvocation = new Map<string, number>();
-
-function consumeSendNowDebounce(key: string, now: number): { allowed: true } | { allowed: false; retryAfterSeconds: number } {
-  const last = sendNowLastInvocation.get(key);
-  if (last !== undefined && now - last < SEND_NOW_DEBOUNCE_MS) {
-    const retryAfterMs = SEND_NOW_DEBOUNCE_MS - (now - last);
-    return { allowed: false, retryAfterSeconds: Math.max(1, Math.ceil(retryAfterMs / 1000)) };
-  }
-  sendNowLastInvocation.set(key, now);
-  // Best-effort cleanup so the map can't grow unboundedly under heavy
-  // multi-tenant load. We sweep entries older than 5x the debounce
-  // window, which is plenty since they no longer affect rate limiting.
-  if (sendNowLastInvocation.size > 1000) {
-    const cutoff = now - SEND_NOW_DEBOUNCE_MS * 5;
-    for (const [k, ts] of sendNowLastInvocation) {
-      if (ts < cutoff) sendNowLastInvocation.delete(k);
-    }
-  }
-  return { allowed: true };
-}
-
-// Test-only escape hatch so unit tests can reset the in-memory rate
-// limiter between cases without resorting to module re-imports.
-export function __resetSendNowDebounceForTests() {
-  sendNowLastInvocation.clear();
-}
+const SEND_NOW_RATE_LIMIT_PREFIX = "send-now:";
 
 // Task #1750 — admin "Send test digest now" debounce. Mirrors the
 // per-project send-now rate limiter above so a frantic click (or a
@@ -502,11 +489,25 @@ export function __resetSendNowDebounceForTests() {
 // button would still only fan out once per 30 seconds. The matching
 // front-end disables the button for the same window so the typical
 // flow doesn't even reach the server.
+//
+// Task #1831 — also moved into `rate_limit_state` for the same
+// multi-replica reason as the send-now debounce.
 const TEST_DIGEST_DEBOUNCE_MS = 30_000;
-const testDigestLastInvocation = new Map<string, number>();
+const TEST_DIGEST_RATE_LIMIT_PREFIX = "test-digest:";
+
+// Test-only escape hatches so route-level unit tests can reset the
+// shared rate-limit store between cases. Both names are kept (instead
+// of being collapsed into a single `__resetRateLimitStoreForTests`)
+// because the existing test suites already import them by name and
+// because they document, at the call site, *which* limiter the test
+// is exercising. Both clear the same backing store, which is
+// intentional — tests want a clean slate per case.
+export function __resetSendNowDebounceForTests() {
+  return resetRateLimitStore();
+}
 
 export function __resetTestDigestDebounceForTests() {
-  testDigestLastInvocation.clear();
+  return resetRateLimitStore();
 }
 
 router.put(
@@ -626,7 +627,11 @@ router.post(
         });
       }
 
-      const debounce = consumeSendNowDebounce(existing.id, Date.now());
+      const debounce = await consumeRateLimit(
+        `${SEND_NOW_RATE_LIMIT_PREFIX}${existing.id}`,
+        SEND_NOW_DEBOUNCE_MS,
+        Date.now(),
+      );
       if (!debounce.allowed) {
         res.setHeader("Retry-After", String(debounce.retryAfterSeconds));
         return res.status(429).json({
@@ -1488,28 +1493,23 @@ router.post(
       // other on the same org both bounce off the same window so the
       // org's admins don't get hit with two test digests in quick
       // succession.
+      //
+      // Task #1831 — backed by `rate_limit_state` so the window holds
+      // across all replicas. The previous module-level `Map` only
+      // protected one Node process; under a multi-pod deployment two
+      // admins clicking against different pods each got through.
       const nowMs = Date.now();
-      const last = testDigestLastInvocation.get(organizationId);
-      if (last !== undefined && nowMs - last < TEST_DIGEST_DEBOUNCE_MS) {
-        const retryAfterSeconds = Math.max(
-          1,
-          Math.ceil((TEST_DIGEST_DEBOUNCE_MS - (nowMs - last)) / 1000),
-        );
-        res.set("Retry-After", String(retryAfterSeconds));
+      const debounce = await consumeRateLimit(
+        `${TEST_DIGEST_RATE_LIMIT_PREFIX}${organizationId}`,
+        TEST_DIGEST_DEBOUNCE_MS,
+        nowMs,
+      );
+      if (!debounce.allowed) {
+        res.set("Retry-After", String(debounce.retryAfterSeconds));
         return res.status(429).json({
           error: "Test digest was sent recently. Please wait before retrying.",
-          retryAfterSeconds,
+          retryAfterSeconds: debounce.retryAfterSeconds,
         });
-      }
-      testDigestLastInvocation.set(organizationId, nowMs);
-      // Best-effort cleanup so the map can't grow unboundedly under
-      // multi-tenant load. Sweep entries older than 5x the debounce
-      // window since they no longer affect the limit.
-      if (testDigestLastInvocation.size > 1000) {
-        const cutoff = nowMs - TEST_DIGEST_DEBOUNCE_MS * 5;
-        for (const [k, ts] of testDigestLastInvocation) {
-          if (ts < cutoff) testDigestLastInvocation.delete(k);
-        }
       }
 
       // Per-click unique dedupe key so the test row is distinguishable

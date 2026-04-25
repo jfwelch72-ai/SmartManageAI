@@ -340,4 +340,8 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
     helper: "ensureAuditActionEnumValues",
     note: "Task #1847 — RESTORE added to ensureAuditActionEnumValues alongside ARCHIVE/UNARCHIVE",
   },
+  "0067_rate_limit_state.sql": {
+    helper: "ensureRateLimitStateTable",
+    note: "Task #1831 — cross-replica backing store for the per-key debounces previously held in module-level Maps inside projectLogEmailScheduleRoutes.ts",
+  },
 };

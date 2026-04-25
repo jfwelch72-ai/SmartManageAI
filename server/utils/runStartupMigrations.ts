@@ -76,6 +76,7 @@ import { ensureProjectLogEmailConsecutiveFailures } from "./ensureProjectLogEmai
 import { ensureProjectLogEmailFailureThresholdSetting } from "./ensureProjectLogEmailFailureThresholdSetting";
 import { ensureProjectLogEmailFailuresDigestSchedule } from "./ensureProjectLogEmailFailuresDigestSchedule";
 import { ensureProjectLogEmailScheduleAttemptsTable } from "./ensureProjectLogEmailScheduleAttemptsTable";
+import { ensureRateLimitStateTable } from "./ensureRateLimitStateTable";
 import { ensureGanttPdfRenderSamplesTable } from "./ensureGanttPdfRenderSamplesTable";
 import { ensurePortfolioPdfRenderSamplesTable } from "./ensurePortfolioPdfRenderSamplesTable";
 import { ensureCrmCsvImportPayloadColumn } from "./ensureCrmCsvImportPayloadColumn";
@@ -293,6 +294,7 @@ const migrations: MigrationStep[] = [
   // count, triggered-by) instead of only seeing the most recent
   // attempt on the schedule row.
   { name: "project_log_email_schedule_attempts_table", category: "CREATE_TABLE", fn: ensureProjectLogEmailScheduleAttemptsTable },
+  { name: "rate_limit_state_table", category: "CREATE_TABLE", fn: ensureRateLimitStateTable },
   { name: "geocode_status_columns", category: "ADD_COLUMN", fn: ensureGeocodeStatusColumns },
   { name: "gantt_pdf_render_samples_table", category: "CREATE_TABLE", fn: ensureGanttPdfRenderSamplesTable },
   { name: "portfolio_pdf_render_samples_table", category: "CREATE_TABLE", fn: ensurePortfolioPdfRenderSamplesTable },

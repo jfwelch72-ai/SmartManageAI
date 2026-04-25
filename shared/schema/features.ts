@@ -10583,6 +10583,32 @@ export type ProjectLogEmailScheduleAttempt = typeof projectLogEmailScheduleAttem
 export const PROJECT_LOG_EMAIL_TRIGGER_TYPES = ["CRON", "MANUAL"] as const;
 export type ProjectLogEmailTriggerType = typeof PROJECT_LOG_EMAIL_TRIGGER_TYPES[number];
 
+// ============================================================
+// RATE LIMIT STATE (Task #1831)
+// ============================================================
+// Cross-replica backing store for the per-key debounces that previously
+// lived in module-level Maps (e.g. the per-schedule "Send now" debounce
+// and the per-org "Send test digest" debounce on the project-log-email
+// settings card). A module-level Map is fine on a single Node process
+// but silently breaks the moment the deployment runs more than one
+// replica — each replica has its own Map, so a frantic click could fan
+// out N test digests instead of one. This table is the shared store
+// each replica writes to so a single Postgres `INSERT ... ON CONFLICT`
+// statement can atomically gate the next attempt.
+//
+// `key` is opaque to the table — callers prefix their own namespace
+// (e.g. `send-now:<schedule-id>`, `test-digest:<org-id>`) so distinct
+// debounces can't collide. `last_invoked_at` is the timestamp of the
+// most recent successful claim; the helper compares it against
+// `now() - <window>` to decide whether the new attempt is allowed.
+export const rateLimitState = pgTable("rate_limit_state", {
+  key: text("key").primaryKey(),
+  lastInvokedAt: timestamp("last_invoked_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+export type RateLimitState = typeof rateLimitState.$inferSelect;
+
 // ============================================
 // GANTT PDF ALERT RECIPIENTS
 // Operator-managed list of email recipients for Gantt PDF queue/disconnect
