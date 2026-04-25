@@ -31,6 +31,20 @@ import {
 import { insertNotification } from "./notificationService";
 import { logError, logInfo } from "../utils/logger";
 import { MAX_SYNC_RETRIES } from "../integrations/syncRetry";
+// Task #1945 — Re-export the friendly-label helpers so existing callers
+// (and tests) can keep importing them from this module.
+import {
+  resolveQboEntityLabel,
+  resolveQboEntityLabels,
+  type QboResolvedEntity,
+  type QboPerItemSubKind,
+} from "./qboEntityLabels";
+export {
+  resolveQboEntityLabel,
+  resolveQboEntityLabels,
+  type QboResolvedEntity,
+  type QboPerItemSubKind,
+};
 
 type UserRole = (typeof userRoleEnum.enumValues)[number];
 const ADMIN_ROLES: readonly UserRole[] = ["ADMIN", "SUPER_ADMIN"];
@@ -77,6 +91,16 @@ export function classifyQboEntity(
     .replace(/^\w/, (c) => c.toUpperCase());
   return { kindLabel: `${pretty} sync`, itemId: null };
 }
+
+// ---------------------------------------------------------------------------
+// Task #1945 — Friendly QBO entity labels (customer name / "Pay app #N —
+// projectCode" / "Pay run #N") for admin emails + digests when the QBO
+// sync row is keyed by a per-item entityType live in
+// `./qboEntityLabels.ts` (re-exported above so callers keep the existing
+// import path). The standalone module avoids the
+// notificationDelivery → notificationService require cycle that would
+// otherwise form when notificationDelivery imports this file.
+// ---------------------------------------------------------------------------
 
 async function getOrgAdminUserIds(organizationId: string): Promise<string[]> {
   const rows = await db
@@ -212,19 +236,48 @@ export async function notifyAdminsOfExhaustedSyncRetry(
   // the affected item id so admins reading the email can triage without
   // hopping back into the app. The full entityType is kept in parens so
   // existing test assertions (and grep-style log searches) still match.
+  //
+  // Task #1945 — for per-item rows (customer / invoice / payroll /
+  // certified_payroll), look the local record up so the title + body
+  // surface the human-readable label (customer name, "Pay app #N —
+  // projectCode", "Pay run #runNumber") instead of forcing admins to
+  // copy the raw uuid into another screen. Orphan IDs (record was
+  // deleted) fall through to the existing kindLabel + itemId rendering.
   let title: string;
   let message: string;
   if (args.entityType.startsWith(QBO_SYNC_ENTITY_TYPE_PREFIX)) {
     const { kindLabel, itemId } = classifyQboEntity(args.entityType);
+    const resolved = itemId
+      ? await resolveQboEntityLabel(args.organizationId, args.entityType).catch(
+          (err) => {
+            // Lookup failures must not block the alert — fall back to the
+            // raw label rather than swallowing the whole notification.
+            logError(
+              "Failed to resolve QBO entity label for exhausted sync alert",
+              {
+                organizationId: args.organizationId,
+                syncStateId: args.syncStateId,
+                entityType: args.entityType,
+              },
+              err instanceof Error ? err : new Error(String(err)),
+            );
+            return null;
+          },
+        )
+      : null;
     const itemSuffix = itemId ? ` ${itemId}` : "";
+    const titleSubject = resolved ? resolved.displayName : `${kindLabel}${itemSuffix}`;
     title =
-      `Integration sync gave up: ${integrationLabel} — ${kindLabel}${itemSuffix} ` +
+      `Integration sync gave up: ${integrationLabel} — ${titleSubject} ` +
       `(${args.entityType})`;
     const lowerKind = kindLabel.charAt(0).toLowerCase() + kindLabel.slice(1);
     const itemPhrase = itemId ? ` (id ${itemId})` : "";
+    const bodySubject = resolved
+      ? `${resolved.displayName}${itemPhrase}`
+      : `this ${lowerKind}${itemPhrase}`;
     message =
-      `QuickBooks ran out of automatic retries while syncing this ${lowerKind}` +
-      `${itemPhrase}. Last error: ${trimmedError}. ` +
+      `QuickBooks ran out of automatic retries while syncing ${bodySubject}. ` +
+      `Last error: ${trimmedError}. ` +
       `Open the QuickBooks panel on the Integrations page to retry or investigate.`;
   } else {
     title = `Integration sync gave up: ${integrationLabel} (${args.entityType})`;
@@ -410,24 +463,53 @@ export async function backfillExhaustedSyncRetryAlerts(): Promise<BackfillExhaus
     const integrationLabel =
       conn?.displayName?.trim() || conn?.provider || "integration";
     const entityCount = group.rows.length;
-    const entityList = group.rows
-      .map((r) => r.entity_type)
-      .sort();
-    const sampleEntities = entityList.slice(0, 5);
-    const moreSuffix = entityCount > sampleEntities.length
-      ? `, and ${entityCount - sampleEntities.length} more`
-      : "";
+
+    // Task #1945 — enrich each entity with the human-readable label
+    // (customer name / "Pay app #N — projectCode" / "Pay run #N") when
+    // we can resolve the local record. Orphans fall through to the raw
+    // entity_type so the digest still renders without crashing.
+    const labelMap = await resolveQboEntityLabels(
+      group.organizationId,
+      group.rows.map((r) => r.entity_type),
+    ).catch((err) => {
+      logError(
+        "Backfill: failed to resolve QBO entity labels for digest",
+        {
+          organizationId: group.organizationId,
+          connectionId: group.connectionId,
+        },
+        err instanceof Error ? err : new Error(String(err)),
+      );
+      return new Map<string, QboResolvedEntity>();
+    });
+    // For each entity, prefer the friendly displayName followed by the
+    // raw `qbo_sync:%` token in parens so existing test assertions and
+    // grep-style log searches still match. Falls back to the raw token
+    // when no record was found (orphan ID).
+    const renderedEntries = group.rows
+      .map((r) => {
+        const hit = labelMap.get(r.entity_type);
+        return hit
+          ? { sortKey: hit.displayName, rendered: `${hit.displayName} (${r.entity_type})` }
+          : { sortKey: r.entity_type, rendered: r.entity_type };
+      })
+      .sort((a, b) => a.sortKey.localeCompare(b.sortKey));
+    const sampleEntries = renderedEntries.slice(0, 5);
+    const moreSuffix =
+      entityCount > sampleEntries.length
+        ? `, and ${entityCount - sampleEntries.length} more`
+        : "";
     const lastErrorSample = group.rows.find((r) => r.last_error)?.last_error;
     const trimmedError = (lastErrorSample ?? "(no error message recorded)").slice(0, 300);
 
     const title =
       entityCount === 1
-        ? `Integration sync gave up: ${integrationLabel} (${entityList[0]})`
+        ? `Integration sync gave up: ${integrationLabel} (${renderedEntries[0].rendered})`
         : `Integration sync gave up: ${integrationLabel} (${entityCount} entities)`;
     const message =
       `Background sync retries for ${integrationLabel} were already exhausted ` +
       `for ${entityCount} ${entityCount === 1 ? "entity" : "entities"} ` +
-      `(${sampleEntities.join(", ")}${moreSuffix}). ` +
+      `(${sampleEntries.map((e) => e.rendered).join(", ")}${moreSuffix}). ` +
       `Sample last error: ${trimmedError}. ` +
       `Open the Integrations page to review and trigger a manual retry.`;
 

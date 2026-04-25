@@ -16,6 +16,7 @@ import { buildDavisBaconMuteUrl } from "../utils/davisBaconMuteToken";
 import { buildWageDecisionRatesChangedMuteUrl } from "../utils/wageDecisionRatesChangedMuteToken";
 import { buildIntegrationSyncMuteUrl } from "../utils/integrationSyncMuteToken";
 import { buildLogEmailFailuresDigestMuteUrl } from "../utils/logEmailFailuresDigestMuteToken";
+import { resolveQboEntityLabel } from "./qboEntityLabels";
 
 type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
 
@@ -145,6 +146,16 @@ export interface ComposeEmailExtras {
      * link.
      */
     provider?: string;
+    /**
+     * Task #1945 — when the exhausted row is a per-item QBO sync
+     * (customer / invoice / payroll / certified_payroll), surface a
+     * direct deep link to the affected record's page (/crm,
+     * /progress-billing, /payroll-management) so admins can jump
+     * straight to it from the email. Falls through (link unset) for
+     * orphan IDs and bare scheduled ops.
+     */
+    recordLink?: string;
+    recordLabel?: string;
   };
 }
 
@@ -672,6 +683,21 @@ export function composeEmailContent(
           </a> &middot; `
       : "";
 
+    // Task #1945 — when the per-item QBO record was resolvable, render a
+    // secondary CTA that deep-links straight to the customer / pay
+    // application / pay run page so the admin can fix the underlying
+    // record (or trigger a retry from the source screen) without
+    // bouncing through the QBO sync panel first. Orphan IDs (record
+    // deleted) leave recordLink unset and the secondary button is
+    // simply omitted.
+    const recordLinkHtml =
+      ctx?.recordLink && ctx?.recordLabel && baseUrl
+        ? `
+          <a href="${baseUrl}${ctx.recordLink}" style="background-color: #ffffff; color: #0070f3; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; margin-left: 8px; border: 1px solid #0070f3;" data-testid="link-integration-sync-exhausted-record">
+            Open ${escapeHtml(ctx.recordLabel)}
+          </a>`
+        : "";
+
     const html = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
         <h2 style="color: #b91c1c;">${escapeHtml(notification.title)}</h2>
@@ -679,7 +705,7 @@ export function composeEmailContent(
         <p style="margin-top: 20px;">
           <a href="${actionUrl}" style="background-color: #0070f3; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block;">
             ${escapeHtml(actionText)}
-          </a>
+          </a>${recordLinkHtml}
         </p>
         <hr style="margin-top: 30px; border: none; border-top: 1px solid #eee;">
         <p style="color: #999; font-size: 12px; line-height: 1.6;">
@@ -965,6 +991,7 @@ async function loadIntegrationSyncContext(
     const [row] = await db
       .select({
         connectionId: integrationSyncState.connectionId,
+        organizationId: integrationSyncState.organizationId,
         entityType: integrationSyncState.entityType,
         provider: integrationConnections.provider,
         displayName: integrationConnections.displayName,
@@ -975,6 +1002,37 @@ async function loadIntegrationSyncContext(
       .limit(1);
     if (!row) return undefined;
     const integrationLabel = row.displayName?.trim() || row.provider || "integration";
+
+    // Task #1945 — for QuickBooks per-item rows, attach a deep link to
+    // the affected customer / pay app / pay run so the email can render
+    // a secondary CTA pointing straight at the source record. Lookup
+    // failures (or orphan IDs) just leave the fields unset and the
+    // email renders the existing single-CTA layout.
+    let recordLink: string | undefined;
+    let recordLabel: string | undefined;
+    if (row.provider === "qbo") {
+      try {
+        const resolved = await resolveQboEntityLabel(
+          row.organizationId,
+          row.entityType,
+        );
+        if (resolved) {
+          recordLink = resolved.link;
+          recordLabel = resolved.displayName;
+        }
+      } catch (err) {
+        logError(
+          "notificationDelivery: failed to resolve QBO record link for exhausted sync email",
+          {
+            userId: notification.userId,
+            syncStateId,
+            entityType: row.entityType,
+            error: String(err),
+          },
+        );
+      }
+    }
+
     return {
       connectionId: row.connectionId,
       entityType: row.entityType,
@@ -982,6 +1040,8 @@ async function loadIntegrationSyncContext(
       // Task #1942 — surface the provider so QBO failures can deep-link
       // into the dedicated QuickBooks panel anchor.
       provider: row.provider,
+      recordLink,
+      recordLabel,
     };
   } catch (err) {
     logError("notificationDelivery: failed to load integration sync context for mute link", {
