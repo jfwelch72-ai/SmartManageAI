@@ -66,6 +66,13 @@ let crmBirthdayDailyTask: ReturnType<typeof cron.schedule> | null = null;
 let jobMetricsPruneTask: ReturnType<typeof cron.schedule> | null = null;
 let jobMetricAlertsTask: ReturnType<typeof cron.schedule> | null = null;
 let jobMetricQuietDigestTask: ReturnType<typeof cron.schedule> | null = null;
+// Task #1957 — per-minute pg pool health sampler. Polls
+// `getPoolStats()` and publishes `pool_health` job metrics so the
+// existing alert engine can page Super Admins when `waiting` stays > 0
+// for several consecutive samples (the `waitingSaturated` counter) or
+// when `pool_exhausted` events spike (already published on each
+// `recordPoolExhaustedEvent` call). See `server/utils/poolHealth.ts`.
+let poolHealthSampleTask: ReturnType<typeof cron.schedule> | null = null;
 let portfolioKpiSnapshotTask: ReturnType<typeof cron.schedule> | null = null;
 let certifiedPayrollDigestTask: ReturnType<typeof cron.schedule> | null = null;
 // Task #1606: hourly sweep of `project_log_email_schedules`. Each row is
@@ -269,6 +276,24 @@ export function startJobRunner() {
       }
     } catch (err) {
       logError("Job metric quiet-hours digest failed", { error: String(err) });
+    }
+  });
+
+  // Task #1957 — every minute, sample the live pg pool counters and
+  // publish them as `pool_health` job-metric samples so the alert engine
+  // can fire on the `waitingSaturated` and `exhausted` counters defined
+  // in `PER_JOB_DEFAULTS["pool_health"]`. The sampler is intentionally
+  // dynamic-imported to keep the existing module-load order intact
+  // (poolHealth pulls in `db.ts`, which transitively imports a number
+  // of schema modules; the existing `recordPoolExhaustedEvent`
+  // integration already uses the same lazy pattern in
+  // `logJobErrorWithKind` above).
+  poolHealthSampleTask = cron.schedule("* * * * *", async () => {
+    try {
+      const mod = await import("../utils/poolHealth");
+      mod.samplePoolHealth();
+    } catch (err) {
+      logError("Pool health sample failed", { error: String(err) });
     }
   });
 
@@ -1089,6 +1114,10 @@ export function stopJobRunner() {
   if (jobMetricQuietDigestTask) {
     jobMetricQuietDigestTask.stop();
     jobMetricQuietDigestTask = null;
+  }
+  if (poolHealthSampleTask) {
+    poolHealthSampleTask.stop();
+    poolHealthSampleTask = null;
   }
   if (portfolioKpiSnapshotTask) {
     portfolioKpiSnapshotTask.stop();

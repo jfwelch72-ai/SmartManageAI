@@ -88,6 +88,29 @@ export const DEFAULT_SKIPPED_EMAIL_FLOOR_PER_HOUR = Number.isFinite(
   ? Number(process.env.JOB_METRIC_SKIPPED_EMAIL_FLOOR_PER_HOUR)
   : 10;
 
+// Task #1957 — Configurable thresholds for the synthetic `pool_health`
+// job's absolute-floor spike rule on the `exhausted` counter. Each
+// `pool_exhausted` event recorded by `recordPoolExhaustedEvent`
+// publishes `{ exhausted: 1 }` so the existing alert engine can fire
+// when the per-hour rate exceeds these floors.
+//
+// Defaults are tuned to "page the moment we see the first starvation
+// event" (in-app) and "escalate to email once we see a small cluster"
+// — connection-pool exhaustion is a hair-on-fire condition that
+// directly translates to user-visible request hangs, so we lean
+// aggressive. Operators can dial these up via env vars without
+// redeploying or override entirely from the dashboard rules table.
+export const POOL_HEALTH_EXHAUSTED_FLOOR_PER_HOUR = Number.isFinite(
+  Number(process.env.POOL_HEALTH_EXHAUSTED_FLOOR_PER_HOUR),
+)
+  ? Number(process.env.POOL_HEALTH_EXHAUSTED_FLOOR_PER_HOUR)
+  : 1;
+export const POOL_HEALTH_EXHAUSTED_EMAIL_FLOOR_PER_HOUR = Number.isFinite(
+  Number(process.env.POOL_HEALTH_EXHAUSTED_EMAIL_FLOOR_PER_HOUR),
+)
+  ? Number(process.env.POOL_HEALTH_EXHAUSTED_EMAIL_FLOOR_PER_HOUR)
+  : 3;
+
 export type AlertKind = "spike" | "stall";
 
 export interface JobMetricAlert {
@@ -461,6 +484,58 @@ export const PER_JOB_DEFAULTS: Record<string, PerJobDefaults> = {
   // Lightweight DB connectivity / latency probe used by the operations
   // dashboard — `0 */6 * * *`.
   db_health_check: { stall: SIX_HOURLY_STALL },
+
+  // ---- Per-minute pool health sampler (cron `* * * * *`) ------------
+  //
+  // Task #1957 — Synthetic job populated by `samplePoolHealth` /
+  // `recordPoolExhaustedEvent` in `server/utils/poolHealth.ts`. Two
+  // absolute-floor spike rules let Super Admins get paged the moment
+  // the shared pg pool starts starving instead of needing to keep the
+  // Job Metrics dashboard open:
+  //
+  //   - `exhausted` — increments by 1 on every `pool_exhausted` log
+  //     event (a job tick that observed a connection-acquisition
+  //     timeout). Multiplier `0` makes this an absolute-floor rule:
+  //     fires whenever the per-hour count clears
+  //     `POOL_HEALTH_EXHAUSTED_FLOOR_PER_HOUR` (default 1, i.e. the
+  //     very first event in the trailing hour). Email escalation kicks
+  //     in at `POOL_HEALTH_EXHAUSTED_EMAIL_FLOOR_PER_HOUR` (default 3)
+  //     so a single transient blip pages in-app but a sustained
+  //     starvation also lands in operators' inboxes.
+  //
+  //   - `waitingSaturated` — increments by 1 each time `samplePoolHealth`
+  //     observes `waiting > 0` for `WAITING_SATURATION_SAMPLES`
+  //     consecutive ticks (~3 minutes by default). Multiplier `0` and
+  //     a floor of 1 mean any such episode pages immediately; email
+  //     escalation also fires on the first episode since a sustained
+  //     queue of waiters is exactly the user-visible-hang scenario the
+  //     #1949/#1950 work was meant to surface.
+  //
+  // Stall threshold of 1h (well under the engine default of 4h) is
+  // appropriate because the sampler runs every minute — if it's been
+  // silent for a full hour something is genuinely broken (cron stopped,
+  // process hung, runner crashed) and on-call should know.
+  pool_health: {
+    stall: {
+      thresholdHours: 1,
+      dedupeMinutes: 60,
+      emailWhenAboveHours: 1,
+    },
+    spikes: {
+      exhausted: {
+        multiplier: 0,
+        minAbsolute: POOL_HEALTH_EXHAUSTED_FLOOR_PER_HOUR,
+        dedupeMinutes: 60,
+        emailWhenAbove: POOL_HEALTH_EXHAUSTED_EMAIL_FLOOR_PER_HOUR,
+      },
+      waitingSaturated: {
+        multiplier: 0,
+        minAbsolute: 1,
+        dedupeMinutes: 60,
+        emailWhenAbove: 1,
+      },
+    },
+  },
 
   // ---- Weekly (cron `0 7 * * 1`) ------------------------------------
 
