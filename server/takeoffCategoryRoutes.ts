@@ -9,6 +9,7 @@ import { verifyOrgAccess, requireOrgOwnership } from "./orgFilter";
 import { verifySheetAccess, safeParsePoints } from "./takeoffHelpers";
 import { logError } from "./utils/logger";
 import { recordJobMetrics } from "./utils/jobMetrics";
+import { broadcastTakeoffEvent } from "./takeoffCollaboration";
 
 const router = Router();
 
@@ -1010,6 +1011,31 @@ router.delete("/api/takeoff/markups/bulk", requireAuth, async (req: AuthRequest,
       }
     });
 
+    // Task #1971 — broadcast `MARKUP_DELETED` so every viewer of
+    // the affected bid/project surgically removes the deleted rows
+    // from its canvas + selection set. Bulk delete payloads can in
+    // principle span multiple sheets, so we group by sheetId and
+    // emit one event per sheet (each with its own room) — matching
+    // the per-sheet shape `useTakeoffCollaboration` consumes.
+    const sheetIdToMarkupIds = new Map<string, string[]>();
+    for (const r of rows) {
+      const list = sheetIdToMarkupIds.get(r.sheetId) || [];
+      list.push(r.id);
+      sheetIdToMarkupIds.set(r.sheetId, list);
+    }
+    // Iterate via `Array.from(...)` rather than `Map.entries()` directly
+    // — the project's tsconfig target / downlevelIteration setting
+    // disallows iterating a `MapIterator` in `for..of` (TS2802).
+    for (const [sheetId, markupIds] of Array.from(sheetIdToMarkupIds.entries())) {
+      const roomId = await resolveRoomIdForSheet(sheetId);
+      if (roomId) {
+        broadcastTakeoffEvent(roomId, "MARKUP_DELETED", {
+          sheetId,
+          markupIds,
+        });
+      }
+    }
+
     recordJobMetrics("takeoff_markups_bulk_delete", {
       ok: 1,
       count: batchCount,
@@ -1304,11 +1330,46 @@ router.delete("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthReq
       await db.delete(takeoffMarkups).where(and(eq(takeoffMarkups.id, markupId), eq(takeoffMarkups.organizationId, orgId!)));
     }
 
+    // Task #1971 — push a `MARKUP_DELETED` collab event so every
+    // viewer of this bid/project surgically removes the markup from
+    // their canvas + selection set immediately, instead of waiting
+    // for the next failed PATCH (#1837 auto-refresh) to discover
+    // the row is gone. The room id matches what the takeoff
+    // workspace passes when it opens its WebSocket: bidId for
+    // bid-context takeoffs, projectId for project-context.
+    const roomId = markup.sheetId
+      ? await resolveRoomIdForSheet(markup.sheetId)
+      : null;
+    if (roomId) {
+      broadcastTakeoffEvent(roomId, "MARKUP_DELETED", {
+        sheetId: markup.sheetId,
+        markupIds: [markupId],
+      });
+    }
+
     res.json({ success: true });
   } catch (error) {
   next(error);
   }
 });
+
+/**
+ * Task #1971 — Resolve a takeoff sheet to its parent bid / project id
+ * so the `broadcastTakeoffEvent` call below can target the same room
+ * the takeoff workspace's WebSocket joined. Returns null if the sheet
+ * has neither (orphan row) so the broadcast becomes a no-op rather
+ * than throwing inside the success path of a delete that has already
+ * committed to the DB.
+ */
+async function resolveRoomIdForSheet(sheetId: string): Promise<string | null> {
+  const [sheet] = await db
+    .select({ projectId: takeoffSheets.projectId, bidId: takeoffSheets.bidId })
+    .from(takeoffSheets)
+    .where(eq(takeoffSheets.id, sheetId))
+    .limit(1);
+  if (!sheet) return null;
+  return sheet.bidId || sheet.projectId || null;
+}
 
 router.get("/api/takeoff/sheets/:sheetId/links", requireAuth, async (req: AuthRequest, res, next) => {
   try {

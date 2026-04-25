@@ -44,9 +44,25 @@ interface UseTakeoffCollaborationParams {
   roomId: string | null;
   selectedSheet: string | null;
   currentUserId: string | null;
+  /**
+   * Task #1971 — Invoked when the server broadcasts a `MARKUP_DELETED`
+   * collab event (a teammate removed one or more markups via the
+   * single-DELETE or bulk-DELETE route). The hook itself surgically
+   * prunes the active sheet's `["/api/takeoff/sheets", sheetId, "markups"]`
+   * react-query cache for the affected ids; this callback exists so the
+   * workspace can mirror the prune into its local selection set, the
+   * same way the #1837 `pruneSelectedMarkupIds` callback does for
+   * not_found-PATCH-driven prunes.
+   *
+   * Called even when `sheetId !== selectedSheet` so the workspace can
+   * still drop those ids from a multi-sheet selection it may be
+   * carrying — the cache prune in this hook is also unconditional for
+   * the same reason.
+   */
+  onMarkupDeleted?: (sheetId: string, markupIds: string[]) => void;
 }
 
-export function useTakeoffCollaboration({ roomId, selectedSheet, currentUserId }: UseTakeoffCollaborationParams) {
+export function useTakeoffCollaboration({ roomId, selectedSheet, currentUserId, onMarkupDeleted }: UseTakeoffCollaborationParams) {
   const { toast } = useToast();
   const wsRef = useRef<WebSocket | null>(null);
   const [collaborators, setCollaborators] = useState<Collaborator[]>([]);
@@ -64,6 +80,13 @@ export function useTakeoffCollaboration({ roomId, selectedSheet, currentUserId }
   selectedSheetRef.current = selectedSheet;
   const currentUserIdRef = useRef(currentUserId);
   currentUserIdRef.current = currentUserId;
+  // Task #1971 — keep the latest `onMarkupDeleted` callback in a ref
+  // so the long-lived `ws.onmessage` closure always invokes the
+  // current workspace handler (the workspace re-creates its arrow
+  // callbacks on every render, but we only attach `onmessage` once
+  // per WebSocket connection).
+  const onMarkupDeletedRef = useRef(onMarkupDeleted);
+  onMarkupDeletedRef.current = onMarkupDeleted;
 
   const cleanupWs = useCallback(() => {
     if (pingTimerRef.current) {
@@ -194,6 +217,39 @@ export function useTakeoffCollaboration({ roomId, selectedSheet, currentUserId }
               variant: "default",
             });
           }
+          break;
+        }
+
+        // Task #1971 — A teammate deleted one or more markups (single
+        // or bulk). Surgically prune the affected ids out of the
+        // sheet's cached `markups` query so the canvas updates in
+        // seconds, instead of waiting for the local user to attempt
+        // an edit on a phantom markup and discover it via the #1837
+        // not_found PATCH path. The companion `onMarkupDeleted`
+        // callback lets the workspace mirror the prune into its
+        // local selection set so the user can't re-select a markup
+        // the server has already removed.
+        case "MARKUP_DELETED": {
+          const sheetId: string | undefined = msg.payload?.sheetId;
+          const markupIds: unknown = msg.payload?.markupIds;
+          if (
+            !sheetId ||
+            !Array.isArray(markupIds) ||
+            markupIds.length === 0
+          ) {
+            break;
+          }
+          const ids = markupIds.filter(
+            (v): v is string => typeof v === "string" && v.length > 0,
+          );
+          if (ids.length === 0) break;
+          const idSet = new Set(ids);
+          const markupsKey = ["/api/takeoff/sheets", sheetId, "markups"];
+          queryClient.setQueryData<Array<{ id: string }>>(
+            markupsKey,
+            (old) => (old ? old.filter((m) => !idSet.has(m.id)) : old),
+          );
+          onMarkupDeletedRef.current?.(sheetId, ids);
           break;
         }
 

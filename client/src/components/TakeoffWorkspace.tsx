@@ -469,6 +469,25 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     roomId: collabRoomId || null,
     selectedSheet,
     currentUserId: currentUser?.id || null,
+    // Task #1971 — When the server pushes a `MARKUP_DELETED` event
+    // (a teammate removed markups from the same bid/project on
+    // another device), the hook surgically prunes the cache; this
+    // callback mirrors the prune into the workspace's local
+    // selection set so the user can't re-select a markup that's
+    // already been removed server-side. Mirrors the #1837
+    // `pruneSelectedMarkupIds` callback that handles the
+    // not_found-PATCH path for stale local edits.
+    onMarkupDeleted: (_sheetId: string, ids: string[]) => {
+      if (ids.length === 0) return;
+      setSelectedMarkupIds((prev) => {
+        let changed = false;
+        const next = new Set(prev);
+        for (const id of ids) {
+          if (next.delete(id)) changed = true;
+        }
+        return changed ? next : prev;
+      });
+    },
   });
 
   const data = useTakeoffData({

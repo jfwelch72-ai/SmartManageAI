@@ -38,6 +38,15 @@ type MessageType =
   | "MEASUREMENT_CREATED"
   | "MEASUREMENT_UPDATED"
   | "MEASUREMENT_DELETED"
+  // Task #1971 — server emits `MARKUP_DELETED` from the takeoff
+  // markup DELETE / bulk-DELETE routes so every viewer's canvas
+  // surgically removes the deleted markup as soon as a teammate
+  // removes it on another device. Mirrors the existing
+  // `MEASUREMENT_DELETED` pattern but is server-initiated (rather
+  // than re-broadcast from the deleter's client) so a stale viewer
+  // never has to wait for the next failed PATCH (#1837) to discover
+  // the row is gone.
+  | "MARKUP_DELETED"
   | "PRESENCE_JOIN"
   | "PRESENCE_LEAVE"
   | "SHEET_CHANGED"
@@ -94,6 +103,36 @@ function broadcastToRoom(roomId: string, message: CollabMessage, excludeConnecti
     if (client.ws.readyState === WebSocket.OPEN) {
       client.ws.send(data);
     }
+  });
+}
+
+/**
+ * Task #1971 — Server-initiated broadcast hook used by route handlers
+ * (e.g. the takeoff markup DELETE / bulk-DELETE routes) to push a
+ * collab event into every connected viewer of `roomId`. The room is
+ * the bid id (bid-context takeoffs) or project id (project-context
+ * takeoffs) that the takeoff workspace passes when establishing its
+ * WebSocket — see `useTakeoffCollaboration` on the client.
+ *
+ * Idempotent: if the room currently has no connected viewers (no one
+ * happens to have the workspace open on the affected bid/project) the
+ * call is a no-op rather than an error so routes don't have to guard
+ * the call site. Sender exclusion is intentionally NOT supported here
+ * — the deleter's client has already removed the row optimistically
+ * before its DELETE returned, so receiving the broadcast is a harmless
+ * no-op for them.
+ */
+export function broadcastTakeoffEvent(
+  roomId: string,
+  type: MessageType,
+  payload: unknown,
+): void {
+  if (!roomId) return;
+  if (!rooms.has(roomId)) return;
+  broadcastToRoom(roomId, {
+    type,
+    payload,
+    timestamp: Date.now(),
   });
 }
 
