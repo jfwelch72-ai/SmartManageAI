@@ -178,6 +178,10 @@ const PortfolioPdfHealth = lazy(() => import("@/pages/PortfolioPdfHealth"));
 const JobMetricsHealth = lazy(() => import("@/pages/JobMetricsHealth"));
 const AdminOneShotJobs = lazy(() => import("@/pages/AdminOneShotJobs"));
 const JobMetricsDashboard = lazy(() => import("@/pages/JobMetricsDashboard"));
+// Task #1962 — Super Admin DOT pay-item refresh history + manual trigger.
+const DotPayItemsRefreshAdminPage = lazy(
+  () => import("@/pages/admin/dot-pay-items-refresh"),
+);
 const VendorPricingPage = lazy(() => import("@/pages/vendor-pricing"));
 const MobileSyncPage = lazy(() => import("@/pages/mobile-sync"));
 const CompanySettingsPage = lazy(() => import("@/pages/company-settings"));
@@ -576,6 +580,8 @@ function Router() {
       <Route path="/admin/job-metrics" component={() => <ProtectedRoute component={JobMetricsHealth} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/one-shot-jobs" component={() => <ProtectedRoute component={AdminOneShotJobs} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/jobs/metrics" component={() => <ProtectedRoute component={JobMetricsDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      {/* Task #1962 — DOT pay-item refresh history + Run-now (Super Admin). */}
+      <Route path="/admin/jobs/dot-pay-items-refresh" component={() => <ProtectedRoute component={DotPayItemsRefreshAdminPage} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/subscriptions" component={() => <ProtectedRoute component={() => <Redirect to="/admin/tools" />} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/support" component={() => <ProtectedRoute component={() => <Redirect to="/admin/tools" />} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/audit" component={() => <ProtectedRoute component={() => <Redirect to="/admin/tools" />} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />

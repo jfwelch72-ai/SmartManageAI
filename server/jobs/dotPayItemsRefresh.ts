@@ -28,6 +28,12 @@ import { runFetcher, type AgencyRefreshResult } from "../../scripts/fetch-dot-pa
 import { AGENCY_MIN_ITEMS } from "../seedDotAgencies";
 import { sendEmail } from "../services/emailService";
 import { logError, logInfo, logWarn } from "../utils/logger";
+import { recordJobMetrics, type JobCounters } from "../utils/jobMetrics";
+import { db } from "../db";
+import { jobMetricSamples } from "@shared/schema";
+import { desc, eq } from "drizzle-orm";
+
+export const DOT_PAY_ITEMS_REFRESH_JOB = "dot_pay_items_refresh";
 
 /**
  * Comma/semicolon/whitespace-separated list of email recipients to notify
@@ -129,12 +135,176 @@ export interface DotPayItemsRefreshOutcome {
 }
 
 /**
+ * Task #1962 — per-agency record stored on the run-history sample so the
+ * admin dashboard can show added/removed/changed deltas per agency
+ * without grepping logs.
+ */
+export interface DotPayItemsRefreshAgencyRecord {
+  code: string;
+  ok: boolean;
+  itemCount: number;
+  added: number | null;
+  removed: number | null;
+  changed: number | null;
+  prevCount: number | null;
+  wrote: boolean;
+  reason: string | null;
+}
+
+export interface DotPayItemsRefreshRegressionRecord extends CoverageRegression {}
+
+export interface DotPayItemsRefreshRecord {
+  ranAt: string;
+  durationMs: number;
+  result: {
+    agenciesProcessed: number;
+    successes: number;
+    failures: number;
+    regressions: number;
+    alertsSent: number;
+    agencies: DotPayItemsRefreshAgencyRecord[];
+    regressionDetails: DotPayItemsRefreshRegressionRecord[];
+  };
+}
+
+function toAgencyRecord(r: AgencyRefreshResult): DotPayItemsRefreshAgencyRecord {
+  return {
+    code: r.code,
+    ok: r.ok,
+    itemCount: r.itemCount,
+    added: r.delta?.added ?? null,
+    removed: r.delta?.removed ?? null,
+    changed: r.delta?.changed ?? null,
+    prevCount: r.delta?.prevCount ?? null,
+    wrote: r.wrote,
+    reason: r.reason ?? null,
+  };
+}
+
+function asNumber(v: unknown): number {
+  return typeof v === "number" && Number.isFinite(v) ? v : 0;
+}
+
+function asBoolean(v: unknown): boolean {
+  return v === true;
+}
+
+function asNullableNumber(v: unknown): number | null {
+  if (v === null || v === undefined) return null;
+  return typeof v === "number" && Number.isFinite(v) ? v : null;
+}
+
+function asNullableString(v: unknown): string | null {
+  if (typeof v === "string") return v;
+  return null;
+}
+
+function rowToHistoryRecord(row: {
+  recordedAt: Date | string;
+  counters: unknown;
+}): DotPayItemsRefreshRecord {
+  const c = (row.counters ?? {}) as Record<string, unknown>;
+  const rawAgencies = Array.isArray(c.agencies_detail)
+    ? (c.agencies_detail as unknown[])
+    : [];
+  const agencies: DotPayItemsRefreshAgencyRecord[] = rawAgencies.map((a) => {
+    const ar = (a ?? {}) as Record<string, unknown>;
+    return {
+      code: typeof ar.code === "string" ? ar.code : "",
+      ok: asBoolean(ar.ok),
+      itemCount: asNumber(ar.itemCount),
+      added: asNullableNumber(ar.added),
+      removed: asNullableNumber(ar.removed),
+      changed: asNullableNumber(ar.changed),
+      prevCount: asNullableNumber(ar.prevCount),
+      wrote: asBoolean(ar.wrote),
+      reason: asNullableString(ar.reason),
+    };
+  });
+  const rawRegs = Array.isArray(c.regressionDetails)
+    ? (c.regressionDetails as unknown[])
+    : [];
+  const regressionDetails: DotPayItemsRefreshRegressionRecord[] = rawRegs.map((r) => {
+    const rr = (r ?? {}) as Record<string, unknown>;
+    const reason = rr.reason === "fetcher_failed" ? "fetcher_failed" : "below_threshold";
+    return {
+      code: typeof rr.code === "string" ? rr.code : "",
+      itemCount: asNumber(rr.itemCount),
+      threshold: asNumber(rr.threshold),
+      reason,
+      detail: typeof rr.detail === "string" ? rr.detail : undefined,
+    };
+  });
+  return {
+    ranAt: new Date(row.recordedAt).toISOString(),
+    durationMs: asNumber(c.durationMs),
+    result: {
+      agenciesProcessed: asNumber(c.agencies ?? c.agencies_processed),
+      successes: asNumber(c.succeeded ?? c.successes),
+      failures: asNumber(c.failed ?? c.failures),
+      regressions: asNumber(c.regressions),
+      alertsSent: asNumber(c.alertsSent ?? c.alerts_sent),
+      agencies,
+      regressionDetails,
+    },
+  };
+}
+
+export async function getLastDotPayItemsRefresh(): Promise<DotPayItemsRefreshRecord | null> {
+  try {
+    const [row] = await db
+      .select({
+        recordedAt: jobMetricSamples.recordedAt,
+        counters: jobMetricSamples.counters,
+      })
+      .from(jobMetricSamples)
+      .where(eq(jobMetricSamples.job, DOT_PAY_ITEMS_REFRESH_JOB))
+      .orderBy(desc(jobMetricSamples.recordedAt))
+      .limit(1);
+    return row ? rowToHistoryRecord(row) : null;
+  } catch (err) {
+    logError("Failed to load last DOT pay-item refresh", { error: String(err) });
+    return null;
+  }
+}
+
+export async function getRecentDotPayItemsRefreshes(
+  limit = 10,
+): Promise<DotPayItemsRefreshRecord[]> {
+  const safeLimit = Math.max(1, Math.min(50, Math.floor(limit)));
+  try {
+    const rows = await db
+      .select({
+        recordedAt: jobMetricSamples.recordedAt,
+        counters: jobMetricSamples.counters,
+      })
+      .from(jobMetricSamples)
+      .where(eq(jobMetricSamples.job, DOT_PAY_ITEMS_REFRESH_JOB))
+      .orderBy(desc(jobMetricSamples.recordedAt))
+      .limit(safeLimit);
+    return rows.map(rowToHistoryRecord);
+  } catch (err) {
+    logError("Failed to load recent DOT pay-item refreshes", { error: String(err) });
+    return [];
+  }
+}
+
+/**
  * Run the quarterly fetch + diff + alert pipeline. Safe to call ad-hoc
  * (e.g. from an admin endpoint or a one-off `tsx -e` invocation) — does
  * not depend on cron scheduling state.
+ *
+ * Task #1962 — also persists a per-run sample to `job_metric_samples`
+ * with the per-agency added/removed/changed deltas + the coverage
+ * regression list embedded in the JSONB `counters` column so the admin
+ * dashboard can render run history without grepping logs. The numeric
+ * counters (`agencies`, `succeeded`, `failed`, `regressions`,
+ * `alerts_sent`, `durationMs`) are still recorded so the existing
+ * Job Metrics surface and alerting engine continue to work.
  */
 export async function processDotPayItemsRefresh(): Promise<DotPayItemsRefreshOutcome> {
   logInfo("DOT pay-item refresh starting");
+  const startedAt = Date.now();
   const summary = await runFetcher();
 
   for (const r of summary.results) {
@@ -190,13 +360,39 @@ export async function processDotPayItemsRefresh(): Promise<DotPayItemsRefreshOut
     }
   }
 
+  const durationMs = Date.now() - startedAt;
+
   logInfo("DOT pay-item refresh complete", {
     agenciesProcessed: summary.results.length,
     successes: summary.successes,
     failures: summary.failures,
     regressions: regressions.length,
     alertsSent,
+    durationMs,
   });
+
+  // Task #1962 — record a per-run sample with both the numeric counters
+  // (consumed by the JobMetricsHealth dashboard + alert engine) and the
+  // per-agency / regression detail (rendered by the Super Admin DOT
+  // pay-item refresh history page). The cast through `unknown` is
+  // necessary because `JobCounters` is `Record<string, number>` for its
+  // numeric consumers — the underlying `job_metric_samples.counters`
+  // column is `jsonb`, and the numeric-only aggregation paths in
+  // `jobMetrics.ts` already skip non-numeric values defensively.
+  const richCounters: Record<string, unknown> = {
+    agencies: summary.results.length,
+    succeeded: summary.successes,
+    failed: summary.failures,
+    regressions: regressions.length,
+    alerts_sent: alertsSent,
+    durationMs,
+    agencies_detail: summary.results.map(toAgencyRecord),
+    regressionDetails: regressions,
+  };
+  recordJobMetrics(
+    DOT_PAY_ITEMS_REFRESH_JOB,
+    richCounters as unknown as JobCounters,
+  );
 
   return {
     agenciesProcessed: summary.results.length,

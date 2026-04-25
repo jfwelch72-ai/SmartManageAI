@@ -1331,6 +1331,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     },
   );
 
+  // Task #1962 — surface the most recent `dot_pay_items_refresh` runs on
+  // the Super Admin Jobs dashboard so an operator can see at a glance
+  // each agency's added/removed/changed deltas, which catalogs regressed
+  // below their `AGENCY_MIN_ITEMS` threshold, and how many email alerts
+  // fired. Mirrors the retention/certified-payroll patterns above.
+  app.get(
+    "/api/admin/jobs/dot_pay_items_refresh/last-run",
+    requireAuth,
+    requireRole("SUPER_ADMIN"),
+    async (_req: AuthRequest, res: Response, next: NextFunction) => {
+      try {
+        const {
+          getLastDotPayItemsRefresh,
+          getRecentDotPayItemsRefreshes,
+        } = await import("./jobs/dotPayItemsRefresh");
+        const [lastRun, recent] = await Promise.all([
+          getLastDotPayItemsRefresh(),
+          getRecentDotPayItemsRefreshes(10),
+        ]);
+        res.json({ lastRun, recent });
+      } catch (err: any) {
+        next(err);
+      }
+    },
+  );
+
   app.post("/api/admin/jobs/:jobName/run", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const { jobName } = req.params;

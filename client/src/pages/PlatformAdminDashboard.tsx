@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Building2, Users, TrendingUp, Activity, ChevronRight, Database, Clock, Server, DollarSign, FileText, ListChecks, Headphones, MailWarning } from "lucide-react";
+import { Building2, Users, TrendingUp, Activity, ChevronRight, Database, Clock, Server, DollarSign, FileText, ListChecks, Headphones, MailWarning, RefreshCw } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -520,6 +520,19 @@ export default function PlatformAdminDashboard() {
                   Job metrics dashboard
                 </CardTitle>
                 <CardDescription>Rolling 24h trend charts for every tracked background job</CardDescription>
+              </CardHeader>
+            </Card>
+          </Link>
+
+          {/* Task #1962 — DOT pay-item refresh history + manual re-run. */}
+          <Link href="/admin/jobs/dot-pay-items-refresh">
+            <Card className="hover-elevate cursor-pointer transition-colors" data-testid="link-admin-dot-pay-items-refresh">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <RefreshCw className="h-5 w-5" />
+                  DOT pay-item refresh
+                </CardTitle>
+                <CardDescription>Quarterly state DOT catalog refresh: per-agency deltas, coverage regressions, and one-click re-run</CardDescription>
               </CardHeader>
             </Card>
           </Link>

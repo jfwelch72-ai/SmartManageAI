@@ -938,14 +938,12 @@ export function startJobRunner() {
   // drops below its `AGENCY_MIN_ITEMS` threshold.
   dotPayItemsRefreshTask = cron.schedule("0 4 1 1,4,7,10 *", async () => {
     try {
+      // Task #1962 — `processDotPayItemsRefresh` now records its own
+      // per-tick `job_metric_samples` row (with both numeric counters
+      // *and* per-agency / regression detail in the JSONB column) so the
+      // Super Admin DOT pay-item refresh history page can render run
+      // history. We no longer need to double-record numeric counters here.
       const out = await processDotPayItemsRefresh();
-      recordJobMetrics("dot_pay_items_refresh", {
-        agencies: out.agenciesProcessed,
-        succeeded: out.successes,
-        failed: out.failures,
-        regressions: out.regressions,
-        alerts_sent: out.alertsSent,
-      });
       logInfo("DOT pay-item quarterly refresh tick", {
         agenciesProcessed: out.agenciesProcessed,
         successes: out.successes,

@@ -110,6 +110,11 @@ export function getJobMetrics(job: string): {
   const totals: JobCounters = {};
   for (const s of samples) {
     for (const [k, v] of Object.entries(s.counters)) {
+      // Task #1962 — guard against non-numeric values so jobs that store
+      // richer per-run JSONB detail (e.g. dot_pay_items_refresh's
+      // per-agency results array) don't poison the numeric totals/aggregates
+      // shown on the JobMetricsHealth dashboard.
+      if (typeof v !== "number" || !Number.isFinite(v)) continue;
       totals[k] = (totals[k] ?? 0) + v;
     }
   }
@@ -136,6 +141,8 @@ function summarize(job: string, windowMs: number, samples: JobMetricSample[]) {
   const totals: JobCounters = {};
   for (const s of samples) {
     for (const [k, v] of Object.entries(s.counters)) {
+      // Task #1962 — same numeric guard as `getJobMetrics`; see comment there.
+      if (typeof v !== "number" || !Number.isFinite(v)) continue;
       totals[k] = (totals[k] ?? 0) + v;
     }
   }
