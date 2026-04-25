@@ -728,6 +728,221 @@ describe("ObjectUploader — post-upload confirm fan-out", () => {
     errSpy.mockRestore();
   });
 
+  /**
+   * Task #2029 — Default upload-parameter flow (no `onGetUploadParameters`
+   * override). When callers don't pass their own param resolver,
+   * ObjectUploader falls back to `getDefaultUploadParameters`, which:
+   *
+   *   1. POSTs `/api/objects/upload` with `{ contentType, fileSize, fileType }`
+   *      where `fileType` defaults to `"DOCUMENT"`.
+   *   2. Reads back `{ uploadURL, intentId, objectKey }` and returns them
+   *      to Uppy as PUT params.
+   *   3. Records the returned `intentId` on the internal file.id → intentId
+   *      map so the post-upload `complete` handler can fan-out confirms.
+   *
+   * Every form in the app that doesn't supply its own resolver depends on
+   * this branch, so a regression in the request shape, the default
+   * `fileType`, or the response parsing would break uploads silently.
+   */
+  it("default getUploadParameters POSTs /api/objects/upload with DOCUMENT fileType and returns the parsed PUT params", async () => {
+    apiRequestMock.mockImplementation(
+      async (_method: string, url: string) => {
+        if (url === "/api/objects/upload") {
+          return {
+            json: async () => ({
+              uploadURL: "https://s3.example.invalid/signed-put-url",
+              intentId: "intent-default-1",
+              objectKey: "uploads/key-default-1",
+            }),
+          };
+        }
+        throw new Error(`unexpected apiRequest URL in test: ${url}`);
+      },
+    );
+
+    render(
+      <ObjectUploader testId="uploader">Upload</ObjectUploader>,
+    );
+    const uppy = getLatestUppy();
+
+    const file = {
+      id: "default-file",
+      name: "report.pdf",
+      type: "application/pdf",
+      size: 12_345,
+    };
+
+    let returnedParams: unknown;
+    await act(async () => {
+      returnedParams = await uppy.simulateGetUploadParameters(file);
+    });
+
+    const uploadCalls = apiRequestMock.mock.calls.filter(
+      ([, url]) => url === "/api/objects/upload",
+    );
+    expect(uploadCalls).toHaveLength(1);
+    expect(uploadCalls[0][0]).toBe("POST");
+    expect(uploadCalls[0][2]).toEqual({
+      contentType: "application/pdf",
+      fileSize: 12_345,
+      fileType: "DOCUMENT",
+    });
+
+    expect(returnedParams).toEqual({
+      method: "PUT",
+      url: "https://s3.example.invalid/signed-put-url",
+      intentId: "intent-default-1",
+      objectKey: "uploads/key-default-1",
+    });
+  });
+
+  it("falls back to 'application/octet-stream' contentType and 0 fileSize when the file lacks them", async () => {
+    apiRequestMock.mockImplementation(async (_method: string, url: string) => {
+      if (url === "/api/objects/upload") {
+        return {
+          json: async () => ({
+            uploadURL: "https://s3.example.invalid/u",
+            intentId: "i-fallback",
+            objectKey: "k-fallback",
+          }),
+        };
+      }
+      throw new Error(`unexpected apiRequest URL in test: ${url}`);
+    });
+
+    render(<ObjectUploader testId="uploader">Upload</ObjectUploader>);
+    const uppy = getLatestUppy();
+
+    const bareFile = { id: "bare", name: "no-meta", type: "", size: 0 };
+    await act(async () => {
+      await uppy.simulateGetUploadParameters(bareFile);
+    });
+
+    const uploadCall = apiRequestMock.mock.calls.find(
+      ([, url]) => url === "/api/objects/upload",
+    );
+    expect(uploadCall?.[2]).toEqual({
+      contentType: "application/octet-stream",
+      fileSize: 0,
+      fileType: "DOCUMENT",
+    });
+  });
+
+  it.each(["MEDIA", "DOCUMENT", "RECEIPT", "BIM", "LIDAR"] as const)(
+    "propagates fileType=%s through the default request body",
+    async (fileType) => {
+      apiRequestMock.mockImplementation(async (_method: string, url: string) => {
+        if (url === "/api/objects/upload") {
+          return {
+            json: async () => ({
+              uploadURL: "https://s3.example.invalid/u",
+              intentId: `intent-${fileType}`,
+              objectKey: `key-${fileType}`,
+            }),
+          };
+        }
+        throw new Error(`unexpected apiRequest URL in test: ${url}`);
+      });
+
+      render(
+        <ObjectUploader testId="uploader" fileType={fileType}>
+          Upload
+        </ObjectUploader>,
+      );
+      const uppy = getLatestUppy();
+
+      const file = {
+        id: `file-${fileType}`,
+        name: `payload-${fileType}.bin`,
+        type: "application/octet-stream",
+        size: 4096,
+      };
+      await act(async () => {
+        await uppy.simulateGetUploadParameters(file);
+      });
+
+      const uploadCall = apiRequestMock.mock.calls.find(
+        ([, url]) => url === "/api/objects/upload",
+      );
+      expect(uploadCall?.[2]).toEqual({
+        contentType: "application/octet-stream",
+        fileSize: 4096,
+        fileType,
+      });
+    },
+  );
+
+  it("records the returned intentId so the downstream confirm fan-out picks it up", async () => {
+    apiRequestMock.mockImplementation(
+      async (_method: string, url: string, body: unknown) => {
+        if (url === "/api/objects/upload") {
+          return {
+            json: async () => ({
+              uploadURL: "https://s3.example.invalid/signed",
+              intentId: "intent-confirmed",
+              objectKey: "uploads/k",
+            }),
+          };
+        }
+        if (url === "/api/objects/confirm") {
+          const intentId = (body as { intentId: string }).intentId;
+          return {
+            json: async () => ({
+              objectPath: `/objects/uploads/${intentId}`,
+              intentId,
+            }),
+          };
+        }
+        throw new Error(`unexpected apiRequest URL in test: ${url}`);
+      },
+    );
+
+    const onComplete = vi.fn();
+    render(
+      <ObjectUploader testId="uploader" onComplete={onComplete}>
+        Upload
+      </ObjectUploader>,
+    );
+    const uppy = getLatestUppy();
+
+    const file = {
+      id: "rec",
+      name: "doc.pdf",
+      type: "application/pdf",
+      size: 2048,
+    };
+
+    // Drive the default getUploadParameters as Uppy would just before PUT.
+    // This is the only path that records intentId → file.id.
+    await act(async () => {
+      await uppy.simulateGetUploadParameters(file);
+    });
+
+    await act(async () => {
+      uppy.emit("upload-success", file);
+      await uppy.emitAsync("complete", {
+        successful: [file],
+        failed: [],
+      });
+    });
+
+    // Confirm fan-out was driven by the intentId returned from the default
+    // upload-params call — proving the intent was recorded.
+    const confirmCalls = apiRequestMock.mock.calls.filter(
+      ([, url]) => url === "/api/objects/confirm",
+    );
+    expect(confirmCalls).toHaveLength(1);
+    expect(confirmCalls[0][2]).toEqual({ intentId: "intent-confirmed" });
+
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    const enriched = onComplete.mock.calls[0][0] as {
+      successful: Array<{ id: string; uploadURL: string }>;
+    };
+    expect(enriched.successful[0].uploadURL).toBe(
+      "/objects/uploads/intent-confirmed",
+    );
+  });
+
   it("surfaces the destructive 'Upload failed' toast and does NOT invoke onComplete (or hit confirm) when only failed files are present", async () => {
     const onComplete = vi.fn();
 
