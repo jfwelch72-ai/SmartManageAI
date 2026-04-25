@@ -16,6 +16,7 @@ import { SageConnectDialog } from "@/components/integrations/SageConnectDialog";
 import { WebhookConfigPanel } from "@/components/integrations/WebhookConfigPanel";
 import { StackCTSyncPanel } from "@/components/integrations/StackCTSyncPanel";
 import { SyncRetryPanel } from "@/components/integrations/SyncRetryPanel";
+import { QboSyncRetryPanel } from "@/components/integrations/QboSyncRetryPanel";
 import { Badge } from "@/components/ui/badge";
 
 function StackCTConnectButton() {
@@ -230,6 +231,7 @@ export default function IntegrationsPage({ embedded }: { embedded?: boolean } = 
       {qboConnection ? (
         <div className="space-y-4">
           <IntegrationSyncPanel connection={qboConnection} />
+          <QboSyncRetryPanel connection={qboConnection} />
           <AccountMappingPanel connection={qboConnection} />
           <SyncSchedulePanel connection={qboConnection} />
         </div>

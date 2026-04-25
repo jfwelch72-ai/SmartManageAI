@@ -8,7 +8,7 @@ import { getConnectionHealth } from "./integrations/healthService";
 import * as outboxService from "./integrations/outboxService";
 import { logInfo, logError } from "./utils/logger";
 import { getCanonicalBaseUrl } from "./utils/routeHelpers";
-import { eq, and, desc, isNotNull, isNull, inArray } from "drizzle-orm";
+import { eq, and, desc, isNotNull, isNull, inArray, sql } from "drizzle-orm";
 import { integrationConnections, type IntegrationConnection, integrationSyncState, integrationSyncAlertMutes, qboAccountMappings, qboSyncSchedules, sageAccountMappings, zapierWebhooks, ZAPIER_EVENT_TYPES, projects, users as usersTable, payApplications, sovLineItems, scheduleOfValues } from "@shared/schema";
 import { verifyIntegrationSyncMuteToken } from "./utils/integrationSyncMuteToken";
 import { db } from "./db";
@@ -23,6 +23,7 @@ import {
   qboCustomerSyncEntityType,
   qboPayrollSyncEntityType,
   qboCertifiedPayrollSyncEntityType,
+  QBO_SYNC_ENTITY_TYPE_PREFIX,
 } from "./integrations/providers/qbo/sync";
 import {
   importChartOfAccounts as sageImportChartOfAccounts,
@@ -1253,6 +1254,102 @@ router.get("/connections/:id/sync-history", requireAuth, async (req, res, next) 
     } : null;
 
     res.json({ history, chartOfAccounts: accountData, connectionId: connection.id, provider: connection.provider });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Task #1394 — per-connection QBO sync retry feed. The global
+// `/sync-retries` endpoint surfaces every failing row across providers,
+// but admins on the QuickBooks integration page need a focused view of
+// the QBO-specific failures grouped by kind (customer / invoice /
+// pay-run / scheduled op) so they can spot what needs attention without
+// scanning unrelated providers. Returns rows from `integration_sync_state`
+// whose entity_type starts with `qbo_sync:` for the supplied connection,
+// pre-bucketed by kind and decorated with retry count, last error, next
+// attempt time, and exhausted flag (for the "Retry now" affordance which
+// rides on the existing /sync-retries/:id/retry-now endpoint).
+router.get("/connections/:id/qbo-sync-retries", requireAuth, async (req, res, next) => {
+  try {
+    const user = (req as any).user;
+    const connection = await connectionService.getConnection(req.params.id, user.organizationId);
+    if (!connection) return res.status(404).json({ error: "Connection not found" });
+    if (connection.provider !== "qbo") {
+      return res.status(400).json({ error: "Connection is not a QuickBooks integration" });
+    }
+
+    const rows = await db
+      .select({
+        id: integrationSyncState.id,
+        entityType: integrationSyncState.entityType,
+        lastError: integrationSyncState.lastError,
+        lastAttemptAt: integrationSyncState.lastAttemptAt,
+        retryCount: integrationSyncState.retryCount,
+        nextRetryAt: integrationSyncState.nextRetryAt,
+      })
+      .from(integrationSyncState)
+      .where(and(
+        eq(integrationSyncState.organizationId, user.organizationId),
+        eq(integrationSyncState.connectionId, connection.id),
+        sql`${integrationSyncState.entityType} LIKE ${QBO_SYNC_ENTITY_TYPE_PREFIX + "%"}`,
+        isNotNull(integrationSyncState.lastError),
+      ))
+      .orderBy(desc(integrationSyncState.lastAttemptAt));
+
+    type Kind = "customer" | "invoice" | "pay_run" | "scheduled_op";
+    const classify = (entityType: string): { kind: Kind; label: string; itemId: string | null } => {
+      const operation = entityType.slice(QBO_SYNC_ENTITY_TYPE_PREFIX.length);
+      const colonIdx = operation.indexOf(":");
+      if (colonIdx > 0) {
+        const subKind = operation.slice(0, colonIdx);
+        const itemId = operation.slice(colonIdx + 1);
+        if (subKind === "customer") {
+          return { kind: "customer", label: `Customer ${itemId}`, itemId };
+        }
+        if (subKind === "invoice") {
+          return { kind: "invoice", label: `Invoice ${itemId}`, itemId };
+        }
+        if (subKind === "payroll") {
+          return { kind: "pay_run", label: `Payroll run ${itemId}`, itemId };
+        }
+        if (subKind === "certified_payroll") {
+          return { kind: "pay_run", label: `Certified payroll run ${itemId}`, itemId };
+        }
+        return { kind: "scheduled_op", label: operation, itemId };
+      }
+      // Bare scheduled operation (no item id).
+      if (operation === "customers") {
+        return { kind: "customer", label: "Customer batch sync", itemId: null };
+      }
+      const label = operation.replace(/_/g, " ");
+      return { kind: "scheduled_op", label, itemId: null };
+    };
+
+    const retries = rows
+      .filter(r => r.retryCount > 0 || r.nextRetryAt !== null)
+      .map(r => {
+        const { kind, label, itemId } = classify(r.entityType);
+        const exhausted = r.retryCount >= MAX_SYNC_RETRIES && r.nextRetryAt === null;
+        return {
+          id: r.id,
+          entityType: r.entityType,
+          kind,
+          label,
+          itemId,
+          lastError: r.lastError,
+          lastAttemptAt: r.lastAttemptAt,
+          retryCount: r.retryCount,
+          nextRetryAt: r.nextRetryAt,
+          exhausted,
+        };
+      });
+
+    res.json({
+      connectionId: connection.id,
+      provider: connection.provider,
+      maxRetries: MAX_SYNC_RETRIES,
+      retries,
+    });
   } catch (err) {
     next(err);
   }
