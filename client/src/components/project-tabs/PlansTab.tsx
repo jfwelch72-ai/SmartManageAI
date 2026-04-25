@@ -1591,7 +1591,9 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
             firstSupersedeContext = {
               fromDocumentId: supersededDoc.id,
               toDocumentId: newDoc.id,
-              fromLabel: supersededDoc.title || supersededDoc.fileName,
+              // PdfDocCandidate.title / fileName are typed `string | null`;
+              // narrow to `string | undefined` for `firstSupersedeContext`.
+              fromLabel: supersededDoc.title || supersededDoc.fileName || undefined,
               toLabel: title || file.name,
             };
           }

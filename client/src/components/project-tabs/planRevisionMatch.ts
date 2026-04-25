@@ -12,7 +12,10 @@ export interface PdfDocCandidate {
   id: string;
   title?: string | null;
   fileName?: string | null;
-  uploadedAt?: string | null;
+  // Accept both ISO strings (API responses) and Date objects (Drizzle row
+  // selects, e.g. PlanDocument.uploadedAt) so call sites don't have to
+  // pre-map. `new Date(...)` handles both transparently.
+  uploadedAt?: string | Date | null;
 }
 
 /**
