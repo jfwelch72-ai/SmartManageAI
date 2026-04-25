@@ -734,7 +734,18 @@ router.patch("/api/takeoff/markups/bulk", requireAuth, async (req: AuthRequest, 
           .set(setPayload)
           .where(whereClause)
           .returning();
-        if (row) out.push(row);
+        // Task #1967 — Defensive: if a concurrent writer deleted the
+        // row between the pre-check SELECT above and this UPDATE, the
+        // per-id UPDATE silently no-ops while the rest of the move
+        // commits — leaving the dragged group visually misaligned.
+        // Mirrors the all-or-nothing contract enforced by the bulk
+        // DELETE route below (and the plan-document fix in Task
+        // #1842): throw to roll the whole transaction back so every
+        // sibling stays at its pre-move position when the race fires.
+        if (!row) {
+          throw new Error("Bulk move affected fewer rows than expected");
+        }
+        out.push(row);
       }
       return out;
     });
