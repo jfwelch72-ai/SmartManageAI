@@ -3288,12 +3288,40 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                 return isNaN(n) ? "0" : n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
               };
               const getUnit = (m: typeof measurements[0]) => {
-                const mt = (m as any).measurementType;
-                if (mt === "COUNT") return "ea";
-                if (mt === "AREA" || mt === "PITCHED_AREA" || mt === "SURFACE_AREA") return "sf";
-                if (mt === "VOLUME") return "cf";
-                return (m as any).units || "lf";
+                switch (m.type) {
+                  case "COUNT":
+                    return "ea";
+                  case "AREA":
+                  case "PITCHED_AREA":
+                  case "SURFACE_AREA":
+                    return "sf";
+                  case "VOLUME":
+                    return "cy";
+                  case "NOTE":
+                    return "";
+                  default:
+                    return "lf";
+                }
               };
+              const getQty = (m: typeof measurements[0]) => {
+                switch (m.type) {
+                  case "COUNT":
+                    return Number(m.count || 0);
+                  case "AREA":
+                  case "PITCHED_AREA":
+                    return Number(m.computedAreaFt2 || 0);
+                  case "SURFACE_AREA":
+                    return Number(m.computedSurfaceAreaFt2 || m.computedAreaFt2 || 0);
+                  case "VOLUME":
+                    return Number(m.computedVolumeCy || 0);
+                  case "NOTE":
+                    return 0;
+                  default:
+                    return Number(m.computedLengthFt || 0);
+                }
+              };
+              const formatType = (t: string | null | undefined) =>
+                (t || "").toLowerCase().replace(/_/g, " ");
               const renderGroup = (title: string, color: string | null, items: typeof measurements) => (
                 <div key={title} className="border rounded-lg overflow-hidden">
                   <div className="flex items-center gap-2 px-3 py-2 bg-muted/50 border-b">
@@ -3314,15 +3342,15 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                     </thead>
                     <tbody>
                       {items.map(m => {
-                        const qty = Number((m as any).quantity || 0);
+                        const qty = getQty(m);
                         const unitCost = Number(m.unitCost || 0);
                         const total = qty * unitCost;
                         return (
-                          <tr key={m.id} className="border-b last:border-b-0 hover:bg-muted/20">
-                            <td className="p-2 font-medium">{m.label || (m as any).measurementType}</td>
-                            <td className="p-2 text-muted-foreground capitalize">{(m as any).measurementType?.toLowerCase().replace(/_/g, " ")}</td>
-                            <td className="p-2 text-right font-mono">{formatVal(qty)}</td>
-                            <td className="p-2 text-right text-muted-foreground">{getUnit(m)}</td>
+                          <tr key={m.id} className="border-b last:border-b-0 hover:bg-muted/20" data-testid={`row-summary-${m.id}`}>
+                            <td className="p-2 font-medium" data-testid={`text-summary-label-${m.id}`}>{m.label || formatType(m.type)}</td>
+                            <td className="p-2 text-muted-foreground capitalize" data-testid={`text-summary-type-${m.id}`}>{formatType(m.type)}</td>
+                            <td className="p-2 text-right font-mono" data-testid={`text-summary-qty-${m.id}`}>{formatVal(qty)}</td>
+                            <td className="p-2 text-right text-muted-foreground" data-testid={`text-summary-unit-${m.id}`}>{getUnit(m)}</td>
                             <td className="p-2 text-right font-mono">{unitCost > 0 ? `$${formatVal(unitCost)}` : "—"}</td>
                             <td className="p-2 text-right font-mono font-medium">{total > 0 ? `$${formatVal(total)}` : "—"}</td>
                           </tr>
@@ -3332,11 +3360,11 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                     <tfoot>
                       <tr className="border-t bg-muted/30">
                         <td colSpan={2} className="p-2 font-semibold">Subtotal</td>
-                        <td className="p-2 text-right font-mono font-semibold">{formatVal(items.reduce((s, m) => s + Number((m as any).quantity || 0), 0))}</td>
+                        <td className="p-2 text-right font-mono font-semibold" data-testid={`text-summary-subtotal-qty-${title}`}>{formatVal(items.reduce((s, m) => s + getQty(m), 0))}</td>
                         <td className="p-2" />
                         <td className="p-2" />
                         <td className="p-2 text-right font-mono font-semibold">
-                          {(() => { const t = items.reduce((s, m) => s + Number((m as any).quantity || 0) * Number(m.unitCost || 0), 0); return t > 0 ? `$${formatVal(t)}` : "—"; })()}
+                          {(() => { const t = items.reduce((s, m) => s + getQty(m) * Number(m.unitCost || 0), 0); return t > 0 ? `$${formatVal(t)}` : "—"; })()}
                         </td>
                       </tr>
                     </tfoot>
@@ -3351,9 +3379,9 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-bold">Grand Total</span>
                       <div className="text-right">
-                        <span className="text-sm font-mono font-bold">
+                        <span className="text-sm font-mono font-bold" data-testid="text-summary-grand-total">
                           {(() => {
-                            const t = measurements.reduce((s, m) => s + Number((m as any).quantity || 0) * Number(m.unitCost || 0), 0);
+                            const t = measurements.reduce((s, m) => s + getQty(m) * Number(m.unitCost || 0), 0);
                             return t > 0 ? `$${formatVal(t)}` : "—";
                           })()}
                         </span>
