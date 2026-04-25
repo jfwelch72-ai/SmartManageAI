@@ -149,18 +149,38 @@ function rangeStart(range: RangeKey, now: number): number {
   return now - cfg.bucketCount * cfg.bucketMs;
 }
 
-function bucketSamples(samples: JobMetricSample[], counters: string[], range: RangeKey) {
+// Task #2017 — How to fold the per-tick samples in a bucket into a
+// single chart point. `sum` keeps the existing cumulative-counter
+// semantics (24h/7d/30d totals). `max` is used for *gauge* counters
+// (`waiting`, `active`) where each sample is an instantaneous reading,
+// not an increment, so summing them across a bucket is meaningless —
+// the maximum tells operators whether the gauge climbed inside that
+// window.
+export type BucketAggregation = "sum" | "max";
+
+export function bucketSamples(
+  samples: JobMetricSample[],
+  counters: string[],
+  range: RangeKey,
+  aggregation: BucketAggregation = "sum",
+) {
   const cfg = RANGE_CONFIG[range];
   const now = Date.now();
   const start = rangeStart(range, now);
-  const buckets: Array<Record<string, number | string>> = [];
+  const buckets: Array<Record<string, number | string | null>> = [];
   for (let i = 0; i < cfg.bucketCount; i++) {
     const bucketStart = start + i * cfg.bucketMs;
-    const row: Record<string, number | string> = {
+    const row: Record<string, number | string | null> = {
       ts: bucketStart,
       label: cfg.formatLabel(bucketStart),
     };
-    for (const c of counters) row[c] = 0;
+    // Sum buckets default to 0 so an empty bucket plots flat at zero
+    // (zero increments really happened). Max buckets default to null
+    // so an empty bucket leaves a gap in the sparkline — a missing
+    // sample doesn't mean the gauge dropped to zero, and plotting
+    // zero would create misleading dips when the sampler skips a tick.
+    const empty: number | null = aggregation === "sum" ? 0 : null;
+    for (const c of counters) row[c] = empty;
     buckets.push(row);
   }
   for (const s of samples) {
@@ -172,7 +192,12 @@ function bucketSamples(samples: JobMetricSample[], counters: string[], range: Ra
     for (const c of counters) {
       const v = s.counters[c];
       if (typeof v === "number") {
-        buckets[idx][c] = (buckets[idx][c] as number) + v;
+        const cur = buckets[idx][c];
+        if (aggregation === "sum") {
+          buckets[idx][c] = ((cur as number | null) ?? 0) + v;
+        } else {
+          buckets[idx][c] = cur == null ? v : Math.max(cur as number, v);
+        }
       }
     }
   }
@@ -205,7 +230,44 @@ export function JobCard({
   waitingSaturationSamples?: number;
 }) {
   const counters = useMemo(() => counterKeys(job), [job]);
-  const chartData = useMemo(() => bucketSamples(job.samples, counters, range), [job, counters, range]);
+  // Task #2017 — Split counters into *cumulative* (incremented per
+  // tick — `exhausted`, `waitingSaturated`, `sampled`, …) and *gauge*
+  // (instantaneous reading per tick — `waiting`, `active`). The
+  // bottom LineChart still sums cumulative counters into the
+  // 24h/7d/30d buckets, but gauges are graphed on a separate sparkline
+  // that aggregates with max-per-bucket so a sustained
+  // "active climbing toward max" trend is visible at a glance instead
+  // of being washed out by per-tick summation.
+  const { gaugeCounters, cumulativeCounters } = useMemo(() => {
+    const gauges: string[] = [];
+    const cumulative: string[] = [];
+    for (const c of counters) {
+      if (getCounterMeta(job.job, c, waitingSaturationSamples)?.isGauge) {
+        gauges.push(c);
+      } else {
+        cumulative.push(c);
+      }
+    }
+    return { gaugeCounters: gauges, cumulativeCounters: cumulative };
+  }, [counters, job.job, waitingSaturationSamples]);
+  const chartData = useMemo(
+    () => bucketSamples(job.samples, cumulativeCounters, range, "sum"),
+    [job, cumulativeCounters, range],
+  );
+  const gaugeChartData = useMemo(
+    () => bucketSamples(job.samples, gaugeCounters, range, "max"),
+    [job, gaugeCounters, range],
+  );
+  // Map gauge -> palette index from the *full* counter list so the
+  // sparkline line colour matches the legend dot above the per-counter
+  // grid (which is keyed off `counters`).
+  const counterColorIndex = useMemo(() => {
+    const map: Record<string, number> = {};
+    counters.forEach((c, idx) => {
+      map[c] = idx;
+    });
+    return map;
+  }, [counters]);
   const sampleCount = job.samples.length;
   const cfg = RANGE_CONFIG[range];
   // Task #1959 — `skipped` is published by the overlap guards in
@@ -392,42 +454,110 @@ export function JobCard({
                 {cfg.emptyMessage}
               </div>
             ) : (
-              <div className="h-32 w-full" data-testid={`chart-${job.job}`}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
-                    <XAxis
-                      dataKey="label"
-                      tick={{ fontSize: 10 }}
-                      interval={cfg.xAxisInterval}
-                      stroke="currentColor"
-                      className="text-muted-foreground"
-                    />
-                    <YAxis
-                      tick={{ fontSize: 10 }}
-                      allowDecimals={false}
-                      width={28}
-                      stroke="currentColor"
-                      className="text-muted-foreground"
-                    />
-                    <Tooltip
-                      contentStyle={{ fontSize: 12 }}
-                      labelFormatter={(label) => cfg.tooltipLabel(String(label))}
-                    />
-                    {counters.map((c, idx) => (
-                      <Line
-                        key={c}
-                        type="monotone"
-                        dataKey={c}
-                        name={c}
-                        stroke={COUNTER_PALETTE[idx % COUNTER_PALETTE.length]}
-                        strokeWidth={1.5}
-                        dot={false}
-                        isAnimationActive={false}
-                      />
-                    ))}
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
+              <>
+                {cumulativeCounters.length > 0 && (
+                  <div className="h-32 w-full" data-testid={`chart-${job.job}`}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
+                        <XAxis
+                          dataKey="label"
+                          tick={{ fontSize: 10 }}
+                          interval={cfg.xAxisInterval}
+                          stroke="currentColor"
+                          className="text-muted-foreground"
+                        />
+                        <YAxis
+                          tick={{ fontSize: 10 }}
+                          allowDecimals={false}
+                          width={28}
+                          stroke="currentColor"
+                          className="text-muted-foreground"
+                        />
+                        <Tooltip
+                          contentStyle={{ fontSize: 12 }}
+                          labelFormatter={(label) => cfg.tooltipLabel(String(label))}
+                        />
+                        {cumulativeCounters.map((c) => {
+                          const idx = counterColorIndex[c] ?? 0;
+                          return (
+                            <Line
+                              key={c}
+                              type="monotone"
+                              dataKey={c}
+                              name={c}
+                              stroke={COUNTER_PALETTE[idx % COUNTER_PALETTE.length]}
+                              strokeWidth={1.5}
+                              dot={false}
+                              isAnimationActive={false}
+                            />
+                          );
+                        })}
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+
+                {gaugeCounters.length > 0 && (
+                  <div className="space-y-1" data-testid={`chart-gauges-wrapper-${job.job}`}>
+                    <div
+                      className="flex items-center justify-between text-[10px] uppercase tracking-wide text-muted-foreground"
+                      data-testid={`text-gauge-sparkline-label-${job.job}`}
+                    >
+                      <span>Gauge max per bucket</span>
+                      <span>{gaugeCounters.join(" · ")}</span>
+                    </div>
+                    <div className="h-20 w-full" data-testid={`chart-gauges-${job.job}`}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart
+                          data={gaugeChartData}
+                          margin={{ top: 4, right: 8, left: 0, bottom: 0 }}
+                        >
+                          <XAxis
+                            dataKey="label"
+                            tick={{ fontSize: 10 }}
+                            interval={cfg.xAxisInterval}
+                            stroke="currentColor"
+                            className="text-muted-foreground"
+                          />
+                          <YAxis
+                            tick={{ fontSize: 10 }}
+                            allowDecimals={false}
+                            width={28}
+                            stroke="currentColor"
+                            className="text-muted-foreground"
+                          />
+                          <Tooltip
+                            contentStyle={{ fontSize: 12 }}
+                            labelFormatter={(label) => cfg.tooltipLabel(String(label))}
+                          />
+                          {gaugeCounters.map((c) => {
+                            const idx = counterColorIndex[c] ?? 0;
+                            // No `connectNulls` — empty buckets render as
+                            // an explicit gap rather than an interpolated
+                            // straight line. A missing sample really does
+                            // mean "we don't know what the gauge was here",
+                            // and bridging the gap visually would
+                            // misrepresent that as a smooth transition
+                            // between two distant readings.
+                            return (
+                              <Line
+                                key={c}
+                                type="monotone"
+                                dataKey={c}
+                                name={c}
+                                stroke={COUNTER_PALETTE[idx % COUNTER_PALETTE.length]}
+                                strokeWidth={1.5}
+                                dot={false}
+                                isAnimationActive={false}
+                              />
+                            );
+                          })}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
