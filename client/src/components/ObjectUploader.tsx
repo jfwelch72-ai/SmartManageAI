@@ -6,6 +6,7 @@ import AwsS3 from "@uppy/aws-s3";
 import type { UploadResult } from "@uppy/core";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 
 export const MULTIPART_THRESHOLD = 10 * 1024 * 1024;
 
@@ -64,7 +65,7 @@ async function getDefaultUploadParameters(
 
 export function ObjectUploader({
   maxNumberOfFiles = 1,
-  maxFileSize = 104857600,
+  maxFileSize = MAX_STORAGE_FILE_SIZE,
   allowedFileTypes,
   fileType,
   onGetUploadParameters,
@@ -102,7 +103,14 @@ export function ObjectUploader({
 
     instance.use(AwsS3, {
       shouldUseMultipart: (file) => !onGetUploadParameters && (file.size ?? 0) > MULTIPART_THRESHOLD,
-      limit: 1,
+      limit: 4,
+      getChunkSize: (file) => {
+        const size = file.size ?? 0;
+        if (size > 5 * 1024 * 1024 * 1024) return 64 * 1024 * 1024; // 5GB+: 64MB chunks
+        if (size > 1024 * 1024 * 1024) return 32 * 1024 * 1024; // 1GB+: 32MB chunks
+        if (size > 256 * 1024 * 1024) return 16 * 1024 * 1024; // 256MB+: 16MB chunks
+        return 8 * 1024 * 1024; // default 8MB
+      },
 
       getUploadParameters: async (file) => {
         const fileInfo = {

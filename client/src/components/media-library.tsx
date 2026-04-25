@@ -4,7 +4,6 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
@@ -38,7 +37,7 @@ interface MediaFile {
 interface MediaResponse {
   files: MediaFile[];
   totalSize: number;
-  storageLimit: number;
+  storageLimit: number | null;
 }
 
 function formatFileSize(bytes: number): string {
@@ -83,16 +82,6 @@ export function MediaLibraryTab() {
   const handleUpload = useCallback(async (files: FileList) => {
     if (!data) return;
 
-    const totalNewSize = Array.from(files).reduce((sum, f) => sum + f.size, 0);
-    if (data.totalSize + totalNewSize > data.storageLimit) {
-      toast({
-        title: "Storage limit exceeded",
-        description: `Adding these files would exceed your 3GB limit. You have ${formatFileSize(data.storageLimit - data.totalSize)} remaining.`,
-        variant: "destructive",
-      });
-      return;
-    }
-
     setUploading(true);
     let successCount = 0;
     try {
@@ -101,8 +90,8 @@ export function MediaLibraryTab() {
           toast({ title: "Skipped " + file.name, description: "Only image files are supported.", variant: "destructive" });
           continue;
         }
-        if (file.size > 10 * 1024 * 1024) {
-          toast({ title: "Skipped " + file.name, description: "Maximum file size is 10MB per file.", variant: "destructive" });
+        if (file.size > 100 * 1024 * 1024) {
+          toast({ title: "Skipped " + file.name, description: "Maximum file size is 100MB per file.", variant: "destructive" });
           continue;
         }
         const formData = new FormData();
@@ -134,8 +123,6 @@ export function MediaLibraryTab() {
 
   const files = data?.files || [];
   const totalSize = data?.totalSize || 0;
-  const storageLimit = data?.storageLimit || 3 * 1024 * 1024 * 1024;
-  const usagePercent = Math.round((totalSize / storageLimit) * 100);
 
   const filteredFiles = searchQuery
     ? files.filter((f) => {
@@ -150,10 +137,8 @@ export function MediaLibraryTab() {
         <div className="flex-1 min-w-[280px]">
           <div className="flex items-center gap-2 text-sm mb-1.5">
             <HardDrive className="h-4 w-4 text-muted-foreground" />
-            <span data-testid="text-storage-usage">{formatGB(totalSize)} GB of {formatGB(storageLimit)} GB used</span>
-            <span className="ml-auto font-medium" data-testid="text-storage-percent">{usagePercent}%</span>
+            <span data-testid="text-storage-usage">{formatGB(totalSize)} GB used</span>
           </div>
-          <Progress value={usagePercent} className="h-2" data-testid="progress-storage" />
         </div>
         <div>
           <input

@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 
 interface HandoverItem {
   id: string;
@@ -270,7 +271,7 @@ export default function AssetHandoverTab({ projectId, projectCode, userRole }: A
                     ) : isMgr && (
                       <ObjectUploader
                         maxNumberOfFiles={1}
-                        maxFileSize={25 * 1024 * 1024}
+                        maxFileSize={MAX_STORAGE_FILE_SIZE}
                         fileType="DOCUMENT"
                         onComplete={(result) => {
                           const f = result.successful?.[0];

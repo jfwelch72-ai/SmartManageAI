@@ -18,6 +18,7 @@ import { WidgetErrorBoundary } from "@/components/WidgetErrorBoundary";
 import DocumentRevisionPanel from "@/components/DocumentRevisionPanel";
 import ProjectAddenda from "@/components/ProjectAddenda";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
 import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 import BidLibrarySection from "@/components/bid/BidLibrarySection";
@@ -1956,7 +1957,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                   <ObjectUploader
                     key={documentType}
                     maxNumberOfFiles={20}
-                    maxFileSize={documentType === "BIM" ? 209715200 : 104857600}
+                    maxFileSize={MAX_STORAGE_FILE_SIZE}
                     allowedFileTypes={documentType === "PLANS" ? [".pdf"] : documentType === "BIM" ? [".ifc"] : [".pdf", ".dwg", ".dxf", ".png", ".jpg", ".jpeg", ".xlsx", ".xls", ".csv", ".doc", ".docx"]}
                     fileType={documentType === "BIM" ? "BIM" : "DOCUMENT"}
                     onComplete={handleObjectUploadComplete}

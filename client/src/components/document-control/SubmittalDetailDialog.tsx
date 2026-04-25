@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import {
   FileCheck,
   Eye,
@@ -578,7 +579,7 @@ function SubmittalAttachmentsTab({ submittal, canUpload, canDeleteAny, currentUs
           </div>
           <ObjectUploader
             maxNumberOfFiles={5}
-            maxFileSize={52428800}
+            maxFileSize={MAX_STORAGE_FILE_SIZE}
             fileType="DOCUMENT"
             onComplete={handleUploadComplete}
             testId="button-upload-submittal-attachment"

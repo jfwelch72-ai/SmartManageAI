@@ -21,7 +21,6 @@ const router = Router();
 // ========================================
 
 const objectStorage = new ObjectStorageService();
-const STORAGE_LIMIT_BYTES = 3 * 1024 * 1024 * 1024;
 const socialUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
@@ -270,22 +269,6 @@ router.post("/upload-media", requireAuth, socialUpload.single("file"), async (re
     }
 
     const basePath = publicPaths[0];
-    const prefix = `gallery/${orgId}/`;
-    const basePathParts = basePath.split("/").filter(p => p.length > 0);
-    const checkBucketName = basePathParts[0];
-    const bucketPrefix = basePathParts.length > 1 ? basePathParts.slice(1).join("/") + "/" + prefix : prefix;
-    const checkBucket = objectStorageClient.bucket(checkBucketName);
-    const [existingFiles] = await checkBucket.getFiles({ prefix: bucketPrefix });
-    let currentTotalSize = 0;
-    for (const f of existingFiles) {
-      const [meta] = await f.getMetadata();
-      currentTotalSize += parseInt(meta.size as string) || 0;
-    }
-    if (currentTotalSize + file.size > STORAGE_LIMIT_BYTES) {
-      return res.status(413).json({
-        error: "Storage limit exceeded. You have used " + (currentTotalSize / (1024 * 1024 * 1024)).toFixed(2) + " GB of 3 GB.",
-      });
-    }
 
     const ext = file.originalname.split(".").pop() || "jpg";
     const uniqueId = randomUUID();

@@ -116,7 +116,7 @@ export default function AIBidAnalysisPage() {
         </TabsContent>
       </Tabs>
 
-      <UploadDialog open={showUploadDialog} onOpenChange={setShowUploadDialog} title="Analyze Bid Document" description="Upload a bid invitation, RFP, or scope document for AI analysis" entityLabel="Bid" entities={bids} selectedEntityId={selectedBidId} onEntityChange={setSelectedBidId} entitySelectTestId="select-bid" helpText="Upload bid invitation, RFP, or scope document (PDF or image, max 50MB)" analyzePending={mutations.analyzeMutation.isPending} onUploadComplete={handleUploadComplete} />
+      <UploadDialog open={showUploadDialog} onOpenChange={setShowUploadDialog} title="Analyze Bid Document" description="Upload a bid invitation, RFP, or scope document for AI analysis" entityLabel="Bid" entities={bids} selectedEntityId={selectedBidId} onEntityChange={setSelectedBidId} entitySelectTestId="select-bid" helpText="Upload bid invitation, RFP, or scope document (PDF or image)" analyzePending={mutations.analyzeMutation.isPending} onUploadComplete={handleUploadComplete} />
 
       <AnalysisResultDialog
         analysis={selectedAnalysis}

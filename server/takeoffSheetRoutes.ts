@@ -54,20 +54,28 @@ router.post("/api/bids/:bidId/takeoff/import-plan", requireAuth, requireRole("AD
 
     let pageCount = 1;
     const isPdf = document.mimeType?.includes("pdf") || document.fileName?.toLowerCase().endsWith(".pdf");
+    const PDF_PAGE_COUNT_MAX_BYTES = 500 * 1024 * 1024;
 
     if (isPdf && document.objectKey) {
       try {
         const { ObjectStorageService } = await import("./objectStorage");
         const objectStorageService = new ObjectStorageService();
         const objectFile = await objectStorageService.getObjectEntityFile(document.objectKey);
-        const [pdfBuffer] = await objectFile.download();
-        const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-        const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer), useSystemFonts: true });
-        const pdfDoc = await loadingTask.promise;
-        pageCount = pdfDoc.numPages;
+        const [metadata] = await objectFile.getMetadata();
+        const fileSize = parseInt(metadata.size as string) || 0;
+        if (fileSize > PDF_PAGE_COUNT_MAX_BYTES) {
+          logError("Skipping PDF page count for large file", { size: fileSize, fileName: document.fileName });
+          pageCount = 1;
+        } else {
+          const [pdfBuffer] = await objectFile.download();
+          const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+          const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer), useSystemFonts: true });
+          const pdfDoc = await loadingTask.promise;
+          pageCount = pdfDoc.numPages;
+        }
       } catch (error) {
-        logError("Error processing PDF:", {}, error instanceof Error ? error : new Error(String(error)));
-        return res.status(400).json({ error: "Failed to process PDF file" });
+        logError("Error processing PDF (falling back to single page):", {}, error instanceof Error ? error : new Error(String(error)));
+        pageCount = 1;
       }
     }
 
@@ -739,28 +747,34 @@ router.post("/api/projects/:projectId/takeoff/import-plan", requireAuth, async (
       return;
     }
 
+    const PDF_PAGE_COUNT_MAX_BYTES = 500 * 1024 * 1024;
     try {
       const { ObjectStorageService } = await import("./objectStorage");
       const objectStorageService = new ObjectStorageService();
       const objectFile = await objectStorageService.getObjectEntityFile(document.objectKey);
-      
-      // Download PDF to buffer using GCS File.download() method
-      const [pdfBuffer] = await objectFile.download();
-      
-      // Load PDF with pdfjs-dist
-      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-      const loadingTask = pdfjsLib.getDocument({
-        data: new Uint8Array(pdfBuffer),
-        useSystemFonts: true,
-      });
-      const pdfDoc = await loadingTask.promise;
-      pageCount = pdfDoc.numPages;
+
+      // Check file size first; skip parsing for very large files
+      const [metadata] = await objectFile.getMetadata();
+      const fileSize = parseInt(metadata.size as string) || 0;
+      if (fileSize > PDF_PAGE_COUNT_MAX_BYTES) {
+        logError("Skipping PDF page count for large file", { size: fileSize, fileName: document.fileName });
+        pageCount = 1;
+      } else {
+        // Download PDF to buffer using GCS File.download() method
+        const [pdfBuffer] = await objectFile.download();
+
+        // Load PDF with pdfjs-dist
+        const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+        const loadingTask = pdfjsLib.getDocument({
+          data: new Uint8Array(pdfBuffer),
+          useSystemFonts: true,
+        });
+        const pdfDoc = await loadingTask.promise;
+        pageCount = pdfDoc.numPages;
+      }
     } catch (error) {
-      logError("Error processing PDF:", {}, error instanceof Error ? error : new Error(String(error)));
-      res.status(400).json({ 
-        error: "Failed to process PDF file. The file may be corrupted or not a valid PDF document." 
-      });
-      return;
+      logError("Error processing PDF (falling back to single page):", {}, error instanceof Error ? error : new Error(String(error)));
+      pageCount = 1;
     }
 
     // Import plan to takeoff (sequential operations with compensating cleanup)
@@ -843,6 +857,7 @@ router.post("/api/projects/:projectId/takeoff/plans", requireAuth, requireRole("
 
     let pageCount = 1;
     const isPdf = fileName?.toLowerCase().endsWith(".pdf");
+    const PDF_PAGE_COUNT_MAX_BYTES = 500 * 1024 * 1024;
     if (isPdf) {
       try {
         const { ObjectStorageService, objectStorageClient } = await import("./objectStorage");
@@ -865,11 +880,17 @@ router.post("/api/projects/:projectId/takeoff/plans", requireAuth, requireRole("
           }
         }
         if (gcsFile) {
-          const [pdfBuffer] = await gcsFile.download();
-          const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-          const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer), useSystemFonts: true });
-          const pdfDoc = await loadingTask.promise;
-          pageCount = pdfDoc.numPages;
+          const [metadata] = await gcsFile.getMetadata();
+          const fileSize = parseInt(metadata.size as string) || 0;
+          if (fileSize > PDF_PAGE_COUNT_MAX_BYTES) {
+            logError("Skipping PDF page count for large file", { size: fileSize, fileName });
+          } else {
+            const [pdfBuffer] = await gcsFile.download();
+            const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
+            const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer), useSystemFonts: true });
+            const pdfDoc = await loadingTask.promise;
+            pageCount = pdfDoc.numPages;
+          }
         }
       } catch (error) {
         logError("Error reading PDF page count for direct upload:", {}, error instanceof Error ? error : new Error(String(error)));

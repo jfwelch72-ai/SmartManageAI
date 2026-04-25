@@ -13,6 +13,7 @@ import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Calendar as CalendarIcon, FileText, UserCog, PlayCircle, ClipboardList } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
 import type { UseFormReturn } from "react-hook-form";
@@ -453,7 +454,7 @@ export function SubcontractorQuoteDialog({
                   fileType="DOCUMENT"
                   onComplete={onFileUploadComplete}
                   allowedFileTypes={[".pdf", ".xlsx", ".docx", ".png", ".jpg"]}
-                  maxFileSize={10 * 1024 * 1024}
+                  maxFileSize={MAX_STORAGE_FILE_SIZE}
                 >
                   Upload Quote Document
                 </ObjectUploader>
@@ -668,7 +669,7 @@ export function MaterialQuoteDialog({
                   fileType="DOCUMENT"
                   onComplete={onFileUploadComplete}
                   allowedFileTypes={[".pdf", ".xlsx", ".docx", ".png", ".jpg"]}
-                  maxFileSize={10 * 1024 * 1024}
+                  maxFileSize={MAX_STORAGE_FILE_SIZE}
                 >
                   Upload Quote Document
                 </ObjectUploader>

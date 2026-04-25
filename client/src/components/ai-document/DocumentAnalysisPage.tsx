@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import { useToast } from "@/hooks/use-toast";
 import {
   Upload, Sparkles, Clock, CheckCircle2, AlertTriangle,
@@ -725,7 +726,7 @@ export function UploadDialog({
                 fileType="DOCUMENT"
                 onComplete={onUploadComplete}
                 allowedFileTypes={["application/pdf", "image/*"]}
-                maxFileSize={50 * 1024 * 1024}
+                maxFileSize={MAX_STORAGE_FILE_SIZE}
               >
                 {helpText}
               </ObjectUploader>

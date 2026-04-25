@@ -226,7 +226,7 @@ export default function AIContractAnalysisPage() {
       <UploadDialog
         open={showUploadDialog} onOpenChange={setShowUploadDialog} title="Analyze Contract Document" description="Upload a contract, award letter, or amendment for AI analysis"
         entityLabel="Project" entities={projects} selectedEntityId={selectedProjectId} onEntityChange={setSelectedProjectId} entitySelectTestId="select-project"
-        helpText="Upload contract document (PDF or image, max 50MB)" analyzePending={mutations.analyzeMutation.isPending} onUploadComplete={handleUploadComplete}
+        helpText="Upload contract document (PDF or image)" analyzePending={mutations.analyzeMutation.isPending} onUploadComplete={handleUploadComplete}
         renderExtras={() => (
           <div className="space-y-2">
             <label className="text-sm font-medium">Document Type</label>

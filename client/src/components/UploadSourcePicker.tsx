@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Card } from "@/components/ui/card";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import {
   HardDrive,
   Link as LinkIcon,
@@ -656,7 +657,7 @@ export function UploadSourcePicker({
               </Button>
               <ObjectUploader
                 maxNumberOfFiles={1}
-                maxFileSize={104857600}
+                maxFileSize={MAX_STORAGE_FILE_SIZE}
                 fileType={fileType}
                 onComplete={handleLocalFileComplete}
                 buttonVariant="default"

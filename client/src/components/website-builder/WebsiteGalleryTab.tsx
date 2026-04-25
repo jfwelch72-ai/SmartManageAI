@@ -119,8 +119,8 @@ export default function WebsiteGalleryTab({ hasWebsite, canEdit }: WebsiteGaller
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      toast({ title: "File too large", description: "Maximum file size is 10MB", variant: "destructive" });
+    if (file.size > 100 * 1024 * 1024) {
+      toast({ title: "File too large", description: "Maximum file size is 100MB", variant: "destructive" });
       return;
     }
 
@@ -346,7 +346,7 @@ export default function WebsiteGalleryTab({ hasWebsite, canEdit }: WebsiteGaller
                       <>
                         <Upload className="h-8 w-8 text-muted-foreground" />
                         <span className="text-sm text-muted-foreground">Click to upload project image</span>
-                        <span className="text-xs text-muted-foreground">PNG, JPG up to 10MB</span>
+                        <span className="text-xs text-muted-foreground">PNG, JPG up to 100MB</span>
                       </>
                     )}
                   </label>

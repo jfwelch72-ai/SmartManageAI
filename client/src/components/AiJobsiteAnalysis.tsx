@@ -938,7 +938,7 @@ export default function AiJobsiteAnalysis({ projectId, projectName }: AiJobsiteA
                   <ImagePlus className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
                   <p className="font-medium">Click to select photos</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Supports JPG, PNG, WebP (max 10MB each)
+                    Supports JPG, PNG, WebP
                   </p>
                   <input
                     ref={fileInputRef}

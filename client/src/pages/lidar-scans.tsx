@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import {
   ScanLine, Upload, Eye, Trash2, Plus, Calendar, HardDrive, MapPin,
   Layers, GitCompare, FileSearch, Loader2, AlertCircle
@@ -504,7 +505,7 @@ export default function LidarScansPage() {
               <Label>Scan File *</Label>
               <ObjectUploader
                 maxNumberOfFiles={1}
-                maxFileSize={500 * 1024 * 1024}
+                maxFileSize={MAX_STORAGE_FILE_SIZE}
                 fileType="LIDAR"
                 allowedFileTypes={[".las", ".laz", ".e57", ".ply"]}
                 onComplete={(result) => {

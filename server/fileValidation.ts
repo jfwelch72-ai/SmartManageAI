@@ -68,11 +68,18 @@ export const ALLOWED_RECEIPT_TYPES = [
   "application/pdf",
 ];
 
-export const MAX_MEDIA_SIZE = 100 * 1024 * 1024; // 100MB
-export const MAX_DOCUMENT_SIZE = 50 * 1024 * 1024; // 50MB
-export const MAX_RECEIPT_SIZE = 10 * 1024 * 1024; // 10MB
-export const MAX_BIM_SIZE = 200 * 1024 * 1024; // 200MB
-export const MAX_LIDAR_SIZE = 500 * 1024 * 1024; // 500MB
+// Effectively-unlimited per-file storage cap. The underlying object-storage
+// flow uses chunked/resumable uploads above 10 MB, so multi-GB uploads are
+// supported. Anything below this threshold should pass server-side validation
+// for every user-storage file type. Keep this large enough to cover huge
+// drawing sets (10+ GB) without ever silently rejecting a legitimate upload.
+export const MAX_STORAGE_FILE_SIZE = 20 * 1024 * 1024 * 1024; // 20 GB
+
+export const MAX_MEDIA_SIZE = MAX_STORAGE_FILE_SIZE;
+export const MAX_DOCUMENT_SIZE = MAX_STORAGE_FILE_SIZE;
+export const MAX_RECEIPT_SIZE = MAX_STORAGE_FILE_SIZE;
+export const MAX_BIM_SIZE = MAX_STORAGE_FILE_SIZE;
+export const MAX_LIDAR_SIZE = MAX_STORAGE_FILE_SIZE;
 
 export function validateMimeType(mimeType: string, fileType: FileType): boolean {
   if (fileType === "MEDIA") {

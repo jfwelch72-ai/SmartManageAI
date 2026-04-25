@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Upload, FileText, Image, File } from "lucide-react";
 import type { UploadResult } from "@uppy/core";
 import { ObjectUploader } from "./ObjectUploader";
+import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -75,7 +76,7 @@ export function ChangeOrderFileUploader({
   return (
     <ObjectUploader
       maxNumberOfFiles={10}
-      maxFileSize={52428800} // 50MB
+      maxFileSize={MAX_STORAGE_FILE_SIZE}
       allowedFileTypes={[
         "image/*",
         "application/pdf",

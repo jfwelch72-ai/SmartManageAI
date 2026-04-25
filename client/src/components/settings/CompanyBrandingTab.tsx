@@ -14,6 +14,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { useToast } from "@/hooks/use-toast";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import { cn } from "@/lib/utils";
 import { Upload, Download, Calendar as CalendarIcon } from "lucide-react";
 import { format, formatDistanceToNow, parseISO } from "date-fns";
@@ -151,7 +152,7 @@ export function DocumentUploadDialog({ open, onOpenChange, selectedDocType, type
           <div className="pt-2">
             <ObjectUploader
               maxNumberOfFiles={1}
-              maxFileSize={52428800}
+              maxFileSize={MAX_STORAGE_FILE_SIZE}
               allowedFileTypes={selectedDocType.includes("LOGO") ? ["image/png", "image/jpeg", "image/svg+xml", "image/webp"] : ["image/png", "image/jpeg", "application/pdf"]}
               fileType={selectedDocType.includes("LOGO") ? "MEDIA" : "DOCUMENT"}
               onComplete={handleUploadComplete}

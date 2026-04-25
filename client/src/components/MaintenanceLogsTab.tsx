@@ -20,6 +20,7 @@ import {
   Clock, AlertTriangle, Shield, BarChart3, CalendarClock, Power, PenLine, Paperclip, Download,
 } from "lucide-react";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
 type MaintenanceType = "PREVENTIVE" | "CORRECTIVE" | "EMERGENCY";
@@ -593,7 +594,7 @@ export default function MaintenanceLogsTab({ projectId, projectCode, userRole, h
                 <div className="mt-1">
                   <ObjectUploader
                     maxNumberOfFiles={1}
-                    maxFileSize={25 * 1024 * 1024}
+                    maxFileSize={MAX_STORAGE_FILE_SIZE}
                     fileType="DOCUMENT"
                     onComplete={(result) => {
                       const f = result.successful?.[0];
@@ -756,7 +757,7 @@ export default function MaintenanceLogsTab({ projectId, projectCode, userRole, h
                 <div className="mt-1">
                   <ObjectUploader
                     maxNumberOfFiles={1}
-                    maxFileSize={25 * 1024 * 1024}
+                    maxFileSize={MAX_STORAGE_FILE_SIZE}
                     fileType="DOCUMENT"
                     onComplete={(result) => {
                       const f = result.successful?.[0];

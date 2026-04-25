@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Upload, Calendar as CalendarIcon, Package, Receipt, Truck, CheckCircle, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -211,7 +212,7 @@ export default function ReceiptsTab({ projectCode, project }: ReceiptsTabProps) 
               </Button>
               <ObjectUploader
                 maxNumberOfFiles={1}
-                maxFileSize={104857600}
+                maxFileSize={MAX_STORAGE_FILE_SIZE}
                 allowedFileTypes={["image/*", "application/pdf"]}
                 fileType="RECEIPT"
                 onComplete={(result) => {

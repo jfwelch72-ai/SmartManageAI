@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import { Upload, Tag, Search, Loader2, Sparkles, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useProjectMedia } from "@/hooks/use-data";
@@ -180,7 +181,7 @@ export default function MediaTab({ projectCode, project }: MediaTabProps) {
                 </Button>
                 <ObjectUploader
                   maxNumberOfFiles={1}
-                  maxFileSize={104857600}
+                  maxFileSize={MAX_STORAGE_FILE_SIZE}
                   allowedFileTypes={mediaType === "IMAGE" ? ["image/*"] : ["video/*"]}
                   fileType="MEDIA"
                   onComplete={(result) => {

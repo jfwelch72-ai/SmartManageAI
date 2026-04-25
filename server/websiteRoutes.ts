@@ -1258,7 +1258,6 @@ const upload = multer({
     }
   }
 });
-const STORAGE_LIMIT_BYTES = 3 * 1024 * 1024 * 1024;
 
 // ============================================
 // IMAGE UPLOAD & MEDIA LIBRARY
@@ -1293,21 +1292,6 @@ router.post("/upload-image", requireAuth, sensitiveLimiter, upload.single("image
     }
 
     const basePath = publicPaths[0];
-
-    const prefix = `gallery/${orgId}/`;
-    const basePathParts = basePath.split('/').filter(p => p.length > 0);
-    const checkBucketName = basePathParts[0];
-    const bucketPrefix = basePathParts.length > 1 ? basePathParts.slice(1).join('/') + '/' + prefix : prefix;
-    const checkBucket = objectStorageClient.bucket(checkBucketName);
-    const [existingFiles] = await checkBucket.getFiles({ prefix: bucketPrefix });
-    let currentTotalSize = 0;
-    for (const f of existingFiles) {
-      const [meta] = await f.getMetadata();
-      currentTotalSize += parseInt(meta.size as string) || 0;
-    }
-    if (currentTotalSize + file.size > STORAGE_LIMIT_BYTES) {
-      return res.status(413).json({ error: "Storage limit exceeded. You have used " + (currentTotalSize / (1024 * 1024 * 1024)).toFixed(2) + " GB of 3 GB." });
-    }
 
     const ext = file.originalname.split('.').pop() || 'jpg';
     const uniqueId = randomUUID();
@@ -1380,7 +1364,7 @@ router.get("/media", requireAuth, async (req: AuthRequest, res: Response, next: 
 
     const publicPaths = objectStorage.getPublicObjectSearchPaths();
     if (publicPaths.length === 0) {
-      return res.json({ files: [], totalSize: 0, storageLimit: STORAGE_LIMIT_BYTES });
+      return res.json({ files: [], totalSize: 0, storageLimit: null });
     }
 
     const basePath = publicPaths[0];
@@ -1414,7 +1398,7 @@ router.get("/media", requireAuth, async (req: AuthRequest, res: Response, next: 
 
     files.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    res.json({ files, totalSize, storageLimit: STORAGE_LIMIT_BYTES });
+    res.json({ files, totalSize, storageLimit: null });
   } catch (error) {
     next(error);
   }
