@@ -11,7 +11,7 @@
 //    handler are paused (nextRetryAt cleared) so the sweep stops chasing
 //    them every 5 minutes forever.
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from "vitest";
 import { sql, eq, and } from "drizzle-orm";
 
 import { db } from "../db";
@@ -19,6 +19,10 @@ import {
   organizations,
   integrationConnections,
   integrationSyncState,
+  users,
+  projects,
+  payRuns,
+  payRunLineItems,
 } from "@shared/schema";
 
 import {
@@ -52,8 +56,19 @@ async function cleanup() {
   for (const id of ids) {
     await db.delete(integrationSyncState).where(eq(integrationSyncState.organizationId, id));
     await db.delete(integrationConnections).where(eq(integrationConnections.organizationId, id));
+    // Pay-run rows + their line items (cascade via pay_run_id) only exist
+    // for the QBO payroll/certified-payroll dispatch tests below; clean
+    // them out before the cascading org delete so the cleanup keeps
+    // working even if Drizzle's cascade order changes.
+    await db.delete(payRuns).where(eq(payRuns.organizationId, id));
     await db.delete(organizations).where(eq(organizations.id, id));
   }
+  // Users + projects don't cascade off the org delete (users.organizationId
+  // is `set null`, projects has no FK back to org). Wipe by the same
+  // PREFIX so reruns don't accumulate orphans or trip the unique
+  // constraints on `users.email` / `projects.code`.
+  await db.execute(sql`DELETE FROM ${users} WHERE email LIKE ${PREFIX + "%"}`);
+  await db.execute(sql`DELETE FROM ${projects} WHERE code LIKE ${PREFIX + "%"}`);
 }
 
 beforeAll(async () => {
@@ -337,6 +352,298 @@ describe("QBO scheduled sync auto-retry", () => {
     expect(out.failed).toBeGreaterThanOrEqual(1);
     const row = await getRow(conn.id, entity);
     expect(row.lastError).toContain("Unsupported QBO operation");
+    expect(row.retryCount).toBe(2);
+  });
+});
+
+// Task #1393 — payload-bearing QBO retries (Task #1377). The generic
+// retry sweep keys these rows as `qbo_sync:<kind>:<localId>` and reads
+// the original push payload from `metadata.payload`. These tests cover
+// each kind end-to-end so a future refactor of the entity-type encoding
+// or the metadata payload format can't silently break replay.
+describe("QBO payload-bearing scheduled sync auto-retry", () => {
+  type FetchCall = { url: string; method: string; body?: any };
+  let realFetch: typeof global.fetch;
+  let fetchCalls: FetchCall[];
+
+  beforeEach(() => {
+    realFetch = global.fetch;
+    fetchCalls = [];
+    // Generic recorder that returns 200 OK for any QBO POST. Tests that
+    // care about the response shape do their own assertions on the
+    // captured calls.
+    global.fetch = vi.fn(async (input: any, init: any = {}) => {
+      const url = String(input);
+      const method = (init.method ?? "GET").toUpperCase();
+      let body: any = undefined;
+      if (init.body) {
+        try { body = JSON.parse(String(init.body)); } catch { body = init.body; }
+      }
+      fetchCalls.push({ url, method, body });
+
+      // Default success payloads keyed by endpoint suffix.
+      if (/\/invoice(\?|$)/.test(url) && method === "POST") {
+        return { ok: true, status: 200, text: async () => "", json: async () => ({ Invoice: { Id: "QBO-INV-1" } }) } as any;
+      }
+      if (/\/customer(\?|$)/.test(url) && method === "POST") {
+        return { ok: true, status: 200, text: async () => "", json: async () => ({ Customer: { Id: "QBO-CUST-1" } }) } as any;
+      }
+      return { ok: true, status: 200, text: async () => "", json: async () => ({}) } as any;
+    }) as any;
+  });
+
+  afterEach(() => {
+    global.fetch = realFetch;
+  });
+
+  async function seedDueFailure(
+    conn: Awaited<ReturnType<typeof makeConnection>>,
+    entity: string,
+    payload: any,
+  ) {
+    await recordSyncFailure(conn, entity, "previous push failed", {
+      metadata: payload === undefined ? undefined : { payload },
+    });
+    await db.update(integrationSyncState)
+      .set({ nextRetryAt: new Date(Date.now() - 60_000) })
+      .where(and(
+        eq(integrationSyncState.connectionId, conn.id),
+        eq(integrationSyncState.entityType, entity),
+      ));
+  }
+
+  it("dispatches a qbo_sync:invoice failure row to exportInvoice using metadata.payload", async () => {
+    const conn = await makeConnection("qbo", { realmId: "r1", accessToken: "tok" });
+    const localInvoiceId = "INV-LOCAL-1";
+    const entity = `qbo_sync:invoice:${localInvoiceId}`;
+    const payload = {
+      customerRef: "CUST-99",
+      lineItems: [{ description: "Concrete pour", amount: 1500 }],
+      dueDate: "2026-05-01",
+      docNumber: "TEST-0001",
+      localInvoiceId,
+    };
+
+    await seedDueFailure(conn, entity, payload);
+
+    const out = await processIntegrationSyncRetries();
+    expect(out.attempted).toBeGreaterThanOrEqual(1);
+    expect(out.succeeded).toBeGreaterThanOrEqual(1);
+    expect(out.byProvider["qbo"]).toMatchObject({ attempted: 1, succeeded: 1 });
+
+    const invoicePosts = fetchCalls.filter(
+      (c) => c.method === "POST" && /\/v3\/company\/r1\/invoice(\?|$)/.test(c.url),
+    );
+    expect(invoicePosts.length).toBe(1);
+    expect(invoicePosts[0].body.CustomerRef.value).toBe("CUST-99");
+    expect(invoicePosts[0].body.DocNumber).toBe("TEST-0001");
+    expect(invoicePosts[0].body.DueDate).toBe("2026-05-01");
+    expect(Array.isArray(invoicePosts[0].body.Line)).toBe(true);
+    expect(invoicePosts[0].body.Line[0].Description).toBe("Concrete pour");
+    expect(invoicePosts[0].body.Line[0].Amount).toBe(1500);
+
+    const row = await getRow(conn.id, entity);
+    expect(row.lastError).toBeNull();
+    expect(row.retryCount).toBe(0);
+    expect(row.nextRetryAt).toBeNull();
+  });
+
+  it("dispatches a qbo_sync:customer failure row to exportCustomers using metadata.payload", async () => {
+    const conn = await makeConnection("qbo", { realmId: "r1", accessToken: "tok" });
+    const localCustomerId = "CUST-LOCAL-1";
+    const entity = `qbo_sync:customer:${localCustomerId}`;
+    const payload = {
+      id: localCustomerId,
+      name: "Acme Construction LLC",
+      email: "ap@acme.example",
+      phone: "555-0100",
+    };
+
+    await seedDueFailure(conn, entity, payload);
+
+    const out = await processIntegrationSyncRetries();
+    expect(out.attempted).toBeGreaterThanOrEqual(1);
+    expect(out.succeeded).toBeGreaterThanOrEqual(1);
+    expect(out.byProvider["qbo"]).toMatchObject({ attempted: 1, succeeded: 1 });
+
+    const customerPosts = fetchCalls.filter(
+      (c) => c.method === "POST" && /\/v3\/company\/r1\/customer(\?|$)/.test(c.url),
+    );
+    expect(customerPosts.length).toBe(1);
+    expect(customerPosts[0].body.DisplayName).toBe("Acme Construction LLC");
+    expect(customerPosts[0].body.PrimaryEmailAddr.Address).toBe("ap@acme.example");
+    expect(customerPosts[0].body.PrimaryPhone.FreeFormNumber).toBe("555-0100");
+
+    const row = await getRow(conn.id, entity);
+    expect(row.lastError).toBeNull();
+    expect(row.retryCount).toBe(0);
+    expect(row.nextRetryAt).toBeNull();
+  });
+
+  // Seed an org-scoped user, project, pay run + line items, and a QBO
+  // chart-of-accounts state with both an Expense and a Liability account.
+  // Used by the payroll / certified-payroll dispatch tests so the QBO
+  // export functions can run end-to-end and POST a journal entry —
+  // letting the tests verify dispatch via the *unique* `PrivateNote`
+  // shape each function emits (mis-routing fails the assertion).
+  async function seedPayRunFixture(connectionId: string, runNumber: string) {
+    const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const [user] = await db.insert(users).values({
+      organizationId: orgId,
+      firstName: "Sync",
+      lastName: "Worker",
+      email: `${PREFIX}user-${stamp}@example.test`,
+    }).returning();
+    const [project] = await db.insert(projects).values({
+      name: `${PREFIX}Project ${stamp}`,
+      code: `${PREFIX}P-${stamp}`,
+      clientName: "Sync Client",
+    }).returning();
+    const [payRun] = await db.insert(payRuns).values({
+      organizationId: orgId,
+      payPeriodStart: "2026-04-01",
+      payPeriodEnd: "2026-04-15",
+      status: "APPROVED",
+      runNumber,
+      createdById: user.id,
+    }).returning();
+    await db.insert(payRunLineItems).values({
+      payRunId: payRun.id,
+      userId: user.id,
+      projectId: project.id,
+      costCode: "01-100",
+      regularHours: "40",
+      overtimeHours: "0",
+      regularRate: "50",
+      totalAmount: "2000",
+      grossAmount: "2000",
+    });
+    await db.insert(integrationSyncState).values({
+      organizationId: orgId,
+      connectionId,
+      entityType: "chart_of_accounts",
+      metadata: {
+        accounts: [
+          { qboId: "100", name: "Direct Labor", classification: "Expense", active: true },
+          { qboId: "200", name: "Payroll Liabilities", classification: "Liability", accountType: "Other Current Liability", active: true },
+        ],
+      },
+      lastSyncAt: new Date(),
+    });
+    return { payRun, user, project };
+  }
+
+  it("dispatches a qbo_sync:payroll failure row to exportPayroll (not exportCertifiedPayroll)", async () => {
+    const conn = await makeConnection("qbo", { realmId: "r1", accessToken: "tok" });
+    const { payRun } = await seedPayRunFixture(conn.id, "RN-PAY-1");
+    const entity = `qbo_sync:payroll:${payRun.id}`;
+
+    await seedDueFailure(conn, entity, { payRunId: payRun.id });
+
+    const out = await processIntegrationSyncRetries();
+    expect(out.attempted).toBeGreaterThanOrEqual(1);
+    expect(out.succeeded).toBeGreaterThanOrEqual(1);
+    expect(out.byProvider["qbo"]).toMatchObject({ attempted: 1, succeeded: 1 });
+
+    // The journal-entry POST `PrivateNote` is the load-bearing dispatch
+    // discriminator: `exportPayroll` writes "SmartManageAI Pay Run #..."
+    // while `exportCertifiedPayroll` writes "Certified Payroll WH-347...".
+    // Asserting the payroll-specific note guarantees the right export
+    // function ran — a future regression that swapped the two branches in
+    // `runQboPayloadOperation` would fail this expectation.
+    const journalPosts = fetchCalls.filter(
+      (c) => c.method === "POST" && /\/v3\/company\/r1\/journalentry(\?|$)/.test(c.url),
+    );
+    expect(journalPosts.length).toBe(1);
+    expect(journalPosts[0].body.PrivateNote).toContain("SmartManageAI Pay Run");
+    expect(journalPosts[0].body.PrivateNote).toContain("RN-PAY-1");
+    expect(journalPosts[0].body.PrivateNote).not.toContain("Certified Payroll WH-347");
+
+    const row = await getRow(conn.id, entity);
+    expect(row.lastError).toBeNull();
+    expect(row.retryCount).toBe(0);
+    expect(row.nextRetryAt).toBeNull();
+  });
+
+  it("dispatches a qbo_sync:certified_payroll failure row to exportCertifiedPayroll (not exportPayroll)", async () => {
+    const conn = await makeConnection("qbo", { realmId: "r1", accessToken: "tok" });
+    const { payRun } = await seedPayRunFixture(conn.id, "RN-CP-1");
+    const entity = `qbo_sync:certified_payroll:${payRun.id}`;
+
+    await seedDueFailure(conn, entity, { payRunId: payRun.id });
+
+    const out = await processIntegrationSyncRetries();
+    expect(out.attempted).toBeGreaterThanOrEqual(1);
+    expect(out.succeeded).toBeGreaterThanOrEqual(1);
+    expect(out.byProvider["qbo"]).toMatchObject({ attempted: 1, succeeded: 1 });
+
+    // Mirror of the payroll test: the WH-347 `PrivateNote` is unique to
+    // `exportCertifiedPayroll`, so a wrong dispatch into `exportPayroll`
+    // would emit the "SmartManageAI Pay Run" note and fail this contains
+    // check (and inversely, the negative assertion guards a regression
+    // the other way).
+    const journalPosts = fetchCalls.filter(
+      (c) => c.method === "POST" && /\/v3\/company\/r1\/journalentry(\?|$)/.test(c.url),
+    );
+    expect(journalPosts.length).toBe(1);
+    expect(journalPosts[0].body.PrivateNote).toContain("Certified Payroll WH-347");
+    expect(journalPosts[0].body.PrivateNote).toContain("RN-CP-1");
+    expect(journalPosts[0].body.PrivateNote).not.toContain("SmartManageAI Pay Run");
+
+    const row = await getRow(conn.id, entity);
+    expect(row.lastError).toBeNull();
+    expect(row.retryCount).toBe(0);
+    expect(row.nextRetryAt).toBeNull();
+  });
+
+  it("returns a clear 'Missing payload' error for legacy invoice rows that lack metadata.payload", async () => {
+    const conn = await makeConnection("qbo", { realmId: "r1", accessToken: "tok" });
+    const localInvoiceId = "INV-LEGACY-1";
+    const entity = `qbo_sync:invoice:${localInvoiceId}`;
+
+    // Simulate a legacy failure row written before Task #1377 added the
+    // `metadata.payload` persistence (or one whose metadata was wiped by
+    // an admin tool). The handler must surface a clear error rather than
+    // crashing inside `exportInvoice` on `payload.lineItems.map(...)`.
+    await seedDueFailure(conn, entity, undefined);
+
+    const out = await processIntegrationSyncRetries();
+    expect(out.failed).toBeGreaterThanOrEqual(1);
+    expect(out.attempted).toBeGreaterThanOrEqual(1);
+    expect(out.succeeded).toBe(0);
+
+    // No QBO request should ever fly for a row that has no payload to
+    // replay — the handler must short-circuit before touching the network.
+    const invoicePosts = fetchCalls.filter(
+      (c) => c.method === "POST" && /\/v3\/company\/r1\/invoice(\?|$)/.test(c.url),
+    );
+    expect(invoicePosts.length).toBe(0);
+
+    const row = await getRow(conn.id, entity);
+    expect(row.lastError).toContain("Missing payload");
+    expect(row.lastError).toContain("invoice");
+    expect(row.retryCount).toBe(2);
+  });
+
+  it("returns a clear 'Missing payload' error for legacy customer rows that lack metadata.payload", async () => {
+    const conn = await makeConnection("qbo", { realmId: "r1", accessToken: "tok" });
+    const localCustomerId = "CUST-LEGACY-1";
+    const entity = `qbo_sync:customer:${localCustomerId}`;
+
+    await seedDueFailure(conn, entity, undefined);
+
+    const out = await processIntegrationSyncRetries();
+    expect(out.failed).toBeGreaterThanOrEqual(1);
+    expect(out.succeeded).toBe(0);
+
+    const customerPosts = fetchCalls.filter(
+      (c) => c.method === "POST" && /\/v3\/company\/r1\/customer(\?|$)/.test(c.url),
+    );
+    expect(customerPosts.length).toBe(0);
+
+    const row = await getRow(conn.id, entity);
+    expect(row.lastError).toContain("Missing payload");
+    expect(row.lastError).toContain("customer");
     expect(row.retryCount).toBe(2);
   });
 });
