@@ -31,6 +31,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Link, useLocation } from "wouter";
 
 import { getNotificationDestination } from "@/lib/notificationDestination";
+import { JobMetricAlertBellItem } from "@/components/notifications/JobMetricAlertItem";
 
 interface AppHeaderProps {
   userName: string;
@@ -626,6 +627,25 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                   </div>
                 ) : (
                   notifications.map((notification) => {
+                    // Task #2022 — render the same Snooze 1h/4h/24h
+                    // controls inline in the bell so admins can dismiss
+                    // recurring `pool_health`/job-metric pages without
+                    // first deep-linking into the Job Metrics dashboard.
+                    if (notification.relatedEntityType === "job_metric_alert") {
+                      return (
+                        <JobMetricAlertBellItem
+                          key={notification.id}
+                          notification={notification}
+                          onDismiss={() => {
+                            if (!notification.isRead) {
+                              markAsRead.mutate(notification.id);
+                            }
+                          }}
+                          onNavigate={() => setNotificationsOpen(false)}
+                          isDismissing={markAsRead.isPending}
+                        />
+                      );
+                    }
                     const destination = getNotificationDestination(notification);
                     const hasDestination = !!destination;
                     // Task #1974 — INTEGRATION_SYNC_RETRIES_EXHAUSTED rows

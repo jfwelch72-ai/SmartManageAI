@@ -22,6 +22,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useState, useEffect } from "react";
 import { OrganizationSwitcher } from "./OrganizationSwitcher";
 import { getNotificationDestination } from "@/lib/notificationDestination";
+import { JobMetricAlertBellItem } from "@/components/notifications/JobMetricAlertItem";
 
 const ASK_AI_STORAGE_KEY = "smartmanage-ask-ai-enabled";
 
@@ -170,6 +171,25 @@ export default function TopHeader() {
                     </div>
                   ) : (
                     notifications.map((notification) => {
+                      // Task #2022 — render the same Snooze 1h/4h/24h
+                      // controls inline in the bell so admins can dismiss
+                      // recurring `pool_health`/job-metric pages without
+                      // first deep-linking into the Job Metrics dashboard.
+                      if (notification.relatedEntityType === "job_metric_alert") {
+                        return (
+                          <JobMetricAlertBellItem
+                            key={notification.id}
+                            notification={notification}
+                            onDismiss={() => {
+                              if (!notification.isRead) {
+                                markAsRead.mutate(notification.id);
+                              }
+                            }}
+                            onNavigate={() => setNotificationsOpen(false)}
+                            isDismissing={markAsRead.isPending}
+                          />
+                        );
+                      }
                       const destination = getNotificationDestination(notification);
                       const hasDestination = destination !== null;
 
