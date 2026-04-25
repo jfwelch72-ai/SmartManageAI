@@ -73,6 +73,23 @@ Volume measurements are reported in **cubic yards (CY)** everywhere — the Meas
 
 If a future export ever needs cubic feet (CF), the conversion (×27) must be applied in a single shared quantity helper rather than scattered per-call-site, and the unit label must be changed in the same place. Do not introduce ad-hoc CF conversions in individual components or routes.
 
+### CLI scripts imported by the server bundle
+Any TS file under `scripts/` that the server transitively imports (e.g. `scripts/fetch-dot-pay-items.ts`, imported by `server/jobs/dotPayItemsRefresh.ts` for `runFetcher`) gets folded into `dist/index.js` by `esbuild --bundle`. The classic ESM "is this the entrypoint?" guard
+
+```ts
+const isMain = import.meta.url === `file://${process.argv[1]}`;
+```
+
+is **not safe in that case** — after bundling, both sides resolve to the bundle path (`/dist/index.js`), so `isMain` becomes `true` in production and the CLI's `main()` runs unconditionally on server boot. That blocked the port from opening and caused a publish failure (April 2026). When a `scripts/*.ts` file both exports helpers AND has a CLI `main()`, also require the entry filename to actually be the script:
+
+```ts
+const isMain =
+  import.meta.url === `file://${process.argv[1]}` &&
+  /(?:^|[\\/])my-script-name\.(?:ts|mts|cts|js|mjs|cjs)$/.test(process.argv[1]);
+```
+
+Or, equivalently, split the file so the bundled code path imports a pure-export module and the CLI lives in a separate `*-cli.ts` wrapper.
+
 ## External Dependencies
 *   PostgreSQL (Neon)
 *   Replit Object Storage (Google Cloud Storage backend)

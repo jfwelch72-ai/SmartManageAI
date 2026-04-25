@@ -1866,7 +1866,10 @@ async function main() {
 }
 
 const isMain =
-  typeof process !== "undefined" && process.argv[1] && import.meta.url === `file://${process.argv[1]}`;
+  typeof process !== "undefined" &&
+  process.argv[1] &&
+  import.meta.url === `file://${process.argv[1]}` &&
+  /(?:^|[\\/])fetch-dot-pay-items\.(?:ts|mts|cts|js|mjs|cjs)$/.test(process.argv[1]);
 if (isMain) {
   main().catch((err) => {
     console.error(err);
