@@ -2,6 +2,8 @@ import { useState, useMemo } from "react";
 import type { ProjectWithNames } from "@/hooks/use-data";
 import { Button } from "@/components/ui/button";
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import StaleDrawingsBadge from "./StaleDrawingsBadge";
+import { useDrawingSetStaleSummary } from "@/hooks/use-drawing-set-stale-summary";
 import {
   startOfMonth,
   endOfMonth,
@@ -41,6 +43,12 @@ interface ProjectBar {
 
 export default function ProjectsCalendarView({ projects, onProjectClick }: Props) {
   const [currentMonth, setCurrentMonth] = useState(() => startOfMonth(new Date()));
+
+  // Task #1915 — reuse the org-scoped roll-up that already powers the table
+  // and kanban views so flipping into the calendar doesn't trigger extra
+  // /compare requests.
+  const { data: staleSummaryData } = useDrawingSetStaleSummary(projects.length > 0);
+  const staleSummary = staleSummaryData?.summary ?? {};
 
   const projectBars: ProjectBar[] = useMemo(() => {
     return projects
@@ -155,11 +163,13 @@ export default function ProjectsCalendarView({ projects, onProjectClick }: Props
                 {placed.map(({ bar, startCol, span, row }, idx) => {
                   const status = bar.project.status;
                   const color = STATUS_BAR_COLORS[status] || "bg-slate-500 hover:bg-slate-600";
+                  const summary = staleSummary[bar.project.id];
                   return (
                     <button
                       key={idx}
+                      type="button"
                       onClick={() => onProjectClick(bar.project)}
-                      className={`absolute text-[11px] text-white px-1.5 py-0.5 rounded truncate text-left ${color}`}
+                      className={`absolute flex items-center gap-1 text-[11px] text-white px-1.5 py-0.5 rounded text-left ${color}`}
                       style={{
                         left: `calc(${(startCol / 7) * 100}% + 2px)`,
                         width: `calc(${(span / 7) * 100}% - 4px)`,
@@ -169,7 +179,11 @@ export default function ProjectsCalendarView({ projects, onProjectClick }: Props
                       title={`${bar.project.name} (${bar.project.code})`}
                       data-testid={`calendar-bar-${bar.project.code}`}
                     >
-                      {bar.project.name}
+                      <span className="flex-1 min-w-0 truncate">{bar.project.name}</span>
+                      <StaleDrawingsBadge
+                        projectCode={bar.project.code}
+                        summary={summary}
+                      />
                     </button>
                   );
                 })}

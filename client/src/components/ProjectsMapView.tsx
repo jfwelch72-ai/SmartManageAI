@@ -18,6 +18,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import MapPickerDialog from "./MapPickerDialog";
+import StaleDrawingsBadge from "./StaleDrawingsBadge";
+import { useDrawingSetStaleSummary } from "@/hooks/use-drawing-set-stale-summary";
 
 const defaultIcon = new L.Icon({
   iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
@@ -59,6 +61,11 @@ export default function ProjectsMapView({ projects, onProjectClick }: Props) {
   useEffect(() => {
     L.Marker.prototype.options.icon = defaultIcon;
   }, []);
+
+  // Task #1915 — share the org-scoped stale-drawings roll-up with the table
+  // and kanban views so opening the map doesn't trigger any extra requests.
+  const { data: staleSummaryData } = useDrawingSetStaleSummary(projects.length > 0);
+  const staleSummary = staleSummaryData?.summary ?? {};
 
   type LocatedProject = ProjectWithNames & { siteLatitude: number; siteLongitude: number };
 
@@ -385,7 +392,13 @@ export default function ProjectsMapView({ projects, onProjectClick }: Props) {
               <Marker key={p.id} position={[p.siteLatitude, p.siteLongitude]} data-testid={`map-pin-${p.code}`}>
                 <Popup>
                   <div className="space-y-1">
-                    <div className="font-mono text-xs text-muted-foreground">{p.code}</div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="font-mono text-xs text-muted-foreground">{p.code}</div>
+                      <StaleDrawingsBadge
+                        projectCode={p.code}
+                        summary={staleSummary[p.id]}
+                      />
+                    </div>
                     <div className="font-medium text-sm">{p.name}</div>
                     {p.clientName && <div className="text-xs">{p.clientName}</div>}
                     <button
