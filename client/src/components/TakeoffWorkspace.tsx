@@ -493,6 +493,22 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       setCategoryName,
       setCategoryColor,
       setSelectedCategoryId,
+      // Task #1837 — When the markup PATCH handler reports a
+      // not_found rollback (a teammate deleted the markup on another
+      // device), drop those ids out of the local selection set so
+      // the user can't re-select a phantom that's already gone from
+      // the cache.
+      pruneSelectedMarkupIds: (ids: string[]) => {
+        if (ids.length === 0) return;
+        setSelectedMarkupIds((prev) => {
+          let changed = false;
+          const next = new Set(prev);
+          for (const id of ids) {
+            if (next.delete(id)) changed = true;
+          }
+          return changed ? next : prev;
+        });
+      },
     },
   });
 

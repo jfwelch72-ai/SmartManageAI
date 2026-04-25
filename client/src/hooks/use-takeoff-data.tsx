@@ -7,7 +7,7 @@ import { useTakeoffHistory, type MeasurementSnapshot } from "@/hooks/use-takeoff
 import { useInvalidateDrawingSetCompares } from "@/hooks/use-invalidate-drawing-set-compares";
 import type { TakeoffSheet, TakeoffMeasurement, TakeoffMeasurementGroup, QuantityCategory, TakeoffMarkup, TakeoffSheetLink, TakeoffCondition } from "@shared/schema";
 import type { PlanDocument, AddendumOverlayData, MeasurementType } from "@/components/takeoff/types";
-import { buildMarkupFailureSummary } from "@/components/markups/markup-failure-helpers";
+import { buildMarkupFailureSummary, type MarkupFailureSummary } from "@/components/markups/markup-failure-helpers";
 
 export type TakeoffMarkupWithAuthor = Omit<TakeoffMarkup, "points"> & { authorName?: string | null; points: { x: number; y: number }[] };
 
@@ -37,6 +37,14 @@ interface UseTakeoffDataParams {
     setCategoryName: (v: string) => void;
     setCategoryColor: (v: string) => void;
     setSelectedCategoryId: (v: string | null) => void;
+    /**
+     * Task #1837 — Called when a single/bulk markup PATCH fails with
+     * `reason: "not_found"` (typically because a teammate deleted
+     * those markups on another device). The workspace prunes its
+     * local selection set so the user can't re-select a phantom that
+     * the server has already removed.
+     */
+    pruneSelectedMarkupIds?: (ids: string[]) => void;
   };
 }
 
@@ -85,6 +93,33 @@ export function useTakeoffData({
   useEffect(() => () => {
     if (failedMarkupIdsTimerRef.current) clearTimeout(failedMarkupIdsTimerRef.current);
   }, []);
+
+  // Task #1837 — When a markup PATCH fails with `reason: "not_found"`
+  // the server has already deleted those markups (typically via a
+  // teammate on another device). The optimistic-rollback handler
+  // restores the pre-mutation snapshot, which would re-introduce the
+  // phantom markup with a red glow until the next manual refresh.
+  // This helper drops the deleted ids from the active sheet's cached
+  // markups list AND from the workspace's selection set so the canvas
+  // state immediately matches what the server believes.
+  const pruneDeletedMarkups = useCallback(
+    (
+      summary: MarkupFailureSummary,
+      cacheKey: readonly unknown[],
+    ) => {
+      const notFoundIds = summary.groups
+        .filter((g) => g.reason === "not_found")
+        .flatMap((g) => g.failedMarkupIds);
+      if (notFoundIds.length === 0) return;
+      const notFoundSet = new Set(notFoundIds);
+      queryClient.setQueryData<TakeoffMarkupWithAuthor[]>(
+        cacheKey,
+        (old) => (old ? old.filter((m) => !notFoundSet.has(m.id)) : old),
+      );
+      callbacks.pruneSelectedMarkupIds?.(notFoundIds);
+    },
+    [callbacks],
+  );
 
   // Task #1882 — Track the most recent "Deleted N markups" undo toast
   // so we can auto-dismiss it when the user navigates away from the
@@ -905,6 +940,16 @@ export function useTakeoffData({
         attemptedMarkupIds: vars?.id ? [vars.id] : [],
         markups: cachedMarkups.map(m => ({ id: m.id, tool: m.tool, text: m.text })),
       });
+      // Task #1837 — If the server reports the markup was deleted
+      // out from under us (typically a teammate on another device),
+      // surgically remove it from the cached markups list (the
+      // `previousMarkups` rollback above just put it back) and prune
+      // it out of the workspace selection set so the canvas state
+      // matches what the server believes BEFORE the toast names it.
+      pruneDeletedMarkups(
+        summary,
+        ctx?.queryKey ?? ["/api/takeoff/sheets", selectedSheet, "markups"],
+      );
       flashFailedMarkupIds(summary.failedMarkupIds);
       toast({ title: summary.title, description: summary.description, variant: "destructive" });
     },
@@ -983,6 +1028,15 @@ export function useTakeoffData({
         attemptedMarkupIds: ctx?.attemptedIds ?? [],
         markups: cachedMarkups.map(m => ({ id: m.id, tool: m.tool, text: m.text })),
       });
+      // Task #1837 — Drop any not_found ids out of the cached markups
+      // list and the workspace selection set so the canvas matches
+      // what the server believes (a teammate deleted those markups
+      // from another device). Runs after the rollback above so the
+      // surviving siblings still revert to their pre-drag points.
+      pruneDeletedMarkups(
+        summary,
+        ctx?.queryKey ?? ["/api/takeoff/sheets", selectedSheet, "markups"],
+      );
       flashFailedMarkupIds(summary.failedMarkupIds);
       toast({ title: summary.title, description: summary.description, variant: "destructive" });
     },
