@@ -1648,6 +1648,78 @@ export async function snoozeJobMetricAlertByKey(
 }
 
 /**
+ * Task #2023 — List the currently-active snoozes (`snoozedUntil > now`)
+ * keyed by `(job, counter, kind)` so the in-app notification feed can
+ * render a persistent "Snoozed until X by Y" banner on the matching
+ * `job_metric_alert` row instead of just flashing a toast at snooze
+ * time. We pick the snooze with the latest `snoozedUntil` per key
+ * (matches what `fetchActiveSnoozeLookup` reports to the engine) and
+ * include the underlying `eventId` so the bell row's "Unsnooze" button
+ * can hit the existing `POST /events/:id/unsnooze` endpoint.
+ */
+export interface ActiveJobMetricAlertSnooze {
+  job: string;
+  counter: string | null;
+  kind: AlertKind;
+  eventId: string;
+  snoozedUntil: number;
+  snoozedById: string | null;
+  snoozedByName: string | null;
+}
+
+export async function listActiveJobMetricAlertSnoozes(): Promise<ActiveJobMetricAlertSnooze[]> {
+  const now = nowFn();
+  const cutoff = new Date(now);
+  // Re-use the same select-and-leftJoin shape that
+  // `listRecentJobMetricAlertEvents` uses so the existing dbMock in
+  // job-metric-alerts.test.ts (which assumes that shape when a join
+  // is present) keeps working without bespoke wiring.
+  const ackUser = alias(users, "ack_user");
+  const snoozeUser = alias(users, "snooze_user");
+  const rows = await db
+    .select({
+      event: jobMetricAlertEvents,
+      ackFirst: ackUser.firstName,
+      ackLast: ackUser.lastName,
+      ackEmail: ackUser.email,
+      snoozeFirst: snoozeUser.firstName,
+      snoozeLast: snoozeUser.lastName,
+      snoozeEmail: snoozeUser.email,
+    })
+    .from(jobMetricAlertEvents)
+    .leftJoin(ackUser, eq(ackUser.id, jobMetricAlertEvents.acknowledgedById))
+    .leftJoin(snoozeUser, eq(snoozeUser.id, jobMetricAlertEvents.snoozedById))
+    .where(gt(jobMetricAlertEvents.snoozedUntil, cutoff));
+
+  // Multiple snoozed events can share a `(job, counter, kind)` key in
+  // edge cases; the engine's `fetchActiveSnoozeLookup` keys on the
+  // newest `snoozedUntil`, so do the same here. `snoozeJobMetricAlertEvent`
+  // is the only writer in normal operation, so picking the newest
+  // snooze also gives the right `eventId` for the unsnooze action.
+  const byKey = new Map<string, ActiveJobMetricAlertSnooze>();
+  for (const { event: r, snoozeFirst, snoozeLast, snoozeEmail } of rows) {
+    if (!r.snoozedUntil) continue;
+    const ts = new Date(r.snoozedUntil).getTime();
+    if (ts <= now) continue;
+    const key = `${r.job}::${r.counter ?? ""}::${r.kind}`;
+    const prev = byKey.get(key);
+    if (prev && prev.snoozedUntil >= ts) continue;
+    byKey.set(key, {
+      job: r.job,
+      counter: r.counter,
+      kind: (r.kind === "stall" ? "stall" : "spike") as AlertKind,
+      eventId: r.id,
+      snoozedUntil: ts,
+      snoozedById: r.snoozedById ?? null,
+      snoozedByName: r.snoozedById
+        ? buildDisplayName(snoozeFirst, snoozeLast, snoozeEmail)
+        : null,
+    });
+  }
+  return Array.from(byKey.values()).sort((a, b) => a.snoozedUntil - b.snoozedUntil);
+}
+
+/**
  * Clear an active snooze early so the alert can re-fire if its
  * underlying condition still holds. The acknowledgement record is
  * preserved so the dashboard still shows who handled it originally.

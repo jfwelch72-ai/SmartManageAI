@@ -1205,6 +1205,133 @@ describe("jobMetricAlerts (Task #718)", () => {
     });
   });
 
+  // Task #2023 — `listActiveJobMetricAlertSnoozes` powers the
+  // persistent "Snoozed until X by Y" banner on the in-app
+  // notification feed. It must (a) only return events whose
+  // `snoozedUntil` is in the future, (b) collapse multiple snoozed
+  // rows for the same `(job, counter, kind)` to the newest snooze so
+  // the banner agrees with the engine's `fetchActiveSnoozeLookup`,
+  // and (c) hydrate the snoozer's display name for the banner copy.
+  describe("listActiveJobMetricAlertSnoozes (Task #2023)", () => {
+    it("returns one entry per (job, counter, kind) keyed to the newest snoozedUntil", async () => {
+      const now = Date.now();
+      alerts.setJobMetricAlertsClockForTests(() => now);
+      // Give admin-1 a real name so the banner copy renders correctly.
+      state.superAdmins[0].firstName = "Jane";
+      state.superAdmins[0].lastName = "Doe";
+
+      // Two snoozed events on the same key — older + newer.
+      state.events.push({
+        id: "evt-old-snooze",
+        job: "pool_health",
+        counter: "waitingSaturated",
+        kind: "spike",
+        ruleId: null,
+        message: "old",
+        observedValue: "1",
+        baselineValue: "0",
+        triggeredAt: new Date(now - 2 * HOUR),
+        notifiedUserCount: 2,
+        acknowledgedAt: new Date(now - 2 * HOUR),
+        acknowledgedById: "admin-1",
+        snoozedUntil: new Date(now + 30 * 60 * 1000),
+        snoozedById: "admin-1",
+        emailed: false,
+        emailedRecipientCount: 0,
+        emailAttempted: false,
+        emailError: null,
+      });
+      state.events.push({
+        id: "evt-new-snooze",
+        job: "pool_health",
+        counter: "waitingSaturated",
+        kind: "spike",
+        ruleId: null,
+        message: "new",
+        observedValue: "1",
+        baselineValue: "0",
+        triggeredAt: new Date(now - 5 * 60 * 1000),
+        notifiedUserCount: 2,
+        acknowledgedAt: new Date(now - 5 * 60 * 1000),
+        acknowledgedById: "admin-1",
+        snoozedUntil: new Date(now + 4 * HOUR),
+        snoozedById: "admin-1",
+        emailed: false,
+        emailedRecipientCount: 0,
+        emailAttempted: false,
+        emailError: null,
+      });
+      // A stall snooze on a different key — should appear separately.
+      state.events.push({
+        id: "evt-other-snooze",
+        job: "stuck_job",
+        counter: null,
+        kind: "stall",
+        ruleId: null,
+        message: "stuck",
+        observedValue: null,
+        baselineValue: null,
+        triggeredAt: new Date(now - 10 * 60 * 1000),
+        notifiedUserCount: 2,
+        acknowledgedAt: new Date(now - 10 * 60 * 1000),
+        acknowledgedById: "admin-2",
+        snoozedUntil: new Date(now + 60 * 60 * 1000),
+        snoozedById: "admin-2",
+        emailed: false,
+        emailedRecipientCount: 0,
+        emailAttempted: false,
+        emailError: null,
+      });
+
+      const snoozes = await alerts.listActiveJobMetricAlertSnoozes();
+
+      expect(snoozes).toHaveLength(2);
+      const poolEntry = snoozes.find(
+        (s) => s.job === "pool_health" && s.counter === "waitingSaturated",
+      );
+      expect(poolEntry).toBeDefined();
+      // Newest snooze wins so the unsnooze button targets the right row.
+      expect(poolEntry?.eventId).toBe("evt-new-snooze");
+      expect(poolEntry?.snoozedUntil).toBe(now + 4 * HOUR);
+      expect(poolEntry?.snoozedById).toBe("admin-1");
+      expect(poolEntry?.snoozedByName).toBe("Jane Doe");
+
+      const stallEntry = snoozes.find((s) => s.kind === "stall");
+      expect(stallEntry?.job).toBe("stuck_job");
+      expect(stallEntry?.counter).toBeNull();
+      expect(stallEntry?.eventId).toBe("evt-other-snooze");
+    });
+
+    it("excludes already-expired snoozes", async () => {
+      const now = Date.now();
+      alerts.setJobMetricAlertsClockForTests(() => now);
+      state.events.push({
+        id: "evt-expired",
+        job: "pool_health",
+        counter: "waitingSaturated",
+        kind: "spike",
+        ruleId: null,
+        message: "expired",
+        observedValue: "1",
+        baselineValue: "0",
+        triggeredAt: new Date(now - 4 * HOUR),
+        notifiedUserCount: 2,
+        acknowledgedAt: new Date(now - 4 * HOUR),
+        acknowledgedById: "admin-1",
+        // Snooze ended 5 minutes ago.
+        snoozedUntil: new Date(now - 5 * 60 * 1000),
+        snoozedById: "admin-1",
+        emailed: false,
+        emailedRecipientCount: 0,
+        emailAttempted: false,
+        emailError: null,
+      });
+
+      const snoozes = await alerts.listActiveJobMetricAlertSnoozes();
+      expect(snoozes).toHaveLength(0);
+    });
+  });
+
   it("snoozeJobMetricAlertEvent rejects non-positive hours", async () => {
     await expect(
       alerts.snoozeJobMetricAlertEvent("evt-x", "admin-1", 0),

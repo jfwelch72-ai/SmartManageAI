@@ -86,6 +86,26 @@ router.post(
   },
 );
 
+// Task #2023 — Surface the active snoozes (keyed by `(job, counter, kind)`)
+// so the in-app notification feed can render a persistent
+// "Snoozed until X by Y" banner on the matching `job_metric_alert`
+// bell row instead of just flashing a toast at snooze time. The
+// response also carries the underlying `eventId` so the bell row's
+// "Unsnooze" button can hit the existing `:id/unsnooze` endpoint.
+router.get(
+  "/admin/metrics/jobs/alerts/active-snoozes",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (_req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const snoozes = await jobMetricAlerts.listActiveJobMetricAlertSnoozes();
+      res.json({ snoozes });
+    } catch (err: any) {
+      next(err);
+    }
+  },
+);
+
 // Task #2010 — Snooze the most recent matching `(job, counter, kind)`
 // alert event without requiring the caller to know its row id. Powers
 // the in-app notification action buttons that page Super Admins from
