@@ -145,6 +145,12 @@ interface TakeoffSidebarProps {
   setSelectedSegmentIndex: (v: number | null) => void;
   deleteMeasurementMutation: any;
   updateMeasurementMutation: any;
+  // Task #1989 — Bulk PATCH mutation that replaces the per-id fan-out
+  // in `handleBulkCategoryAssign`. Optional so existing test mounts
+  // that haven't wired the new mutation continue to compile; the
+  // handler falls back to the per-id `updateMeasurementMutation`
+  // fan-out when this is missing, preserving the legacy behavior.
+  bulkUpdateMeasurementsMutation?: any;
   // Task #1770 — wires the bulk category assignment in this sidebar
   // (and any future bulk measurement edit) into the same Undo/Redo
   // batch entry the workspace uses for markups (#1755/#1758). Optional
@@ -262,7 +268,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     pitchRatio, setPitchRatio, dropDistance, setDropDistance,
     measurements, selectedMeasurementId, setSelectedMeasurementId,
     selectedSegmentIndex, setSelectedSegmentIndex,
-    deleteMeasurementMutation, updateMeasurementMutation, pushMeasurementUpdateBatch, aggregatedMeasurements,
+    deleteMeasurementMutation, updateMeasurementMutation, bulkUpdateMeasurementsMutation, pushMeasurementUpdateBatch, aggregatedMeasurements,
     projectAddenda, addendaOverlays, setAddendaOverlays,
     verifyMode, setVerifyMode, verifyPoints, setVerifyPoints,
     verifyExpectedDistance, setVerifyExpectedDistance, verifyResult, setVerifyResult,
@@ -458,6 +464,20 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
   // `skipHistory: true` so the per-call path doesn't add its own entry.
   // Using `mutateAsync` + `Promise.all` ensures the batch entry is only
   // pushed after every PATCH lands, matching the markup pattern.
+  // Task #1989 — Coalesce a multi-select category re-assign into one
+  // PATCH `/api/takeoff/measurements/bulk` round-trip instead of
+  // fanning out N parallel per-id PATCHes. The previous implementation
+  // wrote N audit-log entries on the server and triggered N
+  // `queryClient.invalidateQueries` refetches on success, which made
+  // the canvas flicker as 50 rows snapped through their old values.
+  // The bulk mutation issues one HTTP request, applies one optimistic
+  // cache write, and on atomic failure restores the snapshot in a
+  // single setQueryData (Task #1752 markup pattern).
+  //
+  // Falls back to the legacy per-id fan-out when
+  // `bulkUpdateMeasurementsMutation` isn't wired (older test mounts /
+  // story setups that haven't supplied the prop) so test compatibility
+  // is preserved without forcing every caller to update at once.
   const handleBulkCategoryAssign = async (categoryId: string) => {
     if (bulkSelectedIds.size === 0) return;
     const ids = Array.from(bulkSelectedIds);
@@ -475,18 +495,25 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
       return;
     }
     try {
-      await Promise.all(
-        afterSnaps.map(s =>
-          updateMeasurementMutation.mutateAsync({ id: s.id, categoryId, skipHistory: true }),
-        ),
-      );
+      if (bulkUpdateMeasurementsMutation) {
+        await bulkUpdateMeasurementsMutation.mutateAsync({
+          updates: afterSnaps.map(s => ({ id: s.id, categoryId })),
+        });
+      } else {
+        await Promise.all(
+          afterSnaps.map(s =>
+            updateMeasurementMutation.mutateAsync({ id: s.id, categoryId, skipHistory: true }),
+          ),
+        );
+      }
       if (selectedSheet && pushMeasurementUpdateBatch) {
         pushMeasurementUpdateBatch(beforeSnaps, afterSnaps, selectedSheet);
       }
       setBulkSelectedIds(new Set());
       toast({ title: "Category assigned", description: `Updated ${afterSnaps.length} items` });
     } catch {
-      // updateMeasurementMutation.onError already shows a toast.
+      // The mutation's onError already shows a toast and rolls back
+      // the optimistic cache write — nothing to do here.
     }
   };
 

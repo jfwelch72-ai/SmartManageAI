@@ -625,6 +625,129 @@ export function useTakeoffData({
     },
   });
 
+  // Task #1989 — Bulk PATCH for editing N measurements in a single
+  // round-trip. Mirrors `bulkUpdateMarkupsMutation` (Task #1752 /
+  // #1765) so a multi-select category re-assign / cost-code rename
+  // collapses into one HTTP request and one cache invalidation
+  // instead of fanning out N parallel `updateMeasurementMutation`
+  // calls (each one its own audit-log entry on the server and its
+  // own `queryClient.invalidateQueries` refetch flicker).
+  //
+  // Optimistic update mirrors `updateMeasurementMutation` so the
+  // affected rows reflect the new values immediately in the
+  // properties panel and the list, instead of snapping to the old
+  // values until the round-trip resolves. On atomic failure the
+  // pre-mutation cache snapshot is restored in one write — no
+  // sibling-by-sibling unwind. The `not_found` 404 path reuses the
+  // existing `extractMeasurementNotFoundIds` / `pruneDeletedMeasurements`
+  // helpers (Task #1970) so deleted-by-teammate rows drop out of the
+  // cache and the workspace selection in the same gesture, matching
+  // the per-id mutation's behavior.
+  //
+  // Callers pass `previous` per entry so the mutation can record a
+  // single MEASUREMENT_UPDATE_BATCH history entry on success — that
+  // wiring is currently driven by the sidebar (which pushes the batch
+  // entry directly via `pushMeasurementUpdateBatch` after
+  // `mutateAsync` resolves), so the mutation here does NOT push its
+  // own entry. Keeping that responsibility in the caller mirrors how
+  // `bulkUpdateMarkupsMutation` defers to `commitMarkupBodyDrag` for
+  // the markup batch entry.
+  const bulkUpdateMeasurementsMutation = useMutation({
+    mutationFn: async (data: {
+      updates: {
+        id: string;
+        label?: string;
+        categoryId?: string | null;
+        costCodeId?: string | null;
+        unitCost?: number | null;
+        groupId?: string | null;
+        lineStyle?: string;
+        lineWidth?: number;
+        metadata?: string;
+        color?: string;
+        note?: string | null;
+        locationId?: string | null;
+      }[];
+    }) => {
+      if (selectedVersionId && (!selectedVersionData || selectedVersionData.status === "LOCKED")) {
+        throw new Error("Cannot edit measurements while viewing a locked version");
+      }
+      const res = await apiRequest("PATCH", "/api/takeoff/measurements/bulk", { updates: data.updates });
+      return res.json();
+    },
+    onMutate: async ({ updates }) => {
+      const queryKey = measurementsQueryKey;
+      await queryClient.cancelQueries({ queryKey });
+      const previousMeasurements = queryClient.getQueryData<TakeoffMeasurement[]>(queryKey);
+      if (previousMeasurements) {
+        const byId = new Map(updates.map((u) => [u.id, u]));
+        queryClient.setQueryData<TakeoffMeasurement[]>(queryKey, (old) => {
+          if (!old) return old;
+          return old.map((m) => {
+            const u = byId.get(m.id);
+            if (!u) return m;
+            const next: TakeoffMeasurement = { ...m };
+            if (u.label !== undefined) next.label = u.label;
+            if (u.categoryId !== undefined) next.categoryId = u.categoryId;
+            if (u.costCodeId !== undefined) next.costCodeId = u.costCodeId;
+            if (u.unitCost !== undefined) next.unitCost = u.unitCost;
+            if (u.groupId !== undefined) next.groupId = u.groupId;
+            if (u.lineStyle !== undefined) next.lineStyle = u.lineStyle;
+            if (u.lineWidth !== undefined) next.lineWidth = u.lineWidth;
+            if (u.metadata !== undefined) next.metadata = u.metadata;
+            if (u.color !== undefined) next.color = u.color;
+            if (u.note !== undefined) next.note = u.note;
+            if (u.locationId !== undefined) next.locationId = u.locationId;
+            return next;
+          });
+        });
+      }
+      return { previousMeasurements, queryKey, attemptedIds: updates.map((u) => u.id) };
+    },
+    onSuccess: (_data, _vars, _ctx) => {
+      queryClient.invalidateQueries({ queryKey: measurementsQueryKey });
+    },
+    onError: (error: unknown, _vars, ctx) => {
+      // Atomic rollback: restore the pre-mutation snapshot in one
+      // write so a 50-row failure doesn't leave the canvas in a
+      // half-applied state.
+      if (ctx?.previousMeasurements) {
+        queryClient.setQueryData(ctx.queryKey, ctx.previousMeasurements);
+      }
+      // Task #1970 reuse — when the server reports any of the rows
+      // are gone (typically a teammate deleted them on another
+      // device), drop them out of the cached list AND the workspace
+      // selection so the user can't keep retrying an edit against a
+      // phantom row. Other reasons (locked / cross_sheet / network)
+      // stay on the legacy generic toast path with no cache surgery.
+      const notFoundIds = extractMeasurementNotFoundIds(
+        error,
+        ctx?.attemptedIds ?? [],
+      );
+      if (notFoundIds.length > 0) {
+        pruneDeletedMeasurements(notFoundIds, ctx?.queryKey ?? measurementsQueryKey);
+        toast({
+          title: "Measurement was deleted",
+          description:
+            "Another teammate removed one or more of these measurements, so your edits could not be saved. The canvas has been refreshed.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object" &&
+              error !== null &&
+              "message" in error &&
+              typeof (error as { message: unknown }).message === "string"
+            ? (error as { message: string }).message
+            : null;
+      const description = message || "Failed to update measurements";
+      toast({ title: "Error", description, variant: "destructive" });
+    },
+  });
+
   const deleteMeasurementMutation = useMutation({
     mutationFn: async (measurement: TakeoffMeasurement) => {
       if (selectedVersionId && (!selectedVersionData || selectedVersionData.status === "LOCKED")) {
@@ -1584,6 +1707,7 @@ export function useTakeoffData({
     supersedeSheetMutation,
     createMeasurementMutation,
     updateMeasurementMutation,
+    bulkUpdateMeasurementsMutation,
     deleteMeasurementMutation,
     bulkDeleteMeasurementsMutation,
     createMarkupMutation,

@@ -558,7 +558,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     categories, currentSheet, aggregatedMeasurements,
     sheetsQueryKey,
     importPlanMutation, supersedeSheetMutation, createMeasurementMutation,
-    updateMeasurementMutation, deleteMeasurementMutation, bulkDeleteMeasurementsMutation,
+    updateMeasurementMutation, bulkUpdateMeasurementsMutation, deleteMeasurementMutation, bulkDeleteMeasurementsMutation,
     createMarkupMutation, updateMarkupMutation, bulkUpdateMarkupsMutation, deleteMarkupMutation, bulkDeleteMarkupsMutation,
     createSheetLinkMutation, deleteSheetLinkMutation, detectLinksMutation,
     saveCategoryMutation, deleteCategoryMutation,
@@ -5622,6 +5622,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         setSelectedSegmentIndex={setSelectedSegmentIndex}
         deleteMeasurementMutation={deleteMeasurementMutation}
         updateMeasurementMutation={updateMeasurementMutation}
+        bulkUpdateMeasurementsMutation={bulkUpdateMeasurementsMutation}
         pushMeasurementUpdateBatch={takeoffHistory.pushMeasurementUpdateBatchAction}
         aggregatedMeasurements={aggregatedMeasurements}
         projectAddenda={projectAddenda}

@@ -2,13 +2,14 @@ import { Router, NextFunction } from "express";
 import { db } from "./db";
 import { bids, takeoffSheets, projects } from "@shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
-import { z } from "zod";
+import { z, ZodError } from "zod";
 import { requireAuth, type AuthRequest } from "./auth";
 import { sanitizeShortText } from "./sanitization";
 import { createArcSegment, computeDistanceInFeet, computePolygonAreaInFt2, computePolygonPerimeterInFt, computeVolumeInCY, computePitchedAreaFt2 } from "@shared/utils/geometry";
 import { verifySheetAccess, safeParsePoints, verifyGroupAccess, getActiveDraftVersionId, getDefaultVersionId, getDefaultVersionIdsBatch, hasAnyVersions, isMeasurementLocked } from "./takeoffHelpers";
 import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import { logError } from "./utils/logger";
+import { recordJobMetrics } from "./utils/jobMetrics";
 
 const router = Router();
 
@@ -325,6 +326,310 @@ router.post("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req
 
     res.status(201).json(measurement);
   } catch (error) {
+    next(error);
+  }
+});
+
+// Task #1989 — Bulk PATCH for editing N takeoff measurements in a
+// single round-trip. Mirrors the markup-side `/api/takeoff/markups/bulk`
+// (Task #1752 / #1765 / #1768) so a 50-measurement category re-assign
+// from `handleBulkCategoryAssign` collapses into one HTTP request and
+// one cache invalidation instead of fanning out N parallel per-id
+// PATCHes (each one its own audit-log entry and its own
+// `queryClient.invalidateQueries` refetch flicker). All updates run
+// inside a single transaction so a partial failure either commits
+// everything or nothing.
+//
+// Failure responses mirror the markup bulk endpoint's structured
+// shape so the existing `extractMeasurementNotFoundIds` /
+// `pruneDeletedMeasurements` helpers (Task #1970) plug in unchanged
+// on the client:
+//   - 404 not_found (with `failedMeasurementIds` listing the missing
+//     ids and a `failuresByReason` array carrying the same shape)
+//   - 403 access_denied (sheet not visible to the caller's tenant)
+//   - 403 locked (one or more rows belong to a LOCKED version)
+//   - 400 cross_sheet (payload mixed measurements from multiple
+//     sheets — every caller operates inside one sheet by definition,
+//     so refusing the request guards against malformed payloads
+//     silently mutating measurements on unrelated sheets)
+//   - 400 validation (with `failedMeasurementIds` mapped from the
+//     offending Zod issue indices)
+//
+// Unlike the per-id PATCH below this endpoint does NOT recompute
+// geometry or write audit-log entries per row: every caller today is
+// a metadata edit (label / categoryId / costCodeId / unitCost /
+// groupId / styling) where points and depth are unchanged, and the
+// bulk path is explicitly the "skip the N audit entries" alternative
+// to the fan-out per the task description. Callers that need
+// geometry recomputes still go through the per-id PATCH.
+//
+// Route MUST be registered before `/api/takeoff/measurements/:id`
+// or Express will route "bulk" into `:id` and 404.
+router.patch("/api/takeoff/measurements/bulk", requireAuth, async (req: AuthRequest, res, next) => {
+  const startedAt = Date.now();
+  let batchCount = 0;
+  try {
+    const { takeoffMeasurements, takeoffVersions } = await import("@shared/schema");
+
+    const bulkSchema = z.object({
+      updates: z
+        .array(
+          z
+            .object({
+              id: z.string().min(1),
+              label: z.string().optional(),
+              categoryId: z.string().nullable().optional(),
+              costCodeId: z.string().nullable().optional(),
+              unitCost: z.number().nullable().optional(),
+              groupId: z.string().nullable().optional(),
+              lineStyle: z.string().optional(),
+              lineWidth: z.number().int().min(1).max(64).optional(),
+              metadata: z.string().optional(),
+              color: z.string().optional(),
+              note: z.string().nullable().optional(),
+              locationId: z.string().nullable().optional(),
+            })
+            .refine(
+              (u) =>
+                u.label !== undefined ||
+                u.categoryId !== undefined ||
+                u.costCodeId !== undefined ||
+                u.unitCost !== undefined ||
+                u.groupId !== undefined ||
+                u.lineStyle !== undefined ||
+                u.lineWidth !== undefined ||
+                u.metadata !== undefined ||
+                u.color !== undefined ||
+                u.note !== undefined ||
+                u.locationId !== undefined,
+              { message: "Each update must include at least one editable field" },
+            ),
+        )
+        .min(1)
+        .max(500),
+    });
+
+    const validated = bulkSchema.parse(req.body);
+    batchCount = validated.updates.length;
+    const ids = validated.updates.map((u) => u.id);
+
+    const rows = await db
+      .select()
+      .from(takeoffMeasurements)
+      .where(inArray(takeoffMeasurements.id, ids));
+
+    // Mirror the markup endpoint's "name every offending id" behavior
+    // so the client toast can call out exactly which siblings are gone
+    // instead of leaving the user to retry the whole batch blind.
+    if (rows.length !== ids.length) {
+      const present = new Set(rows.map((r) => r.id));
+      const missing = ids.filter((id) => !present.has(id));
+      recordJobMetrics("takeoff_measurements_bulk_update", {
+        error: 1,
+        count: batchCount,
+        ms: Date.now() - startedAt,
+      });
+      res.status(404).json({
+        error: "Some measurements could not be updated because they no longer exist",
+        reason: "not_found",
+        failedMeasurementIds: missing,
+        failuresByReason: [
+          {
+            reason: "not_found",
+            failedMeasurementIds: missing,
+            message: "Some measurements could not be updated because they no longer exist",
+          },
+        ],
+      });
+      return;
+    }
+
+    // Same-sheet enforcement — every caller (bulk category / cost-code
+    // re-assign) operates inside one sheet by definition, so refusing
+    // mixed-sheet payloads guards against a malformed request silently
+    // mutating measurements on unrelated sheets.
+    const firstSheetId = rows[0].sheetId;
+    const crossSheet: string[] = [];
+    for (const r of rows) {
+      if (r.sheetId !== firstSheetId) crossSheet.push(r.id);
+    }
+
+    // Sheet access check fans out the per-id `verifySheetAccess` /
+    // org-isolation guard the per-id PATCH does, but only once: every
+    // row shares the same sheet, so cross-tenant requests are caught
+    // up front before the transaction opens.
+    const sheetAccess = await verifySheetAccess(firstSheetId, req.user!);
+    if (!sheetAccess.allowed) {
+      recordJobMetrics("takeoff_measurements_bulk_update", {
+        error: 1,
+        count: batchCount,
+        ms: Date.now() - startedAt,
+      });
+      const status = sheetAccess.sheet ? 403 : 404;
+      const reason: "access_denied" | "not_found" = sheetAccess.sheet ? "access_denied" : "not_found";
+      const message = sheetAccess.reason || "Access denied";
+      res.status(status).json({
+        error: message,
+        reason,
+        failedMeasurementIds: ids,
+        failuresByReason: [{ reason, failedMeasurementIds: ids, message }],
+      });
+      return;
+    }
+
+    // Locked-version enforcement — mirror the per-id PATCH's
+    // `isMeasurementLocked` check but in one query for the whole
+    // batch so a 50-row request doesn't fan out 50 lookups.
+    const versionIds = Array.from(
+      new Set(rows.map((r) => r.takeoffVersionId).filter((v): v is string => !!v)),
+    );
+    const locked: string[] = [];
+    if (versionIds.length > 0) {
+      const lockedVersions = await db
+        .select({ id: takeoffVersions.id })
+        .from(takeoffVersions)
+        .where(and(inArray(takeoffVersions.id, versionIds), eq(takeoffVersions.status, "LOCKED")));
+      const lockedSet = new Set(lockedVersions.map((v) => v.id));
+      for (const r of rows) {
+        if (r.takeoffVersionId && lockedSet.has(r.takeoffVersionId)) {
+          locked.push(r.id);
+        }
+      }
+    }
+
+    // Mirror the markup bulk endpoint's mixed-reason aggregation so
+    // the client toast can call out every cause separately instead of
+    // surfacing only the first non-empty bucket. The legacy flat
+    // `failedMeasurementIds` is preserved (union of all groups) so the
+    // existing `extractMeasurementNotFoundIds` extractor and the
+    // workspace selection prune still work unchanged.
+    const groups: Array<{
+      reason: "cross_sheet" | "locked";
+      ids: string[];
+      message: string;
+    }> = [];
+    if (crossSheet.length > 0) {
+      groups.push({
+        reason: "cross_sheet",
+        ids: crossSheet,
+        message: "Some measurements belong to a different sheet and were not updated",
+      });
+    }
+    if (locked.length > 0) {
+      groups.push({
+        reason: "locked",
+        ids: locked,
+        message: "Some measurements belong to a locked version and were not updated",
+      });
+    }
+    if (groups.length > 0) {
+      const allFailed = Array.from(new Set(groups.flatMap((g) => g.ids)));
+      const status = groups.some((g) => g.reason === "locked") ? 403 : 400;
+      const dominant = groups.reduce((acc, g) =>
+        g.ids.length > acc.ids.length ? g : acc,
+      );
+      recordJobMetrics("takeoff_measurements_bulk_update", {
+        error: 1,
+        count: batchCount,
+        ms: Date.now() - startedAt,
+      });
+      res.status(status).json({
+        error: groups.map((g) => g.message).join("; "),
+        reason: dominant.reason,
+        failedMeasurementIds: allFailed,
+        failuresByReason: groups.map((g) => ({
+          reason: g.reason,
+          failedMeasurementIds: g.ids,
+          message: g.message,
+        })),
+      });
+      return;
+    }
+
+    // Apply all updates inside a single transaction so a mid-batch
+    // failure rolls back atomically — no half-applied category
+    // re-assign that the user can't see and can't undo.
+    const updated = await db.transaction(async (tx) => {
+      const out: typeof rows = [];
+      for (const u of validated.updates) {
+        const setPayload: Record<string, unknown> = { updatedAt: new Date() };
+        if (u.label !== undefined) {
+          // sanitizeShortText returns undefined for empty input — match
+          // the per-id PATCH behavior of leaving the existing label
+          // untouched in that case (the validator already rejected the
+          // empty payload at the schema level if no other field was set).
+          const sanitized = sanitizeShortText(u.label);
+          if (sanitized !== undefined) setPayload.label = sanitized;
+        }
+        if (u.categoryId !== undefined) setPayload.categoryId = u.categoryId;
+        if (u.costCodeId !== undefined) setPayload.costCodeId = u.costCodeId;
+        if (u.unitCost !== undefined) setPayload.unitCost = u.unitCost;
+        if (u.groupId !== undefined) setPayload.groupId = u.groupId;
+        if (u.lineStyle !== undefined) setPayload.lineStyle = u.lineStyle;
+        if (u.lineWidth !== undefined) setPayload.lineWidth = u.lineWidth;
+        if (u.metadata !== undefined) setPayload.metadata = u.metadata;
+        if (u.color !== undefined) setPayload.color = u.color;
+        if (u.note !== undefined) setPayload.note = u.note;
+        if (u.locationId !== undefined) setPayload.locationId = u.locationId;
+
+        const [row] = await tx
+          .update(takeoffMeasurements)
+          .set(setPayload)
+          .where(eq(takeoffMeasurements.id, u.id))
+          .returning();
+        if (row) out.push(row);
+      }
+      return out;
+    });
+
+    recordJobMetrics("takeoff_measurements_bulk_update", {
+      ok: 1,
+      count: batchCount,
+      ms: Date.now() - startedAt,
+    });
+    res.json(
+      updated.map((r) => ({
+        ...r,
+        points: safeParsePoints(r.points) || [],
+      })),
+    );
+  } catch (error: unknown) {
+    recordJobMetrics("takeoff_measurements_bulk_update", {
+      error: 1,
+      count: batchCount,
+      ms: Date.now() - startedAt,
+    });
+    logError(
+      "Error bulk-updating measurements:",
+      {},
+      error instanceof Error ? error : new Error(String(error)),
+    );
+    if (error instanceof ZodError) {
+      // Map each Zod issue's `["updates", N, ...]` path back to the
+      // measurement id the caller submitted so the client toast can
+      // name + flash the offending rows. Mirrors the markup bulk
+      // endpoint's validation failure shape for consistency.
+      const submittedUpdates: Array<{ id?: unknown }> = Array.isArray(req.body?.updates)
+        ? req.body.updates
+        : [];
+      const failedIndices = new Set<number>();
+      for (const issue of error.errors) {
+        const path = Array.isArray(issue.path) ? issue.path : [];
+        if (path[0] === "updates" && typeof path[1] === "number") {
+          failedIndices.add(path[1]);
+        }
+      }
+      const failedMeasurementIds = Array.from(failedIndices)
+        .map((i) => submittedUpdates[i]?.id)
+        .filter((id): id is string => typeof id === "string" && id.length > 0);
+      res.status(400).json({
+        error: "Invalid bulk patch",
+        reason: "validation",
+        failedMeasurementIds,
+        details: error.errors,
+      });
+      return;
+    }
     next(error);
   }
 });
