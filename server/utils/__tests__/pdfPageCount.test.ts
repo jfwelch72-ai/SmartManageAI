@@ -5,6 +5,7 @@ import type { File as GcsFile } from "@google-cloud/storage";
 import {
   PDF_BUFFERED_PARSE_MAX_BYTES,
   getPdfPageCountFromGcs,
+  openPdfFromGcs,
 } from "../pdfPageCount";
 
 vi.mock("../logger", () => ({
@@ -86,5 +87,68 @@ describe("getPdfPageCountFromGcs", () => {
       fileSize: garbage.length,
     });
     expect(count).toBeNull();
+  });
+});
+
+describe("openPdfFromGcs", () => {
+  it("opens a small PDF via the buffered path and exposes pages", async () => {
+    const pdf = await buildPdf(3);
+    const fakeFile = makeFakeFile(pdf);
+
+    const opened = await openPdfFromGcs(asGcsFile(fakeFile), {
+      fileSize: pdf.length,
+    });
+
+    expect(opened).not.toBeNull();
+    expect(opened!.numPages).toBe(3);
+    const page = await opened!.pdfDoc.getPage(1);
+    expect(page).toBeTruthy();
+    await opened!.close();
+    expect(fakeFile.download).toHaveBeenCalledTimes(1);
+    expect(fakeFile.createReadStream).not.toHaveBeenCalled();
+  });
+
+  it("opens a large PDF via the streaming/range-transport path without loading the full buffer", async () => {
+    const pdf = await buildPdf(75);
+    const fakeFile = makeFakeFile(pdf);
+
+    const opened = await openPdfFromGcs(asGcsFile(fakeFile), {
+      fileSize: PDF_BUFFERED_PARSE_MAX_BYTES + 1,
+    });
+
+    expect(opened).not.toBeNull();
+    expect(opened!.numPages).toBe(75);
+    const page = await opened!.pdfDoc.getPage(2);
+    expect(page).toBeTruthy();
+    await opened!.close();
+    expect(fakeFile.createReadStream).toHaveBeenCalledTimes(1);
+    expect(fakeFile.download).not.toHaveBeenCalled();
+  }, 30_000);
+
+  it("returns null when the file exceeds the hard cap", async () => {
+    const fakeFile = makeFakeFile(Buffer.alloc(0));
+    const opened = await openPdfFromGcs(asGcsFile(fakeFile), {
+      fileSize: 16 * 1024 * 1024 * 1024,
+    });
+    expect(opened).toBeNull();
+    expect(fakeFile.download).not.toHaveBeenCalled();
+    expect(fakeFile.createReadStream).not.toHaveBeenCalled();
+  });
+
+  it("returns null when the file size is unknown", async () => {
+    const fakeFile = makeFakeFile(Buffer.alloc(0));
+    const opened = await openPdfFromGcs(asGcsFile(fakeFile), {
+      fileSize: 0,
+    });
+    expect(opened).toBeNull();
+  });
+
+  it("returns null gracefully on malformed PDF bytes", async () => {
+    const garbage = Buffer.from("not a pdf");
+    const fakeFile = makeFakeFile(garbage);
+    const opened = await openPdfFromGcs(asGcsFile(fakeFile), {
+      fileSize: garbage.length,
+    });
+    expect(opened).toBeNull();
   });
 });

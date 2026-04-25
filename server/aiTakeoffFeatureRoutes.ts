@@ -300,59 +300,123 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
 
     if (imageUrl) {
       try {
-        let buffer: Buffer | null = null;
+        const { openPdfFromGcs, PDF_BUFFERED_PARSE_MAX_BYTES } = await import("./utils/pdfPageCount");
+        let gcsFile: import("@google-cloud/storage").File | null = null;
 
         if (imageUrl.startsWith("https://storage.googleapis.com/")) {
           const url = new URL(imageUrl);
           const pathParts = url.pathname.slice(1).split("/");
           const bucketName = pathParts[0];
           const objectName = pathParts.slice(1).join("/");
-          const bucket = objectStorageClient.bucket(bucketName);
-          const file = bucket.file(objectName);
-          [buffer] = await file.download();
+          gcsFile = objectStorageClient.bucket(bucketName).file(objectName);
         } else if (imageUrl.startsWith("/objects/")) {
           const objectStorageService = new ObjectStorageService();
-          const objectFile = await objectStorageService.getObjectEntityFile(imageUrl);
-          [buffer] = await objectFile.download();
+          gcsFile = await objectStorageService.getObjectEntityFile(imageUrl);
         }
 
-        if (buffer) {
-          const isPdf = buffer[0] === 0x25 && buffer[1] === 0x50; // %P (PDF magic bytes)
-          
-          if (isPdf && sheetIndex >= 0) {
+        if (gcsFile) {
+          let fileSize = 0;
+          let contentType = "";
+          try {
+            const [metadata] = await gcsFile.getMetadata();
+            fileSize = parseInt(metadata.size as string) || 0;
+            contentType = ((metadata.contentType as string) || "").toLowerCase();
+          } catch (metaError) {
+            logError(
+              "Failed to read object metadata for AI takeoff:",
+              { imageUrl },
+              metaError instanceof Error ? metaError : new Error(String(metaError)),
+            );
+          }
+
+          let looksLikePdf =
+            contentType.includes("pdf") || imageUrl.toLowerCase().endsWith(".pdf");
+          const inconclusive =
+            !contentType && !imageUrl.toLowerCase().match(/\.(pdf|png|jpe?g|gif|webp|tiff?|bmp)$/);
+          if (inconclusive) {
             try {
-              const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
-              const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer), useSystemFonts: true });
-              const pdfDoc = await loadingTask.promise;
-              const pageNum = Math.min(sheetIndex + 1, pdfDoc.numPages);
-              const page = await pdfDoc.getPage(pageNum);
-              
-              const scale = 2.0;
-              const viewport = page.getViewport({ scale });
-              
-              // eslint-disable-next-line @typescript-eslint/no-var-requires
-              const { createCanvas } = require('canvas') as { createCanvas: (w: number, h: number) => any };
-              const canvas = createCanvas(viewport.width, viewport.height);
-              const context = canvas.getContext('2d');
-              
-              await page.render({ canvasContext: context, viewport, canvas } as any).promise;
-              
-              const pngBuffer = canvas.toBuffer('image/png') as Buffer;
-              const base64Data = pngBuffer.toString("base64");
-              imageUrl = `data:image/png;base64,${base64Data}`;
-              
-              pdfDoc.destroy();
-            } catch (pdfRenderError) {
-              logError("PDF page render failed, sending full PDF:", {}, pdfRenderError instanceof Error ? pdfRenderError : new Error(String(pdfRenderError)));
-              const base64Data = buffer.toString("base64");
-              imageUrl = `data:application/pdf;base64,${base64Data}`;
+              const [magic] = await gcsFile.download({ start: 0, end: 7 });
+              if (magic && magic.length >= 4) {
+                looksLikePdf = magic[0] === 0x25 && magic[1] === 0x50 && magic[2] === 0x44 && magic[3] === 0x46;
+              }
+            } catch (magicError) {
+              logError(
+                "Failed to read PDF magic bytes for AI takeoff:",
+                { imageUrl },
+                magicError instanceof Error ? magicError : new Error(String(magicError)),
+              );
             }
-          } else if (isPdf) {
-            const base64Data = buffer.toString("base64");
-            imageUrl = `data:application/pdf;base64,${base64Data}`;
-          } else {
-            const base64Data = buffer.toString("base64");
-            imageUrl = `data:image/png;base64,${base64Data}`;
+          }
+
+          let rendered = false;
+
+          if (looksLikePdf && sheetIndex >= 0) {
+            const opened = await openPdfFromGcs(gcsFile, {
+              fileSize,
+              fileName: imageUrl,
+              loggerContext: { route: "ai-takeoff/render-page", analysisId },
+            });
+            if (opened) {
+              try {
+                const pageNum = Math.min(sheetIndex + 1, opened.numPages);
+                const page = await opened.pdfDoc.getPage(pageNum);
+
+                const scale = 2.0;
+                const viewport = page.getViewport({ scale });
+
+                // eslint-disable-next-line @typescript-eslint/no-var-requires
+                const { createCanvas } = require('canvas') as { createCanvas: (w: number, h: number) => any };
+                const canvas = createCanvas(viewport.width, viewport.height);
+                const context = canvas.getContext('2d');
+
+                await page.render({ canvasContext: context, viewport, canvas } as any).promise;
+
+                const pngBuffer = canvas.toBuffer('image/png') as Buffer;
+                const base64Data = pngBuffer.toString("base64");
+                imageUrl = `data:image/png;base64,${base64Data}`;
+                rendered = true;
+              } catch (pdfRenderError) {
+                logError(
+                  "PDF page render failed for AI takeoff:",
+                  { analysisId, imageUrl, fileSize },
+                  pdfRenderError instanceof Error ? pdfRenderError : new Error(String(pdfRenderError)),
+                );
+              } finally {
+                await opened.close();
+              }
+            }
+          }
+
+          if (!rendered) {
+            if (looksLikePdf) {
+              if (fileSize > 0 && fileSize <= PDF_BUFFERED_PARSE_MAX_BYTES) {
+                const [buffer] = await gcsFile.download();
+                const base64Data = buffer.toString("base64");
+                imageUrl = `data:application/pdf;base64,${base64Data}`;
+              } else {
+                logError(
+                  "Skipping inline PDF for AI takeoff (file too large or unknown size):",
+                  { analysisId, imageUrl, fileSize },
+                );
+                imageUrl = null;
+              }
+            } else {
+              if (fileSize > 0 && fileSize <= PDF_BUFFERED_PARSE_MAX_BYTES) {
+                const [buffer] = await gcsFile.download();
+                const base64Data = buffer.toString("base64");
+                imageUrl = `data:image/png;base64,${base64Data}`;
+              } else if (fileSize === 0) {
+                const [buffer] = await gcsFile.download();
+                const base64Data = buffer.toString("base64");
+                imageUrl = `data:image/png;base64,${base64Data}`;
+              } else {
+                logError(
+                  "Skipping inline image for AI takeoff (file too large):",
+                  { analysisId, imageUrl, fileSize },
+                );
+                imageUrl = null;
+              }
+            }
           }
         }
       } catch (downloadError) {

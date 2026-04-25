@@ -1556,13 +1556,13 @@ router.post("/api/takeoff/sheets/:sheetId/detect-links", requireAuth, requireRol
 
     if (sheet.projectId || sheet.bidId) {
       try {
-        const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs');
         const { planDocuments, projectPlans, bidDocuments } = await import("@shared/schema");
         const { ObjectStorageService } = await import("./objectStorage");
+        const { openPdfFromGcs } = await import("./utils/pdfPageCount");
         const objectStorageService = new ObjectStorageService();
 
         const planSheet = allSheets.find(s => s.id === sheetId);
-        let pdfBuffer: Buffer | null = null;
+        let openedPdf: import("./utils/pdfPageCount").OpenedPdf | null = null;
 
         if (planSheet && sheet.bidId) {
           const [bidDoc] = await db.select({ objectKey: bidDocuments.objectKey, fileUrl: bidDocuments.fileUrl })
@@ -1571,8 +1571,13 @@ router.post("/api/takeoff/sheets/:sheetId/detect-links", requireAuth, requireRol
             .limit(1);
           if (bidDoc?.objectKey) {
             const objectFile = await objectStorageService.getObjectEntityFile(bidDoc.objectKey);
-            const [buf] = await objectFile.download();
-            pdfBuffer = buf;
+            const [metadata] = await objectFile.getMetadata();
+            const fileSize = parseInt(metadata.size as string) || 0;
+            openedPdf = await openPdfFromGcs(objectFile, {
+              fileSize,
+              fileName: planSheet.sheetName ?? undefined,
+              loggerContext: { route: "takeoff/detect-links", sheetId, bidId: sheet.bidId },
+            });
           }
         } else if (planSheet?.planId) {
           const [sheetWithDoc] = await db
@@ -1584,13 +1589,19 @@ router.post("/api/takeoff/sheets/:sheetId/detect-links", requireAuth, requireRol
             .limit(1);
           if (sheetWithDoc?.objectKey) {
             const objectFile = await objectStorageService.getObjectEntityFile(sheetWithDoc.objectKey);
-            const [buf] = await objectFile.download();
-            pdfBuffer = buf;
+            const [metadata] = await objectFile.getMetadata();
+            const fileSize = parseInt(metadata.size as string) || 0;
+            openedPdf = await openPdfFromGcs(objectFile, {
+              fileSize,
+              fileName: planSheet.sheetName ?? undefined,
+              loggerContext: { route: "takeoff/detect-links", sheetId, planId: planSheet.planId },
+            });
           }
         }
 
-        if (pdfBuffer && planSheet) {
-            const pdf = await pdfjsLib.getDocument({ data: new Uint8Array(pdfBuffer), useSystemFonts: true }).promise;
+        if (openedPdf && planSheet) {
+          try {
+            const pdf = openedPdf.pdfDoc;
             const pageNumber = (planSheet.sheetIndex || 0) + 1;
 
             const samePdfSheets = allSheets.filter(s => s.planId === planSheet.planId);
@@ -1686,6 +1697,9 @@ router.post("/api/takeoff/sheets/:sheetId/detect-links", requireAuth, requireRol
                 }
               }
             }
+          } finally {
+            await openedPdf.close();
+          }
         }
       } catch (pdfError) {
         logError("PDF link detection error:", {}, pdfError instanceof Error ? pdfError : new Error(String(pdfError)));
