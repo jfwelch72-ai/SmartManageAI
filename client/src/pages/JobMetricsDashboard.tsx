@@ -186,7 +186,11 @@ function counterKeys(job: JobMetricsResponse): string[] {
   return Array.from(set).sort();
 }
 
-function JobCard({
+// Task #2016 — Exported so the pool_health UI contract (per-counter
+// tooltips, header badges, gauge rendering, saturation-sample wording)
+// can be exercised by a vitest component test without rendering the
+// entire dashboard + its query stack.
+export function JobCard({
   job,
   range,
   activeAlerts,
