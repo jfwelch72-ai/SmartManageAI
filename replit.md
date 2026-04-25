@@ -66,6 +66,13 @@ Always invoke type-checking through the validation step rather than calling `tsc
 
 The codebase currently has pre-existing type errors (tracked separately) — the validation step's job is to surface *new* regressions added by a change, not to be at zero today.
 
+## Domain Conventions
+
+### Takeoff Measurement Units
+Volume measurements are reported in **cubic yards (CY)** everywhere — the Measurement Summary Report, all report exports (`server/reportRoutes.ts`), the takeoff measurement table, and the schema (`takeoffMeasurements.computedVolumeCy`). This was confirmed with estimating users in April 2026 (task #1924, follow-up to #1876). CY is the standard estimating unit for earthwork, concrete, and aggregate volumes in heavy-civil and building work, and matches AASHTOWare/DOT conventions.
+
+If a future export ever needs cubic feet (CF), the conversion (×27) must be applied in a single shared quantity helper rather than scattered per-call-site, and the unit label must be changed in the same place. Do not introduce ad-hoc CF conversions in individual components or routes.
+
 ## External Dependencies
 *   PostgreSQL (Neon)
 *   Replit Object Storage (Google Cloud Storage backend)
