@@ -8,6 +8,13 @@ import { Pause, Play, X, RotateCw, Loader2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
+import {
+  formatBytes,
+  formatRate,
+  formatEta,
+  computeRollingThroughput,
+  type ThroughputSample,
+} from "./ObjectUploader.helpers";
 
 export const MULTIPART_THRESHOLD = 10 * 1024 * 1024;
 export const LARGE_UPLOAD_THRESHOLD = 256 * 1024 * 1024;
@@ -65,30 +72,6 @@ const INITIAL_PROGRESS: AggregateProgress = {
   hasLargeFile: false,
 };
 
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-}
-
-function formatRate(bytesPerSecond: number): string {
-  if (!Number.isFinite(bytesPerSecond) || bytesPerSecond <= 0) return "—";
-  return `${formatBytes(bytesPerSecond)}/s`;
-}
-
-function formatEta(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return "—";
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  const m = Math.floor(seconds / 60);
-  const s = Math.round(seconds - m * 60);
-  if (m < 60) return `${m}m ${s.toString().padStart(2, "0")}s`;
-  const h = Math.floor(m / 60);
-  const remainingM = m - h * 60;
-  return `${h}h ${remainingM.toString().padStart(2, "0")}m`;
-}
-
 async function confirmIntent(intentId: string): Promise<string> {
   const res = await apiRequest("POST", "/api/objects/confirm", { intentId });
   const data = (await res.json()) as { objectPath: string; intentId: string };
@@ -143,7 +126,7 @@ export function ObjectUploader({
 
   // Per-file tracking & rolling-window throughput sampling
   const fileStateRef = useRef<Map<string, FileProgressEntry>>(new Map());
-  const samplesRef = useRef<Array<{ t: number; bytes: number }>>([]);
+  const samplesRef = useRef<ThroughputSample[]>([]);
   const lastEmitRef = useRef<number>(0);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -181,18 +164,11 @@ export function ObjectUploader({
     const paused = anyPaused && !anyMoving;
 
     // Throughput from rolling sample window (last 5s)
-    const now = Date.now();
-    const cutoff = now - 5000;
-    const samples = samplesRef.current.filter((s) => s.t >= cutoff);
-    samplesRef.current = samples;
-    let bytesPerSecond = 0;
-    if (samples.length >= 2) {
-      const first = samples[0];
-      const last = samples[samples.length - 1];
-      const dt = (last.t - first.t) / 1000;
-      const db = last.bytes - first.bytes;
-      if (dt > 0 && db > 0) bytesPerSecond = db / dt;
-    }
+    const { bytesPerSecond, samples: trimmed } = computeRollingThroughput(
+      samplesRef.current,
+      Date.now(),
+    );
+    samplesRef.current = trimmed;
 
     return {
       active,
