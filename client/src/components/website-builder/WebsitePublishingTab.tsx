@@ -104,9 +104,48 @@ export default function WebsitePublishingTab({ website, onPublish, publishPendin
     },
   });
 
+  // Task #1949 — abortable, fail-fast republish. Previously this
+  // mutation called `apiRequest` with no timeout, so when the
+  // production server was slow to respond the spinner would just
+  // hang forever and the user got no feedback at all (no success
+  // toast, no error toast). We now race the request against a
+  // 30-second client-side timeout and surface a destructive toast
+  // pointing the user at the deployment history if it fires.
+  const REPUBLISH_CLIENT_TIMEOUT_MS = 30000;
   const republishMutation = useMutation({
     mutationFn: async () => {
-      return await apiRequest("POST", "/api/website/republish", {});
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), REPUBLISH_CLIENT_TIMEOUT_MS);
+      try {
+        const csrfToken = document.cookie.match(/(?:^|;\s*)csrf_token=([^;]*)/);
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (csrfToken) headers["x-csrf-token"] = decodeURIComponent(csrfToken[1]);
+        const res = await fetch("/api/website/republish", {
+          method: "POST",
+          headers,
+          credentials: "include",
+          body: JSON.stringify({}),
+          signal: controller.signal,
+        });
+        if (!res.ok) {
+          let message = `${res.status}: ${res.statusText}`;
+          try {
+            const body = await res.json();
+            if (body?.error) message = body.error;
+          } catch {
+            // fall through with default message
+          }
+          throw new Error(message);
+        }
+        return res;
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") {
+          throw new Error("Republish timed out after 30 seconds. Please try again — if it keeps failing, check the deployment history below.");
+        }
+        throw err;
+      } finally {
+        clearTimeout(timer);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/website"] });

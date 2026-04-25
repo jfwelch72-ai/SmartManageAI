@@ -1,4 +1,4 @@
-import {logError, logWarn } from "./utils/logger";
+import {logError, logInfo, logWarn } from "./utils/logger";
 import { Router, type Request, type Response, NextFunction } from "express";
 import { randomUUID } from "crypto";
 import { db } from "./db";
@@ -1122,53 +1122,123 @@ router.get("/deployments", requireAuth, async (req: AuthRequest, res: Response, 
 });
 
 // POST /api/website/republish - Re-publish an already-published website
+//
+// Task #1949 — Make republish observable and fail-fast on the server.
+// Previously this handler had zero log lines on success or failure,
+// which made it impossible to tell whether a "Republish Changes"
+// click had even reached the server when the production pool was
+// starved. We now emit a request-start line on entry and a
+// request-end line with duration on every code path (success, error,
+// not-found, forbidden, timeout) and wrap the DB writes in a bounded
+// timeout so a stuck pool surfaces a 503 instead of holding the
+// socket open until the client gives up.
+const REPUBLISH_DB_TIMEOUT_MS = 20000;
+
+function withDbTimeout<T>(work: Promise<T>, op: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(Object.assign(new Error(`republish ${op} timed out after ${REPUBLISH_DB_TIMEOUT_MS}ms`), { code: "REPUBLISH_DB_TIMEOUT" }));
+    }, REPUBLISH_DB_TIMEOUT_MS);
+    work.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
+
 router.post("/republish", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const started = Date.now();
+  const user = req.user!;
+  const orgIdForLog = user.organizationId ?? undefined;
+  logInfo("website.republish: request received", { userId: user.id, organizationId: orgIdForLog });
+
   try {
-    const user = req.user!;
     if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      logInfo("website.republish: forbidden (role)", { userId: user.id, role: user.role, durationMs: Date.now() - started });
       return res.status(403).json({ error: "Admin access required" });
     }
 
     const orgId = user.organizationId;
     if (!orgId && user.role !== "SUPER_ADMIN") {
+      logInfo("website.republish: forbidden (no org)", { userId: user.id, durationMs: Date.now() - started });
       return res.status(403).json({ error: "Organization access required" });
     }
 
-    const website = await db.query.organizationWebsites.findFirst({
-      where: orgId ? eq(organizationWebsites.organizationId, orgId) : undefined,
-    });
+    const website = await withDbTimeout(
+      db.query.organizationWebsites.findFirst({
+        where: orgId ? eq(organizationWebsites.organizationId, orgId) : undefined,
+      }),
+      "lookup",
+    );
 
     if (!website) {
+      logInfo("website.republish: not found", { userId: user.id, organizationId: orgIdForLog, durationMs: Date.now() - started });
       return res.status(404).json({ error: "Website not found" });
     }
 
-    const [updated] = await db.update(organizationWebsites)
-      .set({
-        status: "PUBLISHED",
-        lastPublishedAt: new Date(),
-        lastPublishedByUserId: user.id,
-        updatedAt: new Date(),
-      })
-      .where(eq(organizationWebsites.id, website.id))
-      .returning();
+    const [updated] = await withDbTimeout(
+      db.update(organizationWebsites)
+        .set({
+          status: "PUBLISHED",
+          lastPublishedAt: new Date(),
+          lastPublishedByUserId: user.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(organizationWebsites.id, website.id))
+        .returning(),
+      "update",
+    );
 
-    await logUpdate(user.id, "organization_websites", website.id, website, { status: "PUBLISHED", lastPublishedAt: new Date() }, req);
+    // Task #1949 — `logUpdate` writes an audit row via the same pg
+    // pool, so it MUST be inside the timeout envelope too. Without
+    // this wrap, a starved pool would let the request hang past the
+    // 20s budget on the audit insert even though the snapshot writes
+    // had returned.
+    await withDbTimeout(
+      logUpdate(user.id, "organization_websites", website.id, website, { status: "PUBLISHED", lastPublishedAt: new Date() }, req),
+      "audit_log",
+    );
 
-    await db.insert(websiteDeployments).values({
+    await withDbTimeout(
+      db.insert(websiteDeployments).values({
+        websiteId: website.id,
+        organizationId: website.organizationId,
+        action: "REPUBLISHED",
+        performedByUserId: user.id,
+        performedByName: `${user.firstName} ${user.lastName}`.trim() || user.email,
+        note: "Website re-published with latest changes",
+      }),
+      "deployment_insert",
+    );
+
+    logInfo("website.republish: success", {
+      userId: user.id,
+      organizationId: orgIdForLog,
       websiteId: website.id,
-      organizationId: website.organizationId,
-      action: "REPUBLISHED",
-      performedByUserId: user.id,
-      performedByName: `${user.firstName} ${user.lastName}`.trim() || user.email,
-      note: "Website re-published with latest changes",
+      durationMs: Date.now() - started,
     });
 
-    res.json({
+    return res.json({
       success: true,
       website: updated,
       siteUrl: `https://${website.subdomain}.smartmanageai-sites.com`,
     });
   } catch (error) {
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const isTimeout = (error as { code?: string } | null)?.code === "REPUBLISH_DB_TIMEOUT";
+    logError("website.republish: failed", {
+      userId: user.id,
+      organizationId: orgIdForLog,
+      durationMs: Date.now() - started,
+      timedOut: isTimeout,
+      error: errMsg,
+    });
+    if (isTimeout) {
+      return res.status(503).json({
+        error: "Republish is temporarily unavailable — the database is overloaded. Please try again in a moment.",
+        code: "REPUBLISH_DB_TIMEOUT",
+      });
+    }
     next(error);
   }
 });

@@ -8,7 +8,7 @@ import { recordJobMetrics, loadJobMetricsFromDb, pruneJobMetricsDb } from "../ut
 import { evaluateJobMetricAlerts, sendJobMetricAlertQuietHoursDigests, setRetentionPolicyUnsupportedPairsForAlerts } from "../utils/jobMetricAlerts";
 import { insertNotification, insertNotifications } from "../services/notificationService";
 import { db } from "../db";
-import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, DOC_OVERDUE_REMINDER_DEFAULT_CAP, DOC_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_CADENCE, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_WEEKDAY, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_HOUR, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_TIMEZONE, rfis, submittals, submittalReviews, messages, timeEntries, media, aiActionAudit, planDocuments, conversations, projectEmailDistributionLists, projectLogEmailSchedules, projectLogEmailScheduleAttempts, type InsertNotification } from "@shared/schema";
+import { isSupportedRetentionPolicyCombo, integrationWebhookSubscriptions, retentionPolicies, auditLog, jobMetricSamples, qboSyncSchedules, integrationSyncState, socialMediaPosts, crmContacts, crmOrganisations, crmOpportunities, crmOpportunityActivities, notifications, notificationChannelPrefs, organizationNetworkSettings, users, projects, projectProfitabilitySnapshots, uploadIntents, crmAutomations, crmAutomationRuns, userSettings, BIRTHDAY_DIGEST_DEFAULT_WEEKDAY, BIRTHDAY_DIGEST_DEFAULT_HOUR, certifiedPayrollReports, organizationPayrollSettings, payRuns, swpppInspections, organizations, SWPPP_OVERDUE_REMINDER_DEFAULT_CAP, SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, DOC_OVERDUE_REMINDER_DEFAULT_CAP, DOC_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_CADENCE, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_WEEKDAY, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_HOUR, PROJECT_LOG_EMAIL_FAILURES_DIGEST_DEFAULT_TIMEZONE, rfis, submittals, submittalReviews, messages, timeEntries, media, aiActionAudit, planDocuments, conversations, projectEmailDistributionLists, projectLogEmailSchedules, projectLogEmailScheduleAttempts, type InsertNotification, type UserRole } from "@shared/schema";
 import { getEffectivePermissions } from "../auth";
 import { eq, and, lt, lte, gt, gte, sql, or, isNotNull, inArray, desc, isNull, ne } from "drizzle-orm";
 import { getProvider } from "../integrations/registry";
@@ -105,6 +105,32 @@ function recordJobOutcome(job: string, ok: boolean): void {
   recordJobMetrics(job, { succeeded: ok ? 1 : 0, failed: ok ? 0 : 1 });
 }
 
+// Task #1949 — overlap guards for the chatty 2-minute cron jobs that
+// were previously stacking up under load and starving the shared
+// Postgres pool. Each guard is a simple in-process boolean: if the
+// previous tick is still running when the next one fires, the new
+// tick logs and returns instead of piling on. node-cron is
+// single-process so a module-level flag is sufficient.
+let outboxTickRunning = false;
+let socialPostTickRunning = false;
+let scheduledCampaignTickRunning = false;
+
+/**
+ * Task #1949 — Distinguish "Postgres pool exhausted / connection
+ * timeout" from ordinary query / business-logic errors when logging
+ * background-job failures. The two have very different remediations
+ * (scale the pool / fix a leak vs. fix the query), but they were
+ * previously both logged as a generic `... processing failed` line
+ * with `error: String(err)` so production logs couldn't be
+ * triaged at a glance.
+ */
+function logJobErrorWithKind(message: string, err: unknown): void {
+  const text = err instanceof Error ? err.message : String(err);
+  const isConnTimeout = /connection terminated due to connection timeout|timeout exceeded when trying to connect|Connection terminated unexpectedly/i.test(text);
+  const kind = isConnTimeout ? "pool_exhausted" : "query_failed";
+  logError(message, { error: text, kind });
+}
+
 export function startJobRunner() {
   logInfo("Starting background job runner");
 
@@ -165,10 +191,23 @@ export function startJobRunner() {
   });
 
   outboxTask = cron.schedule("*/2 * * * *", async () => {
+    // Task #1949 — overlap guard. The cron fires every 2 minutes, but
+    // a single tick that delivers webhooks can take longer than that
+    // when a target is slow. Without this guard, slow ticks pile up
+    // and exhaust the shared Postgres pool ("Connection terminated
+    // due to connection timeout") which then starves user-facing
+    // requests like POST /api/website/republish.
+    if (outboxTickRunning) {
+      logWarn("Outbox processing skipped: previous tick still running");
+      return;
+    }
+    outboxTickRunning = true;
     try {
       await processOutbox();
     } catch (err) {
-      logError("Outbox processing failed", { error: String(err) });
+      logJobErrorWithKind("Outbox processing failed", err);
+    } finally {
+      outboxTickRunning = false;
     }
   });
 
@@ -191,10 +230,20 @@ export function startJobRunner() {
   });
 
   socialPostTask = cron.schedule("*/2 * * * *", async () => {
+    // Task #1949 — same overlap guard as outbox/scheduled campaigns;
+    // a slow social-platform API call must not pile up onto the next
+    // tick and starve the connection pool.
+    if (socialPostTickRunning) {
+      logWarn("Social post processing skipped: previous tick still running");
+      return;
+    }
+    socialPostTickRunning = true;
     try {
       await processScheduledSocialPosts();
     } catch (err) {
-      logError("Social post processing failed", { error: String(err) });
+      logJobErrorWithKind("Social post processing failed", err);
+    } finally {
+      socialPostTickRunning = false;
     }
   });
 
@@ -358,10 +407,21 @@ export function startJobRunner() {
   });
 
   scheduledCampaignTask = cron.schedule("*/2 * * * *", async () => {
+    // Task #1949 — overlap guard. Each campaign tick can fan out
+    // hundreds of `sendEmail` calls; if a tick takes longer than 2
+    // minutes we must NOT start a second one in parallel because
+    // each invocation holds Postgres connections per contact update.
+    if (scheduledCampaignTickRunning) {
+      logWarn("Scheduled campaign processing skipped: previous tick still running");
+      return;
+    }
+    scheduledCampaignTickRunning = true;
     try {
       await processScheduledCampaigns();
     } catch (err) {
-      logError("Scheduled campaign processing failed", { error: String(err) });
+      logJobErrorWithKind("Scheduled campaign processing failed", err);
+    } finally {
+      scheduledCampaignTickRunning = false;
     }
   });
 
@@ -1897,7 +1957,14 @@ async function processComplianceExpirations() {
 async function processProfitabilityMonitor() {
   logInfo("Starting profitability monitor run");
 
-  const FINANCIAL_ROLES = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "HUSTLER"];
+  // Task #1949 — typed array of `user_role` enum values. Previously this
+  // was string-interpolated into a single bound parameter via
+  // `sql\`... IN (${FINANCIAL_ROLES.map(r => \`'${r}'\`).join(",")})\``,
+  // which Postgres saw as ONE quoted string literal containing
+  // commas and crashed every 15 minutes with
+  // `invalid input value for enum user_role: "'SUPER_ADMIN','ADMIN',..."`.
+  // Use Drizzle's `inArray` so each role binds as its own parameter.
+  const FINANCIAL_ROLES: UserRole[] = ["SUPER_ADMIN", "ADMIN", "MANAGER", "SUPERINTENDENT", "ESTIMATOR", "HUSTLER"];
   const THRESHOLDS = [
     { pct: 5, label: "5%", severity: "MINOR_CONCERN" },
     { pct: 10, label: "10%", severity: "MINOR_CONCERN" },
@@ -1916,6 +1983,7 @@ async function processProfitabilityMonitor() {
 
   const notificationValues: Array<{
     userId: string;
+    organizationId: string;
     type: string;
     title: string;
     message: string;
@@ -1934,6 +2002,12 @@ async function processProfitabilityMonitor() {
       .limit(1);
 
     if (!proj) continue;
+    // Task #1949 — skip projects with no GC organization. The downstream
+    // tables (`projectProfitabilitySnapshots`, `notifications`,
+    // `users.organizationId`) all require a non-null org, and there is no
+    // one to notify when the project isn't tied to an organization.
+    if (!proj.gcOrganizationId) continue;
+    const projOrgId: string = proj.gcOrganizationId;
 
     const [lastSnap] = await db.select()
       .from(projectProfitabilitySnapshots)
@@ -1942,7 +2016,7 @@ async function processProfitabilityMonitor() {
       .limit(1);
 
     await db.insert(projectProfitabilitySnapshots).values({
-      organizationId: proj.gcOrganizationId,
+      organizationId: projOrgId,
       projectId: proj.id,
       projectCode: result.project_code,
       budget: String(result.budget),
@@ -1968,12 +2042,17 @@ async function processProfitabilityMonitor() {
       const alreadyFired = lastSnap?.alertThresholdFired === threshold.label;
       if (alreadyFired) continue;
 
+      // Task #1949 — `proj` was selected with `gcOrganizationId`; the
+      // stale `proj.organizationId` reference returned `undefined`,
+      // which Drizzle then bound as NULL and caused the role-list crash
+      // to silently match zero rows (when it didn't crash first). Use
+      // the field that was actually selected.
       const orgUsers = await db.select({ id: users.id })
         .from(users)
         .where(
           and(
-            eq(users.organizationId, proj.organizationId),
-            sql`${users.role} IN (${FINANCIAL_ROLES.map(r => `'${r}'`).join(",")})`,
+            eq(users.organizationId, projOrgId),
+            inArray(users.role, FINANCIAL_ROLES),
             eq(users.isActive, true)
           )
         )
@@ -1998,7 +2077,10 @@ async function processProfitabilityMonitor() {
         if (alreadyNotifiedUsers.has(u.id)) continue;
         notificationValues.push({
           userId: u.id,
-          organizationId: proj.organizationId || proj.gcOrganizationId || null,
+          // Task #1949 — same stale-field fix: `proj` was selected with
+          // `gcOrganizationId`, so `proj.organizationId` was always
+          // undefined and the notifications inherited a NULL org.
+          organizationId: projOrgId,
           type: "GENERAL",
           title,
           message,
