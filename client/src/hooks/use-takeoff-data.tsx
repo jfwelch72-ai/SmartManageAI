@@ -116,6 +116,22 @@ export function useTakeoffData({
     bulkDeleteMeasurementsToastRef.current = null;
   }, []);
 
+  // Task #1902 — Track the most recent "Deleted sheet" undo toast so
+  // it is dismissed if the workspace unmounts (e.g. user navigates
+  // away from the takeoff page entirely). The toast's Undo button
+  // closes over the snapshot the DELETE response returned, so even if
+  // the workspace state is gone the restore POST still succeeds — but
+  // we proactively drop the dangling toast to avoid stale UI on
+  // re-mount. We do NOT dismiss it on `selectedSheet` change the way
+  // the bulk-markup toast does: the deleted sheet is gone, so the
+  // post-delete sheet selection is the natural follow-on context for
+  // the Undo button.
+  const sheetDeleteToastRef = useRef<{ dismiss: () => void } | null>(null);
+  useEffect(() => () => {
+    sheetDeleteToastRef.current?.dismiss();
+    sheetDeleteToastRef.current = null;
+  }, []);
+
   const isBid = context?.type === "bid";
   const ctxId = isBid ? context.bidId : projectId;
   const ctxCode = isBid ? context.bidCode : projectCode;
@@ -634,15 +650,93 @@ export function useTakeoffData({
     },
   });
 
+  // Task #1902 — Restores a sheet (and every measurement / markup
+  // that was on it) from the snapshot the DELETE handler returned.
+  // Powers the Undo action on the destructive "Deleted sheet" toast
+  // shown by `deleteSheetMutation` below. The server preserves
+  // original ids in the round-trip so any downstream cache that
+  // still references the old sheet id resolves after the restore.
+  const restoreSheetMutation = useMutation({
+    mutationFn: async (snapshot: { sheet: { id: string; sheetName?: string | null }; measurements: any[]; markups: any[] }) => {
+      const res = await apiRequest("POST", `/api/takeoff/sheets/${snapshot.sheet.id}/restore`, snapshot);
+      return res.json();
+    },
+    onSuccess: (data: any, variables) => {
+      queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
+      const restoredId: string | undefined = data?.sheet?.id || variables.sheet.id;
+      if (restoredId) {
+        // Re-select the restored sheet so the canvas immediately
+        // shows the user what just came back. The bid / project
+        // measurement count tile also refreshes via the
+        // all-measurements query.
+        callbacks.setSelectedSheet(restoredId);
+        queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", restoredId, "measurements"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", restoredId, "markups"] });
+        queryClient.invalidateQueries({ queryKey: [allMeasurementsUrl] });
+      }
+      const sheetName = data?.sheet?.sheetName || variables.sheet.sheetName || "Sheet";
+      toast({ title: "Sheet restored", description: `"${sheetName}" is back on the takeoff workspace.` });
+    },
+    onError: (error: any) => {
+      const description = (typeof error === "object" && error && typeof error.message === "string"
+        ? error.message
+        : null) || "Failed to restore sheet";
+      toast({ title: "Couldn't undo sheet deletion", description, variant: "destructive" });
+    },
+  });
+
   const deleteSheetMutation = useMutation({
     mutationFn: async (sheetId: string) => {
-      return await apiRequest("DELETE", `/api/takeoff/sheets/${sheetId}?confirm=true`);
+      // Capture the human-readable sheet name from local cache before
+      // the row vanishes; the server snapshot also carries it but
+      // having it on the client side lets us name the toast even if
+      // the server response shape ever drifts.
+      const cached = sheets.find(s => s.id === sheetId);
+      const res = await apiRequest("DELETE", `/api/takeoff/sheets/${sheetId}?confirm=true`);
+      const data = await res.json();
+      return { ...data, _deletedSheetName: cached?.sheetName ?? data?.snapshot?.sheet?.sheetName ?? null };
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
       callbacks.setSelectedSheet(sheets.length > 1 ? sheets.find(s => s.id !== selectedSheet)?.id || null : null);
       callbacks.setDeleteSheetConfirmOpen(false);
-      toast({ title: "Sheet deleted" });
+      // Task #1902 — Surface a destructive-style toast with an Undo
+      // button that POSTs the snapshot to the companion restore
+      // route. Falls back to the legacy plain "Sheet deleted" toast
+      // if the server didn't return a snapshot (e.g. older API or
+      // schema gap), so a non-undoable deletion still notifies.
+      const snapshot = data?.snapshot;
+      if (snapshot?.sheet?.id) {
+        sheetDeleteToastRef.current?.dismiss();
+        const measurementsCount = Number(data?.measurementsDeleted ?? snapshot.measurements?.length ?? 0);
+        const markupsCount = Number(data?.markupsDeleted ?? snapshot.markups?.length ?? 0);
+        const counts: string[] = [];
+        if (measurementsCount > 0) counts.push(`${measurementsCount} measurement${measurementsCount === 1 ? "" : "s"}`);
+        if (markupsCount > 0) counts.push(`${markupsCount} markup${markupsCount === 1 ? "" : "s"}`);
+        const description = counts.length > 0 ? `Removed ${counts.join(" and ")}.` : undefined;
+        const sheetName = data?._deletedSheetName || snapshot.sheet.sheetName || "Sheet";
+        const handle = toast({
+          variant: "destructive",
+          title: `Deleted "${sheetName}"`,
+          description,
+          duration: 8000,
+          action: (
+            <ToastAction
+              altText="Undo sheet deletion"
+              data-testid="button-toast-undo-delete-sheet"
+              onClick={() => {
+                sheetDeleteToastRef.current = null;
+                restoreSheetMutation.mutate(snapshot);
+              }}
+            >
+              Undo
+            </ToastAction>
+          ),
+        });
+        sheetDeleteToastRef.current = { dismiss: handle.dismiss };
+      } else {
+        toast({ title: "Sheet deleted" });
+      }
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to delete sheet", variant: "destructive" });

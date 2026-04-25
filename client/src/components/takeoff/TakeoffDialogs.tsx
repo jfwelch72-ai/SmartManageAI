@@ -250,7 +250,7 @@ export function TakeoffDialogs(props: TakeoffDialogsProps) {
 
       <Dialog open={deleteSheetConfirmOpen} onOpenChange={setDeleteSheetConfirmOpen}>
         <DialogContent className="sm:max-w-sm">
-          <DialogHeader><DialogTitle>Delete Sheet</DialogTitle><DialogDescription>Are you sure you want to delete "{currentSheet?.sheetName}"? This will also remove all measurements on this sheet. This action cannot be undone.</DialogDescription></DialogHeader>
+          <DialogHeader><DialogTitle>Delete Sheet</DialogTitle><DialogDescription>Are you sure you want to delete "{currentSheet?.sheetName}"? This will also remove all measurements and markups on this sheet. You'll have a few seconds to undo from the toast that appears.</DialogDescription></DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteSheetConfirmOpen(false)} data-testid="button-cancel-delete-sheet">Cancel</Button>
             <Button variant="destructive" onClick={() => selectedSheet && deleteSheetMutation.mutate(selectedSheet)} disabled={deleteSheetMutation.isPending} data-testid="button-confirm-delete-sheet">

@@ -1138,7 +1138,7 @@ router.post("/api/takeoff/sheets/:id/duplicate", requireAuth, async (req: AuthRe
 router.delete("/api/takeoff/sheets/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;
-    const { takeoffSheets, takeoffMeasurements } = await import("@shared/schema");
+    const { takeoffSheets, takeoffMeasurements, takeoffMarkups } = await import("@shared/schema");
 
     const access = await verifySheetAccess(id, req.user!);
     if (!access.allowed) {
@@ -1149,7 +1149,7 @@ router.delete("/api/takeoff/sheets/:id", requireAuth, async (req: AuthRequest, r
     const confirm = req.query.confirm === "true";
 
     const measurements = await db
-      .select({ id: takeoffMeasurements.id })
+      .select()
       .from(takeoffMeasurements)
       .where(eq(takeoffMeasurements.sheetId, id));
 
@@ -1162,7 +1162,24 @@ router.delete("/api/takeoff/sheets/:id", requireAuth, async (req: AuthRequest, r
       return;
     }
 
-    const [sheet] = await db.select({ sheetName: takeoffSheets.sheetName }).from(takeoffSheets).where(eq(takeoffSheets.id, id)).limit(1);
+    // Task #1902 — Snapshot the sheet, its measurements and its
+    // markups before the cascading delete fires so the client can
+    // offer an Undo toast that re-creates the same rows on the
+    // companion POST .../restore endpoint. Mirrors the bulk-markup
+    // restore pattern from #1882. Versions / measurement-groups /
+    // sheet-links / BIM associations / issues are intentionally
+    // out of scope: the task explicitly only calls out "every
+    // measurement / markup that was on it". `groupId` and
+    // `takeoffVersionId` references on restored measurements are
+    // nulled out by the restore route since those parent rows were
+    // cascade-deleted alongside the sheet.
+    const [sheet] = await db.select().from(takeoffSheets).where(eq(takeoffSheets.id, id)).limit(1);
+    if (!sheet) {
+      res.status(404).json({ error: "Sheet not found" });
+      return;
+    }
+
+    const markups = await db.select().from(takeoffMarkups).where(eq(takeoffMarkups.sheetId, id));
 
     await db.delete(takeoffSheets).where(eq(takeoffSheets.id, id));
 
@@ -1171,12 +1188,354 @@ router.delete("/api/takeoff/sheets/:id", requireAuth, async (req: AuthRequest, r
       action: "DELETE",
       entityType: "takeoff_sheet",
       entityId: id,
-      oldValue: JSON.stringify({ sheetName: sheet?.sheetName, measurementsDeleted: measurements.length }),
+      oldValue: JSON.stringify({
+        sheetName: sheet?.sheetName,
+        measurementsDeleted: measurements.length,
+        markupsDeleted: markups.length,
+      }),
       newValue: null,
     }, req);
 
-    res.json({ success: true, measurementsDeleted: measurements.length });
+    res.json({
+      success: true,
+      measurementsDeleted: measurements.length,
+      markupsDeleted: markups.length,
+      snapshot: {
+        sheet,
+        measurements,
+        markups,
+      },
+    });
   } catch (error) {
+    next(error);
+  }
+});
+
+// Task #1902 — Companion to the DELETE /api/takeoff/sheets/:id route.
+// Re-creates a sheet plus its measurements and markups from the
+// snapshot the DELETE response handed back, preserving original ids
+// so any cached client references resolve. The whole restore runs
+// inside a single transaction so a mid-flight failure rolls back
+// atomically (no half-restored sheet).
+//
+// Cascading rows that are NOT restored (versions, measurement
+// groups, sheet links, BIM storey associations, issues, comments)
+// have their FK references nulled in the snapshot before insert.
+// The Undo affordance exists only for the in-canvas accidental
+// delete; if the user needs the richer state back they should fall
+// back to the version-history / re-import flows.
+router.post("/api/takeoff/sheets/:id/restore", requireAuth, requireRole("ADMIN", "MANAGER", "ESTIMATOR"), async (req: AuthRequest, res, next) => {
+  try {
+    const { id } = req.params;
+    const { takeoffSheets, takeoffMeasurements, takeoffMarkups } = await import("@shared/schema");
+
+    type SheetInsert = typeof takeoffSheets.$inferInsert;
+    type MeasurementInsert = typeof takeoffMeasurements.$inferInsert;
+    type MarkupInsert = typeof takeoffMarkups.$inferInsert;
+    type RestoredSheet = typeof takeoffSheets.$inferSelect;
+    type RestoredMeasurement = typeof takeoffMeasurements.$inferSelect;
+    type RestoredMarkup = typeof takeoffMarkups.$inferSelect;
+
+    // Strict per-column schemas. We do NOT use .passthrough(): every
+    // field a row needs to round-trip must be declared here so a
+    // malformed snapshot fails fast with a 400 instead of a DB-time 500.
+    const measurementTypeSchema = z.enum([
+      "LINEAR",
+      "AREA",
+      "VOLUME",
+      "COUNT",
+      "NOTE",
+      "LINEAR_WITH_DROP",
+      "PITCHED_AREA",
+      "PITCHED_LINEAR",
+      "SURFACE_AREA",
+      "SEGMENT",
+    ]);
+    const measurementSourceSchema = z.enum(["USER", "AI", "BIM"]);
+    const measurementStatusSchema = z.enum(["DRAFT", "CONFIRMED"]);
+    const installationStatusSchema = z.enum(["NOT_STARTED", "IN_PROGRESS", "COMPLETE", "ON_HOLD"]);
+    const markupToolSchema = z.enum(["ARROW", "TEXT", "RECTANGLE", "CLOUD", "HIGHLIGHT", "FREEHAND"]);
+
+    const optionalDate = z.union([z.coerce.date(), z.null()]).optional();
+
+    const sheetSnapshotSchema = z.object({
+      id: z.string().min(1),
+      projectId: z.string().nullable().optional(),
+      bidId: z.string().nullable().optional(),
+      planId: z.string().nullable().optional(),
+      imageUrl: z.string().min(1),
+      sheetIndex: z.number().int().optional(),
+      sheetName: z.string().nullable().optional(),
+      scalePxPerFoot: z.number().nullable().optional(),
+      units: z.string().optional(),
+      folderGroup: z.string().optional(),
+      revisionLabel: z.string().nullable().optional(),
+      isActive: z.boolean().optional(),
+      supersededById: z.string().nullable().optional(),
+      rotation: z.number().int().optional(),
+      scaleLabel: z.string().nullable().optional(),
+      assignedTo: z.string().nullable().optional(),
+      completionStatus: z.string().optional(),
+      targetMeasurements: z.number().int().nullable().optional(),
+      createdAt: optionalDate,
+      updatedAt: optionalDate,
+    }).strict();
+
+    const measurementSnapshotSchema = z.object({
+      id: z.string().min(1),
+      sheetId: z.string().optional(),
+      categoryId: z.string().nullable().optional(),
+      groupId: z.string().nullable().optional(),
+      takeoffVersionId: z.string().nullable().optional(),
+      locationId: z.string().nullable().optional(),
+      type: measurementTypeSchema,
+      label: z.string(),
+      points: z.string(),
+      arcData: z.string().nullable().optional(),
+      depthFeet: z.number().nullable().optional(),
+      count: z.number().nullable().optional(),
+      note: z.string().nullable().optional(),
+      color: z.string().nullable().optional(),
+      visible: z.boolean().optional(),
+      source: measurementSourceSchema.optional(),
+      status: measurementStatusSchema.optional(),
+      pitchRatio: z.string().nullable().optional(),
+      costCodeId: z.string().nullable().optional(),
+      unitCost: z.number().nullable().optional(),
+      lineStyle: z.string().optional(),
+      lineWidth: z.number().int().optional(),
+      computedLengthFt: z.number().nullable().optional(),
+      computedAreaFt2: z.number().nullable().optional(),
+      computedVolumeCy: z.number().nullable().optional(),
+      computedSurfaceAreaFt2: z.number().nullable().optional(),
+      deductions: z.string().nullable().optional(),
+      metadata: z.string().nullable().optional(),
+      subcontractorId: z.string().nullable().optional(),
+      supplierId: z.string().nullable().optional(),
+      locationTag: z.string().nullable().optional(),
+      installationStatus: installationStatusSchema.nullable().optional(),
+      originMeasurementId: z.string().nullable().optional(),
+      installedQuantity: z.number().nullable().optional(),
+      installedById: z.string().nullable().optional(),
+      installedAt: optionalDate,
+      photoUrls: z.string().nullable().optional(),
+      createdAt: optionalDate,
+      updatedAt: optionalDate,
+    }).strict();
+
+    const markupSnapshotSchema = z.object({
+      id: z.string().min(1),
+      sheetId: z.string().optional(),
+      organizationId: z.string().min(1),
+      createdBy: z.string().min(1),
+      tool: markupToolSchema,
+      points: z.string(),
+      color: z.string().optional(),
+      thickness: z.number().int().optional(),
+      text: z.string().nullable().optional(),
+      categoryId: z.string().nullable().optional(),
+      createdAt: optionalDate,
+    }).strict();
+
+    const bodySchema = z.object({
+      sheet: sheetSnapshotSchema,
+      measurements: z.array(measurementSnapshotSchema).max(10000).default([]),
+      markups: z.array(markupSnapshotSchema).max(10000).default([]),
+    });
+
+    const validated = bodySchema.parse(req.body);
+
+    if (validated.sheet.id !== id) {
+      res.status(400).json({ error: "Sheet id in body does not match the URL" });
+      return;
+    }
+
+    const sheetSnap = validated.sheet;
+    const isSuperAdmin = req.user!.role === "SUPER_ADMIN";
+    const orgId = req.user!.organizationId;
+
+    // Verify the user still has access to the parent project / bid.
+    // The cascade-delete only removed the sheet's children, not its
+    // parent project / bid, so the FK target should still exist.
+    if (sheetSnap.projectId) {
+      const conditions = isSuperAdmin
+        ? [eq(projects.id, sheetSnap.projectId)]
+        : [eq(projects.id, sheetSnap.projectId), eq(projects.gcOrganizationId, orgId!)];
+      const [project] = await db.select({ id: projects.id }).from(projects).where(and(...conditions)).limit(1);
+      if (!project) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
+    } else if (sheetSnap.bidId) {
+      const conditions = isSuperAdmin
+        ? [eq(bids.id, sheetSnap.bidId)]
+        : [eq(bids.id, sheetSnap.bidId), eq(bids.gcOrganizationId, orgId!)];
+      const [bid] = await db.select({ id: bids.id }).from(bids).where(and(...conditions)).limit(1);
+      if (!bid) {
+        res.status(403).json({ error: "Access denied" });
+        return;
+      }
+    } else {
+      res.status(400).json({ error: "Sheet snapshot must reference a projectId or bidId" });
+      return;
+    }
+
+    // Per-row sheet sanity: every measurement / markup snapshot must
+    // belong to the sheet being restored. We rewrite sheetId to the
+    // restored id below as a defence-in-depth, but rejecting forged
+    // snapshots up front keeps the contract obvious to the caller.
+    for (const m of validated.measurements) {
+      if (m.sheetId !== undefined && m.sheetId !== id) {
+        res.status(400).json({ error: "Measurement snapshot sheetId does not match the sheet being restored" });
+        return;
+      }
+    }
+    for (const mk of validated.markups) {
+      if (mk.sheetId !== undefined && mk.sheetId !== id) {
+        res.status(400).json({ error: "Markup snapshot sheetId does not match the sheet being restored" });
+        return;
+      }
+      if (!isSuperAdmin && mk.organizationId !== orgId) {
+        res.status(403).json({ error: "Markup snapshot belongs to another organization" });
+        return;
+      }
+    }
+
+    // Conflict pre-check: the sheet id must currently NOT exist. If
+    // another tab restored it (or the user double-fired Undo) we bail
+    // before opening the transaction so we never partially restore.
+    const [existing] = await db.select({ id: takeoffSheets.id }).from(takeoffSheets).where(eq(takeoffSheets.id, id)).limit(1);
+    if (existing) {
+      res.status(409).json({ error: "Sheet already exists", reason: "conflict" });
+      return;
+    }
+
+    const restored = await db.transaction(async (tx) => {
+      const sheetValues: SheetInsert = {
+        id: sheetSnap.id,
+        projectId: sheetSnap.projectId ?? null,
+        bidId: sheetSnap.bidId ?? null,
+        planId: sheetSnap.planId ?? null,
+        imageUrl: sheetSnap.imageUrl,
+        sheetIndex: sheetSnap.sheetIndex ?? 0,
+        sheetName: sheetSnap.sheetName ?? null,
+        scalePxPerFoot: sheetSnap.scalePxPerFoot ?? null,
+        units: sheetSnap.units ?? "ft",
+        folderGroup: sheetSnap.folderGroup ?? "Plans",
+        revisionLabel: sheetSnap.revisionLabel ?? null,
+        isActive: sheetSnap.isActive ?? true,
+        supersededById: sheetSnap.supersededById ?? null,
+        rotation: sheetSnap.rotation ?? 0,
+        scaleLabel: sheetSnap.scaleLabel ?? null,
+        assignedTo: sheetSnap.assignedTo ?? null,
+        completionStatus: sheetSnap.completionStatus ?? "not_started",
+        targetMeasurements: sheetSnap.targetMeasurements ?? null,
+        ...(sheetSnap.createdAt ? { createdAt: sheetSnap.createdAt } : {}),
+        ...(sheetSnap.updatedAt ? { updatedAt: sheetSnap.updatedAt } : {}),
+      };
+
+      const [insertedSheet] = await tx.insert(takeoffSheets).values(sheetValues).returning();
+
+      let restoredMeasurements: RestoredMeasurement[] = [];
+      if (validated.measurements.length > 0) {
+        const measurementValues: MeasurementInsert[] = validated.measurements.map((m): MeasurementInsert => ({
+          id: m.id,
+          sheetId: id,
+          // groupId / takeoffVersionId reference rows that were
+          // cascade-deleted alongside the sheet. Null them out to
+          // avoid FK violations.
+          groupId: null,
+          takeoffVersionId: null,
+          categoryId: m.categoryId ?? null,
+          locationId: m.locationId ?? null,
+          type: m.type,
+          label: m.label,
+          points: m.points,
+          arcData: m.arcData ?? null,
+          depthFeet: m.depthFeet ?? null,
+          count: m.count ?? null,
+          note: m.note ?? null,
+          color: m.color ?? "#3b82f6",
+          visible: m.visible ?? true,
+          source: m.source ?? "USER",
+          status: m.status ?? "DRAFT",
+          pitchRatio: m.pitchRatio ?? null,
+          costCodeId: m.costCodeId ?? null,
+          unitCost: m.unitCost ?? null,
+          lineStyle: m.lineStyle ?? "solid",
+          lineWidth: m.lineWidth ?? 3,
+          computedLengthFt: m.computedLengthFt ?? null,
+          computedAreaFt2: m.computedAreaFt2 ?? null,
+          computedVolumeCy: m.computedVolumeCy ?? null,
+          computedSurfaceAreaFt2: m.computedSurfaceAreaFt2 ?? null,
+          deductions: m.deductions ?? null,
+          metadata: m.metadata ?? null,
+          subcontractorId: m.subcontractorId ?? null,
+          supplierId: m.supplierId ?? null,
+          locationTag: m.locationTag ?? null,
+          installationStatus: m.installationStatus ?? "NOT_STARTED",
+          originMeasurementId: m.originMeasurementId ?? null,
+          installedQuantity: m.installedQuantity ?? null,
+          installedById: m.installedById ?? null,
+          installedAt: m.installedAt ?? null,
+          photoUrls: m.photoUrls ?? null,
+          ...(m.createdAt ? { createdAt: m.createdAt } : {}),
+          ...(m.updatedAt ? { updatedAt: m.updatedAt } : {}),
+        }));
+        restoredMeasurements = await tx.insert(takeoffMeasurements).values(measurementValues).returning();
+      }
+
+      let restoredMarkups: RestoredMarkup[] = [];
+      if (validated.markups.length > 0) {
+        const markupValues: MarkupInsert[] = validated.markups.map((m): MarkupInsert => ({
+          id: m.id,
+          sheetId: id,
+          organizationId: m.organizationId,
+          createdBy: m.createdBy,
+          tool: m.tool,
+          points: m.points,
+          color: m.color ?? "#ff0000",
+          thickness: m.thickness ?? 2,
+          text: m.text ?? null,
+          categoryId: m.categoryId ?? null,
+          ...(m.createdAt ? { createdAt: m.createdAt } : {}),
+        }));
+        restoredMarkups = await tx.insert(takeoffMarkups).values(markupValues).returning();
+      }
+
+      return {
+        sheet: insertedSheet as RestoredSheet,
+        measurements: restoredMeasurements,
+        markups: restoredMarkups,
+      };
+    });
+
+    await logAudit({
+      userId: req.user!.id,
+      action: "CREATE",
+      entityType: "takeoff_sheet",
+      entityId: id,
+      oldValue: null,
+      newValue: JSON.stringify({
+        restored: true,
+        sheetName: restored.sheet?.sheetName,
+        measurementsRestored: restored.measurements.length,
+        markupsRestored: restored.markups.length,
+      }),
+    }, req);
+
+    res.json({
+      ok: true,
+      sheet: restored.sheet,
+      measurementsRestored: restored.measurements.length,
+      markupsRestored: restored.markups.length,
+    });
+  } catch (error: any) {
+    if (error?.name === "ZodError") {
+      logError("Invalid sheet restore payload", {}, error instanceof Error ? error : new Error(String(error)));
+      res.status(400).json({ error: "Invalid sheet snapshot", reason: "validation", details: error.errors });
+      return;
+    }
     next(error);
   }
 });
