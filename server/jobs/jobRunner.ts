@@ -119,9 +119,50 @@ function recordJobOutcome(job: string, ok: boolean): void {
 // previous tick is still running when the next one fires, the new
 // tick logs and returns instead of piling on. node-cron is
 // single-process so a module-level flag is sufficient.
+//
+// Task #1951 — extended the same pattern to the other long-running
+// jobs whose runtime can plausibly exceed their cron interval: the
+// CRM sequence cadence runner, the integration sync sweeps (QBO
+// schedules + Davis-Bacon/QBO retry), the per-tenant CRM SLA /
+// idle-automation sweeps, the project profitability monitor, the
+// social engagement poller, and the three hourly email-digest
+// fan-outs (project-log schedules, project-log failures, certified
+// payroll, CRM contact birthdays).
+//
+// Jobs intentionally NOT guarded here:
+//   - processImapEmailSync / processProviderEmailSync /
+//     processProviderPushDrain — already carry their own internal
+//     `*Running` single-flight lock with a stale-timeout reset, so a
+//     redundant cron-level guard would double-skip.
+//   - All daily / weekly / monthly cron jobs (retention,
+//     token_expiry, compliance_check, idle_opportunities, swppp /
+//     rfi / submittal overdue sweeps, certified_payroll_purge,
+//     wage_decision_missing_reminder, wage_decision_stale_refresh,
+//     suppression_reset_prune, project_log_email_attempt_prune,
+//     plan_document_markup_trash_purge, project_geocode,
+//     weekly_report, monthly_report, crm_birthday_daily,
+//     portfolio_kpi_snapshot) — they fire once per day at a fixed
+//     minute, so a fresh tick can't physically arrive while the
+//     previous one is still running.
+//   - jobMetricsPrune / jobMetricAlerts / jobMetricQuietDigest —
+//     in-memory analysis backed by single-statement DB ops, well
+//     under the 15-minute interval.
+//   - bidDueDate / orphanUploads / emailPushRenewal / dbHealthCheck
+//     — bounded single-statement scans that complete in seconds.
 let outboxTickRunning = false;
 let socialPostTickRunning = false;
 let scheduledCampaignTickRunning = false;
+let sequenceCadenceTickRunning = false;
+let syncScheduleTickRunning = false;
+let integrationSyncRetryTickRunning = false;
+let crmSlaBreachTickRunning = false;
+let crmIdleAutomationTickRunning = false;
+let crmBirthdayDigestTickRunning = false;
+let profitabilityMonitorTickRunning = false;
+let socialEngagementTickRunning = false;
+let projectLogEmailScheduleTickRunning = false;
+let projectLogEmailFailuresDigestTickRunning = false;
+let certifiedPayrollDigestTickRunning = false;
 
 /**
  * Task #1949 — Distinguish "Postgres pool exhausted / connection
@@ -245,10 +286,22 @@ export function startJobRunner() {
   });
 
   syncScheduleTask = cron.schedule("*/15 * * * *", async () => {
+    // Task #1951 — overlap guard. Each tick walks every active QBO /
+    // integration sync schedule and may issue export/import calls per
+    // tenant; on busy systems a single tick can outlast the 15-minute
+    // interval, and stacking ticks would multiply Postgres pool
+    // pressure on the same scheduled rows.
+    if (syncScheduleTickRunning) {
+      logWarn("Sync schedule processing skipped: previous tick still running");
+      return;
+    }
+    syncScheduleTickRunning = true;
     try {
       await processSyncSchedules();
     } catch (err) {
-      logError("Sync schedule processing failed", { error: String(err) });
+      logJobErrorWithKind("sync_schedules", "Sync schedule processing failed", err);
+    } finally {
+      syncScheduleTickRunning = false;
     }
   });
 
@@ -291,10 +344,22 @@ export function startJobRunner() {
   });
 
   profitabilityMonitorTask = cron.schedule("*/15 * * * *", async () => {
+    // Task #1951 — overlap guard. The profitability sweep loops every
+    // active project per org and recomputes margin / earned-value
+    // metrics, holding short Postgres connections per project. Under
+    // load a single tick can outlast 15 minutes and stack on the next
+    // tick, doubling pool pressure on the same project rows.
+    if (profitabilityMonitorTickRunning) {
+      logWarn("Profitability monitor skipped: previous tick still running");
+      return;
+    }
+    profitabilityMonitorTickRunning = true;
     try {
       await processProfitabilityMonitor();
     } catch (err) {
-      logError("Profitability monitor failed", { error: String(err) });
+      logJobErrorWithKind("profitability", "Profitability monitor failed", err);
+    } finally {
+      profitabilityMonitorTickRunning = false;
     }
   });
 
@@ -422,10 +487,21 @@ export function startJobRunner() {
   });
 
   socialEngagementTask = cron.schedule("0 */4 * * *", async () => {
+    // Task #1951 — overlap guard. The engagement sweep hits every
+    // social platform's analytics API per linked account; rate-limited
+    // backoffs and slow upstreams mean a tick can plausibly outlast
+    // its 4-hour cadence on tenants with many connected pages.
+    if (socialEngagementTickRunning) {
+      logWarn("Social engagement sync skipped: previous tick still running");
+      return;
+    }
+    socialEngagementTickRunning = true;
     try {
       await processSocialEngagement();
     } catch (err) {
-      logError("Social engagement sync failed", { error: String(err) });
+      logJobErrorWithKind("social_engagement", "Social engagement sync failed", err);
+    } finally {
+      socialEngagementTickRunning = false;
     }
   });
 
@@ -449,10 +525,22 @@ export function startJobRunner() {
   });
 
   sequenceCadenceTask = cron.schedule("*/2 * * * *", async () => {
+    // Task #1951 — overlap guard. The sequence runner walks every due
+    // CRM enrolment and fans out emails / waits via the same Postgres
+    // pool that user requests use. Without this guard a slow tick
+    // (e.g. SMTP timeout) would let the next 2-minute tick pile on
+    // and starve the pool.
+    if (sequenceCadenceTickRunning) {
+      logWarn("Sequence cadence runner skipped: previous tick still running");
+      return;
+    }
+    sequenceCadenceTickRunning = true;
     try {
       await processDueExecutions();
     } catch (err) {
-      logError("Sequence cadence runner failed", { error: String(err) });
+      logJobErrorWithKind("sequence_cadences", "Sequence cadence runner failed", err);
+    } finally {
+      sequenceCadenceTickRunning = false;
     }
   });
 
@@ -472,20 +560,42 @@ export function startJobRunner() {
   // "needs attention" deal queue stays current without an admin manually
   // hitting POST /api/crm/sla/run-check.
   crmSlaBreachTask = cron.schedule("*/5 * * * *", async () => {
+    // Task #1951 — overlap guard. The breach sweep walks every org's
+    // active deal pipeline; on tenants with thousands of in-flight
+    // opportunities a tick can outlast 5 minutes and stack onto the
+    // next one, multiplying notification fan-out and pool pressure.
+    if (crmSlaBreachTickRunning) {
+      logWarn("CRM SLA breach sweep skipped: previous tick still running");
+      return;
+    }
+    crmSlaBreachTickRunning = true;
     try {
       await processCrmSlaBreaches();
     } catch (err) {
-      logError("CRM SLA breach sweep failed", { error: String(err) });
+      logJobErrorWithKind("crm_sla_breaches", "CRM SLA breach sweep failed", err);
+    } finally {
+      crmSlaBreachTickRunning = false;
     }
   });
 
   // Task #648: tick the CRM automation engine for IDLE_DAYS triggers every
   // 10 minutes so idle-day automations actually fire on their own.
   crmIdleAutomationTask = cron.schedule("*/10 * * * *", async () => {
+    // Task #1951 — overlap guard. The idle-automation tick evaluates
+    // every active automation rule per org and writes
+    // crm_automation_runs rows; a slow tick (e.g. SMTP send-step) can
+    // exceed the 10-minute interval, so guard against pile-up.
+    if (crmIdleAutomationTickRunning) {
+      logWarn("CRM idle automation tick skipped: previous tick still running");
+      return;
+    }
+    crmIdleAutomationTickRunning = true;
     try {
       await processCrmIdleAutomations();
     } catch (err) {
-      logError("CRM idle automation tick failed", { error: String(err) });
+      logJobErrorWithKind("crm_idle_automations", "CRM idle automation tick failed", err);
+    } finally {
+      crmIdleAutomationTickRunning = false;
     }
   });
 
@@ -494,10 +604,22 @@ export function startJobRunner() {
   // the notification lands during business hours regardless of where the
   // user is, not at the server's wall-clock time.
   crmBirthdayDigestTask = cron.schedule("0 * * * *", async () => {
+    // Task #1951 — overlap guard. The hourly digest fans out
+    // notifications across every org and recipient timezone; if a
+    // slow notification path (email + push) lets a tick stretch past
+    // the next hour boundary, the next tick must skip rather than
+    // double-deliver birthday reminders.
+    if (crmBirthdayDigestTickRunning) {
+      logWarn("CRM contact birthday digest skipped: previous tick still running");
+      return;
+    }
+    crmBirthdayDigestTickRunning = true;
     try {
       await processCrmContactBirthdayDigest();
     } catch (err) {
-      logError("CRM contact birthday digest failed", { error: String(err) });
+      logJobErrorWithKind("crm_birthday_digest", "CRM contact birthday digest failed", err);
+    } finally {
+      crmBirthdayDigestTickRunning = false;
     }
   });
 
@@ -506,10 +628,21 @@ export function startJobRunner() {
   // honored inside `processCertifiedPayrollWeeklyDigest` so admins can pick
   // their own send time, day, and daily/weekly/biweekly cadence.
   certifiedPayrollDigestTask = cron.schedule("0 * * * *", async () => {
+    // Task #1951 — overlap guard. The hourly digest builds and emails
+    // certified payroll PDFs per org; PDF generation + SMTP can take
+    // many minutes per tenant, so a backed-up tick must not stack on
+    // the next hour boundary and double-send.
+    if (certifiedPayrollDigestTickRunning) {
+      logWarn("Certified payroll weekly digest skipped: previous tick still running");
+      return;
+    }
+    certifiedPayrollDigestTickRunning = true;
     try {
       await processCertifiedPayrollWeeklyDigest();
     } catch (err) {
-      logError("Certified payroll weekly digest failed", { error: String(err) });
+      logJobErrorWithKind("certified_payroll_digest", "Certified payroll weekly digest failed", err);
+    } finally {
+      certifiedPayrollDigestTickRunning = false;
     }
   });
 
@@ -518,12 +651,24 @@ export function startJobRunner() {
   // handler, so the cron itself stays a simple "tick every hour" — the
   // worker decides which projects (if any) get emailed this hour.
   projectLogEmailScheduleTask = cron.schedule("0 * * * *", async () => {
+    // Task #1951 — overlap guard. The hourly sweep builds RFI /
+    // submittal PDFs and emails them to per-project distribution
+    // lists; PDF rendering + SMTP fan-out can outlast an hour on
+    // large tenants, and a stacked tick would re-send the same
+    // schedules.
+    if (projectLogEmailScheduleTickRunning) {
+      logWarn("Project log email schedule sweep skipped: previous tick still running");
+      return;
+    }
+    projectLogEmailScheduleTickRunning = true;
     try {
       await processProjectLogEmailSchedules();
       recordJobOutcome("project_log_email_schedules", true);
     } catch (err) {
       recordJobOutcome("project_log_email_schedules", false);
-      logError("Project log email schedule sweep failed", { error: String(err) });
+      logJobErrorWithKind("project_log_email_schedules", "Project log email schedule sweep failed", err);
+    } finally {
+      projectLogEmailScheduleTickRunning = false;
     }
   });
 
@@ -541,12 +686,24 @@ export function startJobRunner() {
   // the same local day (manual fire, boot during the firing minute)
   // doesn't re-send.
   projectLogEmailFailuresDigestTask = cron.schedule("0 * * * *", async () => {
+    // Task #1951 — overlap guard. Same family as the hourly schedule
+    // sweep above: the failures digest fans an email to every org's
+    // ADMIN / SUPER_ADMIN users, gated by per-org cadence + dedupe.
+    // A stacked tick would race the dedupe sentinel and risk
+    // duplicate digests during the firing minute.
+    if (projectLogEmailFailuresDigestTickRunning) {
+      logWarn("Project log email failures digest skipped: previous tick still running");
+      return;
+    }
+    projectLogEmailFailuresDigestTickRunning = true;
     try {
       await processProjectLogEmailFailuresDigest();
       recordJobOutcome("project_log_email_failures_digest", true);
     } catch (err) {
       recordJobOutcome("project_log_email_failures_digest", false);
-      logError("Project log email failures digest sweep failed", { error: String(err) });
+      logJobErrorWithKind("project_log_email_failures_digest", "Project log email failures digest sweep failed", err);
+    } finally {
+      projectLogEmailFailuresDigestTickRunning = false;
     }
   });
 
@@ -632,13 +789,25 @@ export function startJobRunner() {
   // state so banners/notifications resolve naturally; exhausted rows are
   // left alone for manual intervention.
   wageDecisionRetryTask = cron.schedule("*/5 * * * *", async () => {
+    // Task #1951 — overlap guard. The retry sweep walks every failed
+    // integration sync row whose backoff is due (Davis-Bacon, QBO,
+    // Sage, etc.) and replays the underlying provider call; a slow
+    // upstream can plausibly outlast 5 minutes and stack onto the
+    // next tick, doubling provider load and pool pressure.
+    if (integrationSyncRetryTickRunning) {
+      logWarn("Integration sync retry sweep skipped: previous tick still running");
+      return;
+    }
+    integrationSyncRetryTickRunning = true;
     try {
       const out = await processIntegrationSyncRetries();
       if (out.attempted > 0) {
         logInfo("Integration sync retry sweep", out);
       }
     } catch (err) {
-      logError("Integration sync retry sweep failed", { error: String(err) });
+      logJobErrorWithKind("integration_sync_retry", "Integration sync retry sweep failed", err);
+    } finally {
+      integrationSyncRetryTickRunning = false;
     }
   });
 
