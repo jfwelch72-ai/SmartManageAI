@@ -135,6 +135,16 @@ export interface ComposeEmailExtras {
     connectionId: string;
     entityType: string;
     integrationLabel: string;
+    /**
+     * Task #1942 — when the exhausted row belongs to a QuickBooks
+     * connection (`provider === "qbo"`), the email's CTA deep-links to
+     * the QBO panel anchor (`#qbo-sync-retry-<id>`) instead of the
+     * generic SyncRetryPanel anchor, since admins on a QBO failure want
+     * to land in the QBO-specific feed (Task #1394). Optional so older
+     * callers without provider info still produce a working (generic)
+     * link.
+     */
+    provider?: string;
   };
 }
 
@@ -618,9 +628,16 @@ export function composeEmailContent(
     // anchor `id="sync-retry-<id>"` per row that scrolls into view +
     // briefly highlights on hash navigation. Falls back to the panel
     // section anchor when no relatedEntityId is present (defensive).
+    // Task #1942 — for QuickBooks failures, route the deep-link to the
+    // dedicated QboSyncRetryPanel anchor so the admin lands directly on
+    // the failing customer/invoice/pay-run row in the QuickBooks feed
+    // rather than the cross-provider list. Other providers continue to
+    // deep-link into the generic SyncRetryPanel anchor (Task #1414).
+    const isQboSync = extras.integrationSyncContext?.provider === "qbo";
+    const anchorPrefix = isQboSync ? "qbo-sync-retry-" : "sync-retry-";
     const rowAnchor =
       notification.relatedEntityType === "INTEGRATION_SYNC_STATE" && notification.relatedEntityId
-        ? `sync-retry-${notification.relatedEntityId}`
+        ? `${anchorPrefix}${notification.relatedEntityId}`
         : "section-sync-retries";
     const actionUrl = `${baseUrl}/integrations#${rowAnchor}`;
     const subject = `Integration sync gave up — SmartManageAI`;
@@ -958,7 +975,14 @@ async function loadIntegrationSyncContext(
       .limit(1);
     if (!row) return undefined;
     const integrationLabel = row.displayName?.trim() || row.provider || "integration";
-    return { connectionId: row.connectionId, entityType: row.entityType, integrationLabel };
+    return {
+      connectionId: row.connectionId,
+      entityType: row.entityType,
+      integrationLabel,
+      // Task #1942 — surface the provider so QBO failures can deep-link
+      // into the dedicated QuickBooks panel anchor.
+      provider: row.provider,
+    };
   } catch (err) {
     logError("notificationDelivery: failed to load integration sync context for mute link", {
       userId: notification.userId,

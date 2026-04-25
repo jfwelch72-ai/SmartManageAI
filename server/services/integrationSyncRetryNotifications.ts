@@ -35,6 +35,49 @@ import { MAX_SYNC_RETRIES } from "../integrations/syncRetry";
 type UserRole = (typeof userRoleEnum.enumValues)[number];
 const ADMIN_ROLES: readonly UserRole[] = ["ADMIN", "SUPER_ADMIN"];
 
+// Task #1942 — duplicated locally (instead of imported from
+// `../integrations/providers/qbo/sync`) to avoid the cycle: syncRetry.ts
+// imports `notifyAdminsOfExhaustedSyncRetry` from this module, and
+// `qbo/sync.ts` imports `registerSyncRetryHandler` from syncRetry.ts and
+// registers at module load — pulling the QBO module in here would tear
+// the registry handle down before its IIFE init runs.
+const QBO_SYNC_ENTITY_TYPE_PREFIX = "qbo_sync:";
+
+/**
+ * Task #1942 — derive the human-friendly QuickBooks "kind" + item id from a
+ * `qbo_sync:%` entityType (e.g. `qbo_sync:invoice:inv-7` →
+ * `{ kindLabel: "Invoice", itemId: "inv-7" }`). Mirrors the classifier the
+ * QboSyncRetryPanel route already uses (see server/integrationRoutes.ts) so
+ * the email copy and the in-app panel stay in lockstep.
+ */
+export function classifyQboEntity(
+  entityType: string,
+): { kindLabel: string; itemId: string | null } {
+  if (!entityType.startsWith(QBO_SYNC_ENTITY_TYPE_PREFIX)) {
+    return { kindLabel: "Sync", itemId: null };
+  }
+  const operation = entityType.slice(QBO_SYNC_ENTITY_TYPE_PREFIX.length);
+  const colonIdx = operation.indexOf(":");
+  if (colonIdx > 0) {
+    const subKind = operation.slice(0, colonIdx);
+    const itemId = operation.slice(colonIdx + 1) || null;
+    if (subKind === "customer") return { kindLabel: "Customer", itemId };
+    if (subKind === "invoice") return { kindLabel: "Invoice", itemId };
+    if (subKind === "payroll") return { kindLabel: "Payroll run", itemId };
+    if (subKind === "certified_payroll") {
+      return { kindLabel: "Certified payroll run", itemId };
+    }
+    return { kindLabel: "Scheduled operation", itemId };
+  }
+  if (operation === "customers") {
+    return { kindLabel: "Customer batch sync", itemId: null };
+  }
+  const pretty = operation
+    .replace(/_/g, " ")
+    .replace(/^\w/, (c) => c.toUpperCase());
+  return { kindLabel: `${pretty} sync`, itemId: null };
+}
+
 async function getOrgAdminUserIds(organizationId: string): Promise<string[]> {
   const rows = await db
     .select({ id: users.id })
@@ -163,12 +206,34 @@ export async function notifyAdminsOfExhaustedSyncRetry(
   const integrationLabel =
     conn?.displayName?.trim() || conn?.provider || "integration";
   const trimmedError = (args.lastError ?? "(no error message recorded)").slice(0, 300);
-  const title = `Integration sync gave up: ${integrationLabel} (${args.entityType})`;
-  const message =
-    `Automatic retries for ${integrationLabel} — entity "${args.entityType}" — ` +
-    `have been exhausted after the configured backoff schedule. ` +
-    `Last error: ${trimmedError}. ` +
-    `Open the Integrations page to review the failure and trigger a manual retry.`;
+
+  // Task #1942 — when a `qbo_sync:%` row exhausts, render copy that names
+  // the QuickBooks kind (customer / invoice / pay run / scheduled op) and
+  // the affected item id so admins reading the email can triage without
+  // hopping back into the app. The full entityType is kept in parens so
+  // existing test assertions (and grep-style log searches) still match.
+  let title: string;
+  let message: string;
+  if (args.entityType.startsWith(QBO_SYNC_ENTITY_TYPE_PREFIX)) {
+    const { kindLabel, itemId } = classifyQboEntity(args.entityType);
+    const itemSuffix = itemId ? ` ${itemId}` : "";
+    title =
+      `Integration sync gave up: ${integrationLabel} — ${kindLabel}${itemSuffix} ` +
+      `(${args.entityType})`;
+    const lowerKind = kindLabel.charAt(0).toLowerCase() + kindLabel.slice(1);
+    const itemPhrase = itemId ? ` (id ${itemId})` : "";
+    message =
+      `QuickBooks ran out of automatic retries while syncing this ${lowerKind}` +
+      `${itemPhrase}. Last error: ${trimmedError}. ` +
+      `Open the QuickBooks panel on the Integrations page to retry or investigate.`;
+  } else {
+    title = `Integration sync gave up: ${integrationLabel} (${args.entityType})`;
+    message =
+      `Automatic retries for ${integrationLabel} — entity "${args.entityType}" — ` +
+      `have been exhausted after the configured backoff schedule. ` +
+      `Last error: ${trimmedError}. ` +
+      `Open the Integrations page to review the failure and trigger a manual retry.`;
+  }
 
   let delivered = 0;
   for (const userId of adminIds) {

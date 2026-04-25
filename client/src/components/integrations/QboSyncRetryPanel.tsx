@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
@@ -10,6 +11,27 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { Connection } from "./types";
+
+// Task #1942 — When the "QuickBooks sync gave up" admin email's CTA
+// deep-links to /integrations#qbo-sync-retry-<syncStateId>, read the
+// hash on mount (and on hash changes) so the targeted row both scrolls
+// into view and renders a brief ring highlight, mirroring the generic
+// SyncRetryPanel anchor behaviour from Task #1414.
+function useQboSyncRetryHashAnchor(): { focusedId: string | null } {
+  const [focusedId, setFocusedId] = useState<string | null>(null);
+  useEffect(() => {
+    function syncFromHash() {
+      const hash = typeof window !== "undefined" ? window.location.hash : "";
+      const match = /^#qbo-sync-retry-(.+)$/.exec(hash);
+      setFocusedId(match ? decodeURIComponent(match[1]) : null);
+    }
+    syncFromHash();
+    if (typeof window === "undefined") return;
+    window.addEventListener("hashchange", syncFromHash);
+    return () => window.removeEventListener("hashchange", syncFromHash);
+  }, []);
+  return { focusedId };
+}
 
 type Kind = "customer" | "invoice" | "pay_run" | "scheduled_op";
 
@@ -65,12 +87,28 @@ function formatRelative(iso: string | null): string {
 
 export function QboSyncRetryPanel({ connection }: { connection: Connection }) {
   const { toast } = useToast();
+  const { focusedId } = useQboSyncRetryHashAnchor();
+  const focusedRowRef = useRef<HTMLDivElement | null>(null);
+  const lastScrolledIdRef = useRef<string | null>(null);
 
   const { data, isLoading } = useQuery<QboSyncRetryResponse>({
     queryKey: ["/api/integrations/connections", connection.id, "qbo-sync-retries"],
     enabled: connection.status === "active" && connection.provider === "qbo",
     refetchInterval: 30_000,
   });
+
+  // Scroll the email-deep-linked row into view once it's rendered.
+  // Depending on `data` (in addition to `focusedId`) ensures the scroll
+  // re-fires when the rows finish loading after mount, so the hash
+  // anchor isn't lost to a render-vs-effect race.
+  useEffect(() => {
+    if (!focusedId) return;
+    if (lastScrolledIdRef.current === focusedId) return;
+    if (focusedRowRef.current) {
+      focusedRowRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      lastScrolledIdRef.current = focusedId;
+    }
+  }, [focusedId, data]);
 
   const retryMutation = useMutation({
     mutationFn: async (id: string) => {
@@ -168,13 +206,19 @@ export function QboSyncRetryPanel({ connection }: { connection: Connection }) {
                 {list.map(retry => {
                   const isPending =
                     retryMutation.isPending && retryMutation.variables === retry.id;
+                  const isFocused = focusedId === retry.id;
                   return (
                     <div
                       key={retry.id}
+                      id={`qbo-sync-retry-${retry.id}`}
+                      ref={isFocused ? focusedRowRef : undefined}
                       className={
-                        "border rounded-lg p-3 space-y-2" +
+                        "border rounded-lg p-3 space-y-2 scroll-mt-24 transition-shadow" +
                         (retry.exhausted
                           ? " border-destructive/50 bg-destructive/5"
+                          : "") +
+                        (isFocused
+                          ? " ring-2 ring-amber-500 ring-offset-2 dark:ring-offset-background"
                           : "")
                       }
                       data-testid={`row-qbo-sync-retry-${retry.id}`}
