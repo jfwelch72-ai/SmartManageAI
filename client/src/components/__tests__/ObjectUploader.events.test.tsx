@@ -980,6 +980,266 @@ describe("ObjectUploader — post-upload confirm fan-out", () => {
 });
 
 /**
+ * Task #2027 — Tests for the AwsS3 single-PUT `getUploadParameters`
+ * callback. This is the non-multipart path used for sub-10MB uploads
+ * (see MULTIPART_THRESHOLD). It branches on whether the caller passed a
+ * custom `onGetUploadParameters` prop:
+ *
+ *   • No prop  → calls `getDefaultUploadParameters`, which POSTs
+ *     `/api/objects/upload` with `{contentType, fileSize, fileType}`
+ *     and resolves to `{ method: "PUT", url, intentId, objectKey }`.
+ *   • Prop set → invokes the prop and bypasses the default fetch
+ *     entirely (used by e.g. avatar uploads that pre-mint their own
+ *     intent server-side).
+ *
+ * In BOTH branches, after the params are produced the callback writes
+ * `params.intentId` into a per-file map keyed by `file.id`. The
+ * post-upload `complete` handler reads from that map to know which
+ * intents to POST to `/api/objects/confirm`. A regression that
+ * accidentally swapped the map key (e.g. used `file.name` instead of
+ * `file.id`) would silently break asset linking — the upload would
+ * succeed in S3 but no DB record would ever be persisted.
+ */
+describe("ObjectUploader — getUploadParameters (single-PUT) callback", () => {
+  it("default path POSTs /api/objects/upload with {contentType, fileSize, fileType} and resolves to {method:'PUT', url, intentId, objectKey}", async () => {
+    render(
+      <ObjectUploader testId="uploader" fileType="MEDIA">
+        Upload
+      </ObjectUploader>,
+    );
+    const opts = getAwsS3Options(getLatestUppy());
+
+    mockedApiRequest.mockResolvedValueOnce(
+      jsonResponse({
+        uploadURL: "https://s3.example/signed-put?token=abc",
+        intentId: "intent-001",
+        objectKey: "uploads/2026/foo.png",
+      }),
+    );
+
+    const result = await opts.getUploadParameters({
+      id: "f1",
+      name: "foo.png",
+      type: "image/png",
+      size: 4096,
+    });
+
+    expect(mockedApiRequest).toHaveBeenCalledTimes(1);
+    expect(mockedApiRequest).toHaveBeenCalledWith("POST", "/api/objects/upload", {
+      contentType: "image/png",
+      fileSize: 4096,
+      fileType: "MEDIA",
+    });
+    expect(result).toEqual({
+      method: "PUT",
+      url: "https://s3.example/signed-put?token=abc",
+      intentId: "intent-001",
+      objectKey: "uploads/2026/foo.png",
+    });
+  });
+
+  it("default path falls back to application/octet-stream + size 0 + DOCUMENT when file fields and fileType prop are missing", async () => {
+    render(<ObjectUploader testId="uploader">Upload</ObjectUploader>);
+    const opts = getAwsS3Options(getLatestUppy());
+
+    mockedApiRequest.mockResolvedValueOnce(
+      jsonResponse({
+        uploadURL: "https://s3.example/signed-put",
+        intentId: "intent-defaults",
+        objectKey: "uploads/k",
+      }),
+    );
+
+    await opts.getUploadParameters({ id: "f-defaults" });
+
+    expect(mockedApiRequest).toHaveBeenCalledWith("POST", "/api/objects/upload", {
+      contentType: "application/octet-stream",
+      fileSize: 0,
+      fileType: "DOCUMENT",
+    });
+  });
+
+  it("invokes the onGetUploadParameters prop when supplied and does NOT POST /api/objects/upload", async () => {
+    const onGetUploadParameters = vi.fn(async (file: { name: string; type: string; size: number }) => ({
+      method: "PUT" as const,
+      url: `https://custom.example/put/${file.name}`,
+      intentId: `custom-intent-${file.name}`,
+      objectKey: `custom-key-${file.name}`,
+    }));
+
+    render(
+      <ObjectUploader
+        testId="uploader"
+        onGetUploadParameters={onGetUploadParameters}
+      >
+        Upload
+      </ObjectUploader>,
+    );
+    const opts = getAwsS3Options(getLatestUppy());
+
+    const result = await opts.getUploadParameters({
+      id: "f-custom",
+      name: "avatar.png",
+      type: "image/png",
+      size: 2048,
+    });
+
+    // Prop received the same {name, type, size} shape the default path
+    // would have built — proves the prop is the single source of truth
+    // when supplied.
+    expect(onGetUploadParameters).toHaveBeenCalledTimes(1);
+    expect(onGetUploadParameters).toHaveBeenCalledWith({
+      name: "avatar.png",
+      type: "image/png",
+      size: 2048,
+    });
+    // Critical regression guard: when a prop is supplied, the default
+    // path must NOT also call /api/objects/upload (would double-mint
+    // intents and confuse server-side bookkeeping).
+    expect(mockedApiRequest).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      method: "PUT",
+      url: "https://custom.example/put/avatar.png",
+      intentId: "custom-intent-avatar.png",
+      objectKey: "custom-key-avatar.png",
+    });
+  });
+
+  it("populates the intent map keyed by file.id (verified by the subsequent confirm fan-out)", async () => {
+    // The intent map is private to the component, so we observe it
+    // indirectly: drive `getUploadParameters` for a specific file id,
+    // then fire the `complete` event with that same id and assert the
+    // confirm endpoint is called with the intentId we returned. If the
+    // map were keyed by anything else (e.g. file.name), the lookup in
+    // the complete handler would miss and confirm would never be hit.
+    mockedApiRequest.mockImplementation(
+      async (_method: string, url: string, body: unknown) => {
+        if (url === "/api/objects/upload") {
+          return jsonResponse({
+            uploadURL: "https://s3.example/put",
+            intentId: "intent-by-id-99",
+            objectKey: "uploads/key",
+          }) as unknown as Response;
+        }
+        if (url === "/api/objects/confirm") {
+          const intentId = (body as { intentId: string }).intentId;
+          return jsonResponse({
+            objectPath: `/objects/uploads/${intentId}`,
+            intentId,
+          }) as unknown as Response;
+        }
+        throw new Error(`unexpected apiRequest URL: ${url}`);
+      },
+    );
+
+    const onComplete = vi.fn();
+    render(
+      <ObjectUploader testId="uploader" onComplete={onComplete}>
+        Upload
+      </ObjectUploader>,
+    );
+    const uppy = getLatestUppy();
+
+    const file = {
+      id: "the-real-file-id",
+      name: "totally-different-name.png",
+      type: "image/png",
+      size: 1024,
+    };
+
+    await act(async () => {
+      await uppy.simulateGetUploadParameters(file);
+    });
+
+    await act(async () => {
+      uppy.emit("upload-success", file);
+      await uppy.emitAsync("complete", {
+        successful: [file],
+        failed: [],
+      });
+    });
+
+    const confirmCalls = mockedApiRequest.mock.calls.filter(
+      ([, url]) => url === "/api/objects/confirm",
+    );
+    expect(confirmCalls).toHaveLength(1);
+    expect(confirmCalls[0][2]).toEqual({ intentId: "intent-by-id-99" });
+
+    // And the resulting objectPath lands on the file forwarded to
+    // onComplete, proving end-to-end that the file.id keyed map worked.
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    const result = onComplete.mock.calls[0][0] as {
+      successful: Array<{ id: string; uploadURL: string }>;
+    };
+    expect(result.successful[0].id).toBe("the-real-file-id");
+    expect(result.successful[0].uploadURL).toBe(
+      "/objects/uploads/intent-by-id-99",
+    );
+  });
+
+  it("skips the intent map write when the resolved params have no intentId (confirm fan-out is then a no-op for that file)", async () => {
+    // Some onGetUploadParameters implementations (e.g. legacy callers
+    // that hit a pre-signed URL service directly) don't return an
+    // intentId. The component must NOT attempt to confirm anything in
+    // that case — confirm is only meaningful when the server minted an
+    // intent for us.
+    const onGetUploadParameters = vi.fn(async () => ({
+      method: "PUT" as const,
+      url: "https://legacy.example/upload",
+      // intentId intentionally omitted
+    }));
+
+    const onComplete = vi.fn();
+    render(
+      <ObjectUploader
+        testId="uploader"
+        onComplete={onComplete}
+        onGetUploadParameters={onGetUploadParameters}
+      >
+        Upload
+      </ObjectUploader>,
+    );
+    const uppy = getLatestUppy();
+
+    const file = {
+      id: "no-intent-file",
+      name: "legacy.png",
+      type: "image/png",
+      size: 512,
+      uploadURL: "https://legacy.example/already-uploaded",
+    };
+
+    await act(async () => {
+      await uppy.simulateGetUploadParameters(file);
+    });
+
+    // Reset the mock so we can assert nothing more fires during complete.
+    mockedApiRequest.mockReset();
+
+    await act(async () => {
+      uppy.emit("upload-success", file);
+      await uppy.emitAsync("complete", {
+        successful: [file],
+        failed: [],
+      });
+    });
+
+    // No confirm requests because no intentId was ever recorded.
+    expect(
+      mockedApiRequest.mock.calls.filter(([, url]) => url === "/api/objects/confirm"),
+    ).toHaveLength(0);
+    // onComplete still fires with the original uploadURL preserved.
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    const result = onComplete.mock.calls[0][0] as {
+      successful: Array<{ id: string; uploadURL: string }>;
+    };
+    expect(result.successful[0].uploadURL).toBe(
+      "https://legacy.example/already-uploaded",
+    );
+  });
+});
+
+/**
  * Task #2015 — Tests for the AwsS3 multipart sign/list/abort/complete
  * callbacks and the chunk-size policy.
  *
