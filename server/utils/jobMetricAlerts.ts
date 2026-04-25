@@ -1113,7 +1113,29 @@ async function emailSuperAdminsForAlert(
 export async function evaluateJobMetricAlerts(
   opts: EvaluateOptions = {},
 ): Promise<EvaluateResult> {
-  const now = nowFn();
+  const source = opts.metricsSource ?? (() => getAllJobMetrics());
+  const jobs = source();
+
+  // Task #2021 — derive the evaluation clock from a value that is
+  // strictly after the most recent observed sample. The windowing
+  // helpers (`sumCounter`, `baselineAvgPerHour`) use a half-open
+  // [from, to) interval, so a sample written in the same millisecond
+  // as the wall clock would otherwise be silently dropped. In
+  // production this is invisible because the cron tick fires well
+  // after samples land, but in tests that record a metric and then
+  // immediately evaluate, the same-ms race made the engine look like
+  // it didn't fire when it should have. Bumping `now` past the latest
+  // sample keeps the half-open semantics intact (no double-counting
+  // across baseline buckets that share a boundary) while ensuring
+  // boundary samples are always included.
+  const wallNow = nowFn();
+  let latestSampleTs = 0;
+  for (const j of jobs) {
+    if (j.latest && j.latest.timestamp > latestSampleTs) {
+      latestSampleTs = j.latest.timestamp;
+    }
+  }
+  const now = latestSampleTs >= wallNow ? latestSampleTs + 1 : wallNow;
   lastEvaluationAt = now;
   const result: EvaluateResult = {
     evaluatedAt: now,
@@ -1125,8 +1147,6 @@ export async function evaluateJobMetricAlerts(
     emailsFailed: 0,
   };
 
-  const source = opts.metricsSource ?? (() => getAllJobMetrics());
-  const jobs = source();
   result.jobsScanned = jobs.length;
   if (jobs.length === 0) return result;
 

@@ -284,13 +284,10 @@ describeIfDb("pool starvation E2E (Task #2011)", () => {
         alerts.POOL_HEALTH_EXHAUSTED_EMAIL_FLOOR_PER_HOUR,
       );
 
-      // Drive a single alert-evaluation cycle (the cron tick). Pin
-      // the engine's clock one tick into the future so the strict
-      // `s.timestamp < now` window in `sumCounter` always includes
-      // samples we just recorded — without this, a same-millisecond
-      // race makes the assertion intermittently flaky.
-      const evalAt = Date.now() + 1;
-      alerts.setJobMetricAlertsClockForTests(() => evalAt);
+      // Drive a single alert-evaluation cycle (the cron tick). The
+      // engine itself bumps `now` past the latest observed sample
+      // (Task #2021), so a same-millisecond write/evaluate sequence
+      // is no longer racy and we can rely on the real wall clock.
       const result = await alerts.evaluateJobMetricAlerts();
 
       const exhaustedAlerts = result.alertsFired.filter(
@@ -373,11 +370,8 @@ describeIfDb("pool starvation E2E (Task #2011)", () => {
       // One full alert-evaluation cycle should fire the
       // `waitingSaturated` spike and immediately page Super Admins
       // (in-app + email) because the rule's emailWhenAbove === 1.
-      // Pin the engine's clock one tick into the future so the strict
-      // `s.timestamp < now` window in `sumCounter` always includes
-      // samples we just recorded.
-      const evalAt = Date.now() + 1;
-      alerts.setJobMetricAlertsClockForTests(() => evalAt);
+      // The engine bumps `now` past the latest observed sample
+      // (Task #2021), so the real wall clock is sufficient.
       const result = await alerts.evaluateJobMetricAlerts();
 
       const saturatedAlerts = result.alertsFired.filter(
