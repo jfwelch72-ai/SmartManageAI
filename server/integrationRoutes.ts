@@ -15,7 +15,15 @@ import { db } from "./db";
 import { decryptMetadata, encryptMetadata } from "./integrations/encryption";
 import type { AuthRequest } from "./auth";
 import { importChartOfAccounts, exportCustomers, exportInvoice, importPaymentStatus, exportPayroll, exportSubcontractorPayments, exportPurchaseOrders, reconcilePayments } from "./integrations/providers/qbo";
-import { exportHaulTickets, exportSuretyPremiums, exportCertifiedPayroll } from "./integrations/providers/qbo/sync";
+import {
+  exportHaulTickets,
+  exportSuretyPremiums,
+  exportCertifiedPayroll,
+  qboInvoiceSyncEntityType,
+  qboCustomerSyncEntityType,
+  qboPayrollSyncEntityType,
+  qboCertifiedPayrollSyncEntityType,
+} from "./integrations/providers/qbo/sync";
 import {
   importChartOfAccounts as sageImportChartOfAccounts,
   exportCustomers as sageExportCustomers,
@@ -25,6 +33,7 @@ import {
 } from "./integrations/providers/sage";
 import { getIdMapping } from "./integrations/idMapping";
 import { sageRequest, resolveSageCredentials } from "./integrations/providers/sage/xmlGateway";
+import { recordSyncFailure, recordSyncSuccess } from "./integrations/syncRetry";
 import { parseEbsxJson, importBidPackage, exportEstimateAsEbsx } from "./integrations/providers/aashtoware";
 import { importWageDetermination, listSuppressedFailureNotifications, resetSuppressedFailureNotification, resetAllSuppressedFailureNotifications } from "./integrations/providers/dol_davis_bacon";
 import { searchDirectory as searchDbeDirectory, refreshCertifications as refreshDbeCertifications, verifyCertification as verifyDbeCertification } from "./integrations/providers/dbe_directory";
@@ -575,6 +584,31 @@ router.get("/cloud-browse", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MA
 // Routes from integrationSyncRoutes.ts
 // ========================================
 
+// Task #1377 — typed payload for QBO invoice push so the route validates
+// callers up front (no `as any` into exportInvoice) and so every failed
+// invoice push has a stable identity (`localInvoiceId`) the auto-retry
+// sweep can key off of when persisting/replaying the payload.
+const qboInvoicePayloadSchema = z.object({
+  localInvoiceId: z.string().min(1, "localInvoiceId is required for retryable invoice pushes"),
+  customerRef: z.string().min(1),
+  lineItems: z.array(z.object({
+    description: z.string(),
+    amount: z.number(),
+    accountRef: z.string().optional(),
+  })).min(1),
+  dueDate: z.string().optional(),
+  docNumber: z.string().optional(),
+});
+
+// Task #1377 — typed payload for QBO customer push. The local id is
+// required so the per-customer retry row has a stable identity.
+const qboCustomerPayloadSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  email: z.string().optional(),
+  phone: z.string().optional(),
+});
+
 const syncSchema = z.object({
   operation: z.enum([
     // QBO core
@@ -689,21 +723,86 @@ router.post("/connections/:id/sync", requireAuth, async (req, res, next) => {
       case "chart_of_accounts":
         result = await importChartOfAccounts(connection, dryRun);
         break;
-      case "customers":
-        result = await exportCustomers(connection, data?.customers || [], dryRun);
+      case "customers": {
+        const customersParsed = z.array(qboCustomerPayloadSchema).safeParse(data?.customers ?? []);
+        if (!customersParsed.success) {
+          return res.status(400).json({ error: "Invalid customer payload", details: customersParsed.error.flatten() });
+        }
+        const customersInput = customersParsed.data;
+        result = await exportCustomers(connection, customersInput, dryRun);
+        // Task #1377: per-customer auto-retry bookkeeping. Persist the
+        // payload on the failure row so the sweep can replay each customer
+        // push individually; clear it on success so the row resolves.
+        if (!dryRun) {
+          const failedIds = new Set((result.errors ?? []).map((e) => e.entityId).filter(Boolean) as string[]);
+          for (const cust of customersInput) {
+            if (!cust?.id) continue;
+            const ent = qboCustomerSyncEntityType(cust.id);
+            try {
+              if (failedIds.has(cust.id)) {
+                const errMsg = (result.errors ?? []).find((e) => e.entityId === cust.id)?.message || "QBO customer push failed";
+                await recordSyncFailure(connection, ent, errMsg, { metadata: { payload: cust } });
+              } else {
+                await recordSyncSuccess(connection, ent, { metadata: null });
+              }
+            } catch (err) {
+              logError("Failed to persist QBO customer retry state", { connectionId: connection.id, customerId: cust.id, error: String(err) });
+            }
+          }
+        }
         break;
-      case "invoices":
-        if (!data?.invoice) return res.status(400).json({ error: "Invoice data required" });
-        result = await exportInvoice(connection, data.invoice, dryRun);
+      }
+      case "invoices": {
+        const invoiceParsed = qboInvoicePayloadSchema.safeParse(data?.invoice);
+        if (!invoiceParsed.success) {
+          return res.status(400).json({ error: "Invoice data required", details: invoiceParsed.error.flatten() });
+        }
+        const invoicePayload = invoiceParsed.data;
+        result = await exportInvoice(connection, invoicePayload, dryRun);
+        // Task #1377: persist invoice payload on failure so the sweep can
+        // replay it. The schema requires localInvoiceId so every failed
+        // invoice push is auto-retryable end-to-end.
+        if (!dryRun) {
+          const ent = qboInvoiceSyncEntityType(invoicePayload.localInvoiceId);
+          try {
+            if (result.success) {
+              await recordSyncSuccess(connection, ent, { metadata: null });
+            } else {
+              const errMsg = (result.errors ?? []).map((e) => e.message).join("; ") || "QBO invoice push failed";
+              await recordSyncFailure(connection, ent, errMsg, { metadata: { payload: invoicePayload } });
+            }
+          } catch (err) {
+            logError("Failed to persist QBO invoice retry state", { connectionId: connection.id, localInvoiceId: invoicePayload.localInvoiceId, error: String(err) });
+          }
+        }
         break;
+      }
       case "payment_status":
         if (!data?.invoiceIds?.length) return res.status(400).json({ error: "Invoice IDs required" });
         result = await importPaymentStatus(connection, data.invoiceIds);
         break;
-      case "payroll":
+      case "payroll": {
         if (!data?.payRunId) return res.status(400).json({ error: "Pay run ID required" });
-        result = await exportPayroll(connection, data.payRunId, dryRun);
+        const payRunId = data.payRunId as string;
+        result = await exportPayroll(connection, payRunId, dryRun);
+        // Task #1377: per-pay-run auto-retry bookkeeping. The payRunId is
+        // sufficient payload because exportPayroll re-queries the DB on
+        // every call, so we don't need to persist a separate payload blob.
+        if (!dryRun) {
+          const ent = qboPayrollSyncEntityType(payRunId);
+          try {
+            if (result.success) {
+              await recordSyncSuccess(connection, ent, { metadata: null });
+            } else {
+              const errMsg = (result.errors ?? []).map((e) => e.message).join("; ") || "QBO pay run push failed";
+              await recordSyncFailure(connection, ent, errMsg, { metadata: { payload: { payRunId } } });
+            }
+          } catch (err) {
+            logError("Failed to persist QBO payroll retry state", { connectionId: connection.id, payRunId, error: String(err) });
+          }
+        }
         break;
+      }
       case "subcontractor_payments":
         result = await exportSubcontractorPayments(connection, dryRun);
         break;
@@ -719,10 +818,28 @@ router.post("/connections/:id/sync", requireAuth, async (req, res, next) => {
       case "surety_premiums":
         result = await exportSuretyPremiums(connection, { dryRun });
         break;
-      case "certified_payroll":
+      case "certified_payroll": {
         if (!data?.payRunId) return res.status(400).json({ error: "Pay run ID required" });
-        result = await exportCertifiedPayroll(connection, data.payRunId, { dryRun });
+        const payRunId = data.payRunId as string;
+        result = await exportCertifiedPayroll(connection, payRunId, { dryRun });
+        // Task #1377: per-pay-run auto-retry bookkeeping for the
+        // certified-payroll variant. Idempotency on the export side is
+        // shared with `exportPayroll` via the `exported_payroll` bucket.
+        if (!dryRun) {
+          const ent = qboCertifiedPayrollSyncEntityType(payRunId);
+          try {
+            if (result.success) {
+              await recordSyncSuccess(connection, ent, { metadata: null });
+            } else {
+              const errMsg = (result.errors ?? []).map((e) => e.message).join("; ") || "QBO certified payroll push failed";
+              await recordSyncFailure(connection, ent, errMsg, { metadata: { payload: { payRunId } } });
+            }
+          } catch (err) {
+            logError("Failed to persist QBO certified payroll retry state", { connectionId: connection.id, payRunId, error: String(err) });
+          }
+        }
         break;
+      }
       case "ebsx_import":
         if (!data?.payload) return res.status(400).json({ error: "ebsx payload required" });
         result = await importBidPackage(connection, parseEbsxJson(data.payload), dryRun);

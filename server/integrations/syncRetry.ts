@@ -133,7 +133,18 @@ export async function recordSyncFailure(
   connection: Pick<IntegrationConnection, "id" | "organizationId">,
   entityType: string,
   error: unknown,
-  opts: { backoffMinutes?: readonly number[]; now?: Date } = {},
+  opts: {
+    backoffMinutes?: readonly number[];
+    now?: Date;
+    /**
+     * Task #1377: payload-bearing syncs (QBO invoice/customer/pay-run
+     * pushes) need to persist enough payload on the failure row for the
+     * generic sweep to replay them. When supplied, this metadata is
+     * upserted onto the row so the registered retry handler can read
+     * `row.metadata.payload` and re-fire the original operation.
+     */
+    metadata?: SyncStateMetadata;
+  } = {},
 ): Promise<RecordFailureResult> {
   const backoff = opts.backoffMinutes ?? SYNC_RETRY_BACKOFF_MINUTES;
   const now = opts.now ?? new Date();
@@ -157,6 +168,7 @@ export async function recordSyncFailure(
     lastError: String(error).slice(0, 1000),
     retryCount: nextCount,
     nextRetryAt: nextAt,
+    metadata: opts.metadata,
   });
 
   // Task #1391 — when this failure transitioned the row from "still

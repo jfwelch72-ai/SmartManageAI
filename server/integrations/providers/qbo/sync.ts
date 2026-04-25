@@ -1132,10 +1132,42 @@ const QBO_RETRYABLE_OPS = new Set<QboRetryableOperation>([
   "reconcile_payments",
 ]);
 
+/**
+ * Task #1377 — per-item QBO retry kinds. Failed payload-bearing syncs
+ * (customer push, invoice creation, pay-run posting) record a row keyed
+ * `qbo_sync:<kind>:<localId>` with the original payload persisted on
+ * `metadata.payload` so the generic sweep can replay them on the same
+ * 5/15/45/120/360-minute backoff schedule.
+ */
+type QboPayloadKind = "invoice" | "customer" | "payroll" | "certified_payroll";
+
+const QBO_PAYLOAD_KINDS = new Set<QboPayloadKind>([
+  "invoice",
+  "customer",
+  "payroll",
+  "certified_payroll",
+]);
+
 export const QBO_SYNC_ENTITY_TYPE_PREFIX = "qbo_sync:";
 
 export function qboSyncEntityType(operation: string): string {
   return `${QBO_SYNC_ENTITY_TYPE_PREFIX}${operation}`;
+}
+
+export function qboInvoiceSyncEntityType(localInvoiceId: string): string {
+  return `${QBO_SYNC_ENTITY_TYPE_PREFIX}invoice:${localInvoiceId}`;
+}
+
+export function qboCustomerSyncEntityType(localCustomerId: string): string {
+  return `${QBO_SYNC_ENTITY_TYPE_PREFIX}customer:${localCustomerId}`;
+}
+
+export function qboPayrollSyncEntityType(payRunId: string): string {
+  return `${QBO_SYNC_ENTITY_TYPE_PREFIX}payroll:${payRunId}`;
+}
+
+export function qboCertifiedPayrollSyncEntityType(payRunId: string): string {
+  return `${QBO_SYNC_ENTITY_TYPE_PREFIX}certified_payroll:${payRunId}`;
 }
 
 async function runQboOperation(
@@ -1156,24 +1188,68 @@ async function runQboOperation(
   }
 }
 
+async function runQboPayloadOperation(
+  connection: IntegrationConnection,
+  kind: QboPayloadKind,
+  itemId: string,
+  payload: any,
+): Promise<SyncResult> {
+  switch (kind) {
+    case "invoice":
+      return exportInvoice(connection, payload, false);
+    case "customer":
+      return exportCustomers(connection, [payload], false);
+    case "payroll":
+      return exportPayroll(connection, itemId, false);
+    case "certified_payroll":
+      return exportCertifiedPayroll(connection, itemId, { dryRun: false });
+  }
+}
+
 registerSyncRetryHandler({
   provider: "qbo",
   entityTypePrefix: QBO_SYNC_ENTITY_TYPE_PREFIX,
   handler: async (connection, row) => {
     const operation = row.entityType.slice(QBO_SYNC_ENTITY_TYPE_PREFIX.length).trim();
-    if (!QBO_RETRYABLE_OPS.has(operation as QboRetryableOperation)) {
-      logWarn("QBO retry sweep: unsupported operation", {
-        operation,
-        connectionId: connection.id,
-      });
-      return { success: false, error: `Unsupported QBO operation: ${operation}` };
-    }
     const meta = (connection.metadata as Record<string, any>) || {};
     if (!meta.realmId || !meta.accessToken) {
       return { success: false, error: "QBO connection missing credentials" };
     }
+
+    const colonIdx = operation.indexOf(":");
+    const isPayloadBased = colonIdx > 0;
+
     try {
-      const out = await runQboOperation(connection, operation as QboRetryableOperation);
+      let out: SyncResult;
+      if (isPayloadBased) {
+        const kind = operation.slice(0, colonIdx) as QboPayloadKind;
+        const itemId = operation.slice(colonIdx + 1);
+        if (!QBO_PAYLOAD_KINDS.has(kind)) {
+          logWarn("QBO retry sweep: unsupported payload kind", {
+            operation,
+            connectionId: connection.id,
+          });
+          return { success: false, error: `Unsupported QBO operation: ${operation}` };
+        }
+        if (!itemId) {
+          return { success: false, error: `Missing item id for QBO ${kind} retry` };
+        }
+        const payload = (row.metadata as any)?.payload;
+        if (kind !== "payroll" && kind !== "certified_payroll" && !payload) {
+          return { success: false, error: `Missing payload for QBO ${kind} retry` };
+        }
+        out = await runQboPayloadOperation(connection, kind, itemId, payload);
+      } else {
+        if (!QBO_RETRYABLE_OPS.has(operation as QboRetryableOperation)) {
+          logWarn("QBO retry sweep: unsupported operation", {
+            operation,
+            connectionId: connection.id,
+          });
+          return { success: false, error: `Unsupported QBO operation: ${operation}` };
+        }
+        out = await runQboOperation(connection, operation as QboRetryableOperation);
+      }
+
       if (out.success) {
         logInfo("QBO scheduled retry succeeded", {
           operation,
