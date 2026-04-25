@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -20,6 +21,8 @@ import {
   Copy,
   Check,
   Loader2,
+  Settings as SettingsIcon,
+  AlertTriangle,
   X,
 } from "lucide-react";
 
@@ -37,7 +40,26 @@ interface MediaFile {
 interface MediaResponse {
   files: MediaFile[];
   totalSize: number;
+  // Task #1955 — `storageLimit` is now always populated with the
+  // per-organization quota (in bytes); the legacy `null` (= unlimited)
+  // path is gone now that every org is gated.
   storageLimit: number | null;
+  storageQuotaBytes?: number;
+  storageUsageBytes?: number;
+  storageWarningThreshold?: number;
+  canEditQuota?: boolean;
+}
+
+interface StorageQuotaResponse {
+  usageBytes: number;
+  quotaBytes: number;
+  remainingBytes: number;
+  percentUsed: number;
+  warningThreshold: number;
+  defaultQuotaBytes: number;
+  minQuotaBytes: number;
+  maxQuotaBytes: number;
+  canEditQuota: boolean;
 }
 
 function formatFileSize(bytes: number): string {
@@ -50,6 +72,102 @@ function formatFileSize(bytes: number): string {
 
 function formatGB(bytes: number): string {
   return (bytes / (1024 * 1024 * 1024)).toFixed(2);
+}
+
+const BYTES_PER_GB = 1024 * 1024 * 1024;
+
+function StorageQuotaEditor({ quota }: { quota: StorageQuotaResponse }) {
+  const { toast } = useToast();
+  const [open, setOpen] = useState(false);
+  const [valueGB, setValueGB] = useState(() =>
+    Math.max(1, Math.round(quota.quotaBytes / BYTES_PER_GB)).toString(),
+  );
+
+  const minGB = Math.max(1, Math.ceil(quota.minQuotaBytes / BYTES_PER_GB));
+  const maxGB = Math.max(minGB, Math.floor(quota.maxQuotaBytes / BYTES_PER_GB));
+  const usageGB = quota.usageBytes / BYTES_PER_GB;
+
+  const updateMutation = useMutation({
+    mutationFn: async (gb: number) => {
+      const res = await apiRequest("PATCH", "/api/website/storage-quota", {
+        quotaBytes: Math.round(gb * BYTES_PER_GB),
+      });
+      return (await res.json()) as StorageQuotaResponse;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/website/media"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/website/storage-quota"] });
+      toast({ title: "Storage quota updated" });
+      setOpen(false);
+    },
+    onError: (err: any) => {
+      toast({ title: "Update failed", description: err.message || "Could not update quota", variant: "destructive" });
+    },
+  });
+
+  const numericValue = Number(valueGB);
+  const isInvalid = !Number.isFinite(numericValue) || numericValue < minGB || numericValue > maxGB;
+  const wouldBeBelowUsage = Number.isFinite(numericValue) && numericValue < usageGB;
+
+  return (
+    <>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={() => { setValueGB(Math.max(1, Math.round(quota.quotaBytes / BYTES_PER_GB)).toString()); setOpen(true); }}
+        data-testid="button-edit-storage-quota"
+      >
+        <SettingsIcon className="h-4 w-4 mr-1" />
+        Edit Quota
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Organization Storage Quota</DialogTitle>
+          <DialogDescription>
+            Set the maximum storage your organization can use across the website builder media library and social media uploads. Currently using {formatGB(quota.usageBytes)} GB of {formatGB(quota.quotaBytes)} GB.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Input
+              type="number"
+              min={minGB}
+              max={maxGB}
+              step={1}
+              value={valueGB}
+              onChange={(e) => setValueGB(e.target.value)}
+              data-testid="input-storage-quota-gb"
+            />
+            <span className="text-sm text-muted-foreground">GB</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Allowed range: {minGB} – {maxGB} GB. Default is {Math.round(quota.defaultQuotaBytes / BYTES_PER_GB)} GB.
+          </p>
+          {wouldBeBelowUsage && !isInvalid && (
+            <div className="flex items-start gap-2 text-xs text-amber-600 dark:text-amber-400" data-testid="text-storage-quota-below-usage">
+              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <span>
+                The new quota is below current usage. Existing files will not be deleted, but no new uploads will be accepted until usage drops below the new limit.
+              </span>
+            </div>
+          )}
+        </div>
+        <DialogFooter className="flex gap-2">
+          <Button variant="outline" onClick={() => setOpen(false)} data-testid="button-cancel-quota-edit">Cancel</Button>
+          <Button
+            onClick={() => updateMutation.mutate(numericValue)}
+            disabled={isInvalid || updateMutation.isPending}
+            data-testid="button-save-storage-quota"
+          >
+            {updateMutation.isPending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
+            Save Quota
+          </Button>
+        </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 }
 
 export function MediaLibraryTab() {
@@ -65,12 +183,17 @@ export function MediaLibraryTab() {
     queryKey: ["/api/website/media"],
   });
 
+  const { data: quota } = useQuery<StorageQuotaResponse>({
+    queryKey: ["/api/website/storage-quota"],
+  });
+
   const deleteMutation = useMutation({
     mutationFn: async (fileName: string) => {
       await apiRequest("DELETE", `/api/website/media/${fileName}`);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/website/media"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/website/storage-quota"] });
       toast({ title: "File deleted" });
       setDeleteTarget(null);
     },
@@ -99,6 +222,18 @@ export function MediaLibraryTab() {
         const res = await fetch("/api/website/upload-image", { method: "POST", body: formData, credentials: "include" });
         if (!res.ok) {
           const err = await res.json().catch(() => ({ error: "Upload failed" }));
+          // Task #1955: surface a friendlier message when the server rejects
+          // the upload because the org has hit its storage quota.
+          if (res.status === 413 && err?.code === "STORAGE_QUOTA_EXCEEDED") {
+            const usedGB = formatGB(err.currentUsageBytes ?? 0);
+            const quotaGB = formatGB(err.quotaBytes ?? 0);
+            toast({
+              title: "Storage limit reached",
+              description: `Your organization is using ${usedGB} GB of its ${quotaGB} GB quota. Delete unused files or ask an admin to raise the limit.`,
+              variant: "destructive",
+            });
+            break;
+          }
           toast({ title: "Failed: " + file.name, description: err.error, variant: "destructive" });
           continue;
         }
@@ -107,6 +242,7 @@ export function MediaLibraryTab() {
       if (successCount > 0) {
         toast({ title: `${successCount} file${successCount > 1 ? "s" : ""} uploaded` });
         queryClient.invalidateQueries({ queryKey: ["/api/website/media"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/website/storage-quota"] });
       }
     } finally {
       setUploading(false);
@@ -123,6 +259,17 @@ export function MediaLibraryTab() {
 
   const files = data?.files || [];
   const totalSize = data?.totalSize || 0;
+  const quotaBytes = data?.storageQuotaBytes ?? quota?.quotaBytes ?? null;
+  const warningThreshold = data?.storageWarningThreshold ?? quota?.warningThreshold ?? 0.8;
+  const percentUsed = quotaBytes && quotaBytes > 0 ? Math.min(1, totalSize / quotaBytes) : 0;
+  const isAtLimit = quotaBytes != null && totalSize >= quotaBytes;
+  const isWarning = !isAtLimit && quotaBytes != null && percentUsed >= warningThreshold;
+  const canEditQuota = quota?.canEditQuota ?? data?.canEditQuota ?? false;
+  const progressColorClass = isAtLimit
+    ? "[&>div]:bg-destructive"
+    : isWarning
+      ? "[&>div]:bg-amber-500"
+      : "";
 
   const filteredFiles = searchQuery
     ? files.filter((f) => {
@@ -133,14 +280,51 @@ export function MediaLibraryTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-4 flex-wrap">
-        <div className="flex-1 min-w-[280px]">
-          <div className="flex items-center gap-2 text-sm mb-1.5">
+      <div className="flex items-start gap-4 flex-wrap">
+        <div className="flex-1 min-w-[280px] space-y-1.5">
+          <div className="flex items-center gap-2 text-sm">
             <HardDrive className="h-4 w-4 text-muted-foreground" />
-            <span data-testid="text-storage-usage">{formatGB(totalSize)} GB used</span>
+            {quotaBytes != null ? (
+              <span data-testid="text-storage-usage">
+                {formatGB(totalSize)} GB of {formatGB(quotaBytes)} GB used
+                {" "}({Math.round(percentUsed * 100)}%)
+              </span>
+            ) : (
+              <span data-testid="text-storage-usage">{formatGB(totalSize)} GB used</span>
+            )}
           </div>
+          {quotaBytes != null && (
+            <Progress
+              value={percentUsed * 100}
+              className={`h-2 ${progressColorClass}`}
+              data-testid="progress-storage-usage"
+            />
+          )}
+          {isAtLimit && (
+            <div
+              className="flex items-start gap-2 text-xs text-destructive mt-1"
+              data-testid="banner-storage-blocked"
+            >
+              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <span>
+                You've reached your organization's {formatGB(quotaBytes)} GB storage limit. Delete unused files or ask an admin to raise the quota to upload more.
+              </span>
+            </div>
+          )}
+          {isWarning && (
+            <div
+              className="flex items-start gap-2 text-xs text-amber-600 dark:text-amber-400 mt-1"
+              data-testid="banner-storage-warning"
+            >
+              <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+              <span>
+                Heads up — you're using {Math.round(percentUsed * 100)}% of your {formatGB(quotaBytes)} GB storage quota. Consider cleaning up unused files before you hit the limit.
+              </span>
+            </div>
+          )}
         </div>
-        <div>
+        <div className="flex items-center gap-2">
+          {canEditQuota && quota && <StorageQuotaEditor quota={quota} />}
           <input
             ref={fileRef}
             type="file"
@@ -150,7 +334,11 @@ export function MediaLibraryTab() {
             onChange={(e) => { if (e.target.files?.length) { handleUpload(e.target.files); e.target.value = ""; } }}
             data-testid="input-media-upload-file"
           />
-          <Button onClick={() => fileRef.current?.click()} disabled={uploading} data-testid="button-upload-media">
+          <Button
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading || isAtLimit}
+            data-testid="button-upload-media"
+          >
             {uploading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Upload className="h-4 w-4 mr-1" />}
             Upload Media
           </Button>

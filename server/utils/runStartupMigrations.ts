@@ -108,6 +108,7 @@ import { ensureProjectKpiSnapshotsTable } from "./ensureProjectKpiSnapshotsTable
 import { ensureSwpppCorrectiveActionStatus } from "./ensureSwpppCorrectiveActionStatus";
 import { ensureSwpppOverdueNotificationColumn } from "./ensureSwpppOverdueNotificationColumn";
 import { ensureSwpppOverdueReminderSettings } from "./ensureSwpppOverdueReminderSettings";
+import { ensureOrganizationStorageQuotaColumn } from "./ensureOrganizationStorageQuotaColumn";
 import { ensureRfiOverdueColumns } from "./ensureRfiOverdueColumns";
 import { ensureSubmittalReviewOverdueColumns } from "./ensureSubmittalReviewOverdueColumns";
 import { ensureDocOverdueReminderSettings } from "./ensureDocOverdueReminderSettings";
@@ -336,6 +337,10 @@ const migrations: MigrationStep[] = [
   { name: "swppp_overdue_notification_column", category: "ADD_COLUMN", fn: ensureSwpppOverdueNotificationColumn },
   // Task #1286 — per-org SWPPP overdue reminder cap + interval columns.
   { name: "swppp_overdue_reminder_settings", category: "ADD_COLUMN", fn: ensureSwpppOverdueReminderSettings },
+  // Task #1955 — per-org object-storage quota for the shared
+  // `gallery/<orgId>/` prefix used by the website builder image
+  // library and the social-media post media uploader. Default 100 GB.
+  { name: "organization_storage_quota_column", category: "ADD_COLUMN", fn: ensureOrganizationStorageQuotaColumn },
   // Task #1599 — per-RFI dedupe marker + counter for the nightly RFI
   // overdue escalation sweep, plus an external-assignee email column
   // for the EXTERNAL_DOC_EMAIL fanout. Idempotent ADD COLUMN IF NOT

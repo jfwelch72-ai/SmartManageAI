@@ -10,6 +10,7 @@ import crypto from "crypto";
 import multer from "multer";
 import { publishToPlatform, validateToken, refreshToken, fetchEngagement } from "./social/publishService";
 import { ObjectStorageService, objectStorageClient, ObjectNotFoundError } from "./objectStorage";
+import { assertWithinStorageQuota, isStorageQuotaExceededError } from "./utils/orgStorageQuota";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { governedAiCall, estimateCost } from "./services/aiGovernance";
 import { isSocialPlatformConfigured } from "./services/integrationStatusService";
@@ -217,6 +218,27 @@ router.post("/posts/generate-image", requireAuth, sensitiveLimiter, async (req: 
     }
 
     const imageBuffer = Buffer.from(b64Data, "base64");
+
+    // Task #1955: enforce per-org storage quota before persisting the
+    // generated image. The OpenAI request has already been billed at
+    // this point, so we still tell the client what to do (free up
+    // space or ask an admin to raise the cap) instead of silently
+    // discarding the bytes.
+    try {
+      await assertWithinStorageQuota(orgId, imageBuffer.byteLength);
+    } catch (quotaErr) {
+      if (isStorageQuotaExceededError(quotaErr)) {
+        return res.status(413).json({
+          error: "Storage quota exceeded",
+          code: quotaErr.code,
+          currentUsageBytes: quotaErr.currentUsageBytes,
+          quotaBytes: quotaErr.quotaBytes,
+          attemptedBytes: quotaErr.attemptedBytes,
+        });
+      }
+      throw quotaErr;
+    }
+
     const publicPaths = objectStorage.getPublicObjectSearchPaths();
     if (publicPaths.length === 0) {
       return next(error);
@@ -262,6 +284,24 @@ router.post("/upload-media", requireAuth, socialUpload.single("file"), async (re
 
     const file = req.file;
     if (!file) return res.status(400).json({ error: "No file provided" });
+
+    // Task #1955: enforce per-org storage quota before persisting bytes.
+    // Same `gallery/<orgId>/` prefix as the website builder so both
+    // upload paths share a single accounting + ceiling.
+    try {
+      await assertWithinStorageQuota(orgId, file.size);
+    } catch (quotaErr) {
+      if (isStorageQuotaExceededError(quotaErr)) {
+        return res.status(413).json({
+          error: "Storage quota exceeded",
+          code: quotaErr.code,
+          currentUsageBytes: quotaErr.currentUsageBytes,
+          quotaBytes: quotaErr.quotaBytes,
+          attemptedBytes: quotaErr.attemptedBytes,
+        });
+      }
+      throw quotaErr;
+    }
 
     const publicPaths = objectStorage.getPublicObjectSearchPaths();
     if (publicPaths.length === 0) {

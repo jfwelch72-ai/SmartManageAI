@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, bigint, pgEnum, doublePrecision, index, unique, json } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { addonKeyEnum, addonStatusEnum, alertFailureEmailModeEnum, backfillSummaryChannelEnum, bidStatusEnum, billingProviderEnum, deductionCalculationMethodEnum, deductionCategoryEnum, geofenceEnforcementEnum, jobMetricAlertQuietHoursDigestFormatEnum, jobMetricAlertQuietHoursDigestTimeFormatEnum, onboardingStatusEnum, payRunStatusEnum, payrollFormVariantEnum, planTierEnum, projectStatusEnum, subscriptionStatusEnum, tradeTypeEnum, usageKeyEnum, userRoleEnum, workWeekStartDayEnum } from "./enums";
@@ -79,9 +79,32 @@ export const organizations = pgTable("organizations", {
   projectLogEmailFailuresDigestWeekday: integer("project_log_email_failures_digest_weekday").notNull().default(1),
   projectLogEmailFailuresDigestHour: integer("project_log_email_failures_digest_hour").notNull().default(8),
   projectLogEmailFailuresDigestTimezone: text("project_log_email_failures_digest_timezone").notNull().default("UTC"),
+  // Task #1955 — per-organization storage quota (in bytes) covering the
+  // shared object-storage `gallery/<orgId>/` prefix used by both the
+  // website builder image library and the social-media post media
+  // uploader. The hard 3 GB cap that lived in the upload routes was
+  // removed earlier so users weren't blocked, but with effectively
+  // unlimited per-file caps an org could now upload tens or hundreds
+  // of GB without any guardrail. The default lifts the ceiling to
+  // 100 GB (107,374,182,400 bytes) so existing orgs are not surprised,
+  // but the value is now configurable per-org via the admin UI and is
+  // enforced server-side with a 413 response that includes current
+  // usage and the active quota. Stored as bigint because byte-sized
+  // values for GB-scale quotas overflow Postgres `integer` (max ~2.1 GB).
+  storageQuotaBytes: bigint("storage_quota_bytes", { mode: "number" })
+    .notNull()
+    .default(107374182400),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+// Task #1955 — quota constants. Kept alongside the column definition so
+// the same fallback is used by the runtime enforcement helper, the
+// startup migration, and any tests that need to assert the default.
+export const DEFAULT_ORG_STORAGE_QUOTA_BYTES = 100 * 1024 * 1024 * 1024; // 100 GB
+export const MIN_ORG_STORAGE_QUOTA_BYTES = 1 * 1024 * 1024 * 1024; // 1 GB floor
+export const MAX_ORG_STORAGE_QUOTA_BYTES = 10 * 1024 * 1024 * 1024 * 1024; // 10 TB ceiling
+export const ORG_STORAGE_QUOTA_WARNING_THRESHOLD = 0.8;
 
 export const SWPPP_OVERDUE_REMINDER_DEFAULT_CAP = 5;
 export const SWPPP_OVERDUE_REMINDER_DEFAULT_INTERVAL_HOURS = 22;

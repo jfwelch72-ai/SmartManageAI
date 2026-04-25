@@ -8,6 +8,17 @@ import { organizationWebsites, organizationWebsitePages, organizationSocialLinks
 import { requireAuth, AuthRequest, requireFeaturePermission } from "./auth";
 import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import { ObjectStorageService, ObjectNotFoundError, objectStorageClient } from "./objectStorage";
+import {
+  assertWithinStorageQuota,
+  clampStorageQuotaBytes,
+  getOrgStorageUsage,
+  isStorageQuotaExceededError,
+  setOrgStorageQuota,
+  storageQuotaWarningThreshold,
+  DEFAULT_ORG_STORAGE_QUOTA_BYTES,
+  MIN_ORG_STORAGE_QUOTA_BYTES,
+  MAX_ORG_STORAGE_QUOTA_BYTES,
+} from "./utils/orgStorageQuota";
 import multer from "multer";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { sendEmail } from "./email";
@@ -1286,6 +1297,25 @@ router.post("/upload-image", requireAuth, sensitiveLimiter, upload.single("image
       return res.status(403).json({ error: "Organization access required" });
     }
 
+    // Task #1955: enforce per-org storage quota before persisting bytes.
+    // Returns 413 with the active quota + current usage so the client
+    // can render an actionable "you are X of Y GB used" message instead
+    // of a generic upload failure.
+    try {
+      await assertWithinStorageQuota(orgId, file.size);
+    } catch (quotaErr) {
+      if (isStorageQuotaExceededError(quotaErr)) {
+        return res.status(413).json({
+          error: "Storage quota exceeded",
+          code: quotaErr.code,
+          currentUsageBytes: quotaErr.currentUsageBytes,
+          quotaBytes: quotaErr.quotaBytes,
+          attemptedBytes: quotaErr.attemptedBytes,
+        });
+      }
+      throw quotaErr;
+    }
+
     const publicPaths = objectStorage.getPublicObjectSearchPaths();
     if (publicPaths.length === 0) {
       return next(error);
@@ -1362,9 +1392,27 @@ router.get("/media", requireAuth, async (req: AuthRequest, res: Response, next: 
       return res.status(403).json({ error: "Organization access required" });
     }
 
+    // Task #1955: surface the per-org storage quota alongside the file
+    // listing so the Media Library can render a usage bar + warning at
+    // 80% / friendly block at 100% without a second round-trip.
+    const quota = await getOrgStorageUsage(orgId).catch(() => ({
+      usageBytes: 0,
+      quotaBytes: DEFAULT_ORG_STORAGE_QUOTA_BYTES,
+      remainingBytes: DEFAULT_ORG_STORAGE_QUOTA_BYTES,
+      percentUsed: 0,
+    }));
+
     const publicPaths = objectStorage.getPublicObjectSearchPaths();
     if (publicPaths.length === 0) {
-      return res.json({ files: [], totalSize: 0, storageLimit: null });
+      return res.json({
+        files: [],
+        totalSize: 0,
+        storageLimit: quota.quotaBytes,
+        storageQuotaBytes: quota.quotaBytes,
+        storageUsageBytes: 0,
+        storageWarningThreshold: storageQuotaWarningThreshold(),
+        canEditQuota: ["ADMIN", "SUPER_ADMIN"].includes(user.role),
+      });
     }
 
     const basePath = publicPaths[0];
@@ -1398,7 +1446,109 @@ router.get("/media", requireAuth, async (req: AuthRequest, res: Response, next: 
 
     files.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-    res.json({ files, totalSize, storageLimit: null });
+    // Use the freshly-summed total (which matches what the user sees in
+    // the list) as the authoritative usage figure, but keep the quota
+    // value from the helper so the response stays consistent.
+    res.json({
+      files,
+      totalSize,
+      storageLimit: quota.quotaBytes,
+      storageQuotaBytes: quota.quotaBytes,
+      storageUsageBytes: totalSize,
+      storageWarningThreshold: storageQuotaWarningThreshold(),
+      canEditQuota: ["ADMIN", "SUPER_ADMIN"].includes(user.role),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Task #1955: Admin endpoints for inspecting + editing the per-org
+// storage quota. The GET is shared with managers so the Media Library
+// can render usage; the PATCH is restricted to admins because raising
+// the cap directly affects per-org cloud spend.
+router.get("/storage-quota", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN", "MANAGER"].includes(user.role)) {
+      return res.status(403).json({ error: "Manager or admin access required" });
+    }
+    const orgId = user.organizationId;
+    if (!orgId) {
+      return res.status(403).json({ error: "Organization access required" });
+    }
+
+    const usage = await getOrgStorageUsage(orgId);
+    res.json({
+      usageBytes: usage.usageBytes,
+      quotaBytes: usage.quotaBytes,
+      remainingBytes: usage.remainingBytes,
+      percentUsed: usage.percentUsed,
+      warningThreshold: storageQuotaWarningThreshold(),
+      defaultQuotaBytes: DEFAULT_ORG_STORAGE_QUOTA_BYTES,
+      minQuotaBytes: MIN_ORG_STORAGE_QUOTA_BYTES,
+      maxQuotaBytes: MAX_ORG_STORAGE_QUOTA_BYTES,
+      canEditQuota: ["ADMIN", "SUPER_ADMIN"].includes(user.role),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/storage-quota", requireAuth, sensitiveLimiter, async (req: AuthRequest, res: Response, next: NextFunction) => {
+  try {
+    const user = req.user!;
+    if (!["ADMIN", "SUPER_ADMIN"].includes(user.role)) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    const orgId = user.organizationId;
+    if (!orgId) {
+      return res.status(403).json({ error: "Organization access required" });
+    }
+
+    const raw = req.body?.quotaBytes;
+    const parsed = typeof raw === "number" ? raw : Number(raw);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return res.status(400).json({ error: "quotaBytes must be a positive number" });
+    }
+    if (parsed < MIN_ORG_STORAGE_QUOTA_BYTES) {
+      return res.status(400).json({
+        error: `Quota must be at least ${MIN_ORG_STORAGE_QUOTA_BYTES} bytes`,
+        minQuotaBytes: MIN_ORG_STORAGE_QUOTA_BYTES,
+      });
+    }
+    if (parsed > MAX_ORG_STORAGE_QUOTA_BYTES) {
+      return res.status(400).json({
+        error: `Quota must not exceed ${MAX_ORG_STORAGE_QUOTA_BYTES} bytes`,
+        maxQuotaBytes: MAX_ORG_STORAGE_QUOTA_BYTES,
+      });
+    }
+
+    const clamped = clampStorageQuotaBytes(parsed);
+    const previous = await getOrgStorageUsage(orgId);
+    await setOrgStorageQuota(orgId, clamped);
+
+    await logUpdate(
+      user.id,
+      "organizations",
+      orgId,
+      { storageQuotaBytes: previous.quotaBytes },
+      { storageQuotaBytes: clamped },
+      req,
+    );
+
+    const usage = await getOrgStorageUsage(orgId);
+    res.json({
+      usageBytes: usage.usageBytes,
+      quotaBytes: usage.quotaBytes,
+      remainingBytes: usage.remainingBytes,
+      percentUsed: usage.percentUsed,
+      warningThreshold: storageQuotaWarningThreshold(),
+      defaultQuotaBytes: DEFAULT_ORG_STORAGE_QUOTA_BYTES,
+      minQuotaBytes: MIN_ORG_STORAGE_QUOTA_BYTES,
+      maxQuotaBytes: MAX_ORG_STORAGE_QUOTA_BYTES,
+      canEditQuota: true,
+    });
   } catch (error) {
     next(error);
   }
