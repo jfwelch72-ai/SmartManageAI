@@ -231,10 +231,29 @@ jobs:
         # so within a shard the tests still run serially against the
         # single dev server — the parallelism comes from running 4
         # GitHub-hosted runners side by side.
+        #
+        # Task #1910 — Firefox + WebKit canvas specs occasionally flake
+        # for reasons unrelated to a real regression (Konva pointer
+        # timing, browser-launch hiccups, transient races against the
+        # postgres service container). With the Slack alert from
+        # Task #1897 covering the overlapping takeoff specs on `main`,
+        # every such flake would wake the team. `--retries=1` makes
+        # Playwright re-run any failing spec once before marking the
+        # job failed, so the action's `failure()` (and therefore any
+        # downstream Slack notifier) only triggers on a real, repeatable
+        # regression. Set explicitly here — rather than relying on the
+        # global `retries: process.env.CI ? 1 : 0` in
+        # `playwright.config.ts` — so the intent is visible at the job
+        # that needs it and survives any future tightening of the
+        # global default for other E2E jobs. Retries are surfaced as
+        # "flaky" outcomes in the HTML report uploaded below, which is
+        # how we'll spot a flake trend over time even when the job
+        # itself stays green.
         run: |
           npx playwright test \
             --project=${{ matrix.project }} \
             --shard=${{ matrix.shard }}/2 \
+            --retries=1 \
             e2e/takeoff-markup-drawing.spec.ts \
             e2e/plan-markup-group-drag.spec.ts \
             e2e/plan-markup-marquee-select.spec.ts \
