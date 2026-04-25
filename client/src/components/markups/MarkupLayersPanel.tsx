@@ -38,6 +38,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { useDuplicateLayerCopyConfirm } from "@/components/markups/DuplicateLayerCopyDialog";
+import { useDeleteLayerConfirm } from "@/components/markups/DeleteLayerConfirmDialog";
 
 // Task #1805 — how long the "Copy to sheet" success toast (and its
 // Undo button) stays on screen. Long enough for a user to notice the
@@ -113,6 +114,12 @@ export default function MarkupLayersPanel({
   const { toast } = useToast();
   const { dialog: duplicateCopyDialog, confirm: confirmDuplicateCopy } =
     useDuplicateLayerCopyConfirm();
+  // Task #1878 — themed AlertDialog used in place of the native
+  // `window.confirm` when deleting a non-default layer that still has
+  // markups on it. Mirrors the duplicate-copy hook above so both
+  // layer-panel decisions share a single shape.
+  const { dialog: deleteLayerDialog, confirm: confirmDeleteLayer } =
+    useDeleteLayerConfirm();
   const [newName, setNewName] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
@@ -793,16 +800,21 @@ export default function MarkupLayersPanel({
                     type="button"
                     className="text-muted-foreground hover:text-destructive"
                     onClick={() => {
-                      if (
-                        l.markupCount > 0 &&
-                        typeof window !== "undefined" &&
-                        !window.confirm(
-                          `Delete layer "${l.name}"? Its ${l.markupCount} markup(s) will move to the default layer.`,
-                        )
-                      ) {
+                      // Task #1878 — empty layers delete without
+                      // prompting; non-empty layers route through the
+                      // themed AlertDialog so the warning matches the
+                      // rest of the UI (no more native window.confirm).
+                      if (l.markupCount === 0) {
+                        deleteMutation.mutate(l.id);
                         return;
                       }
-                      deleteMutation.mutate(l.id);
+                      void confirmDeleteLayer({
+                        layerName: l.name,
+                        markupCount: l.markupCount,
+                      }).then((accepted) => {
+                        if (!accepted) return;
+                        deleteMutation.mutate(l.id);
+                      });
                     }}
                     aria-label={`Delete ${l.name}`}
                     data-testid={`button-markup-layer-delete-${l.id}`}
@@ -870,6 +882,7 @@ export default function MarkupLayersPanel({
         </Button>
       </form>
       {duplicateCopyDialog}
+      {deleteLayerDialog}
     </div>
   );
 }
