@@ -22,7 +22,11 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { authedRequest, getCsrfHeader, installCsrf } from "./helpers/csrf";
 import { getMinimalPdf, uploadFixturePdf } from "./helpers/uploadFixturePdf";
-import { dragSequence, getDragTuning } from "./helpers/canvasDrag";
+import {
+  clickSequence,
+  dragSequence,
+  dragThresholdNudge,
+} from "./helpers/canvasDrag";
 
 const BASE_URL =
   process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
@@ -267,12 +271,10 @@ test.describe("PlanMarkupLayer — group drag E2E (Task #1707)", () => {
     // shift-extension. `lastSelected` in PlanMarkupLayer iterates the
     // selectedIds Set in insertion order, so the toolbar testid uses
     // the FIRST-clicked markup's id (here: A) even after B is added.
-    // Two move calls so WebKit reliably dispatches the initial
-    // mousemove before the click sequence.
-    const { clickHoldWait } = getDragTuning(browserName);
-    await page.mouse.move(ptA.x, ptA.y);
-    await page.mouse.move(ptA.x, ptA.y);
-    await page.mouse.click(ptA.x, ptA.y, { delay: clickHoldWait });
+    // The shared `clickSequence` helper picks engine-aware step counts
+    // and waits (Chromium vs Firefox/WebKit) — see
+    // `e2e/helpers/canvasDrag.ts`.
+    await clickSequence(page, ptA, browserName);
     await expect(
       page.getByTestId(`markup-selection-toolbar-${markupA.id}`),
     ).toBeVisible({ timeout: 10_000 });
@@ -282,9 +284,7 @@ test.describe("PlanMarkupLayer — group drag E2E (Task #1707)", () => {
     // (forwarded by MarkupRenderer per Task #1729), so we must hold
     // Shift through the native dispatch.
     await page.keyboard.down("Shift");
-    await page.mouse.move(ptB.x, ptB.y);
-    await page.mouse.move(ptB.x, ptB.y);
-    await page.mouse.click(ptB.x, ptB.y, { delay: clickHoldWait });
+    await clickSequence(page, ptB, browserName);
     await page.keyboard.up("Shift");
 
     // When ≥2 markups are selected the Group button appears inside the
@@ -306,10 +306,7 @@ test.describe("PlanMarkupLayer — group drag E2E (Task #1707)", () => {
     const dragTo = { x: ptB.x + DELTA_PX.dx, y: ptB.y + DELTA_PX.dy };
 
     await dragSequence(page, dragFrom, dragTo, browserName, {
-      intermediate: [
-        { x: dragFrom.x + 10, y: dragFrom.y + 10 },
-        { x: dragFrom.x + 30, y: dragFrom.y + 20 },
-      ],
+      intermediate: dragThresholdNudge(dragFrom),
     });
 
     // Convert the pixel delta to the same normalized delta the client

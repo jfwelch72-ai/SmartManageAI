@@ -55,6 +55,26 @@
  * to `clickOnCanvas` because several specs use it to select Konva
  * shapes and the same "did the click land on the wrong spot?"
  * debugging problem applies there too.
+ *
+ * Task #1885 finishes the centralization for the plan-side specs by
+ * adding three small siblings:
+ *
+ *   - `dragThresholdNudge(from)` — canonical 2-waypoint intermediate
+ *     path (`+10,+10`, `+30,+20`) used by every spec that needs to
+ *     clear Konva's drag-distance threshold (and the plan-side
+ *     marquee's `MARQUEE_MIN_DRAG_PX`) before the final move lands.
+ *   - `clickSequence(page, point, browserName)` — the absolute-coord
+ *     sibling of `clickOnCanvas`, for plan-side specs that compute
+ *     positions from a `pdf-preview-overlay` bounding box instead of
+ *     a Konva canvas locator.
+ *   - `release: false` option on `dragSequence` plus a companion
+ *     `releaseDrag(page, browserName)` — for the marquee mid-drag
+ *     assertion that has to fire while the mouse is still pressed.
+ *
+ * Together these let `plan-markup-group-drag.spec.ts` and
+ * `plan-markup-marquee-select.spec.ts` stop issuing raw `page.mouse.*`
+ * sequences for canvas drags, so a future cross-engine timing tweak
+ * only has to be applied here.
  */
 import { test, type Locator, type Page } from "@playwright/test";
 
@@ -116,6 +136,40 @@ export interface DragOptions {
    * skip the warmup (rare).
    */
   preMoves?: boolean;
+  /**
+   * When true (the default), the helper releases the mouse button at
+   * the end of the gesture. Set to false to leave the pointer pressed
+   * at `to` so the caller can run an assertion mid-drag (e.g. checking
+   * that the marquee overlay is visible while the mouse is still
+   * down). Pair with `releaseDrag(page, browserName)` to finish the
+   * gesture once the mid-drag assertion has settled. Task #1885 added
+   * this so the plan-side marquee spec can stop hand-rolling its own
+   * partial drag sequence.
+   */
+  release?: boolean;
+}
+
+/**
+ * Canonical pair of intermediate waypoints used to clear Konva's
+ * `drag-distance` threshold (and the plan-side marquee's
+ * `MARQUEE_MIN_DRAG_PX` threshold) before the final move lands.
+ *
+ * The exact offsets — `+10,+10` then `+30,+20` — mirror what the
+ * takeoff/plan specs originally inlined. Centralizing them here lets
+ * a future cross-engine timing tweak live in one place; today every
+ * call site that needed a custom intermediate path was using these
+ * same numbers.
+ *
+ * Use as `intermediate: dragThresholdNudge(from)` when calling
+ * `dragSequence` / `dragOnCanvas`. `from` is in whatever coordinate
+ * space the surrounding drag uses (viewport pixels for `dragSequence`,
+ * canvas-relative for `dragOnCanvas`).
+ */
+export function dragThresholdNudge(from: Point): Point[] {
+  return [
+    { x: from.x + 10, y: from.y + 10 },
+    { x: from.x + 30, y: from.y + 20 },
+  ];
 }
 
 /** Format a point as a compact `(x, y)` string for step titles. */
@@ -209,7 +263,7 @@ export async function dragSequence(
   browserName: string,
   options: DragOptions = {},
 ): Promise<void> {
-  const { intermediate, preMoves = true } = options;
+  const { intermediate, preMoves = true, release = true } = options;
   const tuning = getDragTuning(browserName);
   const { interStep, finalStep, interWait, edgeWait, postUpWait } = tuning;
 
@@ -245,6 +299,7 @@ export async function dragSequence(
       waypoints,
       waypointSource,
       preMoves,
+      release,
       tuning,
     });
 
@@ -266,9 +321,75 @@ export async function dragSequence(
 
       await page.mouse.move(to.x, to.y, { steps: finalStep });
       await page.waitForTimeout(edgeWait);
-      await page.mouse.up();
-      await page.waitForTimeout(postUpWait);
+      if (release) {
+        await page.mouse.up();
+        await page.waitForTimeout(postUpWait);
+      }
     });
+  });
+}
+
+/**
+ * Release the mouse button that a previous `dragSequence(..., {
+ * release: false })` call left pressed, applying the same engine-aware
+ * `postUpWait` so the surrounding spec doesn't have to re-derive the
+ * tuning. Pair with the `release: false` option on `dragSequence` /
+ * `dragOnCanvas` for mid-drag assertions (e.g. checking that the
+ * marquee overlay is visible while the mouse is still down).
+ */
+export async function releaseDrag(
+  page: Page,
+  browserName: string,
+): Promise<void> {
+  const tuning = getDragTuning(browserName);
+  await test.step(`canvasDrag.releaseDrag ${browserName}`, async () => {
+    await attachGesture("canvas-drag.gesture", {
+      kind: "releaseDrag",
+      browserName,
+      tuning,
+    });
+    await page.mouse.up();
+    await page.waitForTimeout(tuning.postUpWait);
+  });
+}
+
+/**
+ * Click the mouse at `point` in viewport pixel coordinates.
+ *
+ * Mirrors `clickOnCanvas` but for callers that already work in
+ * absolute viewport coordinates (e.g. plan-side specs that compute
+ * positions from a `pdf-preview-overlay` bounding box rather than the
+ * Konva canvas itself). Two `mouse.move()` calls so WebKit reliably
+ * dispatches the initial mousemove before the click sequence, and
+ * `clickHoldWait` is taken from `getDragTuning` so the engine-aware
+ * timing matches every other helper in this module.
+ *
+ * Wrapped in a `test.step` + JSON attachment so the resolved click
+ * point shows up inline in the Playwright HTML report (same treatment
+ * as `clickOnCanvas`). Task #1885 added this helper so the plan-side
+ * markup specs can stop hand-rolling their own click sequences.
+ */
+export async function clickSequence(
+  page: Page,
+  point: Point,
+  browserName: string,
+): Promise<void> {
+  const tuning = getDragTuning(browserName);
+  const stepTitle =
+    `canvasDrag.clickSequence ${browserName} ` +
+    `${fmtPoint(point)} (viewport)`;
+
+  await test.step(stepTitle, async () => {
+    await attachGesture("canvas-drag.gesture", {
+      kind: "clickSequence",
+      browserName,
+      point,
+      tuning,
+    });
+
+    await page.mouse.move(point.x, point.y);
+    await page.mouse.move(point.x, point.y);
+    await page.mouse.click(point.x, point.y, { delay: tuning.clickHoldWait });
   });
 }
 

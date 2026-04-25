@@ -24,7 +24,12 @@
 import { test, expect, type Page, type Route } from "@playwright/test";
 import { authedRequest, installCsrf } from "./helpers/csrf";
 import { getMinimalPdf, uploadFixturePdf } from "./helpers/uploadFixturePdf";
-import { dragSequence, getDragTuning } from "./helpers/canvasDrag";
+import {
+  clickSequence,
+  dragSequence,
+  dragThresholdNudge,
+  releaseDrag,
+} from "./helpers/canvasDrag";
 
 const BASE_URL =
   process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
@@ -253,27 +258,22 @@ test.describe("PlanMarkupLayer — marquee selection E2E (Task #1738)", () => {
     // Drag a marquee that covers BOTH markup A and markup B but stays
     // clear of markup C. Coordinates: from (0.02, 0.02) to (0.35, 0.18).
     // The marquee assertion has to fire while the mouse is still down,
-    // so we drive the gesture by hand here (rather than letting the
-    // shared `dragSequence` helper release it). Step counts/waits are
-    // taken from `getDragTuning` so the gesture stays deterministic on
-    // Firefox / WebKit (synthetic mousemove dispatch is less aggressive
-    // there than on Chromium).
+    // so we let the shared `dragSequence` helper run the press + moves
+    // with `release: false`, run the mid-drag assertion, and then call
+    // `releaseDrag` to finish the gesture. The pre-move waypoints from
+    // `dragThresholdNudge` clear the MARQUEE_MIN_DRAG_PX threshold
+    // before the final move lands. Engine-aware step counts/waits live
+    // inside the helper so Firefox / WebKit stay deterministic
+    // (synthetic mousemove dispatch is less aggressive there than on
+    // Chromium).
     {
       const start = px(0.02, 0.02);
       const end = px(0.35, 0.18);
-      const { interStep, finalStep, interWait, edgeWait, postUpWait } =
-        getDragTuning(browserName);
 
-      await page.mouse.move(start.x, start.y);
-      await page.mouse.move(start.x, start.y);
-      await page.mouse.down();
-      await page.waitForTimeout(edgeWait);
-      // Stepped pre-move so the gesture clears the MARQUEE_MIN_DRAG_PX
-      // threshold before we check for the marquee div.
-      await page.mouse.move(start.x + 10, start.y + 10, { steps: interStep });
-      await page.waitForTimeout(interWait);
-      await page.mouse.move(end.x, end.y, { steps: finalStep });
-      await page.waitForTimeout(edgeWait);
+      await dragSequence(page, start, end, browserName, {
+        intermediate: dragThresholdNudge(start),
+        release: false,
+      });
 
       // While the mouse is still down, the marquee overlay rectangle
       // must be in the DOM with a non-zero size.
@@ -281,8 +281,7 @@ test.describe("PlanMarkupLayer — marquee selection E2E (Task #1738)", () => {
         timeout: 5_000,
       });
 
-      await page.mouse.up();
-      await page.waitForTimeout(postUpWait);
+      await releaseDrag(page, browserName);
 
       // After release, the marquee div is removed.
       await expect(page.getByTestId("markup-marquee")).toHaveCount(0, {
@@ -308,12 +307,11 @@ test.describe("PlanMarkupLayer — marquee selection E2E (Task #1738)", () => {
     // ───────────────────────── Case 2: plain click clears ─────────────────────────
     // Click on an obviously empty area in SELECT mode — the existing
     // selection should be wiped out (no marquee, no Shift, plain click).
+    // The shared `clickSequence` helper picks engine-aware step counts
+    // and waits — see `e2e/helpers/canvasDrag.ts`.
     {
       const empty = px(0.50, 0.40);
-      const { clickHoldWait } = getDragTuning(browserName);
-      await page.mouse.move(empty.x, empty.y);
-      await page.mouse.move(empty.x, empty.y);
-      await page.mouse.click(empty.x, empty.y, { delay: clickHoldWait });
+      await clickSequence(page, empty, browserName);
 
       await expect(
         page.getByTestId(`markup-selection-toolbar-${markupA.id}`),
@@ -332,7 +330,7 @@ test.describe("PlanMarkupLayer — marquee selection E2E (Task #1738)", () => {
       const start = px(0.02, 0.02);
       const end = px(0.18, 0.13);
       await dragSequence(page, start, end, browserName, {
-        intermediate: [{ x: start.x + 10, y: start.y + 10 }],
+        intermediate: dragThresholdNudge(start),
       });
 
       // Only A is selected → its toolbar is visible, the multi-select
