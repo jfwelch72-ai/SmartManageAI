@@ -24,7 +24,8 @@ import {
   Maximize, Minimize, Trash2, Plus, AlertTriangle, GitCompare, Ruler,
   CheckCircle2, AlertCircle, GalleryHorizontal, List,
   Link2, ArrowLeft, Search, X, Tag, History, PanelRight, ArrowRight,
-  ChevronLeft, ChevronRight, Pin, PinOff, ArrowUpCircle
+  ChevronLeft, ChevronRight, Pin, PinOff, ArrowUpCircle,
+  Loader2, Check
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import * as pdfjsLib from 'pdfjs-dist';
@@ -747,6 +748,87 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       newSheetId: latestId,
     });
   }, [activeCanvasSetId, activeCanvasSetItemMap, canvasSwapPinnedRevisionMutation, getLatestRevisionForCanvasSheet]);
+
+  // Task #1917 — Stale-set re-pin reminder banner. Counts pinned items
+  // whose `pinnedToLatestMap` entry points at a different (newer
+  // active) sheet, mirroring what `/repin-stale` will actually update.
+  // Reusing the existing `/sheet-status` payload avoids a third HTTP
+  // round trip on top of the items + sheet-status the workspace
+  // already loads for the canvas pin/unpin controls.
+  const staleCanvasItemCount = useMemo(() => {
+    const map = activeSetStatus?.pinnedToLatestMap;
+    if (!map) return 0;
+    let n = 0;
+    for (const sheetId of Object.keys(map)) {
+      const latestId = map[sheetId];
+      if (latestId && latestId !== sheetId) n++;
+    }
+    return n;
+  }, [activeSetStatus]);
+  // Dismissal is persisted per-(set, count) in sessionStorage so a user
+  // who dismisses the banner doesn't see it again for the same stale
+  // signature on this tab — but a fresh stale sheet appearing (the
+  // count changes) re-surfaces the reminder.
+  const staleBannerDismissKey = activeCanvasSetId && staleCanvasItemCount > 0
+    ? `takeoff-stale-banner-dismissed-${activeCanvasSetId}-${staleCanvasItemCount}`
+    : null;
+  const [staleBannerDismissed, setStaleBannerDismissed] = useState(false);
+  useEffect(() => {
+    if (!staleBannerDismissKey) {
+      setStaleBannerDismissed(false);
+      return;
+    }
+    try {
+      setStaleBannerDismissed(sessionStorage.getItem(staleBannerDismissKey) === "true");
+    } catch {
+      setStaleBannerDismissed(false);
+    }
+  }, [staleBannerDismissKey]);
+  const dismissStaleBanner = useCallback(() => {
+    setStaleBannerDismissed(true);
+    if (staleBannerDismissKey) {
+      try { sessionStorage.setItem(staleBannerDismissKey, "true"); } catch {}
+    }
+  }, [staleBannerDismissKey]);
+  // Task #1917 — same `/repin-stale` endpoint used by Task #1894's
+  // per-card and Compare-dialog buttons. Toast wording mirrors
+  // SetStaleBadge.repinStaleMutation so the user sees identical
+  // confirmation copy regardless of which entry point they used.
+  const repinStaleCanvasMutation = useMutation({
+    mutationFn: async () => {
+      if (!activeCanvasSetId) throw new Error("No active drawing set");
+      const res = await apiRequest(
+        "POST",
+        `/api/projects/drawing-sets/${activeCanvasSetId}/repin-stale`,
+      );
+      return res.json() as Promise<{ updated: number; replaced: number; removed: number }>;
+    },
+    onSuccess: (data) => {
+      invalidateDrawingSetCanvasCaches(activeCanvasSetId);
+      const count = data?.updated ?? 0;
+      toast({
+        title:
+          count === 0
+            ? "No stale sheets to update"
+            : count === 1
+              ? "Re-pinned 1 sheet to latest"
+              : `Re-pinned ${count} sheets to latest`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to re-pin stale sheets.",
+        variant: "destructive",
+      });
+    },
+  });
+  const showStaleBanner =
+    drawingSetsEnabled &&
+    canManageDrawingSetsOnCanvas &&
+    !!activeCanvasSetId &&
+    staleCanvasItemCount > 0 &&
+    !staleBannerDismissed;
 
   const { data: orgUsersData = [] } = useQuery({ queryKey: ["/api/messaging/users"] });
   const orgUsers: any[] = (orgUsersData as any[]).map((u: any) => ({
@@ -2030,6 +2112,47 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 Dismiss
               </Button>
             </div>
+          </div>
+        )}
+        {/* Task #1917 — Re-pin reminder for users who land directly on
+            the takeoff workspace with a stale Active View set without
+            ever opening the Compare dialog or the Drawing Sets panel.
+            Hidden for non-admin viewers (matches the per-card "Re-pin
+            to latest" gating in DrawingSetsPanel.SetStaleBadge). */}
+        {showStaleBanner && (
+          <div
+            className="bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 px-4 py-2 flex items-center gap-2 text-sm text-amber-800 dark:text-amber-200"
+            data-testid="banner-stale-drawing-set"
+          >
+            <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+            <span data-testid="text-stale-banner-message">
+              This set has {staleCanvasItemCount} stale {staleCanvasItemCount === 1 ? "sheet" : "sheets"}.
+            </span>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-1 h-7 px-2 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/30"
+              onClick={() => repinStaleCanvasMutation.mutate()}
+              disabled={repinStaleCanvasMutation.isPending}
+              data-testid="button-banner-repin-stale"
+            >
+              {repinStaleCanvasMutation.isPending ? (
+                <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+              ) : (
+                <Check className="w-3.5 h-3.5 mr-1" />
+              )}
+              Re-pin to latest
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="ml-auto h-7 w-7 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/30"
+              onClick={dismissStaleBanner}
+              data-testid="button-banner-dismiss-stale"
+              aria-label="Dismiss stale set banner"
+            >
+              <X className="w-3.5 h-3.5" />
+            </Button>
           </div>
         )}
         {currentSheetIsSuperseded && (
