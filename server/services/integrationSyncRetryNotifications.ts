@@ -81,6 +81,10 @@ export function classifyQboEntity(
     if (subKind === "certified_payroll") {
       return { kindLabel: "Certified payroll run", itemId };
     }
+    // Task #1975 — per-record Bill / Vendor labels (matches the
+    // resolver's bill / vendor subKinds in qboEntityLabels.ts).
+    if (subKind === "bill") return { kindLabel: "Bill", itemId };
+    if (subKind === "vendor") return { kindLabel: "Vendor", itemId };
     return { kindLabel: "Scheduled operation", itemId };
   }
   if (operation === "customers") {

@@ -56,6 +56,20 @@ describe("classifyQboEntity (Task #1942)", () => {
     });
   });
 
+  it("identifies the bill push kind + item id (Task #1975)", () => {
+    expect(classifyQboEntity("qbo_sync:bill:bill-3")).toEqual({
+      kindLabel: "Bill",
+      itemId: "bill-3",
+    });
+  });
+
+  it("identifies the vendor push kind + item id (Task #1975)", () => {
+    expect(classifyQboEntity("qbo_sync:vendor:vend-2")).toEqual({
+      kindLabel: "Vendor",
+      itemId: "vend-2",
+    });
+  });
+
   it("treats bare `customers` as the batch sync", () => {
     expect(classifyQboEntity("qbo_sync:customers")).toEqual({
       kindLabel: "Customer batch sync",

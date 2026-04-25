@@ -39,6 +39,8 @@ import {
   payRuns,
   projects,
   scheduleOfValues,
+  subcontractorContracts,
+  subcontractorPayments,
 } from "@shared/schema";
 
 import { MAX_SYNC_RETRIES } from "../integrations/syncRetry";
@@ -77,6 +79,13 @@ async function cleanup() {
     await db.delete(payApplications).where(eq(payApplications.organizationId, id));
     await db.delete(scheduleOfValues).where(eq(scheduleOfValues.organizationId, id));
     await db.delete(payRuns).where(eq(payRuns.organizationId, id));
+    // Subcontractor payments / contracts must be deleted before
+    // crm_organisations so the FK from subcontractor_contracts ->
+    // crm_organisations doesn't block the org row removal.
+    await db.delete(subcontractorPayments).where(eq(subcontractorPayments.organizationId, id));
+    await db.delete(subcontractorContracts).where(
+      sql`${subcontractorContracts.subcontractorId} IN (SELECT id FROM crm_organisations WHERE organization_id = ${id})`,
+    );
     await db.delete(crmOrganisations).where(eq(crmOrganisations.organizationId, id));
     await db.delete(notificationChannelPrefs).where(
       sql`${notificationChannelPrefs.userId} IN (SELECT id FROM users WHERE organization_id = ${id})`,
@@ -118,6 +127,10 @@ beforeEach(async () => {
   await db.delete(payApplications).where(eq(payApplications.organizationId, orgId));
   await db.delete(scheduleOfValues).where(eq(scheduleOfValues.organizationId, orgId));
   await db.delete(payRuns).where(eq(payRuns.organizationId, orgId));
+  await db.delete(subcontractorPayments).where(eq(subcontractorPayments.organizationId, orgId));
+  await db.delete(subcontractorContracts).where(
+    sql`${subcontractorContracts.subcontractorId} IN (SELECT id FROM crm_organisations WHERE organization_id = ${orgId})`,
+  );
   await db.delete(crmOrganisations).where(eq(crmOrganisations.organizationId, orgId));
   await db.delete(notificationChannelPrefs).where(
     sql`${notificationChannelPrefs.userId} IN (SELECT id FROM users WHERE organization_id = ${orgId})`,
@@ -185,6 +198,45 @@ async function makePayApplication(projectId: string, applicationNumber: number) 
     applicationNumber,
   }).returning();
   return pa;
+}
+
+async function makeVendor(name: string, type: "SUBCONTRACTOR" | "VENDOR" | "SUPPLIER" = "SUBCONTRACTOR") {
+  const [v] = await db.insert(crmOrganisations).values({
+    organizationId: orgId,
+    type,
+    name,
+  }).returning();
+  return v;
+}
+
+async function makeBill(
+  paymentNumber: number,
+  vendorName: string | null,
+  projectId: string,
+) {
+  const creator = await makeUser("ADMIN");
+  // Bills (subcontractor_payments) need a contract; the contract's
+  // subcontractorId references crm_organisations and supplies the
+  // friendly vendor name surfaced in the resolver. When vendorName is
+  // null we pick a placeholder that the resolver will still render
+  // ("Bill #N from <name>"); to test the no-vendor path the caller can
+  // delete the crm_organisation after the bill is created.
+  const vendor = await makeVendor(vendorName ?? `${PREFIX}placeholder`);
+  const [contract] = await db.insert(subcontractorContracts).values({
+    subcontractorId: vendor.id,
+    projectId,
+    contractNumber: `${PREFIX}C-${paymentNumber}`,
+    scopeOfWork: "scope",
+    contractAmount: "1000",
+    createdById: creator.id,
+  }).returning();
+  const [pay] = await db.insert(subcontractorPayments).values({
+    organizationId: orgId,
+    contractId: contract.id,
+    paymentNumber,
+    amount: "100",
+  }).returning();
+  return { payment: pay, contract, vendor };
 }
 
 async function makePayRun(runNumber: string | null, periodStart = "2025-01-01", periodEnd = "2025-01-15") {
@@ -281,6 +333,118 @@ describe("resolveQboEntityLabels (Task #1945)", () => {
     expect(await resolveQboEntityLabel(orgId, "qbo_sync:chart_of_accounts")).toBeNull();
     expect(await resolveQboEntityLabel(orgId, "qbo_sync:customers")).toBeNull();
     expect(await resolveQboEntityLabel(orgId, "dol_wage_decision:CA-2024-01")).toBeNull();
+  });
+
+  it("resolves vendor entityType to vendor name with /crm link (Task #1975)", async () => {
+    const v = await makeVendor("Acme Subs Co.");
+    const et = `qbo_sync:vendor:${v.id}`;
+    const resolved = await resolveQboEntityLabel(orgId, et);
+    expect(resolved).not.toBeNull();
+    expect(resolved!.subKind).toBe("vendor");
+    expect(resolved!.displayName).toBe("Acme Subs Co.");
+    expect(resolved!.link).toBe(`/crm?organisationId=${encodeURIComponent(v.id)}`);
+  });
+
+  it("resolves bill entityType to 'Bill #N from Vendor X' with /subcontractor-payables link (Task #1975)", async () => {
+    const proj = await makeProject("BPROJ", "Bill Project");
+    const { payment, vendor } = await makeBill(7, "Hauler Bros LLC", proj.id);
+    const et = `qbo_sync:bill:${payment.id}`;
+    const resolved = await resolveQboEntityLabel(orgId, et);
+    expect(resolved).not.toBeNull();
+    expect(resolved!.subKind).toBe("bill");
+    expect(resolved!.displayName).toBe("Bill #7 from Hauler Bros LLC");
+    expect(resolved!.link).toBe(
+      `/subcontractor-payables?paymentId=${encodeURIComponent(payment.id)}`,
+    );
+    expect(vendor).toBeDefined();
+  });
+
+  it("returns null (orphan) for an unknown bill or vendor id (Task #1975)", async () => {
+    const orphanId = "00000000-0000-0000-0000-000000000000";
+    expect(await resolveQboEntityLabel(orgId, `qbo_sync:bill:${orphanId}`)).toBeNull();
+    expect(await resolveQboEntityLabel(orgId, `qbo_sync:vendor:${orphanId}`)).toBeNull();
+  });
+
+  it("does not cross orgs for bill lookups (Task #1975)", async () => {
+    // A bill (subcontractor_payment) that lives in another org must
+    // never resolve when looked up against this org — the resolver's
+    // org-scoped WHERE on subcontractor_payments must keep the row
+    // out of the result entirely.
+    const [otherOrg] = await db.insert(organizations).values({
+      name: `${PREFIX}other-bill`,
+      slug: `${PREFIX}other-bill-${Date.now()}`,
+    }).returning();
+    try {
+      const [creator] = await db.insert(users).values({
+        organizationId: otherOrg.id,
+        firstName: "X",
+        lastName: "Other",
+        email: `${PREFIX}other-${Date.now()}@example.invalid`,
+        role: "ADMIN",
+        isActive: true,
+        passwordHash: "x",
+      }).returning();
+      const [foreignVendor] = await db.insert(crmOrganisations).values({
+        organizationId: otherOrg.id,
+        type: "SUBCONTRACTOR",
+        name: "Foreign Subs",
+      }).returning();
+      const [foreignProj] = await db.insert(projects).values({
+        name: "Foreign Project",
+        code: `${PREFIX}foreign-${Date.now()}`,
+        clientName: "Client",
+      }).returning();
+      const [foreignContract] = await db.insert(subcontractorContracts).values({
+        subcontractorId: foreignVendor.id,
+        projectId: foreignProj.id,
+        contractNumber: `${PREFIX}foreign-c`,
+        scopeOfWork: "x",
+        contractAmount: "1",
+        createdById: creator.id,
+      }).returning();
+      const [foreignBill] = await db.insert(subcontractorPayments).values({
+        organizationId: otherOrg.id,
+        contractId: foreignContract.id,
+        paymentNumber: 1,
+        amount: "1",
+      }).returning();
+      const resolved = await resolveQboEntityLabel(
+        orgId,
+        `qbo_sync:bill:${foreignBill.id}`,
+      );
+      expect(resolved).toBeNull();
+    } finally {
+      await db.delete(subcontractorPayments).where(eq(subcontractorPayments.organizationId, otherOrg.id));
+      await db.delete(subcontractorContracts).where(
+        sql`${subcontractorContracts.subcontractorId} IN (SELECT id FROM crm_organisations WHERE organization_id = ${otherOrg.id})`,
+      );
+      await db.delete(crmOrganisations).where(eq(crmOrganisations.organizationId, otherOrg.id));
+      await db.delete(projects).where(sql`${projects.code} LIKE ${PREFIX + "foreign-%"}`);
+      await db.delete(users).where(eq(users.organizationId, otherOrg.id));
+      await db.delete(organizations).where(eq(organizations.id, otherOrg.id));
+    }
+  });
+
+  it("does not cross orgs for vendor lookups (Task #1975)", async () => {
+    const [otherOrg] = await db.insert(organizations).values({
+      name: `${PREFIX}other-vendor`,
+      slug: `${PREFIX}other-vendor-${Date.now()}`,
+    }).returning();
+    try {
+      const [foreign] = await db.insert(crmOrganisations).values({
+        organizationId: otherOrg.id,
+        type: "SUBCONTRACTOR",
+        name: "Foreign Vendor",
+      }).returning();
+      const resolved = await resolveQboEntityLabel(
+        orgId,
+        `qbo_sync:vendor:${foreign.id}`,
+      );
+      expect(resolved).toBeNull();
+    } finally {
+      await db.delete(crmOrganisations).where(eq(crmOrganisations.organizationId, otherOrg.id));
+      await db.delete(organizations).where(eq(organizations.id, otherOrg.id));
+    }
   });
 
   it("batches mixed entity types into one map", async () => {
