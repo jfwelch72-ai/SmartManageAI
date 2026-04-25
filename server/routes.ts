@@ -775,6 +775,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ jobs: await getAllJobMetricsForRange(range), range });
   });
 
+  // Task #1950 — live Postgres pool stats + recent `pool_exhausted`
+  // events so admins can spot starvation in the dashboard before the
+  // next user-facing request (e.g. POST /api/website/republish) hangs.
+  app.get(
+    "/api/admin/metrics/pool",
+    requireAuth,
+    requireRole("SUPER_ADMIN"),
+    async (_req: AuthRequest, res: Response) => {
+      const { getPoolStats, getRecentPoolExhaustedEvents, POOL_EXHAUSTED_BUFFER_SIZE } =
+        await import("./utils/poolHealth");
+      res.json({
+        stats: getPoolStats(),
+        events: getRecentPoolExhaustedEvents(),
+        bufferSize: POOL_EXHAUSTED_BUFFER_SIZE,
+      });
+    },
+  );
+
   app.get("/api/admin/metrics/jobs/:jobName", requireAuth, requireRole("SUPER_ADMIN"), async (req: AuthRequest, res: Response, next: NextFunction) => {
     // Task #1495 — `/api/admin/metrics/jobs/alerts*` is a sibling
     // namespace (registered further down) for the alert engine, not a

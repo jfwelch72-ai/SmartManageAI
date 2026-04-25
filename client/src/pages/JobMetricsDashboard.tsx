@@ -12,7 +12,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ArrowLeft, RefreshCw, XCircle, Activity, AlertTriangle, Bell, Trash2, PlayCircle, Check, BellOff, Mail, MailWarning, MoonStar, Send, Download } from "lucide-react";
+import { ArrowLeft, RefreshCw, XCircle, Activity, AlertTriangle, Bell, Trash2, PlayCircle, Check, BellOff, Mail, MailWarning, MoonStar, Send, Download, Database } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -58,7 +58,12 @@ const RANGE_OPTIONS: Array<{ value: RangeKey; label: string }> = [
 
 const ALERTS_KEY = ["/api/admin/metrics/jobs/alerts"] as const;
 const DIGESTS_KEY = ["/api/admin/metrics/jobs/alerts/digests"] as const;
+const POOL_KEY = ["/api/admin/metrics/pool"] as const;
 const REFRESH_INTERVAL_MS = 60_000;
+// Task #1950 — pool stats refresh more aggressively than the rest of
+// the dashboard so admins see starvation as it builds, not a minute
+// after it's already starving requests.
+const POOL_REFRESH_INTERVAL_MS = 5_000;
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
@@ -349,6 +354,224 @@ interface AlertsResponse {
     stall: { hours: number; dedupeMinutes: number; emailWhenAbove: number };
   };
   lastEvaluatedAt: number | null;
+}
+
+interface PoolStats {
+  active: number;
+  idle: number;
+  waiting: number;
+  total: number;
+  max: number;
+}
+
+interface PoolExhaustedEvent {
+  timestamp: number;
+  job: string;
+  message: string;
+  error: string;
+}
+
+interface PoolHealthResponse {
+  stats: PoolStats;
+  events: PoolExhaustedEvent[];
+  bufferSize: number;
+}
+
+function formatTimestampFull(ts: number): string {
+  return new Date(ts).toLocaleString();
+}
+
+function PoolHealthPanel({
+  data,
+  isLoading,
+  isError,
+  refetch,
+  isFetching,
+  dataUpdatedAt,
+}: {
+  data: PoolHealthResponse | undefined;
+  isLoading: boolean;
+  isError: boolean;
+  refetch: () => void;
+  isFetching: boolean;
+  dataUpdatedAt: number;
+}) {
+  const stats = data?.stats;
+  const events = data?.events ?? [];
+  const bufferSize = data?.bufferSize ?? 50;
+  const utilizationPct = stats && stats.max > 0 ? Math.round((stats.active / stats.max) * 100) : 0;
+  const isStarving = stats ? stats.waiting > 0 : false;
+  const isHot = stats ? stats.max > 0 && stats.active >= stats.max * 0.8 : false;
+
+  return (
+    <Card
+      data-testid="card-pool-health"
+      className={isStarving ? "border-destructive" : isHot ? "border-amber-500" : undefined}
+    >
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Database className="h-4 w-4" /> Postgres pool health
+              {isStarving && (
+                <Badge variant="destructive" className="gap-1" data-testid="badge-pool-starving">
+                  <AlertTriangle className="h-3 w-3" /> Starving
+                </Badge>
+              )}
+              {!isStarving && isHot && (
+                <Badge
+                  variant="destructive"
+                  className="gap-1 bg-amber-600 hover:bg-amber-700"
+                  data-testid="badge-pool-hot"
+                >
+                  <AlertTriangle className="h-3 w-3" /> Hot
+                </Badge>
+              )}
+            </CardTitle>
+            <CardDescription>
+              Live counters from the shared <code>pg.Pool</code>. Refreshes every{" "}
+              {Math.round(POOL_REFRESH_INTERVAL_MS / 1000)}s.
+              {dataUpdatedAt > 0 && <> Updated {formatRelative(dataUpdatedAt)}.</>}
+            </CardDescription>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={refetch}
+            disabled={isFetching}
+            data-testid="button-refresh-pool"
+          >
+            <RefreshCw className={`h-4 w-4 mr-1 ${isFetching ? "animate-spin" : ""}`} />
+            Refresh
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {isError && (
+          <Alert variant="destructive" data-testid="alert-pool-error">
+            <XCircle className="h-4 w-4" />
+            <AlertTitle>Failed to load pool stats</AlertTitle>
+            <AlertDescription>Try refreshing or check server logs.</AlertDescription>
+          </Alert>
+        )}
+
+        {isLoading && !data ? (
+          <Skeleton className="h-24 w-full" />
+        ) : stats ? (
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-sm">
+            <div data-testid="stat-pool-active">
+              <div className="text-muted-foreground">Active</div>
+              <div className="font-medium text-2xl" data-testid="text-pool-active">
+                {stats.active}
+              </div>
+              {stats.max > 0 && (
+                <div className="text-xs text-muted-foreground" data-testid="text-pool-utilization">
+                  {utilizationPct}% of {stats.max}
+                </div>
+              )}
+            </div>
+            <div data-testid="stat-pool-idle">
+              <div className="text-muted-foreground">Idle</div>
+              <div className="font-medium text-2xl" data-testid="text-pool-idle">
+                {stats.idle}
+              </div>
+            </div>
+            <div data-testid="stat-pool-waiting">
+              <div className="text-muted-foreground">Waiting</div>
+              <div
+                className={`font-medium text-2xl ${stats.waiting > 0 ? "text-destructive" : ""}`}
+                data-testid="text-pool-waiting"
+              >
+                {stats.waiting}
+              </div>
+              {stats.waiting > 0 && (
+                <div className="text-xs text-destructive">Pool starving</div>
+              )}
+            </div>
+            <div data-testid="stat-pool-total">
+              <div className="text-muted-foreground">Total</div>
+              <div className="font-medium text-2xl" data-testid="text-pool-total">
+                {stats.total}
+              </div>
+            </div>
+            <div data-testid="stat-pool-max">
+              <div className="text-muted-foreground">Max</div>
+              <div className="font-medium text-2xl" data-testid="text-pool-max">
+                {stats.max || "—"}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <h3 className="text-sm font-medium">
+              Recent <code>pool_exhausted</code> events
+            </h3>
+            <span className="text-xs text-muted-foreground" data-testid="text-pool-events-count">
+              Showing {events.length} of last {bufferSize}
+            </span>
+          </div>
+          {events.length === 0 ? (
+            <div
+              className="text-sm text-muted-foreground border rounded-md py-6 text-center"
+              data-testid="text-pool-events-empty"
+            >
+              No pool starvation events recorded since this server started.
+            </div>
+          ) : (
+            <div className="overflow-x-auto border rounded-md">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-[10rem]">When</TableHead>
+                    <TableHead className="w-[10rem]">Job</TableHead>
+                    <TableHead>Message</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {events.map((e, idx) => (
+                    <TableRow key={`${e.timestamp}-${idx}`} data-testid={`row-pool-event-${idx}`}>
+                      <TableCell className="align-top">
+                        <div className="flex flex-col">
+                          <span data-testid={`text-pool-event-when-${idx}`}>
+                            {formatRelative(e.timestamp)}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {formatTimestampFull(e.timestamp)}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell
+                        className="align-top font-mono text-xs"
+                        data-testid={`text-pool-event-job-${idx}`}
+                      >
+                        {e.job}
+                      </TableCell>
+                      <TableCell
+                        className="align-top text-xs"
+                        data-testid={`text-pool-event-message-${idx}`}
+                      >
+                        <div>{e.message}</div>
+                        {e.error && (
+                          <div
+                            className="text-muted-foreground font-mono mt-1 break-all"
+                            data-testid={`text-pool-event-error-${idx}`}
+                          >
+                            {e.error}
+                          </div>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 function AlertsPanel({ data }: { data: AlertsResponse | undefined }) {
@@ -1420,6 +1643,18 @@ export default function JobMetricsDashboard() {
     refetchInterval: REFRESH_INTERVAL_MS,
   });
 
+  const {
+    data: poolData,
+    isLoading: poolIsLoading,
+    isError: poolIsError,
+    refetch: poolRefetch,
+    isFetching: poolIsFetching,
+    dataUpdatedAt: poolDataUpdatedAt,
+  } = useQuery<PoolHealthResponse>({
+    queryKey: POOL_KEY,
+    refetchInterval: POOL_REFRESH_INTERVAL_MS,
+  });
+
   const jobs = (data?.jobs ?? []).slice().sort((a, b) => a.job.localeCompare(b.job));
   const activeByJob = alertsData?.activeByJob ?? {};
 
@@ -1516,6 +1751,15 @@ export default function JobMetricsDashboard() {
           ))}
         </div>
       )}
+
+      <PoolHealthPanel
+        data={poolData}
+        isLoading={poolIsLoading}
+        isError={poolIsError}
+        refetch={poolRefetch}
+        isFetching={poolIsFetching}
+        dataUpdatedAt={poolDataUpdatedAt}
+      />
 
       <AlertsPanel data={alertsData} />
 

@@ -123,12 +123,27 @@ let scheduledCampaignTickRunning = false;
  * previously both logged as a generic `... processing failed` line
  * with `error: String(err)` so production logs couldn't be
  * triaged at a glance.
+ *
+ * Task #1950 — Also push `pool_exhausted` events into a small
+ * in-process ring buffer (`server/utils/poolHealth.ts`) so the
+ * admin Job Metrics dashboard can surface the last 50 starvation
+ * events without grepping production logs.
  */
-function logJobErrorWithKind(message: string, err: unknown): void {
+function logJobErrorWithKind(job: string, message: string, err: unknown): void {
   const text = err instanceof Error ? err.message : String(err);
   const isConnTimeout = /connection terminated due to connection timeout|timeout exceeded when trying to connect|Connection terminated unexpectedly/i.test(text);
   const kind = isConnTimeout ? "pool_exhausted" : "query_failed";
-  logError(message, { error: text, kind });
+  logError(message, { error: text, kind, job });
+  if (kind === "pool_exhausted") {
+    // Lazy import keeps the existing module-load order intact (jobRunner
+    // is imported very early; poolHealth pulls in `db.ts`).
+    import("../utils/poolHealth")
+      .then((mod) => mod.recordPoolExhaustedEvent({ job, message, error: text }))
+      .catch(() => {
+        // Buffering is best-effort observability — never let it break a
+        // job tick.
+      });
+  }
 }
 
 export function startJobRunner() {
@@ -205,7 +220,7 @@ export function startJobRunner() {
     try {
       await processOutbox();
     } catch (err) {
-      logJobErrorWithKind("Outbox processing failed", err);
+      logJobErrorWithKind("outbox", "Outbox processing failed", err);
     } finally {
       outboxTickRunning = false;
     }
@@ -241,7 +256,7 @@ export function startJobRunner() {
     try {
       await processScheduledSocialPosts();
     } catch (err) {
-      logJobErrorWithKind("Social post processing failed", err);
+      logJobErrorWithKind("social_posts", "Social post processing failed", err);
     } finally {
       socialPostTickRunning = false;
     }
@@ -419,7 +434,7 @@ export function startJobRunner() {
     try {
       await processScheduledCampaigns();
     } catch (err) {
-      logJobErrorWithKind("Scheduled campaign processing failed", err);
+      logJobErrorWithKind("scheduled_campaigns", "Scheduled campaign processing failed", err);
     } finally {
       scheduledCampaignTickRunning = false;
     }
