@@ -9,7 +9,7 @@ import * as outboxService from "./integrations/outboxService";
 import { logInfo, logError } from "./utils/logger";
 import { getCanonicalBaseUrl } from "./utils/routeHelpers";
 import { eq, and, desc, isNotNull, isNull, inArray, sql } from "drizzle-orm";
-import { integrationConnections, type IntegrationConnection, integrationSyncState, integrationSyncAlertMutes, qboAccountMappings, qboSyncSchedules, sageAccountMappings, zapierWebhooks, ZAPIER_EVENT_TYPES, projects, users as usersTable, payApplications, sovLineItems, scheduleOfValues } from "@shared/schema";
+import { integrationConnections, type IntegrationConnection, integrationSyncState, integrationSyncAlertMutes, qboAccountMappings, qboSyncSchedules, sageAccountMappings, zapierWebhooks, ZAPIER_EVENT_TYPES, projects, users as usersTable, payApplications, sovLineItems, scheduleOfValues, crmOrganisations, payRuns } from "@shared/schema";
 import { verifyIntegrationSyncMuteToken } from "./utils/integrationSyncMuteToken";
 import { db } from "./db";
 import { decryptMetadata, encryptMetadata } from "./integrations/encryption";
@@ -1297,52 +1297,160 @@ router.get("/connections/:id/qbo-sync-retries", requireAuth, async (req, res, ne
       .orderBy(desc(integrationSyncState.lastAttemptAt));
 
     type Kind = "customer" | "invoice" | "pay_run" | "scheduled_op";
-    const classify = (entityType: string): { kind: Kind; label: string; itemId: string | null } => {
+    type SubKind = "customer" | "invoice" | "payroll" | "certified_payroll" | null;
+    const classify = (entityType: string): { kind: Kind; subKind: SubKind; label: string; itemId: string | null } => {
       const operation = entityType.slice(QBO_SYNC_ENTITY_TYPE_PREFIX.length);
       const colonIdx = operation.indexOf(":");
       if (colonIdx > 0) {
         const subKind = operation.slice(0, colonIdx);
         const itemId = operation.slice(colonIdx + 1);
         if (subKind === "customer") {
-          return { kind: "customer", label: `Customer ${itemId}`, itemId };
+          return { kind: "customer", subKind: "customer", label: `Customer ${itemId}`, itemId };
         }
         if (subKind === "invoice") {
-          return { kind: "invoice", label: `Invoice ${itemId}`, itemId };
+          return { kind: "invoice", subKind: "invoice", label: `Invoice ${itemId}`, itemId };
         }
         if (subKind === "payroll") {
-          return { kind: "pay_run", label: `Payroll run ${itemId}`, itemId };
+          return { kind: "pay_run", subKind: "payroll", label: `Payroll run ${itemId}`, itemId };
         }
         if (subKind === "certified_payroll") {
-          return { kind: "pay_run", label: `Certified payroll run ${itemId}`, itemId };
+          return { kind: "pay_run", subKind: "certified_payroll", label: `Certified payroll run ${itemId}`, itemId };
         }
-        return { kind: "scheduled_op", label: operation, itemId };
+        return { kind: "scheduled_op", subKind: null, label: operation, itemId };
       }
       // Bare scheduled operation (no item id).
       if (operation === "customers") {
-        return { kind: "customer", label: "Customer batch sync", itemId: null };
+        return { kind: "customer", subKind: null, label: "Customer batch sync", itemId: null };
       }
       const label = operation.replace(/_/g, " ");
-      return { kind: "scheduled_op", label, itemId: null };
+      return { kind: "scheduled_op", subKind: null, label, itemId: null };
     };
 
-    const retries = rows
+    const classified = rows
       .filter(r => r.retryCount > 0 || r.nextRetryAt !== null)
-      .map(r => {
-        const { kind, label, itemId } = classify(r.entityType);
-        const exhausted = r.retryCount >= MAX_SYNC_RETRIES && r.nextRetryAt === null;
-        return {
-          id: r.id,
-          entityType: r.entityType,
-          kind,
-          label,
-          itemId,
-          lastError: r.lastError,
-          lastAttemptAt: r.lastAttemptAt,
-          retryCount: r.retryCount,
-          nextRetryAt: r.nextRetryAt,
-          exhausted,
-        };
-      });
+      .map(r => ({ row: r, ...classify(r.entityType) }));
+
+    // Task #1941 — resolve human-readable names for per-item rows so
+    // admins can identify which customer / invoice / pay-run is failing
+    // without copying raw IDs into another screen. We collect distinct
+    // local IDs per kind, run one batched query each, then attach a
+    // `displayName` and a deep `link` to each retry row.
+    const customerIds = new Set<string>();
+    const invoiceIds = new Set<string>();
+    const payRunIds = new Set<string>();
+    for (const c of classified) {
+      if (!c.itemId) continue;
+      if (c.subKind === "customer") customerIds.add(c.itemId);
+      else if (c.subKind === "invoice") invoiceIds.add(c.itemId);
+      else if (c.subKind === "payroll" || c.subKind === "certified_payroll") payRunIds.add(c.itemId);
+    }
+
+    const customerLookup = new Map<string, { name: string }>();
+    if (customerIds.size > 0) {
+      const orgs = await db
+        .select({ id: crmOrganisations.id, name: crmOrganisations.name })
+        .from(crmOrganisations)
+        .where(and(
+          eq(crmOrganisations.organizationId, user.organizationId),
+          inArray(crmOrganisations.id, Array.from(customerIds)),
+        ));
+      for (const o of orgs) customerLookup.set(o.id, { name: o.name });
+    }
+
+    const invoiceLookup = new Map<string, { applicationNumber: number; projectCode: string | null; projectName: string | null }>();
+    if (invoiceIds.size > 0) {
+      const apps = await db
+        .select({
+          id: payApplications.id,
+          applicationNumber: payApplications.applicationNumber,
+          projectCode: projects.code,
+          projectName: projects.name,
+        })
+        .from(payApplications)
+        .leftJoin(projects, eq(projects.id, payApplications.projectId))
+        .where(and(
+          eq(payApplications.organizationId, user.organizationId),
+          inArray(payApplications.id, Array.from(invoiceIds)),
+        ));
+      for (const a of apps) {
+        invoiceLookup.set(a.id, {
+          applicationNumber: a.applicationNumber,
+          projectCode: a.projectCode,
+          projectName: a.projectName,
+        });
+      }
+    }
+
+    const payRunLookup = new Map<string, { runNumber: string | null; periodStart: string; periodEnd: string }>();
+    if (payRunIds.size > 0) {
+      const runs = await db
+        .select({
+          id: payRuns.id,
+          runNumber: payRuns.runNumber,
+          periodStart: payRuns.payPeriodStart,
+          periodEnd: payRuns.payPeriodEnd,
+        })
+        .from(payRuns)
+        .where(and(
+          eq(payRuns.organizationId, user.organizationId),
+          inArray(payRuns.id, Array.from(payRunIds)),
+        ));
+      for (const r of runs) {
+        payRunLookup.set(r.id, {
+          runNumber: r.runNumber,
+          periodStart: r.periodStart,
+          periodEnd: r.periodEnd,
+        });
+      }
+    }
+
+    const retries = classified.map(({ row: r, kind, subKind, label, itemId }) => {
+      const exhausted = r.retryCount >= MAX_SYNC_RETRIES && r.nextRetryAt === null;
+
+      let displayName: string | null = null;
+      let link: string | null = null;
+      if (itemId) {
+        if (subKind === "customer") {
+          const hit = customerLookup.get(itemId);
+          if (hit) {
+            displayName = hit.name;
+            link = `/crm?organisationId=${encodeURIComponent(itemId)}`;
+          }
+        } else if (subKind === "invoice") {
+          const hit = invoiceLookup.get(itemId);
+          if (hit) {
+            const projectLabel = hit.projectCode ?? hit.projectName ?? null;
+            displayName = projectLabel
+              ? `Pay app #${hit.applicationNumber} — ${projectLabel}`
+              : `Pay app #${hit.applicationNumber}`;
+            link = `/progress-billing?payApplicationId=${encodeURIComponent(itemId)}`;
+          }
+        } else if (subKind === "payroll" || subKind === "certified_payroll") {
+          const hit = payRunLookup.get(itemId);
+          if (hit) {
+            const variantLabel = subKind === "certified_payroll" ? "Certified pay run" : "Pay run";
+            const numberLabel = hit.runNumber ? `#${hit.runNumber}` : `${hit.periodStart} – ${hit.periodEnd}`;
+            displayName = `${variantLabel} ${numberLabel}`;
+            link = `/payroll-management?payRunId=${encodeURIComponent(itemId)}`;
+          }
+        }
+      }
+
+      return {
+        id: r.id,
+        entityType: r.entityType,
+        kind,
+        label,
+        itemId,
+        displayName,
+        link,
+        lastError: r.lastError,
+        lastAttemptAt: r.lastAttemptAt,
+        retryCount: r.retryCount,
+        nextRetryAt: r.nextRetryAt,
+        exhausted,
+      };
+    });
 
     res.json({
       connectionId: connection.id,

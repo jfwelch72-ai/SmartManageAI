@@ -29,6 +29,12 @@ import {
   organizations,
   integrationConnections,
   integrationSyncState,
+  crmOrganisations,
+  payApplications,
+  payRuns,
+  projects,
+  scheduleOfValues,
+  users,
 } from "@shared/schema";
 import { MAX_SYNC_RETRIES } from "../integrations/syncRetry";
 
@@ -80,6 +86,15 @@ async function cleanup() {
   for (const id of ids) {
     await db.delete(integrationSyncState).where(eq(integrationSyncState.organizationId, id));
     await db.delete(integrationConnections).where(eq(integrationConnections.organizationId, id));
+    await db.delete(payApplications).where(eq(payApplications.organizationId, id));
+    await db.delete(scheduleOfValues).where(eq(scheduleOfValues.organizationId, id));
+    await db.delete(payRuns).where(eq(payRuns.organizationId, id));
+    await db.delete(crmOrganisations).where(eq(crmOrganisations.organizationId, id));
+  }
+  // Projects + users are global by id but reference org via gcOrganizationId/organizationId.
+  await db.execute(sql`DELETE FROM projects WHERE code LIKE ${PREFIX + "%"}`);
+  await db.execute(sql`DELETE FROM users WHERE email LIKE ${PREFIX + "%"}`);
+  for (const id of ids) {
     await db.delete(organizations).where(eq(organizations.id, id));
   }
 }
@@ -112,6 +127,12 @@ beforeEach(async () => {
   await db.delete(integrationSyncState).where(eq(integrationSyncState.organizationId, otherOrgId));
   await db.delete(integrationConnections).where(eq(integrationConnections.organizationId, orgId));
   await db.delete(integrationConnections).where(eq(integrationConnections.organizationId, otherOrgId));
+  await db.delete(payApplications).where(eq(payApplications.organizationId, orgId));
+  await db.delete(scheduleOfValues).where(eq(scheduleOfValues.organizationId, orgId));
+  await db.delete(payRuns).where(eq(payRuns.organizationId, orgId));
+  await db.delete(crmOrganisations).where(eq(crmOrganisations.organizationId, orgId));
+  await db.execute(sql`DELETE FROM projects WHERE code LIKE ${PREFIX + "%"}`);
+  await db.execute(sql`DELETE FROM users WHERE email LIKE ${PREFIX + "%"}`);
 
   const [qbo] = await db
     .insert(integrationConnections)
@@ -373,5 +394,182 @@ describe("GET /api/integrations/connections/:id/qbo-sync-retries", () => {
     expect(res.status).toBe(200);
     expect(res.body.retries).toEqual([]);
     expect(res.body.maxRetries).toBe(MAX_SYNC_RETRIES);
+  });
+
+  // Task #1941 — verify per-item rows resolve a human-readable
+  // displayName (customer name / pay-app number / pay-run number) and a
+  // deep `link` so admins can identify and jump to the source record
+  // without copying raw IDs around. Orphan IDs (no matching record) fall
+  // through gracefully as `displayName: null, link: null`.
+  it("enriches per-item rows with displayName and a deep link", async () => {
+    const future = new Date(Date.now() + 5 * 60_000);
+
+    const [customer] = await db
+      .insert(crmOrganisations)
+      .values({
+        organizationId: orgId,
+        type: "OWNER_REP",
+        name: "Acme Construction LLC",
+      })
+      .returning();
+
+    const [user] = await db
+      .insert(users)
+      .values({
+        organizationId: orgId,
+        firstName: "Test",
+        lastName: "User",
+        email: `${PREFIX}user-${Date.now()}@example.com`,
+        role: "ADMIN",
+      })
+      .returning();
+
+    const [project] = await db
+      .insert(projects)
+      .values({
+        name: "I-90 Bridge Replacement",
+        code: `${PREFIX}proj-${Date.now()}`,
+        clientName: "WSDOT",
+        gcOrganizationId: orgId,
+      })
+      .returning();
+
+    const [sov] = await db
+      .insert(scheduleOfValues)
+      .values({
+        organizationId: orgId,
+        projectId: project.id,
+        sovNumber: "SOV-001",
+        title: "Main SOV",
+        contractValue: "100000",
+      })
+      .returning();
+
+    const [payApp] = await db
+      .insert(payApplications)
+      .values({
+        organizationId: orgId,
+        projectId: project.id,
+        sovId: sov.id,
+        applicationNumber: 7,
+      })
+      .returning();
+
+    const [payRun] = await db
+      .insert(payRuns)
+      .values({
+        organizationId: orgId,
+        payPeriodStart: "2026-04-01",
+        payPeriodEnd: "2026-04-07",
+        runNumber: "PR-2026-04-W1",
+        createdById: user.id,
+      })
+      .returning();
+
+    await seedSyncRow({
+      connectionId: qboConnectionId,
+      organizationId: orgId,
+      entityType: `qbo_sync:customer:${customer.id}`,
+      lastError: "Auth expired",
+      retryCount: MAX_SYNC_RETRIES,
+      nextRetryAt: null,
+    });
+    await seedSyncRow({
+      connectionId: qboConnectionId,
+      organizationId: orgId,
+      entityType: `qbo_sync:invoice:${payApp.id}`,
+      lastError: "QBO 502",
+      retryCount: 1,
+      nextRetryAt: future,
+    });
+    await seedSyncRow({
+      connectionId: qboConnectionId,
+      organizationId: orgId,
+      entityType: `qbo_sync:payroll:${payRun.id}`,
+      lastError: "Rate limit",
+      retryCount: 1,
+      nextRetryAt: future,
+    });
+    await seedSyncRow({
+      connectionId: qboConnectionId,
+      organizationId: orgId,
+      entityType: `qbo_sync:certified_payroll:${payRun.id}`,
+      lastError: "Rate limit",
+      retryCount: 1,
+      nextRetryAt: future,
+    });
+    // Orphan id (no matching customer record) — displayName/link must
+    // fall through to null so the panel can fall back to the raw label.
+    await seedSyncRow({
+      connectionId: qboConnectionId,
+      organizationId: orgId,
+      entityType: "qbo_sync:customer:does-not-exist",
+      lastError: "Auth expired",
+      retryCount: 1,
+      nextRetryAt: future,
+    });
+
+    const res = await request(app).get(`/connections/${qboConnectionId}/qbo-sync-retries`);
+    expect(res.status).toBe(200);
+
+    const byEntity = new Map(
+      (res.body.retries as Array<{ entityType: string; displayName: string | null; link: string | null }>)
+        .map((r) => [r.entityType, r]),
+    );
+
+    const cust = byEntity.get(`qbo_sync:customer:${customer.id}`)!;
+    expect(cust.displayName).toBe("Acme Construction LLC");
+    expect(cust.link).toBe(`/crm?organisationId=${customer.id}`);
+
+    const inv = byEntity.get(`qbo_sync:invoice:${payApp.id}`)!;
+    expect(inv.displayName).toContain("Pay app #7");
+    expect(inv.displayName).toContain(project.code);
+    expect(inv.link).toBe(`/progress-billing?payApplicationId=${payApp.id}`);
+
+    const pay = byEntity.get(`qbo_sync:payroll:${payRun.id}`)!;
+    expect(pay.displayName).toBe("Pay run #PR-2026-04-W1");
+    expect(pay.link).toBe(`/payroll-management?payRunId=${payRun.id}`);
+
+    const cpr = byEntity.get(`qbo_sync:certified_payroll:${payRun.id}`)!;
+    expect(cpr.displayName).toBe("Certified pay run #PR-2026-04-W1");
+    expect(cpr.link).toBe(`/payroll-management?payRunId=${payRun.id}`);
+
+    const orphan = byEntity.get("qbo_sync:customer:does-not-exist")!;
+    expect(orphan.displayName).toBeNull();
+    expect(orphan.link).toBeNull();
+  });
+
+  // Task #1941 — cross-org isolation for the name lookup. A customer
+  // record belonging to another org must NOT be resolved into the
+  // displayName for a row sitting in this org's connection (defence in
+  // depth on top of the org-scoped `where` clauses).
+  it("does not leak displayName from records in another org", async () => {
+    const future = new Date(Date.now() + 5 * 60_000);
+    const [crossCustomer] = await db
+      .insert(crmOrganisations)
+      .values({
+        organizationId: otherOrgId,
+        type: "OWNER_REP",
+        name: "Cross-Org Inc",
+      })
+      .returning();
+
+    await seedSyncRow({
+      connectionId: qboConnectionId,
+      organizationId: orgId,
+      entityType: `qbo_sync:customer:${crossCustomer.id}`,
+      lastError: "Auth expired",
+      retryCount: 1,
+      nextRetryAt: future,
+    });
+
+    const res = await request(app).get(`/connections/${qboConnectionId}/qbo-sync-retries`);
+    expect(res.status).toBe(200);
+    const row = (res.body.retries as Array<{ entityType: string; displayName: string | null; link: string | null }>)
+      .find((r) => r.entityType === `qbo_sync:customer:${crossCustomer.id}`)!;
+    expect(row.displayName).toBeNull();
+    expect(row.link).toBeNull();
+
+    await db.delete(crmOrganisations).where(eq(crmOrganisations.organizationId, otherOrgId));
   });
 });

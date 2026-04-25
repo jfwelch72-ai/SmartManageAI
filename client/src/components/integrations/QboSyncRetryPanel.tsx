@@ -1,10 +1,11 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { Link } from "wouter";
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   AlertCircle, AlertTriangle, Clock, Loader2, RefreshCw,
-  Users, FileText, Banknote, Settings as SettingsIcon,
+  Users, FileText, Banknote, Settings as SettingsIcon, ExternalLink,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -18,6 +19,8 @@ interface QboSyncRetry {
   kind: Kind;
   label: string;
   itemId: string | null;
+  displayName: string | null;
+  link: string | null;
   lastError: string | null;
   lastAttemptAt: string | null;
   retryCount: number;
@@ -179,12 +182,40 @@ export function QboSyncRetryPanel({ connection }: { connection: Connection }) {
                       <div className="flex items-start justify-between gap-3 flex-wrap">
                         <div className="space-y-1 min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span
-                              className="font-medium text-sm truncate"
-                              data-testid={`text-qbo-retry-label-${retry.id}`}
-                            >
-                              {retry.label}
-                            </span>
+                            {retry.displayName && retry.link && retry.exhausted ? (
+                              <Link
+                                href={retry.link}
+                                className="font-medium text-sm truncate inline-flex items-center gap-1 underline-offset-2 hover:underline"
+                                data-testid={`link-qbo-retry-${retry.id}`}
+                              >
+                                <span data-testid={`text-qbo-retry-label-${retry.id}`}>
+                                  {retry.displayName}
+                                </span>
+                                <ExternalLink className="h-3 w-3 opacity-70" />
+                              </Link>
+                            ) : retry.displayName ? (
+                              <span
+                                className="font-medium text-sm truncate"
+                                data-testid={`text-qbo-retry-label-${retry.id}`}
+                              >
+                                {retry.displayName}
+                              </span>
+                            ) : (
+                              <span
+                                className="font-medium text-sm truncate"
+                                data-testid={`text-qbo-retry-label-${retry.id}`}
+                              >
+                                {retry.label}
+                              </span>
+                            )}
+                            {retry.displayName && retry.itemId && (
+                              <span
+                                className="text-xs font-mono text-muted-foreground truncate"
+                                data-testid={`text-qbo-retry-id-${retry.id}`}
+                              >
+                                {retry.itemId}
+                              </span>
+                            )}
                             {retry.exhausted ? (
                               <Badge
                                 variant="destructive"
