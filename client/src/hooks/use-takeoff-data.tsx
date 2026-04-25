@@ -191,19 +191,28 @@ export function useTakeoffData({
             }
           }
         }
-        if (data.reason === "not_found") {
-          if (Array.isArray(data.failedMeasurementIds)) {
-            pushAll(data.failedMeasurementIds);
-          } else if (collected.length === 0 && status === 404) {
-            // Older server responses that include `reason: "not_found"`
-            // but no enumerated id list — fall back to what we tried
-            // to PATCH so the cache and selection still get cleaned up.
-            for (const id of attemptedIds) {
-              if (!seen.has(id)) {
-                seen.add(id);
-                collected.push(id);
-              }
-            }
+        if (data.reason === "not_found" && Array.isArray(data.failedMeasurementIds)) {
+          pushAll(data.failedMeasurementIds);
+        }
+      }
+      // Task #1988 — Plain 404 fallback (also covers Task #1970's
+      // "reason: not_found without an enumerated list" case). When the
+      // server returns a bare 404 — either a true legacy response
+      // (`{ error: "Measurement not found" }` with no `reason` /
+      // `failedMeasurementIds`) or a mixed-deployment scenario where
+      // the client is updated ahead of the server — we still want to
+      // prune the row out of the cache + selection so the canvas does
+      // not leak a phantom. We fall back to the ids the caller just
+      // tried to operate on (`[variables.id]` for the per-id PATCH /
+      // DELETE paths). The bulk DELETE path passes an empty list as
+      // attemptedIds so a plain-404 with no enumerated body never
+      // accidentally prunes the entire bulk selection — it can only
+      // act on ids the modern server explicitly enumerates.
+      if (collected.length === 0 && status === 404) {
+        for (const id of attemptedIds) {
+          if (!seen.has(id)) {
+            seen.add(id);
+            collected.push(id);
           }
         }
       }
@@ -633,7 +642,29 @@ export function useTakeoffData({
       }
       toast({ title: "Success", description: "Measurement deleted" });
     },
-    onError: () => {
+    onError: (error: unknown, measurement) => {
+      // Task #1988 — Mirror the PATCH not_found prune (Task #1970) for
+      // the per-id DELETE path: when the server reports the row is
+      // already gone (typically because a teammate removed it on
+      // another device), drop it out of the cached measurements list
+      // and clear it from the workspace selection so the user can't
+      // keep re-trying a delete against a phantom row that will never
+      // exist. Non-not_found failures (network down, 403) stay on the
+      // legacy generic toast path with no cache surgery.
+      const notFoundIds = extractMeasurementNotFoundIds(
+        error,
+        measurement ? [measurement.id] : [],
+      );
+      if (notFoundIds.length > 0) {
+        pruneDeletedMeasurements(notFoundIds, measurementsQueryKey);
+        toast({
+          title: "Measurement was already deleted",
+          description:
+            "Another teammate already removed this measurement, so the canvas has been refreshed.",
+          variant: "destructive",
+        });
+        return;
+      }
       toast({ title: "Error", description: "Failed to delete measurement", variant: "destructive" });
     },
   });
@@ -712,8 +743,49 @@ export function useTakeoffData({
       }
     },
     onError: (error: any, _vars, ctx) => {
+      // Task #1988 — Mirror the PATCH not_found prune (Task #1970) on
+      // the bulk DELETE path: when one of the per-id DELETEs comes back
+      // with `reason: "not_found"` (a teammate already removed that row
+      // on another device), drop those ids out of the optimistic-
+      // rollback snapshot so the canvas does NOT put a phantom row
+      // back. The remaining rows from the snapshot are restored as
+      // before so the user can retry whatever else failed (network
+      // hiccup, validation, etc.). The pruned ids are also cleared
+      // from the workspace selection set so the properties panel can't
+      // re-edit a row that no longer exists.
+      //
+      // Note: the per-id calls fan out via Promise.all, so only the
+      // first rejection surfaces here. That is enough to clear the
+      // teammate-deleted rows the server explicitly enumerates in
+      // `failedMeasurementIds`; any additional teammate-deletes from
+      // sibling per-id calls would be reconciled on the next refetch.
+      const notFoundIds = extractMeasurementNotFoundIds(error, []);
       if (ctx?.previousMeasurements) {
-        queryClient.setQueryData(ctx.queryKey, ctx.previousMeasurements);
+        if (notFoundIds.length > 0) {
+          const notFoundSet = new Set(notFoundIds);
+          queryClient.setQueryData<TakeoffMeasurement[]>(
+            ctx.queryKey,
+            ctx.previousMeasurements.filter((m) => !notFoundSet.has(m.id)),
+          );
+        } else {
+          queryClient.setQueryData(ctx.queryKey, ctx.previousMeasurements);
+        }
+      }
+      if (notFoundIds.length > 0) {
+        callbacks.pruneSelectedMeasurementIds?.(notFoundIds);
+        const count = notFoundIds.length;
+        toast({
+          title:
+            count === 1
+              ? "Measurement was already deleted"
+              : "Some measurements were already deleted",
+          description:
+            count === 1
+              ? "A teammate already removed it before your bulk delete completed, so the canvas has been refreshed."
+              : `A teammate already removed ${count} of them before your bulk delete completed, so the canvas has been refreshed.`,
+          variant: "destructive",
+        });
+        return;
       }
       const description =
         (typeof error === "object" && error && typeof error.message === "string"

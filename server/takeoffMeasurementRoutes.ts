@@ -612,7 +612,21 @@ router.delete("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequ
       .from(takeoffMeasurements)
       .where(eq(takeoffMeasurements.id, id))
       .limit(1);
-    if (!existing) { res.status(404).json({ error: "Measurement not found" }); return; }
+    if (!existing) {
+      // Task #1988 — Mirror the PATCH endpoint's structured 404 shape
+      // (Task #1970) so the client onError handler on the per-id and
+      // bulk DELETE paths can drop the deleted id out of the cached
+      // measurements list and the workspace selection set instead of
+      // restoring a teammate-deleted row from the optimistic-rollback
+      // snapshot. Without this, a mid-bulk teammate delete left a
+      // phantom row on the canvas until the user manually refreshed.
+      res.status(404).json({
+        error: "Measurement not found — it may have been deleted",
+        reason: "not_found",
+        failedMeasurementIds: [id],
+      });
+      return;
+    }
 
     const locked = await isMeasurementLocked(id);
     if (locked) { res.status(403).json({ error: "Cannot delete a measurement in a locked version" }); return; }
