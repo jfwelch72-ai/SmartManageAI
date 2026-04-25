@@ -157,9 +157,19 @@ jobs:
     # wall-clock time roughly in 4 without changing the engine-aware drag
     # helper. The helper only branches on `browserName` and holds no shared
     # state, so it remains correct under parallel shards on separate
-    # runners. Per-shard reports upload as separate, clearly-named
-    # artifacts so a failure points straight at the engine + shard that
-    # produced it.
+    # runners.
+    #
+    # Task #1911 — Each shard now writes a Playwright blob report
+    # (`blob-report/report-<engine>-<shard>-of-2.zip`, named via
+    # `PLAYWRIGHT_BLOB_OUTPUT_NAME` so all four files coexist in one
+    # download folder) instead of a per-shard HTML. The follow-on
+    # `merge-canvas-reports` job below downloads every blob and runs
+    # `npx playwright merge-reports --reporter html` to produce a single
+    # browsable report — reviewers no longer have to open four separate
+    # artifacts to see the full Firefox + WebKit picture, and the merged
+    # HTML still attributes each test to its project (engine), with the
+    # per-shard blob artifacts kept around so a CI run can be traced back
+    # to the runner that produced it.
     name: E2E Canvas Specs (${{ matrix.project }} shard ${{ matrix.shard }}/2)
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -246,14 +256,30 @@ jobs:
         # `playwright.config.ts` — so the intent is visible at the job
         # that needs it and survives any future tightening of the
         # global default for other E2E jobs. Retries are surfaced as
-        # "flaky" outcomes in the HTML report uploaded below, which is
-        # how we'll spot a flake trend over time even when the job
-        # itself stays green.
+        # "flaky" outcomes in the merged HTML report produced by the
+        # `merge-canvas-reports` job below, which is how we'll spot a
+        # flake trend over time even when the job itself stays green.
+        #
+        # Task #1911 — `--reporter=blob,list` overrides the `[list, html]`
+        # array configured in `playwright.config.ts` for CI: `list` keeps
+        # the streaming step log readable, and `blob` emits the
+        # machine-readable bundle that `playwright merge-reports`
+        # consumes downstream. `PLAYWRIGHT_BLOB_OUTPUT_NAME` (read by
+        # `resolveOutputFile` in Playwright's blob reporter) gives each
+        # shard a unique zip filename so all four bundles can coexist in
+        # the merge job's download folder without overwriting each other
+        # — Playwright's default `report-<shard>.zip` would otherwise
+        # collide between firefox-shard-1 and webkit-shard-1. Playwright's
+        # blob format records `--retries=1` flake outcomes, so the merged
+        # HTML report still surfaces flaky tests as described above.
+        env:
+          PLAYWRIGHT_BLOB_OUTPUT_NAME: report-${{ matrix.project }}-${{ matrix.shard }}-of-2.zip
         run: |
           npx playwright test \
             --project=${{ matrix.project }} \
             --shard=${{ matrix.shard }}/2 \
             --retries=1 \
+            --reporter=blob,list \
             e2e/takeoff-markup-drawing.spec.ts \
             e2e/plan-markup-group-drag.spec.ts \
             e2e/plan-markup-marquee-select.spec.ts \
@@ -261,14 +287,15 @@ jobs:
             e2e/takeoff-markup-history-wiring.spec.ts \
             e2e/takeoff-markup-undo.spec.ts
 
-      - name: Upload Playwright report
+      - name: Upload Playwright blob report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          # Per-shard, per-engine name so all four artifacts coexist on
-          # the run page and a failure points straight at the right one.
-          name: playwright-report-canvas-${{ matrix.project }}-shard-${{ matrix.shard }}-of-2
-          path: playwright-report/
+          # Per-shard, per-engine artifact name so all four blob bundles
+          # coexist on the run page; the `merge-canvas-reports` job
+          # downloads them all by the `blob-report-canvas-*` glob.
+          name: blob-report-canvas-${{ matrix.project }}-shard-${{ matrix.shard }}-of-2
+          path: blob-report/
           retention-days: 14
 
       - name: Upload test results
@@ -277,6 +304,72 @@ jobs:
         with:
           name: playwright-test-results-canvas-${{ matrix.project }}-shard-${{ matrix.shard }}-of-2
           path: test-results/
+          retention-days: 14
+
+  merge-canvas-reports:
+    # Task #1911 — Task #1896 sharded the canvas-heavy Firefox + WebKit
+    # Playwright suite across a 2×2 matrix (engine × shard) on
+    # `e2e-canvas-firefox-webkit`, which made failures findable but
+    # forced reviewers to open up to four separate per-shard HTML
+    # artifacts to see the full picture. The matrix shards now publish
+    # blob reports (see the `Upload Playwright blob report` step above);
+    # this job downloads every `blob-report-canvas-*` artifact, runs
+    # `npx playwright merge-reports --reporter html` to stitch them
+    # back together, and uploads a single `playwright-report-canvas`
+    # HTML artifact. Each test in the merged report is still attributed
+    # to its Playwright project (firefox or webkit), and the per-shard
+    # blob artifacts are kept around so a failure can still be traced
+    # back to the exact runner that produced it.
+    name: Merge Canvas Test Reports
+    # `if: always()` + `needs: [...]` ensures the merged report is
+    # produced even when one or more shards fail — that's precisely the
+    # case where reviewers most need a single combined view.
+    if: always()
+    needs: [e2e-canvas-firefox-webkit]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        # `npm ci` is required so the same Playwright version that
+        # produced the blob bundles is available to merge them; the
+        # blob format is versioned per Playwright release.
+        run: npm ci
+
+      - name: Download per-shard blob reports
+        uses: actions/download-artifact@v4
+        with:
+          # Glob-match every per-shard upload from the matrix above and
+          # flatten them into one folder so `merge-reports` sees all
+          # four `report-<engine>-<shard>-of-2.zip` files at once. The
+          # unique `PLAYWRIGHT_BLOB_OUTPUT_NAME` filenames set on each
+          # shard prevent collisions during the flatten.
+          path: all-blob-reports
+          pattern: blob-report-canvas-*
+          merge-multiple: true
+
+      - name: Merge blob reports into a single HTML report
+        # `merge-reports` reads every `*.zip` blob in the input folder
+        # and produces a fresh `playwright-report/` HTML directory in
+        # the working directory (matching what the `html` reporter
+        # would have written for a single non-sharded run).
+        run: npx playwright merge-reports --reporter html ./all-blob-reports
+
+      - name: Upload combined Playwright HTML report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-canvas
+          path: playwright-report/
           retention-days: 14
 
   e2e-webkit-takeoff:
