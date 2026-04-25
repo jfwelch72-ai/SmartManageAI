@@ -113,6 +113,24 @@ function recordJobOutcome(job: string, ok: boolean): void {
   recordJobMetrics(job, { succeeded: ok ? 1 : 0, failed: ok ? 0 : 1 });
 }
 
+/**
+ * Task #1959 — Publish a `skipped` sample when an overlap guard
+ * (Tasks #1949 / #1951) prevents a fresh tick from running because the
+ * previous one is still in flight. Without this counter, chronic
+ * skipping is invisible on the Job Metrics dashboard — admins can't
+ * tell whether a job is *occasionally* slow (one missed tick) or is
+ * *chronically* over-budget (and needs to be sharded, batched, or moved
+ * to a queue).
+ *
+ * The counter shape mirrors `recordJobOutcome` (single integer per
+ * tick) so the alert engine's default absolute-floor spike rule on
+ * `skipped` (see `jobMetricAlerts.ts`) can fire when the per-hour
+ * skipped-rate exceeds the configured threshold.
+ */
+function recordJobSkipped(job: string): void {
+  recordJobMetrics(job, { skipped: 1 });
+}
+
 // Task #1949 — overlap guards for the chatty 2-minute cron jobs that
 // were previously stacking up under load and starving the shared
 // Postgres pool. Each guard is a simple in-process boolean: if the
@@ -263,6 +281,7 @@ export function startJobRunner() {
     // requests like POST /api/website/republish.
     if (outboxTickRunning) {
       logWarn("Outbox processing skipped: previous tick still running");
+      recordJobSkipped("outbox");
       return;
     }
     outboxTickRunning = true;
@@ -293,6 +312,7 @@ export function startJobRunner() {
     // pressure on the same scheduled rows.
     if (syncScheduleTickRunning) {
       logWarn("Sync schedule processing skipped: previous tick still running");
+      recordJobSkipped("sync_schedules");
       return;
     }
     syncScheduleTickRunning = true;
@@ -311,6 +331,7 @@ export function startJobRunner() {
     // tick and starve the connection pool.
     if (socialPostTickRunning) {
       logWarn("Social post processing skipped: previous tick still running");
+      recordJobSkipped("social_posts");
       return;
     }
     socialPostTickRunning = true;
@@ -351,6 +372,7 @@ export function startJobRunner() {
     // tick, doubling pool pressure on the same project rows.
     if (profitabilityMonitorTickRunning) {
       logWarn("Profitability monitor skipped: previous tick still running");
+      recordJobSkipped("profitability");
       return;
     }
     profitabilityMonitorTickRunning = true;
@@ -493,6 +515,7 @@ export function startJobRunner() {
     // its 4-hour cadence on tenants with many connected pages.
     if (socialEngagementTickRunning) {
       logWarn("Social engagement sync skipped: previous tick still running");
+      recordJobSkipped("social_engagement");
       return;
     }
     socialEngagementTickRunning = true;
@@ -512,6 +535,7 @@ export function startJobRunner() {
     // each invocation holds Postgres connections per contact update.
     if (scheduledCampaignTickRunning) {
       logWarn("Scheduled campaign processing skipped: previous tick still running");
+      recordJobSkipped("scheduled_campaigns");
       return;
     }
     scheduledCampaignTickRunning = true;
@@ -532,6 +556,7 @@ export function startJobRunner() {
     // and starve the pool.
     if (sequenceCadenceTickRunning) {
       logWarn("Sequence cadence runner skipped: previous tick still running");
+      recordJobSkipped("sequence_cadences");
       return;
     }
     sequenceCadenceTickRunning = true;
@@ -566,6 +591,7 @@ export function startJobRunner() {
     // next one, multiplying notification fan-out and pool pressure.
     if (crmSlaBreachTickRunning) {
       logWarn("CRM SLA breach sweep skipped: previous tick still running");
+      recordJobSkipped("crm_sla_breaches");
       return;
     }
     crmSlaBreachTickRunning = true;
@@ -587,6 +613,7 @@ export function startJobRunner() {
     // exceed the 10-minute interval, so guard against pile-up.
     if (crmIdleAutomationTickRunning) {
       logWarn("CRM idle automation tick skipped: previous tick still running");
+      recordJobSkipped("crm_idle_automations");
       return;
     }
     crmIdleAutomationTickRunning = true;
@@ -611,6 +638,7 @@ export function startJobRunner() {
     // double-deliver birthday reminders.
     if (crmBirthdayDigestTickRunning) {
       logWarn("CRM contact birthday digest skipped: previous tick still running");
+      recordJobSkipped("crm_birthday_digest");
       return;
     }
     crmBirthdayDigestTickRunning = true;
@@ -634,6 +662,7 @@ export function startJobRunner() {
     // the next hour boundary and double-send.
     if (certifiedPayrollDigestTickRunning) {
       logWarn("Certified payroll weekly digest skipped: previous tick still running");
+      recordJobSkipped("certified_payroll_digest");
       return;
     }
     certifiedPayrollDigestTickRunning = true;
@@ -658,6 +687,7 @@ export function startJobRunner() {
     // schedules.
     if (projectLogEmailScheduleTickRunning) {
       logWarn("Project log email schedule sweep skipped: previous tick still running");
+      recordJobSkipped("project_log_email_schedules");
       return;
     }
     projectLogEmailScheduleTickRunning = true;
@@ -693,6 +723,7 @@ export function startJobRunner() {
     // duplicate digests during the firing minute.
     if (projectLogEmailFailuresDigestTickRunning) {
       logWarn("Project log email failures digest skipped: previous tick still running");
+      recordJobSkipped("project_log_email_failures_digest");
       return;
     }
     projectLogEmailFailuresDigestTickRunning = true;
@@ -796,6 +827,7 @@ export function startJobRunner() {
     // next tick, doubling provider load and pool pressure.
     if (integrationSyncRetryTickRunning) {
       logWarn("Integration sync retry sweep skipped: previous tick still running");
+      recordJobSkipped("integration_sync_retry");
       return;
     }
     integrationSyncRetryTickRunning = true;

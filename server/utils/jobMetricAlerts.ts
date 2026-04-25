@@ -58,6 +58,36 @@ export const DEFAULT_DEDUPE_MINUTES = 60;
 export const DEFAULT_EMAIL_SPIKE_MULTIPLIER = 10;
 export const DEFAULT_EMAIL_STALL_HOURS = 12;
 
+// Task #1959 — Special-case absolute-floor defaults for the `skipped`
+// counter that overlap guards in `server/jobs/jobRunner.ts` publish
+// when a fresh tick is suppressed because the previous tick was still
+// in flight. A multiplicative spike rule would never fire on a
+// previously-healthy job because the baseline is zero and the engine
+// guards against divide-by-zero — so without an absolute floor here,
+// chronic skipping would be silent on the alert pipeline even though
+// the dashboard shows the trend.
+//
+// Operators can override per-job/per-counter via the dashboard rules
+// table (jobMetricAlertRules) or per-job via `PER_JOB_DEFAULTS` below;
+// the env vars give a single global knob without redeploying for the
+// common case of "make us less / more aggressive everywhere".
+export const SKIPPED_COUNTER = "skipped";
+export const DEFAULT_SKIPPED_FLOOR_PER_HOUR = Number.isFinite(
+  Number(process.env.JOB_METRIC_SKIPPED_FLOOR_PER_HOUR),
+)
+  ? Number(process.env.JOB_METRIC_SKIPPED_FLOOR_PER_HOUR)
+  : 5;
+export const DEFAULT_SKIPPED_DEDUPE_MINUTES = Number.isFinite(
+  Number(process.env.JOB_METRIC_SKIPPED_DEDUPE_MINUTES),
+)
+  ? Number(process.env.JOB_METRIC_SKIPPED_DEDUPE_MINUTES)
+  : 60;
+export const DEFAULT_SKIPPED_EMAIL_FLOOR_PER_HOUR = Number.isFinite(
+  Number(process.env.JOB_METRIC_SKIPPED_EMAIL_FLOOR_PER_HOUR),
+)
+  ? Number(process.env.JOB_METRIC_SKIPPED_EMAIL_FLOOR_PER_HOUR)
+  : 10;
+
 export type AlertKind = "spike" | "stall";
 
 export interface JobMetricAlert {
@@ -462,6 +492,26 @@ function defaultSpikeRule(job: string, counter: string): AlertRuleResolved {
         override.emailWhenAbove === undefined
           ? DEFAULT_EMAIL_SPIKE_MULTIPLIER
           : override.emailWhenAbove,
+    };
+  }
+  // Task #1959 — `skipped` is the overlap-guard counter from
+  // `jobRunner.ts`. Treat it as an absolute-floor rule (threshold 0)
+  // so a previously-healthy job that suddenly starts skipping ticks
+  // pages on the very first hour rather than getting silently swallowed
+  // by the divide-by-zero baseline guard. Operators can still override
+  // per-job via `jobMetricAlertRules` rows.
+  if (counter === SKIPPED_COUNTER) {
+    return {
+      id: null,
+      job,
+      counter,
+      kind: "spike",
+      threshold: 0,
+      minAbsolute: DEFAULT_SKIPPED_FLOOR_PER_HOUR,
+      dedupeMinutes: DEFAULT_SKIPPED_DEDUPE_MINUTES,
+      enabled: true,
+      isDefault: true,
+      emailWhenAbove: DEFAULT_SKIPPED_EMAIL_FLOOR_PER_HOUR,
     };
   }
   return {

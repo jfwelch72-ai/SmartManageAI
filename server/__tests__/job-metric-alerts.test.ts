@@ -1066,4 +1066,114 @@ describe("jobMetricAlerts (Task #718)", () => {
       alerts.snoozeJobMetricAlertEvent("evt-x", "admin-1", Number.NaN),
     ).rejects.toThrow(/positive/i);
   });
+
+  // Task #1959 — overlap-guard "skipped" counter has its own
+  // absolute-floor default rule (threshold 0, minAbsolute = 5) so a
+  // previously-healthy job that suddenly starts skipping ticks pages
+  // immediately, even though the multiplicative-spike baseline is zero.
+  describe("skipped counter (Task #1959)", () => {
+    it("fires the absolute-floor default for `skipped` even when baseline is zero", async () => {
+      const now = Date.now();
+      alerts.setJobMetricAlertsClockForTests(() => now);
+
+      const samples: Array<{ timestamp: number; counters: Record<string, number> }> = [];
+      // 23 prior buckets of clean (0 skipped) ticks — baseline is zero.
+      for (let i = 1; i <= 23; i++) {
+        samples.push({ timestamp: now - i * HOUR - 1000, counters: { succeeded: 1 } });
+      }
+      // Last hour: 6 skipped ticks (>= default floor of 5).
+      for (let i = 0; i < 6; i++) {
+        samples.push({ timestamp: now - (i + 1) * 60_000, counters: { skipped: 1 } });
+      }
+
+      const result = await alerts.evaluateJobMetricAlerts({
+        metricsSource: source([{ job: "outbox", samples }]),
+      });
+
+      expect(result.alertsFired).toHaveLength(1);
+      expect(result.alertsFired[0].kind).toBe("spike");
+      expect(result.alertsFired[0].counter).toBe("skipped");
+      expect(result.alertsFired[0].observedValue).toBe(6);
+      // Absolute-floor rules render an "exceeded floor" message, not a
+      // "spiked vs baseline" one.
+      expect(result.alertsFired[0].message).toMatch(/exceeded floor/i);
+    });
+
+    it("does not fire when last-hour skipped count is below the default floor", async () => {
+      const now = Date.now();
+      alerts.setJobMetricAlertsClockForTests(() => now);
+
+      const samples: Array<{ timestamp: number; counters: Record<string, number> }> = [];
+      for (let i = 1; i <= 23; i++) {
+        samples.push({ timestamp: now - i * HOUR - 1000, counters: { succeeded: 1 } });
+      }
+      // Last hour: 4 skipped ticks (< default floor of 5).
+      for (let i = 0; i < 4; i++) {
+        samples.push({ timestamp: now - (i + 1) * 60_000, counters: { skipped: 1 } });
+      }
+
+      const result = await alerts.evaluateJobMetricAlerts({
+        metricsSource: source([{ job: "outbox", samples }]),
+      });
+
+      expect(result.alertsFired).toHaveLength(0);
+    });
+
+    it("escalates a skipped-counter alert to email when the per-hour count >= the email floor", async () => {
+      const now = Date.now();
+      alerts.setJobMetricAlertsClockForTests(() => now);
+      sendEmailMock.mockClear();
+      sendEmailMock.mockResolvedValue(true);
+
+      const samples: Array<{ timestamp: number; counters: Record<string, number> }> = [];
+      for (let i = 1; i <= 23; i++) {
+        samples.push({ timestamp: now - i * HOUR - 1000, counters: { succeeded: 1 } });
+      }
+      // Last hour: 12 skipped ticks (>= default email floor of 10).
+      for (let i = 0; i < 12; i++) {
+        samples.push({ timestamp: now - (i + 1) * 60_000, counters: { skipped: 1 } });
+      }
+
+      const result = await alerts.evaluateJobMetricAlerts({
+        metricsSource: source([{ job: "sequence_cadences", samples }]),
+      });
+
+      expect(result.alertsFired).toHaveLength(1);
+      expect(result.alertsFired[0].emailed).toBe(true);
+      expect(result.emailsSent).toBe(1);
+    });
+
+    it("respects an operator-authored rule that overrides the default skipped floor", async () => {
+      const now = Date.now();
+      alerts.setJobMetricAlertsClockForTests(() => now);
+      // Operator wants the floor higher (50/hr) for this chatty job.
+      state.rules = [
+        {
+          id: "r-skipped-override",
+          job: "outbox",
+          counter: "skipped",
+          kind: "spike",
+          threshold: "0",
+          minAbsolute: 50,
+          dedupeMinutes: 60,
+          enabled: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ];
+
+      const samples: Array<{ timestamp: number; counters: Record<string, number> }> = [];
+      // 6 skipped in the last hour — would fire the default rule, but
+      // the operator override raises the floor to 50.
+      for (let i = 0; i < 6; i++) {
+        samples.push({ timestamp: now - (i + 1) * 60_000, counters: { skipped: 1 } });
+      }
+
+      const result = await alerts.evaluateJobMetricAlerts({
+        metricsSource: source([{ job: "outbox", samples }]),
+      });
+
+      expect(result.alertsFired).toHaveLength(0);
+    });
+  });
 });

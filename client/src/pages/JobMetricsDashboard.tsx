@@ -184,6 +184,13 @@ function JobCard({ job, range, activeAlerts }: { job: JobMetricsResponse; range:
   const chartData = useMemo(() => bucketSamples(job.samples, counters, range), [job, counters, range]);
   const sampleCount = job.samples.length;
   const cfg = RANGE_CONFIG[range];
+  // Task #1959 — `skipped` is published by the overlap guards in
+  // `server/jobs/jobRunner.ts` whenever a fresh tick is suppressed
+  // because the previous one was still running. Surface a header badge
+  // when any skipped ticks fall inside the visible window so admins can
+  // distinguish "occasionally slow" from "chronically over-budget"
+  // without scanning the per-counter grid.
+  const skippedTotal = job.totals.skipped ?? 0;
 
   return (
     <Card data-testid={`card-job-${job.job}`} className={activeAlerts > 0 ? "border-destructive" : undefined}>
@@ -198,6 +205,16 @@ function JobCard({ job, range, activeAlerts }: { job: JobMetricsResponse; range:
               {activeAlerts > 0 && (
                 <Badge variant="destructive" className="gap-1" data-testid={`badge-active-alerts-${job.job}`}>
                   <AlertTriangle className="h-3 w-3" /> {activeAlerts} alert{activeAlerts === 1 ? "" : "s"}
+                </Badge>
+              )}
+              {skippedTotal > 0 && (
+                <Badge
+                  variant="outline"
+                  className="gap-1 border-amber-500 text-amber-700 dark:text-amber-300"
+                  title="Ticks suppressed by the overlap guard because the previous tick was still running."
+                  data-testid={`badge-skipped-${job.job}`}
+                >
+                  <AlertTriangle className="h-3 w-3" /> {skippedTotal} skipped
                 </Badge>
               )}
             </CardTitle>
