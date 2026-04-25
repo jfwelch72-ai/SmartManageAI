@@ -1,0 +1,119 @@
+name: Notify Slack on CI failure
+description: >
+  Post a Slack alert pointing at the failed run (and, when supplied, naming the
+  uploaded artifact that holds the diagnostic output). If the
+  `SLACK_WEBHOOK_URL` secret has not been wired up in the repo (e.g. forks, or
+  before a maintainer has configured it), the action logs a notice and exits
+  cleanly instead of failing the job a second time on top of the test failure
+  we are already alerting about.
+
+  This composite is the single home for the Slack-on-failure logic that used to
+  live inline at the bottom of `e2e-webkit-takeoff` (added in Task #1897). Task
+  #1909 extended the same alert to the other gates that block `main` (`build`,
+  `e2e`, `cloud-import-security`, `sage-sync-tests`, `lint`, `security`), and
+  factoring it into a composite keeps the heredoc and the webhook-missing
+  fallback in one place instead of six.
+
+  The `failure() && github.event_name == 'push' && github.ref ==
+  'refs/heads/main'` gate stays at the calling site so we can also skip the
+  step entirely (and the noisy `notice` line) on PR builds and forks.
+
+inputs:
+  webhook-url:
+    description: >
+      Slack incoming webhook URL. Pass in `${{ secrets.SLACK_WEBHOOK_URL }}`.
+      Empty / missing = log a notice and skip the post (no failure).
+    required: false
+    default: ''
+  job-name:
+    description: >
+      Human-readable job name to surface in the Slack message (e.g.
+      "Build & Test", "E2E Tests (Playwright)"). This is what a triager sees
+      in the alert headline so make it match the GitHub Actions job name.
+    required: true
+  artifact-name:
+    description: >
+      Name of the artifact uploaded by this job that holds the failure
+      diagnostics (Playwright report, security report, etc.). Omit for jobs
+      that do not upload an artifact (e.g. `lint`); the message will then
+      point at the run page only.
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Post Slack alert
+      shell: bash
+      env:
+        SLACK_WEBHOOK_URL: ${{ inputs.webhook-url }}
+        ARTIFACT_NAME: ${{ inputs.artifact-name }}
+        JOB: ${{ inputs.job-name }}
+        RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        REPO: ${{ github.repository }}
+        COMMIT_SHA: ${{ github.sha }}
+        COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
+        ACTOR: ${{ github.actor }}
+        WORKFLOW: ${{ github.workflow }}
+      run: |
+        set -euo pipefail
+        if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then
+          echo "::notice::SLACK_WEBHOOK_URL is not set; skipping Slack alert for '${JOB}'. Add it under Settings → Secrets and variables → Actions to enable failure alerts on main."
+          exit 0
+        fi
+
+        short_sha="${COMMIT_SHA:0:7}"
+
+        # Artifact line is optional — jobs like `lint` don't upload anything,
+        # so the message should just point at the run page in that case.
+        if [ -n "${ARTIFACT_NAME:-}" ]; then
+          artifact_text="<${RUN_URL}|Open the failed run> — diagnostics are attached as the *${ARTIFACT_NAME}* artifact at the bottom of that page."
+        else
+          artifact_text="<${RUN_URL}|Open the failed run> — see the job log for details (no artifact is uploaded by this gate)."
+        fi
+
+        # Block Kit payload — renders nicely in Slack incoming webhooks and
+        # also degrades to plain text in the notification preview via the
+        # top-level `text` field (required for accessibility / mobile).
+        payload=$(cat <<EOF
+        {
+          "text": ":rotating_light: ${JOB} failed on main — ${short_sha}",
+          "blocks": [
+            {
+              "type": "header",
+              "text": {
+                "type": "plain_text",
+                "text": ":rotating_light: ${JOB} failed on main"
+              }
+            },
+            {
+              "type": "section",
+              "fields": [
+                { "type": "mrkdwn", "text": "*Repo*\n${REPO}" },
+                { "type": "mrkdwn", "text": "*Job*\n${JOB}" },
+                { "type": "mrkdwn", "text": "*Commit*\n<${COMMIT_URL}|${short_sha}> by ${ACTOR}" },
+                { "type": "mrkdwn", "text": "*Workflow*\n${WORKFLOW}" }
+              ]
+            },
+            {
+              "type": "section",
+              "text": {
+                "type": "mrkdwn",
+                "text": "${artifact_text}"
+              }
+            }
+          ]
+        }
+        EOF
+        )
+
+        # `--fail-with-body` so a non-2xx from Slack still surfaces the
+        # response body in the job log, and the step exits non-zero — that
+        # way a misconfigured webhook is visible instead of silently
+        # swallowed. The test failure itself is already reflected by the
+        # earlier failed step.
+        curl --silent --show-error --fail-with-body \
+          -X POST \
+          -H 'Content-Type: application/json' \
+          --data "${payload}" \
+          "${SLACK_WEBHOOK_URL}"

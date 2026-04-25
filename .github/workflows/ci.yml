@@ -45,6 +45,18 @@ jobs:
       - name: Build application
         run: npm run build
 
+      # Task #1909 — A typecheck / vitest / build regression on `main` would
+      # otherwise sit silently in the Actions tab until somebody noticed. The
+      # composite action handles the empty-secret fallback and run-link
+      # formatting (see `.github/actions/notify-slack-on-failure/action.yml`).
+      # No artifact is uploaded by this job, so `artifact-name` is omitted.
+      - name: Notify Slack on build/test failure (main only)
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: ./.github/actions/notify-slack-on-failure
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          job-name: Build & Test
+
   e2e:
     name: E2E Tests (Playwright)
     runs-on: ubuntu-latest
@@ -111,6 +123,18 @@ jobs:
           name: playwright-test-results
           path: test-results/
           retention-days: 14
+
+      # Task #1909 — Same Slack alert pattern as the canvas-heavy job
+      # (Task #1897), now factored into a composite. Points triagers at the
+      # `playwright-report` artifact uploaded just above so they can open the
+      # HTML report straight from the run page.
+      - name: Notify Slack on E2E failure (main only)
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: ./.github/actions/notify-slack-on-failure
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          job-name: E2E Tests (Playwright)
+          artifact-name: playwright-report
 
   e2e-canvas-firefox-webkit:
     # Task #1886 — Task #1867 refactored the canvas-heavy Konva specs to share
@@ -314,85 +338,20 @@ jobs:
       # Slack alert pointing at the failed run and the uploaded Playwright
       # report artifact so the team can triage immediately.
       #
-      # Scoping rules (matches the task brief):
-      #   - `failure()` — only fire when the job itself failed (not on cancel
-      #     or success, and not on a previous step's failure that we already
-      #     handled).
-      #   - `github.event_name == 'push'` and `github.ref == 'refs/heads/main'`
-      #     — never notify on PR-branch failures, only on the `main` branch
-      #     after merge. PR authors already see the red check on their PR.
-      #
-      # The webhook URL lives in the repo's GitHub Actions secrets as
-      # `SLACK_WEBHOOK_URL` (a standard Slack Incoming Webhook). If the
-      # secret is missing — e.g. in a fork, or before a maintainer has wired
-      # it up — the step logs a notice and exits 0 instead of failing the
-      # job a second time on top of the test failure we're already alerting
-      # about.
-      - name: Notify Slack on canvas-heavy failure (main only)
+      # Task #1909 — the same pattern is now used by every other gate that
+      # blocks `main` (`build`, `e2e`, `cloud-import-security`,
+      # `sage-sync-tests`, `lint`, `security`), so the heredoc + webhook-
+      # missing fallback have been factored into the composite action at
+      # `.github/actions/notify-slack-on-failure/`. Read its `action.yml` for
+      # the scoping rules (only fires on `failure()` for `push` events on
+      # `refs/heads/main`, no-ops with a `notice` when the secret is unset).
+      - name: Notify Slack on E2E WebKit (Takeoff) failure (main only)
         if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          REPO: ${{ github.repository }}
-          COMMIT_SHA: ${{ github.sha }}
-          COMMIT_URL: ${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}
-          ACTOR: ${{ github.actor }}
-          WORKFLOW: ${{ github.workflow }}
-          JOB: E2E Canvas Specs (Firefox + WebKit)
-          ARTIFACT_NAME: playwright-report-canvas-firefox-webkit
-        run: |
-          set -euo pipefail
-          if [ -z "${SLACK_WEBHOOK_URL:-}" ]; then
-            echo "::notice::SLACK_WEBHOOK_URL is not set; skipping Slack alert. Add it under Settings → Secrets and variables → Actions to enable canvas-heavy failure alerts on main."
-            exit 0
-          fi
-
-          short_sha="${COMMIT_SHA:0:7}"
-          # Block Kit payload — renders nicely in Slack incoming webhooks and
-          # also degrades to plain text in the notification preview via the
-          # top-level `text` field (required for accessibility / mobile).
-          payload=$(cat <<EOF
-          {
-            "text": ":rotating_light: Canvas-heavy E2E (Firefox + WebKit) failed on main — ${short_sha}",
-            "blocks": [
-              {
-                "type": "header",
-                "text": {
-                  "type": "plain_text",
-                  "text": ":rotating_light: Canvas-heavy E2E failed on main"
-                }
-              },
-              {
-                "type": "section",
-                "fields": [
-                  { "type": "mrkdwn", "text": "*Repo*\n${REPO}" },
-                  { "type": "mrkdwn", "text": "*Job*\n${JOB}" },
-                  { "type": "mrkdwn", "text": "*Commit*\n<${COMMIT_URL}|${short_sha}> by ${ACTOR}" },
-                  { "type": "mrkdwn", "text": "*Workflow*\n${WORKFLOW}" }
-                ]
-              },
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": "<${RUN_URL}|Open the failed run> — the Playwright HTML report is attached as the *${ARTIFACT_NAME}* artifact at the bottom of that page."
-                }
-              }
-            ]
-          }
-          EOF
-          )
-
-          # `--fail-with-body` so a non-2xx from Slack still surfaces the
-          # response body in the job log, and the step exits non-zero — that
-          # way a misconfigured webhook is visible instead of silently
-          # swallowed. The test failure itself is already reflected by the
-          # earlier failed step.
-          curl --silent --show-error --fail-with-body \
-            -X POST \
-            -H 'Content-Type: application/json' \
-            --data "${payload}" \
-            "${SLACK_WEBHOOK_URL}"
+        uses: ./.github/actions/notify-slack-on-failure
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          job-name: E2E WebKit (Takeoff)
+          artifact-name: playwright-report-webkit-takeoff
 
   cloud-import-security:
     # Task #1507 — Run the cloud-import SSRF + size guard suites on every PR
@@ -445,6 +404,18 @@ jobs:
 
       - name: Run cloud-import security tests (safeDownload + from-cloud SSRF)
         run: npx vitest run server/__tests__/safe-download.test.ts server/__tests__/from-cloud-ssrf-redirect.test.ts
+
+      # Task #1909 — A regression in `safeDownload` or the from-cloud SSRF
+      # handler is a security-sensitive failure; alert the team immediately
+      # when it lands on `main` instead of waiting for a manual Actions check.
+      # No artifact is uploaded by this job, so `artifact-name` is omitted and
+      # the message points triagers at the run page log.
+      - name: Notify Slack on cloud-import security failure (main only)
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: ./.github/actions/notify-slack-on-failure
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          job-name: Cloud Import Security Tests
 
   sage-sync-tests:
     # Task #1605 — Run the Sage Intacct sync vitest suite on every PR so the
@@ -502,6 +473,16 @@ jobs:
       - name: Run Sage sync vitest suite
         run: npx vitest run server/__tests__/sage-sync.test.ts server/__tests__/sage-export-invoice-idempotency.test.ts
 
+      # Task #1909 — A Sage envelope/idempotency regression on `main` would
+      # silently risk double-billing customers, so surface the failure in
+      # Slack the moment it lands. No artifact is uploaded by this job.
+      - name: Notify Slack on Sage sync failure (main only)
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: ./.github/actions/notify-slack-on-failure
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          job-name: Sage Sync Tests
+
   lint:
     name: Code Quality
     runs-on: ubuntu-latest
@@ -541,6 +522,17 @@ jobs:
       # argument looks like an Express Request, and fails the build on a hit.
       - name: Audit calls to auditLogger for misplaced request arguments
         run: node scripts/audit-audit-logger-userid.mjs
+
+      # Task #1909 — A regression in the Express-handler `next` audit or the
+      # auditLogger argument audit would land silently on `main` today; the
+      # Slack alert closes that gap. No artifact is uploaded by this job, so
+      # the message points triagers at the run page log directly.
+      - name: Notify Slack on lint failure (main only)
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: ./.github/actions/notify-slack-on-failure
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          job-name: Code Quality
 
   security:
     name: Security Gate (SOC 2 CC8.1 / CC7.1)
@@ -681,3 +673,15 @@ jobs:
                 owner, repo, issue_number, body,
               });
             }
+
+      # Task #1909 — A Critical/High security finding that lands on `main`
+      # blocks merges going forward, so the team needs to know immediately.
+      # Points triagers at the `ci-security-report` artifact uploaded above
+      # so they can open the full scanner output without re-running anything.
+      - name: Notify Slack on security gate failure (main only)
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: ./.github/actions/notify-slack-on-failure
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          job-name: Security Gate (SOC 2 CC8.1 / CC7.1)
+          artifact-name: ci-security-report
