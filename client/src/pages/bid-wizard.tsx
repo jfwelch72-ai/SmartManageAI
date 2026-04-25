@@ -354,7 +354,7 @@ export default function BidWizardPage() {
         title: "Bid created successfully", 
         description: `Bid ${bid.code} has been created with ${scopeItems.filter(i => i.selected).length + customItems.length} line items`
       });
-      setLocation(`/bids/${bid.code}/estimate`);
+      setLocation(`/bids/${bid.code}`);
     },
     onError: (error: any) => {
       toast({ 
@@ -1172,7 +1172,7 @@ export default function BidWizardPage() {
                       ) : (
                         <>
                           <CheckCircle2 className="h-4 w-4 mr-2" />
-                          Create Bid & Go to Estimate
+                          Create Bid & Start Takeoff
                         </>
                       )}
                     </Button>
