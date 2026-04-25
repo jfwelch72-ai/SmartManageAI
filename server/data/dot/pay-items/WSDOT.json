@@ -1,0 +1,6890 @@
+{
+  "specBook": {
+    "edition": "2024",
+    "title": "WSDOT Standard Specifications for Road, Bridge, and Municipal Construction — Standard Item Table (English, DOT-RGG101)"
+  },
+  "source": "https://wsdot.wa.gov/sites/default/files/2024-05/Standard-Item-Table.pdf",
+  "items": [
+    {
+      "itemNumber": "0001",
+      "description": "MOBILIZATION",
+      "unit": "LS",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0002",
+      "description": "MOBILIZATION",
+      "unit": "LS",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0025",
+      "description": "CLEARING AND GRUBBING",
+      "unit": "ACRE",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0030",
+      "description": "CLEARING AND GRUBBING - SITE",
+      "unit": "ACRE",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0035",
+      "description": "CLEARING AND GRUBBING",
+      "unit": "LS",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0040",
+      "description": "CLEARING AND GRUBBING - SITE",
+      "unit": "LS",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0044",
+      "description": "STRIPPING INCL. HAUL",
+      "unit": "CY",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0045",
+      "description": "STRIPPING INCL. HAUL - SITE",
+      "unit": "CY",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0047",
+      "description": "REMOVING MANHOLE",
+      "unit": "EACH",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0049",
+      "description": "REMOVING DRAINAGE STRUCTURE",
+      "unit": "EACH",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0050",
+      "description": "REMOVAL OF STRUCTURES AND OBSTRUCTIONS",
+      "unit": "LS",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0259",
+      "description": "WORK ACCESS",
+      "unit": "LS",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0060",
+      "description": "REMOVING PORTION OF EXISTING STRUCTURE",
+      "unit": "LS",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0061",
+      "description": "REMOVING PORTION OF EXISTING BRIDGE",
+      "unit": "LS",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0062",
+      "description": "REMOVING PORTION OF CONC. BOX CULV.",
+      "unit": "LS",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0070",
+      "description": "REMOVING EXISTING STRUCTURE",
+      "unit": "LS",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0071",
+      "description": "REMOVING EXISTING BRIDGE",
+      "unit": "LS",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0116",
+      "description": "REMOVING CONC. INLET",
+      "unit": "EACH",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0080",
+      "description": "REMOVING BITUMINOUS PAVEMENT",
+      "unit": "SY",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0090",
+      "description": "REMOVING CEMENT CONC. PAVEMENT",
+      "unit": "SY",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0100",
+      "description": "REMOVING CEMENT CONC. SIDEWALK",
+      "unit": "SY",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0108",
+      "description": "REMOVING CEMENT CONC. CURB AND GUTTER",
+      "unit": "LF",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0110",
+      "description": "REMOVING CEMENT CONC. CURB",
+      "unit": "LF",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0114",
+      "description": "REMOVING CEMENT CONC. GUTTER",
+      "unit": "LF",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0120",
+      "description": "REMOVING ASPHALT CONC. PAVEMENT",
+      "unit": "SY",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0130",
+      "description": "REMOVING ASPHALT CONC. SIDEWALK",
+      "unit": "SY",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0140",
+      "description": "REMOVING ASPHALT CONC. CURB",
+      "unit": "LF",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0145",
+      "description": "REMOVING CONC. BARRIER",
+      "unit": "LF",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0150",
+      "description": "REMOVING TRAFFIC ISLAND",
+      "unit": "SY",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0160",
+      "description": "REMOVING TRAFFIC CURB",
+      "unit": "LF",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0170",
+      "description": "REMOVING GUARDRAIL",
+      "unit": "LF",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0182",
+      "description": "REMOVING GUARDRAIL ANCHOR",
+      "unit": "EACH",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0180",
+      "description": "REMOVING CONC. SPOT POST",
+      "unit": "EACH",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0185",
+      "description": "REMOVING GUIDE POST",
+      "unit": "EACH",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0187",
+      "description": "REMOVING PAINT LINE",
+      "unit": "LF",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0190",
+      "description": "REMOVING PLASTIC LINE",
+      "unit": "LF",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0199",
+      "description": "REMOVING PAINTED TRAFFIC MARKING",
+      "unit": "EACH",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0200",
+      "description": "REMOVING PLASTIC TRAFFIC MARKING",
+      "unit": "EACH",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0203",
+      "description": "REMOVING PAINTED CROSSWALK LINE",
+      "unit": "SF",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0204",
+      "description": "REMOVING PLASTIC CROSSWALK LINE",
+      "unit": "SF",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0201",
+      "description": "REMOVING TRAFFIC BUTTON",
+      "unit": "EACH",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0208",
+      "description": "REMOVING RAISED PAVEMENT MARKER",
+      "unit": "HUND",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0209",
+      "description": "REMOVING RAISED PAVEMENT MARKER",
+      "unit": "LS",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0213",
+      "description": "REMOVING DELINEATION LIGHT",
+      "unit": "LF",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0215",
+      "description": "REMOVING MISCELLANEOUS TRAFFIC ITEM",
+      "unit": "LS",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0220",
+      "description": "REMOVING CHAIN LINK FENCE",
+      "unit": "LF",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0230",
+      "description": "REMOVING WIRE FENCE",
+      "unit": "LF",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0250",
+      "description": "REMOVAL AND DISPOSAL OF ASBESTOS MATERIAL",
+      "unit": "LS",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0251",
+      "description": "HAZARDOUS MATERIAL EXCAVATION",
+      "unit": "CY",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0261",
+      "description": "HAZARDOUS MATERIAL EXCAVATION INCL. HAUL",
+      "unit": "CY",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0940",
+      "description": "DISPOSAL OF CREOSOTED MATERIAL",
+      "unit": "LS",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0262",
+      "description": "DECOMMISSIONING WELLS",
+      "unit": "LS",
+      "specSection": "1",
+      "category": "PREPARATION"
+    },
+    {
+      "itemNumber": "0300",
+      "description": "ROADWAY EXCAVATION",
+      "unit": "CY",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0310",
+      "description": "ROADWAY EXCAVATION INCL. HAUL",
+      "unit": "CY",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0320",
+      "description": "ROADWAY EXCAVATION - AREA",
+      "unit": "CY",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0330",
+      "description": "ROADWAY EXCAVATION INCL. HAUL - AREA",
+      "unit": "CY",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0301",
+      "description": "SHOULDER FINISHING",
+      "unit": "MI",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0332",
+      "description": "PAVEMENT REPAIR EXCAVATION INCL. HAUL",
+      "unit": "SY",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0340",
+      "description": "UNSUITABLE FOUNDATION EXCAVATION",
+      "unit": "CY",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0350",
+      "description": "UNSUITABLE FOUNDATION EXCAVATION INCL. HAUL",
+      "unit": "CY",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0370",
+      "description": "CONTROLLED BLASTING OF ROCK FACE",
+      "unit": "LF",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0380",
+      "description": "ROCK SLOPE SCALING",
+      "unit": "CRHR",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0390",
+      "description": "ROCK SLOPE SCALING DEBRIS REMOVAL INCL. HAUL",
+      "unit": "CY",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0400",
+      "description": "HAUL",
+      "unit": "UNIT",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0405",
+      "description": "COMMON BORROW INCL. HAUL",
+      "unit": "CY",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0408",
+      "description": "SELECT BORROW INCL. HAUL",
+      "unit": "TON",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0409",
+      "description": "SELECT BORROW INCL. HAUL",
+      "unit": "CY",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0421",
+      "description": "GRAVEL BORROW INCL. HAUL",
+      "unit": "CY",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0431",
+      "description": "GRAVEL BORROW INCL. HAUL",
+      "unit": "TON",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0440",
+      "description": "SAND DRAINAGE BLANKET",
+      "unit": "TON",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0455",
+      "description": "PREFABRICATED VERTICAL DRAIN",
+      "unit": "LF",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0460",
+      "description": "EMBANKMENT IN PLACE",
+      "unit": "CY",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0470",
+      "description": "EMBANKMENT COMPACTION",
+      "unit": "CY",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0480",
+      "description": "COMPACTOR UNIT",
+      "unit": "HR",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0491",
+      "description": "GEOFOAM LIGHTWEIGHT FILL",
+      "unit": "CY",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0500",
+      "description": "SETTLEMENT INDICATING DEVICE",
+      "unit": "LF",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0502",
+      "description": "SETTLEMENT INDICATING DEVICE",
+      "unit": "EACH",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0505",
+      "description": "PORE PRESSURE DETECTION DEVICE",
+      "unit": "EACH",
+      "specSection": "2",
+      "category": "GRADING"
+    },
+    {
+      "itemNumber": "0601",
+      "description": "EXCESS PROCESSED MATERIAL",
+      "unit": "CALC",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0600",
+      "description": "BALLAST IN STOCKPILE",
+      "unit": "CY",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0610",
+      "description": "BALLAST IN STOCKPILE",
+      "unit": "TON",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0620",
+      "description": "PERMEABLE BALLAST IN STOCKPILE",
+      "unit": "CY",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0630",
+      "description": "PERMEABLE BALLAST IN STOCKPILE",
+      "unit": "TON",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0640",
+      "description": "CRUSHED SURFACING BASE COURSE IN STOCKPILE",
+      "unit": "CY",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0650",
+      "description": "CRUSHED SURFACING BASE COURSE IN STOCKPILE",
+      "unit": "TON",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0660",
+      "description": "CRUSHED SURFACING TOP COURSE IN STOCKPILE",
+      "unit": "CY",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0670",
+      "description": "CRUSHED SURFACING TOP COURSE IN STOCKPILE",
+      "unit": "TON",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0690",
+      "description": "CRUSHED COVER STONE IN STOCKPILE",
+      "unit": "TON",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0695",
+      "description": "CRUSHED COVER STONE IN STOCKPILE",
+      "unit": "CY",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0700",
+      "description": "SCREENED COVER STONE IN STOCKPILE",
+      "unit": "TON",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0710",
+      "description": "CRUSHED SCREENING 5/8",
+      "unit": "TON",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0711",
+      "description": "CRUSHED SCREENING 5/8",
+      "unit": "CY",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0720",
+      "description": "CRUSHED SCREENING 1/2",
+      "unit": "TON",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0721",
+      "description": "CRUSHED SCREENING 1/2",
+      "unit": "CY",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0725",
+      "description": "CRUSHED SCREENING 3/8",
+      "unit": "TON",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0726",
+      "description": "CRUSHED SCREENING 3/8",
+      "unit": "CY",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0730",
+      "description": "CRUSHED SCREENING 1/4",
+      "unit": "TON",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0731",
+      "description": "CRUSHED SCREENING 1/4",
+      "unit": "CY",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0740",
+      "description": "AGG. FOR ACP CL. B 5/8 IN. TO 1/4 IN. IN STOCKPILE",
+      "unit": "TON",
+      "specSection": "3",
+      "category": "IN STOCKPILE"
+    },
+    {
+      "itemNumber": "0750",
+      "description": "AGG. FOR ACP CL. B 1/4 IN. TO 0 IN. IN STOCKPILE",
+      "unit": "TON",
+      "specSection": "3",
+      "category": "STOCKPILING"
+    },
+    {
+      "itemNumber": "0790",
+      "description": "AGG. FOR ACP CL. F 3/4 IN. TO 1/4 IN. IN STOCKPILE",
+      "unit": "TON",
+      "specSection": "3",
+      "category": "STOCKPILING"
+    },
+    {
+      "itemNumber": "0800",
+      "description": "AGG. FOR ACP CL. F 1/4 IN. TO 0 IN. IN STOCKPILE",
+      "unit": "TON",
+      "specSection": "3",
+      "category": "STOCKPILING"
+    },
+    {
+      "itemNumber": "0820",
+      "description": "MAINTENANCE ROCK 1/2 IN. MINUS IN STOCKPILE",
+      "unit": "CY",
+      "specSection": "3",
+      "category": "STOCKPILING"
+    },
+    {
+      "itemNumber": "0830",
+      "description": "MAINTENANCE ROCK 1/2 IN. MINUS IN STOCKPILE",
+      "unit": "TON",
+      "specSection": "3",
+      "category": "STOCKPILING"
+    },
+    {
+      "itemNumber": "0840",
+      "description": "MAINTENANCE SAND 3/8 IN. MINUS IN STOCKPILE",
+      "unit": "CY",
+      "specSection": "3",
+      "category": "STOCKPILING"
+    },
+    {
+      "itemNumber": "0850",
+      "description": "MAINTENANCE SAND 3/8 IN. MINUS IN STOCKPILE",
+      "unit": "TON",
+      "specSection": "3",
+      "category": "STOCKPILING"
+    },
+    {
+      "itemNumber": "0860",
+      "description": "MAINTENANCE SAND 1/4 IN. MINUS IN STOCKPILE",
+      "unit": "CY",
+      "specSection": "3",
+      "category": "STOCKPILING"
+    },
+    {
+      "itemNumber": "0870",
+      "description": "MAINTENANCE SAND 1/4 IN. MINUS IN STOCKPILE",
+      "unit": "TON",
+      "specSection": "3",
+      "category": "STOCKPILING"
+    },
+    {
+      "itemNumber": "1025",
+      "description": "DITCH EXCAVATION",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1030",
+      "description": "DITCH EXCAVATION INCL. HAUL",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1035",
+      "description": "CHANNEL EXCAVATION",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1040",
+      "description": "CHANNEL EXCAVATION INCL. HAUL",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1046",
+      "description": "CONCRETE INLET",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1053",
+      "description": "GRATE INLET TYPE 1",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1054",
+      "description": "GRATE INLET TYPE 2",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1052",
+      "description": "FRAME AND VANED GRATES FOR GRATE INLET TYPE 2",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1058",
+      "description": "DROP INLET TYPE 1",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1059",
+      "description": "DROP INLET TYPE 2",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1062",
+      "description": "PRECAST CONCRETE DRYWELL",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1063",
+      "description": "COMBINATION INLET",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1065",
+      "description": "CEMENT CONC. GUTTER",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1066",
+      "description": "ASPHALT CONC. GUTTER",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1070",
+      "description": "CEMENT CONC. SPILLWAY",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1071",
+      "description": "ASPHALT CONC. SPILLWAY",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1069",
+      "description": "FILTER BLANKET",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1068",
+      "description": "FILTER BLANKET",
+      "unit": "TON",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1067",
+      "description": "MEDIA FILTER DRAIN TYPE",
+      "unit": "SY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0927",
+      "description": "AQUITARD",
+      "unit": "TON",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1077",
+      "description": "8 IN. QUARRY ROCK",
+      "unit": "TON",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1093",
+      "description": "STREAMBED SEDIMENT",
+      "unit": "TON",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1099",
+      "description": "STREAMBED FINE SEDIMENT",
+      "unit": "TON",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1090",
+      "description": "STREAMBED SAND",
+      "unit": "TON",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1095",
+      "description": "STREAMBED SEDIMENT",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1072",
+      "description": "HAND PLACED RIPRAP",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1073",
+      "description": "LIGHT LOOSE RIPRAP",
+      "unit": "TON",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1074",
+      "description": "LIGHT LOOSE RIPRAP",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1075",
+      "description": "HEAVY LOOSE RIPRAP",
+      "unit": "TON",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1076",
+      "description": "HEAVY LOOSE RIPRAP",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0885",
+      "description": "STREAMBED COBBLES 4 IN",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0886",
+      "description": "STREAMBED COBBLES 6 IN.",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0887",
+      "description": "STREAMBED COBBLES 8 IN.",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0888",
+      "description": "STREAMBED COBBLES 10 IN.",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0889",
+      "description": "STREAMBED COBBLES 12 IN.",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0900",
+      "description": "STREAMBED COBBLES 4 IN.",
+      "unit": "TON",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0901",
+      "description": "STREAMBED COBBLES 6 IN.",
+      "unit": "TON",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0902",
+      "description": "STREAMBED COBBLES 8 IN.",
+      "unit": "TON",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0903",
+      "description": "STREAMBED COBBLES 10 IN.",
+      "unit": "TON",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0904",
+      "description": "STREAMBED COBBLES 12 IN.",
+      "unit": "TON",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0905",
+      "description": "STREAMBED BOULDER TYPE ONE",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0906",
+      "description": "STREAMBED BOULDER TYPE ONE",
+      "unit": "TON",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0907",
+      "description": "STREAMBED BOULDER TYPE TWO",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0908",
+      "description": "STREAMBED BOULDER TYPE THREE",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0909",
+      "description": "STREAMBED BOULDER TYPE FOUR",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0912",
+      "description": "HABITAT BOULDER THREE MAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0913",
+      "description": "HABITAT BOULDER FOUR MAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0914",
+      "description": "HABITAT BOULDER FIVE MAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0915",
+      "description": "HABITAT BOULDER SIX MAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0918",
+      "description": "LARGE WOODY MATERIAL-LOG WITHOUT ROOTWAD DIA",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0919",
+      "description": "LARGE WOODY MATERIAL-LOG WITH ROOTWAD DIA",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0928",
+      "description": "BOULDER ANCHOR",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0929",
+      "description": "SMALL WOODY MATERIAL",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0917",
+      "description": "SLASH",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0921",
+      "description": "ROCK FOR EROSION AND SCOUR PROTECTION CLASS A",
+      "unit": "TON",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0922",
+      "description": "ROCK FOR EROSION AND SCOUR PROTECTION CLASS A",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0923",
+      "description": "ROCK FOR EROSION AND SCOUR PROTECTION CLASS B",
+      "unit": "TON",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0924",
+      "description": "ROCK FOR EROSION AND SCOUR PROTECTION CLASS B",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0925",
+      "description": "ROCK FOR EROSION AND SCOUR PROTECTION CLASS C",
+      "unit": "TON",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0926",
+      "description": "ROCK FOR EROSION AND SCOUR PROTECTION CLASS C",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1085",
+      "description": "QUARRY SPALLS",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1086",
+      "description": "QUARRY SPALLS",
+      "unit": "TON",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1080",
+      "description": "RELAYING",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1091",
+      "description": "SAFETY BARS FOR CULVERT PIPE TYPE 1",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1092",
+      "description": "SAFETY BARS FOR CULVERT PIPE TYPE 2",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0967",
+      "description": "TAPERED END SECTION WITH TYPE 4 SAFETY BARS 15 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0968",
+      "description": "TAPERED END SECTION WITH TYPE 4 SAFETY BARS 18 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0969",
+      "description": "TAPERED END SECTION WITH TYPE 4 SAFETY BARS 21 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0970",
+      "description": "TAPERED END SECTION WITH TYPE 4 SAFETY BARS 24 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0971",
+      "description": "TAPERED END SECTION WITH TYPE 4 SAFETY BARS 30 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0972",
+      "description": "TAPERED END SECTION WITH TYPE 3 SAFETY BARS 36 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0973",
+      "description": "TAPERED END SECTION WITH TYPE 4 SAFETY BARS 36 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0974",
+      "description": "TAPERED END SECTION WITH TYPE 3 SAFETY BARS 42 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0975",
+      "description": "TAPERED END SECTION WITH TYPE 4 SAFETY BARS 42 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0976",
+      "description": "TAPERED END SECTION WITH TYPE 3 SAFETY BARS 48 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0977",
+      "description": "TAPERED END SECTION WITH TYPE 4 SAFETY BARS 48 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0978",
+      "description": "TAPERED END SECTION WITH TYPE 3 SAFETY BARS 54 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0979",
+      "description": "TAPERED END SECTION WITH TYPE 4 SAFETY BARS 54 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0966",
+      "description": "TAPERED END SECTION WITH TYPE 4 SAFETY BARS 21 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0989",
+      "description": "TAPERED END SECTION WITH TYPE 4 SAFETY BARS 24 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0990",
+      "description": "TAPERED END SECTION WITH TYPE 4 SAFETY BARS 28 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0991",
+      "description": "TAPERED END SECTION WITH TYPE 3 SAFETY BARS 35 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0992",
+      "description": "TAPERED END SECTION WITH TYPE 4 SAFETY BARS 35 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0993",
+      "description": "TAPERED END SECTION WITH TYPE 3 SAFETY BARS 42 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0994",
+      "description": "TAPERED END SECTION WITH TYPE 4 SAFETY BARS 42 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0995",
+      "description": "TAPERED END SECTION WITH TYPE 3 SAFETY BARS 49 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0996",
+      "description": "TAPERED END SECTION WITH TYPE 4 SAFETY BARS 49 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0997",
+      "description": "TAPERED END SECTION WITH TYPE 3 SAFETY BARS 57 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0998",
+      "description": "TAPERED END SECTION WITH TYPE 4 SAFETY BARS 57 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "0999",
+      "description": "TAPERED END SECTION WITH TYPE 3 SAFETY BARS 64 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1000",
+      "description": "TAPERED END SECTION WITH TYPE 4 SAFETY BARS 64 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1100",
+      "description": "FLARED END SECTION 12 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1101",
+      "description": "FLARED END SECTION 15 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1102",
+      "description": "FLARED END SECTION 18 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1104",
+      "description": "FLARED END SECTION 24 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1105",
+      "description": "FLARED END SECTION 30 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1106",
+      "description": "FLARED END SECTION 36 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1107",
+      "description": "FLARED END SECTION 42 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1108",
+      "description": "FLARED END SECTION 48 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1109",
+      "description": "FLARED END SECTION 54 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1110",
+      "description": "FLARED END SECTION 60 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1112",
+      "description": "FLARED END SECTION 72 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1113",
+      "description": "FLARED END SECTION 78 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1114",
+      "description": "FLARED END SECTION 84 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1120",
+      "description": "FLARED END SECTION 17 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1121",
+      "description": "FLARED END SECTION 21 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1122",
+      "description": "FLARED END SECTION 24 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1123",
+      "description": "FLARED END SECTION 28 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1124",
+      "description": "FLARED END SECTION 35 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1125",
+      "description": "FLARED END SECTION 42 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1126",
+      "description": "FLARED END SECTION 49 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1127",
+      "description": "FLARED END SECTION 57 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1128",
+      "description": "FLARED END SECTION 64 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1129",
+      "description": "FLARED END SECTION 71 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1130",
+      "description": "FLARED END SECTION 77 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1131",
+      "description": "FLARED END SECTION 83 IN. SPAN",
+      "unit": "EACH",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1135",
+      "description": "HALF ROUND PLAIN ST. CULV. PIPE 0.064 IN.TH. 12 IN.DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1136",
+      "description": "HALF ROUND PLAIN ST. CULV. PIPE 0.064 IN.TH. 18 IN.DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1137",
+      "description": "HALF ROUND PLAIN ST. CULV. PIPE 0.064 IN.TH. 24 IN.DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1138",
+      "description": "HALF ROUND PLAIN ST. CULV. PIPE 0.064 IN.TH. 30 IN.DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1140",
+      "description": "HALF ROUND TR. 1 ST. CULV. PIPE 0.064 IN.TH. 12 IN.DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1142",
+      "description": "HALF ROUND TR. 1 ST. CULV. PIPE 0.064 IN.TH. 24 IN.DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1160",
+      "description": "UNDERDRAIN PIPE 6 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1161",
+      "description": "UNDERDRAIN PIPE 8 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1162",
+      "description": "UNDERDRAIN PIPE 10 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1163",
+      "description": "UNDERDRAIN PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1164",
+      "description": "UNDERDRAIN PIPE 15 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1165",
+      "description": "UNDERDRAIN PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1166",
+      "description": "UNDERDRAIN PIPE 21 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1170",
+      "description": "DRAIN PIPE 6 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1171",
+      "description": "DRAIN PIPE 8 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1172",
+      "description": "DRAIN PIPE 10 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1173",
+      "description": "DRAIN PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1174",
+      "description": "DRAIN PIPE 15 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1175",
+      "description": "DRAIN PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1176",
+      "description": "DRAIN PIPE 21 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1180",
+      "description": "SCHEDULE A CULV. PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1182",
+      "description": "SCHEDULE A CULV. PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1184",
+      "description": "SCHEDULE A CULV. PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1186",
+      "description": "SCHEDULE A CULV. PIPE 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1188",
+      "description": "SCHEDULE B CULV. PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1190",
+      "description": "SCHEDULE B CULV. PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1192",
+      "description": "SCHEDULE B CULV. PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1194",
+      "description": "SCHEDULE B CULV. PIPE 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1196",
+      "description": "SCHEDULE C CULV. PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1198",
+      "description": "SCHEDULE C CULV. PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1200",
+      "description": "SCHEDULE C CULV. PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1202",
+      "description": "SCHEDULE C CULV. PIPE 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1204",
+      "description": "SCHEDULE D CULV. PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1206",
+      "description": "SCHEDULE D CULV. PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1208",
+      "description": "SCHEDULE D CULV. PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1210",
+      "description": "SCHEDULE D CULV. PIPE 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1215",
+      "description": "PLAIN CONC. CULV. PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1216",
+      "description": "PLAIN CONC. CULV. PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1217",
+      "description": "PLAIN CONC. CULV. PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2992",
+      "description": "SOLID WALL PVC CULV. PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2993",
+      "description": "SOLID WALL PVC CULV. PIPE 15 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2994",
+      "description": "SOLID WALL PVC CULV. PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2995",
+      "description": "SOLID WALL PVC CULV. PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2996",
+      "description": "SOLID WALL PVC CULV. PIPE 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2997",
+      "description": "PROFILE WALL PVC CULV. PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2998",
+      "description": "PROFILE WALL PVC CULV. PIPE 15 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2999",
+      "description": "PROFILE WALL PVC CULV. PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3000",
+      "description": "PROFILE WALL PVC CULV. PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3001",
+      "description": "PROFILE WALL PVC CULV. PIPE 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3008",
+      "description": "CORRUGATED POLYETHYLENE CULV. PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3009",
+      "description": "CORRUGATED POLYETHYLENE CULV. PIPE 15 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3010",
+      "description": "CORRUGATED POLYETHYLENE CULV. PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3011",
+      "description": "CORRUGATED POLYETHYLENE CULV. PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3012",
+      "description": "CORRUGATED POLYETHYLENE CULV. PIPE 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3013",
+      "description": "ST. RIB REINF POLYETHYLENE CULV. PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3014",
+      "description": "ST. RIB REINF POLYETHYLENE CULV. PIPE 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3015",
+      "description": "ST. RIB REINF POLYETHYLENE CULV. PIPE 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3016",
+      "description": "HIGH-DENSITY POLYETHYLENE (HDPE) PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3017",
+      "description": "HIGH-DENSITY POLYETHYLENE (HDPE) PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3018",
+      "description": "HIGH-DENSITY POLYETHYLENE (HDPE) PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3020",
+      "description": "HIGH-DENSITY POLYETHYLENE (HDPE) PIPE 26 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3019",
+      "description": "HIGH-DENSITY POLYETHYLENE (HDPE) PIPE 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3050",
+      "description": "POLYPROPYLENE CULVERT PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3052",
+      "description": "POLYPROPYLENE CULVERT PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3054",
+      "description": "POLYPROPYLENE CULVERT PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1220",
+      "description": "CL. II REINF. CONC. CULV. PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1221",
+      "description": "CL. II REINF. CONC. CULV. PIPE 15 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1222",
+      "description": "CL. II REINF. CONC. CULV. PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1223",
+      "description": "CL. II REINF. CONC. CULV. PIPE 21 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1224",
+      "description": "CL. II REINF. CONC. CULV. PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1226",
+      "description": "CL. II REINF. CONC. CULV. PIPE 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1228",
+      "description": "CL. II REINF. CONC. CULV. PIPE 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1229",
+      "description": "CL. II REINF. CONC. CULV. PIPE 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1230",
+      "description": "CL. II REINF. CONC. CULV. PIPE 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1231",
+      "description": "CL. II REINF. CONC. CULV. PIPE 54 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1232",
+      "description": "CL. II REINF. CONC. CULV. PIPE 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1234",
+      "description": "CL. II REINF. CONC. CULV. PIPE 72 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1236",
+      "description": "CL. II REINF. CONC. CULV. PIPE 84 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1238",
+      "description": "CL. II REINF. CONC. CULV. PIPE 96 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1245",
+      "description": "CL. III REINF. CONC. CULV. PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1247",
+      "description": "CL. III REINF. CONC. CULV. PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1248",
+      "description": "CL. III REINF. CONC. CULV. PIPE 21 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1249",
+      "description": "CL. III REINF. CONC. CULV. PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1251",
+      "description": "CL. III REINF. CONC. CULV. PIPE 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1253",
+      "description": "CL. III REINF. CONC. CULV. PIPE 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1254",
+      "description": "CL. III REINF. CONC. CULV. PIPE 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1255",
+      "description": "CL. III REINF. CONC. CULV. PIPE 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1256",
+      "description": "CL. III REINF. CONC. CULV. PIPE 54 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1257",
+      "description": "CL. III REINF. CONC. CULV. PIPE 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1270",
+      "description": "CL. IV REINF. CONC. CULV. PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1271",
+      "description": "CL. IV REINF. CONC. CULV. PIPE 15 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1272",
+      "description": "CL. IV REINF. CONC. CULV. PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1274",
+      "description": "CL. IV REINF. CONC. CULV. PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1276",
+      "description": "CL. IV REINF. CONC. CULV. PIPE 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1278",
+      "description": "CL. IV REINF. CONC. CULV. PIPE 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1279",
+      "description": "CL. IV REINF. CONC. CULV. PIPE 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1280",
+      "description": "CL. IV REINF. CONC. CULV. PIPE 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1281",
+      "description": "CL. IV REINF. CONC. CULV. PIPE 54 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1282",
+      "description": "CL. IV REINF. CONC. CULV. PIPE 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1284",
+      "description": "CL. IV REINF. CONC. CULV. PIPE 72 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1290",
+      "description": "CL. V REINF. CONC. CULV. PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1292",
+      "description": "CL. V REINF. CONC. CULV. PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1294",
+      "description": "CL. V REINF. CONC. CULV. PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1296",
+      "description": "CL. V REINF. CONC. CULV. PIPE 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1298",
+      "description": "CL. V REINF. CONC. CULV. PIPE 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1299",
+      "description": "CL. V REINF. CONC. CULV. PIPE 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1302",
+      "description": "CL. V REINF. CONC. CULV. PIPE 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1310",
+      "description": "PLAIN ST. CULV. PIPE 0.064 IN. TH. 8 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1311",
+      "description": "PLAIN ST. CULV. PIPE 0.064 IN. TH. 10 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1312",
+      "description": "PLAIN ST. CULV. PIPE 0.064 IN. TH. 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1319",
+      "description": "PLAIN ST. CULV. PIPE 0.064 IN. TH. 15 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1313",
+      "description": "PLAIN ST. CULV. PIPE 0.064 IN. TH. 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1314",
+      "description": "PLAIN ST. CULV. PIPE 0.064 IN. TH. 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1315",
+      "description": "PLAIN ST. CULV. PIPE 0.064 IN. TH. 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1316",
+      "description": "PLAIN ST. CULV. PIPE 0.064 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1317",
+      "description": "PLAIN ST. CULV. PIPE 0.064 IN. TH. 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1318",
+      "description": "PLAIN ST. CULV. PIPE 0.064 IN. TH. 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1320",
+      "description": "PLAIN ST. CULV. PIPE 0.079 IN. TH. 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1321",
+      "description": "PLAIN ST. CULV. PIPE 0.079 IN. TH. 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1322",
+      "description": "PLAIN ST. CULV. PIPE 0.079 IN. TH. 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1323",
+      "description": "PLAIN ST. CULV. PIPE 0.079 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1324",
+      "description": "PLAIN ST. CULV. PIPE 0.079 IN. TH. 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1325",
+      "description": "PLAIN ST. CULV. PIPE 0.079 IN. TH. 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1326",
+      "description": "PLAIN ST. CULV. PIPE 0.079 IN. TH. 54 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1327",
+      "description": "PLAIN ST. CULV. PIPE 0.109 IN. TH. 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1328",
+      "description": "PLAIN ST. CULV. PIPE 0.109 IN. TH. 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1329",
+      "description": "PLAIN ST. CULV. PIPE 0.109 IN. TH. 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1330",
+      "description": "PLAIN ST. CULV. PIPE 0.109 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1331",
+      "description": "PLAIN ST. CULV. PIPE 0.109 IN. TH. 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1332",
+      "description": "PLAIN ST. CULV. PIPE 0.109 IN. TH. 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1333",
+      "description": "PLAIN ST. CULV. PIPE 0.109 IN. TH. 54 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1334",
+      "description": "PLAIN ST. CULV. PIPE 0.109 IN. TH. 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1336",
+      "description": "PLAIN ST. CULV. PIPE 0.138 IN. TH. 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1338",
+      "description": "PLAIN ST. CULV. PIPE 0.138 IN. TH. 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1340",
+      "description": "PLAIN ST. CULV. PIPE 0.138 IN. TH. 54 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1341",
+      "description": "PLAIN ST. CULV. PIPE 0.138 IN. TH. 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1343",
+      "description": "PLAIN ST. CULV. PIPE 0.138 IN. TH. 72 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1345",
+      "description": "PLAIN ST. CULV. PIPE 0.168 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1349",
+      "description": "PLAIN ST. CULV. PIPE 0.168 IN. TH. 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1351",
+      "description": "PLAIN ST. CULV. PIPE 0.168 IN. TH. 72 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1352",
+      "description": "PLAIN ST. CULV. PIPE 0.168 IN. TH. 78 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1353",
+      "description": "PLAIN ST. CULV. PIPE 0.168 IN. TH. 84 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1360",
+      "description": "TR. 1 ST. CULV. PIPE 0.064 IN. TH. 8 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1362",
+      "description": "TR. 1 ST. CULV. PIPE 0.064 IN. TH. 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1363",
+      "description": "TR. 1 ST. CULV. PIPE 0.064 IN. TH. 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1364",
+      "description": "TR. 1 ST. CULV. PIPE 0.064 IN. TH. 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1365",
+      "description": "TR. 1 ST. CULV. PIPE 0.064 IN. TH. 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1366",
+      "description": "TR. 1 ST. CULV. PIPE 0.064 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1368",
+      "description": "TR. 1 ST. CULV. PIPE 0.064 IN. TH. 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1371",
+      "description": "TR. 1 ST. CULV. PIPE 0.079 IN. TH. 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1372",
+      "description": "TR. 1 ST. CULV. PIPE 0.079 IN. TH. 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1375",
+      "description": "TR. 1 ST. CULV. PIPE 0.079 IN. TH. 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1378",
+      "description": "TR. 1 ST. CULV. PIPE 0.109 IN. TH. 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1379",
+      "description": "TR. 1 ST. CULV. PIPE 0.109 IN. TH. 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1380",
+      "description": "TR. 1 ST. CULV. PIPE 0.109 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1381",
+      "description": "TR. 1 ST. CULV. PIPE 0.109 IN. TH. 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1384",
+      "description": "TR. 1 ST. CULV. PIPE 0.109 IN. TH. 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1387",
+      "description": "TR. 1 ST. CULV. PIPE 0.138 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1389",
+      "description": "TR. 1 ST. CULV. PIPE 0.138 IN. TH. 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1390",
+      "description": "TR. 1 ST. CULV. PIPE 0.138 IN. TH. 54 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1393",
+      "description": "TR. 1 ST. CULV. PIPE 0.138 IN. TH. 72 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1399",
+      "description": "TR. 1 ST. CULV. PIPE 0.168 IN. TH. 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1400",
+      "description": "TR. 1 ST. CULV. PIPE 0.168 IN. TH. 66 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1403",
+      "description": "TR. 1 ST. CULV. PIPE 0.168 IN. TH. 84 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1410",
+      "description": "TR. 2 ST. CULV. PIPE 0.064 IN. TH. 8 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1412",
+      "description": "TR. 2 ST. CULV. PIPE 0.064 IN. TH. 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1413",
+      "description": "TR. 2 ST. CULV. PIPE 0.064 IN. TH. 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1414",
+      "description": "TR. 2 ST. CULV. PIPE 0.064 IN. TH. 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1415",
+      "description": "TR. 2 ST. CULV. PIPE 0.064 IN. TH. 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1416",
+      "description": "TR. 2 ST. CULV. PIPE 0.064 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1417",
+      "description": "TR. 2 ST. CULV. PIPE 0.064 IN. TH. 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1418",
+      "description": "TR. 2 ST. CULV. PIPE 0.064 IN. TH. 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1419",
+      "description": "TR. 2 ST. CULV. PIPE 0.079 IN. TH. 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1420",
+      "description": "TR. 2 ST. CULV. PIPE 0.079 IN. TH. 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1421",
+      "description": "TR. 2 ST. CULV. PIPE 0.079 IN. TH. 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1422",
+      "description": "TR. 2 ST. CULV. PIPE 0.079 IN. TH. 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1423",
+      "description": "TR. 2 ST. CULV. PIPE 0.079 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1424",
+      "description": "TR. 2 ST. CULV. PIPE 0.079 IN. TH. 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1425",
+      "description": "TR. 2 ST. CULV. PIPE 0.079 IN. TH. 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1426",
+      "description": "TR. 2 ST. CULV. PIPE 0.079 IN. TH. 54 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1427",
+      "description": "TR. 2 ST. CULV. PIPE 0.109 IN. TH. 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1428",
+      "description": "TR. 2 ST. CULV. PIPE 0.109 IN. TH. 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1429",
+      "description": "TR. 2 ST. CULV. PIPE 0.109 IN. TH. 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1430",
+      "description": "TR. 2 ST. CULV. PIPE 0.109 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1432",
+      "description": "TR. 2 ST. CULV. PIPE 0.109 IN. TH. 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1433",
+      "description": "TR. 2 ST. CULV. PIPE 0.109 IN. TH. 54 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1434",
+      "description": "TR. 2 ST. CULV. PIPE 0.109 IN. TH. 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1435",
+      "description": "TR. 2 ST. CULV. PIPE 0.109 IN. TH. 66 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1437",
+      "description": "TR. 2 ST. CULV. PIPE 0.138 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1438",
+      "description": "TR. 2 ST. CULV. PIPE 0.138 IN. TH. 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1441",
+      "description": "TR. 2 ST. CULV. PIPE 0.138 IN. TH. 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1443",
+      "description": "TR. 2 ST. CULV. PIPE 0.138 IN. TH. 72 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1445",
+      "description": "TR. 2 ST. CULV. PIPE 0.168 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1447",
+      "description": "TR. 2 ST. CULV. PIPE 0.168 IN. TH. 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1449",
+      "description": "TR. 2 ST. CULV. PIPE 0.168 IN. TH. 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1450",
+      "description": "TR. 2 ST. CULV. PIPE 0.168 IN. TH. 66 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1451",
+      "description": "TR. 2 ST. CULV. PIPE 0.168 IN. TH. 72 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1453",
+      "description": "TR. 2 ST. CULV. PIPE 0.168 IN. TH. 84 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1462",
+      "description": "TR. 3 ST. CULV. PIPE 0.064 IN. TH. 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1463",
+      "description": "TR. 3 ST. CULV. PIPE 0.064 IN. TH. 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1513",
+      "description": "TR. 4 ST. CULV. PIPE 0.064 IN. TH. 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1514",
+      "description": "TR. 4 ST. CULV. PIPE 0.064 IN. TH. 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1516",
+      "description": "TR. 4 ST. CULV. PIPE 0.064 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1534",
+      "description": "TR. 4 ST. CULV. PIPE 0.109 IN. TH. 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1539",
+      "description": "TR. 4 ST. CULV. PIPE 0.138 IN. TH. 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1545",
+      "description": "TR. 4 ST. CULV. PIPE 0.168 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1547",
+      "description": "TR. 4 ST. CULV. PIPE 0.168 IN. TH. 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1553",
+      "description": "TR. 4 ST. CULV. PIPE 0.168 IN. TH. 84 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1562",
+      "description": "TR. 5 ST. CULV. PIPE 0.064 IN. TH. 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1563",
+      "description": "TR. 5 ST. CULV. PIPE 0.064 IN. TH. 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1564",
+      "description": "TR. 5 ST. CULV. PIPE 0.064 IN. TH. 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1565",
+      "description": "TR. 5 ST. CULV. PIPE 0.064 IN. TH. 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1567",
+      "description": "TR. 5 ST. CULV. PIPE 0.064 IN. TH. 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1571",
+      "description": "TR. 5 ST. CULV. PIPE 0.079 IN. TH. 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1580",
+      "description": "TR. 5 ST. CULV. PIPE 0.109 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1600",
+      "description": "TR. 5 ST. CULV. PIPE 0.168 IN. TH. 66 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1612",
+      "description": "TR. 6 ST. CULV. PIPE 0.064 IN. TH. 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1630",
+      "description": "TR. 6 ST. CULV. PIPE 0.109 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1632",
+      "description": "TR. 6 ST. CULV. PIPE 0.109 IN. TH. 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1660",
+      "description": "PLAIN NESTABLE ST. PIPE 0.064 IN. TH. 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1661",
+      "description": "PLAIN NESTABLE ST. PIPE 0.064 IN. TH. 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1663",
+      "description": "PLAIN NESTABLE ST. PIPE 0.064 IN. TH. 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1664",
+      "description": "PLAIN NESTABLE ST. PIPE 0.064 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1665",
+      "description": "PLAIN NESTABLE ST. PIPE 0.064 IN. TH. 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1681",
+      "description": "PLAIN NESTABLE ST. PIPE 0.109 IN. TH. 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1700",
+      "description": "TR. 1 NESTABLE ST. PIPE 0.064 IN. TH. 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1701",
+      "description": "TR. 1 NESTABLE ST. PIPE 0.064 IN. TH. 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1702",
+      "description": "TR. 1 NESTABLE ST. PIPE 0.064 IN. TH. 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1709",
+      "description": "TR. 1 NESTABLE ST. PIPE 0.079 IN. TH. 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1716",
+      "description": "TR. 1 NESTABLE ST. PIPE 0.109 IN. TH. 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1800",
+      "description": "TR. 3 NESTABLE ST. PIPE 0.109 IN. TH. 54 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1950",
+      "description": "PLAIN AL. CULV. PIPE 0.060 IN. TH. 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1951",
+      "description": "PLAIN AL. CULV. PIPE 0.060 IN. TH. 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1952",
+      "description": "PLAIN AL. CULV. PIPE 0.060 IN. TH. 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1953",
+      "description": "PLAIN AL. CULV. PIPE 0.060 IN. TH. 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1954",
+      "description": "PLAIN AL. CULV. PIPE 0.060 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1962",
+      "description": "PLAIN AL. CULV. PIPE 0.075 IN. TH. 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1967",
+      "description": "PLAIN AL. CULV. PIPE 0.105 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "1991",
+      "description": "PLAIN AL. CULV. PIPE 0.164 IN. TH. 72 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2002",
+      "description": "ST. STR. PLATE PIPE 12 GAGE 72 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2005",
+      "description": "ST. STR. PLATE PIPE 12 GAGE 90 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2006",
+      "description": "ST. STR. PLATE PIPE 12 GAGE 96 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2007",
+      "description": "ST. STR. PLATE PIPE 12 GAGE 102 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2008",
+      "description": "ST. STR. PLATE PIPE 12 GAGE 108 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2012",
+      "description": "ST. STR. PLATE PIPE 12 GAGE 132 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2025",
+      "description": "ST. STR. PLATE PIPE 10 GAGE 84 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2037",
+      "description": "ST. STR. PLATE PIPE 10 GAGE 156 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2039",
+      "description": "ST. STR. PLATE PIPE 10 GAGE 168 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2044",
+      "description": "ST. STR. PLATE PIPE 8 GAGE 72 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2046",
+      "description": "ST. STR. PLATE PIPE 8 GAGE 84 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2048",
+      "description": "ST. STR. PLATE PIPE 8 GAGE 96 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2052",
+      "description": "ST. STR. PLATE PIPE 8 GAGE 120 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2053",
+      "description": "ST. STR. PLATE PIPE 8 GAGE 126 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2054",
+      "description": "ST. STR. PLATE PIPE 8 GAGE 132 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2063",
+      "description": "ST. STR. PLATE PIPE 7 GAGE 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2080",
+      "description": "ST. STR. PLATE PIPE 7 GAGE 162 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2092",
+      "description": "ST. STR. PLATE PIPE 5 GAGE 108 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2097",
+      "description": "ST. STR. PLATE PIPE 5 GAGE 138 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2098",
+      "description": "ST. STR. PLATE PIPE 5 GAGE 144 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2100",
+      "description": "ST. STR. PLATE PIPE 5 GAGE 156 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2104",
+      "description": "ST. STR. PLATE PIPE 5 GAGE 180 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2109",
+      "description": "ST. STR. PLATE PIPE 3 GAGE 84 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2126",
+      "description": "ST. STR. PLATE PIPE 1 GAGE 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2132",
+      "description": "ST. STR. PLATE PIPE 1 GAGE 96 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2263",
+      "description": "AL. STR. PLATE PIPE 0.250 IN. TH. 102 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2280",
+      "description": "PLAIN ST. CULV. PIPE ARCH 0.064 IN. TH. 17 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2281",
+      "description": "PLAIN ST. CULV. PIPE ARCH 0.064 IN. TH. 21 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2283",
+      "description": "PLAIN ST. CULV. PIPE ARCH 0.064 IN. TH. 28 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2279",
+      "description": "PLAIN ST. CULV. PIPE ARCH 0.064 IN. TH. 35 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2285",
+      "description": "PLAIN ST. CULV. PIPE ARCH 0.064 IN. TH. 42 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2286",
+      "description": "PLAIN ST. CULV. PIPE ARCH 0.079 IN. TH. 49 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2287",
+      "description": "PLAIN ST. CULV. PIPE ARCH 0.109 IN. TH. 57 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2288",
+      "description": "PLAIN ST. CULV. PIPE ARCH 0.109 IN. TH. 64 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2289",
+      "description": "PLAIN ST. CULV. PIPE ARCH 0.138 IN. TH. 71 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2290",
+      "description": "PLAIN ST. CULV. PIPE ARCH 0.168 IN. TH. 77 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2291",
+      "description": "PLAIN ST. CULV. PIPE ARCH 0.168 IN. TH. 83 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2305",
+      "description": "TR. 2 ST. CULV. PIPE ARCH 0.064 IN. TH. 21 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2310",
+      "description": "TR. 2 ST. CULV. PIPE ARCH 0.079 IN. TH. 49 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2311",
+      "description": "TR. 2 ST. CULV. PIPE ARCH 0.109 IN. TH. 57 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2312",
+      "description": "TR. 2 ST. CULV. PIPE ARCH 0.109 IN. TH. 64 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2313",
+      "description": "TR. 2 ST. CULV. PIPE ARCH 0.138 IN. TH. 71 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2314",
+      "description": "TR. 2 ST. CULV. PIPE ARCH 0.168 IN. TH. 77 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2317",
+      "description": "TR. 3 ST. CULV. PIPE ARCH 0.064 IN. TH. 21 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2344",
+      "description": "TR. 5 ST. CULV. PIPE ARCH 0.064 IN. TH. 35 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2345",
+      "description": "TR. 5 ST. CULV. PIPE ARCH 0.064 IN. TH. 42 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2347",
+      "description": "TR. 5 ST. CULV. PIPE ARCH 0.109 IN. TH. 57 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2417",
+      "description": "PLAIN AL. CULV. PIPE ARCH 0.135 IN. TH. 57 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2430",
+      "description": "ST. STR. PLATE PIPE ARCH 12 GAGE 6 FT. 1 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2431",
+      "description": "ST. STR. PLATE PIPE ARCH 12 GAGE 6 FT. 4 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2432",
+      "description": "ST. STR. PLATE PIPE ARCH 12 GAGE 6 FT. 9 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2433",
+      "description": "ST. STR. PLATE PIPE ARCH 12 GAGE 7 FT. 0 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2435",
+      "description": "ST. STR. PLATE PIPE ARCH 12 GAGE 7 FT. 8 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2437",
+      "description": "ST. STR. PLATE PIPE ARCH 12 GAGE 8 FT. 2 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2438",
+      "description": "ST. STR. PLATE PIPE ARCH 12 GAGE 8 FT. 7 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2439",
+      "description": "ST. STR. PLATE PIPE ARCH 12 GAGE 8 FT. 10 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2441",
+      "description": "ST. STR. PLATE PIPE ARCH 12 GAGE 9 FT. 6 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2443",
+      "description": "ST. STR. PLATE PIPE ARCH 12 GAGE 10 FT. 3 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2448",
+      "description": "ST. STR. PLATE PIPE ARCH 12 GAGE 11 FT. 10 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2450",
+      "description": "ST. STR. PLATE PIPE ARCH 12 GAGE 12 FT. 6 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2451",
+      "description": "ST. STR. PLATE PIPE ARCH 12 GAGE 12 FT. 8 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2452",
+      "description": "ST. STR. PLATE PIPE ARCH 12 GAGE 12 FT. 10 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2455",
+      "description": "ST. STR. PLATE PIPE ARCH 12 GAGE 14 FT. 1 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2461",
+      "description": "ST. STR. PLATE PIPE ARCH 12 GAGE 15 FT. 10 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2504",
+      "description": "ST. STR. PLATE ARCH 12 GAGE 10 FT. 0 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2522",
+      "description": "ST. STR. PLATE ARCH 10 GAGE 10 FT. 0 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2550",
+      "description": "ST. STR. PLATE ARCH 8 GAGE 20 FT. 0 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2586",
+      "description": "ST. STR. PLATE ARCH 5 GAGE 20 FT. 0 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2900",
+      "description": "DESIGN 1 ST. UNDERPASS 12 GAGE 6 FT. 8 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2901",
+      "description": "DESIGN 1 ST. UNDERPASS 12 GAGE 6 FT. 10 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2909",
+      "description": "DESIGN 2 ST. UNDERPASS 12 GAGE 14 FT. 10 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2911",
+      "description": "DESIGN 2 ST. UNDERPASS 10 GAGE 12 FT. 2 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2917",
+      "description": "DESIGN 2 ST. UNDERPASS 10 GAGE 14 FT. 10 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2924",
+      "description": "DESIGN 2 ST. UNDERPASS 10 GAGE 18 FT. 4 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "2938",
+      "description": "DESIGN 2 ST. UNDERPASS 8 GAGE 18 FT. 4 IN. SPAN",
+      "unit": "LF",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3030",
+      "description": "CULVERT BEDDING MATERIAL",
+      "unit": "CY",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3075",
+      "description": "TEMPORARY STREAM DIVERSION",
+      "unit": "LS",
+      "specSection": "4",
+      "category": "DRAINAGE"
+    },
+    {
+      "itemNumber": "3090",
+      "description": "CATCH BASIN TYPE",
+      "unit": "EACH",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3091",
+      "description": "CATCH BASIN TYPE 1",
+      "unit": "EACH",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3105",
+      "description": "CATCH BASIN TYPE 2 48 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3106",
+      "description": "CATCH BASIN TYPE 2 54 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3109",
+      "description": "CATCH BASIN TYPE 2 60 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3107",
+      "description": "CATCH BASIN TYPE 2 72 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3104",
+      "description": "CATCH BASIN TYPE 2 84 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3108",
+      "description": "CATCH BASIN TYPE 2 96 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3093",
+      "description": "CATCH BASIN TYPE 3",
+      "unit": "EACH",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3151",
+      "description": "TESTING STORM SEWER PIPE",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3390",
+      "description": "PLAIN CONC. STORM SEWER PIPE 4 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3391",
+      "description": "PLAIN CONC. STORM SEWER PIPE 6 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3392",
+      "description": "PLAIN CONC. STORM SEWER PIPE 8 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3393",
+      "description": "PLAIN CONC. STORM SEWER PIPE 10 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3394",
+      "description": "PLAIN CONC. STORM SEWER PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3395",
+      "description": "PLAIN CONC. STORM SEWER PIPE 15 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3396",
+      "description": "PLAIN CONC. STORM SEWER PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3397",
+      "description": "PLAIN CONC. STORM SEWER PIPE 21 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3398",
+      "description": "PLAIN CONC. STORM SEWER PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3405",
+      "description": "CL. II REINF. CONC. STORM SEWER PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3407",
+      "description": "CL. II REINF. CONC. STORM SEWER PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3408",
+      "description": "CL. II REINF. CONC. STORM SEWER PIPE 21 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3409",
+      "description": "CL. II REINF. CONC. STORM SEWER PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3411",
+      "description": "CL. II REINF. CONC. STORM SEWER PIPE 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3413",
+      "description": "CL. II REINF. CONC. STORM SEWER PIPE 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3414",
+      "description": "CL. II REINF. CONC. STORM SEWER PIPE 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3415",
+      "description": "CL. II REINF. CONC. STORM SEWER PIPE 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3416",
+      "description": "CL. II REINF. CONC. STORM SEWER PIPE 54 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3417",
+      "description": "CL. II REINF. CONC. STORM SEWER PIPE 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3419",
+      "description": "CL. II REINF. CONC. STORM SEWER PIPE 72 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3430",
+      "description": "CL. III REINF. CONC. STORM SEWER PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3432",
+      "description": "CL. III REINF. CONC. STORM SEWER PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3434",
+      "description": "CL. III REINF. CONC. STORM SEWER PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3436",
+      "description": "CL. III REINF. CONC. STORM SEWER PIPE 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3438",
+      "description": "CL. III REINF. CONC. STORM SEWER PIPE 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3439",
+      "description": "CL. III REINF. CONC. STORM SEWER PIPE 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3455",
+      "description": "CL. IV REINF. CONC. STORM SEWER PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3456",
+      "description": "CL. IV REINF. CONC. STORM SEWER PIPE 15 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3457",
+      "description": "CL. IV REINF. CONC. STORM SEWER PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3458",
+      "description": "CL. IV REINF. CONC. STORM SEWER PIPE 21 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3459",
+      "description": "CL. IV REINF. CONC. STORM SEWER PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3461",
+      "description": "CL. IV REINF. CONC. STORM SEWER PIPE 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3463",
+      "description": "CL. IV REINF. CONC. STORM SEWER PIPE 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3464",
+      "description": "CL. IV REINF. CONC. STORM SEWER PIPE 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3465",
+      "description": "CL. IV REINF. CONC. STORM SEWER PIPE 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3467",
+      "description": "CL. IV REINF. CONC. STORM SEWER PIPE 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3469",
+      "description": "CL. IV REINF. CONC. STORM SEWER PIPE 72 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3471",
+      "description": "CL. IV REINF. CONC. STORM SEWER PIPE 84 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3480",
+      "description": "CL. V REINF. CONC. STORM SEWER PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3482",
+      "description": "CL. V REINF. CONC. STORM SEWER PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3483",
+      "description": "CL. V REINF. CONC. STORM SEWER PIPE 21 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3484",
+      "description": "CL. V REINF. CONC. STORM SEWER PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3486",
+      "description": "CL. V REINF. CONC. STORM SEWER PIPE 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3488",
+      "description": "CL. V REINF. CONC. STORM SEWER PIPE 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3490",
+      "description": "CL. V REINF. CONC. STORM SEWER PIPE 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3494",
+      "description": "CL. V REINF. CONC. STORM SEWER PIPE 72 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3541",
+      "description": "SCHEDULE A STORM SEWER PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3542",
+      "description": "SCHEDULE A STORM SEWER PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3543",
+      "description": "SCHEDULE A STORM SEWER PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3544",
+      "description": "SCHEDULE A STORM SEWER PIPE 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3545",
+      "description": "SCHEDULE A STORM SEWER PIPE 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3546",
+      "description": "SCHEDULE A STORM SEWER PIPE 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3547",
+      "description": "SCHEDULE A STORM SEWER PIPE 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3550",
+      "description": "SCHEDULE B STORM SEWER PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3551",
+      "description": "SCHEDULE B STORM SEWER PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3552",
+      "description": "SCHEDULE B STORM SEWER PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3553",
+      "description": "SCHEDULE B STORM SEWER PIPE 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3554",
+      "description": "SCHEDULE B STORM SEWER PIPE 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3555",
+      "description": "SCHEDULE B STORM SEWER PIPE 42 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3556",
+      "description": "SCHEDULE B STORM SEWER PIPE 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3502",
+      "description": "TR. 5 ST. STORM SEWER PIPE 0.064 IN. TH. 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3503",
+      "description": "TR. 5 ST. STORM SEWER PIPE 0.064 IN. TH. 15 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3504",
+      "description": "TR. 5 ST. STORM SEWER PIPE 0.064 IN. TH. 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3506",
+      "description": "TR. 5 ST. STORM SEWER PIPE 0.064 IN. TH. 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3507",
+      "description": "TR. 5 ST. STORM SEWER PIPE 0.064 IN. TH. 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3508",
+      "description": "TR. 5 ST. STORM SEWER PIPE 0.064 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3510",
+      "description": "TR. 5 ST. STORM SEWER PIPE 0.064 IN. TH. 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3519",
+      "description": "TR. 5 ST. STORM SEWER PIPE 0.079 IN. TH. 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3530",
+      "description": "TR. 5 ST. STORM SEWER PIPE 0.109 IN. TH. 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3532",
+      "description": "TR. 5 ST. STORM SEWER PIPE 0.109 IN. TH. 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3533",
+      "description": "TR. 5 ST. STORM SEWER PIPE 0.109 IN. TH. 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3537",
+      "description": "TR. 5 ST. STORM SEWER PIPE 0.109 IN. TH. 60 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3575",
+      "description": "TR. 5 AL. STORM SEWER PIPE 0.075 IN. TH. 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3577",
+      "description": "SOLID WALL PVC STORM SEWER PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3578",
+      "description": "SOLID WALL PVC STORM SEWER PIPE 15 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3579",
+      "description": "SOLID WALL PVC STORM SEWER PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3582",
+      "description": "SOLID WALL PVC STORM SEWER PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3583",
+      "description": "SOLID WALL PVC STORM SEWER PIPE 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3592",
+      "description": "PROFILE WALL PVC STORM SEWER PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3593",
+      "description": "PROFILE WALL PVC STORM SEWER PIPE 15 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3594",
+      "description": "PROFILE WALL PVC STORM SEWER PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3597",
+      "description": "PROFILE WALL PVC STORM SEWER PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3598",
+      "description": "PROFILE WALL PVC STORM SEWER PIPE 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3602",
+      "description": "CORRUGATED POLYETHYLENE STORM SEWER PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3603",
+      "description": "CORRUGATED POLYETHYLENE STORM SEWER PIPE 15 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3607",
+      "description": "CORRUGATED POLYETHYLENE STORM SEWER PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3608",
+      "description": "CORRUGATED POLYETHYLENE STORM SEWER PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3609",
+      "description": "CORRUGATED POLYETHYLENE STORM SEWER PIPE 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3616",
+      "description": "ST. RIB REINF POLYETHYLENE STORM SEWER PIPE 24 IN. DIAM",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3617",
+      "description": "ST. RIB REINF POLYETHYLENE STORM SEWER PIPE 30 IN. DIAM",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3618",
+      "description": "ST. RIB REINF POLYETHYLENE STORM SEWER PIPE 36 IN. DIAM",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3633",
+      "description": "ST. RIB REINF POLYETHYLENE STORM SEWER PIPE 42 IN. DIAM",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3634",
+      "description": "ST. RIB REINF POLYETHYLENE STORM SEWER PIPE 48 IN. DIAM",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3635",
+      "description": "ST. RIB REINF POLYETHYLENE STORM SEWER PIPE 54 IN. DIAM",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3636",
+      "description": "ST. RIB REINF POLYETHYLENE STORM SEWER PIPE 60 IN. DIAM",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3637",
+      "description": "ST. RIB REINF POLYETHYLENE STORM SEWER PIPE 66 IN. DIAM",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3638",
+      "description": "ST. RIB REINF POLYETHYLENE STORM SEWER PIPE 72 IN. DIAM",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3560",
+      "description": "POLYPROPYLENE STORM SEWER PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3562",
+      "description": "POLYPROPYLENE STORM SEWER PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3564",
+      "description": "POLYPROPYLENE STORM SEWER PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3566",
+      "description": "HIGH-DENSITY POLYETHYLENE (HDPE) PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3567",
+      "description": "HIGH-DENSITY POLYETHYLENE (HDPE) PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3568",
+      "description": "HIGH-DENSITY POLYETHYLENE(HDPE) PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3569",
+      "description": "HIGH-DENSITY POLYETHYLENE (HDPE) PIPE 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "5",
+      "category": "STORM SEWER"
+    },
+    {
+      "itemNumber": "3640",
+      "description": "SEWER CLEANOUT",
+      "unit": "EACH",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3152",
+      "description": "TESTING SEWER PIPE",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3651",
+      "description": "PLAIN CONC. OR V.C. SEWER PIPE 6 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3654",
+      "description": "PLAIN CONC. OR V.C. SEWER PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3655",
+      "description": "PLAIN CONC. OR V.C. SEWER PIPE 15 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3657",
+      "description": "PLAIN CONC. OR V.C. SEWER PIPE 21 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3706",
+      "description": "CL. IV REINF. CONC. SEWER PIPE 15 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3715",
+      "description": "CL. IV REINF. CONC. SEWER PIPE 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3725",
+      "description": "CL. V REINF. CONC. SEWER PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3727",
+      "description": "CL. V REINF. CONC. SEWER PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3729",
+      "description": "CL. V REINF. CONC. SEWER PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3731",
+      "description": "CL. V REINF. CONC. SEWER PIPE 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3735",
+      "description": "CL. V REINF. CONC. SEWER PIPE 48 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3765",
+      "description": "PVC SANITARY SEWER PIPE 4 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3766",
+      "description": "PVC SANITARY SEWER PIPE 6 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3767",
+      "description": "PVC SANITARY SEWER PIPE 8 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3768",
+      "description": "PVC SANITARY SEWER PIPE 10 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3769",
+      "description": "PVC SANITARY SEWER PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3770",
+      "description": "DUCTILE IRON SEWER PIPE 4 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3771",
+      "description": "DUCTILE IRON SEWER PIPE 6 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3772",
+      "description": "DUCTILE IRON SEWER PIPE 8 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3773",
+      "description": "DUCTILE IRON SEWER PIPE 10 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3774",
+      "description": "DUCTILE IRON SEWER PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3776",
+      "description": "DUCTILE IRON SEWER PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3781",
+      "description": "ABS COMPOSITE SEWER PIPE",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3794",
+      "description": "POLYPROPYLENE SEWER PIPE 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3796",
+      "description": "POLYPROPYLENE SEWER PIPE 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3798",
+      "description": "POLYPROPYLENE SEWER PIPE 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "2826",
+      "description": "VTS SEWER SYSTEM",
+      "unit": "LS",
+      "specSection": "6",
+      "category": "SANITARY SEWER"
+    },
+    {
+      "itemNumber": "3800",
+      "description": "ROCK EXCAVATION",
+      "unit": "CY",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3806",
+      "description": "EXTRA TRENCH EXCAVATION",
+      "unit": "CY",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3810",
+      "description": "REMOVAL AND REPLACEMENT OF UNSUITABLE MATERIAL",
+      "unit": "CY",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3815",
+      "description": "BANK RUN GRAVEL FOR TRENCH BACKFILL",
+      "unit": "CY",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "6150",
+      "description": "GATE VALVE 4 IN.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "6155",
+      "description": "GATE VALVE 6 IN.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "6160",
+      "description": "GATE VALVE 8 IN.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "6162",
+      "description": "GATE VALVE 10 IN.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "6165",
+      "description": "GATE VALVE 12 IN.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "6167",
+      "description": "GATE VALVE",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3820",
+      "description": "BUTTERFLY VALVE 12 IN.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3821",
+      "description": "BUTTERFLY VALVE 14 IN.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3822",
+      "description": "BUTTERFLY VALVE 16 IN.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3823",
+      "description": "BUTTERFLY VALVE 18 IN.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3825",
+      "description": "BUTTERFLY VALVE 24 IN.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3827",
+      "description": "BUTTERFLY VALVE 36 IN.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3835",
+      "description": "COMB. AIR RELEASE/AIR VACUUM VALVE ASSEMBLY 1 IN.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3837",
+      "description": "COMB. AIR RELEASE/AIR VACUUM VALVE ASSEMBLY 2 IN.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3838",
+      "description": "BLOWOFF ASSEMBLY",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3842",
+      "description": "TAPPING SLEEVE AND VALVE ASSEMBLY 6 IN.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3843",
+      "description": "TAPPING SLEEVE AND VALVE ASSEMBLY 8 IN.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3846",
+      "description": "HYDRANT ASSEMBLY",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3848",
+      "description": "RESETTING EXISTING HYDRANTS",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3850",
+      "description": "MOVING EXISTING HYDRANTS",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3852",
+      "description": "RECONNECTING EXISTING HYDRANTS",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3854",
+      "description": "HYDRANT EXTENSIONS",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3857",
+      "description": "SERVICE CONNECTION 3/4 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3858",
+      "description": "SERVICE CONNECTION 1 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3859",
+      "description": "SERVICE CONNECTION 1-1/4 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3861",
+      "description": "SERVICE CONNECTION 2 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3865",
+      "description": "DUCTILE IRON PIPE FOR WATER MAIN 4 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3866",
+      "description": "DUCTILE IRON PIPE FOR WATER MAIN 6 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3867",
+      "description": "DUCTILE IRON PIPE FOR WATER MAIN 8 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3868",
+      "description": "DUCTILE IRON PIPE FOR WATER MAIN 10 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3869",
+      "description": "DUCTILE IRON PIPE FOR WATER MAIN 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3870",
+      "description": "DUCTILE IRON PIPE FOR WATER MAIN 14 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3871",
+      "description": "DUCTILE IRON PIPE FOR WATER MAIN 16 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3872",
+      "description": "DUCTILE IRON PIPE FOR WATER MAIN 18 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3874",
+      "description": "DUCTILE IRON PIPE FOR WATER MAIN 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3875",
+      "description": "DUCTILE IRON PIPE FOR WATER MAIN 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3876",
+      "description": "DUCTILE IRON PIPE FOR WATER MAIN 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3901",
+      "description": "CONC. CYLINDER PIPE FOR WATER MAIN 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3910",
+      "description": "ST. PIPE FOR WATER MAIN 4 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3911",
+      "description": "ST. PIPE FOR WATER MAIN 6 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3932",
+      "description": "PVC PIPE FOR WATER MAIN 3 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3933",
+      "description": "PVC PIPE FOR WATER MAIN 4 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3934",
+      "description": "PVC PIPE FOR WATER MAIN 6 IN. DIAM",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3935",
+      "description": "PVC PIPE FOR WATER MAIN 8 IN. DIAM",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "3937",
+      "description": "PVC PIPE FOR WATER MAIN 12 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "2827",
+      "description": "VTS WATER SUPPLY SYSTEM",
+      "unit": "LS",
+      "specSection": "7",
+      "category": "WATER LINES"
+    },
+    {
+      "itemNumber": "4001",
+      "description": "TEMPORARY BRIDGE",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4005",
+      "description": "STRUCTURE EXCAVATION CLASS A",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4006",
+      "description": "STRUCTURE EXCAVATION CLASS A INCL. HAUL",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4009",
+      "description": "ROCK EXCAVATION FOR SHAFT INCLUDING HAUL",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4010",
+      "description": "SPECIAL EXCAVATION",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4013",
+      "description": "SHORING OR EXTRA EXCAVATION CL. A",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4025",
+      "description": "GRAVEL BACKFILL FOR WALL",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4084",
+      "description": "CONSTRUCTING 4 FT. DIAM SHAFT",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4086",
+      "description": "CONSTRUCTING 5 FT. DIAM SHAFT",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4087",
+      "description": "CONSTRUCTING 6 FT. DIAM SHAFT",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4088",
+      "description": "CONSTRUCTING 7 FT. DIAM SHAFT",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4089",
+      "description": "CONSTRUCTING 8 FT. DIAM SHAFT",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4091",
+      "description": "CONSTRUCTING 9 FT. DIAM SHAFT",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4092",
+      "description": "CONSTRUCTING 10 FT. DIAM SHAFT",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4093",
+      "description": "CONSTRUCTING 11 FT. DIAM SHAFT",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4094",
+      "description": "CONSTRUCTING 12 FT. DIAM SHAFT",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4046",
+      "description": "FRESH WATER FOR SHAFT SLURRY",
+      "unit": "MGAL",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4047",
+      "description": "SHAFT - 24 IN. DIAMETER",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4048",
+      "description": "SHAFT - 30 IN. DIAMETER",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4049",
+      "description": "SHAFT - 36 IN. DIAMETER",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4050",
+      "description": "SHAFT - 42 IN. DIAMETER",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4053",
+      "description": "FURNISHING SOLDIER PILE",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4054",
+      "description": "PREBORING FOR 12 IN. DIAM. CONC. PILE",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4056",
+      "description": "PREBORING FOR 14 IN. DIAM. CONC. PILE",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4057",
+      "description": "PREBORING FOR 16 IN. DIAM. CONC. PILE",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4058",
+      "description": "PREBORING FOR 18 IN. DIAM. CONC. PILE",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4059",
+      "description": "PREBORING FOR 20 IN. DIAM. CONC. PILE",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4061",
+      "description": "PREBORING FOR 24 IN. DIAM. CONC. PILE",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4062",
+      "description": "PREBORING FOR 30 IN. DIAM. CONC. PILE",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4063",
+      "description": "PREBORING FOR ST. PILE",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4064",
+      "description": "PREBORING FOR TIMBER PILE",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4060",
+      "description": "FURNISHING AND DRIVING CONCRETE TEST PILE",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4070",
+      "description": "FURNISHING CONC. PILING",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4080",
+      "description": "DRIVING CONC. PILE",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4085",
+      "description": "FURNISHING AND DRIVING STEEL TEST PILE",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4090",
+      "description": "FURNISHING ST. PILING",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4095",
+      "description": "DRIVING ST. PILE",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8376",
+      "description": "FURNISHING STEEL PILE TIP OR SHOE",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8378",
+      "description": "PRECAST CONCRETE PILE BUILDUP",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4100",
+      "description": "FURNISHING AND DRIVING TIMBER TEST PILE",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4105",
+      "description": "FURNISHING TIMBER PILING - UNTREATED",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4107",
+      "description": "FURNISHING TIMBER PILING",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4108",
+      "description": "DRIVING TIMBER PILE - UNTREATED",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4111",
+      "description": "DRIVING TIMBER PILE",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4116",
+      "description": "PILE SPLICE - TIMBER",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4115",
+      "description": "DRIVING TIMBER COMPOSITE PILE",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4130",
+      "description": "PLACING PRESTRESSED HOLLOW CONC. PILE",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4140",
+      "description": "DRIVING PRESTRESSED HOLLOW CONC. PILE",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4157",
+      "description": "MICROPILE",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4193",
+      "description": "MICROPILE VERIFICATION LOAD TESTING",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4194",
+      "description": "MICROPILE PROOF LOAD TESTING",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4147",
+      "description": "EPOXY-COATED ST. REINF. BAR",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4148",
+      "description": "EPOXY-COATED ST. REINF. BAR FOR BRIDGE",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4142",
+      "description": "EPOXY-COATED ST. REINF. BAR - SUPERSTR.",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4143",
+      "description": "EPOXY-COATED ST. REINF. BAR - SUPERSTR. INCL. TRAF. BAR.",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4141",
+      "description": "EPOXY-COATED ST. REINF. BAR FOR RETAINING WALL",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4138",
+      "description": "EPOXY-COATED ST. REINF. BAR FOR PRECAST RETAINING WALL",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4144",
+      "description": "EPOXY-COATED ST. REINF. BAR",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4149",
+      "description": "ST. REINF. BAR FOR BRIDGE",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4145",
+      "description": "ST. REINF. BAR - SUPERSTR.",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4146",
+      "description": "ST. REINF. BAR - SUPERSTR. INCL. TRAF. BAR.",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4150",
+      "description": "ST. REINF. BAR FOR RETAINING WALL",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4136",
+      "description": "ST. REINF. BAR FOR PRECAST RETAINING WALL",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4151",
+      "description": "ST. REINF. BAR",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4160",
+      "description": "QA SHAFT TEST",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4166",
+      "description": "LEAN CONCRETE",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4200",
+      "description": "CONC. CLASS 3000 FOR",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4202",
+      "description": "CONC. CLASS 4000 FOR",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4322",
+      "description": "CONC. CLASS 4000 FOR BRIDGE",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4153",
+      "description": "CONC. CLASS 4000 - SUPERSTR.",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4155",
+      "description": "CONC. CLASS 4000 TRAFFIC BARRIER - SUPERSTR.",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4156",
+      "description": "CONC. CLASS 4000 - SUPERSTR. INCL. TRAF. BAR.",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4139",
+      "description": "CONC. CLASS 4000 FOR RETAINING WALL",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4137",
+      "description": "CONC. CLASS 7000 FOR PRECAST RETAINING WALL",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4204",
+      "description": "CONC. CLASS 4000W FOR",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4324",
+      "description": "CONC. CLASS 4000W FOR BRIDGE",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4380",
+      "description": "CONC. CLASS 4000D FOR BRIDGE",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4205",
+      "description": "CONC. CLASS 5000 FOR",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4325",
+      "description": "CONC. CLASS 5000 FOR BRIDGE",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4158",
+      "description": "CONC. CLASS 5000 - SUPERSTR.",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4207",
+      "description": "CONC. CLASS 6000 FOR",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4327",
+      "description": "CONC. CLASS 6000 FOR BRIDGE",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4370",
+      "description": "CONC. CLASS 6000 - SUPERSTR.",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4161",
+      "description": "CONC. CLASS 4000 - BOX GIRDER - SUPERSTR.",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4162",
+      "description": "CONC. CLASS 5000 - BOX GIRDER - SUPERSTR.",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4375",
+      "description": "CONC. CLASS 6000 - BOX GIRDER - SUPERSTR.",
+      "unit": "CY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4269",
+      "description": "PRESTRESSED CONC. GIRDER",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4278",
+      "description": "PRESTRESSING BAR - SUPERSTR.",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4279",
+      "description": "PRESTRESSING STRAND - SUPERSTR.",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4219",
+      "description": "DEFICIENT STRENGTH CONC. PRICE ADJUSTMENT",
+      "unit": "CALC",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4236",
+      "description": "POLYESTER CONCRETE TRIAL OVERLAY",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4237",
+      "description": "POLYESTER CONCRETE OVERLAY",
+      "unit": "SY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4232",
+      "description": "MODIFIED CONC. OVERLAY",
+      "unit": "CF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4233",
+      "description": "FINISHING AND CURING MODIFIED CONC. OVERLAY",
+      "unit": "SY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4195",
+      "description": "EXPOSED AGG. FINISH",
+      "unit": "SY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4196",
+      "description": "PERMEON TREATMENT",
+      "unit": "SY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4230",
+      "description": "STRUCTURAL CARBON STEEL",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4286",
+      "description": "STRUCTURAL CARBON STEEL - SUPERSTR.",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4235",
+      "description": "STRUCTURAL LOW ALLOY STEEL",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4240",
+      "description": "STRUCTURAL HIGH STRENGTH STEEL",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4288",
+      "description": "STRUCTURAL HIGH STRENGTH STEEL - SUPERSTR.",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4245",
+      "description": "CAST STEEL",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4246",
+      "description": "CAST STEEL",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4292",
+      "description": "CAST STEEL - SUPERSTR.",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4250",
+      "description": "FORGED STEEL",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4293",
+      "description": "FORGED STEEL - SUPERSTR.",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4251",
+      "description": "FORGED STEEL",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4255",
+      "description": "CAST IRON",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4256",
+      "description": "CAST IRON",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4294",
+      "description": "CAST IRON - SUPERSTR.",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4260",
+      "description": "MALLEABLE IRON",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4261",
+      "description": "MALLEABLE IRON",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4295",
+      "description": "MALLEABLE IRON - SUPERSTR.",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4264",
+      "description": "DUCTILE IRON",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4267",
+      "description": "DUCTILE IRON",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4296",
+      "description": "DUCTILE IRON - SUPERSTR.",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4270",
+      "description": "CAST BRONZE",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4271",
+      "description": "CAST BRONZE",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4297",
+      "description": "CAST BRONZE - SUPERSTR.",
+      "unit": "LB",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4299",
+      "description": "LAGGING",
+      "unit": "SF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4280",
+      "description": "TIMBER AND LUMBER - UNTREATED",
+      "unit": "MBM",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4302",
+      "description": "TIMBER AND LUMBER - UNTREATED - SUPERSTR.",
+      "unit": "MBM",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4282",
+      "description": "TIMBER AND LUMBER - CREOSOTE TREATED",
+      "unit": "MBM",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4303",
+      "description": "TIMBER AND LUMBER - CREOSOTE TREATED - SUPERSTR.",
+      "unit": "MBM",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4284",
+      "description": "TIMBER AND LUMBER - SALTS TREATED",
+      "unit": "MBM",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4304",
+      "description": "TIMBER AND LUMBER - SALTS TREATED - SUPERSTR.",
+      "unit": "MBM",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4305",
+      "description": "GLULAM DECK PANELS - SUPERSTR.",
+      "unit": "MBM",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4290",
+      "description": "STRUCTURAL METAL",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4306",
+      "description": "ELASTOMERIC PAD - SUPERSTR.",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4307",
+      "description": "FABRIC PAD BEARING - SUPERSTR.",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4308",
+      "description": "PIN BEARING - SUPERSTR.",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4319",
+      "description": "TRANSVERSE STOP BEARING",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4312",
+      "description": "DISC BEARING - SUPERSTR.",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4313",
+      "description": "SPHERICAL BEARING - SUPERSTR.",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4316",
+      "description": "ROCKER BEARING - SUPERSTR.",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4330",
+      "description": "SEISMIC RETROFIT",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4331",
+      "description": "COLUMN JACKETING",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4333",
+      "description": "LONGITUDINAL SEISMIC RESTRAINER",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4334",
+      "description": "AGENCY DESIGNED BURIED STRUCTURE NO.",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4335",
+      "description": "CONTRACTOR DESIGNED BURIED STRUCTURE NO.",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4336",
+      "description": "COMPOSITE ARCH SYSTEM",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4300",
+      "description": "SUPERSTRUCTURE",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4329",
+      "description": "BRIDGE DECK",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4400",
+      "description": "ST. HAND RAIL",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4355",
+      "description": "STEEL HANDRAIL - SUPERSTR.",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4410",
+      "description": "BRIDGE RAILING TYPE",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4360",
+      "description": "BRIDGE RAILING TYPE BP - SUPERSTR.",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4361",
+      "description": "BRIDGE RAILING TYPE BP-B - SUPERSTR.",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4412",
+      "description": "BRIDGE RAILING TYPE CHAIN LINK FENCE",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4357",
+      "description": "BRIDGE RAIL LOW FENCE TYPE - SUPERSTR.",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4415",
+      "description": "TRAFFIC BARRIER",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4365",
+      "description": "TRAFFIC BARRIER - SUPERSTR.",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4416",
+      "description": "BARRIER",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4114",
+      "description": "TRAFFIC PEDESTRIAN BARRIER",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4117",
+      "description": "PEDESTRIAN BARRIER",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4119",
+      "description": "SEW TRAFFIC BARRIER",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4120",
+      "description": "SEW PEDESTRIAN BARRIER",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4121",
+      "description": "GEOSYNTHETIC WALL SINGLE SLOPE TRAFFIC BARRIER",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4122",
+      "description": "GEOSYNTHETIC WALL F - SHAPE TRAFFIC BARRIER",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4123",
+      "description": "GEOSYNTHETIC RETAINING WALL PEDESTRIAN BARRIER",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4433",
+      "description": "MODIFY BRIDGE DRAIN",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4434",
+      "description": "PLUGGING EXISTING BRIDGE DRAIN",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4337",
+      "description": "PLUGGING EXISTING BRIDGE DRAIN - SUPERSTR.",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4338",
+      "description": "EXPANSION JOINT SYSTEM COMPRESSION SEAL - SUPERSTR.",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4339",
+      "description": "EXPANSION JOINT SYSTEM STRIP SEAL - SUPERSTR.",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4441",
+      "description": "MODULAR EXPANSION JOINT SYSTEM",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4442",
+      "description": "EXPANSION JOINT MODIFICATION",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4443",
+      "description": "EXPANSION JOINT MODIFICATION",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4444",
+      "description": "EXPANSION JOINT MODIFICATION",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4451",
+      "description": "BRIDGE DECK REPAIR BR. NO.",
+      "unit": "SF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4447",
+      "description": "EPOXY RESIN",
+      "unit": "GAL",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4449",
+      "description": "EPOXY CRACK SEALING",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4450",
+      "description": "WATERPROOFING",
+      "unit": "SY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4455",
+      "description": "WATERPROOF MEMBRANE BR. NO.",
+      "unit": "SY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4456",
+      "description": "SCARIFYING CONC. SURFACE",
+      "unit": "SY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4458",
+      "description": "REMOVING EXISTING CONCRETE OVERLAY",
+      "unit": "SY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4465",
+      "description": "TYPE 1 DECK REPAIR",
+      "unit": "SF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4467",
+      "description": "TYPE 2 DECK REPAIR",
+      "unit": "SF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4468",
+      "description": "CLEANING AND PAINTING",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4487",
+      "description": "SEALING AND CAULKING PACK RUST",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4488",
+      "description": "SPOT ABRASIVE BLAST CLEANING",
+      "unit": "SF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4469",
+      "description": "CONTAINMENT OF ABRASIVES",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4472",
+      "description": "NOISE BARRIER WALL TYPE",
+      "unit": "SF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4473",
+      "description": "NOISE BARRIER WALL ACCESS DOOR",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4474",
+      "description": "CONCRETE FASCIA PANEL",
+      "unit": "SF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4480",
+      "description": "CONCRETE FASCIA PANEL FOR GEOSYNTHETIC WALL",
+      "unit": "SF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4478",
+      "description": "SOIL NAIL - EPOXY COATED",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4479",
+      "description": "SOIL NAIL - ENCAPSULATED",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4486",
+      "description": "SOIL NAIL VERIFICATION TEST AND SOIL NAIL PROOF TEST",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4482",
+      "description": "PREFABRICATED DRAINAGE MAT",
+      "unit": "SY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4483",
+      "description": "PERMANENT GROUND ANCHOR",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4484",
+      "description": "PERMANENT GROUND ANCHOR PERFORMANCE TEST",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "4485",
+      "description": "PERMANENT GROUND ANCHOR VERIFICATION TEST",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "7169",
+      "description": "STRUCTURAL EARTH WALL",
+      "unit": "SF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "5656",
+      "description": "BRIDGE APPROACH SLAB",
+      "unit": "SY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8920",
+      "description": "FURNISHING ST. PILING 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8921",
+      "description": "FURNISHING ST. PILING 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8922",
+      "description": "FURNISHING ST. PILING 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8925",
+      "description": "FABRICATING ST. PILING 24 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8926",
+      "description": "FABRICATING ST. PILING 30 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8927",
+      "description": "FABRICATING ST. PILING 36 IN. DIAM.",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8930",
+      "description": "DRIVING ST. PILE 24 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8931",
+      "description": "DRIVING ST. PILE 30 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8932",
+      "description": "DRIVING ST. PILE 36 IN. DIAM.",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8934",
+      "description": "DYNAMIC PILE TESTING",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8939",
+      "description": "STRUCTURAL STEEL",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8940",
+      "description": "STRUCTURAL CARBON STEEL",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8941",
+      "description": "STRUCTURAL LOW ALLOY STEEL",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8943",
+      "description": "CHAIN AND HARDWARE",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8945",
+      "description": "TIMBER AND LUMBER",
+      "unit": "MBM",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8946",
+      "description": "GLUED-LAMINATED DECKING",
+      "unit": "MBM",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8948",
+      "description": "RESIN BONDED ANCHORS",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8950",
+      "description": "UNANCHORED MICROPILE",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8952",
+      "description": "ANCHORED MICROPILE",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8954",
+      "description": "MICROPILE VERIFICATION TEST",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8956",
+      "description": "MICROPILE LOAD TEST",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8958",
+      "description": "MICROPILE SHELL",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8965",
+      "description": "FLOATING DOLPHIN",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8966",
+      "description": "FLOATING DOLPHIN FENDER ASSEMBLY",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8967",
+      "description": "FLOATING DOLPHIN BALLAST",
+      "unit": "TON",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8968",
+      "description": "FLOATING DOLPHIN ANCHOR CHAIN",
+      "unit": "LF",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8969",
+      "description": "TEMPORARY PROTECTIVE DOLPHIN",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8974",
+      "description": "MARINE FENDER",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8975",
+      "description": "MARINE FENDER",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8976",
+      "description": "FURNISH MARINE FENDER",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8977",
+      "description": "INSTALL MARINE FENDER",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8980",
+      "description": "UHMW POLYETHYLENE RUBBING FACE FOR DOLPHINS",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8981",
+      "description": "UHMW POLYETHYLENE RUBBING FACE FOR WINGWALLS",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8982",
+      "description": "UHMW POLYETHYLENE RUBBING FACE FOR PILES",
+      "unit": "EACH",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8983",
+      "description": "UHMW POLYETHYLENE",
+      "unit": "LS",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "8984",
+      "description": "PAINTER AND TOOLS",
+      "unit": "HR",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "7181",
+      "description": "TRANSFER SPAN OVERLAY",
+      "unit": "SY",
+      "specSection": "8",
+      "category": "STRUCTURE"
+    },
+    {
+      "itemNumber": "5005",
+      "description": "BALLAST FROM STOCKPILE",
+      "unit": "CY",
+      "specSection": "9",
+      "category": "SURFACING"
+    },
+    {
+      "itemNumber": "5010",
+      "description": "BALLAST FROM STOCKPILE",
+      "unit": "TON",
+      "specSection": "9",
+      "category": "SURFACING"
+    },
+    {
+      "itemNumber": "5015",
+      "description": "BALLAST",
+      "unit": "CY",
+      "specSection": "9",
+      "category": "SURFACING"
+    },
+    {
+      "itemNumber": "5020",
+      "description": "BALLAST",
+      "unit": "TON",
+      "specSection": "9",
+      "category": "SURFACING"
+    },
+    {
+      "itemNumber": "5025",
+      "description": "SHOULDER BALLAST FROM STOCKPILE",
+      "unit": "CY",
+      "specSection": "9",
+      "category": "SURFACING"
+    },
+    {
+      "itemNumber": "5030",
+      "description": "SHOULDER BALLAST FROM STOCKPILE",
+      "unit": "TON",
+      "specSection": "9",
+      "category": "SURFACING"
+    },
+    {
+      "itemNumber": "5035",
+      "description": "PERMEABLE BALLAST",
+      "unit": "CY",
+      "specSection": "9",
+      "category": "SURFACING"
+    },
+    {
+      "itemNumber": "5040",
+      "description": "PERMEABLE BALLAST",
+      "unit": "TON",
+      "specSection": "9",
+      "category": "SURFACING"
+    },
+    {
+      "itemNumber": "5047",
+      "description": "GRAVEL BASE",
+      "unit": "TON",
+      "specSection": "9",
+      "category": "SURFACING"
+    },
+    {
+      "itemNumber": "5057",
+      "description": "GRAVEL BASE",
+      "unit": "CY",
+      "specSection": "9",
+      "category": "SURFACING"
+    },
+    {
+      "itemNumber": "5085",
+      "description": "CRUSHED SURFACING BASE COURSE FROM STOCKPILE",
+      "unit": "CY",
+      "specSection": "9",
+      "category": "SURFACING"
+    },
+    {
+      "itemNumber": "5090",
+      "description": "CRUSHED SURFACING BASE COURSE FROM STOCKPILE",
+      "unit": "TON",
+      "specSection": "9",
+      "category": "SURFACING"
+    },
+    {
+      "itemNumber": "5095",
+      "description": "CRUSHED SURFACING BASE COURSE",
+      "unit": "CY",
+      "specSection": "9",
+      "category": "SURFACING"
+    },
+    {
+      "itemNumber": "5100",
+      "description": "CRUSHED SURFACING BASE COURSE",
+      "unit": "TON",
+      "specSection": "9",
+      "category": "SURFACING"
+    },
+    {
+      "itemNumber": "5105",
+      "description": "CRUSHED SURFACING TOP COURSE FROM STOCKPILE",
+      "unit": "CY",
+      "specSection": "9",
+      "category": "SURFACING"
+    },
+    {
+      "itemNumber": "5110",
+      "description": "CRUSHED SURFACING TOP COURSE FROM STOCKPILE",
+      "unit": "TON",
+      "specSection": "9",
+      "category": "SURFACING"
+    },
+    {
+      "itemNumber": "5115",
+      "description": "CRUSHED SURFACING TOP COURSE",
+      "unit": "CY",
+      "specSection": "9",
+      "category": "SURFACING"
+    },
+    {
+      "itemNumber": "5120",
+      "description": "CRUSHED SURFACING TOP COURSE",
+      "unit": "TON",
+      "specSection": "9",
+      "category": "SURFACING"
+    }
+  ]
+}

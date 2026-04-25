@@ -348,6 +348,576 @@ async function fetchNcdot(): Promise<AgencyCatalog> {
   };
 }
 
+// ---------- WSDOT Standard Item Table ----------
+//
+// WSDOT publishes a "Standard Item Table" PDF (DOT-RGG101) that lists every
+// pay item grouped by spec section. Layout is *transposed*: each page has
+// one section, with up to 22 items laid out as columns. Per-column rows:
+//
+//   y ~ 613 : ITEM USE banner (STANDARD ITEM, GSP ITEM, REQUIRES SPECIAL PROV.)
+//   y ~ 578 : Prequal code (e.g. A1, D6, T0) — informational
+//   y ~ 321 : Section name (single span, e.g. "PREPARATION") — page-level
+//   y ~ 299 : Section number (single span, e.g. "1") — page-level
+//   y ~ 119 : Description; trailing dashes + "(NN)" page reference stripped
+//   y ~ 78-90 : Unit (LS, ACRE, EACH, CY, ...) spread across a few unit rows
+//   y ~ 28-33 : 4-digit STD item number (the unique within-section id)
+//
+// Item numbers are emitted verbatim as the 4-digit STD ITEM code from
+// the PDF (e.g. "0001"). They are unique across the entire WSDOT
+// catalog, so no synthetic section prefix is needed; the spec section
+// is captured separately on each item.
+
+const WSDOT_URL =
+  "https://wsdot.wa.gov/sites/default/files/2024-05/Standard-Item-Table.pdf";
+
+function wsdotPickAt(spans: PdfSpan[], xCenter: number, tol: number): string {
+  return spans
+    .filter((s) => Math.abs(s.x - xCenter) <= tol)
+    .map((s) => s.str.trim())
+    .filter((s) => s.length > 0)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function wsdotNormalizeUnit(raw: string): string {
+  return raw
+    .toUpperCase()
+    .replace(/\./g, "")
+    .replace(/\s+/g, " ")
+    .replace(/^L S$/, "LS")
+    .replace(/^LSUM$/, "LS")
+    .trim();
+}
+
+async function fetchWsdot(): Promise<AgencyCatalog> {
+  const pages = await fetchPdfPages(WSDOT_URL);
+  const items: PayItem[] = [];
+  const seen = new Set<string>();
+  for (const rows of pages) {
+    const secNameRow = rows.find((r) => r.y >= 310 && r.y <= 340);
+    const secNumRow = rows.find((r) => r.y >= 290 && r.y <= 310);
+    if (!secNameRow || !secNumRow) continue;
+    // Some pages render the section name twice on adjacent baselines; dedupe
+    // consecutive identical tokens so we don't emit "IN STOCKPILE IN STOCKPILE".
+    const nameTokens = secNameRow.spans
+      .map((s) => s.str.trim())
+      .filter(Boolean);
+    const dedupedName: string[] = [];
+    for (const t of nameTokens) {
+      if (dedupedName[dedupedName.length - 1] !== t) dedupedName.push(t);
+    }
+    let sectionName = dedupedName.join(" ").trim();
+    // Also collapse "FOO BAR FOO BAR" -> "FOO BAR" (full-phrase doubles).
+    const half = sectionName.length >>> 1;
+    if (sectionName.length > 0 && sectionName.length % 2 === 1) {
+      const mid = (sectionName.length - 1) / 2;
+      if (sectionName[mid] === " " &&
+          sectionName.slice(0, mid) === sectionName.slice(mid + 1)) {
+        sectionName = sectionName.slice(0, mid);
+      }
+    } else if (half > 0 && sectionName.slice(0, half).trimEnd() === sectionName.slice(half).trimStart()) {
+      sectionName = sectionName.slice(0, half).trimEnd();
+    }
+    const sectionNumber = secNumRow.spans
+      .map((s) => s.str.trim())
+      .filter(Boolean)
+      .join("")
+      .trim();
+    if (!/^\d+$/.test(sectionNumber)) continue;
+
+    const stdItemRows = rows.filter((r) => r.y >= 25 && r.y <= 35);
+    const xSet = new Map<number, number>();
+    for (const row of stdItemRows) {
+      for (const s of row.spans) {
+        if (/^\d{4}$/.test(s.str.trim())) {
+          const xR = Math.round(s.x);
+          xSet.set(xR, (xSet.get(xR) ?? 0) + 1);
+        }
+      }
+    }
+    const cols = [...xSet.keys()].sort((a, b) => a - b);
+    if (cols.length === 0) continue;
+
+    const descRow = rows.find((r) => r.y >= 110 && r.y <= 130);
+    const unitRows = rows.filter((r) => r.y >= 75 && r.y <= 95);
+
+    for (const xCol of cols) {
+      let stdNum = "";
+      for (const row of stdItemRows) {
+        const v = wsdotPickAt(row.spans, xCol, 4);
+        if (/^\d{4}$/.test(v)) {
+          stdNum = v;
+          break;
+        }
+      }
+      if (!stdNum) continue;
+      // STD ITEM numbers are unique across the whole WSDOT catalog, so we
+      // emit them verbatim (matching the PDF's "STD ITEM" column exactly).
+      const itemNumber = stdNum;
+      if (seen.has(itemNumber)) continue;
+
+      const descRaw = descRow ? wsdotPickAt(descRow.spans, xCol, 11) : "";
+      const description = descRaw
+        .replace(/-+\s*\(\d+\)\s*$/, "")
+        .replace(/-+$/, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!description) continue;
+
+      const unitParts: string[] = [];
+      for (const row of unitRows) {
+        const v = wsdotPickAt(row.spans, xCol, 11);
+        if (v && !/^EST\.?$/i.test(v)) unitParts.push(v);
+      }
+      const unit = wsdotNormalizeUnit(unitParts.join(" "));
+      if (!unit) continue;
+
+      seen.add(itemNumber);
+      items.push({
+        itemNumber,
+        description,
+        unit,
+        specSection: sectionNumber,
+        category: sectionName,
+      });
+    }
+  }
+  return {
+    specBook: {
+      edition: "2024",
+      title:
+        "WSDOT Standard Specifications for Road, Bridge, and Municipal Construction — Standard Item Table (English, DOT-RGG101)",
+    },
+    source: WSDOT_URL,
+    items,
+  };
+}
+
+// ---------- CDOT (Colorado) ----------
+//
+// CDOT publishes its complete Item Code Book as an XLSX workbook updated
+// periodically (the latest as of writing is the 2025-10-14 edition). The
+// sheet has a single tab with one row per pay item and four columns:
+//
+//   A: Item Code (e.g. "201-00005", verbatim 9-character code)
+//   B: Long Description
+//   C: Short Description (used by AASHTOWare CES bid forms)
+//   D: Unit of Measurement (L S, EACH, CY, T, ...)
+//
+// We emit the long description verbatim, normalize the unit to the same
+// canonical form used elsewhere in this codebase, and derive a category
+// from the section number prefix using CDOT's Standard Specifications
+// section ranges (200 = Earthwork, 300 = Bases, etc.).
+
+const CDOT_URL =
+  "https://www.codot.gov/business/eema/assets/item-code-book-20251014.xlsx";
+
+function cdotNormalizeUnit(raw: string): string {
+  const u = String(raw || "")
+    .toUpperCase()
+    .replace(/\./g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  // CDOT writes "L S" with a space; match the existing canonical "LS".
+  if (u === "L S" || u === "LSUM" || u === "LUMP SUM") return "LS";
+  return u;
+}
+
+function cdotCategoryForSection(section: string): string {
+  const n = parseInt(section, 10);
+  if (Number.isNaN(n)) return "MISCELLANEOUS";
+  if (n < 200) return "MOBILIZATION & PROJECT ADMINISTRATION";
+  if (n < 300) return "EARTHWORK & SITE PREPARATION";
+  if (n < 400) return "BASES";
+  if (n < 500) return "PAVEMENTS";
+  if (n < 600) return "STRUCTURES";
+  if (n < 700) return "INCIDENTAL CONSTRUCTION";
+  if (n < 800) return "MATERIALS";
+  return "SPECIAL & FORCE ACCOUNT";
+}
+
+interface XlsxModule {
+  read(data: Uint8Array, opts: { type: "buffer" }): {
+    SheetNames: string[];
+    Sheets: Record<string, unknown>;
+  };
+  utils: {
+    sheet_to_json(
+      sheet: unknown,
+      opts: { header: 1; defval: string },
+    ): unknown[][];
+  };
+}
+
+async function fetchCdot(): Promise<AgencyCatalog> {
+  const res = await fetch(CDOT_URL);
+  if (!res.ok) {
+    throw new Error(`CDOT XLSX fetch failed: ${res.status} ${res.statusText}`);
+  }
+  const buf = new Uint8Array(await res.arrayBuffer());
+  const xlsxMod = (await import("xlsx")) as unknown as XlsxModule;
+  const wb = xlsxMod.read(buf, { type: "buffer" });
+  const sheetName = wb.SheetNames[0];
+  if (!sheetName) throw new Error("CDOT XLSX has no sheets");
+  const rows = xlsxMod.utils.sheet_to_json(wb.Sheets[sheetName], {
+    header: 1,
+    defval: "",
+  });
+
+  const items: PayItem[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const itemNumber = String(r[0] ?? "").trim();
+    if (!/^\d{3}-\d{5}$/.test(itemNumber)) continue;
+    if (seen.has(itemNumber)) continue;
+    const description = String(r[1] ?? "").replace(/\s+/g, " ").trim();
+    if (!description) continue;
+    const unit = cdotNormalizeUnit(String(r[3] ?? ""));
+    if (!unit) continue;
+    const sectionNumber = itemNumber.slice(0, 3);
+    seen.add(itemNumber);
+    items.push({
+      itemNumber,
+      description,
+      unit,
+      specSection: sectionNumber,
+      category: cdotCategoryForSection(sectionNumber),
+    });
+  }
+
+  return {
+    specBook: {
+      edition: "2021",
+      title:
+        "CDOT Standard Specifications for Road and Bridge Construction — Item Code Book (2025-10-14 edition)",
+    },
+    source: CDOT_URL,
+    items,
+  };
+}
+
+// ---------- INDOT (Indiana) ----------
+//
+// INDOT publishes its master English Pay Items catalog as an XLSX with a
+// single sheet. Header row 3 declares the columns (SECTION, ITEM,
+// DESCRIPTION, UNIT, TYPE, COMMENTS, MANDATORY SUPPLEMENTAL DESCRIPTION).
+// Items are 10-character codes ("104-000195") with a 3-digit section
+// prefix. Categories are derived from the section number using INDOT's
+// Standard Specifications section ranges, which mirror AASHTO's.
+
+const INDOT_URL =
+  "https://www.in.gov/indot/doing-business-with-indot/files/Current-English-Pay-Items-4.1.2026.xlsx";
+
+function indotCategoryForSection(section: string): string {
+  const n = parseInt(section, 10);
+  if (Number.isNaN(n)) return "MISCELLANEOUS";
+  if (n < 200) return "GENERAL CONTRACT REQUIREMENTS";
+  if (n < 300) return "EARTHWORK & SUBGRADE";
+  if (n < 400) return "BASES";
+  if (n < 500) return "PAVEMENTS";
+  if (n < 600) return "STRUCTURES";
+  if (n < 700) return "INCIDENTAL CONSTRUCTION";
+  if (n < 800) return "MATERIALS";
+  return "SPECIAL & CONTINGENT";
+}
+
+function indotNormalizeUnit(raw: string): string {
+  const u = String(raw || "").toUpperCase().replace(/\./g, "").replace(/\s+/g, " ").trim();
+  if (u === "L S" || u === "LSUM") return "LS";
+  return u;
+}
+
+async function fetchIndot(): Promise<AgencyCatalog> {
+  const res = await fetch(INDOT_URL, { headers: { "User-Agent": "Mozilla/5.0" } });
+  if (!res.ok) throw new Error(`INDOT XLSX fetch failed: ${res.status}`);
+  const buf = new Uint8Array(await res.arrayBuffer());
+  const xlsxMod = (await import("xlsx")) as unknown as XlsxModule;
+  const wb = xlsxMod.read(buf, { type: "buffer" });
+  const sn = wb.SheetNames[0];
+  if (!sn) throw new Error("INDOT XLSX has no sheets");
+  const rows = xlsxMod.utils.sheet_to_json(wb.Sheets[sn], { header: 1, defval: "" });
+
+  const items: PayItem[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const sec = String(r[0] ?? "").trim();
+    const itemNumber = String(r[1] ?? "").trim();
+    // INDOT codes use either 3-5 ("104-05404") or 3-6 ("104-000195") digits.
+    if (!/^\d{3}-\d{5,6}$/.test(itemNumber)) continue;
+    if (seen.has(itemNumber)) continue;
+    const description = String(r[2] ?? "").replace(/\s+/g, " ").trim();
+    const unit = indotNormalizeUnit(String(r[3] ?? ""));
+    if (!description || !unit) continue;
+    const sectionNumber = /^\d+$/.test(sec) ? sec : itemNumber.slice(0, 3);
+    seen.add(itemNumber);
+    items.push({
+      itemNumber,
+      description,
+      unit,
+      specSection: sectionNumber,
+      category: indotCategoryForSection(sectionNumber),
+    });
+  }
+
+  return {
+    specBook: {
+      edition: "2024",
+      title:
+        "INDOT Standard Specifications — Current English Pay Items List (2026-04-01 edition)",
+    },
+    source: INDOT_URL,
+    items,
+  };
+}
+
+// ---------- IADOT (Iowa) ----------
+//
+// Iowa DOT publishes its English Item Catalog as an XLSX workbook with
+// three sheets: Current, Obsolete, and Testing Frequencies. We pull only
+// the Current sheet. Header row 4 declares the columns (Item Code,
+// Description, Units, Form, Support Forms, ...). Item codes are 12-char
+// codes like "2101-0850001"; the first 4 digits are the spec section.
+
+const IADOT_URL =
+  "https://iowadot.gov/Construction_Materials/inspection_tools/englishforms/current_e_pay_items.xlsx";
+
+function iadotCategoryForSection(section: string): string {
+  // Iowa DOT uses 4-digit section numbers grouped into Divisions:
+  // 21xx Earthwork; 22xx Base Course; 23xx Surface Course;
+  // 24xx Bridges; 25xx Misc Construction; 26xx Drainage; 27xx Curbs/Walks;
+  // 41xx-44xx Materials; 81xx-85xx Structures.
+  const n = parseInt(section, 10);
+  if (Number.isNaN(n)) return "MISCELLANEOUS";
+  if (n < 2200) return "EARTHWORK";
+  if (n < 2300) return "BASE COURSE";
+  if (n < 2400) return "SURFACE COURSE";
+  if (n < 2500) return "BRIDGES & STRUCTURES";
+  if (n < 2600) return "INCIDENTAL CONSTRUCTION";
+  if (n < 2700) return "DRAINAGE";
+  if (n < 2800) return "CURBS, GUTTERS & WALKS";
+  if (n < 2900) return "FENCES & GUARDRAIL";
+  if (n < 4000) return "TRAFFIC CONTROL & SAFETY";
+  if (n < 5000) return "MATERIALS";
+  return "SPECIAL & SUPPLEMENTAL";
+}
+
+function iadotNormalizeUnit(raw: string): string {
+  const u = String(raw || "").toUpperCase().replace(/\./g, "").replace(/\s+/g, " ").trim();
+  if (u === "L S" || u === "LSUM") return "LS";
+  return u;
+}
+
+async function fetchIadot(): Promise<AgencyCatalog> {
+  const res = await fetch(IADOT_URL, { headers: { "User-Agent": "Mozilla/5.0" } });
+  if (!res.ok) throw new Error(`IADOT XLSX fetch failed: ${res.status}`);
+  const buf = new Uint8Array(await res.arrayBuffer());
+  const xlsxMod = (await import("xlsx")) as unknown as XlsxModule;
+  const wb = xlsxMod.read(buf, { type: "buffer" });
+  if (!wb.SheetNames.includes("Current")) {
+    throw new Error("IADOT XLSX missing 'Current' sheet");
+  }
+  const rows = xlsxMod.utils.sheet_to_json(wb.Sheets["Current"], { header: 1, defval: "" });
+
+  const items: PayItem[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const itemNumber = String(r[0] ?? "").trim();
+    if (!/^\d{4}-\d{7}$/.test(itemNumber)) continue;
+    if (seen.has(itemNumber)) continue;
+    const description = String(r[1] ?? "").replace(/\s+/g, " ").trim();
+    const unit = iadotNormalizeUnit(String(r[2] ?? ""));
+    if (!description || !unit) continue;
+    const sectionNumber = itemNumber.slice(0, 4);
+    seen.add(itemNumber);
+    items.push({
+      itemNumber,
+      description,
+      unit,
+      specSection: sectionNumber,
+      category: iadotCategoryForSection(sectionNumber),
+    });
+  }
+
+  return {
+    specBook: {
+      edition: "2023",
+      title:
+        "Iowa DOT Standard Specifications — Index to English Item Forms (Current as of October 2025 Letting)",
+    },
+    source: IADOT_URL,
+    items,
+  };
+}
+
+// ---------- MAINEDOT (Maine) ----------
+//
+// Maine DOT publishes its English Item Catalog as a multi-page PDF with
+// a stable column layout on each data page:
+//   ITEM        x ~ 53-95  (item number like "102.06" or "202.0791")
+//   DESCRIPTION x ~ 115
+//   UNITS       x ~ 421-449
+//   HYBRID LS   x ~ 477-508 (a secondary unit, ignored)
+// Page 1 is identical in layout to subsequent pages. The header row
+// (y ~ 727) and page title (y ~ 759) are filtered out.
+
+const MAINEDOT_URL =
+  "https://www.maine.gov/dot/sites/maine.gov.dot/files/2023-08/english-03-29-23.pdf";
+
+function mainedotCategoryForSection(section: string): string {
+  // Maine DOT spec sections follow AASHTO's broad ranges:
+  // 100s general; 200s earthwork; 300s bases; 400s pavements;
+  // 500s structures; 600s incidental; 700s materials.
+  const n = parseInt(section, 10);
+  if (Number.isNaN(n)) return "MISCELLANEOUS";
+  if (n < 200) return "GENERAL CONTRACT REQUIREMENTS";
+  if (n < 300) return "EARTHWORK & SUBGRADE";
+  if (n < 400) return "BASES";
+  if (n < 500) return "PAVEMENTS";
+  if (n < 600) return "STRUCTURES";
+  if (n < 700) return "INCIDENTAL CONSTRUCTION";
+  return "MATERIALS & SPECIAL";
+}
+
+function mainedotPick(spans: PdfSpan[], xMin: number, xMax: number): string {
+  return spans
+    .filter((s) => s.x >= xMin && s.x <= xMax)
+    .map((s) => s.str.trim())
+    .filter((s) => s.length > 0)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function fetchMaineDot(): Promise<AgencyCatalog> {
+  const pages = await fetchPdfPages(MAINEDOT_URL);
+  const items: PayItem[] = [];
+  const seen = new Set<string>();
+  for (const rows of pages) {
+    for (const row of rows) {
+      // Skip header band and page title.
+      if (row.y >= 720) continue;
+      // Skip page footers (small y values for page numbers).
+      if (row.y < 50) continue;
+      const itemRaw = mainedotPick(row.spans, 50, 100);
+      if (!/^\d{3}(\.\d+)?$/.test(itemRaw)) continue;
+      if (seen.has(itemRaw)) continue;
+      const description = mainedotPick(row.spans, 110, 420)
+        .replace(/^[\s\-]+|[\s\-]+$/g, "")
+        .trim();
+      const unitRaw = mainedotPick(row.spans, 420, 470);
+      const unit = unitRaw
+        .toUpperCase()
+        .replace(/\./g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!description || !unit) continue;
+      const sectionNumber = itemRaw.split(".")[0];
+      seen.add(itemRaw);
+      items.push({
+        itemNumber: itemRaw,
+        description,
+        unit,
+        specSection: sectionNumber,
+        category: mainedotCategoryForSection(sectionNumber),
+      });
+    }
+  }
+  return {
+    specBook: {
+      edition: "2020",
+      title:
+        "MaineDOT Standard Specifications — English Item Catalog (2023-03-29 edition)",
+    },
+    source: MAINEDOT_URL,
+    items,
+  };
+}
+
+// ---------- MODOT (Missouri) ----------
+//
+// MoDOT publishes a complete Bid Items Listing PDF (linked from
+// https://www.modot.org/bid-items-listing). Each data row carries:
+//   ITEM NO.         x ~ 72  (numeric/alpha-suffixed item codes)
+//   UNIT             x ~ 131
+//   TYPE             x ~ 169 (accuracy multiplier; ignored)
+//   ITEM DESCRIPTION x ~ 207
+// Page 1 is a title page; page 2 onward begin with a two-line header
+// (y ~ 745 with state name and y ~ 725 with column titles).
+
+const MODOT_URL = "https://www.modot.org/media/54227";
+
+function modotCategoryForSection(itemNumber: string): string {
+  // MoDOT item numbers begin with the related Standard Specification
+  // section number (Sec. 100-1000). Example: 1041000 -> Sec. 104,
+  // 2026010 -> Sec. 202.
+  const sec = itemNumber.length >= 3 ? itemNumber.slice(0, 3) : "";
+  const n = parseInt(sec, 10);
+  if (Number.isNaN(n)) return "MISCELLANEOUS";
+  if (n < 200) return "GENERAL CONTRACT REQUIREMENTS";
+  if (n < 300) return "REMOVALS & PREPARATION";
+  if (n < 400) return "EARTHWORK";
+  if (n < 500) return "PAVEMENTS";
+  if (n < 600) return "STRUCTURES";
+  if (n < 700) return "INCIDENTAL CONSTRUCTION";
+  if (n < 800) return "MATERIALS";
+  return "SPECIAL & MAINTENANCE";
+}
+
+function modotPick(spans: PdfSpan[], xMin: number, xMax: number): string {
+  return spans
+    .filter((s) => s.x >= xMin && s.x <= xMax)
+    .map((s) => s.str.trim())
+    .filter((s) => s.length > 0)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function fetchModot(): Promise<AgencyCatalog> {
+  const pages = await fetchPdfPages(MODOT_URL);
+  const items: PayItem[] = [];
+  const seen = new Set<string>();
+  for (let p = 0; p < pages.length; p++) {
+    const rows = pages[p];
+    for (const row of rows) {
+      // Skip top-of-page header band.
+      if (row.y >= 720) continue;
+      if (row.y < 60) continue;
+      const itemRaw = modotPick(row.spans, 60, 120);
+      if (!/^\d{6,8}[A-Z]?$/.test(itemRaw)) continue;
+      if (seen.has(itemRaw)) continue;
+      const unit = modotPick(row.spans, 125, 165)
+        .toUpperCase()
+        .replace(/\./g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      const description = modotPick(row.spans, 200, 600)
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!description || !unit) continue;
+      const sectionNumber = itemRaw.length >= 3 ? itemRaw.slice(0, 3) : "";
+      seen.add(itemRaw);
+      items.push({
+        itemNumber: itemRaw,
+        description,
+        unit,
+        specSection: sectionNumber,
+        category: modotCategoryForSection(itemRaw),
+      });
+    }
+  }
+  return {
+    specBook: {
+      edition: "2024",
+      title:
+        "MoDOT Standard Specifications for Highway Construction — Bid Items Listing (effective January 1, 2026; issued November 12, 2025)",
+    },
+    source: MODOT_URL,
+    items,
+  };
+}
+
 // ---------- Registry ----------
 
 // ---------- Staged-drop manifest for the remaining 10 DOT agencies ----------
@@ -626,6 +1196,12 @@ function loadIncomingCatalog(code: string, drop: StagedDrop): AgencyCatalog {
 const AGENCY_FETCHERS: Record<string, () => Promise<AgencyCatalog>> = {
   FHWA: fetchFhwa,
   NCDOT: fetchNcdot,
+  WSDOT: fetchWsdot,
+  CDOT: fetchCdot,
+  INDOT: fetchIndot,
+  IADOT: fetchIadot,
+  MAINEDOT: fetchMaineDot,
+  MODOT: fetchModot,
 };
 
 // Register a generic incoming-drop fetcher for every staged agency. FHWA

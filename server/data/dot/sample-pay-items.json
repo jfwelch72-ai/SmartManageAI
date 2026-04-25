@@ -3099,7 +3099,7 @@
       "edition": "2022",
       "title": "Standard Specifications (2022)"
     },
-    "source": "https://www.dot.state.al.us/ConstructionBureau/standardSpecifications.html",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.dot.state.al.us/ConstructionBureau/standardSpecifications.html",
     "items": [
       {
         "itemNumber": "201(A)",
@@ -3276,7 +3276,7 @@
       "edition": "2020",
       "title": "Standard Specifications for Highway Construction (2020)"
     },
-    "source": "https://dot.alaska.gov/stwddes/dcsspecs/",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://dot.alaska.gov/stwddes/dcsspecs/",
     "items": [
       {
         "itemNumber": "201-A",
@@ -3439,7 +3439,7 @@
       "edition": "2008",
       "title": "Standard Specifications for Road and Bridge Construction (2008)"
     },
-    "source": "https://azdot.gov/business/engineering-and-construction/standards-and-specifications",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://azdot.gov/business/engineering-and-construction/standards-and-specifications",
     "items": [
       {
         "itemNumber": "202-A",
@@ -3665,7 +3665,7 @@
       "edition": "2014",
       "title": "Standard Specifications for Highway Construction (2014)"
     },
-    "source": "https://www.ardot.gov/divisions/construction/standard-specifications/",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.ardot.gov/divisions/construction/standard-specifications/",
     "items": [
       {
         "itemNumber": "201(A)",
@@ -3884,7 +3884,7 @@
       "edition": "2021",
       "title": "Standard Specifications for Road and Bridge Construction (2021)"
     },
-    "source": "https://www.codot.gov/business/designsupport/cdot-construction-specifications",
+    "source": "Superseded by verbatim per-agency file at server/data/dot/pay-items/CDOT.json (sourced from CDOT Item Code Book XLSX, 2025-10-14). This entry is fallback-only and is ignored by the seeder when the per-agency file is present.",
     "items": [
       {
         "itemNumber": "202-A",
@@ -4047,7 +4047,7 @@
       "edition": "2020",
       "title": "Standard Specifications Form 818 (Form 818) (2020)"
     },
-    "source": "https://portal.ct.gov/DOT/Engineering-Applications/Forms-Pubs",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://portal.ct.gov/DOT/Engineering-Applications/Forms-Pubs",
     "items": [
       {
         "itemNumber": "202.01",
@@ -4231,7 +4231,7 @@
       "edition": "2016",
       "title": "Standard Specifications (2016)"
     },
-    "source": "https://deldot.gov/Business/standards/",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://deldot.gov/Business/standards/",
     "items": [
       {
         "itemNumber": "201-A",
@@ -4401,7 +4401,7 @@
       "edition": "2013",
       "title": "Standard Specifications (2013)"
     },
-    "source": "https://ddot.dc.gov/page/standard-specifications-highways-and-structures",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://ddot.dc.gov/page/standard-specifications-highways-and-structures",
     "items": [
       {
         "itemNumber": "201.01",
@@ -4571,7 +4571,7 @@
       "edition": "2005",
       "title": "Standard Specifications (2005)"
     },
-    "source": "https://hidot.hawaii.gov/highways/library/standard-specifications/",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://hidot.hawaii.gov/highways/library/standard-specifications/",
     "items": [
       {
         "itemNumber": "201100",
@@ -4797,7 +4797,7 @@
       "edition": "2018",
       "title": "Standard Specifications for Highway Construction (2018)"
     },
-    "source": "https://apps.itd.idaho.gov/apps/manuals/StandardSpecs/",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://apps.itd.idaho.gov/apps/manuals/StandardSpecs/",
     "items": [
       {
         "itemNumber": "2020005",
@@ -5030,7 +5030,7 @@
       "edition": "2024",
       "title": "Standard Specifications (2024)"
     },
-    "source": "https://www.in.gov/indot/business-with-indot/standards/standard-specifications/",
+    "source": "Superseded by verbatim per-agency file at server/data/dot/pay-items/INDOT.json (sourced from INDOT Current English Pay Items XLSX, 2026-04-01). This entry is fallback-only and is ignored by the seeder when the per-agency file is present.",
     "items": [
       {
         "itemNumber": "202-A",
@@ -5228,7 +5228,7 @@
       "edition": "2023",
       "title": "Standard Specifications (2023)"
     },
-    "source": "https://iowadot.gov/specifications",
+    "source": "Superseded by verbatim per-agency file at server/data/dot/pay-items/IADOT.json (sourced from Iowa DOT current_e_pay_items.xlsx, current as of October 2025 letting). This entry is fallback-only and is ignored by the seeder when the per-agency file is present.",
     "items": [
       {
         "itemNumber": "2010005",
@@ -5398,7 +5398,7 @@
       "edition": "2015",
       "title": "Standard Specifications for State Road & Bridge Construction (2015)"
     },
-    "source": "https://www.ksdot.gov/burConsMain/specprov.asp",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.ksdot.gov/burConsMain/specprov.asp",
     "items": [
       {
         "itemNumber": "2040005",
@@ -5603,7 +5603,7 @@
       "edition": "2019",
       "title": "Standard Specifications for Road and Bridge Construction (2019)"
     },
-    "source": "https://transportation.ky.gov/Construction/Pages/Standard-Specifications.aspx",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://transportation.ky.gov/Construction/Pages/Standard-Specifications.aspx",
     "items": [
       {
         "itemNumber": "201.01",
@@ -5780,7 +5780,7 @@
       "edition": "2016",
       "title": "Standard Specifications for Roads and Bridges (2016)"
     },
-    "source": "https://wwwsp.dotd.la.gov/Inside_LaDOTD/Divisions/Engineering/Standard_Specifications/",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://wwwsp.dotd.la.gov/Inside_LaDOTD/Divisions/Engineering/Standard_Specifications/",
     "items": [
       {
         "itemNumber": "202-A",
@@ -5971,7 +5971,7 @@
       "edition": "2020",
       "title": "Standard Specifications (2020)"
     },
-    "source": "https://www.maine.gov/mdot/contractors/publications/standardspec/",
+    "source": "Superseded by verbatim per-agency file at server/data/dot/pay-items/MAINEDOT.json (sourced from MaineDOT English Item Catalog PDF, 2023-03-29 edition). This entry is fallback-only and is ignored by the seeder when the per-agency file is present.",
     "items": [
       {
         "itemNumber": "203.01",
@@ -6141,7 +6141,7 @@
       "edition": "2020",
       "title": "Standard Specifications for Construction and Materials (2020)"
     },
-    "source": "https://www.roads.maryland.gov/Pages/specs.aspx",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.roads.maryland.gov/Pages/specs.aspx",
     "items": [
       {
         "itemNumber": "203.01",
@@ -6311,7 +6311,7 @@
       "edition": "2020",
       "title": "Standard Specifications for Highways and Bridges (2020)"
     },
-    "source": "https://www.mass.gov/lists/massdot-standard-specifications-for-highways-and-bridges",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.mass.gov/lists/massdot-standard-specifications-for-highways-and-bridges",
     "items": [
       {
         "itemNumber": "201.01",
@@ -6488,7 +6488,7 @@
       "edition": "2020",
       "title": "Standard Specifications for Construction (2020)"
     },
-    "source": "https://www.michigan.gov/mdot/business/standard-specifications",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.michigan.gov/mdot/business/standard-specifications",
     "items": [
       {
         "itemNumber": "201-A",
@@ -6651,7 +6651,7 @@
       "edition": "2020",
       "title": "Standard Specifications for Construction (2020)"
     },
-    "source": "https://www.dot.state.mn.us/pre-letting/spec/index.html",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.dot.state.mn.us/pre-letting/spec/index.html",
     "items": [
       {
         "itemNumber": "2010005",
@@ -6856,7 +6856,7 @@
       "edition": "2017",
       "title": "Standard Specifications for Road and Bridge Construction (2017)"
     },
-    "source": "https://mdot.ms.gov/applications/contract/specbook.aspx",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://mdot.ms.gov/applications/contract/specbook.aspx",
     "items": [
       {
         "itemNumber": "201(A)",
@@ -7061,7 +7061,7 @@
       "edition": "2024",
       "title": "Standard Specifications for Highway Construction (2024)"
     },
-    "source": "https://www.modot.org/missouri-standard-specifications-highway-construction",
+    "source": "Superseded by verbatim per-agency file at server/data/dot/pay-items/MODOT.json (sourced from MoDOT Bid Items Listing PDF, effective January 1, 2026 / issued November 12, 2025). This entry is fallback-only and is ignored by the seeder when the per-agency file is present.",
     "items": [
       {
         "itemNumber": "202.01",
@@ -7273,7 +7273,7 @@
       "edition": "2020",
       "title": "Standard Specifications for Road and Bridge Construction (2020)"
     },
-    "source": "https://www.mdt.mt.gov/business/contracting/standard.aspx",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.mdt.mt.gov/business/contracting/standard.aspx",
     "items": [
       {
         "itemNumber": "201-A",
@@ -7478,7 +7478,7 @@
       "edition": "2017",
       "title": "Standard Specifications for Highway Construction (2017)"
     },
-    "source": "https://dot.nebraska.gov/business-center/design-consultant/specbook/",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://dot.nebraska.gov/business-center/design-consultant/specbook/",
     "items": [
       {
         "itemNumber": "2010005",
@@ -7648,7 +7648,7 @@
       "edition": "2014",
       "title": "Standard Specifications for Road and Bridge Construction (2014)"
     },
-    "source": "https://www.dot.nv.gov/business/contractor/standard-specs",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.dot.nv.gov/business/contractor/standard-specs",
     "items": [
       {
         "itemNumber": "202-A",
@@ -7881,7 +7881,7 @@
       "edition": "2016",
       "title": "Standard Specifications for Road and Bridge Construction (2016)"
     },
-    "source": "https://www.nh.gov/dot/org/projectdevelopment/highwaydesign/specifications/",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.nh.gov/dot/org/projectdevelopment/highwaydesign/specifications/",
     "items": [
       {
         "itemNumber": "201-A",
@@ -8072,7 +8072,7 @@
       "edition": "2019",
       "title": "Standard Specifications for Road and Bridge Construction (2019)"
     },
-    "source": "https://www.nj.gov/transportation/eng/specs/",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.nj.gov/transportation/eng/specs/",
     "items": [
       {
         "itemNumber": "203.01",
@@ -8277,7 +8277,7 @@
       "edition": "2019",
       "title": "Standard Specifications for Highway and Bridge Construction (2019)"
     },
-    "source": "https://www.dot.nm.gov/business-support/standards-specifications/",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.dot.nm.gov/business-support/standards-specifications/",
     "items": [
       {
         "itemNumber": "202-A",
@@ -8482,7 +8482,7 @@
       "edition": "2020",
       "title": "Standard Specifications for Road and Bridge Construction (2020)"
     },
-    "source": "https://www.dot.nd.gov/divisions/environmental/specifications.htm",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.dot.nd.gov/divisions/environmental/specifications.htm",
     "items": [
       {
         "itemNumber": "2010005",
@@ -8680,7 +8680,7 @@
       "edition": "2019",
       "title": "Standard Specifications for Highway Construction (2019)"
     },
-    "source": "https://oklahoma.gov/odot/business-center/standards-and-specifications.html",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://oklahoma.gov/odot/business-center/standards-and-specifications.html",
     "items": [
       {
         "itemNumber": "203(A)",
@@ -8843,7 +8843,7 @@
       "edition": "2024",
       "title": "Standard Specifications for Construction (2024)"
     },
-    "source": "https://www.oregon.gov/odot/Business/Pages/Standard_Specifications.aspx",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.oregon.gov/odot/Business/Pages/Standard_Specifications.aspx",
     "items": [
       {
         "itemNumber": "2010231",
@@ -9069,7 +9069,7 @@
       "edition": "2018",
       "title": "Standard Specifications for Road and Bridge Construction (2018)"
     },
-    "source": "https://www.dot.ri.gov/business/standard_specs.php",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.dot.ri.gov/business/standard_specs.php",
     "items": [
       {
         "itemNumber": "201.01",
@@ -9295,7 +9295,7 @@
       "edition": "2007",
       "title": "Standard Specifications for Highway Construction (2007)"
     },
-    "source": "https://www.scdot.org/business/business-construction-standardSpec.aspx",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.scdot.org/business/business-construction-standardSpec.aspx",
     "items": [
       {
         "itemNumber": "201(A)",
@@ -9458,7 +9458,7 @@
       "edition": "2015",
       "title": "Standard Specifications for Roads and Bridges (2015)"
     },
-    "source": "https://dot.sd.gov/doing-business/contractors/standard-specifications",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://dot.sd.gov/doing-business/contractors/standard-specifications",
     "items": [
       {
         "itemNumber": "2030005",
@@ -9635,7 +9635,7 @@
       "edition": "2021",
       "title": "Standard Specifications for Road and Bridge Construction (2021)"
     },
-    "source": "https://www.tn.gov/tdot/roadway-design/standard-specifications.html",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.tn.gov/tdot/roadway-design/standard-specifications.html",
     "items": [
       {
         "itemNumber": "202(A)",
@@ -9854,7 +9854,7 @@
       "edition": "2022",
       "title": "Standard Specifications for Road and Bridge Construction (2022)"
     },
-    "source": "https://www.udot.utah.gov/connect/business/standards-equipment/standard-specifications/",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.udot.utah.gov/connect/business/standards-equipment/standard-specifications/",
     "items": [
       {
         "itemNumber": "202-A",
@@ -10066,7 +10066,7 @@
       "edition": "2018",
       "title": "Standard Specifications for Construction (2018)"
     },
-    "source": "https://vtrans.vermont.gov/highway/contract-admin/spec-book",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://vtrans.vermont.gov/highway/contract-admin/spec-book",
     "items": [
       {
         "itemNumber": "201-A",
@@ -10299,7 +10299,7 @@
       "edition": "2024",
       "title": "Standard Specifications for Road, Bridge, and Municipal Construction (2024)"
     },
-    "source": "https://wsdot.wa.gov/engineering-standards/all-manuals-and-standards/standard-specifications-mas",
+    "source": "Superseded by verbatim per-agency file at server/data/dot/pay-items/WSDOT.json (sourced from WSDOT Standard Item Table PDF, DOT-RGG101). This entry is fallback-only and is ignored by the seeder when the per-agency file is present.",
     "items": [
       {
         "itemNumber": "2130005",
@@ -10476,7 +10476,7 @@
       "edition": "2017",
       "title": "Standard Specifications Roads and Bridges (2017)"
     },
-    "source": "https://transportation.wv.gov/highways/contractadmin/specifications/Pages/default.aspx",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://transportation.wv.gov/highways/contractadmin/specifications/Pages/default.aspx",
     "items": [
       {
         "itemNumber": "201-A",
@@ -10639,7 +10639,7 @@
       "edition": "2024",
       "title": "Standard Specifications for Highway and Structure Construction (2024)"
     },
-    "source": "https://wisconsindot.gov/Pages/doing-bus/eng-consultants/cnslt-rsrces/cnstrct/standard-spec.aspx",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://wisconsindot.gov/Pages/doing-bus/eng-consultants/cnslt-rsrces/cnstrct/standard-spec.aspx",
     "items": [
       {
         "itemNumber": "2010005",
@@ -10844,7 +10844,7 @@
       "edition": "2010",
       "title": "Standard Specifications for Road and Bridge Construction (2010)"
     },
-    "source": "https://www.dot.state.wy.us/home/engineering_technical_programs/manuals_publications/standard_specifications.html",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.dot.state.wy.us/home/engineering_technical_programs/manuals_publications/standard_specifications.html",
     "items": [
       {
         "itemNumber": "203-A",
@@ -11028,7 +11028,7 @@
       "edition": "2014",
       "title": "Standard Specifications for Roads and Bridges (2014)"
     },
-    "source": "https://act.dtop.pr.gov/normas-y-especificaciones",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://act.dtop.pr.gov/normas-y-especificaciones",
     "items": [
       {
         "itemNumber": "203100",
@@ -11219,7 +11219,7 @@
       "edition": "2010",
       "title": "Standard Specifications (2010)"
     },
-    "source": "https://dpw.vi.gov/engineering/",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://dpw.vi.gov/engineering/",
     "items": [
       {
         "itemNumber": "201100",
@@ -11452,7 +11452,7 @@
       "edition": "2010",
       "title": "Standard Specifications (2010)"
     },
-    "source": "https://dpw.guam.gov/engineering/",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://dpw.guam.gov/engineering/",
     "items": [
       {
         "itemNumber": "202100",
@@ -11671,7 +11671,7 @@
       "edition": "2020",
       "title": "Engineering Department Standards (PA Engineering Standards) (2020)"
     },
-    "source": "https://www.panynj.gov/business-opportunities/engineering-design-standards.html",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.panynj.gov/business-opportunities/engineering-design-standards.html",
     "items": [
       {
         "itemNumber": "202.01",
@@ -11862,7 +11862,7 @@
       "edition": "2022",
       "title": "Construction Standards (OTIC) (2022)"
     },
-    "source": "https://www.ohioturnpike.org/business/engineering",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.ohioturnpike.org/business/engineering",
     "items": [
       {
         "itemNumber": "202(A)",
@@ -12046,7 +12046,7 @@
       "edition": "2020",
       "title": "Publication 408 (modified) (PTC modifications) (2020)"
     },
-    "source": "https://www.paturnpike.com/business/engineering/standards",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.paturnpike.com/business/engineering/standards",
     "items": [
       {
         "itemNumber": "202-0007",
@@ -12237,7 +12237,7 @@
       "edition": "2024",
       "title": "FDOT Standard Specifications + FTE Modifications (2024)"
     },
-    "source": "https://www.floridasturnpike.com/business/standards",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.floridasturnpike.com/business/standards",
     "items": [
       {
         "itemNumber": "0101  1",
@@ -12414,7 +12414,7 @@
       "edition": "2022",
       "title": "Standard Specifications (NJTA) (2022)"
     },
-    "source": "https://www.njta.com/doing-business/engineering-and-construction",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.njta.com/doing-business/engineering-and-construction",
     "items": [
       {
         "itemNumber": "203.01",
@@ -12619,7 +12619,7 @@
       "edition": "2023",
       "title": "Supplemental Specifications (Tollway Supplemental) (2023)"
     },
-    "source": "https://www.illinoistollway.com/doing-business/construction",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.illinoistollway.com/doing-business/construction",
     "items": [
       {
         "itemNumber": "I203-001",
@@ -12796,7 +12796,7 @@
       "edition": "2021",
       "title": "B&T Standard Specifications (B&T) (2021)"
     },
-    "source": "https://new.mta.info/agency/bridges-and-tunnels/business",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://new.mta.info/agency/bridges-and-tunnels/business",
     "items": [
       {
         "itemNumber": "202(A)",
@@ -13029,7 +13029,7 @@
       "edition": "2014",
       "title": "TxDOT Standard Specifications + NTTA Special Provisions (2014)"
     },
-    "source": "https://www.ntta.org/projcons/Pages/EngineeringStandards.aspx",
+    "source": "Representative AASHTO-style template (not a verbatim spec-book extract). Verbatim refresh pending — official source: https://www.ntta.org/projcons/Pages/EngineeringStandards.aspx",
     "items": [
       {
         "itemNumber": "100-6001",

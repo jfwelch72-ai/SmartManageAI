@@ -55,6 +55,12 @@ const AGENCY_MIN_ITEMS: Record<string, number> = {
   IDOT: 2400,
   GDOT: 2400,
   VDOT: 2400,
+  WSDOT: 900,    // Standard Item Table (DOT-RGG101) publishes ~990 items
+  CDOT: 4000,    // CDOT Item Code Book (XLSX) publishes ~4,770 items
+  INDOT: 4000,   // Current English Pay Items XLSX publishes ~4,520 items
+  IADOT: 3500,   // Iowa DOT current_e_pay_items.xlsx publishes ~3,740 items
+  MAINEDOT: 4500, // MaineDOT English Item Catalog PDF publishes ~4,850 items
+  MODOT: 2200,   // MoDOT Bid Items Listing PDF publishes ~2,360 items
 };
 
 function loadAgencies(): AgencyJson[] {
@@ -182,10 +188,13 @@ export async function seedDotAgenciesAndSpecBooks(): Promise<{ agenciesInserted:
       }).returning();
       sb = [created];
       specBooksInserted++;
-    } else if (set.source && !sb[0].notes) {
-      await db.update(dotSpecBooks)
-        .set({ notes: `Source: ${set.source}` })
-        .where(eq(dotSpecBooks.id, sb[0].id));
+    } else if (set.source) {
+      const desiredNote = `Source: ${set.source}`;
+      if (sb[0].notes !== desiredNote) {
+        await db.update(dotSpecBooks)
+          .set({ notes: desiredNote })
+          .where(eq(dotSpecBooks.id, sb[0].id));
+      }
     }
     const specBookId = sb[0].id;
 
