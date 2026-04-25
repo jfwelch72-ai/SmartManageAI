@@ -635,6 +635,313 @@ describe("plan_document_markups — delete + restore round-trips through the pub
     expect(row!.userId).toBe(tenant.userId);
   });
 
+  /**
+   * Task #1841 — Lock down end-to-end group_id preservation through the
+   * cached-snapshot bulk restore route. The earlier per-id round-trip
+   * already proves the soft-delete path keeps every column (including
+   * group_id) intact because the row never went away. The cached-
+   * snapshot bulk route is a separate code path: the client hands back
+   * the full pre-deletion snapshot of every removed markup AND the
+   * server `INSERT ... ON CONFLICT DO UPDATE` rewrites the row from
+   * that snapshot. If the client sent the original group_id, the
+   * restored rows MUST come back with the same group_id they had
+   * before deletion — not a fresh one re-stitched after the fact via
+   * `/markup-groups`. Anything else means downstream references to
+   * the group (audit trails, future "comments-on-group" tables) would
+   * silently dangle across a delete + undo cycle.
+   *
+   * Tightens the assertion from "both members share *some* non-null
+   * group_id" to "both members share the SAME group_id they had
+   * before deletion".
+   */
+  it("POST /api/plan-documents/:docId/markups/restore (cached-snapshot bulk) preserves the original group_id when the snapshot supplies it", async () => {
+    const seedA = {
+      pageNumber: 13,
+      tool: "FREEHAND" as const,
+      points: [
+        { x: 0.12, y: 0.13 },
+        { x: 0.22, y: 0.23 },
+      ],
+      color: "#0891b2",
+      thickness: 4,
+    };
+    const seedB = {
+      pageNumber: 13,
+      tool: "ARROW" as const,
+      points: [
+        { x: 0.32, y: 0.33 },
+        { x: 0.42, y: 0.43 },
+      ],
+      color: "#be185d",
+      thickness: 5,
+    };
+    const aRes = await apiPost(
+      `/api/plan-documents/${tenant.docId}/markups`,
+      tenant.token,
+      seedA,
+    );
+    const bRes = await apiPost(
+      `/api/plan-documents/${tenant.docId}/markups`,
+      tenant.token,
+      seedB,
+    );
+    expect(aRes.status).toBe(201);
+    expect(bRes.status).toBe(201);
+    const a = aRes.body as MarkupResponse;
+    const b = bRes.body as MarkupResponse;
+
+    // Stitch the pair into a real group so group_id is populated on
+    // both rows. This is the value that has to survive the round-trip.
+    const groupRes = await apiPost(
+      `/api/plan-documents/${tenant.docId}/markup-groups`,
+      tenant.token,
+      { markupIds: [a.id, b.id] },
+    );
+    expect(groupRes.status).toBe(200);
+    const originalGroupId = groupRes.body.groupId as string;
+    expect(originalGroupId).toBeTruthy();
+
+    // Sanity: both rows actually carry the group id we just minted.
+    const beforeA = await readRowFromDb(a.id);
+    const beforeB = await readRowFromDb(b.id);
+    expect(beforeA!.groupId).toBe(originalGroupId);
+    expect(beforeB!.groupId).toBe(originalGroupId);
+
+    // Soft-delete both (per-id, mirroring the toolbar's delete fan-out).
+    expect(
+      (await apiDelete(`/api/plan-document-markups/${a.id}`, tenant.token))
+        .status,
+    ).toBe(200);
+    expect(
+      (await apiDelete(`/api/plan-document-markups/${b.id}`, tenant.token))
+        .status,
+    ).toBe(200);
+
+    // Cached-snapshot bulk restore — the same path the client's undo
+    // stack uses for `case "delete"`. The snapshot includes the
+    // ORIGINAL group_id on each member; the server is contractually
+    // obliged to write that value back through the on-conflict UPDATE
+    // rather than minting a new group id (which would force the
+    // client to re-stitch via `/markup-groups` and would orphan any
+    // downstream references to the original group_id).
+    const bulk = await apiPost(
+      `/api/plan-documents/${tenant.docId}/markups/restore`,
+      tenant.token,
+      {
+        markups: [
+          {
+            id: a.id,
+            pageNumber: seedA.pageNumber,
+            tool: seedA.tool,
+            points: seedA.points,
+            color: seedA.color,
+            thickness: seedA.thickness,
+            groupId: originalGroupId,
+          },
+          {
+            id: b.id,
+            pageNumber: seedB.pageNumber,
+            tool: seedB.tool,
+            points: seedB.points,
+            color: seedB.color,
+            thickness: seedB.thickness,
+            groupId: originalGroupId,
+          },
+        ],
+      },
+    );
+    expect(bulk.status).toBe(201);
+    expect((bulk.body as { ok: boolean; count: number }).count).toBe(2);
+
+    // STRICT parity: both members share the SAME group_id they had
+    // before deletion. Not "some non-null group_id"; the exact value.
+    const restoredA = await readRowFromDb(a.id);
+    const restoredB = await readRowFromDb(b.id);
+    expect(restoredA!.groupId).toBe(originalGroupId);
+    expect(restoredB!.groupId).toBe(originalGroupId);
+    expect(restoredA!.groupId).toBe(restoredB!.groupId);
+    expect(restoredA!.deletedAt).toBeNull();
+    expect(restoredB!.deletedAt).toBeNull();
+
+    // The bulk-restore response payload also has to surface the
+    // preserved group_id so the client cache update doesn't have to
+    // do a follow-up read just to learn what the server kept.
+    const responseRows = (bulk.body as {
+      markups: Array<{ id: string; groupId: string | null }>;
+    }).markups;
+    const responseA = responseRows.find((r) => r.id === a.id);
+    const responseB = responseRows.find((r) => r.id === b.id);
+    expect(responseA?.groupId).toBe(originalGroupId);
+    expect(responseB?.groupId).toBe(originalGroupId);
+  });
+
+  /**
+   * Task #1841 — Belt-and-braces guard: an older client (or a partial
+   * snapshot built before the membership step) that POSTs the same
+   * payload but with NO `groupId` field at all must not silently null
+   * out the existing row's group_id when the on-conflict UPDATE runs.
+   * Prior to Task #1841 the server normalised missing `groupId` to
+   * NULL and clobbered the column on every restore, which is exactly
+   * the regression that forced the client to re-stitch via
+   * `/markup-groups` after each redo. The handler now distinguishes
+   * "field omitted" (preserve existing) from "field explicitly null"
+   * (clear), so a snapshot that simply doesn't know the group_id keeps
+   * the row's original membership intact.
+   */
+  it("POST /api/plan-documents/:docId/markups/restore (cached-snapshot bulk) does NOT clobber the existing group_id when the snapshot omits the field", async () => {
+    // Seed two markups so we can stitch a real group (the
+    // `/markup-groups` endpoint enforces a minimum of two members).
+    // We then soft-delete and restore JUST ONE of them with a
+    // snapshot that OMITS the `groupId` field — proving that the
+    // on-conflict UPDATE preserves the row's existing group_id when
+    // the caller doesn't supply one, instead of nulling it out.
+    const seedA = {
+      pageNumber: 14,
+      tool: "RECTANGLE" as const,
+      points: [
+        { x: 0.05, y: 0.06 },
+        { x: 0.95, y: 0.96 },
+      ],
+      color: "#16a34a",
+      thickness: 4,
+    };
+    const seedB = {
+      pageNumber: 14,
+      tool: "FREEHAND" as const,
+      points: [
+        { x: 0.15, y: 0.16 },
+        { x: 0.25, y: 0.26 },
+      ],
+      color: "#0f766e",
+      thickness: 3,
+    };
+    const aRes = await apiPost(
+      `/api/plan-documents/${tenant.docId}/markups`,
+      tenant.token,
+      seedA,
+    );
+    const bRes = await apiPost(
+      `/api/plan-documents/${tenant.docId}/markups`,
+      tenant.token,
+      seedB,
+    );
+    expect(aRes.status).toBe(201);
+    expect(bRes.status).toBe(201);
+    const a = aRes.body as MarkupResponse;
+    const b = bRes.body as MarkupResponse;
+
+    const groupRes = await apiPost(
+      `/api/plan-documents/${tenant.docId}/markup-groups`,
+      tenant.token,
+      { markupIds: [a.id, b.id] },
+    );
+    expect(groupRes.status).toBe(200);
+    const originalGroupId = groupRes.body.groupId as string;
+    expect(originalGroupId).toBeTruthy();
+
+    expect(
+      (await apiDelete(`/api/plan-document-markups/${a.id}`, tenant.token))
+        .status,
+    ).toBe(200);
+
+    // Snapshot omits `groupId` entirely (no key at all). The server's
+    // on-conflict UPDATE must leave the existing row's group_id alone.
+    const bulk = await apiPost(
+      `/api/plan-documents/${tenant.docId}/markups/restore`,
+      tenant.token,
+      {
+        markups: [
+          {
+            id: a.id,
+            pageNumber: seedA.pageNumber,
+            tool: seedA.tool,
+            points: seedA.points,
+            color: seedA.color,
+            thickness: seedA.thickness,
+          },
+        ],
+      },
+    );
+    expect(bulk.status).toBe(201);
+    expect((bulk.body as { count: number }).count).toBe(1);
+
+    const restored = await readRowFromDb(a.id);
+    expect(restored!.deletedAt).toBeNull();
+    // Preserved on omit — NOT nulled out. The other group member's
+    // row is untouched too, so the group is still cohesive.
+    expect(restored!.groupId).toBe(originalGroupId);
+    const otherMember = await readRowFromDb(b.id);
+    expect(otherMember!.groupId).toBe(originalGroupId);
+  });
+
+  /**
+   * Task #1841 — Mirror of the preserve-on-omit guarantee for the
+   * `layerId` column. The existing per-id soft-delete restore test
+   * already proves layerId survives the soft-delete round-trip; this
+   * one proves the cached-snapshot bulk route is symmetric — a
+   * snapshot that omits `layerId` must not clear the row's existing
+   * layer assignment.
+   */
+  it("POST /api/plan-documents/:docId/markups/restore (cached-snapshot bulk) does NOT clobber the existing layer_id when the snapshot omits the field", async () => {
+    const layerRes = await apiPost(
+      `/api/plan-documents/${tenant.docId}/markup-layers`,
+      tenant.token,
+      { name: `QA-omit-${Date.now()}`, color: "#a855f7" },
+    );
+    expect(layerRes.status).toBe(201);
+    const layerId = layerRes.body.id as string;
+
+    const seed = {
+      pageNumber: 15,
+      tool: "FREEHAND" as const,
+      points: [
+        { x: 0.2, y: 0.3 },
+        { x: 0.4, y: 0.5 },
+      ],
+      color: "#f59e0b",
+      thickness: 3,
+      layerId,
+    };
+    const created = await apiPost(
+      `/api/plan-documents/${tenant.docId}/markups`,
+      tenant.token,
+      seed,
+    );
+    expect(created.status).toBe(201);
+    const m = created.body as MarkupResponse;
+    expect(m.layerId).toBe(layerId);
+
+    expect(
+      (await apiDelete(`/api/plan-document-markups/${m.id}`, tenant.token))
+        .status,
+    ).toBe(200);
+
+    // Snapshot omits both `layerId` and `groupId`. The on-conflict
+    // UPDATE must preserve the row's existing layerId rather than
+    // resetting it to NULL.
+    const bulk = await apiPost(
+      `/api/plan-documents/${tenant.docId}/markups/restore`,
+      tenant.token,
+      {
+        markups: [
+          {
+            id: m.id,
+            pageNumber: seed.pageNumber,
+            tool: seed.tool,
+            points: seed.points,
+            color: seed.color,
+            thickness: seed.thickness,
+          },
+        ],
+      },
+    );
+    expect(bulk.status).toBe(201);
+
+    const restored = await readRowFromDb(m.id);
+    expect(restored!.deletedAt).toBeNull();
+    expect(restored!.layerId).toBe(layerId);
+  });
+
   it("restoring a row that is already live is a no-op (idempotent double-click)", async () => {
     // The toolbar's "Undo delete" button might fire twice on a
     // double-click or after a stale cache — the restore endpoint must

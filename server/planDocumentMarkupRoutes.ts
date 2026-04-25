@@ -945,6 +945,26 @@ router.post(
       const inserted: Array<typeof planDocumentMarkups.$inferSelect> = [];
       await db.transaction(async (tx) => {
         for (const m of body.markups) {
+          // Task #1841 — `groupId` and `layerId` are optional on the
+          // wire, but the semantics of "missing" vs "explicitly null"
+          // matter for the on-conflict UPDATE. If the caller supplied
+          // a value (string OR null), we treat it as an authoritative
+          // statement of the snapshot's intent and write it through
+          // verbatim. If the caller OMITTED the field entirely (older
+          // clients or partial snapshots), we leave the existing row's
+          // `group_id` / `layer_id` untouched on conflict so a redo
+          // cycle can't silently strip a markup out of its original
+          // group. New-row INSERTs default to NULL since the row
+          // doesn't exist yet — the conflict path is the only place
+          // the preserve-on-omit behavior is observable.
+          const groupIdProvided = Object.prototype.hasOwnProperty.call(
+            m,
+            "groupId",
+          );
+          const layerIdProvided = Object.prototype.hasOwnProperty.call(
+            m,
+            "layerId",
+          );
           const values = {
             id: m.id,
             organizationId: user.organizationId!,
@@ -968,8 +988,8 @@ router.post(
               isAdminOrManagerForRestore && m.createdBy
                 ? m.createdBy
                 : user.id,
-            layerId: m.layerId ?? null,
-            groupId: m.groupId ?? null,
+            layerId: layerIdProvided ? (m.layerId ?? null) : null,
+            groupId: groupIdProvided ? (m.groupId ?? null) : null,
           };
           // Task #1775 — the DELETE handler now soft-deletes (stamps
           // `deleted_at`) instead of removing the row, so a restore of
@@ -981,22 +1001,30 @@ router.post(
           // because the row never went away. New ids (the rare case
           // where the snapshot belongs to a row that was hard-deleted
           // before #1775 shipped) still INSERT cleanly.
+          //
+          // Task #1841 — only overwrite `layer_id` / `group_id` on
+          // conflict when the snapshot actually carried a value. A
+          // payload that omits the field preserves whatever the row
+          // already had so a delete + undo cycle never silently
+          // re-stitches a fresh group_id when the client is sending
+          // back its full pre-deletion snapshot.
+          const conflictSet: Record<string, unknown> = {
+            deletedAt: null,
+            pageNumber: values.pageNumber,
+            tool: values.tool,
+            points: values.points,
+            color: values.color,
+            thickness: values.thickness,
+            text: values.text,
+          };
+          if (layerIdProvided) conflictSet.layerId = values.layerId;
+          if (groupIdProvided) conflictSet.groupId = values.groupId;
           const rows = await tx
             .insert(planDocumentMarkups)
             .values(values)
             .onConflictDoUpdate({
               target: planDocumentMarkups.id,
-              set: {
-                deletedAt: null,
-                pageNumber: values.pageNumber,
-                tool: values.tool,
-                points: values.points,
-                color: values.color,
-                thickness: values.thickness,
-                text: values.text,
-                layerId: values.layerId,
-                groupId: values.groupId,
-              },
+              set: conflictSet,
             })
             .returning();
           if (rows[0]) inserted.push(rows[0]);
