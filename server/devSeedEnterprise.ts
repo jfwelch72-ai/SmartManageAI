@@ -20,6 +20,9 @@ import {
   crmQuotes,
   crmQuoteLineItems,
   tasks,
+  jobMetricAlertEvents,
+  notifications,
+  userDashboardLayouts,
 } from "@shared/schema";
 import { eq, and, like, sql } from "drizzle-orm";
 import { logInfo } from "./utils/logger";
@@ -609,6 +612,205 @@ router.post("/seed-my-work-bulk", requireDevSeed, requireAuth, async (req, res, 
     next(err);
   }
 });
+
+// Task #2024 — Seed a fresh `pool_health.waitingSaturated` job-metric
+// alert event + matching in-app notification for the calling Super
+// Admin so the Playwright e2e test for the one-click snooze flow can
+// drive the JobMetricAlertItem dropdown end-to-end without waiting for
+// the alert engine to fire one organically. The marker baked into the
+// notification message lets the cleanup endpoint pick its own rows
+// without disturbing real alerts.
+const POOL_HEALTH_SEED_MARKER = "[E2E-POOL-HEALTH-SEED]";
+
+router.post(
+  "/seed-job-metric-alert",
+  requireDevSeed,
+  requireAuth,
+  async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      if (user.role !== "SUPER_ADMIN") {
+        return res
+          .status(403)
+          .json({ error: "Super admin access required" });
+      }
+
+      // The dedupe key the alert engine encodes into `relatedEntityId`
+      // is `${job}:${counter ?? "_"}:${kind}` (see
+      // server/utils/jobMetricAlerts.ts and JobMetricAlertItem.parseJobMetricAlertKey).
+      const job = "pool_health";
+      const counter = "waitingSaturated";
+      const kind = "spike" as const;
+      const relatedEntityId = `${job}:${counter}:${kind}`;
+      const message = `${POOL_HEALTH_SEED_MARKER} Counter "${counter}" on job "${job}" spiked: 42 in the last hour vs baseline 0.50/hr.`;
+
+      // Wipe any stragglers from a prior run for this user so the test
+      // can rely on a single matching event/notification.
+      await db
+        .delete(notifications)
+        .where(
+          and(
+            eq(notifications.userId, user.id),
+            eq(notifications.relatedEntityType, "job_metric_alert"),
+            eq(notifications.relatedEntityId, relatedEntityId),
+          ),
+        );
+      await db
+        .delete(jobMetricAlertEvents)
+        .where(
+          and(
+            eq(jobMetricAlertEvents.job, job),
+            eq(jobMetricAlertEvents.kind, kind),
+            sql`${jobMetricAlertEvents.message} LIKE ${POOL_HEALTH_SEED_MARKER + "%"}`,
+          ),
+        );
+
+      const [event] = await db
+        .insert(jobMetricAlertEvents)
+        .values({
+          job,
+          counter,
+          kind,
+          message,
+          observedValue: "42.0000",
+          baselineValue: "0.5000",
+          triggeredAt: new Date(),
+        })
+        .returning();
+
+      const [notification] = await db
+        .insert(notifications)
+        .values({
+          userId: user.id,
+          organizationId: user.organizationId ?? null,
+          type: "GENERAL" as const,
+          title: `Job metric spike: ${job}`,
+          message,
+          relatedEntityType: "job_metric_alert",
+          relatedEntityId,
+        })
+        .returning();
+
+      // Force a deterministic dashboard layout that surfaces the
+      // NotificationsWidget at the very top so the e2e snooze test
+      // can find the row without scrolling past 8+ default sections
+      // (or fighting whatever custom layout the dev sandbox happens
+      // to have saved). The cleanup endpoint deletes this row to put
+      // the user back on the role default.
+      let layoutOverridden = false;
+      if (user.organizationId) {
+        const e2eLayout = {
+          sections: [
+            {
+              id: "section-e2e-notifications",
+              title: "Notifications",
+              columns: 1,
+              collapsed: false,
+              widgets: [
+                {
+                  id: "e2e-notifications",
+                  type: "NOTIFICATIONS",
+                  x: 0,
+                  y: 0,
+                  w: 12,
+                  h: 8,
+                  visible: true,
+                  minW: 2,
+                  minH: 4,
+                  maxW: 12,
+                  maxH: 12,
+                },
+              ],
+            },
+          ],
+          gridCols: 12,
+          version: 3,
+        };
+        const layoutConfig = JSON.stringify(e2eLayout);
+        await db
+          .insert(userDashboardLayouts)
+          .values({
+            organizationId: user.organizationId,
+            userId: user.id,
+            layoutConfig,
+            isCustom: true,
+          })
+          .onConflictDoUpdate({
+            target: [
+              userDashboardLayouts.organizationId,
+              userDashboardLayouts.userId,
+            ],
+            set: {
+              layoutConfig,
+              isCustom: true,
+              updatedAt: new Date(),
+            },
+          });
+        layoutOverridden = true;
+      }
+
+      res.json({
+        success: true,
+        event,
+        notification,
+        relatedEntityId,
+        marker: POOL_HEALTH_SEED_MARKER,
+        layoutOverridden,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
+
+router.delete(
+  "/seed-job-metric-alert",
+  requireDevSeed,
+  requireAuth,
+  async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      const relatedEntityId = "pool_health:waitingSaturated:spike";
+
+      await db
+        .delete(notifications)
+        .where(
+          and(
+            eq(notifications.userId, user.id),
+            eq(notifications.relatedEntityType, "job_metric_alert"),
+            eq(notifications.relatedEntityId, relatedEntityId),
+          ),
+        );
+      await db
+        .delete(jobMetricAlertEvents)
+        .where(
+          and(
+            eq(jobMetricAlertEvents.job, "pool_health"),
+            eq(jobMetricAlertEvents.kind, "spike"),
+            sql`${jobMetricAlertEvents.message} LIKE ${POOL_HEALTH_SEED_MARKER + "%"}`,
+          ),
+        );
+
+      // Drop the e2e-only single-widget dashboard layout the seed
+      // endpoint installed so the user falls back to the role
+      // default ADMIN_LAYOUT for any subsequent (real) usage.
+      if (user.organizationId) {
+        await db
+          .delete(userDashboardLayouts)
+          .where(
+            and(
+              eq(userDashboardLayouts.userId, user.id),
+              eq(userDashboardLayouts.organizationId, user.organizationId),
+            ),
+          );
+      }
+
+      res.json({ success: true });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 router.post("/clear-my-work-bulk", requireDevSeed, requireAuth, async (req, res, next) => {
   try {
