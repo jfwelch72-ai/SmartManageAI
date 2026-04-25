@@ -141,6 +141,11 @@ interface SheetRowProps {
   unpinPending: boolean;
   swapPending: boolean;
   currentFolderName: string;
+  // Task #1918 — true when the sheet was just re-pinned to a new
+  // active revision (within the last ~30s). Drives a brief amber
+  // background tint on the row so users can spot which drawings need
+  // a re-review when they switch back to the sheet list.
+  isHighlighted: boolean;
   onSelect: (sheetId: string) => void;
   onDragStart: (e: any, sheetId: string) => void;
   onDragEnd: () => void;
@@ -178,6 +183,7 @@ const SheetRow = memo(function SheetRow({
   unpinPending,
   swapPending,
   currentFolderName,
+  isHighlighted,
   onSelect,
   onDragStart,
   onDragEnd,
@@ -204,9 +210,15 @@ const SheetRow = memo(function SheetRow({
       className={cn(
         "flex items-start gap-1.5 px-3 py-1.5 text-sm cursor-pointer hover:bg-accent/50 transition-colors group",
         isDragging && "opacity-50",
-        isSelected && "bg-accent text-accent-foreground"
+        isSelected && "bg-accent text-accent-foreground",
+        // Task #1918 — recently re-pinned rows get a soft amber wash
+        // and a left accent border so they stand out without
+        // disrupting selection styling.
+        isHighlighted &&
+          "bg-amber-50 dark:bg-amber-900/20 border-l-2 border-amber-400 dark:border-amber-500",
       )}
       data-testid={`sheet-${sheetId}`}
+      data-recently-repinned={isHighlighted ? "true" : undefined}
     >
       <GripVertical
         className="w-3 h-3 text-muted-foreground opacity-0 group-hover:opacity-50 shrink-0 cursor-grab mt-0.5"
@@ -916,6 +928,41 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   const [storeyAssocStoreyName, setStoreyAssocStoreyName] = useState<string>("");
   const [activeDrawingSetId, setActiveDrawingSetId] = useState<string | null>(null);
   const [showAllSheets, setShowAllSheets] = useState(true);
+
+  // Task #1918 — Recently re-pinned sheet ids stay highlighted in the
+  // sheet list for a short window (~30s) so users who switch over from
+  // the Drawing Sets sub-tab can spot — at a glance — which drawings
+  // jumped to a new revision and need a re-review. The id set is
+  // reset whenever a fresh re-pin lands; the timer is cleared on
+  // unmount and on each new highlight call to avoid leaking timers
+  // or prematurely clearing a fresh batch.
+  const [recentlyRepinnedSheetIds, setRecentlyRepinnedSheetIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const recentlyRepinnedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handleRepinHighlight = useCallback((sheetIds: string[]) => {
+    if (recentlyRepinnedTimerRef.current) {
+      clearTimeout(recentlyRepinnedTimerRef.current);
+      recentlyRepinnedTimerRef.current = null;
+    }
+    if (sheetIds.length === 0) {
+      setRecentlyRepinnedSheetIds(new Set());
+      return;
+    }
+    setRecentlyRepinnedSheetIds(new Set(sheetIds));
+    recentlyRepinnedTimerRef.current = setTimeout(() => {
+      setRecentlyRepinnedSheetIds(new Set());
+      recentlyRepinnedTimerRef.current = null;
+    }, 30_000);
+  }, []);
+  useEffect(() => {
+    return () => {
+      if (recentlyRepinnedTimerRef.current) {
+        clearTimeout(recentlyRepinnedTimerRef.current);
+        recentlyRepinnedTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const { data: categories = [] } = useQuery<QuantityCategory[]>({
     queryKey: ["/api/projects", project?.id, "takeoff", "categories"],
@@ -1828,6 +1875,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
             userRole={user?.role || ""}
             onSetActive={setActiveDrawingSetId}
             activeSetId={activeDrawingSetId}
+            onRepinHighlight={handleRepinHighlight}
           />
         </div>
       )}
@@ -2571,6 +2619,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                                         unpinPending={unpinPending}
                                         swapPending={swapPending}
                                         currentFolderName={folderName}
+                                        isHighlighted={recentlyRepinnedSheetIds.has(sheet.id)}
                                         onSelect={handleSelectSheet}
                                         onDragStart={handleSheetDragStart}
                                         onDragEnd={handleSheetDragEnd}

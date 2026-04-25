@@ -358,6 +358,13 @@ router.get("/drawing-sets/:setId/compare", requireAuth, async (req: AuthRequest,
 //   * returns `{ updated, replaced, removed }` so the client toast can
 //     report the exact number of sheets that were re-pinned.
 //
+// Task #1918 — additionally returns a `changes` array describing each
+// affected pin: `{ itemId, sheetId, sheetName, fromRevision, toRevision,
+// action }`. The client uses this to surface a follow-up dialog
+// listing exactly which sheets were re-pinned (and from→to revision
+// labels) so field users know which drawings to re-review, and to
+// briefly highlight the affected sheets in the plans-tab sheet list.
+//
 // Non-stale pinned items are left untouched, satisfying the
 // "without losing other pinned selections" requirement.
 router.post("/drawing-sets/:setId/repin-stale", requireAuth, requireRoleOrFeature(["SUPER_ADMIN", "ADMIN", "MANAGER"], "canEditProjects"), async (req: AuthRequest, res, next) => {
@@ -374,7 +381,7 @@ router.post("/drawing-sets/:setId/repin-stale", requireAuth, requireRoleOrFeatur
 
     const items = await db.select().from(drawingSetItems)
       .where(eq(drawingSetItems.drawingSetId, req.params.setId));
-    if (items.length === 0) return res.json({ updated: 0, replaced: 0, removed: 0 });
+    if (items.length === 0) return res.json({ updated: 0, replaced: 0, removed: 0, changes: [] });
 
     const sheetIds = items.map((i) => i.sheetId);
     const pinnedSheets = await db.select().from(takeoffSheets)
@@ -392,8 +399,8 @@ router.post("/drawing-sets/:setId/repin-stale", requireAuth, requireRoleOrFeatur
     // dedupe before issuing UPDATE/DELETE statements (avoids the unique
     // constraint conflict that would otherwise surface as HTTP 409).
     const currentPinnedIds = new Set(items.map((i) => i.sheetId));
-    const itemsToDelete: string[] = [];
-    const itemsToUpdate: Array<{ id: string; newSheetId: string }> = [];
+    const itemsToDelete: Array<{ id: string; sheetName: string; fromRevision: string | null; toRevision: string | null; latestSheetId: string }> = [];
+    const itemsToUpdate: Array<{ id: string; newSheetId: string; sheetName: string; fromRevision: string | null; toRevision: string | null }> = [];
 
     for (const item of items) {
       const pinnedSheet = pinnedMap.get(item.sheetId);
@@ -404,23 +411,35 @@ router.post("/drawing-sets/:setId/repin-stale", requireAuth, requireRoleOrFeatur
         // Latest revision is already pinned as a separate item — drop the
         // stale row instead of trying (and failing) to update into a
         // duplicate (drawingSetId, sheetId) pair.
-        itemsToDelete.push(item.id);
+        itemsToDelete.push({
+          id: item.id,
+          sheetName: pinnedSheet.sheetName,
+          fromRevision: pinnedSheet.revisionLabel ?? null,
+          toRevision: latest.revisionLabel ?? null,
+          latestSheetId: latest.id,
+        });
         currentPinnedIds.delete(item.sheetId);
       } else {
-        itemsToUpdate.push({ id: item.id, newSheetId: latest.id });
+        itemsToUpdate.push({
+          id: item.id,
+          newSheetId: latest.id,
+          sheetName: pinnedSheet.sheetName,
+          fromRevision: pinnedSheet.revisionLabel ?? null,
+          toRevision: latest.revisionLabel ?? null,
+        });
         currentPinnedIds.delete(item.sheetId);
         currentPinnedIds.add(latest.id);
       }
     }
 
     if (itemsToDelete.length === 0 && itemsToUpdate.length === 0) {
-      return res.json({ updated: 0, replaced: 0, removed: 0 });
+      return res.json({ updated: 0, replaced: 0, removed: 0, changes: [] });
     }
 
     await db.transaction(async (tx) => {
       if (itemsToDelete.length > 0) {
         await tx.delete(drawingSetItems)
-          .where(inArray(drawingSetItems.id, itemsToDelete));
+          .where(inArray(drawingSetItems.id, itemsToDelete.map((i) => i.id)));
       }
       for (const u of itemsToUpdate) {
         await tx.update(drawingSetItems)
@@ -429,10 +448,35 @@ router.post("/drawing-sets/:setId/repin-stale", requireAuth, requireRoleOrFeatur
       }
     });
 
+    // Task #1918 — surface per-sheet change details so the client can
+    // tell users *which* sheets just changed and *what* revision they
+    // jumped to. `sheetId` is always the post-re-pin sheet id (i.e. the
+    // latest active revision) so the frontend can highlight the now-
+    // pinned sheets in its sheet list.
+    const changes = [
+      ...itemsToUpdate.map((u) => ({
+        itemId: u.id,
+        sheetId: u.newSheetId,
+        sheetName: u.sheetName,
+        fromRevision: u.fromRevision,
+        toRevision: u.toRevision,
+        action: "updated" as const,
+      })),
+      ...itemsToDelete.map((d) => ({
+        itemId: d.id,
+        sheetId: d.latestSheetId,
+        sheetName: d.sheetName,
+        fromRevision: d.fromRevision,
+        toRevision: d.toRevision,
+        action: "removed" as const,
+      })),
+    ];
+
     res.json({
       updated: itemsToDelete.length + itemsToUpdate.length,
       replaced: itemsToUpdate.length,
       removed: itemsToDelete.length,
+      changes,
     });
   } catch (err: any) {
     if (err?.code === "23505") {

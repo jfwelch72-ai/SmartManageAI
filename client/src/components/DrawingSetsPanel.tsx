@@ -35,8 +35,28 @@ import {
   GitCompare,
   Pin,
   Info,
+  ArrowRight,
 } from "lucide-react";
 import type { TakeoffSheet } from "@shared/schema";
+
+// Task #1918 — `/repin-stale` response now carries per-sheet change
+// details so the UI can tell users exactly which sheets were re-pinned
+// and what revision they jumped to.
+export interface RepinChange {
+  itemId: string;
+  sheetId: string;
+  sheetName: string;
+  fromRevision: string | null;
+  toRevision: string | null;
+  action: "updated" | "removed";
+}
+
+interface RepinStaleResult {
+  updated: number;
+  replaced: number;
+  removed: number;
+  changes: RepinChange[];
+}
 
 interface DrawingSet {
   id: string;
@@ -77,6 +97,12 @@ interface DrawingSetsPanelProps {
   userRole: string;
   onSetActive?: (setId: string | null) => void;
   activeSetId?: string | null;
+  // Task #1918 — invoked after a successful "Re-pin to latest" so the
+  // host (PlansTab) can briefly highlight the affected sheets in its
+  // sheet list. Receives the *post-re-pin* sheet ids (latest active
+  // revisions) so the highlight lands on the rows the user should
+  // re-review.
+  onRepinHighlight?: (sheetIds: string[]) => void;
 }
 
 // Task #1813 — The pinned-row sub-component is memoized so React Query
@@ -413,14 +439,108 @@ const CompareRow = memo(function CompareRow({
   );
 });
 
+// Task #1918 — Follow-up dialog shown after a successful "Re-pin to
+// latest". Lists the affected sheets with their old → new revision
+// labels (e.g. "A-100: v1 → v3") so field users know which drawings
+// to re-review. Driven entirely by the `changes` array returned by
+// `/repin-stale` (no extra round-trip).
+interface RepinChangesDialogProps {
+  open: boolean;
+  changes: RepinChange[];
+  onClose: () => void;
+}
+
+const RepinChangesDialog = memo(function RepinChangesDialog({
+  open,
+  changes,
+  onClose,
+}: RepinChangesDialogProps) {
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (!next) onClose();
+    },
+    [onClose],
+  );
+  const count = changes.length;
+  return (
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        className="sm:max-w-lg max-h-[80vh] overflow-y-auto"
+        data-testid="dialog-repin-changes"
+      >
+        <DialogHeader>
+          <DialogTitle data-testid="text-repin-changes-title">
+            {count === 1
+              ? "Re-pinned 1 sheet to latest"
+              : `Re-pinned ${count} sheets to latest`}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-2">
+          <p
+            className="text-xs text-muted-foreground"
+            data-testid="text-repin-changes-subtitle"
+          >
+            Review the updated drawings below — they now point at their
+            latest active revision.
+          </p>
+          <div className="space-y-1.5">
+            {changes.map((change) => (
+              <div
+                key={change.itemId}
+                className="flex items-center justify-between gap-2 p-2 rounded border text-sm bg-amber-50/50 border-amber-200 dark:bg-amber-900/10 dark:border-amber-900/40"
+                data-testid={`repin-change-${change.itemId}`}
+              >
+                <span
+                  className="truncate font-medium"
+                  data-testid={`text-repin-change-name-${change.itemId}`}
+                >
+                  {change.sheetName}
+                </span>
+                <div className="flex items-center gap-1.5 shrink-0 text-xs">
+                  <Badge
+                    variant="outline"
+                    className="text-[10px]"
+                    data-testid={`badge-repin-from-${change.itemId}`}
+                  >
+                    {change.fromRevision || "—"}
+                  </Badge>
+                  <ArrowRight className="w-3 h-3 text-muted-foreground" />
+                  <Badge
+                    variant="outline"
+                    className="text-[10px] border-green-400 text-green-700 dark:text-green-400"
+                    data-testid={`badge-repin-to-${change.itemId}`}
+                  >
+                    {change.toRevision || "—"}
+                  </Badge>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={onClose}
+            data-testid="button-close-repin-changes"
+          >
+            Close
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+});
+
 interface CompareSetDialogProps {
   setId: string;
   onClose: () => void;
+  onRepinChanges: (changes: RepinChange[]) => void;
 }
 
 const CompareSetDialog = memo(function CompareSetDialog({
   setId,
   onClose,
+  onRepinChanges,
 }: CompareSetDialogProps) {
   const { toast } = useToast();
   const [acceptingItemId, setAcceptingItemId] = useState<string | null>(null);
@@ -487,21 +607,26 @@ const CompareSetDialog = memo(function CompareSetDialog({
         "POST",
         `/api/projects/drawing-sets/${setId}/repin-stale`,
       );
-      return res.json() as Promise<{ updated: number; replaced: number; removed: number }>;
+      return res.json() as Promise<RepinStaleResult>;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "compare"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "sheet-status"] });
+      // Task #1893 — keep portfolio-level stale roll-up in sync.
+      queryClient.invalidateQueries({ queryKey: ["/api/projects/drawing-sets/stale-summary"] });
       const count = data?.updated ?? 0;
-      toast({
-        title:
-          count === 0
-            ? "No stale sheets to update"
-            : count === 1
-              ? "Re-pinned 1 sheet to latest"
-              : `Re-pinned ${count} sheets to latest`,
-      });
+      const changes = data?.changes ?? [];
+      // Task #1918 — when at least one sheet was re-pinned, surface a
+      // follow-up dialog (via the parent) listing the affected sheets
+      // with from→to revision labels instead of the stand-alone toast.
+      // The "no stale sheets" case keeps the lightweight toast since
+      // there's nothing to enumerate.
+      if (count > 0 && changes.length > 0) {
+        onRepinChanges(changes);
+      } else {
+        toast({ title: "No stale sheets to update" });
+      }
     },
     onError: (err: unknown) => {
       toast({
@@ -633,12 +758,16 @@ interface SetStaleBadgeProps {
   setId: string;
   onOpenCompare: (setId: string) => void;
   canRepin: boolean;
+  // Task #1918 — propagated up so the parent can show the follow-up
+  // "what changed" dialog and trigger the sheet-list highlight.
+  onRepinChanges: (changes: RepinChange[]) => void;
 }
 
 const SetStaleBadge = memo(function SetStaleBadge({
   setId,
   onOpenCompare,
   canRepin,
+  onRepinChanges,
 }: SetStaleBadgeProps) {
   const { toast } = useToast();
   const { data, isLoading } = useQuery<ComparisonResult>({
@@ -660,21 +789,25 @@ const SetStaleBadge = memo(function SetStaleBadge({
         "POST",
         `/api/projects/drawing-sets/${setId}/repin-stale`,
       );
-      return res.json() as Promise<{ updated: number; replaced: number; removed: number }>;
+      return res.json() as Promise<RepinStaleResult>;
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "compare"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "items"] });
       queryClient.invalidateQueries({ queryKey: ["/api/projects", "drawing-sets", setId, "sheet-status"] });
+      // Task #1893 — keep portfolio-level stale roll-up in sync.
+      queryClient.invalidateQueries({ queryKey: ["/api/projects/drawing-sets/stale-summary"] });
       const count = result?.updated ?? 0;
-      toast({
-        title:
-          count === 0
-            ? "No stale sheets to update"
-            : count === 1
-              ? "Re-pinned 1 sheet to latest"
-              : `Re-pinned ${count} sheets to latest`,
-      });
+      const changes = result?.changes ?? [];
+      // Task #1918 — surface a follow-up dialog enumerating the
+      // affected sheets and their from→to revisions instead of the
+      // unspecific count toast. Fall back to the toast only when
+      // nothing was actually re-pinned.
+      if (count > 0 && changes.length > 0) {
+        onRepinChanges(changes);
+      } else {
+        toast({ title: "No stale sheets to update" });
+      }
     },
     onError: (err: unknown) => {
       toast({
@@ -813,6 +946,7 @@ export default function DrawingSetsPanel({
   userRole,
   onSetActive,
   activeSetId,
+  onRepinHighlight,
 }: DrawingSetsPanelProps) {
   const { toast } = useToast();
   const [createOpen, setCreateOpen] = useState(false);
@@ -821,6 +955,11 @@ export default function DrawingSetsPanel({
   const [newDescription, setNewDescription] = useState("");
   const [compareSetId, setCompareSetId] = useState<string | null>(null);
   const [manageSetId, setManageSetId] = useState<string | null>(null);
+  // Task #1918 — track the most recent re-pin's per-sheet changes so we
+  // can pop the "what changed" follow-up dialog and (optionally) light
+  // up the affected rows in the host sheet list. `repinChanges` doubles
+  // as the dialog's open flag — non-empty array → open.
+  const [repinChanges, setRepinChanges] = useState<RepinChange[]>([]);
 
   const isAdmin = ["ADMIN", "MANAGER"].includes(userRole);
 
@@ -898,6 +1037,25 @@ export default function DrawingSetsPanel({
     (id: string) => setCompareSetId(id),
     [],
   );
+  // Task #1918 — handler invoked by both the per-card stale badge and
+  // the in-dialog "Re-pin to latest" action when the server returns at
+  // least one change. We:
+  //   1. open the follow-up "what changed" dialog enumerating the
+  //      affected sheets with from→to revision labels;
+  //   2. notify the host (PlansTab) so it can briefly highlight those
+  //      rows in its sheet list — only the *post-re-pin* (latest)
+  //      sheet ids are forwarded so the highlight lands on the rows
+  //      the user should actually re-review.
+  const handleRepinChanges = useCallback(
+    (changes: RepinChange[]) => {
+      setRepinChanges(changes);
+      if (onRepinHighlight && changes.length > 0) {
+        onRepinHighlight(changes.map((c) => c.sheetId));
+      }
+    },
+    [onRepinHighlight],
+  );
+  const handleCloseRepinChanges = useCallback(() => setRepinChanges([]), []);
   // Task #1812 — pass the set name to the dialog so its bulk-replace error
   // toast can name the offending set (via bulkPinErrorDescription) when the
   // backend rejects a duplicate pin with HTTP 409.
@@ -963,6 +1121,7 @@ export default function DrawingSetsPanel({
                         setId={set.id}
                         onOpenCompare={handleOpenCompare}
                         canRepin={isAdmin}
+                        onRepinChanges={handleRepinChanges}
                       />
                     </div>
                     {set.description && (
@@ -1137,8 +1296,19 @@ export default function DrawingSetsPanel({
         <CompareSetDialog
           setId={compareSetId}
           onClose={handleCloseCompare}
+          onRepinChanges={handleRepinChanges}
         />
       )}
+
+      {/* Task #1918 — follow-up dialog listing what changed after a
+          successful re-pin. Mounted unconditionally so the dialog can
+          animate its enter/exit transitions; its `open` flag is driven
+          by the presence of any tracked changes. */}
+      <RepinChangesDialog
+        open={repinChanges.length > 0}
+        changes={repinChanges}
+        onClose={handleCloseRepinChanges}
+      />
     </div>
   );
 }

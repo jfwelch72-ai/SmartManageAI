@@ -515,6 +515,8 @@ describe("Task #1894 — POST /api/projects/drawing-sets/:setId/repin-stale", ()
       .set("Cookie", `auth_token=${seed.adminToken}`);
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ updated: 0, replaced: 0, removed: 0 });
+    // Task #1918 — empty `changes` array even when nothing to do.
+    expect(res.body.changes).toEqual([]);
   });
 
   it("returns updated:0 when no pinned items are stale", async () => {
@@ -531,6 +533,7 @@ describe("Task #1894 — POST /api/projects/drawing-sets/:setId/repin-stale", ()
       .set("Cookie", `auth_token=${seed.adminToken}`);
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ updated: 0, replaced: 0, removed: 0 });
+    expect(res.body.changes).toEqual([]);
 
     const rows = await db.select().from(drawingSetItems)
       .where(eq(drawingSetItems.drawingSetId, seed.drawingSetId));
@@ -563,6 +566,21 @@ describe("Task #1894 — POST /api/projects/drawing-sets/:setId/repin-stale", ()
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ updated: 1, replaced: 1, removed: 0 });
 
+    // Task #1918 — `changes` enumerates the affected pin with the
+    // sheet name, old/new revision labels, and the post-re-pin sheet
+    // id (latest active revision) so the client can highlight the
+    // right row.
+    expect(Array.isArray(res.body.changes)).toBe(true);
+    expect(res.body.changes).toHaveLength(1);
+    expect(res.body.changes[0]).toMatchObject({
+      itemId: staleItemId,
+      sheetId: seed.sheetAv2Id,
+      sheetName: "A-100",
+      fromRevision: "v1",
+      toRevision: "v2",
+      action: "updated",
+    });
+
     const after = await db.select().from(drawingSetItems)
       .where(eq(drawingSetItems.drawingSetId, seed.drawingSetId));
     const sheetIds = new Set(after.map((r) => r.sheetId));
@@ -573,6 +591,10 @@ describe("Task #1894 — POST /api/projects/drawing-sets/:setId/repin-stale", ()
     // Non-stale row is identical (same item id, same sheet id).
     const untouched = after.find((r) => r.id === nonStaleItemId);
     expect(untouched?.sheetId).toBe(seed.sheetBId);
+    // Non-stale row should not appear in the changes payload.
+    expect(
+      res.body.changes.find((c: any) => c.itemId === nonStaleItemId),
+    ).toBeUndefined();
   });
 
   it("dedupes the stale row instead of failing with 409 when its latest is already pinned in the set", async () => {
@@ -597,6 +619,20 @@ describe("Task #1894 — POST /api/projects/drawing-sets/:setId/repin-stale", ()
       .set("Cookie", `auth_token=${seed.adminToken}`);
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({ updated: 1, replaced: 0, removed: 1 });
+
+    // Task #1918 — even when the stale row was *removed* (because its
+    // latest revision was already pinned separately) the change is
+    // still surfaced so users see "A-100: v1 → v2" in the dialog and
+    // can highlight the remaining latest pin in the sheet list.
+    expect(Array.isArray(res.body.changes)).toBe(true);
+    expect(res.body.changes).toHaveLength(1);
+    expect(res.body.changes[0]).toMatchObject({
+      sheetId: seed.sheetAv2Id,
+      sheetName: "A-100",
+      fromRevision: "v1",
+      toRevision: "v2",
+      action: "removed",
+    });
 
     const rows = await db.select().from(drawingSetItems)
       .where(eq(drawingSetItems.drawingSetId, seed.drawingSetId));
