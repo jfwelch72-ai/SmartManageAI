@@ -2,7 +2,7 @@ import { useRef, useCallback, useState } from "react";
 import type { TakeoffMeasurement, TakeoffMarkup } from "@shared/schema";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
-type ActionType = "CREATE" | "DELETE" | "UPDATE" | "MEASUREMENT_UPDATE" | "MEASUREMENT_UPDATE_BATCH" | "MARKUP_CREATE" | "MARKUP_DELETE" | "MARKUP_DELETE_BATCH" | "MARKUP_UPDATE" | "MARKUP_UPDATE_BATCH";
+type ActionType = "CREATE" | "DELETE" | "UPDATE" | "MEASUREMENT_UPDATE" | "MEASUREMENT_UPDATE_BATCH" | "MEASUREMENT_DELETE_BATCH" | "MARKUP_CREATE" | "MARKUP_DELETE" | "MARKUP_DELETE_BATCH" | "MARKUP_UPDATE" | "MARKUP_UPDATE_BATCH";
 
 export interface MarkupSnapshot {
   id: string;
@@ -45,6 +45,16 @@ interface HistoryEntry {
   // ids / authorship / sheet preserved (and a single Redo press can
   // re-issue the same bulk DELETE that produced them).
   markupBatch?: Array<TakeoffMarkup & { points: { x: number; y: number }[] }>;
+  // Task #1901 — full-row snapshots of every measurement removed by a
+  // bulk DELETE. Used by `MEASUREMENT_DELETE_BATCH` so a single Undo
+  // press recreates the whole selection. The measurements API has no
+  // bulk DELETE / bulk-restore endpoint today (unlike #1860's markup
+  // bulk endpoints), so undo/redo fan the work out per-id via
+  // Promise.all to mirror the existing per-id `DELETE` entry path.
+  // Restored measurements receive new ids on undo; the restored row
+  // objects are stored back on the entry so the redo branch can target
+  // those new ids.
+  measurementBatch?: TakeoffMeasurement[];
   sheetId: string;
 }
 
@@ -117,6 +127,24 @@ export function useTakeoffHistory(selectedSheet: string | null) {
   ) => {
     if (markups.length === 0) return;
     undoStack.current.push({ type: "MARKUP_DELETE_BATCH", markupBatch: markups, sheetId });
+    redoStack.current = [];
+    updateFlags();
+  }, [updateFlags]);
+
+  // Task #1901 — Coalesce a bulk DELETE of N measurements into a
+  // single history entry so one Undo press recreates the whole
+  // selection. Mirrors `pushMarkupDeleteBatchAction` (#1860) but the
+  // measurements API has no bulk DELETE / bulk-restore endpoint, so
+  // the undo/redo branches fan the work out per-id (one POST per
+  // restored row, one DELETE per re-deleted row) — same shape as the
+  // existing per-id `DELETE` entry path. Empty arrays are no-ops so
+  // callers don't have to guard.
+  const pushMeasurementDeleteBatchAction = useCallback((
+    measurements: TakeoffMeasurement[],
+    sheetId: string,
+  ) => {
+    if (measurements.length === 0) return;
+    undoStack.current.push({ type: "MEASUREMENT_DELETE_BATCH", measurementBatch: measurements, sheetId });
     redoStack.current = [];
     updateFlags();
   }, [updateFlags]);
@@ -306,6 +334,21 @@ export function useTakeoffHistory(selectedSheet: string | null) {
         await applyMeasurementSnapshot(entry.measurementBefore);
       } else if (entry.type === "MEASUREMENT_UPDATE_BATCH" && entry.measurementBatchBefore) {
         await applyMeasurementBatchSnapshots(entry.measurementBatchBefore);
+      } else if (entry.type === "MEASUREMENT_DELETE_BATCH" && entry.measurementBatch) {
+        // Task #1901 — Recreate every removed measurement. The
+        // measurements API has no bulk-restore counterpart to
+        // /api/takeoff/markups/restore-bulk, so we fan out per-id
+        // POSTs via Promise.all (matching the per-id `DELETE` undo
+        // path). Each POST returns a fresh row; we store those back
+        // on the entry so the redo branch can DELETE the new ids.
+        const restored = await Promise.all(
+          entry.measurementBatch.map(async (m) => {
+            const payload = buildCreatePayload(m, entry.sheetId);
+            const res = await apiRequest("POST", "/api/takeoff/measurements", payload);
+            return res.json() as Promise<TakeoffMeasurement>;
+          }),
+        );
+        entry.measurementBatch = restored;
       }
       redoStack.current.push(entry);
       invalidate(entry.sheetId, entry.type.startsWith("MARKUP"));
@@ -365,6 +408,14 @@ export function useTakeoffHistory(selectedSheet: string | null) {
         await applyMeasurementSnapshot(entry.measurementAfter);
       } else if (entry.type === "MEASUREMENT_UPDATE_BATCH" && entry.measurementBatchAfter) {
         await applyMeasurementBatchSnapshots(entry.measurementBatchAfter);
+      } else if (entry.type === "MEASUREMENT_DELETE_BATCH" && entry.measurementBatch) {
+        // Task #1901 — Re-issue the bulk delete by fanning out per-id
+        // DELETEs against the (post-undo) ids stored on the entry.
+        await Promise.all(
+          entry.measurementBatch.map((m) =>
+            apiRequest("DELETE", `/api/takeoff/measurements/${m.id}`),
+          ),
+        );
       }
       undoStack.current.push(entry);
       invalidate(entry.sheetId, entry.type.startsWith("MARKUP"));
@@ -382,5 +433,5 @@ export function useTakeoffHistory(selectedSheet: string | null) {
     updateFlags();
   }, [updateFlags]);
 
-  return { pushAction, pushMarkupAction, pushMarkupDeleteBatchAction, pushMarkupUpdateAction, pushMarkupUpdateBatchAction, pushMeasurementUpdateAction, pushMeasurementUpdateBatchAction, undo, redo, canUndo, canRedo, isPending, clear };
+  return { pushAction, pushMarkupAction, pushMarkupDeleteBatchAction, pushMarkupUpdateAction, pushMarkupUpdateBatchAction, pushMeasurementUpdateAction, pushMeasurementUpdateBatchAction, pushMeasurementDeleteBatchAction, undo, redo, canUndo, canRedo, isPending, clear };
 }

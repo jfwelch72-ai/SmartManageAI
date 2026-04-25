@@ -515,6 +515,89 @@ describe("useTakeoffHistory MARKUP_UPDATE", () => {
     expect(result.current.canRedo).toBe(true);
   });
 
+  // Task #1901 — A bulk DELETE of N measurements must collapse into a
+  // single MEASUREMENT_DELETE_BATCH entry so one Undo press recreates
+  // every removed row (and one Redo press re-deletes them). The
+  // measurements API has no /restore-bulk counterpart to #1860, so
+  // undo fans out per-id POSTs and redo fans out per-id DELETEs via
+  // Promise.all — same shape as the per-id `DELETE` undo path. The
+  // restored rows receive new ids on undo; the redo branch must
+  // target those new ids, so we assert the entry stores them back.
+  it("MEASUREMENT_DELETE_BATCH undo fans out per-id POSTs and redo targets the restored ids", async () => {
+    const { result } = renderHook(() => useTakeoffHistory("sheet-1"));
+
+    const deletedRows = [
+      {
+        id: "old-m1",
+        sheetId: "sheet-1",
+        type: "LINEAR",
+        points: JSON.stringify([{ x: 0, y: 0 }, { x: 1, y: 1 }]),
+        label: "Slab A",
+      },
+      {
+        id: "old-m2",
+        sheetId: "sheet-1",
+        type: "AREA",
+        points: JSON.stringify([{ x: 0, y: 0 }, { x: 2, y: 2 }]),
+        label: "Slab B",
+      },
+    ] as any;
+
+    act(() => {
+      result.current.pushMeasurementDeleteBatchAction(deletedRows, "sheet-1");
+    });
+
+    expect(result.current.canUndo).toBe(true);
+
+    // Undo: server returns brand-new ids; entry must remember them
+    // so redo can target the right rows. Capture the id at call time
+    // (not inside the json closure) so each POST returns its own id
+    // even though Promise.all fires both in parallel.
+    let postCount = 0;
+    apiRequestMock.mockImplementation(async (method: string, _url: string) => {
+      if (method === "POST") {
+        postCount += 1;
+        const id = `restored-${postCount}`;
+        return { json: async () => ({ id }) };
+      }
+      return { json: async () => ({}) };
+    });
+
+    await act(async () => { await result.current.undo(); });
+
+    expect(apiRequestMock.mock.calls.filter(([m]) => m === "POST")).toHaveLength(2);
+    expect(apiRequestMock.mock.calls).toEqual(
+      expect.arrayContaining([
+        ["POST", "/api/takeoff/measurements", expect.objectContaining({ sheetId: "sheet-1", label: "Slab A" })],
+        ["POST", "/api/takeoff/measurements", expect.objectContaining({ sheetId: "sheet-1", label: "Slab B" })],
+      ]),
+    );
+    expect(invalidateQueriesMock).toHaveBeenCalledWith({
+      queryKey: ["/api/takeoff/sheets", "sheet-1", "measurements"],
+    });
+
+    apiRequestMock.mockClear();
+    apiRequestMock.mockResolvedValue({ json: async () => ({}) });
+
+    // Redo: must DELETE the freshly-restored ids, not the original ones.
+    await act(async () => { await result.current.redo(); });
+
+    expect(apiRequestMock.mock.calls).toEqual(
+      expect.arrayContaining([
+        ["DELETE", "/api/takeoff/measurements/restored-1"],
+        ["DELETE", "/api/takeoff/measurements/restored-2"],
+      ]),
+    );
+  });
+
+  it("MEASUREMENT_DELETE_BATCH ignores empty arrays", () => {
+    const { result } = renderHook(() => useTakeoffHistory("sheet-1"));
+    act(() => {
+      result.current.pushMeasurementDeleteBatchAction([], "sheet-1");
+    });
+    expect(result.current.canUndo).toBe(false);
+  });
+
   it("clears the redo stack when a new edit is pushed", async () => {
     const { result } = renderHook(() => useTakeoffHistory("sheet-1"));
 

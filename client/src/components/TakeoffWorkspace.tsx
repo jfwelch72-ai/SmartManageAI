@@ -502,7 +502,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     categories, currentSheet, aggregatedMeasurements,
     sheetsQueryKey,
     importPlanMutation, supersedeSheetMutation, createMeasurementMutation,
-    updateMeasurementMutation, deleteMeasurementMutation,
+    updateMeasurementMutation, deleteMeasurementMutation, bulkDeleteMeasurementsMutation,
     createMarkupMutation, updateMarkupMutation, bulkUpdateMarkupsMutation, deleteMarkupMutation, bulkDeleteMarkupsMutation,
     createSheetLinkMutation, deleteSheetLinkMutation, detectLinksMutation,
     saveCategoryMutation, deleteCategoryMutation,
@@ -4886,18 +4886,21 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 variant="ghost"
                 size="sm"
                 className="h-6 text-xs px-2"
+                disabled={bulkDeleteMeasurementsMutation.isPending}
                 data-testid="button-batch-delete"
                 onClick={async () => {
-                  if (deleteMeasurementMutation) {
-                    const toDelete = measurements.filter(m => selectedMeasurementIds.has(m.id));
-                    const count = toDelete.length;
-                    setSelectedMeasurementIds(new Set());
-                    setSelectedMeasurementId(null);
-                    for (const m of toDelete) {
-                      deleteMeasurementMutation.mutate(m);
-                    }
-                    toast({ title: "Batch Delete", description: `Deleting ${count} measurements...` });
-                  }
+                  // Task #1901 — Route through the bulk mutation so the
+                  // user gets a single destructive "Deleted N
+                  // measurements · Undo" toast (mirroring #1882 for
+                  // markups) and the deletion is coalesced into one
+                  // MEASUREMENT_DELETE_BATCH history entry instead of
+                  // N per-id `DELETE` entries from the previous
+                  // per-id fan-out loop.
+                  const toDelete = measurements.filter(m => selectedMeasurementIds.has(m.id));
+                  if (toDelete.length === 0) return;
+                  setSelectedMeasurementIds(new Set());
+                  setSelectedMeasurementId(null);
+                  bulkDeleteMeasurementsMutation.mutate(toDelete);
                 }}
               >
                 <Trash2 className="w-3 h-3 mr-1" />

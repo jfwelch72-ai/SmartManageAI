@@ -92,16 +92,28 @@ export function useTakeoffData({
   // restore would put the markups back on the wrong canvas context for
   // the user.
   const bulkDeleteToastRef = useRef<{ dismiss: () => void; sheetId: string } | null>(null);
+  // Task #1901 — Same affordance as #1882 but for the measurements
+  // bulk-delete path. The two refs are kept independent so a navigate
+  // event clears whichever toasts belong to the previous sheet without
+  // either layer piggy-backing on the other's dismiss handle.
+  const bulkDeleteMeasurementsToastRef = useRef<{ dismiss: () => void; sheetId: string } | null>(null);
   useEffect(() => {
     const tracked = bulkDeleteToastRef.current;
     if (tracked && tracked.sheetId !== selectedSheet) {
       tracked.dismiss();
       bulkDeleteToastRef.current = null;
     }
+    const trackedMeas = bulkDeleteMeasurementsToastRef.current;
+    if (trackedMeas && trackedMeas.sheetId !== selectedSheet) {
+      trackedMeas.dismiss();
+      bulkDeleteMeasurementsToastRef.current = null;
+    }
   }, [selectedSheet]);
   useEffect(() => () => {
     bulkDeleteToastRef.current?.dismiss();
     bulkDeleteToastRef.current = null;
+    bulkDeleteMeasurementsToastRef.current?.dismiss();
+    bulkDeleteMeasurementsToastRef.current = null;
   }, []);
 
   const isBid = context?.type === "bid";
@@ -438,6 +450,91 @@ export function useTakeoffData({
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to delete measurement", variant: "destructive" });
+    },
+  });
+
+  // Task #1901 — Bulk DELETE for measurements with a visible Undo
+  // toast, mirroring the markup affordance from #1882. The measurements
+  // API has no `/bulk` DELETE endpoint today (unlike #1832 for markups),
+  // so the mutation fans out per-id DELETEs via Promise.all and
+  // optimistically removes the rows from cache up front. On success we
+  // push exactly one MEASUREMENT_DELETE_BATCH history entry (the Undo
+  // button replays it via takeoffHistory.undo() — Cmd/Ctrl+Z works in
+  // parallel through the same entry) and surface a destructive toast
+  // with an explicit Undo button. The toast carries a `duration` so the
+  // shared toast hook auto-dismisses it (without `duration`,
+  // TOAST_REMOVE_DELAY pins it forever) and is force-dismissed if the
+  // user navigates to a different sheet (see
+  // `bulkDeleteMeasurementsToastRef` effect above). On failure we
+  // restore the cache snapshot and surface a destructive error toast.
+  // We bypass `deleteMeasurementMutation` so its per-id `pushAction`
+  // does not pollute history with N entries alongside the batch entry.
+  const bulkDeleteMeasurementsMutation = useMutation({
+    mutationFn: async (measurementsToDelete: TakeoffMeasurement[]) => {
+      if (selectedVersionId && (!selectedVersionData || selectedVersionData.status === "LOCKED")) {
+        throw new Error("Cannot delete measurements while viewing a locked version");
+      }
+      await Promise.all(
+        measurementsToDelete.map((m) =>
+          apiRequest("DELETE", `/api/takeoff/measurements/${m.id}`),
+        ),
+      );
+      return measurementsToDelete;
+    },
+    onMutate: async (measurementsToDelete) => {
+      const queryKey = measurementsQueryKey;
+      await queryClient.cancelQueries({ queryKey });
+      const previousMeasurements = queryClient.getQueryData<TakeoffMeasurement[]>(queryKey);
+      const ids = new Set(measurementsToDelete.map((m) => m.id));
+      queryClient.setQueryData<TakeoffMeasurement[]>(queryKey, (old) =>
+        old ? old.filter((m) => !ids.has(m.id)) : old,
+      );
+      return { previousMeasurements, queryKey };
+    },
+    onSuccess: (deleted) => {
+      queryClient.invalidateQueries({ queryKey: measurementsQueryKey });
+      callbacks.setSelectedMeasurementId(null);
+      if (selectedSheet) {
+        takeoffHistory.pushMeasurementDeleteBatchAction(deleted, selectedSheet);
+        // Mirror the per-id mutation's collab fan-out so the other
+        // viewers' canvases drop the rows in real time too.
+        for (const m of deleted) {
+          onCollabBroadcast?.("MEASUREMENT_DELETED", { sheetId: selectedSheet, measurementId: m.id });
+        }
+      }
+      const count = deleted.length;
+      if (count > 0 && selectedSheet) {
+        bulkDeleteMeasurementsToastRef.current?.dismiss();
+        const sheetIdAtDelete = selectedSheet;
+        const handle = toast({
+          variant: "destructive",
+          title: `Deleted ${count} ${count === 1 ? "measurement" : "measurements"}`,
+          duration: 8000,
+          action: (
+            <ToastAction
+              altText="Undo bulk delete of measurements"
+              data-testid="button-toast-undo-bulk-delete-measurements"
+              onClick={() => {
+                bulkDeleteMeasurementsToastRef.current = null;
+                takeoffHistory.undo();
+              }}
+            >
+              Undo
+            </ToastAction>
+          ),
+        });
+        bulkDeleteMeasurementsToastRef.current = { dismiss: handle.dismiss, sheetId: sheetIdAtDelete };
+      }
+    },
+    onError: (error: any, _vars, ctx) => {
+      if (ctx?.previousMeasurements) {
+        queryClient.setQueryData(ctx.queryKey, ctx.previousMeasurements);
+      }
+      const description =
+        (typeof error === "object" && error && typeof error.message === "string"
+          ? error.message
+          : null) || "Failed to delete measurements";
+      toast({ title: "Error", description, variant: "destructive" });
     },
   });
 
@@ -1118,6 +1215,7 @@ export function useTakeoffData({
     createMeasurementMutation,
     updateMeasurementMutation,
     deleteMeasurementMutation,
+    bulkDeleteMeasurementsMutation,
     createMarkupMutation,
     updateMarkupMutation,
     bulkUpdateMarkupsMutation,
