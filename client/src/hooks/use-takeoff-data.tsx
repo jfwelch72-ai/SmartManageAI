@@ -4,6 +4,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { ToastAction } from "@/components/ui/toast";
 import { useTakeoffHistory, type MeasurementSnapshot } from "@/hooks/use-takeoff-history";
+import { useInvalidateDrawingSetCompares } from "@/hooks/use-invalidate-drawing-set-compares";
 import type { TakeoffSheet, TakeoffMeasurement, TakeoffMeasurementGroup, QuantityCategory, TakeoffMarkup, TakeoffSheetLink, TakeoffCondition } from "@shared/schema";
 import type { PlanDocument, AddendumOverlayData, MeasurementType } from "@/components/takeoff/types";
 import { buildMarkupFailureSummary } from "@/components/markups/markup-failure-helpers";
@@ -136,6 +137,17 @@ export function useTakeoffData({
   const ctxId = isBid ? context.bidId : projectId;
   const ctxCode = isBid ? context.bidCode : projectCode;
 
+  // Task #1913 — Mirror PlansTab's #1895 staleness wiring from inside the
+  // takeoff workspace. Sheet rename / duplicate / delete / supersede here
+  // mutate the same `takeoff_sheets.is_active` / `sheet_name` fields that
+  // every drawing set's `/compare` query reads, so we invalidate every
+  // set's compare query after each mutation. Drawing sets are
+  // project-scoped, so bid-context takeoffs pass `null` and this becomes
+  // a no-op there.
+  const invalidateDrawingSetCompares = useInvalidateDrawingSetCompares(
+    isBid ? null : projectId,
+  );
+
   const sheetsQueryKey = isBid
     ? ["/api/bids", ctxId, "takeoff", "sheets"]
     : ["/api/projects", ctxId, "takeoff", "sheets"];
@@ -165,6 +177,10 @@ export function useTakeoffData({
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
+      // Task #1913 — importing a plan creates new active takeoff_sheets
+      // that may match pinned sheet names in any drawing set, so refresh
+      // every set's compare query (mirrors PlansTab #1895 behavior).
+      invalidateDrawingSetCompares();
       callbacks.setUploadDialogOpen(false);
       if (data?.sheets?.[0]?.id) {
         callbacks.setSelectedSheet(data.sheets[0].id);
@@ -193,6 +209,11 @@ export function useTakeoffData({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
+      // Task #1913 — supersede explicitly flips the old sheet's is_active,
+      // which is exactly what every drawing set's /compare query reads to
+      // decide if its pinned revision is stale. Refresh every set's
+      // compare so SetStaleBadge updates without window refocus.
+      invalidateDrawingSetCompares();
       toast({ title: "Revision recorded", description: "The old sheet has been superseded by the new revision." });
     },
     onError: () => {
@@ -627,6 +648,10 @@ export function useTakeoffData({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
+      // Task #1913 — sheet_name change shifts which sheet a set's pinned
+      // revision matches as the latest active, so refresh every set's
+      // compare query (mirrors PlansTab #1895 behavior).
+      invalidateDrawingSetCompares();
       callbacks.setRenameDialogOpen(false);
       toast({ title: "Sheet renamed" });
     },
@@ -642,6 +667,9 @@ export function useTakeoffData({
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
+      // Task #1913 — duplicate creates a new active sheet that may match
+      // a pinned sheet name, flipping a set from "Up to date" to "newer".
+      invalidateDrawingSetCompares();
       if (data?.sheet?.id) callbacks.setSelectedSheet(data.sheet.id);
       toast({ title: "Sheet duplicated", description: `${data?.measurementsCopied || 0} measurements copied` });
     },
@@ -663,6 +691,11 @@ export function useTakeoffData({
     },
     onSuccess: (data: any, variables) => {
       queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
+      // Task #1913 — restore re-activates a previously-deleted sheet, so
+      // it can flip every set's compare back to the pre-delete staleness
+      // state. Mirror the deleteSheetMutation invalidation above so the
+      // SetStaleBadge stays in sync with the round-trip.
+      invalidateDrawingSetCompares();
       const restoredId: string | undefined = data?.sheet?.id || variables.sheet.id;
       if (restoredId) {
         // Re-select the restored sheet so the canvas immediately
@@ -698,6 +731,10 @@ export function useTakeoffData({
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
+      // Task #1913 — deleting a sheet drops it from the project's active
+      // set, potentially clearing or revealing a newer revision for any
+      // set, so refresh every set's compare (mirrors PlansTab #1895).
+      invalidateDrawingSetCompares();
       callbacks.setSelectedSheet(sheets.length > 1 ? sheets.find(s => s.id !== selectedSheet)?.id || null : null);
       callbacks.setDeleteSheetConfirmOpen(false);
       // Task #1902 — Surface a destructive-style toast with an Undo

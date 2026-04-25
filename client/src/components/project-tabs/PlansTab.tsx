@@ -54,6 +54,7 @@ import { useTour } from "@/components/TourProvider";
 import type { TakeoffSheet } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { useFeatureFlags } from "@/hooks/use-feature-flags";
+import { useInvalidateDrawingSetCompares } from "@/hooks/use-invalidate-drawing-set-compares";
 import LibraryPanel from "@/components/LibraryPanel";
 import DrawingSetsPanel from "@/components/DrawingSetsPanel";
 import ReportsPage from "@/pages/reports";
@@ -983,14 +984,13 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   // Existing pin/unpin/swap flows already invalidate the active set's
   // compare via `invalidateDrawingSetCaches`; this helper covers the
   // sheet-side mutations that affect every set.
-  const invalidateProjectSetCompares = useCallback(() => {
-    if (!project?.id || drawingSetsData.length === 0) return;
-    for (const set of drawingSetsData) {
-      queryClient.invalidateQueries({
-        queryKey: ["/api/projects", "drawing-sets", set.id, "compare"],
-      });
-    }
-  }, [project?.id, drawingSetsData]);
+  //
+  // Task #1913 — Extracted into the shared `useInvalidateDrawingSetCompares`
+  // hook so the takeoff workspace's parallel rename/duplicate/delete/
+  // supersede mutations (`use-takeoff-data`) reuse the exact same
+  // invalidation set instead of leaving the badge stale until window
+  // refocus.
+  const invalidateProjectSetCompares = useInvalidateDrawingSetCompares(project?.id);
 
   const primarySet = useMemo(() => drawingSetsData.find(s => s.isPrimary) || null, [drawingSetsData]);
 
