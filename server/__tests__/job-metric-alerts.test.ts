@@ -209,8 +209,19 @@ const dbMock = {
         joinCount++;
         return innerChain;
       };
-      innerChain.orderBy = (..._args2: unknown[]) =>
-        Promise.resolve(computeRows());
+      // Task #2010 — `snoozeJobMetricAlertByKey` issues a
+      // `.from(...).where(...).orderBy(...).limit(1)` query, so the
+      // chain needs both an awaitable `.orderBy()` (existing usage) and
+      // a chained `.limit()` that resolves the slice. The legacy
+      // awaitable orderBy still works because we attach `then` to the
+      // chain returned from `.limit()` too.
+      const orderByChain: Record<string, unknown> = {};
+      orderByChain.limit = (n: number) =>
+        Promise.resolve(computeRows().slice(0, n));
+      (orderByChain as { then?: unknown }).then = (
+        onFulfilled: (value: unknown) => unknown,
+      ) => Promise.resolve(computeRows()).then(onFulfilled);
+      innerChain.orderBy = (..._args2: unknown[]) => orderByChain;
       (innerChain as { then?: unknown }).then = (
         onFulfilled: (value: unknown) => unknown,
       ) => Promise.resolve(computeRows()).then(onFulfilled);
@@ -1052,6 +1063,145 @@ describe("jobMetricAlerts (Task #718)", () => {
           at("2026-04-21T03:00:00Z"),
         ),
       ).toBe(false);
+    });
+  });
+
+  // Task #2010 — `snoozeJobMetricAlertByKey` powers the in-app
+  // notification action buttons that page Super Admins from the
+  // `pool_health` job. The bell row only carries the dedupe key, so
+  // the function must find the most recent matching event and write
+  // a snooze the engine's `fetchActiveSnoozeLookup` will pick up to
+  // suppress in-app + email re-notifications for the chosen window.
+  describe("snoozeJobMetricAlertByKey (Task #2010)", () => {
+    it("snoozes the most recent matching event by job/counter/kind", async () => {
+      const now = Date.now();
+      alerts.setJobMetricAlertsClockForTests(() => now);
+      // Two prior events on different keys; the second one targets
+      // the dedupe key the operator is reacting to from the bell row.
+      state.events.push({
+        id: "evt-other",
+        job: "pool_health",
+        counter: "exhausted",
+        kind: "spike",
+        ruleId: null,
+        message: "noisy neighbor",
+        observedValue: "1",
+        baselineValue: "0",
+        triggeredAt: new Date(now - 30 * 60 * 1000),
+        notifiedUserCount: 2,
+        acknowledgedAt: null,
+        acknowledgedById: null,
+        snoozedUntil: null,
+        snoozedById: null,
+        emailed: false,
+        emailedRecipientCount: 0,
+        emailAttempted: false,
+        emailError: null,
+      });
+      state.events.push({
+        id: "evt-target",
+        job: "pool_health",
+        counter: "waitingSaturated",
+        kind: "spike",
+        ruleId: null,
+        message: "waiting saturated",
+        observedValue: "1",
+        baselineValue: "0",
+        triggeredAt: new Date(now - 5 * 60 * 1000),
+        notifiedUserCount: 2,
+        acknowledgedAt: null,
+        acknowledgedById: null,
+        snoozedUntil: null,
+        snoozedById: null,
+        emailed: false,
+        emailedRecipientCount: 0,
+        emailAttempted: false,
+        emailError: null,
+      });
+
+      const updated = await alerts.snoozeJobMetricAlertByKey(
+        "admin-1",
+        "pool_health",
+        "waitingSaturated",
+        "spike",
+        4,
+      );
+
+      expect(updated).not.toBeNull();
+      expect(updated?.job).toBe("pool_health");
+      expect(updated?.counter).toBe("waitingSaturated");
+      expect(updated?.snoozedById).toBe("admin-1");
+      expect(updated?.snoozedUntil).not.toBeNull();
+      // Acknowledgement is set as a side effect of snoozing so the
+      // event leaves the active banner immediately.
+      expect(updated?.acknowledgedById).toBe("admin-1");
+
+      // Engine's snooze lookup now returns a future timestamp for
+      // `pool_health::waitingSaturated::spike`, so a fresh evaluation
+      // tick that would normally fire the absolute-floor rule must
+      // suppress it instead. This is the user-visible payoff: the
+      // operator clicks "Snooze 4h" on the bell row and the engine
+      // stops re-paging the same starvation incident every 60 min.
+      const samples: Array<{ timestamp: number; counters: Record<string, number> }> = [
+        { timestamp: now - 60_000, counters: { waitingSaturated: 5 } },
+      ];
+      const result = await alerts.evaluateJobMetricAlerts({
+        metricsSource: source([
+          { job: "pool_health", samples },
+        ]),
+      });
+      expect(
+        result.alertsFired.find(
+          (a) => a.job === "pool_health" && a.counter === "waitingSaturated",
+        ),
+      ).toBeUndefined();
+      expect(result.alertsSuppressed).toBeGreaterThanOrEqual(1);
+    });
+
+    it("returns null when there are no candidate events to snooze", async () => {
+      // No events seeded. The select-then-limit chain returns [] and
+      // the helper short-circuits. (The SQL `where` filter that
+      // discriminates by job/counter/kind is exercised via the
+      // production database; the unit-test db mock ignores filter
+      // expressions, so testing that path here would not be faithful.)
+      const updated = await alerts.snoozeJobMetricAlertByKey(
+        "admin-1",
+        "pool_health",
+        "waitingSaturated",
+        "spike",
+        1,
+      );
+      expect(updated).toBeNull();
+    });
+
+    it("rejects non-positive hours without touching the database", async () => {
+      await expect(
+        alerts.snoozeJobMetricAlertByKey(
+          "admin-1",
+          "pool_health",
+          "waitingSaturated",
+          "spike",
+          0,
+        ),
+      ).rejects.toThrow(/positive/i);
+      await expect(
+        alerts.snoozeJobMetricAlertByKey(
+          "admin-1",
+          "pool_health",
+          "waitingSaturated",
+          "spike",
+          -2,
+        ),
+      ).rejects.toThrow(/positive/i);
+      await expect(
+        alerts.snoozeJobMetricAlertByKey(
+          "admin-1",
+          "pool_health",
+          "waitingSaturated",
+          "spike",
+          Number.NaN,
+        ),
+      ).rejects.toThrow(/positive/i);
     });
   });
 

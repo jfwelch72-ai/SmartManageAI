@@ -86,6 +86,64 @@ router.post(
   },
 );
 
+// Task #2010 — Snooze the most recent matching `(job, counter, kind)`
+// alert event without requiring the caller to know its row id. Powers
+// the in-app notification action buttons that page Super Admins from
+// `pool_health` starvation events: the bell row only carries the
+// dedupe key (e.g. `pool_health:waitingSaturated:spike` in
+// `relatedEntityId`), so this endpoint lets the operator act on the
+// alert without first navigating to the dashboard. Behavior, dedupe
+// key, and audit log entry mirror the `:id/snooze` route exactly.
+const snoozeByKeySchema = z.object({
+  job: z.string().min(1).max(128),
+  counter: z.string().min(1).max(128).nullable().optional(),
+  kind: z.enum(["spike", "stall"]),
+  hours: z.number().positive().max(7 * 24),
+});
+
+router.post(
+  "/admin/metrics/jobs/alerts/snooze-by-key",
+  requireAuth,
+  requireRole("SUPER_ADMIN"),
+  async (req: AuthRequest, res: Response, next: NextFunction) => {
+    try {
+      const { job, counter, kind, hours } = snoozeByKeySchema.parse(req.body);
+      const updated = await jobMetricAlerts.snoozeJobMetricAlertByKey(
+        req.user!.id,
+        job,
+        counter ?? null,
+        kind,
+        hours,
+      );
+      if (!updated) {
+        res
+          .status(404)
+          .json({ error: "No matching alert event in the last 24h" });
+        return;
+      }
+      await logAudit(
+        {
+          userId: req.user!.id,
+          action: "UPDATE",
+          entityType: "job_metric_alert_event",
+          entityId: updated.id,
+          newValue: `Snoozed ${updated.job}/${updated.counter ?? "_"}/${updated.kind} for ${hours}h until ${updated.snoozedUntil ? new Date(updated.snoozedUntil).toISOString() : "n/a"} (via notification action)`,
+        },
+        req,
+      );
+      res.json(updated);
+    } catch (err: any) {
+      if (err instanceof z.ZodError) {
+        res
+          .status(400)
+          .json({ error: "Invalid snooze request", details: err.errors });
+        return;
+      }
+      next(err);
+    }
+  },
+);
+
 // Task #734 — clear an active snooze early
 router.post(
   "/admin/metrics/jobs/alerts/events/:id/unsnooze",

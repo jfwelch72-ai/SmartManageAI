@@ -181,6 +181,14 @@ export function getNotificationDestination(notification: {
       if (relatedEntityType === "gantt_pdf_health") {
         return "/admin/gantt-pdf";
       }
+      // Task #2010 — bell-row deep link for the job-metric alert
+      // pages fired by `evaluateJobMetricAlerts`. The notifications
+      // widget renders inline snooze buttons, but the global bell
+      // dropdown needs a destination so a Super Admin can land on the
+      // dashboard's active-alert banner with one click.
+      if (relatedEntityType === "job_metric_alert") {
+        return "/admin/job-metrics";
+      }
       return null;
     default:
       return null;

@@ -9,6 +9,7 @@ import type { Notification } from "@shared/schema";
 import { formatDistanceToNow } from "date-fns";
 import { useState } from "react";
 import { CertifiedPayrollDigestItem } from "@/components/notifications/CertifiedPayrollDigestItem";
+import { JobMetricAlertItem } from "@/components/notifications/JobMetricAlertItem";
 
 export function NotificationsWidget({ config }: { config?: Record<string, unknown> }) {
   const { data: notifications = [], isLoading, isError, refetch } = useQuery<Notification[]>({
@@ -112,6 +113,16 @@ export function NotificationsWidget({ config }: { config?: Record<string, unknow
                     onDismiss={() => markAsReadMutation.mutate(notification.id)}
                     isDismissing={markAsReadMutation.isPending}
                     onView={() => markAsReadMutation.mutate(notification.id)}
+                  />
+                );
+              }
+              if (notification.relatedEntityType === "job_metric_alert") {
+                return (
+                  <JobMetricAlertItem
+                    key={notification.id}
+                    notification={notification}
+                    onDismiss={() => markAsReadMutation.mutate(notification.id)}
+                    isDismissing={markAsReadMutation.isPending}
                   />
                 );
               }

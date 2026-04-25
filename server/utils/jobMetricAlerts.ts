@@ -21,7 +21,7 @@
  */
 
 import { db } from "../db";
-import { and, desc, eq, gt, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gt, gte, lte, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   jobMetricAlertEvents,
@@ -1579,6 +1579,52 @@ export async function snoozeJobMetricAlertEvent(
     .returning();
   if (!updated) return null;
   return hydrateEventRow(updated);
+}
+
+/**
+ * Task #2010 — Snooze the most recent matching `(job, counter, kind)`
+ * alert event without requiring the caller to know its row id. Used
+ * by the in-app notification action buttons (and any other surface
+ * where the operator only knows the dedupe key from the bell-row
+ * relatedEntityId, e.g. `pool_health:waitingSaturated:spike`).
+ *
+ * Behavior mirrors `snoozeJobMetricAlertEvent` exactly — the engine's
+ * `fetchActiveSnoozeLookup` already keys on `(job, counter, kind)` so
+ * snoozing any matching row suppresses both in-app and email
+ * re-notifications for the dedupe window. We pick the newest matching
+ * row in the last 24h so the snooze attribution lines up with the
+ * notification the operator is reacting to.
+ */
+export async function snoozeJobMetricAlertByKey(
+  userId: string,
+  job: string,
+  counter: string | null,
+  kind: AlertKind,
+  hours: number,
+): Promise<JobMetricAlertEventView | null> {
+  if (!Number.isFinite(hours) || hours <= 0) {
+    throw new Error("Snooze duration must be a positive number of hours");
+  }
+  const now = nowFn();
+  const cutoff = new Date(now - 24 * HOUR_MS);
+  const counterClause = counter === null
+    ? sql`${jobMetricAlertEvents.counter} IS NULL`
+    : eq(jobMetricAlertEvents.counter, counter);
+  const [target] = await db
+    .select({ id: jobMetricAlertEvents.id })
+    .from(jobMetricAlertEvents)
+    .where(
+      and(
+        eq(jobMetricAlertEvents.job, job),
+        counterClause,
+        eq(jobMetricAlertEvents.kind, kind),
+        gte(jobMetricAlertEvents.triggeredAt, cutoff),
+      ),
+    )
+    .orderBy(desc(jobMetricAlertEvents.triggeredAt))
+    .limit(1);
+  if (!target) return null;
+  return snoozeJobMetricAlertEvent(target.id, userId, hours);
 }
 
 /**
