@@ -45,6 +45,17 @@ interface UseTakeoffDataParams {
      * the server has already removed.
      */
     pruneSelectedMarkupIds?: (ids: string[]) => void;
+    /**
+     * Task #1970 — Same affordance as `pruneSelectedMarkupIds` but
+     * for measurements. Called when `updateMeasurementMutation`
+     * receives a `reason: "not_found"` 404 (typically because a
+     * teammate deleted the measurement on another device). The
+     * workspace clears `selectedMeasurementId` and prunes any
+     * matching ids from the multi-select set so the properties
+     * panel can't re-edit a phantom that the server has already
+     * removed.
+     */
+    pruneSelectedMeasurementIds?: (ids: string[]) => void;
   };
 }
 
@@ -119,6 +130,86 @@ export function useTakeoffData({
       callbacks.pruneSelectedMarkupIds?.(notFoundIds);
     },
     [callbacks],
+  );
+
+  // Task #1970 — Mirror the markup helper above for measurements:
+  // when a measurement PATCH fails with `reason: "not_found"` the
+  // server has already deleted the row (typically a teammate on
+  // another device). The legacy onError handler only fired a generic
+  // "Failed to update measurement" toast and left the cache intact,
+  // so the next edit attempt against the same row would just fail
+  // again until the user manually refreshed the workspace. This
+  // helper surgically removes the deleted ids from the active
+  // sheet's cached measurements list AND clears them out of the
+  // workspace's selectedMeasurementId / selectedMeasurementIds
+  // state so the properties panel can't re-edit a phantom row.
+  const pruneDeletedMeasurements = useCallback(
+    (notFoundIds: string[], cacheKey: readonly unknown[]) => {
+      if (notFoundIds.length === 0) return;
+      const notFoundSet = new Set(notFoundIds);
+      queryClient.setQueryData<TakeoffMeasurement[]>(
+        cacheKey,
+        (old) => (old ? old.filter((m) => !notFoundSet.has(m.id)) : old),
+      );
+      callbacks.pruneSelectedMeasurementIds?.(notFoundIds);
+    },
+    [callbacks],
+  );
+
+  // Task #1970 — Parse a measurement PATCH error response and return
+  // the ids the server says are gone (`reason: "not_found"`). Mirrors
+  // the markup-side `parseFailureGroups` shape so a future bulk
+  // measurement endpoint can reuse the same `failuresByReason` /
+  // legacy-flat shape without changing this caller. The attempted-id
+  // fallback (status 404 with no structured body) matches the markup
+  // helper's behavior so older server responses still get the prune
+  // treatment instead of leaking phantoms. Hook-local because it
+  // doesn't close over any state — exposed as a useCallback so its
+  // identity stays stable across renders for the onError handler
+  // dependency list.
+  const extractMeasurementNotFoundIds = useCallback(
+    (error: unknown, attemptedIds: string[]): string[] => {
+      if (!error || typeof error !== "object") return [];
+      const data = (error as { data?: any }).data;
+      const status = (error as { status?: number }).status;
+      const collected: string[] = [];
+      const seen = new Set<string>();
+      const pushAll = (raw: unknown) => {
+        if (!Array.isArray(raw)) return;
+        for (const v of raw) {
+          if (typeof v === "string" && v.length > 0 && !seen.has(v)) {
+            seen.add(v);
+            collected.push(v);
+          }
+        }
+      };
+      if (data && typeof data === "object") {
+        if (Array.isArray(data.failuresByReason)) {
+          for (const g of data.failuresByReason) {
+            if (g && typeof g === "object" && g.reason === "not_found") {
+              pushAll(g.failedMeasurementIds);
+            }
+          }
+        }
+        if (data.reason === "not_found") {
+          if (Array.isArray(data.failedMeasurementIds)) {
+            pushAll(data.failedMeasurementIds);
+          } else if (collected.length === 0 && status === 404) {
+            // Older server responses that include `reason: "not_found"`
+            // but no enumerated id list — fall back to what we tried
+            // to PATCH so the cache and selection still get cleaned up.
+            for (const id of attemptedIds) {
+              if (!seen.has(id)) {
+                seen.add(id);
+                collected.push(id);
+              }
+            }
+          }
+        }
+      }
+      return collected;
+    },
+    [],
   );
 
   // Task #1882 — Track the most recent "Deleted N markups" undo toast
@@ -498,7 +589,29 @@ export function useTakeoffData({
         }
       }
     },
-    onError: () => {
+    onError: (error: unknown, variables) => {
+      // Task #1970 — Mirror the markup not_found prune (Task #1837)
+      // for measurements: when the server reports the measurement is
+      // already gone (typically a teammate deleted it on another
+      // device), drop it out of the cached measurements list and
+      // clear it from the workspace selection so the user can't keep
+      // re-trying an edit against a phantom row that will never
+      // succeed. Non-not_found failures (network down, validation)
+      // stay on the legacy generic toast path with no cache surgery.
+      const notFoundIds = extractMeasurementNotFoundIds(
+        error,
+        variables?.id ? [variables.id] : [],
+      );
+      if (notFoundIds.length > 0) {
+        pruneDeletedMeasurements(notFoundIds, measurementsQueryKey);
+        toast({
+          title: "Measurement was deleted",
+          description:
+            "Another teammate removed this measurement, so your edit could not be saved. The canvas has been refreshed.",
+          variant: "destructive",
+        });
+        return;
+      }
       toast({ title: "Error", description: "Failed to update measurement", variant: "destructive" });
     },
   });

@@ -528,6 +528,26 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           return changed ? next : prev;
         });
       },
+      // Task #1970 — Same affordance as `pruneSelectedMarkupIds`
+      // above but for measurements: when `updateMeasurementMutation`
+      // sees a `reason: "not_found"` 404 (teammate deleted the
+      // measurement on another device), clear the matching id from
+      // both the single-select (`selectedMeasurementId`) and
+      // multi-select (`selectedMeasurementIds`) state so the
+      // properties panel can't re-issue an edit against a phantom.
+      pruneSelectedMeasurementIds: (ids: string[]) => {
+        if (ids.length === 0) return;
+        const idSet = new Set(ids);
+        setSelectedMeasurementId((prev) => (prev && idSet.has(prev) ? null : prev));
+        setSelectedMeasurementIds((prev) => {
+          let changed = false;
+          const next = new Set(prev);
+          for (const id of ids) {
+            if (next.delete(id)) changed = true;
+          }
+          return changed ? next : prev;
+        });
+      },
     },
   });
 

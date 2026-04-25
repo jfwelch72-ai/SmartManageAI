@@ -339,7 +339,19 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
       .from(takeoffMeasurements)
       .where(eq(takeoffMeasurements.id, id))
       .limit(1);
-    if (!existingMeasurement) { res.status(404).json({ error: "Measurement not found" }); return; }
+    if (!existingMeasurement) {
+      // Task #1970 — Mirror the markup PATCH's structured 404 shape
+      // (Task #1768) so the client onError handler can drop the
+      // deleted id out of the cached measurements list and the
+      // workspace selection set instead of restoring a phantom that
+      // will keep failing until the user manually refreshes.
+      res.status(404).json({
+        error: "Measurement not found — it may have been deleted",
+        reason: "not_found",
+        failedMeasurementIds: [id],
+      });
+      return;
+    }
 
     const locked = await isMeasurementLocked(id);
     if (locked) { res.status(403).json({ error: "Cannot edit a measurement in a locked version" }); return; }
