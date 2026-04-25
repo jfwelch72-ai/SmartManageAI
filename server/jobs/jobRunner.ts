@@ -2531,8 +2531,15 @@ async function processIdleOpportunities() {
 }
 
 async function processOrphanUploads() {
-  const ORPHAN_CUTOFF_MINUTES = 30;
-  const cutoff = new Date(Date.now() - ORPHAN_CUTOFF_MINUTES * 60 * 1000);
+  // Task #2003 — keep resumable multipart intents (those with a
+  // resumableUri) for 24h so users can recover from accidental refreshes
+  // mid-multi-GB upload. Single-PUT intents still get the aggressive
+  // 30-minute sweep because they finish in seconds.
+  const SHORT_CUTOFF_MINUTES = 30;
+  const RESUMABLE_CUTOFF_MINUTES = 24 * 60;
+  const now = Date.now();
+  const shortCutoff = new Date(now - SHORT_CUTOFF_MINUTES * 60 * 1000);
+  const resumableCutoff = new Date(now - RESUMABLE_CUTOFF_MINUTES * 60 * 1000);
 
   const orphans = await db
     .select()
@@ -2540,7 +2547,10 @@ async function processOrphanUploads() {
     .where(
       and(
         isNull(uploadIntents.confirmedAt),
-        lt(uploadIntents.createdAt, cutoff)
+        or(
+          and(isNull(uploadIntents.resumableUri), lt(uploadIntents.createdAt, shortCutoff)),
+          and(isNotNull(uploadIntents.resumableUri), lt(uploadIntents.createdAt, resumableCutoff)),
+        )
       )
     )
     .limit(50);

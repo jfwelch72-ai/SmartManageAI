@@ -4,7 +4,7 @@ import Uppy from "@uppy/core";
 import DashboardModal from "@uppy/react/dashboard-modal";
 import AwsS3 from "@uppy/aws-s3";
 import type { UploadResult, UppyFile } from "@uppy/core";
-import { Pause, Play, X, RotateCw, Loader2 } from "lucide-react";
+import { Pause, Play, X, RotateCw, Loader2, History } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
@@ -15,6 +15,14 @@ import {
   computeRollingThroughput,
   type ThroughputSample,
 } from "./ObjectUploader.helpers";
+import {
+  findResumableForFile,
+  listResumableUploads,
+  removeResumableUpload,
+  saveResumableUpload,
+  touchResumableUpload,
+  type ResumableUploadEntry,
+} from "@/lib/resumableUploads";
 
 export const MULTIPART_THRESHOLD = 10 * 1024 * 1024;
 export const LARGE_UPLOAD_THRESHOLD = 256 * 1024 * 1024;
@@ -129,6 +137,18 @@ export function ObjectUploader({
   const samplesRef = useRef<ThroughputSample[]>([]);
   const lastEmitRef = useRef<number>(0);
   const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Task #2003 — resumable-upload bookkeeping. `resumeMatchRef` maps an Uppy
+  // file id to the localStorage entry we matched at file-add time so the
+  // multipart create handler can reuse the persisted uploadId/objectKey
+  // instead of starting from byte zero.
+  const resumeMatchRef = useRef<Map<string, ResumableUploadEntry>>(new Map());
+  const [resumablePrompts, setResumablePrompts] = useState<ResumableUploadEntry[]>([]);
+  const refreshResumablePrompts = useCallback(() => {
+    setResumablePrompts(listResumableUploads().filter((e) => e.bucketKind === resolvedFileType));
+  }, [resolvedFileType]);
+  const resumeFilePickerRef = useRef<HTMLInputElement>(null);
+  const pendingResumeRef = useRef<ResumableUploadEntry | null>(null);
 
   useEffect(() => {
     onCompleteRef.current = onComplete;
@@ -256,12 +276,56 @@ export function ObjectUploader({
       },
 
       createMultipartUpload: async (file) => {
+        // Task #2003 — if we matched a persisted resumable entry when this
+        // file was added, hand the stored uploadId/key back to Uppy so it
+        // calls listParts and resumes from the last good byte instead of
+        // starting a brand-new multipart upload from scratch.
+        const match = file.id ? resumeMatchRef.current.get(file.id) : undefined;
+        if (match) {
+          try {
+            const probe = await apiRequest("GET", `/api/objects/multipart/${match.uploadId}`, undefined);
+            if (probe.ok) {
+              // Refresh the entry's createdAt so a long resumed session
+              // doesn't expire mid-upload from the 24h TTL we applied
+              // when the original entry was first persisted.
+              touchResumableUpload(match.uploadId);
+              return { uploadId: match.uploadId, key: match.objectKey };
+            }
+            // Fallthrough → create a fresh upload below and replace the entry.
+            removeResumableUpload(match.uploadId);
+            resumeMatchRef.current.delete(file.id);
+          } catch {
+            removeResumableUpload(match.uploadId);
+            resumeMatchRef.current.delete(file.id);
+          }
+        }
+
         const res = await apiRequest("POST", "/api/objects/multipart", {
           contentType: file.type ?? "application/octet-stream",
           fileSize: file.size ?? 0,
           fileType: resolvedFileType,
         });
         const data = (await res.json()) as { uploadId: string; key: string };
+
+        // Persist for resume after a refresh. Only multipart uploads (large
+        // files) are tracked — small single-PUT uploads finish too quickly
+        // for resume to matter.
+        const lastModified =
+          (file.data instanceof File ? file.data.lastModified : undefined) ?? 0;
+        try {
+          saveResumableUpload({
+            uploadId: data.uploadId,
+            objectKey: data.key,
+            fileName: file.name ?? "file",
+            fileSize: file.size ?? 0,
+            fileType: file.type ?? "application/octet-stream",
+            lastModified,
+            bucketKind: resolvedFileType,
+            createdAt: Date.now(),
+          });
+        } catch {
+          // localStorage is best-effort
+        }
         return { uploadId: data.uploadId, key: data.key };
       },
 
@@ -281,10 +345,17 @@ export function ObjectUploader({
       completeMultipartUpload: async (_file, { uploadId }) => {
         const res = await apiRequest("POST", `/api/objects/multipart/${uploadId}/complete`, {});
         const data = (await res.json()) as { location: string };
+        // Task #2003 — once the upload completes successfully, the persisted
+        // entry is no longer useful. Drop it so we don't show a stale resume
+        // prompt next time the page loads.
+        removeResumableUpload(uploadId);
         return { location: data.location };
       },
 
       abortMultipartUpload: async (_file, { uploadId }) => {
+        // Explicit user cancel: tear down the server-side intent and forget
+        // the local resume hint.
+        if (uploadId) removeResumableUpload(uploadId);
         await apiRequest("DELETE", `/api/objects/multipart/${uploadId}`, undefined).catch(() => {});
       },
     });
@@ -393,10 +464,19 @@ export function ObjectUploader({
 
     instance.on("file-removed", (file) => {
       fileStateRef.current.delete(file.id);
+      resumeMatchRef.current.delete(file.id);
       scheduleProgressEmit();
     });
 
     instance.on("cancel-all", () => {
+      // The aws-s3 plugin will fire abortMultipartUpload for any uploads it
+      // has in flight, which already prunes localStorage. As a safety net,
+      // also drop any resume entries we matched for files in this batch
+      // (e.g. user cancelled before bytes started flowing).
+      for (const entry of Array.from(resumeMatchRef.current.values())) {
+        removeResumableUpload(entry.uploadId);
+      }
+      resumeMatchRef.current.clear();
       resetProgress();
     });
 
@@ -475,29 +555,108 @@ export function ObjectUploader({
     };
   }, []);
 
+  // Task #2003 — surface any resumable uploads stashed in localStorage when
+  // the component first mounts. The list also gets refreshed after each
+  // batch of new files is added or after the user dismisses an entry.
+  useEffect(() => {
+    refreshResumablePrompts();
+  }, [refreshResumablePrompts]);
+
   const addFilesToUppy = useCallback(
     (files: FileList | File[]) => {
       const fileArray = Array.from(files);
+      let resumedCount = 0;
 
       fileArray.forEach((file) => {
         try {
-          uppy.addFile({
+          // Task #2003 — when a file is added, look for a persisted resume
+          // entry that matches this file's name + size + lastModified. If
+          // we find one (e.g. user just refreshed a page mid-upload), stash
+          // it so the multipart create handler can reuse it.
+          const match = findResumableForFile(
+            file.name,
+            file.size,
+            file.lastModified ?? 0,
+            resolvedFileType,
+          );
+          const id = uppy.addFile({
             name: file.name,
             type: file.type,
             data: file,
             source: "local",
           });
+          if (match && id) {
+            resumeMatchRef.current.set(id, match);
+            resumedCount++;
+          }
         } catch (error) {
           console.warn("File add error:", error);
           toast({ title: "File error", description: error instanceof Error ? error.message : "Could not add file.", variant: "destructive" });
         }
       });
 
+      if (resumedCount > 0) {
+        toast({
+          title: resumedCount === 1 ? "Resuming previous upload" : `Resuming ${resumedCount} uploads`,
+          description: "Picking up where you left off.",
+        });
+      }
+
       if (fileArray.length > 0) {
         setShowModal(true);
+        refreshResumablePrompts();
       }
     },
-    [uppy, toast]
+    [uppy, toast, resolvedFileType, refreshResumablePrompts]
+  );
+
+  // Task #2003 — discard a stored resume entry without re-selecting the file.
+  const handleDiscardResumable = useCallback(
+    async (entry: ResumableUploadEntry) => {
+      removeResumableUpload(entry.uploadId);
+      // Best-effort server-side cleanup: aborts the multipart intent so the
+      // partial bytes don't sit on storage forever. Failures are swallowed
+      // because the local entry is already gone.
+      apiRequest("DELETE", `/api/objects/multipart/${entry.uploadId}`, undefined).catch(() => {});
+      refreshResumablePrompts();
+    },
+    [refreshResumablePrompts]
+  );
+
+  // Task #2003 — kick off the file picker scoped to a single resumable entry.
+  // We hold on to the entry in `pendingResumeRef` so the change handler can
+  // verify the file the user selects actually matches what we stored.
+  const handleResumeClick = useCallback((entry: ResumableUploadEntry) => {
+    pendingResumeRef.current = entry;
+    resumeFilePickerRef.current?.click();
+  }, []);
+
+  const handleResumeFileSelected = useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const expected = pendingResumeRef.current;
+      pendingResumeRef.current = null;
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file || !expected) return;
+
+      const fingerprintMatches =
+        file.name === expected.fileName &&
+        file.size === expected.fileSize &&
+        (file.lastModified ?? 0) === expected.lastModified;
+
+      if (!fingerprintMatches) {
+        toast({
+          title: "File doesn't match",
+          description:
+            "Pick the exact same file (same name, size, and modification time) to continue an interrupted upload.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      addFilesToUppy([file]);
+    },
+    [addFilesToUppy, toast]
   );
 
   const handleDragEnter = useCallback((e: DragEvent) => {
@@ -579,6 +738,11 @@ export function ObjectUploader({
       ? progress.files[0].name
       : `${progress.files.length} files`;
 
+  // Task #2003 — only show the resume prompt when there's no active upload
+  // already in flight for this component instance. Otherwise the banner
+  // would overlap with the live progress strip.
+  const visibleResumablePrompts = progress.active ? [] : resumablePrompts;
+
   return (
     <div>
       <input
@@ -589,6 +753,14 @@ export function ObjectUploader({
         className="hidden"
         onChange={handleFileInput}
         data-testid={testId ? `${testId}-input` : undefined}
+      />
+      <input
+        ref={resumeFilePickerRef}
+        type="file"
+        className="hidden"
+        accept={allowedFileTypes?.join(",")}
+        onChange={handleResumeFileSelected}
+        data-testid={testId ? `${testId}-resume-input` : "upload-resume-input"}
       />
       <div
         onClick={handleClick}
@@ -601,6 +773,55 @@ export function ObjectUploader({
       >
         {children}
       </div>
+      {visibleResumablePrompts.length > 0 && (
+        <div
+          className="mt-2 rounded-md border border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-100 p-3 text-sm shadow-sm"
+          role="status"
+          data-testid="upload-resume-prompt"
+        >
+          <div className="flex items-start gap-2">
+            <History className="h-4 w-4 mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <div className="font-medium">Resume previous upload?</div>
+              <div className="mt-0.5 text-xs opacity-80">
+                We found {visibleResumablePrompts.length === 1 ? "an upload" : `${visibleResumablePrompts.length} uploads`} that didn't finish. Re-select the same file to pick up where you left off.
+              </div>
+              <ul className="mt-2 space-y-1.5">
+                {visibleResumablePrompts.map((entry) => (
+                  <li
+                    key={entry.uploadId}
+                    className="flex items-center gap-2"
+                    data-testid={`upload-resume-entry-${entry.uploadId}`}
+                  >
+                    <span className="truncate flex-1 min-w-0" title={entry.fileName}>
+                      <span className="font-medium">{entry.fileName}</span>
+                      <span className="ml-2 text-xs opacity-70">{formatBytes(entry.fileSize)}</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleResumeClick(entry)}
+                      className="inline-flex h-7 items-center gap-1 rounded-sm border border-amber-400 bg-amber-100 hover:bg-amber-200 dark:border-amber-700 dark:bg-amber-900 dark:hover:bg-amber-800 px-2 text-xs"
+                      data-testid={`button-resume-upload-${entry.uploadId}`}
+                    >
+                      <Play className="h-3 w-3" />
+                      Resume
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDiscardResumable(entry)}
+                      className="inline-flex h-7 items-center rounded-sm border border-amber-400 bg-transparent hover:bg-amber-100 dark:border-amber-700 dark:hover:bg-amber-900 px-2 text-xs"
+                      data-testid={`button-discard-upload-${entry.uploadId}`}
+                      aria-label="Discard resumable upload"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
       {showAggregate && isLargeUpload && (
         <div
           className="mt-2 rounded-md border border-border bg-card text-card-foreground p-3 text-sm shadow-sm"
