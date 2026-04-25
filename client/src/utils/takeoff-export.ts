@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import type { TakeoffMeasurement, TakeoffSheet, QuantityCategory } from "@shared/schema";
+import { getMeasurementQty, getMeasurementUnit } from "@shared/utils/measurementQuantity";
 
 export interface TakeoffExportOptions {
   projectName: string;
@@ -9,29 +10,17 @@ export interface TakeoffExportOptions {
   hiddenCategoryIds?: Set<string>;
 }
 
+// Task #1923 — both the on-screen Measurement Summary Report dialog and
+// every CSV/PDF/Excel export route through the same shared helpers so the
+// exported quantities can never diverge from what users see on screen.
+// Excel/CSV historically use uppercase units (LF/SF/CY/EA) so we pass
+// `{ uppercase: true }` here while the dialog uses the lowercase default.
 function getQuantity(m: TakeoffMeasurement): number {
-  if (m.type === "LINEAR" || m.type === "LINEAR_WITH_DROP" || m.type === "PITCHED_LINEAR") {
-    const val = Number(m.computedLengthFt);
-    return Number.isFinite(val) ? val : 0;
-  }
-  if (m.type === "AREA" || m.type === "PITCHED_AREA" || m.type === "SURFACE_AREA") {
-    const val = Number(m.computedSurfaceAreaFt2 || m.computedAreaFt2);
-    return Number.isFinite(val) ? val : 0;
-  }
-  if (m.type === "VOLUME") {
-    const val = Number(m.computedVolumeCy);
-    return Number.isFinite(val) ? val : 0;
-  }
-  if (m.type === "COUNT") return 1;
-  return 0;
+  return getMeasurementQty(m);
 }
 
 function getUnit(type: string): string {
-  if (type === "LINEAR" || type === "LINEAR_WITH_DROP" || type === "PITCHED_LINEAR") return "LF";
-  if (type === "AREA" || type === "PITCHED_AREA" || type === "SURFACE_AREA") return "SF";
-  if (type === "VOLUME") return "CY";
-  if (type === "COUNT") return "EA";
-  return "";
+  return getMeasurementUnit({ type }, { uppercase: true });
 }
 
 function getSheetName(sheetId: string, sheets: TakeoffSheet[]): string {

@@ -13,6 +13,19 @@ import {
 import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } from "./auth";
 import { eq, and, sql, desc, inArray } from "drizzle-orm";
 import { getOrgIdForFilter } from "./orgFilter";
+import { getMeasurementQty, getMeasurementUnit, type MeasurementQtyInput } from "@shared/utils/measurementQuantity";
+
+// Task #1923 — server-side takeoff CSV/PDF report routes share the same
+// quantity + unit helpers as the on-screen Measurement Summary Report
+// dialog so exported numbers can never drift from what users see in the
+// takeoff sidebar. Uppercase units (LF/SF/CY/EA) are kept for backwards
+// compatibility with downstream tools that consume these reports.
+function deriveQtyAndUnit(m: MeasurementQtyInput) {
+  return {
+    quantity: getMeasurementQty(m),
+    unit: getMeasurementUnit(m, { uppercase: true }),
+  };
+}
 
 const router = Router();
 router.use("/api/reports", requireAuth, requireFeaturePermission('canAccessReports'));
@@ -53,6 +66,7 @@ router.get("/api/reports/takeoff/quantity", requireAuth, async (req: AuthRequest
       type: takeoffMeasurements.type,
       computedLengthFt: takeoffMeasurements.computedLengthFt,
       computedAreaFt2: takeoffMeasurements.computedAreaFt2,
+      computedSurfaceAreaFt2: takeoffMeasurements.computedSurfaceAreaFt2,
       computedVolumeCy: takeoffMeasurements.computedVolumeCy,
       count: takeoffMeasurements.count,
       sheetId: takeoffMeasurements.sheetId,
@@ -65,12 +79,7 @@ router.get("/api/reports/takeoff/quantity", requireAuth, async (req: AuthRequest
 
     const rows = measurements.map(m => {
       const sheet = sheetMap[m.sheetId];
-      let quantity = 0;
-      let unit = "EA";
-      if (m.type === "LINEAR") { quantity = Number(m.computedLengthFt || 0); unit = "LF"; }
-      else if (m.type === "AREA") { quantity = Number(m.computedAreaFt2 || 0); unit = "SF"; }
-      else if (m.type === "VOLUME") { quantity = Number(m.computedVolumeCy || 0); unit = "CY"; }
-      else if (m.type === "COUNT") { quantity = Number(m.count || 1); unit = "EA"; }
+      const { quantity, unit } = deriveQtyAndUnit(m);
       return {
         id: m.id,
         description: m.label,
@@ -108,6 +117,7 @@ router.get("/api/reports/takeoff/summary", requireAuth, async (req: AuthRequest,
       type: takeoffMeasurements.type,
       computedLengthFt: takeoffMeasurements.computedLengthFt,
       computedAreaFt2: takeoffMeasurements.computedAreaFt2,
+      computedSurfaceAreaFt2: takeoffMeasurements.computedSurfaceAreaFt2,
       computedVolumeCy: takeoffMeasurements.computedVolumeCy,
       count: takeoffMeasurements.count,
     }).from(takeoffMeasurements)
@@ -115,15 +125,12 @@ router.get("/api/reports/takeoff/summary", requireAuth, async (req: AuthRequest,
 
     const summary: Record<string, { type: string; totalQuantity: number; unit: string; measurementCount: number }> = {};
     for (const m of measurements) {
+      const { quantity, unit } = deriveQtyAndUnit(m);
       if (!summary[m.type]) {
-        const unit = m.type === "LINEAR" ? "LF" : m.type === "AREA" ? "SF" : m.type === "VOLUME" ? "CY" : "EA";
         summary[m.type] = { type: m.type, totalQuantity: 0, unit, measurementCount: 0 };
       }
       summary[m.type].measurementCount++;
-      if (m.type === "LINEAR") summary[m.type].totalQuantity += Number(m.computedLengthFt || 0);
-      else if (m.type === "AREA") summary[m.type].totalQuantity += Number(m.computedAreaFt2 || 0);
-      else if (m.type === "VOLUME") summary[m.type].totalQuantity += Number(m.computedVolumeCy || 0);
-      else if (m.type === "COUNT") summary[m.type].totalQuantity += Number(m.count || 1);
+      summary[m.type].totalQuantity += quantity;
     }
 
     const rows = Object.values(summary).map(s => ({
@@ -159,6 +166,7 @@ router.get("/api/reports/takeoff/by-takeoff", requireAuth, async (req: AuthReque
       type: takeoffMeasurements.type,
       computedLengthFt: takeoffMeasurements.computedLengthFt,
       computedAreaFt2: takeoffMeasurements.computedAreaFt2,
+      computedSurfaceAreaFt2: takeoffMeasurements.computedSurfaceAreaFt2,
       computedVolumeCy: takeoffMeasurements.computedVolumeCy,
       count: takeoffMeasurements.count,
       sheetId: takeoffMeasurements.sheetId,
@@ -172,12 +180,7 @@ router.get("/api/reports/takeoff/by-takeoff", requireAuth, async (req: AuthReque
       const sheet = sheetMap[m.sheetId];
       const sheetName = sheet?.sheetName || "Unknown";
       if (!grouped[sheetName]) grouped[sheetName] = { sheetName, measurements: [] };
-      let quantity = 0;
-      let unit = "EA";
-      if (m.type === "LINEAR") { quantity = Number(m.computedLengthFt || 0); unit = "LF"; }
-      else if (m.type === "AREA") { quantity = Number(m.computedAreaFt2 || 0); unit = "SF"; }
-      else if (m.type === "VOLUME") { quantity = Number(m.computedVolumeCy || 0); unit = "CY"; }
-      else if (m.type === "COUNT") { quantity = Number(m.count || 1); unit = "EA"; }
+      const { quantity, unit } = deriveQtyAndUnit(m);
       grouped[sheetName].measurements.push({
         id: m.id,
         description: m.label,
@@ -220,7 +223,7 @@ router.get("/api/reports/takeoff/items", requireAuth, async (req: AuthRequest, r
     for (const m of measurements) {
       const key = `${m.label}-${m.type}`;
       if (!seen.has(key)) {
-        const unit = m.type === "LINEAR" ? "LF" : m.type === "AREA" ? "SF" : m.type === "VOLUME" ? "CY" : "EA";
+        const unit = getMeasurementUnit({ type: m.type }, { uppercase: true });
         seen.set(key, { description: m.label, type: m.type, unit });
       }
     }
@@ -253,6 +256,7 @@ router.get("/api/reports/takeoff/item-cost", requireAuth, async (req: AuthReques
       type: takeoffMeasurements.type,
       computedLengthFt: takeoffMeasurements.computedLengthFt,
       computedAreaFt2: takeoffMeasurements.computedAreaFt2,
+      computedSurfaceAreaFt2: takeoffMeasurements.computedSurfaceAreaFt2,
       computedVolumeCy: takeoffMeasurements.computedVolumeCy,
       count: takeoffMeasurements.count,
       unitCost: takeoffMeasurements.unitCost,
@@ -260,12 +264,7 @@ router.get("/api/reports/takeoff/item-cost", requireAuth, async (req: AuthReques
       .where(inArray(takeoffMeasurements.sheetId, sheetIds));
 
     const rows = measurements.map(m => {
-      let quantity = 0;
-      let unit = "EA";
-      if (m.type === "LINEAR") { quantity = Number(m.computedLengthFt || 0); unit = "LF"; }
-      else if (m.type === "AREA") { quantity = Number(m.computedAreaFt2 || 0); unit = "SF"; }
-      else if (m.type === "VOLUME") { quantity = Number(m.computedVolumeCy || 0); unit = "CY"; }
-      else if (m.type === "COUNT") { quantity = Number(m.count || 1); unit = "EA"; }
+      const { quantity, unit } = deriveQtyAndUnit(m);
       const unitCost = Number(m.unitCost || 0);
       return {
         id: m.id,
@@ -305,6 +304,7 @@ router.get("/api/reports/takeoff/item-cost-by-type", requireAuth, async (req: Au
       type: takeoffMeasurements.type,
       computedLengthFt: takeoffMeasurements.computedLengthFt,
       computedAreaFt2: takeoffMeasurements.computedAreaFt2,
+      computedSurfaceAreaFt2: takeoffMeasurements.computedSurfaceAreaFt2,
       computedVolumeCy: takeoffMeasurements.computedVolumeCy,
       count: takeoffMeasurements.count,
       unitCost: takeoffMeasurements.unitCost,
@@ -314,12 +314,7 @@ router.get("/api/reports/takeoff/item-cost-by-type", requireAuth, async (req: Au
     const grouped: Record<string, { type: string; items: any[]; subtotal: number }> = {};
     for (const m of measurements) {
       if (!grouped[m.type]) grouped[m.type] = { type: m.type, items: [], subtotal: 0 };
-      let quantity = 0;
-      let unit = "EA";
-      if (m.type === "LINEAR") { quantity = Number(m.computedLengthFt || 0); unit = "LF"; }
-      else if (m.type === "AREA") { quantity = Number(m.computedAreaFt2 || 0); unit = "SF"; }
-      else if (m.type === "VOLUME") { quantity = Number(m.computedVolumeCy || 0); unit = "CY"; }
-      else if (m.type === "COUNT") { quantity = Number(m.count || 1); unit = "EA"; }
+      const { quantity, unit } = deriveQtyAndUnit(m);
       const unitCost = Number(m.unitCost || 0);
       const totalCost = quantity * unitCost;
       grouped[m.type].items.push({
@@ -366,6 +361,7 @@ router.get("/api/reports/takeoff/item-cost-by-takeoff", requireAuth, async (req:
       type: takeoffMeasurements.type,
       computedLengthFt: takeoffMeasurements.computedLengthFt,
       computedAreaFt2: takeoffMeasurements.computedAreaFt2,
+      computedSurfaceAreaFt2: takeoffMeasurements.computedSurfaceAreaFt2,
       computedVolumeCy: takeoffMeasurements.computedVolumeCy,
       count: takeoffMeasurements.count,
       unitCost: takeoffMeasurements.unitCost,
@@ -380,12 +376,7 @@ router.get("/api/reports/takeoff/item-cost-by-takeoff", requireAuth, async (req:
       const sheet = sheetMap[m.sheetId];
       const sheetName = sheet?.sheetName || "Unknown";
       if (!grouped[sheetName]) grouped[sheetName] = { sheetName, items: [], subtotal: 0 };
-      let quantity = 0;
-      let unit = "EA";
-      if (m.type === "LINEAR") { quantity = Number(m.computedLengthFt || 0); unit = "LF"; }
-      else if (m.type === "AREA") { quantity = Number(m.computedAreaFt2 || 0); unit = "SF"; }
-      else if (m.type === "VOLUME") { quantity = Number(m.computedVolumeCy || 0); unit = "CY"; }
-      else if (m.type === "COUNT") { quantity = Number(m.count || 1); unit = "EA"; }
+      const { quantity, unit } = deriveQtyAndUnit(m);
       const unitCost = Number(m.unitCost || 0);
       const totalCost = quantity * unitCost;
       grouped[sheetName].items.push({

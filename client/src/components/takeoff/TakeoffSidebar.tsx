@@ -25,6 +25,7 @@ import { CostCodeCombobox } from "@/components/CostCodeCombobox";
 import { COMMON_SCALES, type Tool, type AddendumOverlayData } from "./types";
 import { computePixelDistance, computeNetAreaInFt2, computePolygonAreaInFt2 } from "@shared/utils/geometry";
 import { evaluateFormula, computeAssemblyResults, type FormulaContext } from "@shared/utils/assemblyFormula";
+import { getMeasurementQty, getMeasurementUnit } from "@shared/utils/measurementQuantity";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import AssemblyPanel from "@/components/AssemblyPanel";
 import LibraryItemDialog from "@/components/LibraryItemDialog";
@@ -378,15 +379,20 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
   };
 
   const exportGroupCSV = (groupName: string, items: TakeoffMeasurement[]) => {
-    const rows = [["Label", "Type", "Length (LF)", "Area (SF)", "Volume (CY)", "Category", "Line Style", "Line Width"]];
+    // Quantity + Unit columns mirror the on-screen Measurement Summary
+    // Report dialog (task #1923). Both sides go through the shared
+    // getMeasurementQty / getMeasurementUnit helpers so the exported
+    // numbers can never drift from what users see on screen.
+    const rows = [["Label", "Type", "Quantity", "Unit", "Category", "Line Style", "Line Width"]];
     items.forEach((m) => {
       const cat = categories.find(c => c.id === m.categoryId);
+      const qty = getMeasurementQty(m);
+      const unit = getMeasurementUnit(m);
       rows.push([
         m.label || "Untitled",
         m.type,
-        m.computedLengthFt ? String(m.computedLengthFt.toFixed(2)) : "",
-        m.computedAreaFt2 ? String(m.computedAreaFt2.toFixed(2)) : "",
-        m.computedVolumeCy ? String(m.computedVolumeCy.toFixed(2)) : "",
+        qty > 0 ? qty.toFixed(2) : "",
+        unit,
         cat?.name || "",
         m.lineStyle || "solid",
         String(m.lineWidth || 3),
@@ -3287,39 +3293,11 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                 const n = Number(v);
                 return isNaN(n) ? "0" : n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
               };
-              const getUnit = (m: typeof measurements[0]) => {
-                switch (m.type) {
-                  case "COUNT":
-                    return "ea";
-                  case "AREA":
-                  case "PITCHED_AREA":
-                  case "SURFACE_AREA":
-                    return "sf";
-                  case "VOLUME":
-                    return "cy";
-                  case "NOTE":
-                    return "";
-                  default:
-                    return "lf";
-                }
-              };
-              const getQty = (m: typeof measurements[0]) => {
-                switch (m.type) {
-                  case "COUNT":
-                    return Number(m.count || 0);
-                  case "AREA":
-                  case "PITCHED_AREA":
-                    return Number(m.computedAreaFt2 || 0);
-                  case "SURFACE_AREA":
-                    return Number(m.computedSurfaceAreaFt2 || m.computedAreaFt2 || 0);
-                  case "VOLUME":
-                    return Number(m.computedVolumeCy || 0);
-                  case "NOTE":
-                    return 0;
-                  default:
-                    return Number(m.computedLengthFt || 0);
-                }
-              };
+              // Task #1923 — both the dialog and the CSV/PDF/Excel exports
+              // share these helpers so exported quantities + units always
+              // match what users see on screen.
+              const getUnit = (m: typeof measurements[0]) => getMeasurementUnit(m);
+              const getQty = (m: typeof measurements[0]) => getMeasurementQty(m);
               const formatType = (t: string | null | undefined) =>
                 (t || "").toLowerCase().replace(/_/g, " ");
               const renderGroup = (title: string, color: string | null, items: typeof measurements) => (
