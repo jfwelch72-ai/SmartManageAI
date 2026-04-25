@@ -31,7 +31,7 @@
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from "fs";
 import { join } from "path";
 
-interface PayItem {
+export interface PayItem {
   itemNumber: string;
   description: string;
   unit: string;
@@ -39,13 +39,13 @@ interface PayItem {
   category: string;
 }
 
-interface AgencyCatalog {
+export interface AgencyCatalog {
   specBook: { edition: string; title: string };
   source: string;
   items: PayItem[];
 }
 
-const OUT_DIR = join(process.cwd(), "server/data/dot/pay-items");
+export const OUT_DIR = join(process.cwd(), "server/data/dot/pay-items");
 
 interface PdfSpan {
   str: string;
@@ -1614,7 +1614,7 @@ function loadIncomingCatalog(code: string, drop: StagedDrop): AgencyCatalog {
   };
 }
 
-const AGENCY_FETCHERS: Record<string, () => Promise<AgencyCatalog>> = {
+export const AGENCY_FETCHERS: Record<string, () => Promise<AgencyCatalog>> = {
   FHWA: fetchFhwa,
   NCDOT: fetchNcdot,
   WSDOT: fetchWsdot,
@@ -1658,19 +1658,163 @@ const ARTIFACT_PATTERNS: RegExp[] = [
   /\bPage \d+ of \d+\b/i,
 ];
 
-function findArtifacts(catalog: AgencyCatalog): PayItem[] {
+export function findArtifacts(catalog: AgencyCatalog): PayItem[] {
   return catalog.items.filter((it) =>
     ARTIFACT_PATTERNS.some((re) => re.test(it.description)),
   );
 }
 
-function writeCatalog(code: string, catalog: AgencyCatalog) {
+export function writeCatalog(code: string, catalog: AgencyCatalog) {
   mkdirSync(OUT_DIR, { recursive: true });
   const outPath = join(OUT_DIR, `${code}.json`);
   writeFileSync(outPath, JSON.stringify(catalog, null, 2));
   console.log(
     `[fetch] ${code}: ${catalog.items.length} items -> ${outPath}`,
   );
+}
+
+/**
+ * Read the previously persisted catalog for an agency, or return null if
+ * none has been written yet. Used by the quarterly refresh job to compute
+ * added/removed/changed deltas vs the prior fetch.
+ */
+export function readExistingCatalog(code: string): AgencyCatalog | null {
+  const p = join(OUT_DIR, `${code}.json`);
+  if (!existsSync(p)) return null;
+  try {
+    return JSON.parse(readFileSync(p, "utf8")) as AgencyCatalog;
+  } catch {
+    return null;
+  }
+}
+
+export interface AgencyDelta {
+  added: number;
+  removed: number;
+  changed: number;
+  prevCount: number;
+  nextCount: number;
+}
+
+/**
+ * Compute a per-agency delta between two catalog snapshots.
+ * "changed" counts items present in both whose description or unit
+ * differs (item-number is the join key).
+ */
+export function diffCatalogs(prev: AgencyCatalog | null, next: AgencyCatalog): AgencyDelta {
+  const prevItems = prev?.items ?? [];
+  const prevByNumber: Record<string, PayItem> = {};
+  for (const it of prevItems) prevByNumber[it.itemNumber] = it;
+  const nextByNumber: Record<string, PayItem> = {};
+  for (const it of next.items) nextByNumber[it.itemNumber] = it;
+  let added = 0;
+  let removed = 0;
+  let changed = 0;
+  for (const num of Object.keys(nextByNumber)) {
+    const item = nextByNumber[num];
+    const before = prevByNumber[num];
+    if (!before) {
+      added++;
+      continue;
+    }
+    if (before.description !== item.description || before.unit !== item.unit) {
+      changed++;
+    }
+  }
+  for (const num of Object.keys(prevByNumber)) {
+    if (!(num in nextByNumber)) removed++;
+  }
+  return {
+    added,
+    removed,
+    changed,
+    prevCount: prevItems.length,
+    nextCount: next.items.length,
+  };
+}
+
+export interface AgencyRefreshResult {
+  code: string;
+  ok: boolean;
+  itemCount: number;
+  delta?: AgencyDelta;
+  /** Reason this agency did not produce a usable catalog (parse error, artifact rows, < 200 items, fetcher threw). */
+  reason?: string;
+  wrote: boolean;
+}
+
+export interface RefreshOptions {
+  /** Restrict to a subset of agency codes; defaults to every registered fetcher. */
+  codes?: string[];
+  /** When true, parse + diff but do not overwrite the JSON files. */
+  dryRun?: boolean;
+}
+
+export interface RefreshSummary {
+  results: AgencyRefreshResult[];
+  successes: number;
+  failures: number;
+}
+
+/**
+ * Programmatic entry point for the quarterly refresh job. Mirrors the CLI
+ * `main()` behaviour (same parse/artifact/threshold guards, same write
+ * suppression on failure) but returns structured per-agency results
+ * instead of writing log lines + exiting the process.
+ */
+export async function runFetcher(opts: RefreshOptions = {}): Promise<RefreshSummary> {
+  const targets = opts.codes && opts.codes.length > 0 ? opts.codes : Object.keys(AGENCY_FETCHERS);
+  const results: AgencyRefreshResult[] = [];
+  for (const code of targets) {
+    const fetcher = AGENCY_FETCHERS[code];
+    if (!fetcher) {
+      results.push({ code, ok: false, itemCount: 0, reason: "no_fetcher_registered", wrote: false });
+      continue;
+    }
+    try {
+      const catalog = await fetcher();
+      if (catalog.items.length < 200) {
+        results.push({
+          code,
+          ok: false,
+          itemCount: catalog.items.length,
+          reason: "below_minimum_parse_threshold",
+          wrote: false,
+        });
+        continue;
+      }
+      const artifacts = findArtifacts(catalog);
+      if (artifacts.length > 0) {
+        results.push({
+          code,
+          ok: false,
+          itemCount: catalog.items.length,
+          reason: `artifact_descriptions:${artifacts.length}`,
+          wrote: false,
+        });
+        continue;
+      }
+      const prev = readExistingCatalog(code);
+      const delta = diffCatalogs(prev, catalog);
+      let wrote = false;
+      if (!opts.dryRun) {
+        writeCatalog(code, catalog);
+        wrote = true;
+      }
+      results.push({ code, ok: true, itemCount: catalog.items.length, delta, wrote });
+    } catch (err) {
+      results.push({
+        code,
+        ok: false,
+        itemCount: 0,
+        reason: (err as Error).message || "fetcher_threw",
+        wrote: false,
+      });
+    }
+  }
+  const successes = results.filter((r) => r.ok).length;
+  const failures = results.length - successes;
+  return { results, successes, failures };
 }
 
 async function main() {

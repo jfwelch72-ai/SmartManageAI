@@ -25,6 +25,7 @@ import { processArchivedCertifiedPayrollPurge } from "./certifiedPayrollPurge";
 import { pruneProjectLogEmailScheduleAttempts } from "./projectLogEmailScheduleAttemptPrune";
 import { purgePlanDocumentMarkupTrash } from "./planDocumentMarkupSoftDeletePurge";
 import { processFailedWageDecisionRetries, processStaleWageDecisions } from "../integrations/providers/dol_davis_bacon/sync";
+import { processDotPayItemsRefresh } from "./dotPayItemsRefresh";
 import { processMissingWageDecisionReminders } from "../services/davisBaconAdminNotifications";
 import { processIntegrationSyncRetries, recordSyncFailure, recordSyncSuccess } from "../integrations/syncRetry";
 import { pruneSuppressionResets } from "../integrations/audit";
@@ -89,6 +90,13 @@ let projectLogEmailAttemptPruneTask: ReturnType<typeof cron.schedule> | null = n
 // configured retention window (default 30 days). Keeps the table and
 // indexes bounded while preserving the one-click undo window.
 let planDocumentMarkupTrashPurgeTask: ReturnType<typeof cron.schedule> | null = null;
+// Task #1948: quarterly automated refresh of every verbatim DOT
+// pay-item catalog. The fetcher (`scripts/fetch-dot-pay-items.ts`) is
+// idempotent and only overwrites a per-agency JSON when the parse
+// passes its >=200-item / no-artifact guards; the job logs per-agency
+// added/removed/changed deltas and emails the on-call rotation if any
+// catalog regresses below its `AGENCY_MIN_ITEMS` threshold.
+let dotPayItemsRefreshTask: ReturnType<typeof cron.schedule> | null = null;
 // Task #1715: daily digest to org ADMIN/SUPER_ADMIN users summarising
 // every schedule whose latest attempt was FAILURE / NO_RECIPIENTS so
 // admins get a proactive nudge instead of having to remember to open
@@ -720,6 +728,36 @@ export function startJobRunner() {
     }
   });
 
+  // Task #1948: quarterly refresh of every verbatim DOT pay-item
+  // catalog. Runs at 04:00 UTC on the 1st of Jan/Apr/Jul/Oct so it
+  // lands well outside North-American business hours. The handler is
+  // idempotent (the underlying fetcher refuses to overwrite a JSON
+  // when the parse fails its guards) and emits a single per-agency
+  // delta log line + an email to the on-call rotation when a catalog
+  // drops below its `AGENCY_MIN_ITEMS` threshold.
+  dotPayItemsRefreshTask = cron.schedule("0 4 1 1,4,7,10 *", async () => {
+    try {
+      const out = await processDotPayItemsRefresh();
+      recordJobMetrics("dot_pay_items_refresh", {
+        agencies: out.agenciesProcessed,
+        succeeded: out.successes,
+        failed: out.failures,
+        regressions: out.regressions,
+        alerts_sent: out.alertsSent,
+      });
+      logInfo("DOT pay-item quarterly refresh tick", {
+        agenciesProcessed: out.agenciesProcessed,
+        successes: out.successes,
+        failures: out.failures,
+        regressions: out.regressions,
+        alertsSent: out.alertsSent,
+      });
+    } catch (err) {
+      recordJobOutcome("dot_pay_items_refresh", false);
+      logError("DOT pay-item quarterly refresh failed", { error: String(err) });
+    }
+  });
+
   // Task #1344: daily 08:00 UTC fan-out reminder to org admins about
   // projects whose Davis-Bacon wage decision has been missing for >24h.
   // The handler itself enforces a 1-per-project-per-week throttle so a
@@ -909,6 +947,10 @@ export function stopJobRunner() {
     planDocumentMarkupTrashPurgeTask.stop();
     planDocumentMarkupTrashPurgeTask = null;
   }
+  if (dotPayItemsRefreshTask) {
+    dotPayItemsRefreshTask.stop();
+    dotPayItemsRefreshTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -990,6 +1032,13 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   // Batched inside the helper so a large tenant can't hold long row-level
   // locks on the markup table.
   plan_document_markup_trash_purge: { fn: async () => { await purgePlanDocumentMarkupTrash(); }, description: "Hard-delete plan_document_markups rows whose deleted_at is older than PLAN_DOCUMENT_MARKUP_TRASH_RETENTION_DAYS (default 30 days), in batches", schedule: "15 4 * * *" },
+  // Task #1948: quarterly automated refresh of the verbatim DOT pay-item
+  // catalogs (FHWA + every supported state DOT). Logs per-agency
+  // added/removed/changed deltas and emails the on-call rotation if
+  // any catalog regresses below its `AGENCY_MIN_ITEMS` threshold so
+  // the seed data tracks each agency's published spec book without
+  // manual intervention.
+  dot_pay_items_refresh: { fn: async () => { await processDotPayItemsRefresh(); }, description: "Quarterly refresh of verbatim DOT pay-item catalogs from each agency's published source; logs added/removed/changed per agency and emails on-call when a catalog drops below AGENCY_MIN_ITEMS", schedule: "0 4 1 1,4,7,10 *" },
 };
 
 async function processOutbox() {

@@ -43,7 +43,7 @@ const INSERT_BATCH = 500;
 // book size (templated data for other agencies). On boot, if a loaded
 // catalog falls below the threshold, the seeder logs a warning so coverage
 // regressions are visible.
-const AGENCY_MIN_ITEMS: Record<string, number> = {
+export const AGENCY_MIN_ITEMS: Record<string, number> = {
   FHWA: 3500,     // FP-14 master list publishes ~3,985 items
   NCDOT: 1400,    // 2024 Master Pay Item List publishes ~1,463 items
   TXDOT: 3000,
