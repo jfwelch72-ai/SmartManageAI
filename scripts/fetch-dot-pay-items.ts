@@ -918,9 +918,355 @@ async function fetchModot(): Promise<AgencyCatalog> {
   };
 }
 
+// ---------- MDOT_MI (Michigan) ----------
+//
+// MDOT publishes its full pay-item catalog as a single-sheet XLSX. The
+// header row (row 1) declares: ITEM | UNITS | Item Description 1 | FUSP
+// | SUPP DESC REQUIRED. Item codes are 7- or 8-digit numeric codes whose
+// first 3 digits are the Standard Specifications section (e.g. 1020001
+// -> sec 102, 4011175 -> sec 401, 10000030 -> sec 100). Rows whose
+// description is "_" are USP (user-supplied-price) templates that
+// require a runtime description and are excluded from the verbatim
+// catalog.
+const MDOT_MI_URL =
+  "https://www.michigan.gov/mdot/-/media/Project/Websites/MDOT/Business/Design/Estimating/2020-Pay-Item-Codes.xlsx";
+
+function mdotMiCategoryForSection(section: string): string {
+  const n = parseInt(section, 10);
+  if (Number.isNaN(n)) return "MISCELLANEOUS";
+  if (n < 200) return "GENERAL CONTRACT REQUIREMENTS";
+  if (n < 300) return "EARTHWORK & SUBGRADE";
+  if (n < 400) return "BASES & SHOULDERS";
+  if (n < 500) return "PAVEMENTS";
+  if (n < 600) return "STRUCTURES";
+  if (n < 700) return "INCIDENTAL CONSTRUCTION";
+  if (n < 800) return "TRAFFIC CONTROL & SAFETY";
+  if (n < 900) return "LANDSCAPING & EROSION CONTROL";
+  return "SPECIAL & SUPPLEMENTAL";
+}
+
+function mdotMiNormalizeUnit(raw: string): string {
+  const u = String(raw || "").toUpperCase().replace(/\./g, "").replace(/\s+/g, " ").trim();
+  if (u === "L S" || u === "LSUM" || u === "LUMP SUM") return "LS";
+  return u;
+}
+
+async function fetchMdotMi(): Promise<AgencyCatalog> {
+  const res = await fetch(MDOT_MI_URL, { headers: { "User-Agent": "Mozilla/5.0" } });
+  if (!res.ok) throw new Error(`MDOT_MI XLSX fetch failed: ${res.status}`);
+  const buf = new Uint8Array(await res.arrayBuffer());
+  const xlsxMod = (await import("xlsx")) as unknown as XlsxModule;
+  const wb = xlsxMod.read(buf, { type: "buffer" });
+  const sn = wb.SheetNames[0];
+  if (!sn) throw new Error("MDOT_MI XLSX has no sheets");
+  const rows = xlsxMod.utils.sheet_to_json(wb.Sheets[sn], { header: 1, defval: "" });
+
+  const items: PayItem[] = [];
+  const seen = new Set<string>();
+  for (const r of rows) {
+    const itemNumber = String(r[0] ?? "").trim();
+    if (!/^\d{7,8}$/.test(itemNumber)) continue;
+    if (seen.has(itemNumber)) continue;
+    const unit = mdotMiNormalizeUnit(String(r[1] ?? ""));
+    const description = String(r[2] ?? "").replace(/\s+/g, " ").trim();
+    if (!description || description === "_" || !unit) continue;
+    const sectionNumber = itemNumber.slice(0, 3);
+    seen.add(itemNumber);
+    items.push({
+      itemNumber,
+      description,
+      unit,
+      specSection: sectionNumber,
+      category: mdotMiCategoryForSection(sectionNumber),
+    });
+  }
+
+  return {
+    specBook: {
+      edition: "2020",
+      title:
+        "MDOT 2020 Standard Specifications for Construction — Pay Item Codes (current as of 2026-04-10)",
+    },
+    source: MDOT_MI_URL,
+    items,
+  };
+}
+
+// ---------- ODOT_OK (Oklahoma) ----------
+//
+// Oklahoma DOT publishes its master pay-item list as a Crystal Reports
+// PDF served from the AWP reporting host. Each data row carries:
+//   SY               x ~ 50-90  (always "19")
+//   Item No.         x ~ 90-160 (forms: "104 3100" or "201(A)1200" or "613(EE)5961")
+//   Item Description x ~ 160-470
+//   Unit             x ~ 470-505
+//   Type             x ~ 505-540 (RDY, ERC, ENH, T, ...; ignored)
+//   Class            x ~ 540-565 (the spec book section group, e.g. "100", "200")
+const ODOT_OK_URL =
+  "https://crystalweb.odot.ok.gov/report/viewer.aspx?reportpath=CWD/AWP-ItemList.rpt&password=APEX&P1=19";
+const ODOT_OK_ITEM_RE = /^\d{3}(?:\s|\([A-Z]{1,2}\))\d{4}$/;
+
+function odotOkCategoryForSection(section: string): string {
+  const n = parseInt(section, 10);
+  if (Number.isNaN(n)) return "MISCELLANEOUS";
+  if (n < 200) return "GENERAL PROVISIONS";
+  if (n < 300) return "EARTHWORK & SUBGRADE";
+  if (n < 400) return "BASES";
+  if (n < 500) return "PAVEMENTS";
+  if (n < 600) return "STRUCTURES";
+  if (n < 700) return "INCIDENTAL CONSTRUCTION";
+  if (n < 800) return "TRAFFIC CONTROL & SAFETY";
+  if (n < 900) return "MATERIALS";
+  return "SPECIAL & SUPPLEMENTAL";
+}
+
+function odotOkPick(spans: PdfSpan[], xMin: number, xMax: number): string {
+  return spans
+    .filter((s) => s.x >= xMin && s.x < xMax)
+    .map((s) => s.str.trim())
+    .filter((s) => s.length > 0)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function fetchOdotOk(): Promise<AgencyCatalog> {
+  const pages = await fetchPdfPages(ODOT_OK_URL);
+  const items: PayItem[] = [];
+  const seen = new Set<string>();
+  for (const rows of pages) {
+    for (const row of rows) {
+      // Header band y >= 720 carries report title and column labels; page
+      // footer rows have very small y. Filter both.
+      if (row.y >= 720 || row.y < 60) continue;
+      const sy = odotOkPick(row.spans, 50, 90);
+      if (sy !== "19") continue;
+      const itemNumber = odotOkPick(row.spans, 90, 160);
+      if (!ODOT_OK_ITEM_RE.test(itemNumber)) continue;
+      if (seen.has(itemNumber)) continue;
+      const description = odotOkPick(row.spans, 160, 470);
+      const unit = odotOkPick(row.spans, 470, 505)
+        .toUpperCase()
+        .replace(/\./g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!description || !unit) continue;
+      const sectionNumber = itemNumber.slice(0, 3);
+      seen.add(itemNumber);
+      items.push({
+        itemNumber,
+        description,
+        unit,
+        specSection: sectionNumber,
+        category: odotOkCategoryForSection(sectionNumber),
+      });
+    }
+  }
+  return {
+    specBook: {
+      edition: "2019",
+      title:
+        "Oklahoma DOT 2019 Standard Specifications for Highway Construction — List of Spec Year 19 Pay Items",
+    },
+    source: ODOT_OK_URL,
+    items,
+  };
+}
+
+// ---------- WISDOT (Wisconsin) ----------
+//
+// WisDOT's Standard Specifications publish a "Bid Items" appendix
+// (ss-99-10.pdf) listing every standard bid item. Layout:
+//   Item       x ~ 86  (e.g. "108.4300", "201.0105")
+//   Description x ~ 152
+//   Unit       x ~ 510-580 (right-aligned: STA/SY/ACRE/EACH/...)
+// Items are grouped by section heading rows (e.g. "100 Bid Items",
+// "200 Bid Items") at x ~ 279. Long descriptions wrap onto follow-up
+// rows that contain only a span in the description column.
+const WISDOT_URL = "https://wisconsindot.gov/rdwy/stndspec/ss-99-10.pdf";
+const WISDOT_ITEM_RE = /^\d{3}\.\d{4}$/;
+
+function wisdotCategoryForSection(section: string): string {
+  const n = parseInt(section, 10);
+  if (Number.isNaN(n)) return "MISCELLANEOUS";
+  if (n < 200) return "GENERAL REQUIREMENTS";
+  if (n < 300) return "EARTHWORK";
+  if (n < 400) return "BASES & SUBBASES";
+  if (n < 500) return "PAVEMENTS";
+  if (n < 600) return "STRUCTURES";
+  if (n < 700) return "INCIDENTAL CONSTRUCTION";
+  if (n < 800) return "TRAFFIC CONTROL & SAFETY";
+  if (n < 900) return "LANDSCAPING & EROSION CONTROL";
+  return "SPECIAL & SUPPLEMENTAL";
+}
+
+function wisdotPick(spans: PdfSpan[], xMin: number, xMax: number): string {
+  return spans
+    .filter((s) => s.x >= xMin && s.x < xMax)
+    .map((s) => s.str.trim())
+    .filter((s) => s.length > 0)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function fetchWisdot(): Promise<AgencyCatalog> {
+  const pages = await fetchPdfPages(WISDOT_URL);
+  const items: PayItem[] = [];
+  const seen = new Set<string>();
+  let lastIdx: number | null = null;
+  for (const rows of pages) {
+    for (const row of rows) {
+      // Skip the per-page "Bid Items" header band and the page footer
+      // ("Effective with ... 2025 Standard Specifications").
+      if (row.y >= 740 || row.y < 50) {
+        lastIdx = null;
+        continue;
+      }
+      const itemNumber = wisdotPick(row.spans, 70, 145);
+      if (WISDOT_ITEM_RE.test(itemNumber)) {
+        if (seen.has(itemNumber)) {
+          lastIdx = null;
+          continue;
+        }
+        const description = wisdotPick(row.spans, 145, 510);
+        const unit = wisdotPick(row.spans, 510, 580).toUpperCase();
+        if (!description || !unit) {
+          lastIdx = null;
+          continue;
+        }
+        const sectionNumber = itemNumber.slice(0, 3);
+        seen.add(itemNumber);
+        items.push({
+          itemNumber,
+          description,
+          unit,
+          specSection: sectionNumber,
+          category: wisdotCategoryForSection(sectionNumber),
+        });
+        lastIdx = items.length - 1;
+        continue;
+      }
+      // Possible wrapped description: only the description column has text.
+      if (lastIdx === null) continue;
+      const ahead = wisdotPick(row.spans, 70, 145);
+      const wrapDesc = wisdotPick(row.spans, 145, 510);
+      const wrapUnit = wisdotPick(row.spans, 510, 580);
+      if (ahead || wrapUnit || !wrapDesc) {
+        lastIdx = null;
+        continue;
+      }
+      // Section group headers ("300 Bid Items") are centered around x ~ 279
+      // and also have no item or unit, so guard against picking them up.
+      if (/^\d{3}\s+Bid Items$/i.test(wrapDesc)) {
+        lastIdx = null;
+        continue;
+      }
+      items[lastIdx].description += " " + wrapDesc;
+    }
+  }
+  return {
+    specBook: {
+      edition: "2025",
+      title:
+        "WisDOT 2025 Standard Specifications for Highway and Structure Construction — Bid Items (effective with November 2024 letting)",
+    },
+    source: WISDOT_URL,
+    items,
+  };
+}
+
+// ---------- SDDOT (South Dakota) ----------
+//
+// SDDOT does not publish a flat pay-item master. The closest
+// authoritative bulk source is the annual Bid Item Price Report PDF,
+// which lists every item bid in the year alongside the Standard Bid Item
+// (SBI) code, description, unit of measure, and bid statistics.
+//
+// COVERAGE CAVEAT: this catalog is intentionally year-scoped — it
+// reflects only items used in SDDOT's 2024 lettings (~1,200 items) and
+// will under-represent SBIs that exist in the spec book but were not
+// bid that year. Replace with a true canonical SBI master list as soon
+// as one becomes obtainable; until then, refresh by pointing
+// `SDDOT_URL` at the latest annual report.
+//
+// Layout:
+//   Number          x ~ 25-65 (e.g. "004E0010", "120E0010" — group + form letter + 4 digits)
+//   Description     x ~ 70-240
+//   Unit of Measure x ~ 243-300
+//   ...quantities/prices we ignore
+const SDDOT_URL =
+  "https://dot.sd.gov/media/qqhgg24h/2024-bid-item-price-report.pdf";
+const SDDOT_ITEM_RE = /^\d{3}[A-Z]\d{4}$/;
+
+function sddotCategoryForSection(section: string): string {
+  const n = parseInt(section, 10);
+  if (Number.isNaN(n)) return "MISCELLANEOUS";
+  if (n < 100) return "TRAFFIC DIVERSIONS & MISC";
+  if (n < 200) return "EARTHWORK & SUBGRADE";
+  if (n < 300) return "BASES & SURFACING";
+  if (n < 400) return "PAVEMENTS";
+  if (n < 500) return "STRUCTURES";
+  if (n < 600) return "INCIDENTAL CONSTRUCTION";
+  if (n < 700) return "TRAFFIC CONTROL & SAFETY";
+  if (n < 800) return "EROSION CONTROL & VEGETATION";
+  if (n < 900) return "MATERIALS";
+  return "SPECIAL & MAINTENANCE";
+}
+
+function sddotPick(spans: PdfSpan[], xMin: number, xMax: number): string {
+  return spans
+    .filter((s) => s.x >= xMin && s.x < xMax)
+    .map((s) => s.str.trim())
+    .filter((s) => s.length > 0)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+async function fetchSddot(): Promise<AgencyCatalog> {
+  const pages = await fetchPdfPages(SDDOT_URL);
+  const items: PayItem[] = [];
+  const seen = new Set<string>();
+  for (const rows of pages) {
+    for (const row of rows) {
+      // Skip headers/footers; data rows live between y ~ 60 and y ~ 715.
+      if (row.y >= 720 || row.y < 50) continue;
+      const itemNumber = sddotPick(row.spans, 20, 65);
+      if (!SDDOT_ITEM_RE.test(itemNumber)) continue;
+      if (seen.has(itemNumber)) continue;
+      const description = sddotPick(row.spans, 65, 240);
+      const unit = sddotPick(row.spans, 240, 300)
+        .toUpperCase()
+        .replace(/\./g, "")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (!description || !unit) continue;
+      const sectionNumber = itemNumber.slice(0, 3);
+      seen.add(itemNumber);
+      items.push({
+        itemNumber,
+        description,
+        unit,
+        specSection: sectionNumber,
+        category: sddotCategoryForSection(sectionNumber),
+      });
+    }
+  }
+  return {
+    specBook: {
+      edition: "2015",
+      title:
+        "SDDOT Standard Specifications for Roads and Bridges — 2024 Bid Item Price Report (Office of Project Development, March 2025)",
+    },
+    source: SDDOT_URL,
+    items,
+  };
+}
+
 // ---------- Registry ----------
 
-// ---------- Staged-drop manifest for the remaining 10 DOT agencies ----------
+// ---------- Staged-drop manifest for DOT agencies without parseable bulk sources ----------
 //
 // The agencies below publish their authoritative pay-item lists behind
 // portals, JS apps, login walls, or CDNs (Akamai) that reject scripted
@@ -1065,6 +1411,81 @@ const STAGED_AGENCIES: Record<string, StagedDrop> = {
     notes:
       "VDOT's pay-item master ships inside the AASHTOWare BAMS reference set on the Construction Division SharePoint. Download the latest `VDOT_PayItem.xml` and drop as incoming/VDOT.xml; the importer's XML mode handles the <PayItem> blocks directly.",
   },
+  KDOT: {
+    edition: "2015",
+    title: "Standard Specifications for State Road and Bridge Construction",
+    sourceUrl:
+      "https://www.ksdot.gov/bureaus/burConsMain/specprov/2015SpecificationProvisions.asp",
+    expectedMinItems: 2000,
+    notes:
+      "KDOT's 2015 spec book PDF only carries an alphabetical PAY ITEMS INDEX without item codes. The canonical numeric list lives in the Bid Letting AASHTOWare reference data. Export `KDOT_BidItemList.csv` from the Letting Management System and drop as incoming/KDOT.csv. Headers: Item Number,Description,Unit,Section.",
+    csvColumnMap: {
+      item: "Item Number",
+      description: "Description",
+      unit: "Unit",
+      section: "Section",
+    },
+  },
+  MDOT_MS: {
+    edition: "2017",
+    title: "Mississippi Standard Specifications for Road and Bridge Construction",
+    sourceUrl: "https://mdot.ms.gov/applications/specbook/",
+    expectedMinItems: 1800,
+    notes:
+      "MDOT-MS publishes the spec book through a React SPA with no static manifest. Use the `Item List` view, choose `Export to CSV`, save as incoming/MDOT_MS.csv. Headers typically: Item,Description,Unit,Section.",
+  },
+  NDOT_NE: {
+    edition: "2017",
+    title:
+      "Standard Specifications for Highway Construction (Nebraska DOT, 2017 edition)",
+    sourceUrl:
+      "https://dot.nebraska.gov/business-center/design-consultant/rdwy-design/std-specs/",
+    expectedMinItems: 1500,
+    notes:
+      "NDOT-NE's 2017 spec book is prose only — no flat item table. Pull the latest BidExpress letting in CSV form, dedupe on item number, and save as incoming/NDOT_NE.csv. Headers: Item Number,Description,Unit.",
+  },
+  NDDOT: {
+    edition: "2020",
+    title: "Standard Specifications for Road and Bridge Construction",
+    sourceUrl:
+      "https://www.dot.nd.gov/divisions/environmental/specs.htm",
+    expectedMinItems: 1500,
+    notes:
+      "NDDOT's spec book PDF lists items only in section prose. Use the latest AASHTOWare `Item List` export from the Construction Division share, drop as incoming/NDDOT.csv. Headers: Item Code,Description,Unit,Spec.",
+    csvColumnMap: {
+      item: "Item Code",
+      description: "Description",
+      unit: "Unit",
+      section: "Spec",
+    },
+  },
+  MNDOT: {
+    edition: "2020",
+    title: "Standard Specifications for Construction",
+    sourceUrl:
+      "https://www.dot.state.mn.us/pre-letting/spec/index.html",
+    expectedMinItems: 2400,
+    notes:
+      "MnDOT's pay-item Search UI is an ASP.NET WebForms postback page that does not return a flat list to scripted clients. Use the `Pay Item Search` results, click `Export`, and save as incoming/MNDOT.csv. Headers: Item Number,Description,Unit,Spec Year.",
+  },
+  ILLINOIS_TOLLWAY: {
+    edition: "2024",
+    title:
+      "Illinois Tollway Standard Specifications for Road and Bridge Construction (Supplement to IDOT 2022)",
+    sourceUrl: "https://www.illinoistollway.com/doing-business",
+    expectedMinItems: 800,
+    notes:
+      "Illinois Tollway does not post a public pay-item list; items are released per project in the Bid Express letting packet. Concatenate the most recent letting's item summary into incoming/ILLINOIS_TOLLWAY.csv. Headers: Item,Description,Unit.",
+  },
+  TURNPIKE_OH: {
+    edition: "2023",
+    title:
+      "Ohio Turnpike & Infrastructure Commission Standard Specifications (Supplement to ODOT C&MS)",
+    sourceUrl: "https://www.ohioturnpike.org/business/contracting",
+    expectedMinItems: 600,
+    notes:
+      "Ohio Turnpike does not publish a flat pay-item list. Pull the most recent letting bid tab from the Contracts page, dedupe on item number, and save as incoming/TURNPIKE_OH.csv. Headers: Item,Description,Unit.",
+  },
 };
 
 // --- Minimal CSV/XML parsers (mirror scripts/import-dot-pay-items.ts) ---
@@ -1202,6 +1623,10 @@ const AGENCY_FETCHERS: Record<string, () => Promise<AgencyCatalog>> = {
   IADOT: fetchIadot,
   MAINEDOT: fetchMaineDot,
   MODOT: fetchModot,
+  MDOT_MI: fetchMdotMi,
+  ODOT_OK: fetchOdotOk,
+  WISDOT: fetchWisdot,
+  SDDOT: fetchSddot,
 };
 
 // Register a generic incoming-drop fetcher for every staged agency. FHWA

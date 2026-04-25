@@ -61,6 +61,10 @@ const AGENCY_MIN_ITEMS: Record<string, number> = {
   IADOT: 3500,   // Iowa DOT current_e_pay_items.xlsx publishes ~3,740 items
   MAINEDOT: 4500, // MaineDOT English Item Catalog PDF publishes ~4,850 items
   MODOT: 2200,   // MoDOT Bid Items Listing PDF publishes ~2,360 items
+  MDOT_MI: 6500, // MDOT 2020 Pay Item Codes XLSX publishes ~6,718 items (USP rows excluded)
+  ODOT_OK: 3000, // Oklahoma DOT AWP Spec Year 19 Item List publishes ~3,207 items
+  WISDOT: 2000,  // WisDOT 2025 Standard Specifications Bid Items appendix publishes ~2,089 items
+  SDDOT: 1100,   // SDDOT 2024 Bid Item Price Report publishes ~1,189 items used in 2024
 };
 
 function loadAgencies(): AgencyJson[] {
