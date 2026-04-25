@@ -20,6 +20,15 @@ interface DrawingSetSummary {
 // workspace was previously leaving the badge stale until window refocus
 // when users edited sheets there instead of from the Plans tab.
 //
+// Task #1966 — also invalidate the org-scoped
+// `/api/projects/drawing-sets/stale-summary` rollup that powers the
+// projects-list "out of date drawings" indicator
+// (`useDrawingSetStaleSummary` → `StaleDrawingsBadge`). The pin/unpin/swap
+// mutations in `DrawingSetsPanel` and `TakeoffWorkspace` already invalidate
+// this key, but sheet-side edits were leaving the projects-list badge stale
+// until the next 60s window expired. Centralising it here keeps both
+// surfaces in sync with one change.
+//
 // `projectId` is intentionally nullable so callers in non-project contexts
 // (e.g. bid-scoped takeoff) can pass `null` to make this a no-op.
 export function useInvalidateDrawingSetCompares(
@@ -37,5 +46,8 @@ export function useInvalidateDrawingSetCompares(
         queryKey: ["/api/projects", "drawing-sets", set.id, "compare"],
       });
     }
+    queryClient.invalidateQueries({
+      queryKey: ["/api/projects/drawing-sets/stale-summary"],
+    });
   }, [projectId, drawingSets]);
 }

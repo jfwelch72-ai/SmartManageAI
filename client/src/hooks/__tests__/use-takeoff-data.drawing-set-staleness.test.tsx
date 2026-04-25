@@ -215,6 +215,30 @@ describe("use-takeoff-data drawing-set staleness invalidation (Task #1913)", () 
     });
   });
 
+  // Task #1966 — sheet edits also need to refresh the org-scoped
+  // /api/projects/drawing-sets/stale-summary rollup that powers the
+  // projects-list "out of date drawings" indicator. Pin/unpin/swap
+  // mutations already do this; this test guards the sheet-edit paths.
+  it("rename → also invalidates the org-scoped stale-summary rollup (Task #1966)", async () => {
+    const history = makeHistoryMock();
+    const { result } = renderTakeoffData(history);
+    const qc = sharedQc.current!;
+    const invalidateSpy = vi.spyOn(qc, "invalidateQueries");
+
+    await act(async () => {
+      await result.current.renameSheetMutation.mutateAsync({
+        sheetId: "sheet-1",
+        sheetName: "C-101 Sheet",
+      });
+    });
+
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({
+        queryKey: ["/api/projects/drawing-sets/stale-summary"],
+      });
+    });
+  });
+
   it("bid-context takeoff → does NOT invalidate any project drawing-set /compare query", async () => {
     const history = makeHistoryMock();
     const qc = sharedQc.current!;
@@ -255,5 +279,17 @@ describe("use-takeoff-data drawing-set staleness invalidation (Task #1913)", () 
       return Array.isArray(key) && key[3] === "compare";
     });
     expect(compareCalls).toHaveLength(0);
+
+    // Task #1966 — bid-context takeoff must also leave the org-scoped
+    // stale-summary rollup alone (drawing sets are project-scoped, so
+    // bid-side sheet edits cannot affect the projects-list indicator).
+    const summaryCalls = invalidateSpy.mock.calls.filter((c) => {
+      const key = (c[0] as { queryKey?: unknown[] } | undefined)?.queryKey;
+      return (
+        Array.isArray(key) &&
+        key[0] === "/api/projects/drawing-sets/stale-summary"
+      );
+    });
+    expect(summaryCalls).toHaveLength(0);
   });
 });
