@@ -28,6 +28,19 @@
  *  - partial-failure atomicity for the new style fields (one missing
  *    id ⇒ 404 and NO color / thickness / text change is committed)
  *  - validation: an entry with no mutable fields is rejected with 400
+ *
+ * Task #1829 — Task #1766 added `recordJobMetrics("takeoff_markups_bulk_move", ...)`
+ * around this handler so SREs can spot tenants with slow / hot bulk
+ * gestures. There were no tests pinning that the metric actually fires
+ * with the right counters, so a future refactor could silently drop it
+ * and we'd lose the visibility. The new tests below cover:
+ *
+ *  - happy path: a successful bulk PATCH records exactly one
+ *    `takeoff_markups_bulk_move` sample with `ok: 1`, `count` matching
+ *    the request size, and a numeric `ms`
+ *  - failure path: a failing bulk PATCH (validation error caught by
+ *    the route's catch block) records exactly one sample with
+ *    `error: 1` and a numeric `ms`
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import type { Server } from "http";
@@ -39,6 +52,13 @@ import { sql } from "drizzle-orm";
 import { db } from "../../db";
 import { users, organizations, bids } from "@shared/schema";
 import { generateToken } from "../../auth";
+import { getJobMetrics } from "../../utils/jobMetrics";
+
+// Task #1829 — Job-metrics tag the bulk-move route emits via
+// `recordJobMetrics(...)`. Hardcoded here so a future rename of the
+// counter in the route file fails this suite loudly rather than
+// silently dropping the visibility we wired up in #1766.
+const BULK_MOVE_METRIC = "takeoff_markups_bulk_move";
 
 const TEST_PREFIX = "__takeoff_markup_bulk__";
 
@@ -596,5 +616,89 @@ describe("PATCH /api/takeoff/markups/bulk", () => {
     expect(r1.thickness).toBe(beforeThickness1);
     expect(r2.color).toBe(beforeColor2);
     expect(r2.thickness).toBe(beforeThickness2);
+  });
+
+  // Task #1829 — Pin the `recordJobMetrics("takeoff_markups_bulk_move", ...)`
+  // call wired up by Task #1766. Without these tests a future refactor
+  // could silently delete the metric call and we'd lose the visibility
+  // we just added (slow tenants on the bulk-move endpoint would stop
+  // showing up in the admin dashboard with no test failure to flag it).
+  // We snapshot the in-memory totals/sample count BEFORE firing the
+  // request so this works even when other tests in the suite have
+  // already exercised the endpoint and pushed samples into the rolling
+  // window.
+  it("records a `takeoff_markups_bulk_move` sample with ok:1 and count==batch size on success", async () => {
+    const m1 = await createMarkup(sheetIdA, 1500, 10);
+    const m2 = await createMarkup(sheetIdA, 1500, 80);
+    const m3 = await createMarkup(sheetIdA, 1500, 150);
+    const updates = [m1, m2, m3].map((m) => ({
+      id: m.id,
+      points: m.points.map((p) => ({ x: p.x + 1, y: p.y + 2 })),
+    }));
+
+    const okBefore = getJobMetrics(BULK_MOVE_METRIC).totals.ok ?? 0;
+    const errBefore = getJobMetrics(BULK_MOVE_METRIC).totals.error ?? 0;
+    const samplesBefore = getJobMetrics(BULK_MOVE_METRIC).samples.length;
+
+    const res = await apiPatch("/api/takeoff/markups/bulk", { updates });
+    expect(res.status).toBe(200);
+
+    const after = getJobMetrics(BULK_MOVE_METRIC);
+    // Exactly one new sample for this request — the route records once
+    // per call, not per update inside the batch.
+    expect(after.samples.length).toBe(samplesBefore + 1);
+    // Success path bumps `ok` by 1 and never bumps `error`.
+    expect(after.totals.ok ?? 0).toBe(okBefore + 1);
+    expect(after.totals.error ?? 0).toBe(errBefore);
+
+    const latest = after.latest!;
+    expect(latest).toBeTruthy();
+    expect(latest.counters.ok).toBe(1);
+    expect(latest.counters.error ?? 0).toBe(0);
+    // `count` mirrors `validated.updates.length`, which is the batch
+    // size the client submitted — this is the dimension SREs look at
+    // to spot tenants pushing huge group-drag gestures.
+    expect(latest.counters.count).toBe(updates.length);
+    // `ms` is wall-clock time spent in the handler. We can't assert a
+    // tight upper bound (CI is noisy) but it must be a finite, non-
+    // negative number — that's what the dashboard charts.
+    expect(typeof latest.counters.ms).toBe("number");
+    expect(Number.isFinite(latest.counters.ms)).toBe(true);
+    expect(latest.counters.ms).toBeGreaterThanOrEqual(0);
+  });
+
+  it("records a `takeoff_markups_bulk_move` sample with error:1 when the request fails validation", async () => {
+    const okBefore = getJobMetrics(BULK_MOVE_METRIC).totals.ok ?? 0;
+    const errBefore = getJobMetrics(BULK_MOVE_METRIC).totals.error ?? 0;
+    const samplesBefore = getJobMetrics(BULK_MOVE_METRIC).samples.length;
+
+    // Non-numeric coordinates trip the per-update Zod schema, which
+    // throws and lands in the route's catch block — the same catch
+    // block that owns the `error: 1` metric call. Using a Zod failure
+    // (rather than e.g. a missing-id 404, which short-circuits BEFORE
+    // either metric call fires) is what guarantees the failure
+    // counter actually gets tagged.
+    const res = await apiPatch("/api/takeoff/markups/bulk", {
+      updates: [{ id: "abc", points: [{ x: "oops", y: 1 }] }],
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.reason).toBe("validation");
+
+    const after = getJobMetrics(BULK_MOVE_METRIC);
+    expect(after.samples.length).toBe(samplesBefore + 1);
+    // Failure path bumps `error` by 1 and never bumps `ok`.
+    expect(after.totals.error ?? 0).toBe(errBefore + 1);
+    expect(after.totals.ok ?? 0).toBe(okBefore);
+
+    const latest = after.latest!;
+    expect(latest).toBeTruthy();
+    expect(latest.counters.error).toBe(1);
+    expect(latest.counters.ok ?? 0).toBe(0);
+    // `ms` must still be tagged on the failure path so the dashboard
+    // can chart "how long do failed bulk PATCHes take?" alongside the
+    // happy-path latency.
+    expect(typeof latest.counters.ms).toBe("number");
+    expect(Number.isFinite(latest.counters.ms)).toBe(true);
+    expect(latest.counters.ms).toBeGreaterThanOrEqual(0);
   });
 });
