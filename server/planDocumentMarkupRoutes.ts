@@ -551,10 +551,28 @@ router.patch(
       }
       await db.transaction(async (tx) => {
         for (const u of body.updates) {
-          await tx
+          // Defensive: if a concurrent writer hard-deletes or
+          // soft-deletes the row between the SELECT above and this
+          // UPDATE, the per-id UPDATE would silently no-op while the
+          // rest of the move commits — leaving the dragged group
+          // visually misaligned. Filter on `deletedAt IS NULL` (mirrors
+          // the pre-check above) and require returning() to surface
+          // exactly one row; otherwise throw to roll the whole
+          // transaction back so the move stays all-or-nothing, the
+          // same contract the bulk DELETE route enforces (Task #1776).
+          const updated = await tx
             .update(planDocumentMarkups)
             .set({ points: JSON.stringify(u.points) })
-            .where(eq(planDocumentMarkups.id, u.id));
+            .where(
+              and(
+                eq(planDocumentMarkups.id, u.id),
+                isNull(planDocumentMarkups.deletedAt),
+              ),
+            )
+            .returning({ id: planDocumentMarkups.id });
+          if (updated.length !== 1) {
+            throw new Error("Bulk move affected fewer rows than expected");
+          }
         }
       });
       await logAudit(

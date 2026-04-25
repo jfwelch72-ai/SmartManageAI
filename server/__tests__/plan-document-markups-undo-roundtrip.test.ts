@@ -589,3 +589,111 @@ describe("plan_document_markups — multi-step undo / redo (Task #1739)", () => 
     expect(afterUndoMove1.get(a.id)).toEqual(startA);
   });
 });
+
+/**
+ * Task #1842 — Bulk move atomicity under a concurrent delete.
+ *
+ * The bulk PATCH route runs N per-id UPDATEs inside one transaction.
+ * Without a row-count guard a row that gets removed between the route's
+ * pre-check SELECT and its UPDATE would silently no-op while the rest
+ * of the move commits, leaving the dragged group visually misaligned
+ * (one piece stayed put, the rest moved). This case proves the route
+ * now mirrors the bulk DELETE contract (Task #1776): if any per-id
+ * UPDATE fails to hit a row the whole transaction rolls back so every
+ * markup either lands at its new position or none of them do.
+ *
+ * To reliably observe the race without timing flake we wrap
+ * `db.transaction` so the bulk move's own transaction is preceded by a
+ * hard DELETE of one of the ids — the route's pre-check SELECT runs
+ * outside the transaction and has already seen both rows by then, but
+ * Postgres' default READ COMMITTED isolation means the now-committed
+ * DELETE is visible to the tx's subsequent UPDATE statements. The
+ * UPDATE loop then sees that id missing and the throw rolls everything
+ * back. Asserting the OTHER row's points stayed at their pre-move
+ * value is the all-or-nothing proof.
+ */
+describe("plan_document_markups — bulk move is atomic under a concurrent delete (Task #1842)", () => {
+  it("rolls back the whole move when a row disappears mid-flight, leaving every other row at its pre-move position", async () => {
+    const startA = [{ x: 0.11, y: 0.11 }, { x: 0.12, y: 0.12 }];
+    const startB = [{ x: 0.21, y: 0.21 }, { x: 0.22, y: 0.22 }];
+
+    const aRes = await apiPost(
+      `/api/plan-documents/${tenant.docId}/markups`,
+      tenant.token,
+      { pageNumber: 9, tool: "ARROW", points: startA },
+    );
+    const bRes = await apiPost(
+      `/api/plan-documents/${tenant.docId}/markups`,
+      tenant.token,
+      { pageNumber: 9, tool: "ARROW", points: startB },
+    );
+    expect(aRes.status).toBe(201);
+    expect(bRes.status).toBe(201);
+    const a = aRes.body as MarkupResponse;
+    const b = bRes.body as MarkupResponse;
+
+    // Wrap `db.transaction` so the very next transaction the process
+    // opens — which will be the bulk move's own — first hard-deletes
+    // row A. The route's pre-check SELECT has already returned both
+    // ids by this point (it ran outside the transaction), so the
+    // transaction proceeds into the per-id UPDATE loop. Postgres'
+    // default READ COMMITTED isolation means the now-committed DELETE
+    // is visible to the tx's subsequent UPDATE statements, so the
+    // UPDATE for A hits zero rows. With the new guard in place the
+    // throw rolls the whole transaction back, leaving B's points
+    // untouched.
+    const realTransaction = db.transaction.bind(db);
+    let txIntercepted = false;
+    (db as unknown as { transaction: typeof db.transaction }).transaction = (async (
+      callback: Parameters<typeof db.transaction>[0],
+      ...rest: unknown[]
+    ) => {
+      if (!txIntercepted) {
+        txIntercepted = true;
+        await db.execute(
+          sql`DELETE FROM plan_document_markups WHERE id = ${a.id}`,
+        );
+      }
+      return (realTransaction as unknown as (
+        cb: typeof callback,
+        ...r: unknown[]
+      ) => Promise<unknown>)(callback, ...rest);
+    }) as typeof db.transaction;
+
+    let moveStatus: number | null = null;
+    try {
+      const moved = await apiPatch(
+        `/api/plan-documents/${tenant.docId}/markups/bulk`,
+        tenant.token,
+        {
+          updates: [
+            { id: a.id, points: a.points.map((p) => ({ x: p.x + 0.5, y: p.y + 0.5 })) },
+            { id: b.id, points: b.points.map((p) => ({ x: p.x + 0.5, y: p.y + 0.5 })) },
+          ],
+        },
+      );
+      moveStatus = moved.status;
+    } finally {
+      (db as unknown as { transaction: typeof db.transaction }).transaction = realTransaction;
+    }
+
+    // The route surfaced a non-2xx — the throw inside the transaction
+    // bubbles to the express error handler. The exact status code is
+    // up to the global error handler; the *contract* this test locks
+    // down is "the move did not commit", which the row-level
+    // assertions below prove regardless of status.
+    expect(moveStatus).not.toBeNull();
+    expect(moveStatus!).toBeGreaterThanOrEqual(400);
+
+    // The crucial assertion: row B — the one that was NOT racing — was
+    // NOT moved. Without the guard B would have committed at its new
+    // position while A silently no-op'd, leaving the group misaligned.
+    const after = await readPointsFromDb([b.id]);
+    expect(after.get(b.id)).toEqual(startB);
+
+    // Confirm A really did get removed by the injected concurrent
+    // delete (proves we exercised the race rather than skipping it).
+    const aRow = await readPointsFromDb([a.id]);
+    expect(aRow.has(a.id)).toBe(false);
+  });
+});
