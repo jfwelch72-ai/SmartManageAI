@@ -8,6 +8,7 @@ import { ensureEquipmentColumns } from "./ensureEquipmentColumns";
 import { ensureMessageColumns } from "./ensureMessageColumns";
 import { ensureNotificationEnumValues } from "./ensureNotificationEnumValues";
 import { ensureNotificationTypePrefsMutedUntil } from "./ensureNotificationTypePrefsMutedUntil";
+import { ensureNotificationsMetadata } from "./ensureNotificationsMetadata";
 import { ensureIntegrationSyncStateFailureColumns } from "./ensureIntegrationSyncStateFailureColumns";
 import { ensureIntegrationSyncStateExhaustedNotifiedColumn } from "./ensureIntegrationSyncStateExhaustedNotifiedColumn";
 import { ensureIntegrationSyncAlertMutes } from "./ensureIntegrationSyncAlertMutes";
@@ -165,6 +166,12 @@ const migrations: MigrationStep[] = [
   // mutes can carry an auto-clear deadline (snooze). Read paths treat past
   // deadlines as if the override row didn't exist.
   { name: "notification_type_prefs_muted_until", category: "ADD_COLUMN", fn: ensureNotificationTypePrefsMutedUntil },
+  // Task #1974 — adds opaque `metadata` jsonb to `notifications` so the
+  // INTEGRATION_SYNC_RETRIES_EXHAUSTED fan-out can persist a friendly
+  // {recordLink, recordLabel} pair the in-app bell row renders as a
+  // secondary "Open <label>" link, mirroring the email's secondary CTA
+  // (Task #1945).
+  { name: "notifications_metadata", category: "ADD_COLUMN", fn: ensureNotificationsMetadata },
   // Task #1332 — adds last_attempt_at + last_error to integration_sync_state
   // so the Davis-Bacon background sync can persist failure state per
   // wage decision and surface it in the Project payroll banner.

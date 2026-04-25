@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Bell, Check, CheckCheck, AlertCircle, RefreshCw } from "lucide-react";
+import { Bell, Check, CheckCheck, AlertCircle, RefreshCw, ExternalLink } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { Link } from "wouter";
 import { useState } from "react";
@@ -16,7 +16,7 @@ import { CertifiedPayrollDigestItem } from "@/components/notifications/Certified
 import { getNotificationDestination } from "@/lib/notificationDestination";
 import type { Notification } from "@shared/schema";
 
-function StandardNotificationItem({
+export function StandardNotificationItem({
   notification,
   onDismiss,
   isDismissing,
@@ -26,6 +26,14 @@ function StandardNotificationItem({
   isDismissing: boolean;
 }) {
   const destination = getNotificationDestination(notification);
+  // Task #1974 — secondary "Open <recordLabel>" link for
+  // INTEGRATION_SYNC_RETRIES_EXHAUSTED rows whose failed QBO sync
+  // resolves to a customer / pay app / pay run. Mirrors the email's
+  // secondary CTA from Task #1945. Orphan IDs leave metadata unset and
+  // the link is omitted, same as the email path.
+  const recordLink = notification.metadata?.recordLink ?? null;
+  const recordLabel = notification.metadata?.recordLabel ?? null;
+  const hasRecordLink = !!(recordLink && recordLabel);
 
   const body = (
     <div className="flex-1 min-w-0">
@@ -54,13 +62,31 @@ function StandardNotificationItem({
       }`}
       data-testid={`notification-item-${notification.id}`}
     >
-      {destination ? (
-        <Link href={destination} className="flex-1 min-w-0">
-          {body}
-        </Link>
-      ) : (
-        body
-      )}
+      <div className="flex-1 min-w-0">
+        {destination ? (
+          <Link href={destination} className="block">
+            {body}
+          </Link>
+        ) : (
+          body
+        )}
+        {hasRecordLink && recordLink && recordLabel && (
+          <Link
+            href={recordLink}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!notification.isRead) {
+                onDismiss();
+              }
+            }}
+            className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+            data-testid={`link-notification-record-${notification.id}`}
+          >
+            <ExternalLink className="h-3 w-3" />
+            Open {recordLabel}
+          </Link>
+        )}
+      </div>
       {!notification.isRead && (
         <Button
           variant="ghost"

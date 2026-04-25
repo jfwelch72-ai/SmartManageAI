@@ -28,6 +28,11 @@ export interface NotificationRecord {
   message: string;
   relatedEntityId?: string | null;
   relatedEntityType?: string | null;
+  // Task #1974 — opaque per-notification metadata (currently the
+  // {recordLink, recordLabel} pair the INTEGRATION_SYNC_RETRIES_EXHAUSTED
+  // fan-out resolves at creation time so the in-app bell row can render
+  // a secondary "Open <label>" link).
+  metadata?: { recordLink?: string; recordLabel?: string } | null;
 }
 
 interface ChannelPrefs {

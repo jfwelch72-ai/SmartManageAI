@@ -628,7 +628,21 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                   notifications.map((notification) => {
                     const destination = getNotificationDestination(notification);
                     const hasDestination = !!destination;
-                    
+                    // Task #1974 — INTEGRATION_SYNC_RETRIES_EXHAUSTED rows
+                    // carry a friendly {recordLink, recordLabel} pair on
+                    // notifications.metadata when the failed QBO sync row
+                    // resolves to a customer / pay app / pay run. Render
+                    // it as a secondary "Open <recordLabel>" link so
+                    // admins triaging from the bell get the same one-click
+                    // jump as admins triaging from the email (mirrors the
+                    // composeEmailContent secondary CTA from Task #1945).
+                    // Orphan IDs (record was deleted) leave metadata
+                    // unset and the link is omitted, same as the email
+                    // path.
+                    const recordLink = notification.metadata?.recordLink ?? null;
+                    const recordLabel = notification.metadata?.recordLabel ?? null;
+                    const hasRecordLink = !!(recordLink && recordLabel);
+
                     const notificationContent = (
                       <div className="flex items-start justify-between w-full gap-2">
                         <div className="flex-1">
@@ -642,6 +656,23 @@ export default function AppHeader({ userName, userRole, onLogout, organizationNa
                           <p className="text-xs text-muted-foreground mt-1">
                             {format(new Date(notification.createdAt), "MMM d, h:mm a")}
                           </p>
+                          {hasRecordLink && recordLink && recordLabel && (
+                            <Link
+                              href={recordLink}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!notification.isRead) {
+                                  markAsRead.mutate(notification.id);
+                                }
+                                setNotificationsOpen(false);
+                              }}
+                              className="mt-1.5 inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                              data-testid={`link-notification-record-${notification.id}`}
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                              Open {recordLabel}
+                            </Link>
+                          )}
                         </div>
                         {!notification.isRead && (
                           <div className="w-2 h-2 rounded-full bg-primary flex-shrink-0 mt-1" />

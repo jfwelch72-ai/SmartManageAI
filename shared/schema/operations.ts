@@ -1267,6 +1267,17 @@ export const notifications = pgTable("notifications", {
   isRead: boolean("is_read").notNull().default(false),
   relatedEntityId: varchar("related_entity_id"),
   relatedEntityType: text("related_entity_type"),
+  // Task #1974 — opaque per-notification metadata. Currently used by the
+  // INTEGRATION_SYNC_RETRIES_EXHAUSTED fan-out to carry a friendly
+  // {recordLink, recordLabel} pair the in-app bell row renders as a
+  // secondary "Open <label>" link, mirroring the email's secondary CTA
+  // (Task #1945). Resolved at notification-creation time so orphan IDs
+  // (record was deleted) leave the fields unset and the UI omits the
+  // link, same as the email path.
+  metadata: jsonb("metadata").$type<{
+    recordLink?: string;
+    recordLabel?: string;
+  } | null>(),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   userIdIdx: index("notifications_user_id_idx").on(table.userId),

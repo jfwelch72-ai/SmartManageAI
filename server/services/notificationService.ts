@@ -14,6 +14,10 @@ export async function insertNotification(values: InsertNotification): Promise<vo
       message: inserted.message,
       relatedEntityId: inserted.relatedEntityId,
       relatedEntityType: inserted.relatedEntityType,
+      // Task #1974 — propagate persisted metadata to the delivery layer
+      // so any future channel that wants to consume {recordLink, recordLabel}
+      // (currently the in-app bell row only) doesn't have to re-resolve it.
+      metadata: inserted.metadata,
     };
     setImmediate(() => {
       deliverNotification(record).catch(() => undefined);

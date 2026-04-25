@@ -249,6 +249,13 @@ export async function notifyAdminsOfExhaustedSyncRetry(
   // deleted) fall through to the existing kindLabel + itemId rendering.
   let title: string;
   let message: string;
+  // Task #1974 — capture the resolved record link/label so it can be
+  // persisted on the notification row itself (jsonb metadata column),
+  // letting the in-app bell render a secondary "Open <recordLabel>"
+  // link without re-resolving on every list call. Orphan IDs leave
+  // these undefined so the secondary link is omitted (same as the
+  // email path).
+  let recordMetadata: { recordLink?: string; recordLabel?: string } | null = null;
   if (args.entityType.startsWith(QBO_SYNC_ENTITY_TYPE_PREFIX)) {
     const { kindLabel, itemId } = classifyQboEntity(args.entityType);
     const resolved = itemId
@@ -283,6 +290,12 @@ export async function notifyAdminsOfExhaustedSyncRetry(
       `QuickBooks ran out of automatic retries while syncing ${bodySubject}. ` +
       `Last error: ${trimmedError}. ` +
       `Open the QuickBooks panel on the Integrations page to retry or investigate.`;
+    if (resolved) {
+      recordMetadata = {
+        recordLink: resolved.link,
+        recordLabel: resolved.displayName,
+      };
+    }
   } else {
     title = `Integration sync gave up: ${integrationLabel} (${args.entityType})`;
     message =
@@ -303,6 +316,7 @@ export async function notifyAdminsOfExhaustedSyncRetry(
         message,
         relatedEntityId: args.syncStateId,
         relatedEntityType: "INTEGRATION_SYNC_STATE",
+        metadata: recordMetadata,
       };
       await insertNotification(payload);
       delivered += 1;
@@ -520,6 +534,19 @@ export async function backfillExhaustedSyncRetryAlerts(): Promise<BackfillExhaus
     // Anchor the related-entity link on the first claimed row so clicking
     // through the notification opens a real sync state record.
     const anchorRowId = group.rows[0].id;
+    // Task #1974 — when the backfill summary covers a single resolved
+    // QBO record, persist its {recordLink, recordLabel} so the in-app
+    // bell row gets the same secondary "Open <label>" link the
+    // per-row notify path emits. Multi-entity summaries intentionally
+    // skip the secondary link (no single record to deep-link to);
+    // orphan IDs likewise skip it (resolveQboEntityLabels left no
+    // map entry).
+    const anchorRow = group.rows[0];
+    const anchorResolved = labelMap.get(anchorRow.entity_type);
+    const recordMetadata: { recordLink?: string; recordLabel?: string } | null =
+      entityCount === 1 && anchorResolved
+        ? { recordLink: anchorResolved.link, recordLabel: anchorResolved.displayName }
+        : null;
 
     let delivered = 0;
     for (const userId of adminIds) {
@@ -532,6 +559,7 @@ export async function backfillExhaustedSyncRetryAlerts(): Promise<BackfillExhaus
           message,
           relatedEntityId: anchorRowId,
           relatedEntityType: "INTEGRATION_SYNC_STATE",
+          metadata: recordMetadata,
         };
         await insertNotification(payload);
         delivered += 1;
