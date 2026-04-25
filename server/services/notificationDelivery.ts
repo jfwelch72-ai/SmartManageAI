@@ -16,7 +16,11 @@ import { buildDavisBaconMuteUrl } from "../utils/davisBaconMuteToken";
 import { buildWageDecisionRatesChangedMuteUrl } from "../utils/wageDecisionRatesChangedMuteToken";
 import { buildIntegrationSyncMuteUrl } from "../utils/integrationSyncMuteToken";
 import { buildLogEmailFailuresDigestMuteUrl } from "../utils/logEmailFailuresDigestMuteToken";
-import { resolveQboEntityLabel } from "./qboEntityLabels";
+import {
+  resolveQboEntityLabelCached,
+  createQboEntityLabelCache,
+  type QboEntityLabelCache,
+} from "./qboEntityLabels";
 
 type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
 
@@ -987,6 +991,7 @@ export function composeEmailContent(
  */
 async function loadIntegrationSyncContext(
   notification: NotificationRecord,
+  qboLabelCache?: QboEntityLabelCache,
 ): Promise<ComposeEmailExtras["integrationSyncContext"] | undefined> {
   if (notification.type !== "INTEGRATION_SYNC_RETRIES_EXHAUSTED") return undefined;
   if (notification.relatedEntityType !== "INTEGRATION_SYNC_STATE") return undefined;
@@ -1017,9 +1022,13 @@ async function loadIntegrationSyncContext(
     let recordLabel: string | undefined;
     if (row.provider === "qbo") {
       try {
-        const resolved = await resolveQboEntityLabel(
+        // Task #1976 — share an in-flight per-batch cache so the same
+        // (org, entityType) lookup is collapsed across every recipient
+        // when one notification fans out to multiple admins.
+        const resolved = await resolveQboEntityLabelCached(
           row.organizationId,
           row.entityType,
+          qboLabelCache,
         );
         if (resolved) {
           recordLink = resolved.link;
@@ -1058,9 +1067,16 @@ async function loadIntegrationSyncContext(
   }
 }
 
-async function deliverEmail(userEmail: string, notification: NotificationRecord): Promise<void> {
+async function deliverEmail(
+  userEmail: string,
+  notification: NotificationRecord,
+  qboLabelCache?: QboEntityLabelCache,
+): Promise<void> {
   try {
-    const integrationSyncContext = await loadIntegrationSyncContext(notification);
+    const integrationSyncContext = await loadIntegrationSyncContext(
+      notification,
+      qboLabelCache,
+    );
     const { subject, body, actionUrl, actionText, html } = composeEmailContent(
       notification,
       integrationSyncContext ? { integrationSyncContext } : {},
@@ -1141,7 +1157,10 @@ function deliverSlack(webhookUrl: string | null, notification: NotificationRecor
   });
 }
 
-export async function deliverNotification(notification: NotificationRecord): Promise<void> {
+export async function deliverNotification(
+  notification: NotificationRecord,
+  qboLabelCache?: QboEntityLabelCache,
+): Promise<void> {
   try {
     const [userRow] = await db
       .select({
@@ -1178,7 +1197,7 @@ export async function deliverNotification(notification: NotificationRecord): Pro
     const tasks: Promise<void>[] = [];
 
     if (prefs.emailEnabled || forceEmailForExhaustedSync) {
-      tasks.push(deliverEmail(userRow.email, notification));
+      tasks.push(deliverEmail(userRow.email, notification, qboLabelCache));
     }
     if (prefs.smsEnabled && enterpriseNotifications && isTwilioConfigured()) {
       let smsFeatureEnabled = true;
@@ -1213,5 +1232,12 @@ export async function deliverNotification(notification: NotificationRecord): Pro
 }
 
 export async function deliverNotifications(notifications: NotificationRecord[]): Promise<void> {
-  await Promise.allSettled(notifications.map(deliverNotification));
+  // Task #1976 — Share a single QBO label cache across every recipient
+  // in this batch so a fan-out (e.g. 5 admins × 20 failed rows) only
+  // resolves each (org, entityType) pair once instead of once per
+  // recipient.
+  const qboLabelCache = createQboEntityLabelCache();
+  await Promise.allSettled(
+    notifications.map((n) => deliverNotification(n, qboLabelCache)),
+  );
 }

@@ -315,3 +315,70 @@ export async function resolveQboEntityLabel(
   const map = await resolveQboEntityLabels(organizationId, [entityType]);
   return map.get(entityType) ?? null;
 }
+
+// ---------------------------------------------------------------------------
+// Task #1976 — Per-batch cache for resolveQboEntityLabel.
+//
+// When an INTEGRATION_SYNC_RETRIES_EXHAUSTED notification fans out to
+// multiple admins, the email composer's loadIntegrationSyncContext path
+// (server/services/notificationDelivery.ts) calls resolveQboEntityLabel
+// once per recipient — so an org with 5 admins and 20 failed rows would
+// produce 100 redundant per-record lookups for the same 20 records.
+//
+// The cache below collapses repeats to one call per (organizationId,
+// entityType) within a single delivery batch. It's intentionally a
+// plain Map keyed by an in-flight promise — no TTL, no eviction —
+// because a `QboEntityLabelCache` is created fresh by
+// `deliverNotifications` and discarded once the batch settles. There's
+// nothing to invalidate; it just lives for the lifetime of one batch.
+// ---------------------------------------------------------------------------
+
+export type QboEntityLabelCache = Map<string, Promise<QboResolvedEntity | null>>;
+
+export function createQboEntityLabelCache(): QboEntityLabelCache {
+  return new Map();
+}
+
+function cacheKey(organizationId: string, entityType: string): string {
+  return `${organizationId}::${entityType}`;
+}
+
+/**
+ * Indirection so tests (and the cached variant below) can swap the
+ * resolver without having to mock around ESM live-binding hoisting.
+ * Production code never reaches into this object.
+ */
+export const __qboEntityLabelInternals = {
+  resolve: resolveQboEntityLabel,
+};
+
+/**
+ * Cached variant of resolveQboEntityLabel. When `cache` is supplied,
+ * repeat lookups for the same (organizationId, entityType) reuse the
+ * pending or settled promise so the resolver only runs once per pair
+ * for the lifetime of the cache. Without a cache, behaves identically
+ * to resolveQboEntityLabel.
+ */
+export async function resolveQboEntityLabelCached(
+  organizationId: string,
+  entityType: string,
+  cache?: QboEntityLabelCache,
+): Promise<QboResolvedEntity | null> {
+  if (!cache) {
+    return __qboEntityLabelInternals.resolve(organizationId, entityType);
+  }
+  const key = cacheKey(organizationId, entityType);
+  const existing = cache.get(key);
+  if (existing) return existing;
+  const pending = __qboEntityLabelInternals
+    .resolve(organizationId, entityType)
+    .catch((err) => {
+      // Don't poison the cache with a rejected promise — drop it so a
+      // subsequent caller can retry. Re-throw so the original caller
+      // still sees the failure.
+      cache.delete(key);
+      throw err;
+    });
+  cache.set(key, pending);
+  return pending;
+}

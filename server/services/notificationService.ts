@@ -1,6 +1,10 @@
 import { db, pool } from "../db";
 import { notifications, type InsertNotification } from "@shared/schema";
-import { deliverNotification, type NotificationRecord } from "./notificationDelivery";
+import {
+  deliverNotification,
+  type NotificationRecord,
+} from "./notificationDelivery";
+import { createQboEntityLabelCache } from "./qboEntityLabels";
 import { logError } from "../utils/logger";
 
 export async function insertNotification(values: InsertNotification): Promise<void> {
@@ -467,7 +471,13 @@ export async function insertNotifications(valuesList: InsertNotification[]): Pro
       relatedEntityType: n.relatedEntityType,
     }));
     setImmediate(() => {
-      Promise.allSettled(records.map((r) => deliverNotification(r))).catch(() => undefined);
+      // Task #1976 — share a per-batch QBO entity-label cache across
+      // every fan-out recipient so the same (org, entityType) is only
+      // resolved once instead of once per recipient.
+      const qboLabelCache = createQboEntityLabelCache();
+      Promise.allSettled(
+        records.map((r) => deliverNotification(r, qboLabelCache)),
+      ).catch(() => undefined);
     });
   }
 }

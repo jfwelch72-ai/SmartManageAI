@@ -28,7 +28,7 @@ import {
   users,
   type InsertNotification,
 } from "@shared/schema";
-import { insertNotification } from "./notificationService";
+import { insertNotification, insertNotifications } from "./notificationService";
 import { logError, logInfo } from "../utils/logger";
 import { MAX_SYNC_RETRIES } from "../integrations/syncRetry";
 // Task #1945 — Re-export the friendly-label helpers so existing callers
@@ -305,32 +305,37 @@ export async function notifyAdminsOfExhaustedSyncRetry(
       `Open the Integrations page to review the failure and trigger a manual retry.`;
   }
 
+  // Task #1976 — Batch the fan-out through insertNotifications so every
+  // recipient's deliverNotification shares the per-batch QBO label cache,
+  // collapsing what used to be N redundant resolveQboEntityLabel calls
+  // (one per admin) into one per (org, entityType) pair.
+  // Task #1974 — propagate the resolved record link/label as opaque
+  // notification metadata so the in-app bell can render a secondary
+  // "Open <recordLabel>" link without re-resolving on every list call.
+  const payloads: InsertNotification[] = adminIds.map((userId) => ({
+    userId,
+    organizationId: args.organizationId,
+    type: "INTEGRATION_SYNC_RETRIES_EXHAUSTED",
+    title,
+    message,
+    relatedEntityId: args.syncStateId,
+    relatedEntityType: "INTEGRATION_SYNC_STATE",
+    metadata: recordMetadata,
+  }));
   let delivered = 0;
-  for (const userId of adminIds) {
-    try {
-      const payload: InsertNotification = {
-        userId,
+  try {
+    await insertNotifications(payloads);
+    delivered = payloads.length;
+  } catch (err) {
+    logError(
+      "Failed to deliver exhausted sync retry notifications",
+      {
         organizationId: args.organizationId,
-        type: "INTEGRATION_SYNC_RETRIES_EXHAUSTED",
-        title,
-        message,
-        relatedEntityId: args.syncStateId,
-        relatedEntityType: "INTEGRATION_SYNC_STATE",
-        metadata: recordMetadata,
-      };
-      await insertNotification(payload);
-      delivered += 1;
-    } catch (err) {
-      logError(
-        "Failed to deliver exhausted sync retry notification",
-        {
-          organizationId: args.organizationId,
-          syncStateId: args.syncStateId,
-          userId,
-        },
-        err instanceof Error ? err : new Error(String(err)),
-      );
-    }
+        syncStateId: args.syncStateId,
+        recipients: payloads.length,
+      },
+      err instanceof Error ? err : new Error(String(err)),
+    );
   }
 
   if (delivered > 0) {
