@@ -68,13 +68,14 @@ export const ALLOWED_RECEIPT_TYPES = [
   "application/pdf",
 ];
 
-// Per-file storage cap. The underlying object-storage flow uses
-// chunked/resumable uploads above 10 MB, so multi-GB uploads are supported.
-// Anything at or below this threshold passes server-side validation for every
-// user-storage file type. Keep this in lock-step with MAX_STORAGE_FILE_SIZE in
-// client/src/lib/uploadLimits.ts so the client never previews a file the
-// server would later reject.
-export const MAX_STORAGE_FILE_SIZE = 5 * 1024 * 1024 * 1024; // 5 GB
+// Effectively-unlimited per-file storage cap. The underlying object-storage
+// flow uses chunked/resumable uploads above 10 MB, so multi-GB uploads are
+// supported. Anything below this threshold should pass server-side validation
+// for every user-storage file type. Keep this large enough to cover huge
+// drawing sets (10+ GB) without ever silently rejecting a legitimate upload —
+// construction projects routinely upload many large plans, BIM, and LiDAR
+// files in the Plans & Takeoff step.
+export const MAX_STORAGE_FILE_SIZE = 20 * 1024 * 1024 * 1024; // 20 GB
 
 export const MAX_MEDIA_SIZE = MAX_STORAGE_FILE_SIZE;
 export const MAX_DOCUMENT_SIZE = MAX_STORAGE_FILE_SIZE;
