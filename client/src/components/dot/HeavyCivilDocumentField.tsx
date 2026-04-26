@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ObjectUploader } from "@/components/ObjectUploader";
-import { MAX_BATCH_UPLOAD_FILES } from "@/lib/uploadLimits";
+import { MAX_BATCH_UPLOAD_FILES, MAX_BATCH_UPLOAD_HELPER_TEXT } from "@/lib/uploadLimits";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Upload, FileText, History, Download, X } from "lucide-react";
@@ -405,17 +405,20 @@ export function HeavyCivilDocumentList({
     <div className="space-y-2" data-testid={`field-${testId}`}>
       <div className="flex items-center justify-between">
         <div className="text-sm font-medium">{label}</div>
-        <ObjectUploader
-          maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
-          fileType="DOCUMENT"
-          onComplete={handleComplete}
-          testId={`uploader-${testId}`}
-        >
-          <Button type="button" size="sm" variant="outline" disabled={disabled || busy || !projectId}>
-            {busy ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-2" />}
-            Add file(s)
-          </Button>
-        </ObjectUploader>
+        <div className="flex flex-col items-end gap-0.5">
+          <ObjectUploader
+            maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
+            fileType="DOCUMENT"
+            onComplete={handleComplete}
+            testId={`uploader-${testId}`}
+          >
+            <Button type="button" size="sm" variant="outline" disabled={disabled || busy || !projectId}>
+              {busy ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-2" />}
+              Add file(s)
+            </Button>
+          </ObjectUploader>
+          <p className="text-[10px] text-muted-foreground" data-testid={`hint-batch-upload-limit-${testId}`}>{MAX_BATCH_UPLOAD_HELPER_TEXT}</p>
+        </div>
       </div>
       {documentIds.length === 0 ? (
         <div className="text-xs text-muted-foreground rounded-md border border-dashed p-3">

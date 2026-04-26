@@ -22,3 +22,12 @@ export const MAX_STORAGE_FILE_SIZE = 20 * 1024 * 1024 * 1024; // 20 GB
 // exempt and stay at maxNumberOfFiles={1} — they fill one form field and must
 // not silently turn into multi-uploaders.
 export const MAX_BATCH_UPLOAD_FILES = 50;
+
+// Canonical helper-line copy that sits next to every multi-file ObjectUploader
+// trigger so users see the per-batch cap *before* they drop 80 plan PDFs and
+// Uppy throws a "you can only upload 50 files at a time" toast at them. Keep
+// this wording identical across call sites — the task #2044 fix exists exactly
+// because each uploader was either silent or had its own slightly different
+// phrasing. The constant interpolates MAX_BATCH_UPLOAD_FILES so bumping the
+// cap in one place updates every helper line automatically.
+export const MAX_BATCH_UPLOAD_HELPER_TEXT = `Up to ${MAX_BATCH_UPLOAD_FILES} files per batch`;

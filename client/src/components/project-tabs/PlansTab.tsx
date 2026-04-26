@@ -18,7 +18,7 @@ import { WidgetErrorBoundary } from "@/components/WidgetErrorBoundary";
 import DocumentRevisionPanel from "@/components/DocumentRevisionPanel";
 import ProjectAddenda from "@/components/ProjectAddenda";
 import { ObjectUploader } from "@/components/ObjectUploader";
-import { MAX_BATCH_UPLOAD_FILES, MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
+import { MAX_BATCH_UPLOAD_FILES, MAX_BATCH_UPLOAD_HELPER_TEXT, MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import { useTableKeyboardNav } from "@/hooks/use-table-keyboard-nav";
 import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 import BidLibrarySection from "@/components/bid/BidLibrarySection";
@@ -1977,6 +1977,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                   {documentType === "BIM" && (
                     <p className="text-[10px] text-muted-foreground" data-testid="hint-ifc-only">IFC files only for BIM models</p>
                   )}
+                  <p className="text-[10px] text-muted-foreground" data-testid="hint-batch-upload-limit">{MAX_BATCH_UPLOAD_HELPER_TEXT}</p>
                 </div>
               </div>
 

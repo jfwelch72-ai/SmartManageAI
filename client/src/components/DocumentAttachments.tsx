@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { ObjectUploader } from "@/components/ObjectUploader";
-import { MAX_BATCH_UPLOAD_FILES, MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
+import { MAX_BATCH_UPLOAD_FILES, MAX_BATCH_UPLOAD_HELPER_TEXT, MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import {
   Paperclip,
   Upload,
@@ -130,25 +130,28 @@ export default function DocumentAttachments({
             <span>Attachments ({files.length})</span>
           </div>
           {canUpload && (
-            <ObjectUploader
-              maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
-              maxFileSize={MAX_STORAGE_FILE_SIZE}
-              fileType="DOCUMENT"
-              onComplete={handleUploadComplete}
-              testId={`button-upload-${entityType}-file`}
-            >
-              {isUploading || uploadMutation.isPending ? (
-                <span className="flex items-center gap-1.5">
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                  Uploading...
-                </span>
-              ) : (
-                <span className="flex items-center gap-1.5">
-                  <Upload className="h-3 w-3" />
-                  Attach
-                </span>
-              )}
-            </ObjectUploader>
+            <div className="flex flex-col items-end gap-0.5">
+              <ObjectUploader
+                maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
+                maxFileSize={MAX_STORAGE_FILE_SIZE}
+                fileType="DOCUMENT"
+                onComplete={handleUploadComplete}
+                testId={`button-upload-${entityType}-file`}
+              >
+                {isUploading || uploadMutation.isPending ? (
+                  <span className="flex items-center gap-1.5">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Uploading...
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1.5">
+                    <Upload className="h-3 w-3" />
+                    Attach
+                  </span>
+                )}
+              </ObjectUploader>
+              <p className="text-[10px] text-muted-foreground" data-testid="hint-batch-upload-limit">{MAX_BATCH_UPLOAD_HELPER_TEXT}</p>
+            </div>
           )}
         </div>
 
@@ -217,25 +220,28 @@ export default function DocumentAttachments({
           )}
         </CardTitle>
         {canUpload && (
-          <ObjectUploader
-            maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
-            maxFileSize={MAX_STORAGE_FILE_SIZE}
-            fileType="DOCUMENT"
-            onComplete={handleUploadComplete}
-            testId={`button-upload-${entityType}-file`}
-          >
-            {isUploading || uploadMutation.isPending ? (
-              <span className="flex items-center gap-1.5">
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                Uploading...
-              </span>
-            ) : (
-              <span className="flex items-center gap-1.5">
-                <Upload className="h-3.5 w-3.5" />
-                Upload Document
-              </span>
-            )}
-          </ObjectUploader>
+          <div className="flex flex-col items-end gap-0.5">
+            <ObjectUploader
+              maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
+              maxFileSize={MAX_STORAGE_FILE_SIZE}
+              fileType="DOCUMENT"
+              onComplete={handleUploadComplete}
+              testId={`button-upload-${entityType}-file`}
+            >
+              {isUploading || uploadMutation.isPending ? (
+                <span className="flex items-center gap-1.5">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Uploading...
+                </span>
+              ) : (
+                <span className="flex items-center gap-1.5">
+                  <Upload className="h-3.5 w-3.5" />
+                  Upload Document
+                </span>
+              )}
+            </ObjectUploader>
+            <p className="text-xs text-muted-foreground" data-testid="hint-batch-upload-limit">{MAX_BATCH_UPLOAD_HELPER_TEXT}</p>
+          </div>
         )}
       </CardHeader>
       <CardContent>

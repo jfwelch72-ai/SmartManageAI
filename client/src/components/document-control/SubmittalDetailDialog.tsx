@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ObjectUploader } from "@/components/ObjectUploader";
-import { MAX_BATCH_UPLOAD_FILES, MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
+import { MAX_BATCH_UPLOAD_FILES, MAX_BATCH_UPLOAD_HELPER_TEXT, MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import {
   FileCheck,
   Eye,
@@ -577,18 +577,21 @@ function SubmittalAttachmentsTab({ submittal, canUpload, canDeleteAny, currentUs
               </SelectContent>
             </Select>
           </div>
-          <ObjectUploader
-            maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
-            maxFileSize={MAX_STORAGE_FILE_SIZE}
-            fileType="DOCUMENT"
-            onComplete={handleUploadComplete}
-            testId="button-upload-submittal-attachment"
-          >
-            <span className="flex items-center gap-1.5">
-              <Paperclip className="h-3 w-3" />
-              Upload File
-            </span>
-          </ObjectUploader>
+          <div className="flex flex-col items-end gap-0.5">
+            <ObjectUploader
+              maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
+              maxFileSize={MAX_STORAGE_FILE_SIZE}
+              fileType="DOCUMENT"
+              onComplete={handleUploadComplete}
+              testId="button-upload-submittal-attachment"
+            >
+              <span className="flex items-center gap-1.5">
+                <Paperclip className="h-3 w-3" />
+                Upload File
+              </span>
+            </ObjectUploader>
+            <p className="text-[10px] text-muted-foreground" data-testid="hint-batch-upload-limit">{MAX_BATCH_UPLOAD_HELPER_TEXT}</p>
+          </div>
         </div>
       )}
 

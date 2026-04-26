@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ObjectUploader } from "@/components/ObjectUploader";
-import { MAX_BATCH_UPLOAD_FILES, MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
+import { MAX_BATCH_UPLOAD_FILES, MAX_BATCH_UPLOAD_HELPER_TEXT, MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import type { UploadResult } from "@uppy/core";
 import {
   Upload,
@@ -254,7 +254,7 @@ export default function BidPlansStep({ bidId, bidCode, canEdit, onNextStep }: Bi
                   <Upload className="w-4 h-4 mr-2" />
                   {createDocMutation.isPending ? "Saving..." : "Upload Documents"}
                 </Button>
-                <p className="text-xs text-muted-foreground mt-1">Select multiple files at once</p>
+                <p className="text-xs text-muted-foreground mt-1" data-testid="hint-batch-upload-limit">{MAX_BATCH_UPLOAD_HELPER_TEXT}</p>
               </ObjectUploader>
             </div>
           )}

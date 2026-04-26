@@ -17,7 +17,7 @@ import {
   Shield, RefreshCcw, Paperclip, History, ChevronDown,
 } from "lucide-react";
 import { ObjectUploader } from "@/components/ObjectUploader";
-import { MAX_BATCH_UPLOAD_FILES } from "@/lib/uploadLimits";
+import { MAX_BATCH_UPLOAD_FILES, MAX_BATCH_UPLOAD_HELPER_TEXT } from "@/lib/uploadLimits";
 import type { PunchListItem } from "@shared/schema";
 
 interface PunchListTabProps {
@@ -794,30 +794,33 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
                   </div>
                 )}
                 {isManagement(userRole) && (
-                  <ObjectUploader
-                    fileType="MEDIA"
-                    maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
-                    allowedFileTypes={["image/*", "application/pdf"]}
-                    onComplete={(result) => {
-                      const successful = result.successful ?? [];
-                      for (const f of successful) {
-                        addAttachmentMutation.mutate({
-                          id: selected.id,
-                          attachment: {
-                            url: f.uploadURL ?? "",
-                            filename: f.name ?? "attachment",
-                            mimeType: f.type ?? "application/octet-stream",
-                          },
-                        });
-                      }
-                    }}
-                    testId="uploader-punch-attachment"
-                  >
-                    <Button variant="outline" size="sm" data-testid="button-add-attachment">
-                      <Paperclip className="h-4 w-4 mr-1.5" />
-                      Add Photo / File
-                    </Button>
-                  </ObjectUploader>
+                  <div className="flex flex-col items-start gap-0.5">
+                    <ObjectUploader
+                      fileType="MEDIA"
+                      maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
+                      allowedFileTypes={["image/*", "application/pdf"]}
+                      onComplete={(result) => {
+                        const successful = result.successful ?? [];
+                        for (const f of successful) {
+                          addAttachmentMutation.mutate({
+                            id: selected.id,
+                            attachment: {
+                              url: f.uploadURL ?? "",
+                              filename: f.name ?? "attachment",
+                              mimeType: f.type ?? "application/octet-stream",
+                            },
+                          });
+                        }
+                      }}
+                      testId="uploader-punch-attachment"
+                    >
+                      <Button variant="outline" size="sm" data-testid="button-add-attachment">
+                        <Paperclip className="h-4 w-4 mr-1.5" />
+                        Add Photo / File
+                      </Button>
+                    </ObjectUploader>
+                    <p className="text-[10px] text-muted-foreground" data-testid="hint-batch-upload-limit">{MAX_BATCH_UPLOAD_HELPER_TEXT}</p>
+                  </div>
                 )}
               </div>
 

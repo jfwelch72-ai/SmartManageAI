@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Upload, FileText, Image, File } from "lucide-react";
 import type { UploadResult } from "@uppy/core";
 import { ObjectUploader } from "./ObjectUploader";
-import { MAX_BATCH_UPLOAD_FILES, MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
+import { MAX_BATCH_UPLOAD_FILES, MAX_BATCH_UPLOAD_HELPER_TEXT, MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -74,30 +74,33 @@ export function ChangeOrderFileUploader({
   };
 
   return (
-    <ObjectUploader
-      maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
-      maxFileSize={MAX_STORAGE_FILE_SIZE}
-      allowedFileTypes={[
-        "image/*",
-        "application/pdf",
-        ".pdf",
-        ".doc",
-        ".docx",
-        ".xls",
-        ".xlsx",
-        ".txt",
-        ".dwg",
-        ".dxf",
-      ]}
-      fileType="DOCUMENT"
-      onComplete={handleComplete}
-      buttonVariant={variant}
-      buttonClassName={className}
-      testId="button-upload-change-order-files"
-    >
-      <Upload className="w-4 h-4 mr-2" />
-      {isUploading ? "Uploading..." : "Upload Files"}
-    </ObjectUploader>
+    <div className="flex flex-col items-start gap-0.5">
+      <ObjectUploader
+        maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
+        maxFileSize={MAX_STORAGE_FILE_SIZE}
+        allowedFileTypes={[
+          "image/*",
+          "application/pdf",
+          ".pdf",
+          ".doc",
+          ".docx",
+          ".xls",
+          ".xlsx",
+          ".txt",
+          ".dwg",
+          ".dxf",
+        ]}
+        fileType="DOCUMENT"
+        onComplete={handleComplete}
+        buttonVariant={variant}
+        buttonClassName={className}
+        testId="button-upload-change-order-files"
+      >
+        <Upload className="w-4 h-4 mr-2" />
+        {isUploading ? "Uploading..." : "Upload Files"}
+      </ObjectUploader>
+      <p className="text-xs text-muted-foreground" data-testid="hint-batch-upload-limit">{MAX_BATCH_UPLOAD_HELPER_TEXT}</p>
+    </div>
   );
 }
 

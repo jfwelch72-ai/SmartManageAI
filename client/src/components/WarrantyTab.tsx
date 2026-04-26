@@ -22,7 +22,7 @@ import {
   ChevronDown, ChevronRight, ListChecks, Wrench, FileText,
 } from "lucide-react";
 import { ObjectUploader } from "@/components/ObjectUploader";
-import { MAX_BATCH_UPLOAD_FILES } from "@/lib/uploadLimits";
+import { MAX_BATCH_UPLOAD_FILES, MAX_BATCH_UPLOAD_HELPER_TEXT } from "@/lib/uploadLimits";
 import { useTableKeyboardNav, type RowProps } from "@/hooks/use-table-keyboard-nav";
 import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 
@@ -895,6 +895,7 @@ function CaseDetailDialog({
                   Attach Document / Photo
                 </Button>
               </ObjectUploader>
+              <p className="text-[10px] text-muted-foreground" data-testid="hint-batch-upload-limit">{MAX_BATCH_UPLOAD_HELPER_TEXT}</p>
             </div>
           </div>
         )}

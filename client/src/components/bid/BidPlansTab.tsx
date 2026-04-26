@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
 import { WidgetErrorBoundary } from "@/components/WidgetErrorBoundary";
 import { ObjectUploader } from "@/components/ObjectUploader";
-import { MAX_BATCH_UPLOAD_FILES, MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
+import { MAX_BATCH_UPLOAD_FILES, MAX_BATCH_UPLOAD_HELPER_TEXT, MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import BidLibrarySection from "./BidLibrarySection";
 import {
   Upload, Download, Eye, FileText, Trash2, FolderOpen, Folder, ChevronRight, ChevronDown,
@@ -830,6 +830,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                   {docType === "BIM" && (
                     <p className="text-[10px] text-muted-foreground" data-testid="hint-ifc-only">IFC files only for BIM models</p>
                   )}
+                  <p className="text-[10px] text-muted-foreground" data-testid="hint-batch-upload-limit">{MAX_BATCH_UPLOAD_HELPER_TEXT}</p>
                 </div>
               )}
             </div>
