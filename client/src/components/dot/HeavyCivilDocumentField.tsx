@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { MAX_BATCH_UPLOAD_FILES } from "@/lib/uploadLimits";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Upload, FileText, History, Download, X } from "lucide-react";
@@ -405,7 +406,7 @@ export function HeavyCivilDocumentList({
       <div className="flex items-center justify-between">
         <div className="text-sm font-medium">{label}</div>
         <ObjectUploader
-          maxNumberOfFiles={10}
+          maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
           fileType="DOCUMENT"
           onComplete={handleComplete}
           testId={`uploader-${testId}`}

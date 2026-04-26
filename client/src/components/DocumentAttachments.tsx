@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { ObjectUploader } from "@/components/ObjectUploader";
-import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
+import { MAX_BATCH_UPLOAD_FILES, MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import {
   Paperclip,
   Upload,
@@ -131,7 +131,7 @@ export default function DocumentAttachments({
           </div>
           {canUpload && (
             <ObjectUploader
-              maxNumberOfFiles={5}
+              maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
               maxFileSize={MAX_STORAGE_FILE_SIZE}
               fileType="DOCUMENT"
               onComplete={handleUploadComplete}
@@ -218,7 +218,7 @@ export default function DocumentAttachments({
         </CardTitle>
         {canUpload && (
           <ObjectUploader
-            maxNumberOfFiles={5}
+            maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
             maxFileSize={MAX_STORAGE_FILE_SIZE}
             fileType="DOCUMENT"
             onComplete={handleUploadComplete}

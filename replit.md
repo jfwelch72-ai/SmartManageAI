@@ -73,6 +73,9 @@ Volume measurements are reported in **cubic yards (CY)** everywhere — the Meas
 
 If a future export ever needs cubic feet (CF), the conversion (×27) must be applied in a single shared quantity helper rather than scattered per-call-site, and the unit label must be changed in the same place. Do not introduce ad-hoc CF conversions in individual components or routes.
 
+### Upload limits
+Every multi-file uploader in the app shares the same per-batch file count cap, defined as `MAX_BATCH_UPLOAD_FILES = 50` in `client/src/lib/uploadLimits.ts` (alongside `MAX_STORAGE_FILE_SIZE`). All `<ObjectUploader>` call sites that accept more than one file at a time must import and pass this constant — do not hard-code per-call-site numbers like `5`, `10`, or `20`. Single-file pickers (avatar, company logo, single LiDAR scan, single receipt, single project media item, equipment maintenance photo, asset handover doc, individual heavy-civil DOT cert slot) are deliberately exempt and stay at `maxNumberOfFiles={1}` — they fill one form field and must not silently turn into multi-uploaders. The 50-file batch cap is the per-batch limit only; there is no cap on total files per bid/project, so users can run a second batch right after.
+
 ### CLI scripts imported by the server bundle
 Any TS file under `scripts/` that the server transitively imports (e.g. `scripts/fetch-dot-pay-items.ts`, imported by `server/jobs/dotPayItemsRefresh.ts` for `runFetcher`) gets folded into `dist/index.js` by `esbuild --bundle`. The classic ESM "is this the entrypoint?" guard
 

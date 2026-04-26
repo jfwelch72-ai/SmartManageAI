@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
 import { WidgetErrorBoundary } from "@/components/WidgetErrorBoundary";
 import { ObjectUploader } from "@/components/ObjectUploader";
-import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
+import { MAX_BATCH_UPLOAD_FILES, MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import BidLibrarySection from "./BidLibrarySection";
 import {
   Upload, Download, Eye, FileText, Trash2, FolderOpen, Folder, ChevronRight, ChevronDown,
@@ -812,7 +812,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                   </div>
                   <ObjectUploader
                     key={docType}
-                    maxNumberOfFiles={20}
+                    maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
                     maxFileSize={MAX_STORAGE_FILE_SIZE}
                     allowedFileTypes={docType === "PLANS" ? [".pdf"] : docType === "BIM" ? [".ifc"] : [".pdf", ".dwg", ".dxf", ".png", ".jpg", ".jpeg", ".xlsx", ".xls", ".csv", ".doc", ".docx", ".ifc"]}
                     fileType={docType === "BIM" ? "BIM" : "DOCUMENT"}

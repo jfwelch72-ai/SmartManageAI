@@ -37,6 +37,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { MAX_BATCH_UPLOAD_FILES } from "@/lib/uploadLimits";
 import CrmOrganizationSelector from "@/components/CrmOrganizationSelector";
 
 import {
@@ -558,13 +559,13 @@ export default function BidWizardPage() {
                 fileType="DOCUMENT"
                 onComplete={handleUploadComplete}
                 allowedFileTypes={[".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx", ".xls", ".xlsx"]}
-                maxNumberOfFiles={10}
+                maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
               >
                 <div className="flex flex-col items-center justify-center p-8 border-2 border-dashed rounded-lg hover:border-primary transition-colors">
                   <Upload className="h-10 w-10 text-muted-foreground mb-4" />
                   <p className="font-medium">Click to upload or drag and drop</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    PDF, Images, Word, Excel (max 10 files)
+                    PDF, Images, Word, Excel (max {MAX_BATCH_UPLOAD_FILES} files)
                   </p>
                 </div>
               </ObjectUploader>

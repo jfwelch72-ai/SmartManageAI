@@ -6,3 +6,19 @@
 // routinely upload large drawing sets and BIM/LiDAR files, especially in the
 // Plans & Takeoff step, so this stays generous on purpose.
 export const MAX_STORAGE_FILE_SIZE = 20 * 1024 * 1024 * 1024; // 20 GB
+
+// Per-batch file count cap shared by every multi-file ObjectUploader call site
+// (bid plans, project plans, change orders, document attachments, submittals,
+// heavy-civil multi-doc fields, warranty, punch list, etc.). 50 was picked to
+// cover real construction batches in one shot — full plan sets as individual
+// PDFs (typically 20–80 sheets), daily-report photo dumps (10–40 photos), and
+// punch-list evidence (5–30 photos) — without pushing Uppy's per-file
+// preview/progress list into sluggish territory on lower-end laptops and
+// tablets, which is exactly the field-device profile we ship for. Users can
+// always run a second batch right after; there is no cap on total files per
+// bid/project. Single-file pickers (avatar, company logo, single LiDAR scan,
+// single receipt, single project media item, equipment maintenance photo,
+// asset handover doc, individual heavy-civil DOT cert slot) are deliberately
+// exempt and stay at maxNumberOfFiles={1} — they fill one form field and must
+// not silently turn into multi-uploaders.
+export const MAX_BATCH_UPLOAD_FILES = 50;

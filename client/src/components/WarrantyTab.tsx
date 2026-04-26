@@ -22,6 +22,7 @@ import {
   ChevronDown, ChevronRight, ListChecks, Wrench, FileText,
 } from "lucide-react";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { MAX_BATCH_UPLOAD_FILES } from "@/lib/uploadLimits";
 import { useTableKeyboardNav, type RowProps } from "@/hooks/use-table-keyboard-nav";
 import { useRegisterShortcuts, TABLE_NAV_SHORTCUTS } from "@/components/KeyboardShortcutsHelp";
 
@@ -885,7 +886,7 @@ function CaseDetailDialog({
               </div>
               <ObjectUploader
                 fileType="DOCUMENT"
-                maxNumberOfFiles={5}
+                maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
                 onComplete={handleDocUploadComplete}
                 testId="uploader-warranty-doc"
               >

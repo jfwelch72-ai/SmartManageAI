@@ -17,6 +17,7 @@ import {
   Shield, RefreshCcw, Paperclip, History, ChevronDown,
 } from "lucide-react";
 import { ObjectUploader } from "@/components/ObjectUploader";
+import { MAX_BATCH_UPLOAD_FILES } from "@/lib/uploadLimits";
 import type { PunchListItem } from "@shared/schema";
 
 interface PunchListTabProps {
@@ -795,7 +796,7 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
                 {isManagement(userRole) && (
                   <ObjectUploader
                     fileType="MEDIA"
-                    maxNumberOfFiles={5}
+                    maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
                     allowedFileTypes={["image/*", "application/pdf"]}
                     onComplete={(result) => {
                       const successful = result.successful ?? [];

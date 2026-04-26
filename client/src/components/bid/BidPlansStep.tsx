@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ObjectUploader } from "@/components/ObjectUploader";
-import { MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
+import { MAX_BATCH_UPLOAD_FILES, MAX_STORAGE_FILE_SIZE } from "@/lib/uploadLimits";
 import type { UploadResult } from "@uppy/core";
 import {
   Upload,
@@ -243,7 +243,7 @@ export default function BidPlansStep({ bidId, bidCode, canEdit, onNextStep }: Bi
                 </div>
               </div>
               <ObjectUploader
-                maxNumberOfFiles={20}
+                maxNumberOfFiles={MAX_BATCH_UPLOAD_FILES}
                 maxFileSize={MAX_STORAGE_FILE_SIZE}
                 allowedFileTypes={[".pdf", ".dwg", ".dxf", ".png", ".jpg", ".jpeg", ".xlsx", ".xls", ".csv", ".doc", ".docx"]}
                 fileType="DOCUMENT"
