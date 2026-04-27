@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import LibraryItemDialog from "@/components/LibraryItemDialog";
 import LibraryAssemblyDialog from "@/components/LibraryAssemblyDialog";
+import LibraryCategoryManagerDialog from "@/components/LibraryCategoryManagerDialog";
 import { dispatchLibraryEvent } from "@/lib/libraryEvents";
 import { FolderOpen } from "lucide-react";
 import type { LibraryItem, LibraryAssembly, CustomLibrary, SavedTakeoff, LibraryCategory } from "@shared/schema";
@@ -53,6 +54,7 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
   const [showAssemblyDialog, setShowAssemblyDialog] = useState(false);
   const [deleteItemId, setDeleteItemId] = useState<string | null>(null);
   const [deleteAssemblyId, setDeleteAssemblyId] = useState<string | null>(null);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
 
   const { data: libraries = [] } = useQuery<CustomLibrary[]>({
     queryKey: ["/api/custom-libraries"],
@@ -314,15 +316,27 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="pl-3 pr-1 space-y-0.5 py-0.5">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start text-[11px] h-6"
-              onClick={() => { setEditItem(null); setShowItemDialog(true); }}
-              data-testid="btn-bid-add-item"
-            >
-              <Plus className="h-3 w-3 mr-1" /> New Item
-            </Button>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="flex-1 justify-start text-[11px] h-6"
+                onClick={() => { setEditItem(null); setShowItemDialog(true); }}
+                data-testid="btn-bid-add-item"
+              >
+                <Plus className="h-3 w-3 mr-1" /> New Item
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-[11px] h-6 px-1.5"
+                onClick={() => setShowCategoryManager(true)}
+                title="Manage categories"
+                data-testid="btn-bid-manage-categories"
+              >
+                <Layers className="h-3 w-3 mr-1" /> Categories
+              </Button>
+            </div>
             {/* Task #2068 — Trade > Category > Item tree. */}
             {tradeTree.map((trade) => (
               <Collapsible
@@ -535,6 +549,14 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
           assembly={editAssembly}
           libraryId={selectedLibraryId !== "all" ? selectedLibraryId : undefined}
           allItems={items}
+        />
+      )}
+
+      {showCategoryManager && (
+        <LibraryCategoryManagerDialog
+          open={showCategoryManager}
+          onOpenChange={setShowCategoryManager}
+          libraryId={selectedLibraryId}
         />
       )}
 

@@ -33,6 +33,7 @@ import {
 import { cn } from "@/lib/utils";
 import LibraryItemDialog from "./LibraryItemDialog";
 import LibraryAssemblyDialog from "./LibraryAssemblyDialog";
+import LibraryCategoryManagerDialog from "./LibraryCategoryManagerDialog";
 import type { LibraryItem, LibraryAssembly, CustomLibrary, SavedTakeoff, LibraryCategory } from "@shared/schema";
 import { getTradeDisplayName, type TradeType } from "@shared/tradeTypeUtils";
 
@@ -64,6 +65,7 @@ export default function LibraryPanel({ projectId, sheetId, measurements }: Libra
   const [deleteTakeoffId, setDeleteTakeoffId] = useState<string | null>(null);
 
   const [showLibraryManager, setShowLibraryManager] = useState(false);
+  const [showCategoryManager, setShowCategoryManager] = useState(false);
   const [newLibraryName, setNewLibraryName] = useState("");
   const [newLibraryDesc, setNewLibraryDesc] = useState("");
   const [editLibrary, setEditLibrary] = useState<CustomLibrary | null>(null);
@@ -383,15 +385,27 @@ export default function LibraryPanel({ projectId, sheetId, measurements }: Libra
             </CollapsibleTrigger>
             <CollapsibleContent>
               <div className="pl-4 pr-1 space-y-0.5 py-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="w-full justify-start text-xs h-7"
-                  onClick={() => { setEditItem(null); setShowItemDialog(true); }}
-                  data-testid="btn-add-item"
-                >
-                  <Plus className="h-3 w-3 mr-1" /> Add Item
-                </Button>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="flex-1 justify-start text-xs h-7"
+                    onClick={() => { setEditItem(null); setShowItemDialog(true); }}
+                    data-testid="btn-add-item"
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> Add Item
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs h-7 px-2"
+                    onClick={() => setShowCategoryManager(true)}
+                    title="Manage categories"
+                    data-testid="btn-manage-categories"
+                  >
+                    <Layers className="h-3 w-3 mr-1" /> Categories
+                  </Button>
+                </div>
                 {!isEmpty && items.length === 0 && !itemsLoading && (
                   <Button
                     variant="ghost"
@@ -562,6 +576,14 @@ export default function LibraryPanel({ projectId, sheetId, measurements }: Libra
           assembly={editAssembly}
           libraryId={selectedLibraryId !== "all" ? selectedLibraryId : undefined}
           allItems={items}
+        />
+      )}
+
+      {showCategoryManager && (
+        <LibraryCategoryManagerDialog
+          open={showCategoryManager}
+          onOpenChange={setShowCategoryManager}
+          libraryId={selectedLibraryId}
         />
       )}
 
