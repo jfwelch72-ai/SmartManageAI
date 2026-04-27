@@ -1,4 +1,5 @@
 import React, { lazy, Suspense, Component, type ErrorInfo, type ReactNode } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Switch, Route, Redirect, useLocation, Link } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -678,11 +679,21 @@ function AppContent() {
   );
 }
 
+const WIDGETS_COLLAPSED_KEY = "smartmanage-floating-widgets-collapsed";
+
 function AuthGatedWidget() {
   const [location] = useLocation();
   const { user } = useAuth();
   const [messagingOpen, setMessagingOpen] = React.useState(false);
   const [aiOpen, setAiOpen] = React.useState(false);
+  const [collapsed, setCollapsed] = React.useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem(WIDGETS_COLLAPSED_KEY) === "true";
+    } catch {
+      return false;
+    }
+  });
   const isStandaloneRoute = location.startsWith('/site/') || location.startsWith('/sub-portal') || location.startsWith('/rfq-response/') || location === '/portal' || location.startsWith('/portal/') || location.startsWith('/print/') || location === '/trust' || location === '/sub-processors' || location === '/status';
 
   React.useEffect(() => {
@@ -702,6 +713,14 @@ function AuthGatedWidget() {
     };
   }, []);
 
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem(WIDGETS_COLLAPSED_KEY, String(collapsed));
+    } catch {
+      // ignore storage failures
+    }
+  }, [collapsed]);
+
   if (!user || isStandaloneRoute) return null;
 
   let containerRight = '24px';
@@ -713,6 +732,24 @@ function AuthGatedWidget() {
     containerRight = '420px';
   }
 
+  // Each widget renders EITHER a small floating button OR (for Messaging / Ask
+  // AI) an open side panel — never both at once. We collapse on a per-widget
+  // basis so that the toggle always hides every visible floating button when
+  // pressed, while never clipping or hiding an already-open side panel
+  // (which lives inside the same widget component subtree).
+  const hideVoiceButton = collapsed;
+  const hideMessagingButton = collapsed && !messagingOpen;
+  const hideAiButton = collapsed && !aiOpen;
+  const allButtonsHidden = hideVoiceButton && hideMessagingButton && hideAiButton;
+
+  const collapsibleStyle = (hidden: boolean): React.CSSProperties => ({
+    overflow: 'hidden',
+    maxHeight: hidden ? '0px' : '64px',
+    opacity: hidden ? 0 : 1,
+    pointerEvents: hidden ? 'none' : 'auto',
+    transition: 'max-height 0.3s ease, opacity 0.25s ease',
+  });
+
   return (
     <Suspense fallback={null}>
       <div
@@ -723,15 +760,46 @@ function AuthGatedWidget() {
           zIndex: 9998,
           display: 'flex',
           flexDirection: 'column-reverse',
-          gap: '12px',
+          gap: allButtonsHidden ? '0px' : '12px',
           alignItems: 'flex-end',
-          transition: 'right 0.3s ease',
+          transition: 'right 0.3s ease, gap 0.25s ease',
         }}
         data-testid="widget-group-container"
       >
-        <VoiceDictation />
-        <MessagingWidget />
-        <AIAssistantWidget />
+        <button
+          type="button"
+          onClick={() => setCollapsed(prev => !prev)}
+          title={collapsed ? "Show widgets" : "Hide widgets"}
+          aria-label={collapsed ? "Show widgets" : "Hide widgets"}
+          aria-expanded={!collapsed}
+          className="flex items-center justify-center h-7 w-7 rounded-full border border-border bg-background/90 text-muted-foreground shadow hover-elevate active-elevate-2"
+          data-testid="button-toggle-widgets"
+        >
+          {collapsed ? (
+            <ChevronLeft className="h-4 w-4" />
+          ) : (
+            <ChevronRight className="h-4 w-4" />
+          )}
+        </button>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column-reverse',
+            gap: '12px',
+            alignItems: 'flex-end',
+          }}
+          data-testid="widget-stack"
+        >
+          <div style={collapsibleStyle(hideVoiceButton)} aria-hidden={hideVoiceButton}>
+            <VoiceDictation />
+          </div>
+          <div style={collapsibleStyle(hideMessagingButton)} aria-hidden={hideMessagingButton}>
+            <MessagingWidget />
+          </div>
+          <div style={collapsibleStyle(hideAiButton)} aria-hidden={hideAiButton}>
+            <AIAssistantWidget />
+          </div>
+        </div>
       </div>
     </Suspense>
   );
