@@ -1351,8 +1351,8 @@ export default function LandingPage() {
               <ul className="space-y-2 text-sm text-muted-foreground">
                 <li><a href="#" className="hover:text-foreground transition-colors" data-testid="link-footer-about">About</a></li>
                 <li><a href="#" className="hover:text-foreground transition-colors" data-testid="link-footer-contact">Contact</a></li>
-                <li><a href="#" className="hover:text-foreground transition-colors" data-testid="link-footer-privacy">Privacy Policy</a></li>
-                <li><a href="#" className="hover:text-foreground transition-colors" data-testid="link-footer-terms">Terms of Service</a></li>
+                <li><Link href="/privacy" className="hover:text-foreground transition-colors" data-testid="link-footer-privacy">Privacy Policy</Link></li>
+                <li><Link href="/terms" className="hover:text-foreground transition-colors" data-testid="link-footer-terms">Terms of Service</Link></li>
               </ul>
             </div>
           </div>

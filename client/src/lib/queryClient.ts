@@ -53,7 +53,9 @@ function handleGlobal401(url: string) {
       !path.startsWith("/quotes/accept/") &&
       path !== "/portal" &&
       !path.startsWith("/portal/") &&
-      !path.startsWith("/sub-portal")) {
+      !path.startsWith("/sub-portal") &&
+      path !== "/privacy" &&
+      path !== "/terms") {
     window.location.href = "/login";
   }
 }

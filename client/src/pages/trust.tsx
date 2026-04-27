@@ -780,4 +780,339 @@ export function StatusPage() {
   );
 }
 
+const LEGAL_LAST_UPDATED = "2026-04-27";
+
+function LegalSection({ title, children }: { title: string; children: React.ReactNode }) {
+  const id = title.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+  return (
+    <section className="mb-8" id={id}>
+      <h2 className="text-xl font-semibold mb-3" data-testid={`heading-legal-${id}`}>{title}</h2>
+      <div className="text-sm leading-relaxed text-foreground/90 space-y-3">{children}</div>
+    </section>
+  );
+}
+
+export function PrivacyPolicyPage() {
+  return (
+    <PageShell
+      title="Privacy Policy"
+      description="How SmartManageAI collects, uses, shares, and protects your information."
+    >
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold mb-2" data-testid="heading-privacy-title">Privacy Policy</h1>
+        <p className="text-muted-foreground" data-testid="text-privacy-tagline">
+          This Privacy Policy explains how SmartManageAI, Inc. ("SmartManageAI", "we", "us") handles personal
+          information when you visit our website or use our construction management platform.
+        </p>
+        <div className="text-xs text-muted-foreground mt-3" data-testid="text-privacy-last-updated">
+          Last updated: {LEGAL_LAST_UPDATED}
+        </div>
+      </div>
+
+      <LegalSection title="Information we collect">
+        <p>We collect information in three ways:</p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            <span className="font-medium">Information you give us.</span> Account details such as your name, work email,
+            phone number, company, role, and password; profile and preference settings; bid, project, financial,
+            payroll, contract, schedule, and field documentation that your organization uploads to the platform; and
+            any messages you send us.
+          </li>
+          <li>
+            <span className="font-medium">Information from your use of the service.</span> Log data (IP address, browser
+            and device information, pages viewed, timestamps), actions taken in the app, and diagnostic data needed to
+            keep the platform reliable and secure.
+          </li>
+          <li>
+            <span className="font-medium">Information from third parties.</span> Data from your single sign-on identity
+            provider when you sign in with SAML or OAuth, billing metadata from our payment processor, and information
+            you choose to import from connected services such as e-signature, accounting, or DOT systems.
+          </li>
+        </ul>
+      </LegalSection>
+
+      <LegalSection title="How we use information">
+        <ul className="list-disc pl-5 space-y-1">
+          <li>To provide, maintain, and improve the SmartManageAI platform.</li>
+          <li>To authenticate users, enforce role-based access, and protect customer data.</li>
+          <li>To respond to support requests and communicate about your account.</li>
+          <li>To monitor performance, debug issues, and prevent abuse or fraud.</li>
+          <li>To send transactional notifications (status incidents, billing receipts, security alerts).</li>
+          <li>To comply with legal obligations and enforce our agreements.</li>
+        </ul>
+        <p>
+          AI features are opt-in at the organization level. When enabled, the data you submit to a specific AI feature
+          is sent to our AI sub-processor solely to generate the requested output. Customer data is not used to train
+          third-party models.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="How we share information">
+        <p>We do not sell personal information. We share information only in these circumstances:</p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>
+            <span className="font-medium">Within your organization.</span> Information you upload is visible to other
+            users in your organization based on the access controls your administrators configure.
+          </li>
+          <li>
+            <span className="font-medium">Sub-processors.</span> Vetted vendors that help us run the platform (hosting,
+            database, file storage, email delivery, billing, and opt-in AI). The current list lives at{" "}
+            <Link href="/sub-processors" className="underline" data-testid="link-privacy-subprocessors">/sub-processors</Link>.
+          </li>
+          <li>
+            <span className="font-medium">Legal and safety.</span> When required by law, valid legal process, or to
+            protect the rights, property, or safety of SmartManageAI, our customers, or the public.
+          </li>
+          <li>
+            <span className="font-medium">Business transfers.</span> In connection with a merger, acquisition, or sale
+            of assets, subject to the commitments in this Policy.
+          </li>
+        </ul>
+      </LegalSection>
+
+      <LegalSection title="Data retention">
+        <p>
+          We retain customer data for as long as your organization maintains an active account, plus a limited
+          recovery window after termination. By default we soft-delete account data immediately on request and
+          hard-delete it within 30 days, except where we are required to keep records for tax, legal, or audit
+          purposes. Backups are retained for up to 30 days and then cycled out.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Security">
+        <p>
+          We protect customer data with TLS in transit, AES-256 at rest, role-based access enforced server-side,
+          phishing-resistant authentication options (passkeys and SAML SSO), audit logging, and an annual third-party
+          penetration test. More detail is on our{" "}
+          <Link href="/trust" className="underline" data-testid="link-privacy-trust">Trust</Link> page.
+        </p>
+        <p>
+          No system is perfectly secure. If you believe your account has been compromised or you have spotted a
+          security issue, email{" "}
+          <a href="mailto:security@smartmanage.ai" className="underline" data-testid="link-privacy-security-email">security@smartmanage.ai</a>.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Your rights">
+        <p>
+          Depending on where you live you may have rights to access, correct, export, or delete personal information
+          we hold about you, to object to or restrict certain processing, and to withdraw consent. To exercise these
+          rights, email{" "}
+          <a href="mailto:privacy@smartmanage.ai" className="underline" data-testid="link-privacy-email">privacy@smartmanage.ai</a>{" "}
+          from the address associated with your account. We respond within 30 days. If your data was provided to us
+          by your employer, we will direct your request to them as the controller of that data.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Cookies and similar technologies">
+        <p>
+          We use a small number of cookies and similar technologies that are necessary to keep you signed in, remember
+          your preferences, and measure aggregate platform performance. We do not use third-party advertising cookies
+          on the application. Your browser settings let you block or delete cookies, though doing so may break parts
+          of the service that depend on staying signed in.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Children's privacy">
+        <p>
+          SmartManageAI is built for businesses and is not directed to children under 16. We do not knowingly collect
+          personal information from children. If you believe a child has provided us information, email{" "}
+          <a href="mailto:privacy@smartmanage.ai" className="underline" data-testid="link-privacy-children-email">privacy@smartmanage.ai</a>{" "}
+          and we will delete it.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Changes to this policy">
+        <p>
+          We may update this Policy from time to time. When we make material changes we will update the "Last updated"
+          date above and, where appropriate, notify customer administrators by email or in-app notice. Continued use of
+          the service after a change takes effect means you accept the updated Policy.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Contact us">
+        <p>
+          Questions about this Policy? Email{" "}
+          <a href="mailto:privacy@smartmanage.ai" className="underline" data-testid="link-privacy-contact-email">privacy@smartmanage.ai</a>{" "}
+          or write to SmartManageAI, Inc., Attn: Privacy.
+        </p>
+      </LegalSection>
+
+      <div className="mt-8">
+        <Link href="/" className="inline-flex items-center gap-1 text-sm underline" data-testid="link-privacy-back-home">
+          ← Back to home
+        </Link>
+      </div>
+    </PageShell>
+  );
+}
+
+export function TermsOfServicePage() {
+  return (
+    <PageShell
+      title="Terms of Service"
+      description="The terms that govern your use of the SmartManageAI platform."
+    >
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold mb-2" data-testid="heading-terms-title">Terms of Service</h1>
+        <p className="text-muted-foreground" data-testid="text-terms-tagline">
+          These Terms of Service ("Terms") form a binding agreement between SmartManageAI, Inc.
+          ("SmartManageAI", "we", "us") and the organization or individual ("Customer", "you") that accesses or uses
+          our platform.
+        </p>
+        <div className="text-xs text-muted-foreground mt-3" data-testid="text-terms-last-updated">
+          Last updated: {LEGAL_LAST_UPDATED}
+        </div>
+      </div>
+
+      <LegalSection title="Acceptance of terms">
+        <p>
+          By creating an account, signing an order form, or otherwise using the SmartManageAI platform you agree to
+          these Terms. If you accept these Terms on behalf of an organization you represent that you are authorized to
+          bind that organization. If you do not agree, do not use the service.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Eligibility">
+        <p>
+          You must be at least 18 years old and able to form a binding contract to use the service. The service is
+          built for businesses; it is not intended for personal, family, or household use.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Accounts">
+        <p>
+          You are responsible for the accuracy of the information in your account, for keeping your credentials
+          secure, and for all activity under your account. Notify us promptly at{" "}
+          <a href="mailto:security@smartmanage.ai" className="underline" data-testid="link-terms-security-email">security@smartmanage.ai</a>{" "}
+          if you suspect unauthorized access. Customer administrators are responsible for managing user roles and
+          access within their organization.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Acceptable use">
+        <p>You agree not to:</p>
+        <ul className="list-disc pl-5 space-y-1">
+          <li>Use the service to violate any law or third-party right.</li>
+          <li>Upload malware or content that is unlawful, infringing, or harmful.</li>
+          <li>Probe, scan, or test the vulnerability of the system except as permitted by our responsible disclosure terms.</li>
+          <li>Interfere with or disrupt the service, its infrastructure, or other customers.</li>
+          <li>Reverse engineer, scrape, or resell the service except as expressly permitted.</li>
+          <li>Use the service to build a competing product or to train competing AI models.</li>
+        </ul>
+      </LegalSection>
+
+      <LegalSection title="Subscriptions and payment">
+        <p>
+          Paid plans are billed in advance on the cadence stated in your order form or in-app subscription page. Fees
+          are non-refundable except as required by law. We may change pricing on renewal with reasonable advance
+          notice. Late payments may accrue interest at the lesser of 1.5% per month or the maximum allowed by law and
+          may result in suspension of the service.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Intellectual property">
+        <p>
+          We own the SmartManageAI platform, including all software, designs, and trademarks. Subject to these Terms
+          we grant you a limited, non-exclusive, non-transferable right to use the service during your subscription.
+          We welcome feedback and suggestions; if you provide them, you grant us a perpetual, royalty-free license to
+          use them to improve the service.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Customer data">
+        <p>
+          You retain all rights to the data your organization uploads ("Customer Data"). You grant us a limited
+          license to host, copy, transmit, display, and process Customer Data solely to provide and improve the
+          service for you, to maintain security, and as otherwise instructed by you. Our handling of personal
+          information is described in our{" "}
+          <Link href="/privacy" className="underline" data-testid="link-terms-privacy">Privacy Policy</Link>.
+        </p>
+        <p>
+          You are responsible for the accuracy, quality, and legality of Customer Data and for having the rights
+          necessary to upload it.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Third-party services">
+        <p>
+          The service may integrate with third-party products such as e-signature, accounting, DOT, or AI providers.
+          Your use of those products is governed by the third party's terms. We are not responsible for third-party
+          services and disabling them may limit functionality.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Disclaimers">
+        <p>
+          Except as expressly stated in a signed agreement, the service is provided "as is" and "as available". We
+          disclaim all warranties, express or implied, including merchantability, fitness for a particular purpose,
+          and non-infringement. We do not warrant that the service will be uninterrupted or error-free, that it will
+          meet every requirement, or that AI-generated outputs will be accurate or appropriate for your project.
+          Always have a qualified human review business-critical decisions.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Limitation of liability">
+        <p>
+          To the maximum extent permitted by law, neither party will be liable for indirect, incidental, special,
+          consequential, exemplary, or punitive damages, or for lost profits, revenue, data, or goodwill, even if
+          advised of the possibility. Our aggregate liability arising out of or related to these Terms will not
+          exceed the fees you paid us for the service in the 12 months before the event giving rise to the claim.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Indemnification">
+        <p>
+          You will defend, indemnify, and hold us harmless from third-party claims arising out of your Customer Data,
+          your use of the service in violation of these Terms or law, or your breach of any third-party right. We
+          will defend, indemnify, and hold you harmless from third-party claims that the service, used as authorized,
+          infringes a U.S. patent, copyright, or trademark, subject to the exclusions and remedies customary in
+          enterprise SaaS agreements.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Termination">
+        <p>
+          You may stop using the service at any time. Either party may terminate for material breach that is not
+          cured within 30 days of written notice. We may suspend the service immediately if your use endangers our
+          systems or other customers, or for non-payment after notice. On termination we will, at your request and
+          for a reasonable transition period, allow export of Customer Data; thereafter we will delete Customer Data
+          on the schedule described in our Privacy Policy.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Governing law">
+        <p>
+          These Terms are governed by the laws of the State of Delaware, without regard to conflict-of-laws rules.
+          The parties consent to the exclusive jurisdiction of the state and federal courts located in Delaware for
+          any dispute that is not subject to arbitration under your order form. Each party waives any right to a jury
+          trial.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Changes to these terms">
+        <p>
+          We may update these Terms from time to time. When we make material changes we will update the "Last updated"
+          date above and, where appropriate, notify customer administrators by email or in-app notice. Continued use
+          of the service after a change takes effect means you accept the updated Terms.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="Contact">
+        <p>
+          Questions about these Terms? Email{" "}
+          <a href="mailto:legal@smartmanage.ai" className="underline" data-testid="link-terms-contact-email">legal@smartmanage.ai</a>{" "}
+          or write to SmartManageAI, Inc., Attn: Legal.
+        </p>
+      </LegalSection>
+
+      <div className="mt-8">
+        <Link href="/" className="inline-flex items-center gap-1 text-sm underline" data-testid="link-terms-back-home">
+          ← Back to home
+        </Link>
+      </div>
+    </PageShell>
+  );
+}
+
 export default TrustPage;
