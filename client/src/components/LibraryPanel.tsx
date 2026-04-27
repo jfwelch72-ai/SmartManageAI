@@ -30,12 +30,16 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Search, Plus, ChevronDown, ChevronRight, Package, Layers, Ruler,
   MoreVertical, Pencil, Trash2, Settings, Download, Sparkles, BookOpen, FolderOpen, RefreshCw,
-  CheckSquare, X, FolderInput, Copy
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import LibraryItemDialog from "./LibraryItemDialog";
 import LibraryAssemblyDialog from "./LibraryAssemblyDialog";
 import LibraryCategoryManagerDialog from "./LibraryCategoryManagerDialog";
+import { useLibraryBulkSelection } from "./library/useLibraryBulkSelection";
+import { LibraryBulkSelectToggle } from "./library/LibraryBulkSelectToggle";
+import { LibraryBulkActionBar } from "./library/LibraryBulkActionBar";
+import { MoveToCategoryDialog } from "./library/MoveToCategoryDialog";
+import { BulkDeleteConfirmDialog } from "./library/BulkDeleteConfirmDialog";
 import type { LibraryItem, LibraryAssembly, CustomLibrary, SavedTakeoff, LibraryCategory } from "@shared/schema";
 import { getTradeDisplayName, type TradeType } from "@shared/tradeTypeUtils";
 
@@ -79,30 +83,6 @@ export default function LibraryPanel({ projectId, sheetId, measurements }: Libra
 
   const [saveTakeoffName, setSaveTakeoffName] = useState("");
   const [showSaveTakeoffDialog, setShowSaveTakeoffDialog] = useState(false);
-
-  // Task #2086 — multi-select & bulk re-bucket. Selection mode hides hover
-  // affordances and exposes a checkbox per item; the bulk move dialog calls
-  // PATCH /api/library-items/bulk to retag everything in one round-trip.
-  // Task #2113 — same selection now also drives bulk delete & duplicate.
-  const [selectionMode, setSelectionMode] = useState(false);
-  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
-  const [showBulkMoveDialog, setShowBulkMoveDialog] = useState(false);
-  const [bulkMoveTargetCategoryId, setBulkMoveTargetCategoryId] = useState<string>("");
-  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
-
-  const exitSelectionMode = () => {
-    setSelectionMode(false);
-    setSelectedItemIds(new Set());
-  };
-
-  const toggleItemSelected = (id: string) => {
-    setSelectedItemIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
 
   const { data: libraries = [] } = useQuery<CustomLibrary[]>({
     queryKey: ["/api/custom-libraries"],
@@ -197,59 +177,6 @@ export default function LibraryPanel({ projectId, sheetId, measurements }: Libra
     },
   });
 
-  // Task #2086 — bulk re-bucket selected library items into a different
-  // category. categoryId === null means "Uncategorized".
-  const bulkMoveMutation = useMutation({
-    mutationFn: async (payload: { ids: string[]; categoryId: string | null }) => {
-      const res = await apiRequest("PATCH", "/api/library-items/bulk", payload);
-      return res.json();
-    },
-    onSuccess: (data) => {
-      invalidateItems();
-      setShowBulkMoveDialog(false);
-      setBulkMoveTargetCategoryId("");
-      exitSelectionMode();
-      toast({ title: "Items moved", description: `Re-bucketed ${data?.updated ?? 0} items.` });
-    },
-    onError: (err: any) => {
-      toast({ title: "Move failed", description: err?.message || "Could not move items", variant: "destructive" });
-    },
-  });
-
-  // Task #2113 — bulk delete selected library items in a single round-trip.
-  const bulkDeleteMutation = useMutation({
-    mutationFn: async (ids: string[]) => {
-      const res = await apiRequest("DELETE", "/api/library-items/bulk", { ids });
-      return res.json();
-    },
-    onSuccess: (data) => {
-      invalidateItems();
-      setShowBulkDeleteConfirm(false);
-      exitSelectionMode();
-      toast({ title: "Items deleted", description: `Deleted ${data?.deleted ?? 0} items.` });
-    },
-    onError: (err: any) => {
-      toast({ title: "Delete failed", description: err?.message || "Could not delete items", variant: "destructive" });
-    },
-  });
-
-  // Task #2113 — bulk duplicate selected library items. Each duplicate is
-  // saved as a custom (non-prebuilt) copy so estimators can edit them.
-  const bulkDuplicateMutation = useMutation({
-    mutationFn: async (ids: string[]) => {
-      const res = await apiRequest("POST", "/api/library-items/bulk-duplicate", { ids });
-      return res.json();
-    },
-    onSuccess: (data) => {
-      invalidateItems();
-      exitSelectionMode();
-      toast({ title: "Items duplicated", description: `Created ${data?.duplicated ?? 0} copies.` });
-    },
-    onError: (err: any) => {
-      toast({ title: "Duplicate failed", description: err?.message || "Could not duplicate items", variant: "destructive" });
-    },
-  });
-
   const createLibraryMutation = useMutation({
     mutationFn: async (data: { name: string; description?: string }) => {
       const res = await apiRequest("POST", "/api/custom-libraries", data);
@@ -319,6 +246,37 @@ export default function LibraryPanel({ projectId, sheetId, measurements }: Libra
       i.unitOfMeasure?.toLowerCase().includes(q)
     );
   }, [items, searchQuery]);
+
+  // Task #2086 / #2115 — multi-select & bulk re-bucket. Selection mode hides
+  // hover affordances and exposes a checkbox per item; the shared hook owns
+  // the dialog/mutation so the bid sidebar can reuse the same pieces.
+  const bulkSelection = useLibraryBulkSelection({
+    filteredItems,
+    invalidateItems,
+  });
+  const {
+    selectionMode,
+    exitSelectionMode,
+    setSelectionMode,
+    selectedItemIds,
+    toggleItemSelected,
+    isAllSelected,
+    toggleSelectAll,
+    showBulkMoveDialog,
+    closeBulkMoveDialog,
+    openBulkMoveDialog,
+    bulkMoveTargetCategoryId,
+    setBulkMoveTargetCategoryId,
+    bulkMoveMutation,
+    submitBulkMove,
+    showBulkDeleteConfirm,
+    openBulkDeleteConfirm,
+    closeBulkDeleteConfirm,
+    bulkDeleteMutation,
+    submitBulkDelete,
+    bulkDuplicateMutation,
+    submitBulkDuplicate,
+  } = bulkSelection;
 
   // Task #2068 — Build a Trade > Category > Items tree for the new three-tier
   // navigation. Items without a trade collapse under "Other Items"; items
@@ -511,73 +469,25 @@ export default function LibraryPanel({ projectId, sheetId, measurements }: Libra
                   >
                     <Layers className="h-3 w-3 mr-1" /> Categories
                   </Button>
-                  {/* Task #2086 — toggle multi-select mode for bulk re-bucket. */}
-                  <Button
-                    variant={selectionMode ? "secondary" : "ghost"}
-                    size="sm"
-                    className="text-xs h-7 px-2"
-                    onClick={() => (selectionMode ? exitSelectionMode() : setSelectionMode(true))}
-                    title={selectionMode ? "Exit selection mode" : "Select items to bulk-edit"}
-                    data-testid="btn-toggle-bulk-select"
-                  >
-                    {selectionMode ? <X className="h-3 w-3 mr-1" /> : <CheckSquare className="h-3 w-3 mr-1" />}
-                    {selectionMode ? "Done" : "Select"}
-                  </Button>
+                  {/* Task #2086 / #2115 — toggle multi-select mode (shared component). */}
+                  <LibraryBulkSelectToggle
+                    selectionMode={selectionMode}
+                    onToggle={() => (selectionMode ? exitSelectionMode() : setSelectionMode(true))}
+                    testId="btn-toggle-bulk-select"
+                  />
                 </div>
-                {/* Task #2086 — bulk action bar. Renders only while items are selected. */}
+                {/* Task #2086 / #2113 / #2115 — shared bulk action bar. */}
                 {selectionMode && (
-                  <div
-                    className="flex items-center gap-1 px-2 py-1 rounded bg-accent/60 border border-border/60"
-                    data-testid="bulk-action-bar"
-                  >
-                    <Checkbox
-                      checked={selectedItemIds.size > 0 && selectedItemIds.size === filteredItems.length}
-                      onCheckedChange={(v) => {
-                        if (v) setSelectedItemIds(new Set(filteredItems.map((i) => i.id)));
-                        else setSelectedItemIds(new Set());
-                      }}
-                      data-testid="checkbox-select-all-items"
-                    />
-                    <span className="text-xs flex-1" data-testid="text-selected-count">
-                      {selectedItemIds.size} selected
-                    </span>
-                    <Button
-                      variant="default"
-                      size="sm"
-                      className="h-6 text-xs px-2"
-                      disabled={selectedItemIds.size === 0}
-                      onClick={() => {
-                        setBulkMoveTargetCategoryId("");
-                        setShowBulkMoveDialog(true);
-                      }}
-                      data-testid="btn-bulk-move"
-                    >
-                      <FolderInput className="h-3 w-3 mr-1" /> Move to category…
-                    </Button>
-                    {/* Task #2113 — bulk duplicate. */}
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      className="h-6 text-xs px-2"
-                      disabled={selectedItemIds.size === 0 || bulkDuplicateMutation.isPending}
-                      onClick={() => bulkDuplicateMutation.mutate(Array.from(selectedItemIds))}
-                      data-testid="btn-bulk-duplicate"
-                    >
-                      <Copy className="h-3 w-3 mr-1" />
-                      {bulkDuplicateMutation.isPending ? "Duplicating…" : "Duplicate"}
-                    </Button>
-                    {/* Task #2113 — bulk delete (confirmation dialog below). */}
-                    <Button
-                      variant="destructive"
-                      size="sm"
-                      className="h-6 text-xs px-2"
-                      disabled={selectedItemIds.size === 0}
-                      onClick={() => setShowBulkDeleteConfirm(true)}
-                      data-testid="btn-bulk-delete"
-                    >
-                      <Trash2 className="h-3 w-3 mr-1" /> Delete
-                    </Button>
-                  </div>
+                  <LibraryBulkActionBar
+                    selectedCount={selectedItemIds.size}
+                    isAllSelected={isAllSelected}
+                    onToggleAll={toggleSelectAll}
+                    onMove={openBulkMoveDialog}
+                    onDuplicate={submitBulkDuplicate}
+                    isDuplicatePending={bulkDuplicateMutation.isPending}
+                    onDelete={openBulkDeleteConfirm}
+                    testIdPrefix=""
+                  />
                 )}
                 {!isEmpty && items.length === 0 && !itemsLoading && (
                   <Button
@@ -779,61 +689,17 @@ export default function LibraryPanel({ projectId, sheetId, measurements }: Libra
         />
       )}
 
-      {/* Task #2086 — bulk move dialog. */}
-      <Dialog open={showBulkMoveDialog} onOpenChange={(o) => { if (!o) { setShowBulkMoveDialog(false); setBulkMoveTargetCategoryId(""); } }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Move items to category</DialogTitle>
-            <DialogDescription>
-              Re-bucket {selectedItemIds.size} selected {selectedItemIds.size === 1 ? "item" : "items"} into a different category.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3 py-2">
-            <Label>Destination category</Label>
-            <Select value={bulkMoveTargetCategoryId} onValueChange={setBulkMoveTargetCategoryId}>
-              <SelectTrigger data-testid="select-bulk-move-target">
-                <SelectValue placeholder="Select a category…" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__uncategorized__">Uncategorized</SelectItem>
-                {categories
-                  .slice()
-                  .sort((a, b) => {
-                    const ta = a.tradeType || "";
-                    const tb = b.tradeType || "";
-                    if (ta !== tb) return ta.localeCompare(tb);
-                    return a.name.localeCompare(b.name);
-                  })
-                  .map((c) => {
-                    const tradeLabel = c.tradeType ? getTradeDisplayName(c.tradeType as TradeType) : "Other";
-                    return (
-                      <SelectItem key={c.id} value={c.id} data-testid={`option-bulk-move-${c.id}`}>
-                        {tradeLabel} · {c.name}
-                      </SelectItem>
-                    );
-                  })}
-              </SelectContent>
-            </Select>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => { setShowBulkMoveDialog(false); setBulkMoveTargetCategoryId(""); }}>
-              Cancel
-            </Button>
-            <Button
-              disabled={!bulkMoveTargetCategoryId || bulkMoveMutation.isPending || selectedItemIds.size === 0}
-              onClick={() => {
-                bulkMoveMutation.mutate({
-                  ids: Array.from(selectedItemIds),
-                  categoryId: bulkMoveTargetCategoryId === "__uncategorized__" ? null : bulkMoveTargetCategoryId,
-                });
-              }}
-              data-testid="btn-confirm-bulk-move"
-            >
-              {bulkMoveMutation.isPending ? "Moving…" : "Move"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Task #2086 / #2115 — shared bulk move dialog. */}
+      <MoveToCategoryDialog
+        open={showBulkMoveDialog}
+        onOpenChange={(o) => { if (!o) closeBulkMoveDialog(); }}
+        categories={categories}
+        selectedCount={selectedItemIds.size}
+        targetCategoryId={bulkMoveTargetCategoryId}
+        setTargetCategoryId={setBulkMoveTargetCategoryId}
+        onConfirm={submitBulkMove}
+        isPending={bulkMoveMutation.isPending}
+      />
 
       <AlertDialog open={!!deleteItemId} onOpenChange={() => setDeleteItemId(null)}>
         <AlertDialogContent>
@@ -848,35 +714,15 @@ export default function LibraryPanel({ projectId, sheetId, measurements }: Libra
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Task #2113 — bulk delete confirmation. */}
-      <AlertDialog
+      {/* Task #2113 / #2115 — shared bulk delete confirmation. */}
+      <BulkDeleteConfirmDialog
         open={showBulkDeleteConfirm}
-        onOpenChange={(open) => { if (!bulkDeleteMutation.isPending) setShowBulkDeleteConfirm(open); }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              Delete {selectedItemIds.size} {selectedItemIds.size === 1 ? "item" : "items"}?
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete the {selectedItemIds.size} selected library {selectedItemIds.size === 1 ? "item" : "items"}. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={bulkDeleteMutation.isPending} data-testid="btn-cancel-bulk-delete">Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={(e) => {
-                e.preventDefault();
-                bulkDeleteMutation.mutate(Array.from(selectedItemIds));
-              }}
-              disabled={bulkDeleteMutation.isPending || selectedItemIds.size === 0}
-              data-testid="btn-confirm-bulk-delete"
-            >
-              {bulkDeleteMutation.isPending ? "Deleting…" : `Delete ${selectedItemIds.size}`}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        onOpenChange={(o) => { if (!o) closeBulkDeleteConfirm(); }}
+        selectedCount={selectedItemIds.size}
+        onConfirm={submitBulkDelete}
+        isPending={bulkDeleteMutation.isPending}
+        testIdPrefix=""
+      />
 
       <AlertDialog open={!!deleteAssemblyId} onOpenChange={() => setDeleteAssemblyId(null)}>
         <AlertDialogContent>
