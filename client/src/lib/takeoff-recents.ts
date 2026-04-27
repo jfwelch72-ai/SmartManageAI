@@ -15,6 +15,10 @@ export interface RecentTakeoffEntry {
   // first and are not capped by the recents limit. `hidden` entries are
   // suppressed from the UI until the user opens them again, in which case
   // `recordRecent` clears the flag.
+  //
+  // Task #2097 — these flags now sync server-side via the same
+  // /api/takeoff/recents endpoints so they follow the user across
+  // devices, not just locally.
   pinnedAt?: number | null;
   hidden?: boolean;
 }
@@ -33,6 +37,9 @@ const EVENT_NAME = "takeoff-recents-changed";
 // client-side cache is reconciled with the server on /takeoff load (see
 // `syncRecentsFromServer` below) and every local write fires a
 // best-effort POST so other devices catch up on their next read.
+//
+// Task #2097 layered pin/unpin/remove endpoints onto the same base URL
+// so the pinned/removed state syncs alongside the openedAt ordering.
 const SYNC_ENDPOINT = "/api/takeoff/recents";
 const lastServerSyncAt = new Map<string, number>();
 const inflightSync = new Map<string, Promise<void>>();
@@ -164,6 +171,28 @@ function writeRecents(userId: string, entries: RecentTakeoffEntry[]): void {
   }
 }
 
+// Task #2097 — When merging local and server entries, prefer the
+// "stronger signal" per field so a user who pinned offline doesn't lose
+// the pin when the server snapshot (which doesn't yet know about it)
+// arrives. Hidden tombstones are always preserved.
+function mergeFields(a: RecentTakeoffEntry, b: RecentTakeoffEntry): RecentTakeoffEntry {
+  // Pick the side with the more recent openedAt as the base for snapshot
+  // text, then overlay the strongest pin/hide state from either side.
+  const fresher = a.openedAt >= b.openedAt ? a : b;
+  const other = fresher === a ? b : a;
+  return {
+    kind: fresher.kind,
+    entityId: fresher.entityId,
+    entityCode: fresher.entityCode,
+    entityName: fresher.entityName ?? other.entityName ?? null,
+    sheetId: fresher.sheetId ?? null,
+    sheetName: fresher.sheetName ?? other.sheetName ?? null,
+    openedAt: fresher.openedAt,
+    pinnedAt: a.pinnedAt ?? b.pinnedAt ?? null,
+    hidden: (a.hidden ?? false) || (b.hidden ?? false),
+  };
+}
+
 // Merges two lists keyed by (kind, entityId, sheetId), keeping the entry
 // with the most recent `openedAt` and the fresher entityName/sheetName
 // (preferring the side that bumped the timestamp). Server-derived entries
@@ -179,14 +208,13 @@ function mergeEntries(
     for (const entry of list) {
       const key = keyOf(entry);
       const existing = byKey.get(key);
-      if (!existing || entry.openedAt > existing.openedAt) {
-        byKey.set(key, entry);
-      }
+      byKey.set(key, existing ? mergeFields(existing, entry) : entry);
     }
   }
-  return Array.from(byKey.values())
-    .sort((x, y) => y.openedAt - x.openedAt)
-    .slice(0, MAX_ENTRIES);
+  // Sort by openedAt desc and keep pinned + a cap of unpinned. Pinned
+  // never get trimmed; hidden tombstones are kept (filtered at render time).
+  const all = Array.from(byKey.values()).sort((x, y) => y.openedAt - x.openedAt);
+  return capEntries(all);
 }
 
 async function postRecentToServer(entry: RecentTakeoffEntry): Promise<void> {
@@ -203,13 +231,20 @@ async function postRecentToServer(entry: RecentTakeoffEntry): Promise<void> {
   }
 }
 
-async function deleteRecentOnServer(
+// Task #2097 — fire-and-forget POST helper for the new pin/unpin/remove
+// endpoints. The local cache is the authoritative source for the UI; the
+// server write is best-effort. If the user is offline (or the request
+// fails for any reason), the local copy still reflects the change so the
+// UI doesn't regress, and the next successful syncRecentsFromServer
+// round-trip reconciles us with the server.
+async function postSelectorToServer(
+  path: "pin" | "unpin" | "remove",
   selector: RecentTakeoffSelector,
 ): Promise<void> {
   if (typeof window === "undefined") return;
   try {
-    await fetch(SYNC_ENDPOINT, {
-      method: "DELETE",
+    await fetch(`${SYNC_ENDPOINT}/${path}`, {
+      method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -219,8 +254,7 @@ async function deleteRecentOnServer(
       }),
     });
   } catch {
-    // Network errors are tolerable — local state is the source of truth
-    // until the next sync round-trip.
+    // Best-effort. Local state is already correct.
   }
 }
 
@@ -320,9 +354,7 @@ export function recordRecent(
   // Task #2079 — Fire-and-forget POST so the entry follows the user to
   // their other devices. Local writes already updated the rail
   // synchronously above so the user never waits on the network. The
-  // server schema only stores the cross-device fields (kind, entity,
-  // sheet, openedAt) — pin/hide flags from Task #2078 are intentionally
-  // device-local, so any extra keys on `next` are ignored server-side.
+  // server-side POST also clears `hidden=false` on re-open (Task #2097).
   void postRecentToServer(next);
 }
 
@@ -341,7 +373,11 @@ export function pinRecent(
     // pinned. (Pinning an already-hidden entry would otherwise be silent.)
     return { ...e, pinnedAt: Date.now(), hidden: false };
   });
-  if (changed) writeRecents(userId, next);
+  if (changed) {
+    writeRecents(userId, next);
+    // Task #2097 — Mirror the pin on the server so it follows the user.
+    void postSelectorToServer("pin", selector);
+  }
 }
 
 export function unpinRecent(
@@ -357,7 +393,11 @@ export function unpinRecent(
     changed = true;
     return { ...e, pinnedAt: null };
   });
-  if (changed) writeRecents(userId, capEntries(next));
+  if (changed) {
+    writeRecents(userId, capEntries(next));
+    // Task #2097 — Mirror the unpin on the server.
+    void postSelectorToServer("unpin", selector);
+  }
 }
 
 export function removeRecent(
@@ -377,11 +417,10 @@ export function removeRecent(
   });
   if (changed) {
     writeRecents(userId, capEntries(next));
-    // Task #2079 — Mirror the local removal on the server so the entry
-    // doesn't reappear from a sync on another device's next load.
-    // Best-effort; failures are tolerable since the next syncRecents
-    // round-trip will re-apply local state.
-    void deleteRecentOnServer(selector);
+    // Task #2097 — Soft-hide on the server (NOT a hard DELETE) so the
+    // tombstone follows the user across devices. Without this, an open
+    // from another device would resurrect the entry the user dismissed.
+    void postSelectorToServer("remove", selector);
   }
 }
 
@@ -414,7 +453,8 @@ export function useRecentTakeoffs(
     setEntries(readRecents(userId));
     if (typeof window === "undefined" || !userId) return;
     // Pull the latest server-side rail as soon as a user is in scope
-    // (Task #2079 — switching devices should show the same recents).
+    // (Task #2079 — switching devices should show the same recents,
+    // Task #2097 — pinned/removed state too).
     void syncRecentsFromServer(userId);
     const key = storageKey(userId);
     const refresh = () => setEntries(readRecents(userId));

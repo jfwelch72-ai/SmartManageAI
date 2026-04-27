@@ -1,4 +1,7 @@
 // Task #2079 — Sync Takeoff "Recent" entries across the user's devices.
+// Task #2097 — Extended to also sync pin / unpin / remove state so pinned
+// bids and removed entries follow the user across devices, not just the
+// "last opened" ordering.
 //
 // Recent bid/sheet/project openings used to live exclusively in
 // localStorage, so a user who jumped between desktop and laptop saw a
@@ -9,7 +12,7 @@
 
 import { Router } from "express";
 import { z } from "zod";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, isNotNull, sql } from "drizzle-orm";
 import { db } from "./db";
 import { takeoffRecents } from "@shared/schema";
 import { requireAuth, type AuthRequest } from "./auth";
@@ -18,8 +21,10 @@ import { logError } from "./utils/logger";
 const router = Router();
 
 // Mirrors MAX_ENTRIES on the client. Anything older than this gets pruned
-// at write time so the table can't grow unbounded for power users.
-const MAX_ENTRIES_PER_USER = 24;
+// at write time so the table can't grow unbounded for power users. Pinned
+// and hidden (tombstone) rows are never pruned — they need to persist so
+// the user's choices survive across devices.
+const MAX_UNPINNED_PER_USER = 50;
 
 const recentEntrySchema = z.object({
   kind: z.enum(["bid", "project"]),
@@ -33,6 +38,16 @@ const recentEntrySchema = z.object({
   openedAt: z.number().int().nonnegative().optional(),
 });
 
+const selectorSchema = z.object({
+  kind: z.enum(["bid", "project"]),
+  entityId: z.string().min(1).max(128),
+  sheetId: z.string().max(128).nullable().optional(),
+});
+
+function sheetSentinel(sheetId: string | null | undefined): string {
+  return sheetId && sheetId.length > 0 ? sheetId : "";
+}
+
 function toDate(openedAt: number | undefined): Date {
   if (typeof openedAt !== "number" || !Number.isFinite(openedAt)) {
     return new Date();
@@ -44,6 +59,27 @@ function toDate(openedAt: number | undefined): Date {
   return new Date(Math.min(openedAt, max));
 }
 
+// Trim unpinned, non-hidden rows past the cap so the table can't grow
+// unbounded. Pinned and hidden rows are exempt — they're explicit user
+// state we must preserve. Done inline because the table is small and
+// writes are infrequent.
+async function trimUnpinnedForUser(userId: string): Promise<void> {
+  await db.execute(sql`
+    DELETE FROM ${takeoffRecents}
+    WHERE user_id = ${userId}
+      AND pinned_at IS NULL
+      AND hidden = false
+      AND id NOT IN (
+        SELECT id FROM ${takeoffRecents}
+        WHERE user_id = ${userId}
+          AND pinned_at IS NULL
+          AND hidden = false
+        ORDER BY opened_at DESC
+        LIMIT ${MAX_UNPINNED_PER_USER}
+      )
+  `);
+}
+
 router.get("/api/takeoff/recents", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
@@ -51,8 +87,7 @@ router.get("/api/takeoff/recents", requireAuth, async (req: AuthRequest, res, ne
       .select()
       .from(takeoffRecents)
       .where(eq(takeoffRecents.userId, userId))
-      .orderBy(desc(takeoffRecents.openedAt))
-      .limit(MAX_ENTRIES_PER_USER);
+      .orderBy(desc(takeoffRecents.openedAt));
 
     return res.json(
       rows.map((row) => ({
@@ -63,10 +98,14 @@ router.get("/api/takeoff/recents", requireAuth, async (req: AuthRequest, res, ne
         sheetId: row.sheetId === "" ? null : row.sheetId,
         sheetName: row.sheetName,
         openedAt: row.openedAt.getTime(),
+        // Task #2097 — surface pin/hide state so the client can render
+        // pinned items separately and keep removed items hidden.
+        pinnedAt: row.pinnedAt ? row.pinnedAt.getTime() : null,
+        hidden: row.hidden,
       })),
     );
   } catch (error) {
-    logError("Failed to load takeoff recents", { error: String(error) });
+    logError("Failed to load takeoff recents", undefined, error);
     return next(error);
   }
 });
@@ -88,9 +127,7 @@ router.post("/api/takeoff/recents", requireAuth, async (req: AuthRequest, res, n
     }
 
     const entry = parsed.data;
-    // Normalize sheetId to "" so the unique index treats sheet-less entries
-    // as a single slot per (user, kind, entity).
-    const sheetIdKey = entry.sheetId && entry.sheetId.length > 0 ? entry.sheetId : "";
+    const sheetIdKey = sheetSentinel(entry.sheetId);
     const openedAt = toDate(entry.openedAt);
 
     await db
@@ -121,45 +158,123 @@ router.post("/api/takeoff/recents", requireAuth, async (req: AuthRequest, res, n
           entityCode: entry.entityCode,
           entityName: entry.entityName ?? null,
           sheetName: entry.sheetName ?? null,
+          // Task #2097 — re-opening an entry clears the hidden flag so a
+          // user who removed an entry and then visits it again gets it
+          // back on the rail. pinnedAt is intentionally preserved.
+          hidden: false,
+          updatedAt: sql`NOW()`,
         },
       });
 
-    // Prune anything past the cap so the table can't grow unbounded. Done
-    // inline because the table is small and the writes are infrequent —
-    // there's no need for a background job. Uses a subquery so the same
-    // statement works on both Neon and stock Postgres.
-    await db.execute(sql`
-      DELETE FROM ${takeoffRecents}
-      WHERE user_id = ${userId}
-        AND id NOT IN (
-          SELECT id FROM ${takeoffRecents}
-          WHERE user_id = ${userId}
-          ORDER BY opened_at DESC
-          LIMIT ${MAX_ENTRIES_PER_USER}
-        )
-    `);
+    await trimUnpinnedForUser(userId);
 
     return res.status(204).end();
   } catch (error) {
-    logError("Failed to record takeoff recent", { error: String(error) });
+    logError("Failed to record takeoff recent", undefined, error);
     return next(error);
   }
 });
 
-const deleteSchema = z.object({
-  kind: z.enum(["bid", "project"]),
-  entityId: z.string().min(1).max(128),
-  sheetId: z.string().max(128).nullable().optional(),
-});
-
-router.delete("/api/takeoff/recents", requireAuth, async (req: AuthRequest, res, next) => {
+// Task #2097 — Pin: mark an existing entry as pinned (sets pinnedAt = now,
+// clears hidden in case the user pinned something they had previously
+// removed). The entry must already exist (the client always records
+// before pinning); if it doesn't, this is a no-op.
+router.post("/api/takeoff/recents/pin", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const userId = req.user!.id;
-    const parsed = deleteSchema.safeParse(req.body);
+    const parsed = selectorSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
     }
-    const sheetIdKey = parsed.data.sheetId && parsed.data.sheetId.length > 0 ? parsed.data.sheetId : "";
+    const sheetIdKey = sheetSentinel(parsed.data.sheetId);
+    await db
+      .update(takeoffRecents)
+      .set({ pinnedAt: new Date(), hidden: false, updatedAt: new Date() })
+      .where(
+        and(
+          eq(takeoffRecents.userId, userId),
+          eq(takeoffRecents.kind, parsed.data.kind),
+          eq(takeoffRecents.entityId, parsed.data.entityId),
+          eq(takeoffRecents.sheetId, sheetIdKey),
+        ),
+      );
+    return res.status(204).end();
+  } catch (error) {
+    logError("Failed to pin takeoff recent", undefined, error);
+    return next(error);
+  }
+});
+
+// Task #2097 — Unpin: clear pinnedAt. The entry stays in the rail; if it
+// falls outside the unpinned cap on the next /record it'll get trimmed.
+router.post("/api/takeoff/recents/unpin", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const userId = req.user!.id;
+    const parsed = selectorSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+    }
+    const sheetIdKey = sheetSentinel(parsed.data.sheetId);
+    await db
+      .update(takeoffRecents)
+      .set({ pinnedAt: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(takeoffRecents.userId, userId),
+          eq(takeoffRecents.kind, parsed.data.kind),
+          eq(takeoffRecents.entityId, parsed.data.entityId),
+          eq(takeoffRecents.sheetId, sheetIdKey),
+          isNotNull(takeoffRecents.pinnedAt),
+        ),
+      );
+    return res.status(204).end();
+  } catch (error) {
+    logError("Failed to unpin takeoff recent", undefined, error);
+    return next(error);
+  }
+});
+
+// Task #2097 — Remove: soft-hide so the entry doesn't reappear on other
+// devices. This replaces the hard-DELETE behaviour from #2079 because
+// without a tombstone, an "open from another device" sync would resurrect
+// the entry the user had just dismissed.
+router.post("/api/takeoff/recents/remove", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const userId = req.user!.id;
+    const parsed = selectorSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+    }
+    const sheetIdKey = sheetSentinel(parsed.data.sheetId);
+    await db
+      .update(takeoffRecents)
+      .set({ hidden: true, pinnedAt: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(takeoffRecents.userId, userId),
+          eq(takeoffRecents.kind, parsed.data.kind),
+          eq(takeoffRecents.entityId, parsed.data.entityId),
+          eq(takeoffRecents.sheetId, sheetIdKey),
+        ),
+      );
+    return res.status(204).end();
+  } catch (error) {
+    logError("Failed to remove takeoff recent", undefined, error);
+    return next(error);
+  }
+});
+
+// Task #2079 hard-delete kept for backwards compatibility with any
+// existing client paths that still call DELETE /api/takeoff/recents
+// before they're updated to the soft-hide /remove endpoint above.
+router.delete("/api/takeoff/recents", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const userId = req.user!.id;
+    const parsed = selectorSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+    }
+    const sheetIdKey = sheetSentinel(parsed.data.sheetId);
 
     await db
       .delete(takeoffRecents)
@@ -174,7 +289,7 @@ router.delete("/api/takeoff/recents", requireAuth, async (req: AuthRequest, res,
 
     return res.status(204).end();
   } catch (error) {
-    logError("Failed to delete takeoff recent", { error: String(error) });
+    logError("Failed to delete takeoff recent", undefined, error);
     return next(error);
   }
 });

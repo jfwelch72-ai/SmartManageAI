@@ -9584,6 +9584,10 @@ export type UserSettings = typeof userSettings.$inferSelect;
 // instant UX, but rows here are the cross-device source of truth so a user
 // who jumps between desktop and laptop sees the same recent bids/sheets.
 //
+// Task #2097 extended this with `pinnedAt`, `hidden`, and `updatedAt` so
+// pin/remove state also follows the user across devices (previously those
+// flags were only stored locally, defeating the cross-device promise).
+//
 // `kind` is the discriminator from RecentTakeoffEntry ("bid" | "project").
 // `sheetId` is stored as the empty string when the entry refers to the
 // workspace itself rather than a specific sheet — Postgres treats nullable
@@ -9600,6 +9604,14 @@ export const takeoffRecents = pgTable("takeoff_recents", {
   sheetId: varchar("sheet_id").notNull().default(""),
   sheetName: text("sheet_name"),
   openedAt: timestamp("opened_at").notNull().defaultNow(),
+  // Task #2097 — `pinnedAt` is a timestamp (null = not pinned) so the UI
+  // can render pinned items chronologically by when they were pinned.
+  // `hidden` acts as a tombstone for "Remove from list" so the entry
+  // stays gone across devices until the user explicitly re-opens it
+  // (which clears the flag in `recordRecent`).
+  pinnedAt: timestamp("pinned_at"),
+  hidden: boolean("hidden").notNull().default(false),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   userOpenedIdx: index("takeoff_recents_user_opened_idx").on(table.userId, table.openedAt),
   uniqueEntry: unique("takeoff_recents_user_entry_unique").on(
@@ -9610,7 +9622,7 @@ export const takeoffRecents = pgTable("takeoff_recents", {
   ),
 }));
 
-export const insertTakeoffRecentSchema = createInsertSchema(takeoffRecents).omit({ id: true });
+export const insertTakeoffRecentSchema = createInsertSchema(takeoffRecents).omit({ id: true, updatedAt: true });
 export type InsertTakeoffRecent = z.infer<typeof insertTakeoffRecentSchema>;
 export type TakeoffRecent = typeof takeoffRecents.$inferSelect;
 
