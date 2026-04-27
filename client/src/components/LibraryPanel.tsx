@@ -960,7 +960,7 @@ export default function LibraryPanel({ projectId, sheetId, measurements }: Libra
           <AlertDialogHeader>
             <AlertDialogTitle>Reset prebuilt catalog?</AlertDialogTitle>
             <AlertDialogDescription>
-              This will delete every prebuilt item, prebuilt assembly, and prebuilt category for your organization, then re-seed them using the current trade mappings. Custom items and assemblies you created are preserved, but any custom items filed under a prebuilt category will become uncategorized.
+              This will delete every prebuilt item, prebuilt assembly, and prebuilt category for your organization, then re-seed them using the current trade mappings. Custom items and assemblies you created are preserved, and any custom items filed under a prebuilt category will be re-attached to the freshly seeded category that matches it. Items whose old category has no equivalent in the new catalog will become uncategorized.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

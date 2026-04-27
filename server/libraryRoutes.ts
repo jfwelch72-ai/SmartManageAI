@@ -675,6 +675,62 @@ router.post("/api/library-items/reset-prebuilt-catalog", async (req: AuthRequest
 
     const tradeType = (org as any).tradeType || "OTHER";
 
+    // Task #2095 — Before we drop the prebuilt categories, capture which
+    // custom (user-created) items currently live under one. The FK from
+    // library_items.category_id to library_categories is `ON DELETE SET
+    // NULL`, so without this snapshot any custom item filed under a prebuilt
+    // category would silently lose its categorization the moment we delete
+    // its parent category. We remember each affected item alongside the old
+    // category's sourceId / name + tradeType so we can re-attach them after
+    // the reseed produces fresh categories with stable sourceIds.
+    const oldPrebuiltCategories = await db
+      .select({
+        id: libraryCategories.id,
+        sourceId: libraryCategories.sourceId,
+        name: libraryCategories.name,
+        tradeType: libraryCategories.tradeType,
+      })
+      .from(libraryCategories)
+      .where(and(
+        eq(libraryCategories.organizationId, orgId),
+        eq(libraryCategories.isPrebuilt, true),
+      ));
+
+    type RelinkPlan = {
+      itemId: string;
+      sourceId: string | null;
+      name: string;
+      tradeType: string | null;
+    };
+    let customItemsToRelink: RelinkPlan[] = [];
+    if (oldPrebuiltCategories.length > 0) {
+      const oldPrebuiltCategoryIds = oldPrebuiltCategories.map(c => c.id);
+      const customItems = await db
+        .select({
+          id: libraryItems.id,
+          categoryId: libraryItems.categoryId,
+        })
+        .from(libraryItems)
+        .where(and(
+          eq(libraryItems.organizationId, orgId),
+          eq(libraryItems.isPrebuilt, false),
+          inArray(libraryItems.categoryId, oldPrebuiltCategoryIds),
+        ));
+      const oldCatById = new Map(oldPrebuiltCategories.map(c => [c.id, c]));
+      customItemsToRelink = customItems
+        .map((item) => {
+          const cat = item.categoryId ? oldCatById.get(item.categoryId) : undefined;
+          if (!cat) return null;
+          return {
+            itemId: item.id,
+            sourceId: cat.sourceId ?? null,
+            name: cat.name,
+            tradeType: cat.tradeType ?? null,
+          } satisfies RelinkPlan;
+        })
+        .filter((x): x is RelinkPlan => x !== null);
+    }
+
     // Delete prebuilt assemblies first; their child rows in
     // library_assembly_items / *_groups / *_group_members cascade automatically
     // via the schema's `onDelete: cascade` FK.
@@ -689,14 +745,59 @@ router.post("/api/library-items/reset-prebuilt-catalog", async (req: AuthRequest
       .returning({ id: libraryItems.id });
 
     // Delete prebuilt categories last. Any custom item that was assigned to a
-    // prebuilt category has `categoryId` set to NULL (FK is `onDelete: set
-    // null`), so the user keeps the item but loses the category placement —
-    // they can re-file it under a fresh prebuilt category after re-seed.
+    // prebuilt category now has `categoryId` set to NULL via the FK's
+    // `onDelete: set null`. We captured those rows above and will re-attach
+    // them to the freshly seeded category once the reseed completes.
     const deletedCategories = await db.delete(libraryCategories)
       .where(and(eq(libraryCategories.organizationId, orgId), eq(libraryCategories.isPrebuilt, true)))
       .returning({ id: libraryCategories.id });
 
     const seedResult = await runPrebuiltSeed(orgId, tradeType);
+
+    // Task #2095 — Re-attach the custom items we captured pre-delete to the
+    // newly seeded prebuilt categories. We match primarily by sourceId
+    // (stable across reseeds — see the `onboarding:category:<trade>:<name>`
+    // format in runPrebuiltSeed). For categories created before we started
+    // stamping a sourceId, fall back to (tradeType, name). Items whose old
+    // category has no equivalent in the new catalog stay uncategorized,
+    // matching the previous behaviour.
+    let customItemsRelinked = 0;
+    if (customItemsToRelink.length > 0) {
+      const newPrebuiltCategories = await db
+        .select({
+          id: libraryCategories.id,
+          sourceId: libraryCategories.sourceId,
+          name: libraryCategories.name,
+          tradeType: libraryCategories.tradeType,
+        })
+        .from(libraryCategories)
+        .where(and(
+          eq(libraryCategories.organizationId, orgId),
+          eq(libraryCategories.isPrebuilt, true),
+        ));
+      const newBySourceId = new Map<string, string>();
+      const newByNameTrade = new Map<string, string>();
+      for (const c of newPrebuiltCategories) {
+        if (c.sourceId) newBySourceId.set(c.sourceId, c.id);
+        newByNameTrade.set(`${c.tradeType ?? ""}::${c.name}`, c.id);
+      }
+      for (const plan of customItemsToRelink) {
+        let newCategoryId: string | undefined;
+        if (plan.sourceId) newCategoryId = newBySourceId.get(plan.sourceId);
+        if (!newCategoryId) {
+          newCategoryId = newByNameTrade.get(`${plan.tradeType ?? ""}::${plan.name}`);
+        }
+        if (newCategoryId) {
+          await db.update(libraryItems)
+            .set({ categoryId: newCategoryId, updatedAt: new Date() })
+            .where(and(
+              eq(libraryItems.id, plan.itemId),
+              eq(libraryItems.organizationId, orgId),
+            ));
+          customItemsRelinked++;
+        }
+      }
+    }
 
     await logAudit({
       userId,
@@ -713,6 +814,7 @@ router.post("/api/library-items/reset-prebuilt-catalog", async (req: AuthRequest
         itemsCreated: seedResult.itemsCreated,
         assembliesCreated: seedResult.assembliesCreated,
         categoriesCreated: seedResult.categoriesCreated,
+        customItemsRelinked,
       }),
     }, req);
 
@@ -730,6 +832,7 @@ router.post("/api/library-items/reset-prebuilt-catalog", async (req: AuthRequest
         assemblies: seedResult.assembliesCreated,
         categories: seedResult.categoriesCreated,
       },
+      customItemsRelinked,
     });
   } catch (error: any) {
     next(error);

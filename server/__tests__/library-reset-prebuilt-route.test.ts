@@ -55,10 +55,15 @@ vi.mock("../auditLogger", () => ({
 let prebuiltItemsForOrg: any[] = [];
 let prebuiltAssembliesForOrg: any[] = [];
 let prebuiltCategoriesForOrg: any[] = [];
+// Task #2095 — list of custom (non-prebuilt) library_items currently filed
+// under one of the prebuilt categories. The reset route reads this before
+// deleting categories so it can re-link them after the seed.
+let customItemsLinkedToPrebuilt: any[] = [];
 let orgRow: any = { id: "org-1", tradeType: "CONCRETE" };
 let insertedItems: any[] = [];
 let insertedCategories: any[] = [];
 let insertedAssemblies: any[] = [];
+const updateCalls: Array<{ table: string; values: any }> = [];
 
 function makeSelectChain(rows: any[]) {
   // Mimics: db.select(...).from(...).where(...).limit(...) and variants. The
@@ -72,11 +77,15 @@ function makeSelectChain(rows: any[]) {
   return result;
 }
 
-function makeInsertChain(target: any[]) {
+function makeInsertChain(target: any[], mirror?: any[]) {
   const ret = (rows: any) => {
     const arr = Array.isArray(rows) ? rows : [rows];
     const created = arr.map((r, i) => ({ id: `gen-${target.length + i}`, ...r }));
     target.push(...created);
+    // Task #2095 — Categories inserted by the seed need to be visible to
+    // the route's post-seed `select(...)` lookup that powers the relink.
+    // Mirror them into the "current state" array so the select returns them.
+    if (mirror) mirror.push(...created);
     const chain: any = {
       returning: () => Promise.resolve(created),
     };
@@ -112,19 +121,37 @@ vi.mock("../db", () => ({
       // `.from(table)` call sets the desired result. We use a lightweight
       // dispatcher keyed on first .from() argument identity.
       let _table: any = null;
+      let _isLimited = false;
       const chain: any = {};
       chain.from = (t: any) => {
         _table = t;
         return chain;
       };
       chain.where = () => chain;
-      chain.limit = () => chain;
+      chain.limit = () => {
+        _isLimited = true;
+        return chain;
+      };
       chain.orderBy = () => chain;
       chain.then = (resolve: any, reject: any) => {
         try {
           const tableName = _table?.[Symbol.for("drizzle:Name")] || _table?._?.name || _table?.name || "";
-          if (tableName === "library_items" || _table === LIBRARY_ITEMS) return resolve(prebuiltItemsForOrg);
-          if (tableName === "library_categories" || _table === LIBRARY_CATEGORIES) return resolve(prebuiltCategoriesForOrg);
+          if (tableName === "library_items" || _table === LIBRARY_ITEMS) {
+            // Task #2095 — Pre-delete custom-item lookup. The reset route is
+            // the only call site that selects from library_items in this
+            // test, so returning the list of "custom items linked to a
+            // prebuilt category" matches the new `select` it issues.
+            return resolve(customItemsLinkedToPrebuilt);
+          }
+          if (tableName === "library_categories" || _table === LIBRARY_CATEGORIES) {
+            // The seed loop guards each insert with a `.limit(1)` existence
+            // check. Returning [] there forces the seed to actually insert
+            // (which is what we want to assert on). Non-limited selects
+            // (pre-delete capture + post-seed relink lookup) get the full
+            // current state.
+            if (_isLimited) return resolve([]);
+            return resolve(prebuiltCategoriesForOrg);
+          }
           if (tableName === "library_assemblies" || _table === LIBRARY_ASSEMBLIES) return resolve(prebuiltAssembliesForOrg);
           if (tableName === "organizations" || _table === ORGANIZATIONS) return resolve(orgRow ? [orgRow] : []);
           return resolve([]);
@@ -136,7 +163,9 @@ vi.mock("../db", () => ({
     }),
     insert: vi.fn((table: any) => {
       if (table === LIBRARY_ITEMS) return makeInsertChain(insertedItems);
-      if (table === LIBRARY_CATEGORIES) return makeInsertChain(insertedCategories);
+      // Mirror inserted prebuilt categories into prebuiltCategoriesForOrg so
+      // the post-seed select used by the relink step can find them.
+      if (table === LIBRARY_CATEGORIES) return makeInsertChain(insertedCategories, prebuiltCategoriesForOrg);
       if (table === LIBRARY_ASSEMBLIES) return makeInsertChain(insertedAssemblies);
       // assembly items / group members / etc. — accept and discard
       return makeInsertChain([]);
@@ -146,6 +175,27 @@ vi.mock("../db", () => ({
       if (table === LIBRARY_CATEGORIES) return makeDeleteChain(prebuiltCategoriesForOrg);
       if (table === LIBRARY_ASSEMBLIES) return makeDeleteChain(prebuiltAssembliesForOrg);
       return makeDeleteChain([]);
+    }),
+    update: vi.fn((table: any) => {
+      // Task #2095 — Captures the post-seed re-link UPDATEs against
+      // library_items. The chain is awaited via `.where(...)` (no
+      // `.returning()`), so we make the where chain itself awaitable.
+      let _values: any = null;
+      const chain: any = {};
+      chain.set = (vals: any) => {
+        _values = vals;
+        return chain;
+      };
+      chain.where = () => chain;
+      chain.returning = () => Promise.resolve([]);
+      chain.then = (resolve: any) => {
+        const tableName = table?.[Symbol.for("drizzle:Name")] || table?._?.name || table?.name || "";
+        if (tableName === "library_items" || table === LIBRARY_ITEMS) {
+          updateCalls.push({ table: "library_items", values: _values });
+        }
+        resolve([]);
+      };
+      return chain;
     }),
   },
 }));
@@ -214,10 +264,12 @@ beforeEach(() => {
   prebuiltCategoriesForOrg = [
     { id: "old-cat-1", organizationId: "org-1", isPrebuilt: true, sourceId: "onboarding:category:CONCRETE:Concrete Misc" },
   ];
+  customItemsLinkedToPrebuilt = [];
   orgRow = { id: "org-1", tradeType: "CONCRETE" };
   insertedItems = [];
   insertedCategories = [];
   insertedAssemblies = [];
+  updateCalls.length = 0;
 });
 
 describe("POST /api/library-items/reset-prebuilt-catalog — auth", () => {
@@ -278,5 +330,109 @@ describe("POST /api/library-items/reset-prebuilt-catalog — happy path", () => 
     orgRow = null;
     const res = await request(app).post("/api/library-items/reset-prebuilt-catalog");
     expect(res.status).toBe(404);
+  });
+});
+
+describe("POST /api/library-items/reset-prebuilt-catalog — relink custom items (Task #2095)", () => {
+  beforeEach(() => {
+    testUser = { id: "admin-1", organizationId: "org-1", role: "ADMIN" };
+  });
+
+  it("re-attaches custom items to the freshly seeded category that shares the old sourceId", async () => {
+    // The seed helper creates categories with sourceId
+    // `onboarding:category:<trade>:<categoryName>`. The mocked
+    // categoryForMaterial returns `Category-${group}` so for `group: "concrete"`
+    // and tradeType "CONCRETE" the new category will end up with sourceId
+    // `onboarding:category:CONCRETE:Category-concrete`. We seed the old
+    // prebuilt category with the same sourceId so the relink lookup matches.
+    const sharedSourceId = "onboarding:category:CONCRETE:Category-concrete";
+    prebuiltCategoriesForOrg = [
+      {
+        id: "old-cat-1",
+        organizationId: "org-1",
+        isPrebuilt: true,
+        sourceId: sharedSourceId,
+        name: "Category-concrete",
+        tradeType: "CONCRETE",
+      },
+      {
+        id: "old-cat-2",
+        organizationId: "org-1",
+        isPrebuilt: true,
+        sourceId: "onboarding:category:CONCRETE:Will Disappear",
+        name: "Will Disappear",
+        tradeType: "CONCRETE",
+      },
+    ];
+    customItemsLinkedToPrebuilt = [
+      {
+        id: "custom-item-matched",
+        organizationId: "org-1",
+        isPrebuilt: false,
+        categoryId: "old-cat-1",
+      },
+      {
+        id: "custom-item-orphaned",
+        organizationId: "org-1",
+        isPrebuilt: false,
+        categoryId: "old-cat-2",
+      },
+    ];
+
+    const res = await request(app).post("/api/library-items/reset-prebuilt-catalog");
+    expect(res.status).toBe(200);
+    expect(res.body.reset).toBe(true);
+    // Only the item whose old category had a matching new sourceId is relinked.
+    expect(res.body.customItemsRelinked).toBe(1);
+
+    // The matched custom item was UPDATEd to point at the freshly seeded
+    // category (whichever generated id corresponds to the new "Category-concrete").
+    const relinkedCategory = insertedCategories.find(c => c.sourceId === sharedSourceId);
+    expect(relinkedCategory).toBeTruthy();
+    const relinkUpdate = updateCalls.find(u => u.values?.categoryId === relinkedCategory!.id);
+    expect(relinkUpdate).toBeTruthy();
+    expect(relinkUpdate!.values).toMatchObject({ categoryId: relinkedCategory!.id });
+
+    // The audit log records the relink count alongside the seed counts.
+    const newValue = JSON.parse(auditCalls[0].newValue);
+    expect(newValue.customItemsRelinked).toBe(1);
+  });
+
+  it("does not issue any UPDATEs when no custom items were attached to a prebuilt category", async () => {
+    customItemsLinkedToPrebuilt = [];
+    const res = await request(app).post("/api/library-items/reset-prebuilt-catalog");
+    expect(res.status).toBe(200);
+    expect(res.body.customItemsRelinked).toBe(0);
+    expect(updateCalls.length).toBe(0);
+  });
+
+  it("falls back to (tradeType, name) match when the old category has no sourceId", async () => {
+    // Older prebuilt categories created before sourceId existed have a null
+    // sourceId. The relink should still find them by their friendly name.
+    prebuiltCategoriesForOrg = [
+      {
+        id: "old-cat-legacy",
+        organizationId: "org-1",
+        isPrebuilt: true,
+        sourceId: null,
+        name: "Category-concrete",
+        tradeType: "CONCRETE",
+      },
+    ];
+    customItemsLinkedToPrebuilt = [
+      {
+        id: "custom-item-legacy",
+        organizationId: "org-1",
+        isPrebuilt: false,
+        categoryId: "old-cat-legacy",
+      },
+    ];
+
+    const res = await request(app).post("/api/library-items/reset-prebuilt-catalog");
+    expect(res.status).toBe(200);
+    expect(res.body.customItemsRelinked).toBe(1);
+    const relinkedCategory = insertedCategories.find(c => c.name === "Category-concrete" && c.tradeType === "CONCRETE");
+    expect(relinkedCategory).toBeTruthy();
+    expect(updateCalls.some(u => u.values?.categoryId === relinkedCategory!.id)).toBe(true);
   });
 });
