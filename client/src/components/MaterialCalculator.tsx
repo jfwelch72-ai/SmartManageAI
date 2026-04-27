@@ -96,6 +96,22 @@ function isAreaUnit(unit: string): boolean {
   return areaUnits.some(u => unit.toUpperCase().includes(u.toUpperCase()));
 }
 
+/**
+ * Resolve a waste / swell percentage from a form input.
+ *
+ * `parseFloat(value) || defaultPercent` swallows an explicit `0` because
+ * 0 is falsy in JS — so a user who really wants 0% waste silently gets
+ * the default instead. This helper only falls back when the input is
+ * empty or non-numeric, mirroring `parseFactor` in
+ * `server/materialCalculator.ts`.
+ */
+function parseFactor(value: string | number | null | undefined, defaultPercent: number): number {
+  if (value === null || value === undefined) return defaultPercent;
+  if (typeof value === 'string' && value.trim() === '') return defaultPercent;
+  const num = typeof value === 'string' ? parseFloat(value) : value;
+  return isNaN(num) ? defaultPercent : num;
+}
+
 export interface MaterialCalculatorData {
   concreteDepthInches: string;
   dimensionWidthInches: string;
@@ -571,7 +587,7 @@ export default function MaterialCalculator({
       parseFloat(value.concreteDepthInches) || 0,
       parseFloat(value.dimensionWidthInches) || undefined,
       parseFloat(value.dimensionHeightInches) || undefined,
-      parseFloat(value.concreteWasteFactor) || 10
+      parseFactor(value.concreteWasteFactor, 10)
     );
   }, [quantity, unit, value.concreteDepthInches, value.dimensionWidthInches, value.dimensionHeightInches, value.concreteWasteFactor]);
 
@@ -584,7 +600,7 @@ export default function MaterialCalculator({
       parseFloat(value.stoneDepthInches) || 0,
       value.stoneType || "CRUSHED_STONE",
       parseFloat(value.dimensionWidthInches) || undefined,
-      parseFloat(value.stoneWasteFactor) || 10
+      parseFactor(value.stoneWasteFactor, 10)
     );
   }, [quantity, unit, value.requiresStoneBase, value.stoneDepthInches, value.stoneType, value.dimensionWidthInches, value.stoneWasteFactor]);
 
@@ -596,7 +612,7 @@ export default function MaterialCalculator({
       unit,
       parseFloat(value.excavationDepthInches) || 0,
       parseFloat(value.excavationWidthInches) || undefined,
-      parseFloat(value.excavationSwellFactor) || 25
+      parseFactor(value.excavationSwellFactor, 25)
     );
   }, [quantity, unit, value.requiresExcavation, value.excavationDepthInches, value.excavationWidthInches, value.excavationSwellFactor]);
 
@@ -607,7 +623,7 @@ export default function MaterialCalculator({
     return calculateWireMeshRolls(
       quantity,
       unit,
-      parseFloat(value.wireMeshWasteFactor) || 10,
+      parseFactor(value.wireMeshWasteFactor, 10),
       meshType.coverageSF
     );
   }, [quantity, unit, value.requiresWireMesh, value.wireMeshType, value.wireMeshWasteFactor]);
@@ -621,7 +637,7 @@ export default function MaterialCalculator({
       unit,
       parseFloat(value.rebarSpacingInches) || 12,
       rebarSize.lengthFt,
-      parseFloat(value.rebarWasteFactor) || 10
+      parseFactor(value.rebarWasteFactor, 10)
     );
   }, [quantity, unit, value.requiresRebar, value.rebarSize, value.rebarSpacingInches, value.rebarWasteFactor]);
 
@@ -643,7 +659,7 @@ export default function MaterialCalculator({
       unit,
       sealerType.coverageSFPerGallon,
       parseFloat(value.sealerCoats) || 1,
-      parseFloat(value.sealerWasteFactor) || 10
+      parseFactor(value.sealerWasteFactor, 10)
     );
   }, [quantity, unit, value.requiresSealer, value.sealerType, value.sealerCoats, value.sealerWasteFactor]);
 
@@ -654,7 +670,7 @@ export default function MaterialCalculator({
       quantity,
       unit,
       parseFloat(value.underlaymentOverlapInches) || 6,
-      parseFloat(value.underlaymentWasteFactor) || 10
+      parseFactor(value.underlaymentWasteFactor, 10)
     );
   }, [quantity, unit, value.requiresUnderlayment, value.underlaymentOverlapInches, value.underlaymentWasteFactor]);
 
@@ -1131,7 +1147,7 @@ export default function MaterialCalculator({
                   const stoneDepth = parseFloat(value.stoneDepthInches) || 4;
                   const stoneWidth = parseFloat(value.dimensionWidthInches) || 24;
                   const density = STONE_DENSITIES[value.stoneType || "CRUSHED_STONE"];
-                  const wasteFactor = parseFloat(value.stoneWasteFactor) || 10;
+                  const wasteFactor = parseFactor(value.stoneWasteFactor, 10);
                   
                   return (
                     <FormulaBreakdown
@@ -1294,7 +1310,7 @@ export default function MaterialCalculator({
                 {showFormulas && excavationYards > 0 && (() => {
                   const excDepth = parseFloat(value.excavationDepthInches) || 12;
                   const excWidth = parseFloat(value.excavationWidthInches) || 24;
-                  const swellFactor = parseFloat(value.excavationSwellFactor) || 25;
+                  const swellFactor = parseFactor(value.excavationSwellFactor, 25);
                   const inGroundYards = excavationYards / (1 + swellFactor / 100);
                   
                   return (
@@ -1429,7 +1445,7 @@ export default function MaterialCalculator({
                   </div>
 
                   {showFormulas && wireMeshRolls > 0 && (() => {
-                    const waste = parseFloat(value.wireMeshWasteFactor || "10");
+                    const waste = parseFactor(value.wireMeshWasteFactor, 10);
                     const sfWithWaste = quantity * (1 + waste / 100);
                     return (
                       <FormulaBreakdown
@@ -1570,7 +1586,7 @@ export default function MaterialCalculator({
 
                 {showFormulas && rebarCalc.count > 0 && isArea && (() => {
                   const spacingIn = parseFloat(value.rebarSpacingInches || "12");
-                  const waste = parseFloat(value.rebarWasteFactor || "10");
+                  const waste = parseFactor(value.rebarWasteFactor, 10);
                   const sideLength = Math.sqrt(quantity);
                   const spacingFt = spacingIn / 12;
                   const barsPerDir = Math.ceil(sideLength / spacingFt) + 1;
@@ -1803,7 +1819,7 @@ export default function MaterialCalculator({
                     const sealerType = value.sealerType || "CURE_SEAL";
                     const coverage = SEALER_TYPES[sealerType]?.coverageSFPerGallon || 200;
                     const coats = parseFloat(value.sealerCoats || "1");
-                    const waste = parseFloat(value.sealerWasteFactor || "10");
+                    const waste = parseFactor(value.sealerWasteFactor, 10);
                     const totalSF = quantity * (1 + waste / 100) * coats;
                     return (
                       <FormulaBreakdown
@@ -1923,7 +1939,7 @@ export default function MaterialCalculator({
 
                   {showFormulas && underlaymentSF > 0 && (() => {
                     const overlap = parseFloat(value.underlaymentOverlapInches || "6");
-                    const waste = parseFloat(value.underlaymentWasteFactor || "10");
+                    const waste = parseFactor(value.underlaymentWasteFactor, 10);
                     const overlapFactor = 1 + ((overlap / 12) / 10);
                     const sfWithOverlap = quantity * overlapFactor;
                     return (

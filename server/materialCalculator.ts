@@ -23,50 +23,57 @@ import { EstimateLineItem } from "@shared/schema";
  *                                       × (1 + waste%)
  *
  * Waste-factor handling: every waste/swell input is treated as a percentage
- * (10 → +10%). When the corresponding field is null/undefined the calculator
- * falls back to industry defaults baked into each branch (e.g. 10% concrete
- * waste, 25% excavation swell, 4" stone depth).
+ * (10 → +10%). Only `null`, `undefined`, an empty string, or a non-numeric
+ * value falls back to the industry defaults baked into each branch (e.g.
+ * 10% concrete waste, 25% excavation swell). An explicit `0` (or `"0"`)
+ * is honored as 0% — useful for sanity checks or when the materials are
+ * already on hand. See `parseFactor` below.
  */
+// Numeric inputs are parsed via `parseNumber` / `parseFactor`, both of which
+// accept either a number or a numeric string ("decimal" Drizzle columns are
+// returned as strings at runtime, and form fields submit strings too).
+type NumericInput = number | string | null;
+
 export interface MaterialCalculationInputs {
   quantity: number;
   unit: string;
   
-  concreteDepthInches?: number | null;
-  dimensionWidthInches?: number | null;
-  dimensionHeightInches?: number | null;
-  concreteWasteFactor?: number | null;
+  concreteDepthInches?: NumericInput;
+  dimensionWidthInches?: NumericInput;
+  dimensionHeightInches?: NumericInput;
+  concreteWasteFactor?: NumericInput;
   
   requiresStoneBase?: boolean | null;
-  stoneDepthInches?: number | null;
-  stoneWasteFactor?: number | null;
+  stoneDepthInches?: NumericInput;
+  stoneWasteFactor?: NumericInput;
   stoneType?: string | null;
   
   requiresExcavation?: boolean | null;
-  excavationDepthInches?: number | null;
-  excavationWidthInches?: number | null;
-  excavationSwellFactor?: number | null;
+  excavationDepthInches?: NumericInput;
+  excavationWidthInches?: NumericInput;
+  excavationSwellFactor?: NumericInput;
   
   requiresWireMesh?: boolean | null;
-  wireMeshCoverageSF?: number | null;
-  wireMeshWasteFactor?: number | null;
+  wireMeshCoverageSF?: NumericInput;
+  wireMeshWasteFactor?: NumericInput;
   
   requiresRebar?: boolean | null;
-  rebarSpacingInches?: number | null;
-  rebarLengthFeet?: number | null;
-  rebarWasteFactor?: number | null;
+  rebarSpacingInches?: NumericInput;
+  rebarLengthFeet?: NumericInput;
+  rebarWasteFactor?: NumericInput;
   
   requiresDowels?: boolean | null;
-  dowelSpacingInches?: number | null;
-  jointLengthFeet?: number | null;
+  dowelSpacingInches?: NumericInput;
+  jointLengthFeet?: NumericInput;
   
   requiresSealer?: boolean | null;
-  sealerCoverageSFPerGallon?: number | null;
-  sealerCoats?: number | null;
-  sealerWasteFactor?: number | null;
+  sealerCoverageSFPerGallon?: NumericInput;
+  sealerCoats?: NumericInput;
+  sealerWasteFactor?: NumericInput;
   
   requiresUnderlayment?: boolean | null;
-  underlaymentOverlapInches?: number | null;
-  underlaymentWasteFactor?: number | null;
+  underlaymentOverlapInches?: NumericInput;
+  underlaymentWasteFactor?: NumericInput;
 }
 
 export interface MaterialCalculationResults {
@@ -125,6 +132,22 @@ function parseNumber(value: any): number | null {
   return isNaN(num) ? null : num;
 }
 
+/**
+ * Resolve a waste / swell factor from raw input.
+ *
+ * Unlike `parseNumber(...) || defaultPercent`, an explicit `0` (or `"0"`)
+ * is honored as 0% — only `null`, `undefined`, `""`, or a non-numeric
+ * value falls back to the industry default. This makes "0% waste" really
+ * mean 0% waste (e.g. for a sanity check or for materials a user already
+ * owns) instead of silently reverting to the default.
+ */
+function parseFactor(value: any, defaultPercent: number): number {
+  if (value === null || value === undefined) return defaultPercent;
+  if (typeof value === 'string' && value.trim() === '') return defaultPercent;
+  const num = typeof value === 'string' ? parseFloat(value) : value;
+  return isNaN(num) ? defaultPercent : num;
+}
+
 export function calculateMaterials(inputs: MaterialCalculationInputs): MaterialCalculationResults {
   const results: MaterialCalculationResults = {
     calculatedConcreteYards: null,
@@ -148,7 +171,7 @@ export function calculateMaterials(inputs: MaterialCalculationInputs): MaterialC
   const concreteDepth = parseNumber(inputs.concreteDepthInches);
   const dimensionWidth = parseNumber(inputs.dimensionWidthInches);
   const dimensionHeight = parseNumber(inputs.dimensionHeightInches);
-  const concreteWaste = parseNumber(inputs.concreteWasteFactor) || 10;
+  const concreteWaste = parseFactor(inputs.concreteWasteFactor, 10);
 
   if (concreteDepth && concreteDepth > 0) {
     let cubicFeet = 0;
@@ -183,7 +206,7 @@ export function calculateMaterials(inputs: MaterialCalculationInputs): MaterialC
 
   if (inputs.requiresStoneBase && isSF && quantity > 0) {
     const stoneDepth = parseNumber(inputs.stoneDepthInches) || 4;
-    const stoneWaste = parseNumber(inputs.stoneWasteFactor) || 10;
+    const stoneWaste = parseFactor(inputs.stoneWasteFactor, 10);
     const stoneType = (inputs.stoneType || '').toString().toUpperCase();
     const density = STONE_DENSITIES_TONS_PER_CY[stoneType] ?? DEFAULT_STONE_DENSITY;
 
@@ -213,7 +236,7 @@ export function calculateMaterials(inputs: MaterialCalculationInputs): MaterialC
   if (inputs.requiresExcavation) {
     const excavationDepth = parseNumber(inputs.excavationDepthInches) || 6;
     const excavationWidth = parseNumber(inputs.excavationWidthInches);
-    const swellFactor = parseNumber(inputs.excavationSwellFactor) || 25;
+    const swellFactor = parseFactor(inputs.excavationSwellFactor, 25);
     
     let cubicFeet = 0;
     if (isSF && quantity > 0) {
@@ -246,7 +269,7 @@ export function calculateMaterials(inputs: MaterialCalculationInputs): MaterialC
 
   if (inputs.requiresWireMesh && isSF && quantity > 0) {
     const coverageSF = parseNumber(inputs.wireMeshCoverageSF) || 150;
-    const wasteFactor = parseNumber(inputs.wireMeshWasteFactor) || 10;
+    const wasteFactor = parseFactor(inputs.wireMeshWasteFactor, 10);
     
     const sfWithWaste = quantity * (1 + wasteFactor / 100);
     const rolls = sfWithWaste / coverageSF;
@@ -265,7 +288,7 @@ export function calculateMaterials(inputs: MaterialCalculationInputs): MaterialC
   if (inputs.requiresRebar && isSF && quantity > 0) {
     const spacingInches = parseNumber(inputs.rebarSpacingInches) || 12;
     const rebarLengthFt = parseNumber(inputs.rebarLengthFeet) || 20;
-    const wasteFactor = parseNumber(inputs.rebarWasteFactor) || 10;
+    const wasteFactor = parseFactor(inputs.rebarWasteFactor, 10);
     
     const spacingFeet = spacingInches / 12;
     const sideA = Math.sqrt(quantity);
@@ -334,7 +357,7 @@ export function calculateMaterials(inputs: MaterialCalculationInputs): MaterialC
   if (inputs.requiresSealer && isSF && quantity > 0) {
     const coveragePerGallon = parseNumber(inputs.sealerCoverageSFPerGallon) || 200;
     const coats = parseNumber(inputs.sealerCoats) || 1;
-    const wasteFactor = parseNumber(inputs.sealerWasteFactor) || 10;
+    const wasteFactor = parseFactor(inputs.sealerWasteFactor, 10);
     
     const totalSF = quantity * coats;
     const sfWithWaste = totalSF * (1 + wasteFactor / 100);
@@ -360,7 +383,7 @@ export function calculateMaterials(inputs: MaterialCalculationInputs): MaterialC
 
   if (inputs.requiresUnderlayment && isSF && quantity > 0) {
     const overlapInches = parseNumber(inputs.underlaymentOverlapInches) || 6;
-    const wasteFactor = parseNumber(inputs.underlaymentWasteFactor) || 10;
+    const wasteFactor = parseFactor(inputs.underlaymentWasteFactor, 10);
     
     // Standard 10' polyethylene rolls — overlap factor matches the
     // client's `calculateUnderlaymentSF`. A 6" overlap on a 10' roll

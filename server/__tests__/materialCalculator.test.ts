@@ -374,6 +374,143 @@ describe('server/materialCalculator → calculateMaterials', () => {
       expect(r.calculatedWireMeshRolls).toBeNull();
     });
   });
+
+  /**
+   * 0% waste must mean 0% waste — not "fall back to the industry default".
+   *
+   * For each material that accepts a waste/swell factor we assert that
+   * passing an explicit `0` (or `"0"`) produces the unwasted base
+   * quantity and that omitting the field falls back to the documented
+   * industry default. This is the regression net for the
+   * "Make 0% waste actually mean 0% waste" task.
+   */
+  describe('Explicit 0% waste / swell is honored (not silently defaulted)', () => {
+    it('Concrete: 0% waste returns the un-wasted base CY', () => {
+      // 100 SF × 4/12 = 33.333 CF → /27 = 1.2346 CY → with 0% waste = 1.23
+      const zero = calculateMaterials(baseInputs({
+        quantity: 100, unit: 'SF', concreteDepthInches: 4,
+        concreteWasteFactor: 0,
+      }));
+      expect(zero.calculatedConcreteYards).toBeCloseTo(1.23, 2);
+
+      // Same calc with the field omitted → falls back to 10% default = 1.36
+      const omitted = calculateMaterials(baseInputs({
+        quantity: 100, unit: 'SF', concreteDepthInches: 4,
+      }));
+      expect(omitted.calculatedConcreteYards).toBeCloseTo(1.36, 2);
+
+      // String "0" is treated the same as numeric 0
+      const zeroString = calculateMaterials(baseInputs({
+        quantity: 100, unit: 'SF', concreteDepthInches: 4,
+        concreteWasteFactor: '0',
+      }));
+      expect(zeroString.calculatedConcreteYards).toBeCloseTo(1.23, 2);
+    });
+
+    it('Stone: 0% waste returns the un-wasted base tons', () => {
+      // 100 SF × 4/12 / 27 × 1.5 = 1.852 tons → with 0% waste = 1.85
+      const r = calculateMaterials(baseInputs({
+        quantity: 100, unit: 'SF',
+        requiresStoneBase: true,
+        stoneDepthInches: 4,
+        stoneType: 'CRUSHED_STONE',
+        stoneWasteFactor: 0,
+      }));
+      expect(r.calculatedStoneTons).toBeCloseTo(1.85, 2);
+    });
+
+    it('Excavation: 0% swell returns the in-ground volume', () => {
+      // 100 SF × 6/12 / 27 = 1.852 CY → with 0% swell = 1.85
+      const r = calculateMaterials(baseInputs({
+        quantity: 100, unit: 'SF',
+        requiresExcavation: true,
+        excavationDepthInches: 6,
+        excavationSwellFactor: 0,
+      }));
+      expect(r.calculatedExcavationYards).toBeCloseTo(1.85, 2);
+    });
+
+    it('Wire mesh: 0% waste does not pad the area', () => {
+      // 1000 SF / 150 SF/roll = 6.6667 → ceil to 2 dec = 6.67 → req rounds to 7
+      const r = calculateMaterials(baseInputs({
+        quantity: 1000, unit: 'SF',
+        requiresWireMesh: true,
+        wireMeshCoverageSF: 150,
+        wireMeshWasteFactor: 0,
+      }));
+      const meshReq = r.materialRequirements.find(m => m.item === 'Wire Mesh');
+      expect(meshReq?.quantity).toBe(7);
+    });
+
+    it('Rebar: 0% waste reduces the LF and bar count vs the 10% default', () => {
+      // side = √100 = 10 ft; bars/dir = ceil(10/1)+1 = 11; total bars = 22
+      // total LF = 22 × 10 = 220 → with 0% waste = 220 → bars = ceil(220/20) = 11
+      const r = calculateMaterials(baseInputs({
+        quantity: 100, unit: 'SF',
+        requiresRebar: true,
+        rebarSpacingInches: 12,
+        rebarLengthFeet: 20,
+        rebarWasteFactor: 0,
+      }));
+      expect(r.calculatedRebarLinearFeet).toBeCloseTo(220, 0);
+      expect(r.calculatedRebarCount).toBe(11);
+
+      // Sanity: with the field omitted we still get the documented 10%-waste result.
+      const omitted = calculateMaterials(baseInputs({
+        quantity: 100, unit: 'SF',
+        requiresRebar: true,
+        rebarSpacingInches: 12,
+        rebarLengthFeet: 20,
+      }));
+      expect(omitted.calculatedRebarCount).toBe(13);
+    });
+
+    it('Sealer: 0% waste returns the un-wasted base gallons', () => {
+      // 1000 SF × 1 coat / 200 SF/gal = 5.00 gal — no waste padding
+      const r = calculateMaterials(baseInputs({
+        quantity: 1000, unit: 'SF',
+        requiresSealer: true,
+        sealerCoats: 1,
+        sealerCoverageSFPerGallon: 200,
+        sealerWasteFactor: 0,
+      }));
+      expect(r.calculatedSealerGallons).toBeCloseTo(5.0, 2);
+    });
+
+    it('Underlayment: 0% waste keeps just the overlap factor', () => {
+      // overlapFactor = 1 + (6/12)/10 = 1.05 → 1000 × 1.05 = 1050 SF
+      const r = calculateMaterials(baseInputs({
+        quantity: 1000, unit: 'SF',
+        requiresUnderlayment: true,
+        underlaymentOverlapInches: 6,
+        underlaymentWasteFactor: 0,
+      }));
+      expect(r.calculatedUnderlaymentSF).toBeCloseTo(1050, 0);
+    });
+
+    it('Empty-string waste / swell still falls back to the industry default', () => {
+      // The form ships strings, and an empty input must not be treated as 0%.
+      const r = calculateMaterials(baseInputs({
+        quantity: 100, unit: 'SF',
+        concreteDepthInches: 4,
+        concreteWasteFactor: '',
+      }));
+      expect(r.calculatedConcreteYards).toBeCloseTo(1.36, 2);
+    });
+
+    it('Material requirement notes reflect the chosen waste % (including 0)', () => {
+      const r = calculateMaterials(baseInputs({
+        quantity: 100, unit: 'SF',
+        concreteDepthInches: 4,
+        concreteWasteFactor: 0,
+      }));
+      const req = r.materialRequirements.find(m => m.item === 'Ready Mix Concrete');
+      // The note string is what the calculator UI surfaces back to the user,
+      // so 0 must show up here verbatim — never "10% waste factor".
+      expect(req?.notes).toContain('0% waste factor');
+      expect(req?.notes).not.toContain('10% waste factor');
+    });
+  });
 });
 
 describe('server/tradeCalculators — canonical examples', () => {
