@@ -19,7 +19,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import {
-  ArrowUp, ArrowDown, Pencil, Trash2, Check, X, Plus, Layers,
+  ArrowUp, ArrowDown, Pencil, Trash2, Check, X, Plus, Layers, GripVertical,
 } from "lucide-react";
 import type { LibraryCategory, LibraryItem } from "@shared/schema";
 import { VALID_TRADE_TYPES, getTradeDisplayName, type TradeType } from "@shared/tradeTypeUtils";
@@ -50,6 +50,8 @@ export default function LibraryCategoryManagerDialog({
   const [newName, setNewName] = useState("");
   const [pendingDelete, setPendingDelete] = useState<LibraryCategory | null>(null);
   const [moveTarget, setMoveTarget] = useState<string>(MOVE_UNCATEGORIZED);
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -57,6 +59,8 @@ export default function LibraryCategoryManagerDialog({
       setEditingId(null);
       setNewName("");
       setPendingDelete(null);
+      setDraggingId(null);
+      setDragOverId(null);
     }
   }, [open, initialTradeType]);
 
@@ -167,12 +171,13 @@ export default function LibraryCategoryManagerDialog({
         )
       );
     },
-    onSuccess: () => {
-      invalidateAll();
-    },
     onError: (err: any) => {
+      // Roll back any optimistic cache writes by refetching from the
+      // server, which is the authoritative source of truth.
+      invalidateAll();
       toast({ title: "Could not reorder", description: err.message, variant: "destructive" });
     },
+    onSettled: () => invalidateAll(),
   });
 
   const deleteMutation = useMutation({
@@ -222,6 +227,44 @@ export default function LibraryCategoryManagerDialog({
       { id: a.id, displayOrder: newAOrder },
       { id: b.id, displayOrder: newBOrder },
     ]);
+  };
+
+  // Drag-and-drop reorder. `targetId` is the row the user dropped onto;
+  // null means "drop at end of the list". We compute the new ordering
+  // within the *currently visible* (trade-filtered) slice, renumber
+  // those rows with spaced values (1000, 2000, …) and PATCH only rows
+  // whose displayOrder actually changed. The query cache is updated
+  // optimistically so the new ordering is visible immediately.
+  const reorderByDrag = (sourceId: string, targetId: string | null) => {
+    if (sourceId === targetId) return;
+    if (selectedTrade === ALL_TRADES) return;
+    const fromIdx = visibleCategories.findIndex((c) => c.id === sourceId);
+    if (fromIdx === -1) return;
+    const without = visibleCategories.slice();
+    const [moved] = without.splice(fromIdx, 1);
+    let toIdx =
+      targetId == null ? without.length : without.findIndex((c) => c.id === targetId);
+    if (toIdx === -1) toIdx = without.length;
+    without.splice(toIdx, 0, moved);
+    if (without.every((c, i) => c.id === visibleCategories[i]?.id)) return;
+
+    const updates: { id: string; displayOrder: number }[] = [];
+    const newOrders = new Map<string, number>();
+    without.forEach((c, i) => {
+      const nextOrder = (i + 1) * 1000;
+      newOrders.set(c.id, nextOrder);
+      if ((c.displayOrder ?? 0) !== nextOrder) {
+        updates.push({ id: c.id, displayOrder: nextOrder });
+      }
+    });
+
+    queryClient.setQueryData<LibraryCategory[]>([categoriesUrl], (old) =>
+      (old ?? []).map((c) =>
+        newOrders.has(c.id) ? { ...c, displayOrder: newOrders.get(c.id)! } : c
+      )
+    );
+
+    if (updates.length > 0) reorderMutation.mutate(updates);
   };
 
   const handleCreate = () => {
@@ -336,12 +379,78 @@ export default function LibraryCategoryManagerDialog({
                 {visibleCategories.map((cat, idx) => {
                   const count = itemCountByCategory.get(cat.id) || 0;
                   const isEditing = editingId === cat.id;
+                  const dragDisabled =
+                    isEditing || selectedTrade === ALL_TRADES;
+                  const isDragging = draggingId === cat.id;
+                  const isDragOver =
+                    dragOverId === cat.id && draggingId && draggingId !== cat.id;
                   return (
                     <div
                       key={cat.id}
-                      className="flex items-center gap-1 p-2 rounded hover:bg-accent/40 group"
+                      className={`flex items-center gap-1 p-2 rounded group transition-colors ${
+                        isDragOver
+                          ? "bg-accent border border-primary"
+                          : "hover:bg-accent/40 border border-transparent"
+                      } ${isDragging ? "opacity-50" : ""}`}
                       data-testid={`row-category-${cat.id}`}
+                      onDragOver={(e) => {
+                        if (!draggingId || dragDisabled) return;
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = "move";
+                        if (dragOverId !== cat.id) setDragOverId(cat.id);
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverId === cat.id) setDragOverId(null);
+                      }}
+                      onDrop={(e) => {
+                        if (!draggingId || dragDisabled) return;
+                        e.preventDefault();
+                        const sourceId = draggingId;
+                        setDraggingId(null);
+                        setDragOverId(null);
+                        reorderByDrag(sourceId, cat.id);
+                      }}
                     >
+                      <button
+                        type="button"
+                        draggable={!dragDisabled}
+                        onDragStart={(e) => {
+                          if (dragDisabled) {
+                            e.preventDefault();
+                            return;
+                          }
+                          e.dataTransfer.effectAllowed = "move";
+                          try {
+                            e.dataTransfer.setData("text/plain", cat.id);
+                          } catch {
+                            // Some older browsers throw on setData; safe to ignore.
+                          }
+                          setDraggingId(cat.id);
+                        }}
+                        onDragEnd={() => {
+                          setDraggingId(null);
+                          setDragOverId(null);
+                        }}
+                        className={`shrink-0 text-muted-foreground hover:text-foreground p-0.5 -ml-1 ${
+                          dragDisabled
+                            ? "cursor-not-allowed opacity-40"
+                            : "cursor-grab active:cursor-grabbing"
+                        }`}
+                        aria-label={
+                          selectedTrade === ALL_TRADES
+                            ? "Pick a trade to reorder"
+                            : `Drag to reorder ${cat.name}`
+                        }
+                        title={
+                          selectedTrade === ALL_TRADES
+                            ? "Pick a trade to reorder"
+                            : "Drag to reorder"
+                        }
+                        disabled={dragDisabled}
+                        data-testid={`drag-handle-category-${cat.id}`}
+                      >
+                        <GripVertical className="h-3.5 w-3.5" />
+                      </button>
                       <Layers className="h-3.5 w-3.5 text-purple-500 shrink-0" />
                       <div className="flex-1 min-w-0">
                         {isEditing ? (
@@ -466,6 +575,35 @@ export default function LibraryCategoryManagerDialog({
                     </div>
                   );
                 })}
+                {!isLoading &&
+                  visibleCategories.length > 0 &&
+                  selectedTrade !== ALL_TRADES && (
+                    <div
+                      className={`h-2 mx-2 rounded transition-colors ${
+                        dragOverId === "__end__" && draggingId
+                          ? "bg-primary/30 border border-primary"
+                          : "border border-transparent"
+                      }`}
+                      data-testid="dropzone-category-end"
+                      onDragOver={(e) => {
+                        if (!draggingId) return;
+                        e.preventDefault();
+                        e.dataTransfer.dropEffect = "move";
+                        if (dragOverId !== "__end__") setDragOverId("__end__");
+                      }}
+                      onDragLeave={() => {
+                        if (dragOverId === "__end__") setDragOverId(null);
+                      }}
+                      onDrop={(e) => {
+                        if (!draggingId) return;
+                        e.preventDefault();
+                        const sourceId = draggingId;
+                        setDraggingId(null);
+                        setDragOverId(null);
+                        reorderByDrag(sourceId, null);
+                      }}
+                    />
+                  )}
               </div>
             </ScrollArea>
           </div>
