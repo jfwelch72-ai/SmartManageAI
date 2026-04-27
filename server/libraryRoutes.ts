@@ -700,7 +700,7 @@ router.post("/api/library-items/reset-prebuilt-catalog", async (req: AuthRequest
 
     await logAudit({
       userId,
-      action: "UPDATE",
+      action: "RESET",
       entityType: "libraryPrebuiltCatalog",
       entityId: orgId,
       oldValue: JSON.stringify({

@@ -1,0 +1,22 @@
+-- Task #2096: Add a dedicated RESET value to the audit_action enum so
+-- destructive admin reset routes can write a first-class action
+-- instead of blending in with ordinary edits in the audit trail.
+--
+-- Currently the only caller is the prebuilt-catalog reset route added
+-- in Task #2083:
+--
+--   * `POST /api/library-items/reset-prebuilt-catalog` (admin-only)
+--     wipes every prebuilt library item / assembly / category for
+--     the org and re-runs the seed. It previously logged with
+--     `action: "UPDATE"` + `entityType = "libraryPrebuiltCatalog"`,
+--     which was indistinguishable from a normal edit.
+--
+-- The route now logs under `action: "RESET"` so auditors filtering
+-- the audit trail for "who reset what and when" can query the
+-- `action` column directly.
+--
+-- IF NOT EXISTS is required because the runtime
+-- `ensureAuditActionEnumValues` migration also adds this value on
+-- startup, and the two paths can race on long-lived DBs that already
+-- received the runtime addition before this SQL migration runs.
+ALTER TYPE "public"."audit_action" ADD VALUE IF NOT EXISTS 'RESET';

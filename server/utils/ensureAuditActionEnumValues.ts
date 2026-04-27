@@ -19,8 +19,16 @@ import { logError } from "./logger";
  * shim with an `op: "restore"` JSON payload. Auditors filtering for
  * "who restored what and when" no longer need to parse JSON out of
  * the `newValue` column.
+ *
+ * Task #2096 — adds RESET so the prebuilt-catalog reset route
+ * (`POST /api/library-items/reset-prebuilt-catalog`, added in
+ * Task #2083) can write a first-class action value instead of the
+ * previous `action: "UPDATE"` shim on
+ * `entityType = "libraryPrebuiltCatalog"`. Without this value,
+ * destructive admin resets blend in with ordinary edits when
+ * reviewing the audit log.
  */
-const REQUIRED_AUDIT_ACTION_VALUES = ["ARCHIVE", "UNARCHIVE", "RESTORE"];
+const REQUIRED_AUDIT_ACTION_VALUES = ["ARCHIVE", "UNARCHIVE", "RESTORE", "RESET"];
 
 export async function ensureAuditActionEnumValues(): Promise<void> {
   try {

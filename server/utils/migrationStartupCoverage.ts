@@ -344,4 +344,17 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
     helper: "ensureRateLimitStateTable",
     note: "Task #1831 — cross-replica backing store for the per-key debounces previously held in module-level Maps inside projectLogEmailScheduleRoutes.ts",
   },
+  // Task #2096 — promote the prebuilt-catalog reset route's audit
+  // entries from the generic `UPDATE` action to a first-class
+  // `RESET` value on the long-lived `audit_action` Postgres enum so
+  // destructive admin resets are directly searchable in the audit
+  // trail instead of blending in with ordinary edits on
+  // `entityType = "libraryPrebuiltCatalog"`. `reconcileSchemaDrift`
+  // (Task #1075) creates missing enum *types* but never adds values
+  // to an existing one, so the runtime helper is required to keep
+  // long-lived dev / production DBs in sync.
+  "0071_audit_action_reset.sql": {
+    helper: "ensureAuditActionEnumValues",
+    note: "Task #2096 — RESET added to ensureAuditActionEnumValues alongside ARCHIVE/UNARCHIVE/RESTORE",
+  },
 };

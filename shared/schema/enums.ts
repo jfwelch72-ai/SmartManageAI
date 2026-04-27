@@ -196,7 +196,14 @@ export const auditActionEnum = pgEnum("audit_action", [
   // route and the bulk `POST .../markups/restore` route) are
   // directly searchable in the audit trail without having to parse
   // the `op: "restore"` JSON shim out of the `newValue` column.
-  "RESTORE"
+  "RESTORE",
+  // Task #2096: explicit RESET action so destructive admin resets
+  // (currently the `POST /api/library-items/reset-prebuilt-catalog`
+  // route added in Task #2083, which wipes the org's prebuilt
+  // library and re-seeds it) are directly searchable in the audit
+  // trail instead of blending in with ordinary UPDATE edits on
+  // `entityType = "libraryPrebuiltCatalog"`.
+  "RESET"
 ]);
 export const clockEventTypeEnum = pgEnum("clock_event_type", ["CLOCK_IN", "CLOCK_OUT", "ADJUSTMENT", "ADMIN_OVERRIDE", "AUTO_CLOCK_OUT"]);
 export const shiftApprovalStatusEnum = pgEnum("shift_approval_status", ["PENDING", "APPROVED", "REJECTED"]);

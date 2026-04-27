@@ -265,7 +265,7 @@ describe("POST /api/library-items/reset-prebuilt-catalog — happy path", () => 
     expect(auditCalls.length).toBe(1);
     expect(auditCalls[0]).toMatchObject({
       userId: "admin-1",
-      action: "UPDATE",
+      action: "RESET",
       entityType: "libraryPrebuiltCatalog",
       entityId: "org-1",
     });
