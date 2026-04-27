@@ -2954,13 +2954,23 @@ router.delete("/api/bids/:code/documents/:docId", requireAuth, requireRole("ADMI
   }
 });
 
-// Shared helper: resolves a bid document, runs the defense-in-depth ACL
-// check, and lazily backfills a missing ACL policy for legacy uploads
-// that pre-date the upload-time policy write. The org membership check
-// (verifyOrgAccess) and bid->document join already proved this user is
-// allowed to read documents on this bid; the ACL backfill simply
-// persists that fact onto the underlying object so getObjectAclPolicy
-// stops returning null on subsequent reads.
+// Shared helper: resolves a bid document for the preview / stream
+// endpoints. Authorization model: anyone who can list a bid's documents
+// (verifyOrgAccess on the bid's gcOrganizationId) can also view the
+// individual files. The list endpoint at GET /api/bids/:code/documents
+// uses the same gate, so the read endpoints must match — otherwise users
+// see a file in the list and get a 403 trying to open it.
+//
+// Defense-in-depth against a forged or imported bidDocuments row whose
+// storageKey points at another tenant's object: every legitimate upload
+// goes through `getObjectEntityUploadURL` which builds the path as
+// `<privateObjectDir>/<orgId>/uploads/<uuid>`, normalized to
+// `/objects/<orgId>/uploads/<uuid>`. We verify the second path segment
+// (the encoded orgId) matches the bid's gcOrganizationId before piping
+// any bytes back. This catches the forgery scenario without depending
+// on the role-based filePermissions / ESTIMATOR-assigned-bid checks
+// that gate `canAccessObject` — those checks deny legitimate org
+// members and were the reason every preview returned 403.
 async function resolveBidDocumentForRead(
   req: AuthRequest,
   res: any,
@@ -2986,51 +2996,53 @@ async function resolveBidDocumentForRead(
   }
 
   const { ObjectStorageService } = await import("./objectStorage");
-  const { getObjectAclPolicy } = await import("./objectAcl");
   const objectStorageService = new ObjectStorageService();
   const normalized = objectStorageService.normalizeObjectEntityPath(storageKey);
+
+  // Tenancy gate on the storage key itself. Normalized form is always
+  // `/objects/<orgId>/uploads/<uuid>` for files uploaded via the
+  // standard signed-URL flow. If the path doesn't carry the bid's org as
+  // its first segment, the row is pointing at someone else's object —
+  // refuse rather than serve it.
+  const expectedOrgId = bid.gcOrganizationId;
+  let storageKeyOrgId: string | null = null;
+  if (normalized.startsWith("/objects/")) {
+    const parts = normalized.slice("/objects/".length).split("/");
+    storageKeyOrgId = parts[0] || null;
+  }
+  // SUPER_ADMIN is allowed to bypass for support/oversight, mirroring
+  // the carve-out in canAccessObject.
+  const userRole = (req.user as any).effectiveRole || req.user!.role;
+  const isSuperAdmin = userRole === "SUPER_ADMIN";
+  if (!isSuperAdmin && (!storageKeyOrgId || storageKeyOrgId !== expectedOrgId)) {
+    logError("Bid document storage key tenancy mismatch", {
+      bidId: bid.id,
+      docId: doc.id,
+      bidOrg: expectedOrgId,
+      storageKeyOrg: storageKeyOrgId,
+    });
+    res.status(403).json({ error: "Forbidden" });
+    return null;
+  }
+
   const objectFile = await objectStorageService.getObjectEntityFile(normalized);
 
-  // Backfill: legacy bid documents were inserted before the POST handler
-  // started writing an ACL policy on upload. canAccessObject defaults to
-  // deny when the object has no policy, which surfaced to the user as
-  // "You don't have permission to view this PDF". Since we just verified
-  // the caller belongs to this bid's org and that the bid->document row
-  // is consistent, write the missing policy now (best-effort).
-  let preloadedPolicy: import("./objectAcl").ObjectAclPolicy | null | undefined = undefined;
+  // Best-effort ACL backfill so other code paths that DO check the ACL
+  // policy (e.g. signed download URLs, future audits) see a coherent
+  // policy on the object. We don't gate this request on the result —
+  // tenancy was already proven above.
   try {
+    const { getObjectAclPolicy } = await import("./objectAcl");
     const existing = await getObjectAclPolicy(objectFile);
     if (!existing) {
-      const fallback: import("./objectAcl").ObjectAclPolicy = {
+      await objectStorageService.trySetObjectEntityAclPolicy(storageKey, {
         owner: doc.uploadedById || req.user!.id,
         organizationId: bid.gcOrganizationId!,
         visibility: "private",
-      };
-      try {
-        await objectStorageService.trySetObjectEntityAclPolicy(storageKey, fallback);
-        preloadedPolicy = fallback;
-      } catch (writeErr) {
-        // Bucket metadata write may be slow/unavailable; pass the policy
-        // inline to canAccessObjectEntity so this request still succeeds.
-        logError("Bid document ACL backfill write failed:", {}, writeErr instanceof Error ? writeErr : new Error(String(writeErr)));
-        preloadedPolicy = fallback;
-      }
+      });
     }
-  } catch (readErr) {
-    logError("Bid document ACL policy lookup failed:", {}, readErr instanceof Error ? readErr : new Error(String(readErr)));
-  }
-
-  const allowed = await objectStorageService.canAccessObjectEntity({
-    userId: req.user!.id,
-    userOrganizationId: req.user!.organizationId!,
-    objectFile,
-    requestedPermission: ObjectPermission.READ,
-    userRole: (req.user as any).effectiveRole || req.user!.role,
-    aclPolicy: preloadedPolicy,
-  });
-  if (!allowed) {
-    res.status(403).json({ error: "Forbidden" });
-    return null;
+  } catch (backfillErr) {
+    logError("Bid document ACL backfill skipped:", {}, backfillErr instanceof Error ? backfillErr : new Error(String(backfillErr)));
   }
 
   return { objectStorageService, objectFile };
