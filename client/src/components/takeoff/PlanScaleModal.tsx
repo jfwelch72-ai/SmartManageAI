@@ -17,13 +17,21 @@ interface PlanScaleModalProps {
   onApplyScale: (pxPerFoot: number, units: string, label: string) => void;
   onStartCalibration: () => void;
   currentScalePxPerFoot: number | null;
+  /**
+   * Task #2067 — When true, renders the dialog as a near-fullscreen sheet so
+   * the standard scales list, calibration instructions and custom-ratio
+   * inputs all fit comfortably in the standalone Takeoff workspace
+   * (Bluebeam-style). The default sm:max-w-lg sizing is preserved when this
+   * is false so the existing embedded callers keep their compact modal.
+   */
+  fullscreen?: boolean;
 }
 
 const RECOMMENDED_SCALE = '1/4" = 1\'-0"';
 
 type ScaleCategory = "all" | "architectural" | "civil" | "structural";
 
-export function PlanScaleModal({ open, onClose, onApplyScale, onStartCalibration, currentScalePxPerFoot }: PlanScaleModalProps) {
+export function PlanScaleModal({ open, onClose, onApplyScale, onStartCalibration, currentScalePxPerFoot, fullscreen = false }: PlanScaleModalProps) {
   const [activeTab, setActiveTab] = useState("standard");
   const [category, setCategory] = useState<ScaleCategory>("all");
   const [selectedScale, setSelectedScale] = useState<{ label: string; pxPerFoot: number; category: string } | null>(null);
@@ -95,15 +103,24 @@ export function PlanScaleModal({ open, onClose, onApplyScale, onStartCalibration
     return currentScalePxPerFoot !== null && Math.abs(s.pxPerFoot - currentScalePxPerFoot) < 0.01;
   };
 
+  // Task #2067 — In fullscreen mode the dialog covers most of the viewport so
+  // the standards list and calibration instructions get more room. The
+  // standard-scales `<ScrollArea>` height also grows so users can browse the
+  // full COMMON_SCALES list without paging.
+  const dialogClass = fullscreen
+    ? "max-w-[95vw] w-[95vw] sm:max-w-[1100px] h-[90vh] p-0 gap-0 overflow-hidden flex flex-col"
+    : "sm:max-w-lg p-0 gap-0 overflow-hidden";
+  const scrollAreaHeight = fullscreen ? "h-[calc(90vh-280px)]" : "h-[240px]";
+
   return (
     <Dialog open={open} onOpenChange={(v) => !v && resetAndClose()}>
-      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden">
+      <DialogContent className={dialogClass} data-testid={fullscreen ? "dialog-plan-scale-fullscreen" : "dialog-plan-scale"}>
         <DialogHeader className="px-6 pt-6 pb-2">
           <DialogTitle data-testid="text-plan-scale-title">Plan Scale</DialogTitle>
           <DialogDescription>
             {currentScaleLabel
               ? <>Current scale: <span className="font-medium text-foreground">{currentScaleLabel}</span></>
-              : "Select a standard scale or calibrate manually"}
+              : "Select a standard scale, calibrate from a known dimension, or enter a custom ratio."}
           </DialogDescription>
         </DialogHeader>
 
@@ -141,7 +158,7 @@ export function PlanScaleModal({ open, onClose, onApplyScale, onStartCalibration
               </Select>
             </div>
 
-            <ScrollArea className="h-[240px]">
+            <ScrollArea className={scrollAreaHeight}>
               <div className="space-y-1 pr-3">
                 {filteredScales.map((scale) => {
                   const isSelected = selectedScale?.label === scale.label && selectedScale?.pxPerFoot === scale.pxPerFoot;

@@ -89,9 +89,15 @@ interface TakeoffWorkspaceProps {
    *  on. Wired from the bid Plans tab; project Plans tab opts out
    *  (default false) for now to preserve existing behavior. */
   labeled?: boolean;
+  /** Task #2067 — When true, the `<PlanScaleModal>` opens in its
+   *  near-fullscreen layout. Wired from the standalone `/takeoff/:bidCode`
+   *  workspace page so the scale calibration UX gets Bluebeam-style breathing
+   *  room. Embedded callers (bid Plans tab split-view) keep the compact
+   *  modal by leaving this off. */
+  fullscreenScaleModal?: boolean;
 }
 
-export default function TakeoffWorkspace({ projectId = "", projectCode = "", context, selectedSheetId: controlledSheetId, onSelectSheet, labeled = false }: TakeoffWorkspaceProps) {
+export default function TakeoffWorkspace({ projectId = "", projectCode = "", context, selectedSheetId: controlledSheetId, onSelectSheet, labeled = false, fullscreenScaleModal = false }: TakeoffWorkspaceProps) {
   const isMobile = useIsMobile();
   const [activeTool, setActiveTool] = useState<Tool>("select");
   const [currentDrawingTool, setCurrentDrawingTool] = useState<Tool | null>(null);
@@ -5851,6 +5857,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       )}
 
       <PlanScaleModal
+        fullscreen={fullscreenScaleModal}
         open={scaleModalOpen}
         onClose={() => setScaleModalOpen(false)}
         onApplyScale={async (pxPerFoot, scaleUnits, label) => {

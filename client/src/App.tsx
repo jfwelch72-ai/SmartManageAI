@@ -129,6 +129,9 @@ const ProfilePage = lazy(() => import("@/pages/profile"));
 const BidsPage = lazy(() => import("@/pages/bids"));
 const BidDetailPage = lazy(() => import("@/pages/bid-detail"));
 const BidEstimate = lazy(() => import("@/pages/bid-estimate"));
+// Task #2067 — Standalone full-page Takeoff workspace + index landing page.
+const TakeoffWorkspacePage = lazy(() => import("@/pages/takeoff-workspace"));
+const TakeoffIndexPage = lazy(() => import("@/pages/takeoff-index"));
 const HistoricalCostsPage = lazy(() => import("@/pages/historical-costs"));
 const ProjectsPage = lazy(() => import("@/pages/projects"));
 const ProjectTemplatesPage = lazy(() => import("@/pages/project-templates"));
@@ -449,6 +452,13 @@ function Router() {
       <Route path="/historical-costs" component={() => <ProtectedRoute component={HistoricalCostsPage} permission={RoutePermissions.HISTORICAL_COSTS} />} />
       <Route path="/bids/:code/estimate" component={() => <ProtectedRoute component={BidEstimate} permission={RoutePermissions.BID_DETAIL} />} />
       <Route path="/bids/:code" component={() => <ProtectedRoute component={BidDetailPage} permission={RoutePermissions.BID_DETAIL} />} />
+      {/* Task #2067 — Standalone Takeoff tool. The :bidCode route is the
+          Bluebeam-style full-page workspace; /takeoff is a landing page that
+          lets the user pick a bid to open. Both gate on the dedicated
+          `TAKEOFF` permission so the tool's access can later diverge from
+          BID_DETAIL without touching every route. */}
+      <Route path="/takeoff/:bidCode" component={() => <ProtectedRoute component={TakeoffWorkspacePage} permission={RoutePermissions.TAKEOFF} />} />
+      <Route path="/takeoff" component={() => <ProtectedRoute component={TakeoffIndexPage} permission={RoutePermissions.TAKEOFF} />} />
       <Route path="/time-entry" component={() => <ProtectedRoute component={TimeEntryPage} permission={RoutePermissions.TIME_ENTRY} featurePerm="canManageScheduling" />} />
       <Route path="/tm-daily" component={() => <ProtectedRoute component={TMDailyPage} permission={RoutePermissions.TM_DAILY} featurePerm="canAccessTimeMaterial" />} />
       <Route path="/tm-billing" component={() => <ProtectedRoute component={TMBillingPage} permission={RoutePermissions.TM_BILLING} featurePerm="canViewFinancials" />} />

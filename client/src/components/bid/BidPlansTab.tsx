@@ -37,6 +37,11 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import type { TakeoffSheet } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { useFeatureFlags } from "@/hooks/use-feature-flags";
+// Task #2067 — Plans tab now links into the standalone Takeoff workspace at
+// `/takeoff/:bidCode` instead of embedding `<TakeoffWorkspace>` for the
+// default no-doc-selected pane. Sheet clicks navigate via wouter.
+import { Link, useLocation } from "wouter";
+import { Maximize2 } from "lucide-react";
 
 interface BidPlansTabProps {
   bidId: string;
@@ -221,9 +226,18 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
       else sessionStorage.removeItem(bidSheetStorageKey);
     } catch {}
   }, [selectedSheetId, bidSheetStorageKey]);
+  // Task #2067 — Clicking a sheet in the bid Plans sidebar now jumps to the
+  // standalone Takeoff workspace (`/takeoff/:bidCode`) instead of selecting
+  // it inside an embedded `<TakeoffWorkspace>`. We pass the sheet id via a
+  // `?sheet=` query param; the workspace page also writes it to
+  // sessionStorage so a refresh keeps the user on the same sheet.
+  const [, navigate] = useLocation();
   const handleSelectSheetFromSidebar = (sheetId: string) => {
     setPreviewDocId(null);
     setSelectedSheetId(sheetId);
+    if (bidCode) {
+      navigate(`/takeoff/${bidCode}?sheet=${encodeURIComponent(sheetId)}`);
+    }
   };
   const [panelWidth, setPanelWidth] = useState(256);
   const isResizingRef = useRef(false);
@@ -1548,7 +1562,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
           ) : previewDocId ? (
             (() => {
               const doc = documents.find((d) => d.id === previewDocId);
-              if (!doc) return <WidgetErrorBoundary fallbackTitle="Takeoff Workspace"><TakeoffWorkspace context={{ type: "bid", bidId, bidCode }} selectedSheetId={selectedSheetId} onSelectSheet={setSelectedSheetId} labeled={labeledToolbar} /></WidgetErrorBoundary>;
+              if (!doc) return <TakeoffCtaPane bidCode={bidCode} />;
               const isBim = bimEnabled && (doc.type === "BIM" || doc.fileName?.toLowerCase().endsWith(".ifc"));
 
               if (isBim && previewUrlData?.url) {
@@ -1695,11 +1709,12 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
               );
             })()
           ) : (
+            /* Task #2067 — When no document is being previewed and we are
+               not in BIM split view, the Plans tab no longer embeds the
+               full takeoff workspace. Instead it shows a CTA that opens
+               the standalone, full-page Takeoff tool at /takeoff/:bidCode.
+               Split View is still offered when BIM models exist. */
             <div className="flex flex-col h-full">
-              {/* Task #1696 — Top bar always renders so the bid Plans
-                  view-settings menu (Labeled toolbar / Show me the tour
-                  again) is reachable even when no BIM document is
-                  present. The Split View button is conditional on BIM. */}
               <div className="flex items-center justify-end gap-2 px-2 py-1 border-b bg-muted/20 shrink-0">
                 {bimEnabled && bimDocuments.length > 0 && (
                   <Button
@@ -1720,14 +1735,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                 />
               </div>
               <div className="flex-1 min-h-0">
-                <WidgetErrorBoundary fallbackTitle="Takeoff Workspace">
-                  <TakeoffWorkspace
-                    context={{ type: "bid", bidId, bidCode }}
-                    selectedSheetId={selectedSheetId}
-                    onSelectSheet={setSelectedSheetId}
-                    labeled={labeledToolbar}
-                  />
-                </WidgetErrorBoundary>
+                <TakeoffCtaPane bidCode={bidCode} />
               </div>
             </div>
           )}
@@ -1964,5 +1972,43 @@ function BidPlansViewSettingsMenu({
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+/**
+ * Task #2067 — Call-to-action pane shown inside the bid Plans tab when no
+ * document is being previewed. Replaces the previous embedded
+ * `<TakeoffWorkspace>` and points users at the standalone, full-page
+ * Takeoff tool at `/takeoff/:bidCode`.
+ */
+function TakeoffCtaPane({ bidCode }: { bidCode: string }) {
+  return (
+    <div
+      className="flex flex-col items-center justify-center h-full text-center px-6 py-10 gap-5"
+      data-testid="takeoff-cta-pane"
+    >
+      <div className="rounded-full bg-primary/10 p-4">
+        <Maximize2 className="w-8 h-8 text-primary" />
+      </div>
+      <div className="max-w-md space-y-2">
+        <h3 className="text-lg font-semibold tracking-tight">
+          Open Takeoff in its own workspace
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          Takeoff now runs as a dedicated, full-screen tool with collapsible
+          sidebars, scale calibration, and markups — all of your existing
+          measurements move with you.
+        </p>
+      </div>
+      <Button asChild size="lg" data-testid="button-open-takeoff-workspace">
+        <Link href={`/takeoff/${bidCode}`}>
+          <Maximize2 className="w-4 h-4 mr-2" />
+          Open Full-Screen Takeoff
+        </Link>
+      </Button>
+      <p className="text-xs text-muted-foreground">
+        Tip: select a sheet on the left and we'll jump straight to it.
+      </p>
+    </div>
   );
 }

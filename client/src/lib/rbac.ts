@@ -266,6 +266,9 @@ export const RoutePermissions = {
 
   BIDS: (role?: string, perms?: FeaturePerms) => canAccessBids(role, perms),
   BID_DETAIL: (role?: string, perms?: FeaturePerms) => canAccessBids(role, perms),
+  // Task #2067 — Takeoff is its own top-level tool but it operates on bid
+  // documents/measurements, so it gates on the same permission set.
+  TAKEOFF: (role?: string, perms?: FeaturePerms) => canAccessBids(role, perms),
   TIME_ENTRY: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageTimeClock : hasManagementAccess(role),
   TIME_CLOCK_MANAGER: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageTimeClock : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
   AI_PM: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canUseAiFeatures : hasManagementAccess(role),
@@ -504,6 +507,8 @@ export const NavItems: Record<string, NavItem> = {
   '/crm': { href: '/crm', label: 'CRM', testId: 'nav-crm', visible: (role?: string, perms?: FeaturePerms) => hasCrmAccess(role, perms) },
   '/sequences': { href: '/sequences', label: 'Sequences', testId: 'nav-sequences', visible: (role?: string, perms?: FeaturePerms) => hasCrmAccess(role, perms) },
   '/bids': { href: '/bids', label: 'Bids', testId: 'nav-bids', visible: (role?: string, perms?: FeaturePerms) => canAccessBids(role, perms) },
+  // Task #2067 — Standalone Takeoff tool (full-page workspace).
+  '/takeoff': { href: '/takeoff', label: 'Takeoff', testId: 'nav-takeoff', visible: (role?: string, perms?: FeaturePerms) => canAccessBids(role, perms) },
   '/bid-network': { href: '/bid-network', label: 'Bid Network', testId: 'nav-bid-network', visible: (role?: string, perms?: FeaturePerms) => canAccessBidNetworkAsGC(role, perms) },
   '/historical-costs': { href: '/historical-costs', label: 'Historical Costs', testId: 'nav-historical-costs', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessHistoricalCosts : canAccessBids(role) || hasFinancialAccess(role) },
   '/marketplace': { href: '/marketplace', label: 'Marketplace', testId: 'nav-marketplace', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessMarketplace : hasManagementAccess(role) },
@@ -587,7 +592,7 @@ export interface WorkflowGroup {
 
 const ADMIN_WORKFLOW: WorkflowGroup[] = [
   { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications', '/portfolio', '/executive-digest'] },
-  { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/sequences', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
+  { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/sequences', '/bids', '/takeoff', '/bid-network', '/historical-costs', '/marketplace'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages', '/email-assistant'] },
   { key: 'team', label: 'Team', itemHrefs: ['/users', '/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/safety', '/safety-training'] },
   { key: 'time', label: 'Time', itemHrefs: ['/time-clock', '/time-clock-manager', '/tm-daily'] },
@@ -606,7 +611,7 @@ const HUSTLER_WORKFLOW: WorkflowGroup[] = [
 
 const MANAGER_WORKFLOW: WorkflowGroup[] = [
   { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications', '/portfolio'] },
-  { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/sequences', '/bids', '/marketplace'] },
+  { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/sequences', '/bids', '/takeoff', '/marketplace'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages', '/email-assistant'] },
   { key: 'time', label: 'Time', itemHrefs: ['/time-clock', '/time-clock-manager', '/tm-daily'] },
   { key: 'team', label: 'Team', itemHrefs: ['/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/safety', '/safety-training'] },
@@ -630,7 +635,7 @@ const SUPERINTENDENT_WORKFLOW: WorkflowGroup[] = [
 
 const ESTIMATOR_WORKFLOW: WorkflowGroup[] = [
   { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications'] },
-  { key: 'bids', label: 'Bids', itemHrefs: ['/crm', '/sequences', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
+  { key: 'bids', label: 'Bids', itemHrefs: ['/crm', '/sequences', '/bids', '/takeoff', '/bid-network', '/historical-costs', '/marketplace'] },
   { key: 'costs', label: 'Costs', itemHrefs: ['/cost-rates', '/production-rates', '/scope-settings'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages'] },
   { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/lidar-scans'] },
