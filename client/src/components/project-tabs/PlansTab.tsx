@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useRef, useEffect, lazy, Suspense, memo } from "react";
 import PdfPreview from "@/components/PdfPreview";
+import FilePreview from "@/components/FilePreview";
 import { PlanPinLayer, PinPicker, PinCreateDialog, type PinFilter, type PinType, type PlanPin, type ClusterDensity, DEFAULT_CLUSTER_DENSITY } from "@/components/PlanPinLayer";
 import PlanMarkupLayer, { type MarkupHistoryState } from "@/components/markups/PlanMarkupLayer";
 import UnifiedPlanToolbar from "@/components/plans/UnifiedPlanToolbar";
@@ -2840,7 +2841,6 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                 const doc = documents.find((d: any) => d.id === previewDocId);
                 if (!doc) return <WidgetErrorBoundary fallbackTitle="Takeoff Workspace"><TakeoffWorkspace projectId={project.id} projectCode={project.code} selectedSheetId={selectedSheetId} onSelectSheet={setSelectedSheetId} /></WidgetErrorBoundary>;
                 const isPdf = doc.mimeType?.includes("pdf") || doc.fileName?.toLowerCase().endsWith(".pdf");
-                const isImage = doc.mimeType?.startsWith("image/") || /\.(png|jpg|jpeg|gif|webp)$/i.test(doc.fileName || "");
                 const isBim = bimEnabled && (doc.type === "BIM" || doc.fileName?.toLowerCase().endsWith(".ifc"));
 
                 if (isBim && previewUrlData?.url) {
@@ -3099,36 +3099,14 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                         <div className="flex items-center justify-center h-full" data-testid="preview-loading">
                           <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
                         </div>
-                      ) : isImage ? (
-                        <div className="flex items-center justify-center h-full bg-muted/20 p-4">
-                          <img
-                            src={previewUrlData?.url || doc.fileUrl}
-                            alt={doc.title || doc.fileName}
-                            className="max-w-full max-h-full object-contain"
-                            data-testid="preview-image"
-                          />
-                        </div>
                       ) : (
-                        <div className="flex items-center justify-center h-full">
-                          <div className="text-center space-y-4 p-8 max-w-sm">
-                            <div className="flex justify-center">
-                              <File className="w-16 h-16 text-muted-foreground/40" />
-                            </div>
-                            <div>
-                              <p className="font-medium text-sm" data-testid="preview-filename">{doc.title || doc.fileName}</p>
-                              <Badge variant="secondary" className="mt-1 text-xs">{doc.fileName.split(".").pop()?.toUpperCase() || doc.type}</Badge>
-                            </div>
-                            <p className="text-sm text-muted-foreground">This file type cannot be previewed in the browser.</p>
-                            <Button
-                              variant="outline"
-                              onClick={() => handleOpenFile(doc.id, doc.fileUrl)}
-                              data-testid="button-open-file-external"
-                            >
-                              <ExternalLink className="w-4 h-4 mr-2" />
-                              Open File
-                            </Button>
-                          </div>
-                        </div>
+                        <FilePreview
+                          url={previewUrlData?.url || `/api/projects/${projectCode}/documents/${doc.id}/stream`}
+                          fileName={doc.fileName}
+                          title={doc.title || undefined}
+                          mimeType={doc.mimeType}
+                          onOpenFile={() => handleOpenFile(doc.id, doc.fileUrl)}
+                        />
                       )}
                     </div>
                   </div>
