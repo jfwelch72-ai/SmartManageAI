@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useState, useEffect, useMemo } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import type { LibraryItem } from "@shared/schema";
+import type { LibraryItem, LibraryCategory } from "@shared/schema";
+import { VALID_TRADE_TYPES, getTradeDisplayName, type TradeType } from "@shared/tradeTypeUtils";
 
 const UOM_OPTIONS = [
   "LF", "SF", "CY", "SY", "EA", "GAL", "TON", "LB", "SQ", "BF",
@@ -35,6 +36,8 @@ interface LibraryItemInitialValues {
   costTypes?: string[];
   unitCosts?: Record<string, string>;
   notes?: string;
+  tradeType?: string;
+  categoryId?: string;
 }
 
 interface LibraryItemDialogProps {
@@ -44,6 +47,9 @@ interface LibraryItemDialogProps {
   libraryId?: string;
   initialValues?: LibraryItemInitialValues;
 }
+
+const NONE_VALUE = "__none__";
+const NEW_CATEGORY_VALUE = "__new__";
 
 export default function LibraryItemDialog({ open, onOpenChange, item, libraryId, initialValues }: LibraryItemDialogProps) {
   const { toast } = useToast();
@@ -60,6 +66,27 @@ export default function LibraryItemDialog({ open, onOpenChange, item, libraryId,
   const [accountingCodes, setAccountingCodes] = useState<Record<string, string>>({});
   const [unitCosts, setUnitCosts] = useState<Record<string, string>>({});
   const [notes, setNotes] = useState("");
+  // Task #2068 — Trade > Category > Item.
+  const [tradeType, setTradeType] = useState<string>("");
+  const [categoryId, setCategoryId] = useState<string>("");
+  const [newCategoryName, setNewCategoryName] = useState("");
+
+  // Pull categories scoped to the same library this item belongs to (when
+  // known) so the user can place this item under one of them — optionally
+  // narrowed further by the trade selection below. When no libraryId is
+  // provided we fall back to the org-wide list so the dialog still works
+  // outside of a library context.
+  const categoriesQueryUrl = libraryId
+    ? `/api/library-categories?libraryId=${libraryId}`
+    : "/api/library-categories";
+  const { data: allCategories = [] } = useQuery<LibraryCategory[]>({
+    queryKey: [categoriesQueryUrl],
+  });
+
+  const filteredCategories = useMemo(() => {
+    if (!tradeType) return allCategories;
+    return allCategories.filter(c => !c.tradeType || c.tradeType === tradeType);
+  }, [allCategories, tradeType]);
 
   useEffect(() => {
     if (item) {
@@ -78,6 +105,9 @@ export default function LibraryItemDialog({ open, onOpenChange, item, libraryId,
           : {}
       );
       setNotes(item.notes || "");
+      setTradeType(item.tradeType || "");
+      setCategoryId(item.categoryId || "");
+      setNewCategoryName("");
     } else if (initialValues) {
       setName(initialValues.name || "");
       setItemNumber(initialValues.itemNumber || "");
@@ -91,6 +121,9 @@ export default function LibraryItemDialog({ open, onOpenChange, item, libraryId,
       setAccountingCodes({});
       setUnitCosts(initialValues.unitCosts || {});
       setNotes(initialValues.notes || "");
+      setTradeType(initialValues.tradeType || "");
+      setCategoryId(initialValues.categoryId || "");
+      setNewCategoryName("");
     } else {
       setName("");
       setItemNumber("");
@@ -104,10 +137,14 @@ export default function LibraryItemDialog({ open, onOpenChange, item, libraryId,
       setAccountingCodes({});
       setUnitCosts({});
       setNotes("");
+      setTradeType("");
+      setCategoryId("");
+      setNewCategoryName("");
     }
   }, [item, initialValues, open]);
 
   const invalidateItems = () => queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string)?.startsWith("/api/library-items") });
+  const invalidateCategories = () => queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string)?.startsWith("/api/library-categories") });
 
   const createMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -139,7 +176,7 @@ export default function LibraryItemDialog({ open, onOpenChange, item, libraryId,
     },
   });
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!name.trim()) {
       toast({ title: "Name is required", variant: "destructive" });
       return;
@@ -148,6 +185,31 @@ export default function LibraryItemDialog({ open, onOpenChange, item, libraryId,
     const numericUnitCosts = Object.fromEntries(
       Object.entries(unitCosts).map(([k, v]) => [k, parseFloat(v) || 0])
     );
+
+    // Task #2068 — if the user typed a brand-new category name, create the
+    // category first so the item is stamped with the resulting category id.
+    let resolvedCategoryId = categoryId || null;
+    if (categoryId === NEW_CATEGORY_VALUE) {
+      const trimmedName = newCategoryName.trim();
+      if (!trimmedName) {
+        toast({ title: "Category name is required", variant: "destructive" });
+        return;
+      }
+      try {
+        const res = await apiRequest("POST", "/api/library-categories", {
+          name: trimmedName,
+          tradeType: tradeType || null,
+          libraryId: libraryId || null,
+        });
+        const created = await res.json();
+        resolvedCategoryId = created.id;
+        invalidateCategories();
+      } catch (err: any) {
+        toast({ title: "Error creating category", description: err?.message || String(err), variant: "destructive" });
+        return;
+      }
+    }
+
     const payload = {
       name: name.trim(),
       itemNumber: itemNumber.trim() || null,
@@ -161,6 +223,8 @@ export default function LibraryItemDialog({ open, onOpenChange, item, libraryId,
       unitCosts: Object.keys(numericUnitCosts).length > 0 ? numericUnitCosts : null,
       notes: notes.trim() || null,
       libraryId: libraryId || null,
+      tradeType: tradeType || null,
+      categoryId: resolvedCategoryId,
     };
 
     if (item) {
@@ -255,6 +319,69 @@ export default function LibraryItemDialog({ open, onOpenChange, item, libraryId,
               data-testid="input-item-description"
             />
             <span className="text-xs text-muted-foreground">{description.length}/255</span>
+          </div>
+
+          <Separator />
+
+          {/* Task #2068 — Trade > Category selectors. */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Trade</Label>
+              <Select
+                value={tradeType || NONE_VALUE}
+                onValueChange={(v) => {
+                  const next = v === NONE_VALUE ? "" : v;
+                  setTradeType(next);
+                  // Drop the category selection if it no longer matches the new trade.
+                  if (categoryId && categoryId !== NEW_CATEGORY_VALUE) {
+                    const cat = allCategories.find(c => c.id === categoryId);
+                    if (cat?.tradeType && next && cat.tradeType !== next) {
+                      setCategoryId("");
+                    }
+                  }
+                }}
+              >
+                <SelectTrigger data-testid="select-item-trade">
+                  <SelectValue placeholder="Select a trade" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE_VALUE}>None</SelectItem>
+                  {VALID_TRADE_TYPES.map((t: TradeType) => (
+                    <SelectItem key={t} value={t}>{getTradeDisplayName(t)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Category</Label>
+              <Select
+                value={categoryId || NONE_VALUE}
+                onValueChange={(v) => {
+                  setCategoryId(v === NONE_VALUE ? "" : v);
+                  if (v !== NEW_CATEGORY_VALUE) setNewCategoryName("");
+                }}
+              >
+                <SelectTrigger data-testid="select-item-category">
+                  <SelectValue placeholder="Uncategorized" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE_VALUE}>Uncategorized</SelectItem>
+                  {filteredCategories.map(c => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                  ))}
+                  <SelectItem value={NEW_CATEGORY_VALUE}>+ Create new category…</SelectItem>
+                </SelectContent>
+              </Select>
+              {categoryId === NEW_CATEGORY_VALUE && (
+                <Input
+                  className="mt-2"
+                  value={newCategoryName}
+                  onChange={(e) => setNewCategoryName(e.target.value)}
+                  placeholder="New category name"
+                  data-testid="input-new-category-name"
+                />
+              )}
+            </div>
           </div>
 
           <Separator />

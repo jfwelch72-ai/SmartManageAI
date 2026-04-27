@@ -26,7 +26,12 @@ import {
 import LibraryItemDialog from "@/components/LibraryItemDialog";
 import LibraryAssemblyDialog from "@/components/LibraryAssemblyDialog";
 import { dispatchLibraryEvent } from "@/lib/libraryEvents";
-import type { LibraryItem, LibraryAssembly, CustomLibrary, SavedTakeoff } from "@shared/schema";
+import { FolderOpen } from "lucide-react";
+import type { LibraryItem, LibraryAssembly, CustomLibrary, SavedTakeoff, LibraryCategory } from "@shared/schema";
+import { getTradeDisplayName, type TradeType } from "@shared/tradeTypeUtils";
+
+const UNCATEGORIZED_KEY = "__uncategorized__";
+const NO_TRADE_KEY = "__no_trade__";
 
 interface BidLibrarySectionProps {
   bidId: string;
@@ -56,6 +61,13 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
   const itemsQueryUrl = `/api/library-items?libraryId=${selectedLibraryId}${searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : ""}`;
   const { data: items = [], isLoading: itemsLoading } = useQuery<LibraryItem[]>({
     queryKey: [itemsQueryUrl],
+  });
+
+  // Task #2068 — fetch categories so the bid item picker can render the
+  // Trade > Category > Item tree.
+  const categoriesQueryUrl = `/api/library-categories?libraryId=${selectedLibraryId}`;
+  const { data: categories = [] } = useQuery<LibraryCategory[]>({
+    queryKey: [categoriesQueryUrl],
   });
 
   const assembliesQueryUrl = `/api/library-assemblies?libraryId=${selectedLibraryId}${searchQuery ? `&search=${encodeURIComponent(searchQuery)}` : ""}`;
@@ -128,6 +140,52 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
     }
     return result;
   }, [items, searchQuery, costTypeFilter]);
+
+  // Task #2068 — Trade > Category > Item grouping for the picker.
+  const tradeTree = useMemo(() => {
+    const categoryNameById = new Map(categories.map(c => [c.id, c.name] as const));
+    const tradesMap = new Map<string, {
+      tradeKey: string;
+      tradeLabel: string;
+      categoriesMap: Map<string, { categoryKey: string; categoryLabel: string; items: LibraryItem[] }>;
+    }>();
+    for (const it of filteredItems) {
+      const tradeKey = it.tradeType || NO_TRADE_KEY;
+      const tradeLabel = it.tradeType
+        ? getTradeDisplayName(it.tradeType as TradeType)
+        : "Other Items";
+      let trade = tradesMap.get(tradeKey);
+      if (!trade) {
+        trade = { tradeKey, tradeLabel, categoriesMap: new Map() };
+        tradesMap.set(tradeKey, trade);
+      }
+      const catKey = it.categoryId || UNCATEGORIZED_KEY;
+      const catLabel = it.categoryId
+        ? (categoryNameById.get(it.categoryId) ?? "Uncategorized")
+        : "Uncategorized";
+      let cat = trade.categoriesMap.get(catKey);
+      if (!cat) {
+        cat = { categoryKey: catKey, categoryLabel: catLabel, items: [] };
+        trade.categoriesMap.set(catKey, cat);
+      }
+      cat.items.push(it);
+    }
+    return Array.from(tradesMap.values())
+      .map(t => ({
+        ...t,
+        categoryList: Array.from(t.categoriesMap.values()).sort((a, b) => a.categoryLabel.localeCompare(b.categoryLabel)),
+      }))
+      .sort((a, b) => {
+        if (a.tradeKey === NO_TRADE_KEY) return 1;
+        if (b.tradeKey === NO_TRADE_KEY) return -1;
+        return a.tradeLabel.localeCompare(b.tradeLabel);
+      });
+  }, [filteredItems, categories]);
+
+  const [expandedTrades, setExpandedTrades] = useState<Record<string, boolean>>({});
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+  const isTradeOpen = (k: string) => (searchQuery ? true : (expandedTrades[k] ?? true));
+  const isCategoryOpen = (k: string) => (searchQuery ? true : (expandedCategories[k] ?? true));
 
   const filteredAssemblies = useMemo(() => {
     if (!searchQuery) return assemblies;
@@ -265,49 +323,97 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
             >
               <Plus className="h-3 w-3 mr-1" /> New Item
             </Button>
-            {filteredItems.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center gap-1 px-1.5 py-1 text-[11px] rounded hover:bg-accent/50 group cursor-pointer"
-                data-testid={`bid-library-item-${item.id}`}
+            {/* Task #2068 — Trade > Category > Item tree. */}
+            {tradeTree.map((trade) => (
+              <Collapsible
+                key={trade.tradeKey}
+                open={isTradeOpen(trade.tradeKey)}
+                onOpenChange={(o) => setExpandedTrades(prev => ({ ...prev, [trade.tradeKey]: o }))}
               >
-                <Package className="h-3 w-3 text-muted-foreground shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="truncate font-medium">{item.name}</div>
-                  <div className="text-muted-foreground truncate text-[10px]">
-                    {item.itemNumber && <span>{item.itemNumber} · </span>}
-                    {item.unitOfMeasure}
-                    {item.unitCosts && typeof item.unitCosts === "object" && (
-                      <span> · ${Object.values(item.unitCosts as Record<string, number>).reduce((s, v) => s + (Number(v) || 0), 0).toFixed(2)}</span>
-                    )}
-                  </div>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5 opacity-0 group-hover:opacity-100 shrink-0"
-                  onClick={(e) => { e.stopPropagation(); handleApplyItem(item); }}
-                  title="Apply to takeoff"
-                  data-testid={`btn-apply-item-${item.id}`}
+                <CollapsibleTrigger
+                  className="flex items-center gap-1.5 w-full px-1.5 py-1 text-[11px] rounded hover:bg-accent/40"
+                  data-testid={`bid-trade-group-${trade.tradeKey}`}
                 >
-                  <ArrowRight className="h-3 w-3" />
-                </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 shrink-0" data-testid={`btn-bid-item-menu-${item.id}`}>
-                      <MoreVertical className="h-3 w-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => { setEditItem(item); setShowItemDialog(true); }} data-testid={`btn-bid-edit-item-${item.id}`}>
-                      <Pencil className="h-3.5 w-3.5 mr-2" /> Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuItem className="text-destructive" onClick={() => setDeleteItemId(item.id)} data-testid={`btn-bid-delete-item-${item.id}`}>
-                      <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+                  {isTradeOpen(trade.tradeKey) ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                  <FolderOpen className="h-3 w-3 text-amber-500" />
+                  <span className="font-medium truncate">{trade.tradeLabel}</span>
+                  <Badge variant="secondary" className="ml-auto text-[10px] h-4 px-1">
+                    {trade.categoryList.reduce((s, c) => s + c.items.length, 0)}
+                  </Badge>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <div className="pl-3 space-y-0.5 py-0.5">
+                    {trade.categoryList.map((cat) => {
+                      const catNodeKey = `${trade.tradeKey}::${cat.categoryKey}`;
+                      return (
+                        <Collapsible
+                          key={catNodeKey}
+                          open={isCategoryOpen(catNodeKey)}
+                          onOpenChange={(o) => setExpandedCategories(prev => ({ ...prev, [catNodeKey]: o }))}
+                        >
+                          <CollapsibleTrigger
+                            className="flex items-center gap-1.5 w-full px-1.5 py-1 text-[11px] rounded hover:bg-accent/40"
+                            data-testid={`bid-category-group-${catNodeKey}`}
+                          >
+                            {isCategoryOpen(catNodeKey) ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+                            <Layers className="h-3 w-3 text-purple-500" />
+                            <span className="truncate">{cat.categoryLabel}</span>
+                            <Badge variant="outline" className="ml-auto text-[10px] h-4 px-1">{cat.items.length}</Badge>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <div className="pl-3 space-y-0.5 py-0.5">
+                              {cat.items.map((item) => (
+                                <div
+                                  key={item.id}
+                                  className="flex items-center gap-1 px-1.5 py-1 text-[11px] rounded hover:bg-accent/50 group cursor-pointer"
+                                  data-testid={`bid-library-item-${item.id}`}
+                                >
+                                  <Package className="h-3 w-3 text-muted-foreground shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    <div className="truncate font-medium">{item.name}</div>
+                                    <div className="text-muted-foreground truncate text-[10px]">
+                                      {item.itemNumber && <span>{item.itemNumber} · </span>}
+                                      {item.unitOfMeasure}
+                                      {item.unitCosts && typeof item.unitCosts === "object" ? (
+                                        <span> · ${Object.values(item.unitCosts as Record<string, number>).reduce<number>((s, v) => s + (Number(v) || 0), 0).toFixed(2)}</span>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-5 w-5 opacity-0 group-hover:opacity-100 shrink-0"
+                                    onClick={(e) => { e.stopPropagation(); handleApplyItem(item); }}
+                                    title="Apply to takeoff"
+                                    data-testid={`btn-apply-item-${item.id}`}
+                                  >
+                                    <ArrowRight className="h-3 w-3" />
+                                  </Button>
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 shrink-0" data-testid={`btn-bid-item-menu-${item.id}`}>
+                                        <MoreVertical className="h-3 w-3" />
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuItem onClick={() => { setEditItem(item); setShowItemDialog(true); }} data-testid={`btn-bid-edit-item-${item.id}`}>
+                                        <Pencil className="h-3.5 w-3.5 mr-2" /> Edit
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem className="text-destructive" onClick={() => setDeleteItemId(item.id)} data-testid={`btn-bid-delete-item-${item.id}`}>
+                                        <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
+                              ))}
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      );
+                    })}
+                  </div>
+                </CollapsibleContent>
+              </Collapsible>
             ))}
           </div>
         </CollapsibleContent>

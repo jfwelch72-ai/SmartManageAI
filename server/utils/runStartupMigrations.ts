@@ -18,6 +18,7 @@ import { ensureWageDecisionRateChangeAcknowledgements } from "./ensureWageDecisi
 import { ensureOneShotJobRuns } from "./ensureOneShotJobRuns";
 import { ensureEstimateCategoryEnumValues } from "./ensureEstimateCategoryEnumValues";
 import { ensureTakeoffEnhancements } from "./ensureTakeoffEnhancements";
+import { ensureLibraryCategoryTier } from "./ensureLibraryCategoryTier";
 import { ensureFieldWorkerPermColumns } from "./ensureFieldWorkerPermColumns";
 import { ensurePeerRatingColumns } from "./ensurePeerRatingColumns";
 import { ensureNullablePermissions } from "./ensureNullablePermissions";
@@ -211,6 +212,8 @@ const migrations: MigrationStep[] = [
   { name: "audit_action_enum_values", category: "ADD_ENUM", fn: ensureAuditActionEnumValues },
   { name: "calendar_event_type_enum_values", category: "ADD_ENUM", fn: ensureCalendarEventTypeEnumValues },
   { name: "takeoff_enhancements", category: "ADD_COLUMN", fn: ensureTakeoffEnhancements },
+  // Task #2068 — three-tier trade catalog (Trade > Category > Item).
+  { name: "library_category_tier", category: "CREATE_TABLE", fn: ensureLibraryCategoryTier },
   { name: "field_worker_perm_columns", category: "ADD_COLUMN", fn: ensureFieldWorkerPermColumns },
   { name: "peer_rating_columns", category: "ADD_COLUMN", fn: ensurePeerRatingColumns },
   { name: "nullable_permissions", category: "ALTER_TABLE", fn: ensureNullablePermissions },

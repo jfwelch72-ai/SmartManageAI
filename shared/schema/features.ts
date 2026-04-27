@@ -8097,6 +8097,33 @@ export const insertCustomLibrarySchema = createInsertSchema(customLibraries).omi
 export type InsertCustomLibrary = z.infer<typeof insertCustomLibrarySchema>;
 export type CustomLibrary = typeof customLibraries.$inferSelect;
 
+// Task #2068 — three-tier catalog: Trade > Category > Item.
+// `library_categories` is the middle "Category" tier. Each category belongs to
+// an organization and (optionally) a custom library and a trade. Library items
+// link to a category via `categoryId` and carry the top-level `tradeType`.
+export const libraryCategories = pgTable("library_categories", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  libraryId: varchar("library_id").references(() => customLibraries.id, { onDelete: "set null" }),
+  tradeType: varchar("trade_type", { length: 60 }),
+  name: varchar("name", { length: 120 }).notNull(),
+  description: text("description"),
+  displayOrder: integer("display_order").notNull().default(0),
+  sourceId: varchar("source_id"),
+  isPrebuilt: boolean("is_prebuilt").notNull().default(false),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("library_categories_org_idx").on(table.organizationId),
+  tradeIdx: index("library_categories_trade_idx").on(table.tradeType),
+  libraryIdx: index("library_categories_library_idx").on(table.libraryId),
+}));
+
+export const insertLibraryCategorySchema = createInsertSchema(libraryCategories).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertLibraryCategory = z.infer<typeof insertLibraryCategorySchema>;
+export type LibraryCategory = typeof libraryCategories.$inferSelect;
+
 export const libraryItems = pgTable("library_items", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
@@ -8112,6 +8139,12 @@ export const libraryItems = pgTable("library_items", {
   unitCosts: json("unit_costs"),
   notes: text("notes"),
   libraryId: varchar("library_id").references(() => customLibraries.id, { onDelete: "set null" }),
+  // Task #2068 — top "Trade" tier (string so we can store any tradeType enum
+  // value without coupling library_items to the exact enum membership).
+  tradeType: varchar("trade_type", { length: 60 }),
+  // Task #2068 — middle "Category" tier; nullable so legacy items remain valid
+  // until they're sorted into a category.
+  categoryId: varchar("category_id").references(() => libraryCategories.id, { onDelete: "set null" }),
   sourceId: varchar("source_id"),
   isPrebuilt: boolean("is_prebuilt").notNull().default(false),
   isActive: boolean("is_active").notNull().default(true),
@@ -8120,6 +8153,8 @@ export const libraryItems = pgTable("library_items", {
 }, (table) => ({
   orgIdx: index("library_items_org_idx").on(table.organizationId),
   libraryIdx: index("library_items_library_idx").on(table.libraryId),
+  tradeIdx: index("library_items_trade_idx").on(table.tradeType),
+  categoryIdx: index("library_items_category_idx").on(table.categoryId),
 }));
 
 export const insertLibraryItemSchema = createInsertSchema(libraryItems).omit({ id: true, createdAt: true, updatedAt: true });

@@ -8,6 +8,7 @@ import {
   libraryAssemblyItems, insertLibraryAssemblyItemSchema,
   libraryAssemblyItemGroups, insertLibraryAssemblyItemGroupSchema,
   libraryAssemblyItemGroupMembers, insertLibraryAssemblyItemGroupMemberSchema,
+  libraryCategories, insertLibraryCategorySchema,
   customLibraries, insertCustomLibrarySchema,
   savedTakeoffs, insertSavedTakeoffSchema,
   organizations,
@@ -80,17 +81,84 @@ router.delete("/api/custom-libraries/:id", async (req: AuthRequest, res: Respons
 router.get("/api/library-items", async (req: AuthRequest, res: Response, next: NextFunction) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
-  const { search, libraryId, costType } = req.query;
-  let query = db.select().from(libraryItems).where(eq(libraryItems.organizationId, orgId));
+  const { search, libraryId, costType, tradeType, categoryId } = req.query;
   const conditions: any[] = [eq(libraryItems.organizationId, orgId)];
   if (libraryId && libraryId !== "all") {
     conditions.push(eq(libraryItems.libraryId, libraryId as string));
+  }
+  // Task #2068 — three-tier filtering. The picker passes `tradeType` to scope
+  // results to a single trade, and `categoryId` to drill into one category.
+  if (tradeType && tradeType !== "all") {
+    conditions.push(eq(libraryItems.tradeType, tradeType as string));
+  }
+  if (categoryId && categoryId !== "all") {
+    if (categoryId === "uncategorized") {
+      conditions.push(sql`${libraryItems.categoryId} IS NULL`);
+    } else {
+      conditions.push(eq(libraryItems.categoryId, categoryId as string));
+    }
   }
   if (search) {
     conditions.push(ilike(libraryItems.name, `%${search}%`));
   }
   const results = await db.select().from(libraryItems).where(and(...conditions)).orderBy(libraryItems.name);
   res.json(results);
+});
+
+// Task #2068 — CRUD for the new "Category" tier between Trade and Item.
+router.get("/api/library-categories", async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  const { libraryId, tradeType } = req.query;
+  const conditions: any[] = [eq(libraryCategories.organizationId, orgId)];
+  if (libraryId && libraryId !== "all") {
+    conditions.push(eq(libraryCategories.libraryId, libraryId as string));
+  }
+  if (tradeType && tradeType !== "all") {
+    conditions.push(eq(libraryCategories.tradeType, tradeType as string));
+  }
+  const results = await db
+    .select()
+    .from(libraryCategories)
+    .where(and(...conditions))
+    .orderBy(libraryCategories.displayOrder, libraryCategories.name);
+  res.json(results);
+});
+
+router.post("/api/library-categories", async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
+  const data = insertLibraryCategorySchema.parse({ ...req.body, organizationId: orgId });
+  const [result] = await db.insert(libraryCategories).values(data).returning();
+  res.json(result);
+});
+
+router.patch("/api/library-categories/:id", async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
+  const { id } = req.params;
+  const updateData = { ...req.body, updatedAt: new Date() };
+  delete updateData.id;
+  delete updateData.organizationId;
+  delete updateData.createdAt;
+  const [result] = await db.update(libraryCategories)
+    .set(updateData)
+    .where(and(eq(libraryCategories.id, id), eq(libraryCategories.organizationId, orgId)))
+    .returning();
+  if (!result) return res.status(404).json({ error: "Not found" });
+  res.json(result);
+});
+
+router.delete("/api/library-categories/:id", async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
+  const { id } = req.params;
+  await db.delete(libraryCategories)
+    .where(and(eq(libraryCategories.id, id), eq(libraryCategories.organizationId, orgId)));
+  res.json({ success: true });
 });
 
 router.post("/api/library-items", async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -352,8 +420,17 @@ router.post("/api/library-items/seed-from-onboarding", async (req: AuthRequest, 
     const allMaterials = getMaterials();
     const allFormulas = getFormulas();
 
-    const materialItems: any[] = [];
+    // Task #2068 — collect items along with the category bucket they belong to
+    // so we can create the per-trade categories first and stamp items with the
+    // resulting category id.
+    const materialItems: Array<{ item: any; categoryName: string }> = [];
     const seenMaterialIds = new Set<string>();
+
+    const categoryNameForMaterialGroup = (group?: string): string => {
+      if (!group) return "Materials";
+      // Drop any leading numeric prefixes (e.g. "01_Concrete") to keep names tidy.
+      return group.replace(/^\d+[_-]?/, "").replace(/[_-]+/g, " ").trim() || "Materials";
+    };
 
     for (const tradeId of tradeIds) {
       const scopes = getScopesByTradeId(tradeId);
@@ -364,18 +441,22 @@ router.post("/api/library-items/seed-from-onboarding", async (req: AuthRequest, 
           const mat = allMaterials.find(m => m.material_family_id === matFamilyId);
           if (mat) {
             materialItems.push({
-              organizationId: orgId,
-              name: mat.display_name,
-              itemNumber: mat.material_family_id,
-              measuredCoverage: 1,
-              unitOfMeasure: mat.canonical_uom,
-              purchaseCoverage: 1,
-              purchaseUnit: mat.canonical_uom,
-              description: mat.group ? `${mat.group} material` : undefined,
-              costTypes: ["material"],
-              unitCosts: { material: 0 },
-              sourceId: `onboarding:material:${mat.material_family_id}`,
-              isPrebuilt: true,
+              categoryName: categoryNameForMaterialGroup(mat.group) || scope.scope_name || "Materials",
+              item: {
+                organizationId: orgId,
+                name: mat.display_name,
+                itemNumber: mat.material_family_id,
+                measuredCoverage: 1,
+                unitOfMeasure: mat.canonical_uom,
+                purchaseCoverage: 1,
+                purchaseUnit: mat.canonical_uom,
+                description: mat.group ? `${mat.group} material` : undefined,
+                costTypes: ["material"],
+                unitCosts: { material: 0 },
+                sourceId: `onboarding:material:${mat.material_family_id}`,
+                isPrebuilt: true,
+                tradeType,
+              },
             });
           }
         }
@@ -384,21 +465,25 @@ router.post("/api/library-items/seed-from-onboarding", async (req: AuthRequest, 
       const components = getComponentsByTradeId(tradeId);
       for (const comp of components) {
         const compSourceId = `onboarding:component:${comp.component_id}`;
-        if (materialItems.some(i => i.sourceId === compSourceId)) continue;
+        if (materialItems.some(m => m.item.sourceId === compSourceId)) continue;
         const isLabor = comp.display_name.toLowerCase().includes("labor") || comp.display_name.toLowerCase().includes("install");
         materialItems.push({
-          organizationId: orgId,
-          name: comp.display_name,
-          itemNumber: comp.component_id,
-          measuredCoverage: 1,
-          unitOfMeasure: "EA",
-          purchaseCoverage: 1,
-          purchaseUnit: "EA",
-          description: comp.description?.substring(0, 255) || undefined,
-          costTypes: [isLabor ? "labor" : "material"],
-          unitCosts: isLabor ? { labor: 0 } : { material: 0 },
-          sourceId: compSourceId,
-          isPrebuilt: true,
+          categoryName: isLabor ? "Labor" : "Components",
+          item: {
+            organizationId: orgId,
+            name: comp.display_name,
+            itemNumber: comp.component_id,
+            measuredCoverage: 1,
+            unitOfMeasure: "EA",
+            purchaseCoverage: 1,
+            purchaseUnit: "EA",
+            description: comp.description?.substring(0, 255) || undefined,
+            costTypes: [isLabor ? "labor" : "material"],
+            unitCosts: isLabor ? { labor: 0 } : { material: 0 },
+            sourceId: compSourceId,
+            isPrebuilt: true,
+            tradeType,
+          },
         });
       }
     }
@@ -406,26 +491,58 @@ router.post("/api/library-items/seed-from-onboarding", async (req: AuthRequest, 
     if (materialItems.length === 0) {
       for (const mat of allMaterials.slice(0, 50)) {
         materialItems.push({
-          organizationId: orgId,
-          name: mat.display_name,
-          itemNumber: mat.material_family_id,
-          measuredCoverage: 1,
-          unitOfMeasure: mat.canonical_uom,
-          purchaseCoverage: 1,
-          purchaseUnit: mat.canonical_uom,
-          description: mat.group ? `${mat.group} material` : undefined,
-          costTypes: ["material"],
-          unitCosts: { material: 0 },
-          sourceId: `onboarding:material:${mat.material_family_id}`,
-          isPrebuilt: true,
+          categoryName: categoryNameForMaterialGroup(mat.group) || "Materials",
+          item: {
+            organizationId: orgId,
+            name: mat.display_name,
+            itemNumber: mat.material_family_id,
+            measuredCoverage: 1,
+            unitOfMeasure: mat.canonical_uom,
+            purchaseCoverage: 1,
+            purchaseUnit: mat.canonical_uom,
+            description: mat.group ? `${mat.group} material` : undefined,
+            costTypes: ["material"],
+            unitCosts: { material: 0 },
+            sourceId: `onboarding:material:${mat.material_family_id}`,
+            isPrebuilt: true,
+            tradeType,
+          },
         });
       }
     }
 
+    // Task #2068 — create / reuse one category per (trade, name) bucket so the
+    // seeded items land under the correct middle tier.
+    const categoryIdByName = new Map<string, string>();
+    const uniqueCategoryNames = Array.from(new Set(materialItems.map(m => m.categoryName)));
+    for (const catName of uniqueCategoryNames) {
+      const sourceId = `onboarding:category:${tradeType}:${catName}`;
+      const existing = await db.select().from(libraryCategories)
+        .where(and(eq(libraryCategories.organizationId, orgId), eq(libraryCategories.sourceId, sourceId)))
+        .limit(1);
+      if (existing.length > 0) {
+        categoryIdByName.set(catName, existing[0].id);
+      } else {
+        const [created] = await db.insert(libraryCategories).values({
+          organizationId: orgId,
+          name: catName,
+          tradeType,
+          sourceId,
+          isPrebuilt: true,
+        }).returning();
+        categoryIdByName.set(catName, created.id);
+      }
+    }
+
+    const itemsToInsert = materialItems.map(({ item, categoryName }) => ({
+      ...item,
+      categoryId: categoryIdByName.get(categoryName) ?? null,
+    }));
+
     const batchSize = 50;
     const createdItems: any[] = [];
-    for (let i = 0; i < materialItems.length; i += batchSize) {
-      const batch = materialItems.slice(i, i + batchSize);
+    for (let i = 0; i < itemsToInsert.length; i += batchSize) {
+      const batch = itemsToInsert.slice(i, i + batchSize);
       const results = await db.insert(libraryItems).values(batch).returning();
       createdItems.push(...results);
     }
@@ -473,7 +590,8 @@ function getPrebuiltAssemblies(tradeType: string, itemsBySourceId: Map<string, a
   const assemblies: any[] = [];
 
   const findItem = (keyword: string) => {
-    for (const [sourceId, item] of itemsBySourceId.entries()) {
+    const entries = Array.from(itemsBySourceId.entries());
+    for (const [, item] of entries) {
       if (item.name.toLowerCase().includes(keyword.toLowerCase())) return item;
     }
     return null;
