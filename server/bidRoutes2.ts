@@ -2878,11 +2878,34 @@ router.post("/api/bids/:code/documents", requireAuth, requireRole("ADMIN", "MANA
     // tenant cannot register a bid document that points at another tenant's
     // private object.
     const supplied = data.objectKey || data.fileUrl;
+    let normalizedObjectKey: string | undefined = data.objectKey;
     if (supplied) {
       try {
-        await assertStorageKeyBelongsToOrg(supplied, bid.gcOrganizationId, req.user!.id, req.user!.role);
+        await assertStorageKeyBelongsToOrg(supplied, bid.gcOrganizationId!, req.user!.id, req.user!.role);
       } catch (err: any) {
         return res.status(err?.status || 403).json({ error: err?.message || "Forbidden" });
+      }
+
+      // Persist an ACL policy on the underlying object so the read endpoints
+      // (preview-url / stream) — which call canAccessObjectEntity as
+      // defense-in-depth — can resolve tenancy. Without this, every bid
+      // document upload returned 403 on preview because getObjectAclPolicy
+      // resolved to null and canAccessObject defaults to deny.
+      try {
+        const { ObjectStorageService } = await import("./objectStorage");
+        const objectStorageService = new ObjectStorageService();
+        normalizedObjectKey = await objectStorageService.trySetObjectEntityAclPolicy(
+          supplied,
+          {
+            owner: req.user!.id,
+            organizationId: bid.gcOrganizationId!,
+            visibility: "private",
+          },
+        );
+      } catch (err) {
+        logError("Bid document ACL policy write failed:", {}, err instanceof Error ? err : new Error(String(err)));
+        // Do not block the upload; the read endpoint has a backfill that will
+        // set the policy on first preview if it is still missing.
       }
     }
 
@@ -2891,7 +2914,7 @@ router.post("/api/bids/:code/documents", requireAuth, requireRole("ADMIN", "MANA
       title: data.title,
       fileName: data.fileName,
       fileUrl: data.fileUrl,
-      objectKey: data.objectKey,
+      objectKey: normalizedObjectKey ?? data.objectKey,
       fileSize: data.fileSize,
       mimeType: data.mimeType,
       type: data.type,
@@ -2931,39 +2954,93 @@ router.delete("/api/bids/:code/documents/:docId", requireAuth, requireRole("ADMI
   }
 });
 
+// Shared helper: resolves a bid document, runs the defense-in-depth ACL
+// check, and lazily backfills a missing ACL policy for legacy uploads
+// that pre-date the upload-time policy write. The org membership check
+// (verifyOrgAccess) and bid->document join already proved this user is
+// allowed to read documents on this bid; the ACL backfill simply
+// persists that fact onto the underlying object so getObjectAclPolicy
+// stops returning null on subsequent reads.
+async function resolveBidDocumentForRead(
+  req: AuthRequest,
+  res: any,
+): Promise<{ objectStorageService: import("./objectStorage").ObjectStorageService; objectFile: import("@google-cloud/storage").File } | null> {
+  const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
+  if (!bid) {
+    res.status(404).json({ error: "Bid not found" });
+    return null;
+  }
+  if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return null;
+
+  const [doc] = await db.select().from(bidDocuments)
+    .where(and(eq(bidDocuments.id, req.params.docId), eq(bidDocuments.bidId, bid.id)))
+    .limit(1);
+  if (!doc) {
+    res.status(404).json({ error: "Document not found" });
+    return null;
+  }
+  const storageKey = doc.objectKey || doc.fileUrl;
+  if (!storageKey) {
+    res.status(404).json({ error: "No file associated with this document" });
+    return null;
+  }
+
+  const { ObjectStorageService } = await import("./objectStorage");
+  const { getObjectAclPolicy } = await import("./objectAcl");
+  const objectStorageService = new ObjectStorageService();
+  const normalized = objectStorageService.normalizeObjectEntityPath(storageKey);
+  const objectFile = await objectStorageService.getObjectEntityFile(normalized);
+
+  // Backfill: legacy bid documents were inserted before the POST handler
+  // started writing an ACL policy on upload. canAccessObject defaults to
+  // deny when the object has no policy, which surfaced to the user as
+  // "You don't have permission to view this PDF". Since we just verified
+  // the caller belongs to this bid's org and that the bid->document row
+  // is consistent, write the missing policy now (best-effort).
+  let preloadedPolicy: import("./objectAcl").ObjectAclPolicy | null | undefined = undefined;
+  try {
+    const existing = await getObjectAclPolicy(objectFile);
+    if (!existing) {
+      const fallback: import("./objectAcl").ObjectAclPolicy = {
+        owner: doc.uploadedById || req.user!.id,
+        organizationId: bid.gcOrganizationId!,
+        visibility: "private",
+      };
+      try {
+        await objectStorageService.trySetObjectEntityAclPolicy(storageKey, fallback);
+        preloadedPolicy = fallback;
+      } catch (writeErr) {
+        // Bucket metadata write may be slow/unavailable; pass the policy
+        // inline to canAccessObjectEntity so this request still succeeds.
+        logError("Bid document ACL backfill write failed:", {}, writeErr instanceof Error ? writeErr : new Error(String(writeErr)));
+        preloadedPolicy = fallback;
+      }
+    }
+  } catch (readErr) {
+    logError("Bid document ACL policy lookup failed:", {}, readErr instanceof Error ? readErr : new Error(String(readErr)));
+  }
+
+  const allowed = await objectStorageService.canAccessObjectEntity({
+    userId: req.user!.id,
+    userOrganizationId: req.user!.organizationId!,
+    objectFile,
+    requestedPermission: ObjectPermission.READ,
+    userRole: (req.user as any).effectiveRole || req.user!.role,
+    aclPolicy: preloadedPolicy,
+  });
+  if (!allowed) {
+    res.status(403).json({ error: "Forbidden" });
+    return null;
+  }
+
+  return { objectStorageService, objectFile };
+}
+
 router.get("/api/bids/:code/documents/:docId/preview-url", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
-    if (!bid) return res.status(404).json({ error: "Bid not found" });
-    if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
-
-    const [doc] = await db.select().from(bidDocuments)
-      .where(and(eq(bidDocuments.id, req.params.docId), eq(bidDocuments.bidId, bid.id)))
-      .limit(1);
-    if (!doc) return res.status(404).json({ error: "Document not found" });
-    const storageKey = doc.objectKey || doc.fileUrl;
-    if (!storageKey) return res.status(404).json({ error: "No file associated with this document" });
-
-    const { ObjectStorageService } = await import("./objectStorage");
-    const objectStorageService = new ObjectStorageService();
-    const normalized = objectStorageService.normalizeObjectEntityPath(storageKey);
-    const objectFile = await objectStorageService.getObjectEntityFile(normalized);
-
-    // Defense-in-depth ACL check on the underlying object before piping bytes,
-    // so a bid document row whose storageKey was forged or imported from
-    // elsewhere cannot leak another tenant's file.
-    const allowed = await objectStorageService.canAccessObjectEntity({
-      userId: req.user!.id,
-      userOrganizationId: req.user!.organizationId!,
-      objectFile,
-      requestedPermission: ObjectPermission.READ,
-      userRole: (req.user as any).effectiveRole || req.user!.role,
-    });
-    if (!allowed) {
-      return res.status(403).json({ error: "Forbidden" });
-    }
-
-    await objectStorageService.downloadObject(objectFile, res, 3600);
+    const resolved = await resolveBidDocumentForRead(req, res);
+    if (!resolved) return;
+    await resolved.objectStorageService.downloadObject(resolved.objectFile, res, 3600);
   } catch (error) {
     logError("Bid document preview-url error:", {}, error instanceof Error ? error : new Error(String(error)));
     if (!res.headersSent) {
@@ -2974,36 +3051,9 @@ router.get("/api/bids/:code/documents/:docId/preview-url", requireAuth, async (r
 
 router.get("/api/bids/:code/documents/:docId/stream", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const [bid] = await db.select().from(bids).where(eq(bids.code, req.params.code)).limit(1);
-    if (!bid) return res.status(404).json({ error: "Bid not found" });
-    if (!verifyOrgAccess(req, res, bid.gcOrganizationId)) return;
-
-    const [doc] = await db.select().from(bidDocuments)
-      .where(and(eq(bidDocuments.id, req.params.docId), eq(bidDocuments.bidId, bid.id)))
-      .limit(1);
-    if (!doc) return res.status(404).json({ error: "Document not found" });
-    const storageKey = doc.objectKey || doc.fileUrl;
-    if (!storageKey) return res.status(404).json({ error: "No file associated with this document" });
-
-    const { ObjectStorageService } = await import("./objectStorage");
-    const objectStorageService = new ObjectStorageService();
-    const normalized = objectStorageService.normalizeObjectEntityPath(storageKey);
-    const objectFile = await objectStorageService.getObjectEntityFile(normalized);
-
-    // Defense-in-depth ACL check before streaming, mirroring the preview-url
-    // hardening above.
-    const allowed = await objectStorageService.canAccessObjectEntity({
-      userId: req.user!.id,
-      userOrganizationId: req.user!.organizationId!,
-      objectFile,
-      requestedPermission: ObjectPermission.READ,
-      userRole: (req.user as any).effectiveRole || req.user!.role,
-    });
-    if (!allowed) {
-      return res.status(403).json({ error: "Forbidden" });
-    }
-
-    await objectStorageService.downloadObject(objectFile, res, 3600);
+    const resolved = await resolveBidDocumentForRead(req, res);
+    if (!resolved) return;
+    await resolved.objectStorageService.downloadObject(resolved.objectFile, res, 3600);
   } catch (error) {
     logError("Bid document stream error:", {}, error instanceof Error ? error : new Error(String(error)));
     if (!res.headersSent) {
