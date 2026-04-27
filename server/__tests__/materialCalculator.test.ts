@@ -813,10 +813,11 @@ describe('server/tradeCalculators — additional helper coverage', () => {
   });
 
   describe('Drywall finishing extras', () => {
-    it('calculateJointCompoundGallons: 100 sheets × 0.5 gal × 10% waste → 56', () => {
-      // 100 × 0.5 = 50 gallons before waste; ×1.10 = 55.0000…01 in IEEE-754,
-      // and Math.ceil bumps that to 56. The pre-waste value is exactly 50.
-      expect(calculateJointCompoundGallons(100)).toBe(56);
+    it('calculateJointCompoundGallons: 100 sheets × 0.5 gal × 10% waste → 55', () => {
+      // 100 × 0.5 = 50 gallons before waste; ×1.10 = 55 mathematically.
+      // ceilWithEpsilon snaps the IEEE-754 noise away so we don't bill an
+      // estimator for an extra gallon on clean round-number inputs.
+      expect(calculateJointCompoundGallons(100)).toBe(55);
     });
 
     it('calculateTapeLF: 100 sheets × 40 LF/sheet × 10% waste → 4400', () => {
@@ -842,15 +843,18 @@ describe('server/tradeCalculators — additional helper coverage', () => {
   });
 
   describe('Flooring', () => {
-    it('calculateFlooringCartons: 1000 SF / 20 SF per carton × 10% waste → 56', () => {
-      // 1000/20 = 50 cartons before waste; ×1.10 = 55.0000…01 (IEEE-754),
-      // Math.ceil → 56. Pre-waste yield is exactly 50 cartons.
-      expect(calculateFlooringCartons(1000)).toBe(56);
+    it('calculateFlooringCartons: 1000 SF / 20 SF per carton × 10% waste → 55', () => {
+      // 1000/20 = 50 cartons before waste; ×1.10 = 55 mathematically.
+      // ceilWithEpsilon strips the IEEE-754 fuzz so we land on the textbook
+      // answer instead of charging the estimator for an extra carton.
+      expect(calculateFlooringCartons(1000)).toBe(55);
     });
 
-    it('calculateCarpetSY: 900 SF / 9 SF per SY × 10% waste → 111', () => {
-      // 900/9 = 100 SY exactly; ×1.10 = 110.0000…01 (IEEE-754); ceil = 111.
-      expect(calculateCarpetSY(900)).toBe(111);
+    it('calculateCarpetSY: 900 SF / 9 SF per SY × 10% waste → 110', () => {
+      // 900/9 = 100 SY exactly; ×1.10 = 110 mathematically. ceilWithEpsilon
+      // absorbs the floating-point noise so a clean 100 SY input does not
+      // bill an extra square yard.
+      expect(calculateCarpetSY(900)).toBe(110);
     });
 
     it('calculateFlooringAdhesiveGallons: 1000 SF / 100 SF per gal × 10% waste → 11', () => {
@@ -865,11 +869,11 @@ describe('server/tradeCalculators — additional helper coverage', () => {
       expect(calculatePrimerGallons(1000)).toBeCloseTo(3.15, 2);
     });
 
-    it('calculateStainGallons: 1000 SF / 250 SF/gal × 1 coat × 10% waste → 4.41 gal', () => {
-      // 1000/250 = 4.0; ×1.10 = 4.4 mathematically, but IEEE-754 yields
-      // 4.4000…001, and `ceil(value × 100) / 100` rounds that up to 4.41.
-      // Pre-rounding gallon yield is exactly 4.40.
-      expect(calculateStainGallons(1000)).toBeCloseTo(4.41, 2);
+    it('calculateStainGallons: 1000 SF / 250 SF/gal × 1 coat × 10% waste → 4.40 gal', () => {
+      // 1000/250 = 4.0; ×1.10 = 4.40 mathematically. ceilWithEpsilon strips
+      // the IEEE-754 noise on `4.4 × 100` so the result lands on the
+      // textbook 4.40 instead of being bumped up to 4.41.
+      expect(calculateStainGallons(1000)).toBeCloseTo(4.40, 2);
     });
   });
 
@@ -884,13 +888,15 @@ describe('server/tradeCalculators — additional helper coverage', () => {
     });
 
     it('calculateWirePullLF allows zero pull boxes', () => {
-      // 100 × 1 = 100; ×1.10 = 110.0000…01 (IEEE-754); ceil = 111.
-      // Validates the pull-box term reduces to zero when pullBoxCount is 0.
+      // 100 × 1 = 100; ×1.10 = 110 mathematically. ceilWithEpsilon ignores
+      // IEEE-754 noise so a clean 100 LF / 1-wire pull lands on 110, not
+      // 111. Also validates the pull-box term reduces to zero when
+      // pullBoxCount is 0.
       expect(calculateWirePullLF({
         conduitLengthLF: 100,
         pullBoxCount: 0,
         wiresPerRun: 1,
-      })).toBe(111);
+      })).toBe(110);
     });
 
     it('calculateCircuitAmps: 10 devices × 100 W / 120 V → 8.33 A', () => {
@@ -911,9 +917,10 @@ describe('server/tradeCalculators — additional helper coverage', () => {
       })).toBeCloseTo(20.83, 2);
     });
 
-    it('calculateConduitLF: 100 LF route × 10% electrical waste → 111', () => {
-      // 100 × 1.10 = 110.0000…01 (IEEE-754); Math.ceil → 111.
-      expect(calculateConduitLF(100)).toBe(111);
+    it('calculateConduitLF: 100 LF route × 10% electrical waste → 110', () => {
+      // 100 × 1.10 = 110 mathematically. ceilWithEpsilon strips the
+      // IEEE-754 fuzz so a clean 100 LF route does not bill an extra LF.
+      expect(calculateConduitLF(100)).toBe(110);
     });
 
     it('calculateDeviceBoxes: 20 outlets × half-waste (5%) → 21', () => {
@@ -923,9 +930,10 @@ describe('server/tradeCalculators — additional helper coverage', () => {
   });
 
   describe('Plumbing (CSI 22)', () => {
-    it('calculatePipeLF: 100 LF × 10% fittings/waste → 111', () => {
-      // 100 × 1.10 = 110.0000…01 (IEEE-754); Math.ceil → 111.
-      expect(calculatePipeLF(100)).toBe(111);
+    it('calculatePipeLF: 100 LF × 10% fittings/waste → 110', () => {
+      // 100 × 1.10 = 110 mathematically. ceilWithEpsilon strips the
+      // IEEE-754 fuzz so 100 LF of pipe doesn't get billed for 111 LF.
+      expect(calculatePipeLF(100)).toBe(110);
     });
 
     it('calculatePipeHangers: small (≤1") pipe — 6 ft spacing per MSS SP-58', () => {

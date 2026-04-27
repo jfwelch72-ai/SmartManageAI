@@ -47,6 +47,23 @@ const WASTE_FACTORS = {
 };
 
 // ============================================
+// NUMERIC HELPERS
+// ============================================
+
+/**
+ * Ceil with floating-point epsilon tolerance.
+ *
+ * IEEE-754 makes products like `100 * 1.10` slightly larger than `110`
+ * (e.g. `110.00000000000001`), so a naive `Math.ceil` over-rounds clean
+ * round-number inputs by one whole unit. We snap the value to 9 decimal
+ * places of precision before ceiling, which absorbs the FP noise without
+ * affecting genuinely fractional values.
+ */
+export function ceilWithEpsilon(value: number): number {
+  return Math.ceil(Math.round(value * 1e9) / 1e9);
+}
+
+// ============================================
 // INPUT VALIDATION HELPERS
 // ============================================
 export function validatePositive(value: number, name: string): void {
@@ -535,7 +552,7 @@ export function calculateJointCompoundGallons(sheetCount: number): number {
   validatePositive(sheetCount, 'Sheet count');
   
   const gallons = sheetCount * 0.5;
-  return Math.ceil(gallons * (1 + WASTE_FACTORS.drywall));
+  return ceilWithEpsilon(gallons * (1 + WASTE_FACTORS.drywall));
 }
 
 /**
@@ -598,7 +615,7 @@ export function calculateFlooringCartons(areaSF: number, sfPerCarton: number = 2
   validatePositive(sfPerCarton, 'SF per carton');
   
   const cartons = areaSF / sfPerCarton;
-  return Math.ceil(cartons * (1 + WASTE_FACTORS.flooring));
+  return ceilWithEpsilon(cartons * (1 + WASTE_FACTORS.flooring));
 }
 
 /**
@@ -609,7 +626,7 @@ export function calculateCarpetSY(areaSF: number): number {
   validatePositive(areaSF, 'Area SF');
   
   const squareYards = areaSF / CONVERSIONS.SF_PER_SY;
-  return Math.ceil(squareYards * (1 + WASTE_FACTORS.flooring));
+  return ceilWithEpsilon(squareYards * (1 + WASTE_FACTORS.flooring));
 }
 
 /**
@@ -647,7 +664,7 @@ export function calculatePaintGallons(input: PaintingInput): number {
   const gallons = totalSF / input.coverageSFPerGallon;
   const withWaste = gallons * (1 + WASTE_FACTORS.paint);
   
-  return Math.ceil(withWaste * 100) / 100;
+  return ceilWithEpsilon(withWaste * 100) / 100;
 }
 
 /**
@@ -696,7 +713,7 @@ export function calculateWirePullLF(input: WirePullInput): number {
   const wireLF = (input.conduitLengthLF * input.wiresPerRun) + (input.pullBoxCount * extraPerBox);
   const withWaste = wireLF * (1 + WASTE_FACTORS.electrical);
   
-  return Math.ceil(withWaste);
+  return ceilWithEpsilon(withWaste);
 }
 
 /**
@@ -721,7 +738,7 @@ export function calculateCircuitAmps(input: CircuitLoadInput): number {
 export function calculateConduitLF(routeLF: number): number {
   validatePositive(routeLF, 'Route length');
   
-  return Math.ceil(routeLF * (1 + WASTE_FACTORS.electrical));
+  return ceilWithEpsilon(routeLF * (1 + WASTE_FACTORS.electrical));
 }
 
 /**
@@ -749,7 +766,7 @@ export interface PipingInput {
 export function calculatePipeLF(lengthLF: number): number {
   validatePositive(lengthLF, 'Pipe length');
   
-  return Math.ceil(lengthLF * (1 + WASTE_FACTORS.plumbing));
+  return ceilWithEpsilon(lengthLF * (1 + WASTE_FACTORS.plumbing));
 }
 
 /**
