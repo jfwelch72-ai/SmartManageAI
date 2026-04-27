@@ -262,6 +262,27 @@ router.delete("/api/library-items/bulk", async (req: AuthRequest, res: Response,
     }, req)
   ));
 
+  // Task #2153 — audit destructive bulk action so we can answer "who wiped
+  // our cost catalog?" later. Only log when at least one row was actually
+  // touched so requests that only contained foreign / unknown ids don't
+  // pollute the audit log with empty entries.
+  if (deleted.length > 0) {
+    await logAudit({
+      userId,
+      action: "BULK_DELETE",
+      entityType: "libraryItem",
+      entityId: orgId,
+      oldValue: JSON.stringify({
+        requestedIds: ids,
+        requestedCount: ids.length,
+      }),
+      newValue: JSON.stringify({
+        deletedIds: deleted.map((r) => r.id),
+        deletedCount: deleted.length,
+      }),
+    }, req);
+  }
+
   res.json({ deleted: deleted.length, ids: deleted.map((r) => r.id) });
 });
 
@@ -329,6 +350,31 @@ router.post("/api/library-items/bulk-duplicate", async (req: AuthRequest, res: R
       duplicatedFrom: row.sourceId,
     }, req)
   ));
+
+  // Task #2153 — also emit a single high-level BULK_DUPLICATE audit row in
+  // addition to the per-item logCreate entries above so the audit log can be
+  // queried at the bulk-action level (e.g. "show me all bulk duplications").
+  // We already returned early when `sources.length === 0`, so a successful
+  // insert path always has at least one row, but we still guard on
+  // `inserted.length > 0` to keep the "no noisy logs for empty calls"
+  // contract explicit.
+  if (inserted.length > 0) {
+    await logAudit({
+      userId,
+      action: "BULK_DUPLICATE",
+      entityType: "libraryItem",
+      entityId: orgId,
+      oldValue: JSON.stringify({
+        requestedIds: ids,
+        requestedCount: ids.length,
+        sourceIds: sources.map((s) => s.id),
+      }),
+      newValue: JSON.stringify({
+        duplicatedIds: inserted.map((r) => r.id),
+        duplicatedCount: inserted.length,
+      }),
+    }, req);
+  }
 
   res.json({ duplicated: inserted.length, items: inserted });
 });

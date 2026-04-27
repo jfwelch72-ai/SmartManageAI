@@ -27,8 +27,16 @@ import { logError } from "./logger";
  * `entityType = "libraryPrebuiltCatalog"`. Without this value,
  * destructive admin resets blend in with ordinary edits when
  * reviewing the audit log.
+ *
+ * Task #2153 — adds BULK_DELETE and BULK_DUPLICATE so the bulk
+ * library-item routes (`DELETE /api/library-items/bulk` and
+ * `POST /api/library-items/bulk-duplicate`, both added in
+ * Task #2113) can write first-class action values rather than be
+ * indistinguishable from per-row CRUD entries. Without these,
+ * a 500-row wipe or a 500-row fan-out duplication looks identical
+ * to ordinary single-item activity in the audit trail.
  */
-const REQUIRED_AUDIT_ACTION_VALUES = ["ARCHIVE", "UNARCHIVE", "RESTORE", "RESET"];
+const REQUIRED_AUDIT_ACTION_VALUES = ["ARCHIVE", "UNARCHIVE", "RESTORE", "RESET", "BULK_DELETE", "BULK_DUPLICATE"];
 
 export async function ensureAuditActionEnumValues(): Promise<void> {
   try {

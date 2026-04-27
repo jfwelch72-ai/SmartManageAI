@@ -1,0 +1,22 @@
+-- Task #2153: Add BULK_DELETE and BULK_DUPLICATE values to the audit_action
+-- enum so the bulk library-item routes can write first-class action values
+-- instead of being indistinguishable from per-row CRUD entries.
+--
+-- Callers added by Task #2113:
+--
+--   * `DELETE /api/library-items/bulk` — wipes up to 500 library items in
+--     a single round-trip.
+--   * `POST /api/library-items/bulk-duplicate` — fans out up to 500
+--     duplicates in a single round-trip.
+--
+-- Both routes now log under `action: "BULK_DELETE"` / `"BULK_DUPLICATE"`
+-- with `entityType = "libraryItem"`, so auditors filtering for "who wiped
+-- our cost catalog" or "who fanned out hundreds of copies" can query the
+-- `action` column directly.
+--
+-- IF NOT EXISTS is required because the runtime
+-- `ensureAuditActionEnumValues` migration also adds these values on
+-- startup, and the two paths can race on long-lived DBs that already
+-- received the runtime addition before this SQL migration runs.
+ALTER TYPE "public"."audit_action" ADD VALUE IF NOT EXISTS 'BULK_DELETE';
+ALTER TYPE "public"."audit_action" ADD VALUE IF NOT EXISTS 'BULK_DUPLICATE';

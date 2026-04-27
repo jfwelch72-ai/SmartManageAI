@@ -357,4 +357,17 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
     helper: "ensureAuditActionEnumValues",
     note: "Task #2096 — RESET added to ensureAuditActionEnumValues alongside ARCHIVE/UNARCHIVE/RESTORE",
   },
+  // Task #2153 — promote the bulk library-item routes' audit entries
+  // from the generic per-row CRUD actions to first-class
+  // `BULK_DELETE` / `BULK_DUPLICATE` values on the long-lived
+  // `audit_action` Postgres enum so destructive bulk operations are
+  // directly searchable in the audit trail instead of blending in
+  // with ordinary single-row edits. `reconcileSchemaDrift`
+  // (Task #1075) creates missing enum *types* but never adds values
+  // to an existing one, so the runtime helper is required to keep
+  // long-lived dev / production DBs in sync.
+  "0072_audit_action_bulk.sql": {
+    helper: "ensureAuditActionEnumValues",
+    note: "Task #2153 — BULK_DELETE/BULK_DUPLICATE added to ensureAuditActionEnumValues alongside ARCHIVE/UNARCHIVE/RESTORE/RESET",
+  },
 };

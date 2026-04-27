@@ -203,7 +203,13 @@ export const auditActionEnum = pgEnum("audit_action", [
   // library and re-seeds it) are directly searchable in the audit
   // trail instead of blending in with ordinary UPDATE edits on
   // `entityType = "libraryPrebuiltCatalog"`.
-  "RESET"
+  "RESET",
+  // Task #2153: explicit BULK_DELETE / BULK_DUPLICATE actions for the
+  // library bulk routes (`DELETE /api/library-items/bulk` and
+  // `POST /api/library-items/bulk-duplicate` from Task #2113), so a
+  // 500-row wipe or a 500-row fan-out is filterable in the audit
+  // trail rather than buried as a generic DELETE/CREATE entry.
+  "BULK_DELETE", "BULK_DUPLICATE"
 ]);
 export const clockEventTypeEnum = pgEnum("clock_event_type", ["CLOCK_IN", "CLOCK_OUT", "ADJUSTMENT", "ADMIN_OVERRIDE", "AUTO_CLOCK_OUT"]);
 export const shiftApprovalStatusEnum = pgEnum("shift_approval_status", ["PENDING", "APPROVED", "REJECTED"]);

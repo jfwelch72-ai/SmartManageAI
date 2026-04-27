@@ -54,8 +54,14 @@ vi.mock("../auth", () => ({
     },
 }));
 
+// Task #2153 — capture every logAudit call so the bulk routes can be asserted
+// to write a paper trail (mirrors the pattern in
+// server/__tests__/library-reset-prebuilt-route.test.ts).
+const auditCalls: any[] = [];
 vi.mock("../auditLogger", () => ({
-  logAudit: vi.fn(),
+  logAudit: vi.fn(async (data: any) => {
+    auditCalls.push(data);
+  }),
   logCreate: vi.fn(),
   logUpdate: vi.fn(),
   logDelete: vi.fn(),
@@ -204,6 +210,7 @@ beforeEach(() => {
   testUser = null;
   nextGenId = 1;
   insertedRows.length = 0;
+  auditCalls.length = 0;
   // Two rows in the caller's org plus one foreign-org row that must never
   // be touched regardless of whether its id is included in the request.
   rows = [
@@ -355,6 +362,21 @@ describe("DELETE /api/library-items/bulk", () => {
     expect(rows.find((r) => r.id === "item-a")).toBeUndefined();
     expect(rows.find((r) => r.id === "item-b")).toBeUndefined();
     expect(rows.find((r) => r.id === "item-foreign")).toBeTruthy();
+
+    // Task #2153 — audit row was written with the affected ids and counts.
+    expect(auditCalls.length).toBe(1);
+    expect(auditCalls[0]).toMatchObject({
+      userId: "u1",
+      action: "BULK_DELETE",
+      entityType: "libraryItem",
+      entityId: "org-1",
+    });
+    const newValue = JSON.parse(auditCalls[0].newValue);
+    expect(newValue.deletedCount).toBe(2);
+    expect(newValue.deletedIds.sort()).toEqual(["item-a", "item-b"]);
+    const oldValue = JSON.parse(auditCalls[0].oldValue);
+    expect(oldValue.requestedCount).toBe(2);
+    expect(oldValue.requestedIds.sort()).toEqual(["item-a", "item-b"]);
   });
 
   it("ignores ids that belong to a different organization (cross-tenant isolation)", async () => {
@@ -367,6 +389,13 @@ describe("DELETE /api/library-items/bulk", () => {
     expect(res.body.deleted).toBe(1);
     expect(res.body.ids).toEqual(["item-a"]);
     expect(rows.find((r) => r.id === "item-foreign")).toBeTruthy();
+
+    // Task #2153 — partial-success path still produces an audit row that
+    // names exactly the rows that were deleted (not the foreign id).
+    expect(auditCalls.length).toBe(1);
+    const newValue = JSON.parse(auditCalls[0].newValue);
+    expect(newValue.deletedCount).toBe(1);
+    expect(newValue.deletedIds).toEqual(["item-a"]);
   });
 
   it("returns 0 when none of the supplied ids belong to the caller", async () => {
@@ -378,6 +407,20 @@ describe("DELETE /api/library-items/bulk", () => {
     expect(res.body.deleted).toBe(0);
     expect(res.body.ids).toEqual([]);
     expect(rows.find((r) => r.id === "item-foreign")).toBeTruthy();
+
+    // Task #2153 — no rows touched means no audit noise.
+    expect(auditCalls.length).toBe(0);
+  });
+
+  it("does not write an audit row when the cap-but-empty path matches nothing (Task #2153)", async () => {
+    testUser = { id: "u1", organizationId: "org-1", role: "ESTIMATOR" };
+    const ids = Array.from({ length: 500 }, (_, i) => `nope-${i}`);
+    const res = await request(app)
+      .delete("/api/library-items/bulk")
+      .send({ ids });
+    expect(res.status).toBe(200);
+    expect(res.body.deleted).toBe(0);
+    expect(auditCalls.length).toBe(0);
   });
 });
 
@@ -449,6 +492,23 @@ describe("POST /api/library-items/bulk-duplicate", () => {
     expect(copyA.id).not.toBe("item-a");
     expect(copyA.organizationId).toBe("org-1");
     expect(insertedRows).toHaveLength(2);
+
+    // Task #2153 — audit row was written naming the source ids and the
+    // freshly inserted ids.
+    expect(auditCalls.length).toBe(1);
+    expect(auditCalls[0]).toMatchObject({
+      userId: "u1",
+      action: "BULK_DUPLICATE",
+      entityType: "libraryItem",
+      entityId: "org-1",
+    });
+    const oldValue = JSON.parse(auditCalls[0].oldValue);
+    expect(oldValue.requestedCount).toBe(2);
+    expect(oldValue.requestedIds.sort()).toEqual(["item-a", "item-b"]);
+    expect(oldValue.sourceIds.sort()).toEqual(["item-a", "item-b"]);
+    const newValue = JSON.parse(auditCalls[0].newValue);
+    expect(newValue.duplicatedCount).toBe(2);
+    expect(newValue.duplicatedIds.sort()).toEqual([copyA.id, copyB.id].sort());
   });
 
   it("clamps the (copy) name to 120 characters", async () => {
@@ -482,6 +542,9 @@ describe("POST /api/library-items/bulk-duplicate", () => {
     expect(insertedRows).toEqual([]);
     // The foreign row itself is untouched.
     expect(rows.find((r) => r.id === "item-foreign")).toBeTruthy();
+
+    // Task #2153 — nothing was duplicated, so no audit noise either.
+    expect(auditCalls.length).toBe(0);
   });
 
   it("only duplicates the in-org subset when the request mixes own and foreign ids", async () => {
@@ -494,5 +557,14 @@ describe("POST /api/library-items/bulk-duplicate", () => {
     expect(res.body.items[0].name).toBe("Concrete Slab (copy)");
     expect(res.body.items[0].sourceId).toBe("item-a");
     expect(res.body.items[0].organizationId).toBe("org-1");
+
+    // Task #2153 — partial-success path still records exactly the in-org
+    // sources that ended up duplicated.
+    expect(auditCalls.length).toBe(1);
+    const oldValue = JSON.parse(auditCalls[0].oldValue);
+    expect(oldValue.sourceIds).toEqual(["item-a"]);
+    const newValue = JSON.parse(auditCalls[0].newValue);
+    expect(newValue.duplicatedCount).toBe(1);
+    expect(newValue.duplicatedIds).toEqual([res.body.items[0].id]);
   });
 });
