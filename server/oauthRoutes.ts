@@ -8,6 +8,7 @@ import { generateToken, setAuthCookie } from "./auth";
 import express from "express";
 import { getCanonicalBaseUrl } from "./utils/routeHelpers";
 import jwt from "jsonwebtoken";
+import { createOAuthState, consumeOAuthState } from "./oauthStateStore";
 
 const router = Router();
 
@@ -17,17 +18,14 @@ function generateState(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
-// Providers that return to us via cross-site form_post (Apple) need a cookie
-// the browser will actually send on a cross-site POST. SameSite=Lax cookies
-// are dropped on cross-site POSTs, so for those providers we set
-// SameSite=None; Secure. GET-redirect providers (Google, Microsoft) keep
-// SameSite=Lax so their behavior is unchanged.
+// Used for GET-redirect OAuth providers (Google, Microsoft). Apple uses a
+// cross-site form_post callback which drops SameSite cookies in modern
+// browsers, so it stores its state server-side via oauthStateStore instead.
 function setStateCookie(res: Response, state: string, provider: string) {
-  const crossSitePost = provider === "apple";
   res.cookie(`oauth_state_${provider}`, state, {
     httpOnly: true,
-    secure: crossSitePost ? true : process.env.NODE_ENV === "production",
-    sameSite: crossSitePost ? "none" : "lax",
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
     maxAge: 10 * 60 * 1000,
     path: "/",
   });
@@ -35,8 +33,7 @@ function setStateCookie(res: Response, state: string, provider: string) {
 
 function validateState(req: Request, provider: string): boolean {
   const cookieState = req.cookies?.[`oauth_state_${provider}`];
-  const returnedState =
-    provider === "apple" ? req.body?.state : (req.query?.state as string);
+  const returnedState = req.query?.state as string | undefined;
   if (!cookieState || !returnedState || cookieState !== returnedState) {
     return false;
   }
@@ -44,12 +41,11 @@ function validateState(req: Request, provider: string): boolean {
 }
 
 function clearStateCookie(res: Response, provider: string) {
-  const crossSitePost = provider === "apple";
   res.clearCookie(`oauth_state_${provider}`, {
     path: "/",
     httpOnly: true,
-    secure: crossSitePost ? true : process.env.NODE_ENV === "production",
-    sameSite: crossSitePost ? "none" : "lax",
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
   });
 }
 
@@ -298,16 +294,28 @@ function generateAppleClientSecret(): string {
 
 router.get("/api/auth/apple", (req: Request, res: Response) => {
   if (!isAppleConfigured()) {
-    res.status(503).json({
-      error:
-        "Apple Sign-In is not configured yet. Please set APPLE_CLIENT_ID, APPLE_TEAM_ID, APPLE_KEY_ID, and APPLE_PRIVATE_KEY environment variables.",
-    });
+    logWarn("Apple Sign-In requested but APPLE_* env vars are missing or placeholders");
+    res.redirect("/login?error=apple_not_configured");
+    return;
+  }
+
+  // Verify the client-secret JWT can actually be generated up-front so users
+  // are not bounced through the Apple consent screen only to fail on the
+  // callback. A failure here usually means APPLE_PRIVATE_KEY is malformed.
+  try {
+    generateAppleClientSecret();
+  } catch (err) {
+    logError(
+      "Apple client_secret JWT generation failed at /api/auth/apple",
+      {},
+      err instanceof Error ? err : new Error(String(err)),
+    );
+    res.redirect("/login?error=apple_not_configured");
     return;
   }
 
   const clientId = process.env.APPLE_CLIENT_ID!;
-  const state = generateState();
-  setStateCookie(res, state, "apple");
+  const state = createOAuthState("apple");
 
   const redirectUri = `${getCanonicalBaseUrl(req)}/api/auth/apple/callback`;
   const scope = encodeURIComponent("name email");
@@ -327,12 +335,41 @@ router.post(
   "/api/auth/apple/callback",
   async (req: Request, res: Response) => {
     try {
-      if (!validateState(req, "apple")) {
-        logError("Apple OAuth state mismatch — possible CSRF");
+      if (!isAppleConfigured()) {
+        logWarn("Apple OAuth callback hit but APPLE_* env vars not configured");
+        res.redirect("/login?error=apple_not_configured");
+        return;
+      }
+
+      // Defense-in-depth against login-CSRF: because the state lives
+      // server-side and is keyed only by its random value, an attacker who
+      // obtains a valid state (e.g. by initiating their own Apple flow)
+      // could try to POST it from a malicious page in a victim's browser to
+      // log the victim into the attacker's Apple account. Browsers populate
+      // the Origin header on cross-site form POSTs to the source origin, so
+      // we reject any callback whose Origin is not Apple. Some browsers
+      // strip Origin to "null" on cross-origin redirects — accept that, but
+      // reject any concrete non-Apple origin.
+      const originHeader = (req.headers.origin || "") as string;
+      if (originHeader && originHeader !== "null" && originHeader !== "https://appleid.apple.com") {
+        logError("Apple OAuth callback rejected — Origin is not Apple", { origin: originHeader });
         res.redirect("/login?error=apple_state_mismatch");
         return;
       }
-      clearStateCookie(res, "apple");
+
+      const returnedState = req.body?.state;
+      if (!returnedState || typeof returnedState !== "string") {
+        logError("Apple OAuth callback missing state parameter");
+        res.redirect("/login?error=apple_state_mismatch");
+        return;
+      }
+      if (!consumeOAuthState("apple", returnedState)) {
+        // Either the state was never issued by us, was already consumed, or
+        // expired (>10 min). All point to a stale/replayed/forged callback.
+        logError("Apple OAuth state mismatch — possible CSRF, replay, or expired state");
+        res.redirect("/login?error=apple_state_mismatch");
+        return;
+      }
 
       const { code, user: appleUserData } = req.body;
 
@@ -343,7 +380,18 @@ router.post(
       }
 
       const clientId = process.env.APPLE_CLIENT_ID!;
-      const clientSecret = generateAppleClientSecret();
+      let clientSecret: string;
+      try {
+        clientSecret = generateAppleClientSecret();
+      } catch (secretErr) {
+        logError(
+          "Apple client_secret JWT generation failed in callback",
+          {},
+          secretErr instanceof Error ? secretErr : new Error(String(secretErr)),
+        );
+        res.redirect("/login?error=apple_not_configured");
+        return;
+      }
       const redirectUri = `${getCanonicalBaseUrl(req)}/api/auth/apple/callback`;
 
       const tokenRes = await fetch("https://appleid.apple.com/auth/token", {
@@ -467,6 +515,7 @@ router.post(
       }
 
       if (!email) {
+        logWarn("Apple id_token missing email — user likely chose 'Hide My Email' on first consent without sharing");
         res.redirect("/login?error=apple_no_email");
         return;
       }
@@ -483,7 +532,7 @@ router.post(
             firstName = parsed.name.firstName || "User";
             lastName = parsed.name.lastName || "";
           }
-        } catch { logWarn("Non-critical operation failed"); }
+        } catch { logWarn("Apple user payload could not be parsed (non-critical)"); }
       }
 
       const user = await findOrCreateOAuthUser(
@@ -496,6 +545,7 @@ router.post(
       );
 
       if (!user) {
+        logWarn("Apple sign-in: could not find or create user (email_verified=false and no existing account)", { emailVerified });
         res.redirect("/login?error=apple_no_email");
         return;
       }
