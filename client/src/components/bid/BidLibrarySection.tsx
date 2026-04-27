@@ -23,10 +23,17 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
+} from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import LibraryItemDialog from "@/components/LibraryItemDialog";
 import LibraryAssemblyDialog from "@/components/LibraryAssemblyDialog";
 import LibraryCategoryManagerDialog from "@/components/LibraryCategoryManagerDialog";
 import { dispatchLibraryEvent } from "@/lib/libraryEvents";
+import { cn } from "@/lib/utils";
+import { CheckSquare, X, FolderInput } from "lucide-react";
 import { FolderOpen } from "lucide-react";
 import type { LibraryItem, LibraryAssembly, CustomLibrary, SavedTakeoff, LibraryCategory } from "@shared/schema";
 import { getTradeDisplayName, type TradeType } from "@shared/tradeTypeUtils";
@@ -55,6 +62,26 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
   const [deleteItemId, setDeleteItemId] = useState<string | null>(null);
   const [deleteAssemblyId, setDeleteAssemblyId] = useState<string | null>(null);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
+
+  // Task #2086 — multi-select & bulk re-bucket from the bid sidebar.
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
+  const [showBulkMoveDialog, setShowBulkMoveDialog] = useState(false);
+  const [bulkMoveTargetCategoryId, setBulkMoveTargetCategoryId] = useState<string>("");
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedItemIds(new Set());
+  };
+
+  const toggleItemSelected = (id: string) => {
+    setSelectedItemIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const { data: libraries = [] } = useQuery<CustomLibrary[]>({
     queryKey: ["/api/custom-libraries"],
@@ -124,6 +151,24 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message || "Failed to delete assembly", variant: "destructive" });
+    },
+  });
+
+  // Task #2086 — bulk re-bucket selected items via the new PATCH endpoint.
+  const bulkMoveMutation = useMutation({
+    mutationFn: async (payload: { ids: string[]; categoryId: string | null }) => {
+      const res = await apiRequest("PATCH", "/api/library-items/bulk", payload);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string)?.startsWith("/api/library-items") });
+      setShowBulkMoveDialog(false);
+      setBulkMoveTargetCategoryId("");
+      exitSelectionMode();
+      toast({ title: "Items moved", description: `Re-bucketed ${data?.updated ?? 0} items.` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Move failed", description: err?.message || "Could not move items", variant: "destructive" });
     },
   });
 
@@ -336,7 +381,52 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
               >
                 <Layers className="h-3 w-3 mr-1" /> Categories
               </Button>
+              {/* Task #2086 — bulk-edit toggle. */}
+              <Button
+                variant={selectionMode ? "secondary" : "ghost"}
+                size="sm"
+                className="text-[11px] h-6 px-1.5"
+                onClick={() => (selectionMode ? exitSelectionMode() : setSelectionMode(true))}
+                title={selectionMode ? "Exit selection mode" : "Select items to bulk-edit"}
+                data-testid="btn-bid-toggle-bulk-select"
+              >
+                {selectionMode ? <X className="h-3 w-3 mr-1" /> : <CheckSquare className="h-3 w-3 mr-1" />}
+                {selectionMode ? "Done" : "Select"}
+              </Button>
             </div>
+            {/* Task #2086 — bulk action bar in the bid sidebar. */}
+            {selectionMode && (
+              <div
+                className="flex items-center gap-1 px-1.5 py-1 rounded bg-accent/60 border border-border/60"
+                data-testid="bid-bulk-action-bar"
+              >
+                <Checkbox
+                  checked={selectedItemIds.size > 0 && selectedItemIds.size === filteredItems.length}
+                  onCheckedChange={(v) => {
+                    if (v) setSelectedItemIds(new Set(filteredItems.map((i) => i.id)));
+                    else setSelectedItemIds(new Set());
+                  }}
+                  className="h-3.5 w-3.5"
+                  data-testid="checkbox-bid-select-all-items"
+                />
+                <span className="text-[11px] flex-1" data-testid="text-bid-selected-count">
+                  {selectedItemIds.size} selected
+                </span>
+                <Button
+                  variant="default"
+                  size="sm"
+                  className="h-5 text-[11px] px-1.5"
+                  disabled={selectedItemIds.size === 0}
+                  onClick={() => {
+                    setBulkMoveTargetCategoryId("");
+                    setShowBulkMoveDialog(true);
+                  }}
+                  data-testid="btn-bid-bulk-move"
+                >
+                  <FolderInput className="h-3 w-3 mr-1" /> Move…
+                </Button>
+              </div>
+            )}
             {/* Task #2068 — Trade > Category > Item tree. */}
             {tradeTree.map((trade) => (
               <Collapsible
@@ -376,50 +466,71 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
                           </CollapsibleTrigger>
                           <CollapsibleContent>
                             <div className="pl-3 space-y-0.5 py-0.5">
-                              {cat.items.map((item) => (
-                                <div
-                                  key={item.id}
-                                  className="flex items-center gap-1 px-1.5 py-1 text-[11px] rounded hover:bg-accent/50 group cursor-pointer"
-                                  data-testid={`bid-library-item-${item.id}`}
-                                >
-                                  <Package className="h-3 w-3 text-muted-foreground shrink-0" />
-                                  <div className="flex-1 min-w-0">
-                                    <div className="truncate font-medium">{item.name}</div>
-                                    <div className="text-muted-foreground truncate text-[10px]">
-                                      {item.itemNumber && <span>{item.itemNumber} · </span>}
-                                      {item.unitOfMeasure}
-                                      {item.unitCosts && typeof item.unitCosts === "object" ? (
-                                        <span> · ${Object.values(item.unitCosts as Record<string, number>).reduce<number>((s, v) => s + (Number(v) || 0), 0).toFixed(2)}</span>
-                                      ) : null}
-                                    </div>
-                                  </div>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-5 w-5 opacity-0 group-hover:opacity-100 shrink-0"
-                                    onClick={(e) => { e.stopPropagation(); handleApplyItem(item); }}
-                                    title="Apply to takeoff"
-                                    data-testid={`btn-apply-item-${item.id}`}
+                              {cat.items.map((item) => {
+                                const isSelected = selectedItemIds.has(item.id);
+                                return (
+                                  <div
+                                    key={item.id}
+                                    className={cn(
+                                      "flex items-center gap-1 px-1.5 py-1 text-[11px] rounded hover:bg-accent/50 group cursor-pointer",
+                                      isSelected && "bg-accent/70"
+                                    )}
+                                    onClick={selectionMode ? () => toggleItemSelected(item.id) : undefined}
+                                    data-testid={`bid-library-item-${item.id}`}
                                   >
-                                    <ArrowRight className="h-3 w-3" />
-                                  </Button>
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 shrink-0" data-testid={`btn-bid-item-menu-${item.id}`}>
-                                        <MoreVertical className="h-3 w-3" />
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                      <DropdownMenuItem onClick={() => { setEditItem(item); setShowItemDialog(true); }} data-testid={`btn-bid-edit-item-${item.id}`}>
-                                        <Pencil className="h-3.5 w-3.5 mr-2" /> Edit
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem className="text-destructive" onClick={() => setDeleteItemId(item.id)} data-testid={`btn-bid-delete-item-${item.id}`}>
-                                        <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                </div>
-                              ))}
+                                    {selectionMode ? (
+                                      <Checkbox
+                                        checked={isSelected}
+                                        onCheckedChange={() => toggleItemSelected(item.id)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="h-3.5 w-3.5"
+                                        data-testid={`checkbox-bid-item-${item.id}`}
+                                      />
+                                    ) : (
+                                      <Package className="h-3 w-3 text-muted-foreground shrink-0" />
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <div className="truncate font-medium">{item.name}</div>
+                                      <div className="text-muted-foreground truncate text-[10px]">
+                                        {item.itemNumber && <span>{item.itemNumber} · </span>}
+                                        {item.unitOfMeasure}
+                                        {item.unitCosts && typeof item.unitCosts === "object" ? (
+                                          <span> · ${Object.values(item.unitCosts as Record<string, number>).reduce<number>((s, v) => s + (Number(v) || 0), 0).toFixed(2)}</span>
+                                        ) : null}
+                                      </div>
+                                    </div>
+                                    {!selectionMode && (
+                                      <>
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-5 w-5 opacity-0 group-hover:opacity-100 shrink-0"
+                                          onClick={(e) => { e.stopPropagation(); handleApplyItem(item); }}
+                                          title="Apply to takeoff"
+                                          data-testid={`btn-apply-item-${item.id}`}
+                                        >
+                                          <ArrowRight className="h-3 w-3" />
+                                        </Button>
+                                        <DropdownMenu>
+                                          <DropdownMenuTrigger asChild>
+                                            <Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 shrink-0" data-testid={`btn-bid-item-menu-${item.id}`}>
+                                              <MoreVertical className="h-3 w-3" />
+                                            </Button>
+                                          </DropdownMenuTrigger>
+                                          <DropdownMenuContent align="end">
+                                            <DropdownMenuItem onClick={() => { setEditItem(item); setShowItemDialog(true); }} data-testid={`btn-bid-edit-item-${item.id}`}>
+                                              <Pencil className="h-3.5 w-3.5 mr-2" /> Edit
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem className="text-destructive" onClick={() => setDeleteItemId(item.id)} data-testid={`btn-bid-delete-item-${item.id}`}>
+                                              <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                                            </DropdownMenuItem>
+                                          </DropdownMenuContent>
+                                        </DropdownMenu>
+                                      </>
+                                    )}
+                                  </div>
+                                );
+                              })}
                             </div>
                           </CollapsibleContent>
                         </Collapsible>
@@ -585,6 +696,62 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Task #2086 — bulk move dialog. */}
+      <Dialog open={showBulkMoveDialog} onOpenChange={(o) => { if (!o) { setShowBulkMoveDialog(false); setBulkMoveTargetCategoryId(""); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Move items to category</DialogTitle>
+            <DialogDescription>
+              Re-bucket {selectedItemIds.size} selected {selectedItemIds.size === 1 ? "item" : "items"} into a different category.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <Label>Destination category</Label>
+            <Select value={bulkMoveTargetCategoryId} onValueChange={setBulkMoveTargetCategoryId}>
+              <SelectTrigger data-testid="select-bid-bulk-move-target">
+                <SelectValue placeholder="Select a category…" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__uncategorized__">Uncategorized</SelectItem>
+                {categories
+                  .slice()
+                  .sort((a, b) => {
+                    const ta = a.tradeType || "";
+                    const tb = b.tradeType || "";
+                    if (ta !== tb) return ta.localeCompare(tb);
+                    return a.name.localeCompare(b.name);
+                  })
+                  .map((c) => {
+                    const tradeLabel = c.tradeType ? getTradeDisplayName(c.tradeType as TradeType) : "Other";
+                    return (
+                      <SelectItem key={c.id} value={c.id} data-testid={`option-bid-bulk-move-${c.id}`}>
+                        {tradeLabel} · {c.name}
+                      </SelectItem>
+                    );
+                  })}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setShowBulkMoveDialog(false); setBulkMoveTargetCategoryId(""); }}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!bulkMoveTargetCategoryId || bulkMoveMutation.isPending || selectedItemIds.size === 0}
+              onClick={() => {
+                bulkMoveMutation.mutate({
+                  ids: Array.from(selectedItemIds),
+                  categoryId: bulkMoveTargetCategoryId === "__uncategorized__" ? null : bulkMoveTargetCategoryId,
+                });
+              }}
+              data-testid="btn-confirm-bid-bulk-move"
+            >
+              {bulkMoveMutation.isPending ? "Moving…" : "Move"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

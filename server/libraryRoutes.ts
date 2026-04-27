@@ -181,6 +181,44 @@ router.post("/api/library-items", async (req: AuthRequest, res: Response, next: 
   res.json(result);
 });
 
+// Task #2086 — bulk re-bucket many library items into a different category in
+// a single round-trip. Limited to a single shared `categoryId` patch (null
+// allowed to move items back to "Uncategorized") so the endpoint stays narrow
+// and easy to authorize. All ids must belong to the caller's organization.
+router.patch("/api/library-items/bulk", async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
+
+  const { ids, categoryId } = req.body ?? {};
+  if (!Array.isArray(ids) || ids.length === 0 || !ids.every((v) => typeof v === "string" && v.length > 0)) {
+    return res.status(400).json({ error: "ids must be a non-empty array of strings" });
+  }
+  if (categoryId !== null && typeof categoryId !== "string") {
+    return res.status(400).json({ error: "categoryId must be a string or null" });
+  }
+  const MAX_BULK = 500;
+  if (ids.length > MAX_BULK) {
+    return res.status(400).json({ error: `Cannot bulk-update more than ${MAX_BULK} items at once` });
+  }
+
+  // If a destination category was supplied, make sure it belongs to the caller's
+  // org so we don't let one tenant park items under another tenant's category.
+  if (categoryId) {
+    const [cat] = await db.select({ id: libraryCategories.id }).from(libraryCategories)
+      .where(and(eq(libraryCategories.id, categoryId), eq(libraryCategories.organizationId, orgId)))
+      .limit(1);
+    if (!cat) return res.status(404).json({ error: "Destination category not found" });
+  }
+
+  const updated = await db.update(libraryItems)
+    .set({ categoryId: categoryId ?? null, updatedAt: new Date() })
+    .where(and(eq(libraryItems.organizationId, orgId), inArray(libraryItems.id, ids)))
+    .returning({ id: libraryItems.id });
+
+  res.json({ updated: updated.length, ids: updated.map((r) => r.id) });
+});
+
 router.patch("/api/library-items/:id", async (req: AuthRequest, res: Response, next: NextFunction) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
