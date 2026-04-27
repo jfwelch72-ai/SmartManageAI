@@ -49,10 +49,44 @@ import { sql } from "drizzle-orm";
 export interface OAuthStateStore {
   create(provider: string, state: string, expiresAt: Date): Promise<void>;
   consume(provider: string, state: string, nowMs: number): Promise<boolean>;
+  /**
+   * Diagnostic-only — returns whatever is currently stored under
+   * `state` (if anything) WITHOUT consuming or mutating it. Used by
+   * Task #2061 to disambiguate why a `consume` returned `false`:
+   *   - `null` → no row at all (state was never issued, was already
+   *     consumed, was swept, or — most importantly here — Apple
+   *     POSTed back something that doesn't exactly match what we
+   *     INSERTed).
+   *   - row + `provider !== expected` → cross-provider replay.
+   *   - row + `expiresAt <= now` → expired.
+   *   - row + `provider === expected` && `expiresAt > now` → the
+   *     consume's `expires_at > now` filter (or some other
+   *     transient condition) rejected a row that should have
+   *     matched. This is the smoking gun for a clock-skew or
+   *     parameter-binding bug and we want it to scream in the
+   *     logs.
+   */
+  inspect(state: string): Promise<{ provider: string; expiresAt: Date } | null>;
   /** Test/dev only — wipes the entire store. */
   reset(): Promise<void>;
   /** Test-only inspector — number of entries currently retained. */
   size(): Promise<number>;
+}
+
+/**
+ * Task #2061 — short, non-reversible identifier for an OAuth state
+ * value, safe to log. We hash with SHA-256 and keep the first 12 hex
+ * chars (48 bits) so we can correlate the create-time and consume-time
+ * log lines for a single sign-in attempt without ever writing the raw
+ * state value to disk (which would re-enable a CSRF attacker who reads
+ * logs to consume the state).
+ */
+export function hashOAuthStatePrefix(state: string): string {
+  return crypto
+    .createHash("sha256")
+    .update(state)
+    .digest("hex")
+    .slice(0, 12);
 }
 
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -71,12 +105,28 @@ class PostgresOAuthStateStore implements OAuthStateStore {
     `);
   }
 
-  async consume(provider: string, state: string, nowMs: number): Promise<boolean> {
+  async consume(provider: string, state: string, _nowMs: number): Promise<boolean> {
     // Atomic one-time consume:
     //   - DELETE removes the row so a replay can't succeed.
-    //   - The `expires_at > $now` filter rejects stale rows that the
+    //   - The `expires_at > now()` filter rejects stale rows that the
     //     periodic sweep hasn't gotten to yet, without having to
     //     SELECT-then-DELETE (which would race a parallel callback).
+    //     Task #2061 — the comparison is now done with Postgres'
+    //     server-side `now()` instead of a Node-side `Date` parameter.
+    //     Why: in production we were seeing every Apple sign-in
+    //     attempt return `false` from this consume even though the
+    //     state had been INSERTed seconds earlier and the TTL was
+    //     ~10 minutes. The leading hypothesis (per the bug report)
+    //     was a clock or parameter-binding skew between the Node
+    //     process and the Postgres backend that pushed `expires_at`
+    //     to the wrong side of the comparison. Using `now()`
+    //     evaluates "is this row still alive?" against a single
+    //     authoritative clock — Postgres' own — so a Node clock
+    //     drift, an off-by-one timezone bug in the pg date binder,
+    //     or any future driver upgrade that changes how a JS `Date`
+    //     becomes a `timestamptz` parameter cannot resurrect this
+    //     bug. The TTL is still 10 minutes (set on the row at INSERT
+    //     time), so the user-visible behavior is unchanged.
     //   - The `provider = $provider` filter enforces namespacing
     //     symmetrically with the in-memory store: a state issued for
     //     Apple cannot be consumed as a Google state.
@@ -84,16 +134,44 @@ class PostgresOAuthStateStore implements OAuthStateStore {
     //     the definitive "consume succeeded" signal under concurrency:
     //     two replicas POSTing the same state both run the DELETE, but
     //     Postgres serializes them and only one gets a row back.
-    const nowDate = new Date(nowMs);
+    void _nowMs;
     const result = await db.execute(sql`
       DELETE FROM oauth_state
       WHERE state = ${state}
         AND provider = ${provider}
-        AND expires_at > ${nowDate}
+        AND expires_at > now()
       RETURNING state
     `);
     const rows = (result as { rows?: unknown[] }).rows ?? [];
     return rows.length > 0;
+  }
+
+  async inspect(state: string): Promise<{ provider: string; expiresAt: Date } | null> {
+    // Read-only peek used exclusively by the diagnostic logging path
+    // when `consume` returns `false`. Intentionally does NOT filter
+    // on `expires_at` or `provider` so the caller can distinguish
+    // "no row at all" from "row exists but expired" from "row exists
+    // but namespaced under a different provider".
+    const result = await db.execute(sql`
+      SELECT provider, expires_at
+      FROM oauth_state
+      WHERE state = ${state}
+      LIMIT 1
+    `);
+    // Cast through `unknown` to mirror the pattern used by `consume` /
+    // `size` above — drizzle's `db.execute` return type is generic over
+    // an unknown row shape so a direct narrowing cast is unsound.
+    const rows =
+      ((result as unknown) as { rows?: Array<{ provider: string; expires_at: Date | string }> })
+        .rows ?? [];
+    if (rows.length === 0) return null;
+    const row = rows[0];
+    // pg may hand back `expires_at` as either a JS `Date` (default
+    // type parser) or an ISO string (if a downstream consumer has
+    // overridden the parser). Normalize so callers always get a Date.
+    const expiresAt =
+      row.expires_at instanceof Date ? row.expires_at : new Date(row.expires_at);
+    return { provider: row.provider, expiresAt };
   }
 
   async reset(): Promise<void> {
@@ -134,6 +212,11 @@ export function createInMemoryOAuthStateStore(): OAuthStateStore {
       if (entry.expiresAtMs <= nowMs) return false;
       return true;
     },
+    async inspect(state: string): Promise<{ provider: string; expiresAt: Date } | null> {
+      const entry = map.get(state);
+      if (!entry) return null;
+      return { provider: entry.provider, expiresAt: new Date(entry.expiresAtMs) };
+    },
     async reset(): Promise<void> {
       map.clear();
     },
@@ -162,6 +245,21 @@ export async function consumeOAuthState(
 ): Promise<boolean> {
   if (!state || typeof state !== "string") return false;
   return activeStore.consume(provider, state, Date.now());
+}
+
+/**
+ * Task #2061 — diagnostic-only peek at the persisted state row,
+ * delegating to whichever store is currently active. Routes call this
+ * after a `consumeOAuthState` returns `false` to enrich the failure
+ * log with enough context to tell apart the four candidate root
+ * causes (no row vs. wrong provider vs. expired vs. should-have-
+ * matched). Never used to authorize anything — strictly logging.
+ */
+export async function inspectOAuthState(
+  state: string,
+): Promise<{ provider: string; expiresAt: Date } | null> {
+  if (!state || typeof state !== "string") return null;
+  return activeStore.inspect(state);
 }
 
 /**

@@ -1,4 +1,4 @@
-import {logError, logWarn } from "./utils/logger";
+import { logError, logInfo, logWarn } from "./utils/logger";
 import { Router, type Request, type Response } from "express";
 import crypto from "crypto";
 import { db } from "./db";
@@ -8,7 +8,12 @@ import { generateToken, setAuthCookie } from "./auth";
 import express from "express";
 import { getCanonicalBaseUrl } from "./utils/routeHelpers";
 import jwt from "jsonwebtoken";
-import { createOAuthState, consumeOAuthState } from "./oauthStateStore";
+import {
+  createOAuthState,
+  consumeOAuthState,
+  inspectOAuthState,
+  hashOAuthStatePrefix,
+} from "./oauthStateStore";
 
 const router = Router();
 
@@ -335,6 +340,22 @@ router.get("/api/auth/apple", async (req: Request, res: Response) => {
   }
 
   const redirectUri = `${getCanonicalBaseUrl(req)}/api/auth/apple/callback`;
+
+  // Task #2061 — emit a structured "state issued" log line at create
+  // time so we can correlate it with the consume-time log on the
+  // callback for a single sign-in attempt. We log the SHA-256 prefix
+  // (NOT the raw state) so an attacker who reads logs cannot replay
+  // the state. Length and the redirect_uri Apple will POST back to
+  // are also logged so a callback that lands on a different
+  // deployment / replica is obvious from the absence of a matching
+  // "issued" line.
+  logInfo("Apple OAuth state issued", {
+    provider: "apple",
+    statePrefix: hashOAuthStatePrefix(state),
+    stateLength: state.length,
+    redirectUri,
+    issuedAt: new Date().toISOString(),
+  });
   const scope = encodeURIComponent("name email");
   const authUrl =
     `https://appleid.apple.com/auth/authorize?` +
@@ -380,6 +401,11 @@ router.post(
         res.redirect("/login?error=apple_state_mismatch");
         return;
       }
+      // Task #2061 — hash the returned state up-front so every log line
+      // on the callback path can carry the same correlation id back to
+      // the "Apple OAuth state issued" log emitted on the GET. Never
+      // log the raw state.
+      const returnedStatePrefix = hashOAuthStatePrefix(returnedState);
       let stateConsumed = false;
       try {
         // Task #2056 — `consumeOAuthState` now reads from a shared Postgres
@@ -389,18 +415,88 @@ router.post(
         // CSRF protection on a transient outage.
         stateConsumed = await consumeOAuthState("apple", returnedState);
       } catch (stateErr) {
+        // Task #2061 — surface DB-error-driven failures with a distinct
+        // error code (`apple_state_consume_error`) so operators reading
+        // logs / user reports can immediately tell this apart from a
+        // "row genuinely didn't match" mismatch. The original behavior
+        // silently degraded to `apple_state_mismatch`, which made an
+        // outage indistinguishable from a CSRF attempt.
         logError(
-          "Apple OAuth state consume failed",
-          {},
+          "Apple OAuth state consume threw — DB error, not a true mismatch",
+          { provider: "apple", statePrefix: returnedStatePrefix, stateLength: returnedState.length },
           stateErr instanceof Error ? stateErr : new Error(String(stateErr)),
         );
-        res.redirect("/login?error=apple_state_mismatch");
+        res.redirect("/login?error=apple_state_consume_error");
         return;
       }
       if (!stateConsumed) {
-        // Either the state was never issued by us, was already consumed, or
-        // expired (>10 min). All point to a stale/replayed/forged callback.
-        logError("Apple OAuth state mismatch — possible CSRF, replay, or expired state");
+        // Task #2061 — the bare "state mismatch" log was unactionable: it
+        // collapsed four very different failure modes (no row at all,
+        // row exists for the wrong provider, row exists but already
+        // expired, row exists and *should* have matched) into one
+        // message. Peek at whatever is currently in the table for this
+        // state value (read-only, does not consume) so we can attach
+        // the actually-disambiguating context to the log line. The peek
+        // is wrapped in its own try because a DB hiccup here must not
+        // mask the original mismatch.
+        const serverNow = new Date();
+        let inspected: { provider: string; expiresAt: Date } | null = null;
+        let inspectError: Error | null = null;
+        try {
+          inspected = await inspectOAuthState(returnedState);
+        } catch (inspectErr) {
+          inspectError = inspectErr instanceof Error ? inspectErr : new Error(String(inspectErr));
+        }
+
+        if (inspected) {
+          // The row IS in the table — consume rejected it on the
+          // `provider` or `expires_at > now()` filter. This is the
+          // most diagnostic-rich case: dump the row's actual provider
+          // and expires_at alongside the server's current time so the
+          // four candidate causes (encoding diff is now ruled out;
+          // wrong provider, expired, or shouldn't-have-rejected) are
+          // legible from a single log line.
+          const isExpired = inspected.expiresAt.getTime() <= serverNow.getTime();
+          const providerMismatch = inspected.provider !== "apple";
+          logError(
+            "Apple OAuth state mismatch — row found in oauth_state but consume rejected it",
+            {
+              provider: "apple",
+              statePrefix: returnedStatePrefix,
+              stateLength: returnedState.length,
+              rowProvider: inspected.provider,
+              rowExpiresAt: inspected.expiresAt.toISOString(),
+              serverNow: serverNow.toISOString(),
+              msUntilExpiry: inspected.expiresAt.getTime() - serverNow.getTime(),
+              providerMismatch,
+              isExpired,
+              // If neither flag is true the consume should have
+              // succeeded — this is the smoking gun for a clock-skew
+              // / parameter-binding / replication-lag bug.
+              shouldHaveMatched: !providerMismatch && !isExpired,
+            },
+          );
+        } else {
+          // No row at all. Either the state was never issued by us
+          // (CSRF / forged callback), Apple POSTed back something
+          // that doesn't byte-for-byte match what we INSERTed (the
+          // "encoding diff" hypothesis), the state was already
+          // consumed (replay), or the row was swept after expiry.
+          // Cross-reference with the "Apple OAuth state issued" log
+          // sharing the same `statePrefix`: if there is no matching
+          // issued line, this callback is for a state we never
+          // created (or one created on a different deployment).
+          logError(
+            "Apple OAuth state mismatch — no row found for returned state",
+            {
+              provider: "apple",
+              statePrefix: returnedStatePrefix,
+              stateLength: returnedState.length,
+              serverNow: serverNow.toISOString(),
+              inspectErrorMessage: inspectError?.message ?? null,
+            },
+          );
+        }
         res.redirect("/login?error=apple_state_mismatch");
         return;
       }

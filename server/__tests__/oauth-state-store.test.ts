@@ -2,6 +2,8 @@ import { describe, it, expect, beforeEach, afterAll, vi } from "vitest";
 import {
   createOAuthState,
   consumeOAuthState,
+  inspectOAuthState,
+  hashOAuthStatePrefix,
   _testClearOAuthStateStore,
   _testOAuthStateStoreSize,
   __setOAuthStateStoreForTests,
@@ -107,5 +109,89 @@ describe("oauthStateStore", () => {
     __setOAuthStateStoreForTests(sharedStore);
 
     expect(await consumeOAuthState("apple", issuedBeforeRestart)).toBe(true);
+  });
+
+  // Task #2061 — the diagnostic peek that the Apple callback uses to
+  // explain *why* a `consume` returned `false`. It must be a pure
+  // read: a peek must not consume the row, must report the row's
+  // provider and expires_at when present, and must return `null`
+  // (not throw) when the state has never been issued. Without these
+  // guarantees the new "Apple OAuth state mismatch — row found" /
+  // "no row found" disambiguation logs would be misleading.
+  describe("inspectOAuthState (diagnostic peek)", () => {
+    it("returns null for a state that was never issued", async () => {
+      expect(await inspectOAuthState("never-issued-state")).toBeNull();
+    });
+
+    it("returns null for empty / non-string input without throwing", async () => {
+      expect(await inspectOAuthState("")).toBeNull();
+      // @ts-expect-error — exercising the runtime guard
+      expect(await inspectOAuthState(undefined)).toBeNull();
+    });
+
+    it("returns the provider and expiresAt for a live state without consuming it", async () => {
+      const state = await createOAuthState("apple", 60_000);
+      const inspected = await inspectOAuthState(state);
+      expect(inspected).not.toBeNull();
+      expect(inspected!.provider).toBe("apple");
+      expect(inspected!.expiresAt.getTime()).toBeGreaterThan(Date.now());
+      // Crucially: the peek must NOT have removed the row.
+      expect(await _testOAuthStateStoreSize()).toBe(1);
+      // And the state must still be consumable exactly once after.
+      expect(await consumeOAuthState("apple", state)).toBe(true);
+      expect(await consumeOAuthState("apple", state)).toBe(false);
+    });
+
+    it("still surfaces a row whose expires_at has passed (so the callback can log 'expired')", async () => {
+      vi.useFakeTimers();
+      const state = await createOAuthState("apple", 1000);
+      vi.advanceTimersByTime(2000);
+      const inspected = await inspectOAuthState(state);
+      // Row is still in the table — the callback's diagnostic logger
+      // is what compares expires_at to now and labels it "expired".
+      expect(inspected).not.toBeNull();
+      expect(inspected!.provider).toBe("apple");
+      expect(inspected!.expiresAt.getTime()).toBeLessThanOrEqual(Date.now());
+    });
+
+    it("reports the actual provider so a wrong-provider call is diagnosable", async () => {
+      const state = await createOAuthState("google");
+      const inspected = await inspectOAuthState(state);
+      expect(inspected?.provider).toBe("google");
+      // And the apple-namespaced consume of a google state still fails,
+      // which is what triggers the diagnostic peek in the callback.
+      expect(await consumeOAuthState("apple", state)).toBe(false);
+    });
+  });
+
+  // Task #2061 — the hash prefix is the correlation id between the
+  // "Apple OAuth state issued" log on the GET and the
+  // "Apple OAuth state mismatch" log on the callback. It MUST be
+  // deterministic, MUST be much shorter than the state itself (so a
+  // log scraper isn't tempted to use it as a CSRF replay token),
+  // and MUST NOT leak the raw state byte-for-byte.
+  describe("hashOAuthStatePrefix", () => {
+    it("is deterministic for the same input", () => {
+      const a = hashOAuthStatePrefix("abcdef");
+      const b = hashOAuthStatePrefix("abcdef");
+      expect(a).toBe(b);
+    });
+
+    it("is different for different inputs", () => {
+      expect(hashOAuthStatePrefix("a")).not.toBe(hashOAuthStatePrefix("b"));
+    });
+
+    it("never returns the raw state value", () => {
+      const state = "f".repeat(64);
+      const prefix = hashOAuthStatePrefix(state);
+      expect(prefix).not.toContain(state);
+      expect(state).not.toContain(prefix);
+    });
+
+    it("is short enough to be safe to log (<= 16 hex chars)", () => {
+      const prefix = hashOAuthStatePrefix("anything");
+      expect(prefix.length).toBeLessThanOrEqual(16);
+      expect(prefix).toMatch(/^[0-9a-f]+$/);
+    });
   });
 });

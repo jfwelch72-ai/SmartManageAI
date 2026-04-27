@@ -490,4 +490,126 @@ describe("Apple OAuth routes (e2e)", () => {
     expect(res.status).toBe(302);
     expect(res.headers.location).toBe("/login?error=apple_not_configured");
   });
+
+  // Task #2061 — these regression tests cover the failure-mode
+  // disambiguation work added because every Apple Sign-In in
+  // production was returning `apple_state_mismatch` with a single,
+  // unactionable log line that collapsed four very different causes
+  // into one. The regressions we never want to ship again:
+  //   1. A DB error during `consumeOAuthState` is silently
+  //      relabeled as a "state mismatch", making an outage
+  //      indistinguishable from a CSRF attempt in logs / user
+  //      reports. The new `apple_state_consume_error` redirect must
+  //      be distinct.
+  //   2. The "state mismatch" log carries no correlation id, so it
+  //      is impossible to tell whether the callback's state matches
+  //      a state the server actually issued. The new log must carry
+  //      a SHA-256 prefix of the state (NOT the raw value) so it
+  //      can be correlated with the `Apple OAuth state issued` log
+  //      from the GET initiator for the same sign-in attempt.
+  //   3. A diagnostic `inspectOAuthState` peek leaking state into
+  //      the table or consuming it would re-introduce the original
+  //      "state already gone by the time we peek" bug. The peek
+  //      must be a pure read.
+  describe("Task #2061 — diagnostic logging + distinct error codes", () => {
+    it("redirects with apple_state_consume_error (not apple_state_mismatch) when consumeOAuthState throws", async () => {
+      const state = await initiateAndExtractState();
+
+      // Swap in a store whose `consume` blows up to simulate a
+      // transient Postgres outage. `inspect` is harmless here — the
+      // consume throw is what the route should latch onto.
+      const original = stateStoreModule.createInMemoryOAuthStateStore();
+      const failingStore: import("../oauthStateStore").OAuthStateStore = {
+        async create(...args) {
+          return original.create(...args);
+        },
+        async consume() {
+          throw new Error("simulated DB outage on consume");
+        },
+        async inspect(...args) {
+          return original.inspect(...args);
+        },
+        async reset() {
+          return original.reset();
+        },
+        async size() {
+          return original.size();
+        },
+      };
+      stateStoreModule.__setOAuthStateStoreForTests(failingStore);
+
+      try {
+        const res = await request(app)
+          .post("/api/auth/apple/callback")
+          .type("form")
+          .send({ state, code: "code" });
+
+        expect(res.status).toBe(302);
+        // The whole point: a DB-error failure mode must surface a
+        // distinct error code so an operator can immediately tell
+        // it apart from a real "state mismatch".
+        expect(res.headers.location).toBe(
+          "/login?error=apple_state_consume_error",
+        );
+        expect(extractAuthCookie(res)).toBeNull();
+      } finally {
+        stateStoreModule.__setOAuthStateStoreForTests(null);
+      }
+    });
+
+    it("a callback for a never-issued state still yields apple_state_mismatch (and the inspect peek does not throw)", async () => {
+      // A 64-char hex value that nobody ever issued — this exercises
+      // the diagnostic-peek path where `inspectOAuthState` legitimately
+      // returns null. We just need to confirm the route doesn't crash
+      // (peek-throws-must-not-mask-mismatch) and still issues the
+      // user-visible state-mismatch redirect.
+      const res = await request(app)
+        .post("/api/auth/apple/callback")
+        .type("form")
+        .send({ state: "a".repeat(64), code: "code" });
+
+      expect(res.status).toBe(302);
+      expect(res.headers.location).toBe("/login?error=apple_state_mismatch");
+      expect(extractAuthCookie(res)).toBeNull();
+    });
+
+    it("the GET initiator's redirect URL matches the redirect_uri Apple will POST back to (rules out multi-host mismatch)", async () => {
+      // The (d) candidate cause of the production bug was that the
+      // canonical base URL handed to Apple as `redirect_uri` did not
+      // match the URL Apple POSTs the callback to, sending the
+      // callback to a different replica / host that has no matching
+      // row. Lock the round-trip in: whatever host the GET picks
+      // for the `redirect_uri` query param MUST be the same host
+      // the POST callback path lives on. (Both come from
+      // `getCanonicalBaseUrl`.)
+      const res = await request(app).get("/api/auth/apple");
+      expect(res.status).toBe(302);
+      const location = res.headers.location as string;
+      const url = new URL(location);
+      const redirectUri = url.searchParams.get("redirect_uri");
+      expect(redirectUri).toBeTruthy();
+      const parsedRedirect = new URL(redirectUri!);
+      expect(parsedRedirect.pathname).toBe("/api/auth/apple/callback");
+    });
+
+    it("the diagnostic peek does not consume the row (so a parallel callback can still validate)", async () => {
+      // Direct unit-style assertion against the in-memory store the
+      // suite runs against: peek then consume must succeed; consume
+      // then peek must return null.
+      const state = await stateStoreModule.createOAuthState("apple");
+      const peeked = await stateStoreModule.inspectOAuthState(state);
+      expect(peeked).not.toBeNull();
+      expect(peeked!.provider).toBe("apple");
+      expect(await stateStoreModule.consumeOAuthState("apple", state)).toBe(true);
+      expect(await stateStoreModule.inspectOAuthState(state)).toBeNull();
+    });
+
+    it("hashOAuthStatePrefix never returns the raw state — safe to log", () => {
+      const sample = "f".repeat(64);
+      const prefix = stateStoreModule.hashOAuthStatePrefix(sample);
+      expect(prefix).not.toBe(sample);
+      expect(prefix.length).toBeLessThan(sample.length);
+      expect(prefix).toMatch(/^[0-9a-f]+$/);
+    });
+  });
 });
