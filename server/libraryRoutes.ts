@@ -17,6 +17,7 @@ import {
   getMaterials, getComponentsByTradeId, getScopesByTradeId, getFormulas,
   type MaterialFamily, type TradeComponent, type Scope,
 } from "./data/onboarding/index";
+import { categoryForMaterial, categoryForComponent, isLaborComponent } from "./data/onboarding/categoryMappings";
 import { getLibraryTradeIdsForLegacy } from "../shared/tradeTypeUtils";
 import { requireRole, type AuthRequest } from "./auth";
 import type { UserRole } from "@shared/schema";
@@ -423,14 +424,10 @@ router.post("/api/library-items/seed-from-onboarding", async (req: AuthRequest, 
     // Task #2068 — collect items along with the category bucket they belong to
     // so we can create the per-trade categories first and stamp items with the
     // resulting category id.
+    // Task #2071 — friendly category names come from the per-trade mapping in
+    // ./data/onboarding/categoryMappings instead of the raw `group` slug.
     const materialItems: Array<{ item: any; categoryName: string }> = [];
     const seenMaterialIds = new Set<string>();
-
-    const categoryNameForMaterialGroup = (group?: string): string => {
-      if (!group) return "Materials";
-      // Drop any leading numeric prefixes (e.g. "01_Concrete") to keep names tidy.
-      return group.replace(/^\d+[_-]?/, "").replace(/[_-]+/g, " ").trim() || "Materials";
-    };
 
     for (const tradeId of tradeIds) {
       const scopes = getScopesByTradeId(tradeId);
@@ -441,7 +438,7 @@ router.post("/api/library-items/seed-from-onboarding", async (req: AuthRequest, 
           const mat = allMaterials.find(m => m.material_family_id === matFamilyId);
           if (mat) {
             materialItems.push({
-              categoryName: categoryNameForMaterialGroup(mat.group) || scope.scope_name || "Materials",
+              categoryName: categoryForMaterial(tradeType, mat.group),
               item: {
                 organizationId: orgId,
                 name: mat.display_name,
@@ -466,9 +463,9 @@ router.post("/api/library-items/seed-from-onboarding", async (req: AuthRequest, 
       for (const comp of components) {
         const compSourceId = `onboarding:component:${comp.component_id}`;
         if (materialItems.some(m => m.item.sourceId === compSourceId)) continue;
-        const isLabor = comp.display_name.toLowerCase().includes("labor") || comp.display_name.toLowerCase().includes("install");
+        const isLabor = isLaborComponent(comp.display_name);
         materialItems.push({
-          categoryName: isLabor ? "Labor" : "Components",
+          categoryName: categoryForComponent(tradeType, comp.display_name),
           item: {
             organizationId: orgId,
             name: comp.display_name,
@@ -491,7 +488,7 @@ router.post("/api/library-items/seed-from-onboarding", async (req: AuthRequest, 
     if (materialItems.length === 0) {
       for (const mat of allMaterials.slice(0, 50)) {
         materialItems.push({
-          categoryName: categoryNameForMaterialGroup(mat.group) || "Materials",
+          categoryName: categoryForMaterial(tradeType, mat.group),
           item: {
             organizationId: orgId,
             name: mat.display_name,
