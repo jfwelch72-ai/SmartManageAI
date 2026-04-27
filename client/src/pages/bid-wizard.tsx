@@ -104,10 +104,10 @@ interface AIAnalysisResult {
 }
 
 const WIZARD_STEPS = [
-  { id: 1, name: "Upload Documents", icon: Upload, description: "Upload bid invitation, plans, and specs" },
-  { id: 2, name: "AI Review", icon: Sparkles, description: "AI analyzes your documents" },
-  { id: 3, name: "Confirm Scope", icon: ClipboardList, description: "Review and modify SOW items" },
-  { id: 4, name: "Bid Details", icon: Building2, description: "Enter bid information" },
+  { id: 1, name: "Bid Info", icon: Building2, description: "Enter bid information" },
+  { id: 2, name: "Upload Documents", icon: Upload, description: "Upload bid invitation, plans, and specs" },
+  { id: 3, name: "AI Review", icon: Sparkles, description: "AI analyzes your documents" },
+  { id: 4, name: "Confirm Scope", icon: ClipboardList, description: "Review and modify SOW items" },
 ];
 
 const bidDetailsSchema = z.object({
@@ -234,16 +234,28 @@ export default function BidWizardPage() {
       }));
       setScopeItems(items);
       
-      if (data.projectName) form.setValue("name", data.projectName);
-      if (data.clientName) form.setValue("clientName", data.clientName);
-      if (data.clientContactName) form.setValue("clientContactName", data.clientContactName);
-      if (data.clientContactEmail) form.setValue("clientContactEmail", data.clientContactEmail);
-      if (data.clientContactPhone) form.setValue("clientContactPhone", data.clientContactPhone);
-      if (data.dueDate) form.setValue("dueDate", data.dueDate);
-      if (data.locationAddress) form.setValue("locationAddress", data.locationAddress);
-      if (data.city) form.setValue("city", data.city);
-      if (data.state) form.setValue("state", data.state);
-      if (data.description) form.setValue("description", data.description);
+      // Only fill blank form fields — never overwrite values the user has
+      // already entered on the Bid Info step.
+      const setIfBlank = (
+        fieldName: keyof BidDetailsForm,
+        value: string | undefined,
+      ) => {
+        if (!value) return;
+        const current = form.getValues(fieldName);
+        if (current === undefined || current === null || current === "") {
+          form.setValue(fieldName, value);
+        }
+      };
+      setIfBlank("name", data.projectName);
+      setIfBlank("clientName", data.clientName);
+      setIfBlank("clientContactName", data.clientContactName);
+      setIfBlank("clientContactEmail", data.clientContactEmail);
+      setIfBlank("clientContactPhone", data.clientContactPhone);
+      setIfBlank("dueDate", data.dueDate);
+      setIfBlank("locationAddress", data.locationAddress);
+      setIfBlank("city", data.city);
+      setIfBlank("state", data.state);
+      setIfBlank("description", data.description);
       
       // Show warning if AI had an error
       if (data.aiError) {
@@ -256,7 +268,7 @@ export default function BidWizardPage() {
         toast({ title: "Analysis complete", description: `Found ${items.length} scope items` });
       }
       
-      setCurrentStep(3);
+      setCurrentStep(4);
     },
     onError: (error: any) => {
       setAnalysisError(error.message || "Failed to analyze documents. You can still proceed manually.");
@@ -355,6 +367,10 @@ export default function BidWizardPage() {
         title: "Bid created successfully", 
         description: `Bid ${bid.code} has been created with ${scopeItems.filter(i => i.selected).length + customItems.length} line items`
       });
+      // Bid detail (`/bids/:code`) initializes currentStep=1 which renders the
+      // Plans & Takeoff tab (BidPlansTab). This satisfies the wizard's
+      // "Create Bid & Start Takeoff" outcome — the user lands directly on the
+      // takeoff workspace ready to start measurements.
       setLocation(`/bids/${bid.code}`);
     },
     onError: (error: any) => {
@@ -424,13 +440,13 @@ export default function BidWizardPage() {
 
   const goToStep = (step: number) => {
     if (step < currentStep) {
-      if (step === 1) {
+      if (step === 2) {
         hasAutoTriggered.current = false;
         setAnalysisError(null);
       }
       setCurrentStep(step);
     } else if (step === currentStep + 1) {
-      if (currentStep === 1 && uploadedDocs.length === 0) {
+      if (currentStep === 2 && uploadedDocs.length === 0) {
         toast({ title: "Upload required", description: "Please upload at least one document", variant: "destructive" });
         return;
       }
@@ -442,14 +458,14 @@ export default function BidWizardPage() {
   const hasAutoTriggered = useRef(false);
 
   useEffect(() => {
-    if (currentStep === 2 && !analyzeMutation.isPending && !analysisResult && !analysisError && !hasAutoTriggered.current) {
+    if (currentStep === 3 && !analyzeMutation.isPending && !analysisResult && !analysisError && !hasAutoTriggered.current) {
       hasAutoTriggered.current = true;
       analyzeMutation.mutate();
     }
   }, [currentStep]);
 
   const handleSkipAnalysis = () => {
-    setCurrentStep(3);
+    setCurrentStep(4);
   };
 
   const updateScopeItem = (itemId: string, field: string, value: string) => {
@@ -467,9 +483,44 @@ export default function BidWizardPage() {
     setScopeItems(prev => prev.map(item => ({ ...item, selected: checked })));
   };
 
-  const handleSubmit = form.handleSubmit((data) => {
-    createBidMutation.mutate(data);
-  });
+  const handleSubmit = form.handleSubmit(
+    (data) => {
+      createBidMutation.mutate(data);
+    },
+    (errors) => {
+      // Required fields live on Step 1 (Bid Info). If validation fails when
+      // the user clicks "Create Bid" from the final step, jump them back to
+      // Step 1 and surface a toast so the failure isn't silent.
+      const fieldLabels: Record<string, string> = {
+        name: "Bid Name",
+        clientName: "Client Name",
+      };
+      const missing = Object.keys(errors)
+        .map((key) => fieldLabels[key] || key)
+        .join(", ");
+      toast({
+        title: "Missing required information",
+        description: missing
+          ? `Please fill in: ${missing}`
+          : "Please complete the required fields on the Bid Info step.",
+        variant: "destructive",
+      });
+      setCurrentStep(1);
+    },
+  );
+
+  const validateBidInfoAndAdvance = async () => {
+    const ok = await form.trigger(["name", "clientName"]);
+    if (!ok) {
+      toast({
+        title: "Missing required information",
+        description: "Please enter at least a Bid Name and Client Name to continue.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setCurrentStep(2);
+  };
 
   const progressPercent = (currentStep / WIZARD_STEPS.length) * 100;
 
@@ -542,7 +593,7 @@ export default function BidWizardPage() {
           </div>
         </div>
 
-        {currentStep === 1 && (
+        {currentStep === 2 && (
           <Card data-testid="step-upload-documents">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -604,16 +655,16 @@ export default function BidWizardPage() {
               )}
 
               <div className="flex justify-between pt-4">
-                <Button variant="outline" onClick={() => setLocation("/bids")} data-testid="button-back-to-bids">
+                <Button variant="outline" onClick={() => setCurrentStep(1)} data-testid="button-back-to-bid-info">
                   <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Bids
+                  Back to Bid Info
                 </Button>
                 <div className="flex gap-2">
                   <Button variant="outline" onClick={handleSkipAnalysis} data-testid="button-skip-analysis">
                     Skip AI Analysis
                   </Button>
                   <Button 
-                    onClick={() => goToStep(2)} 
+                    onClick={() => goToStep(3)} 
                     disabled={uploadedDocs.length === 0}
                     data-testid="button-analyze-documents"
                   >
@@ -626,7 +677,7 @@ export default function BidWizardPage() {
           </Card>
         )}
 
-        {currentStep === 2 && (
+        {currentStep === 3 && (
           <Card data-testid="step-ai-review">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -667,7 +718,7 @@ export default function BidWizardPage() {
                         Retry Analysis
                       </Button>
                       <Button
-                        onClick={() => setCurrentStep(3)}
+                        onClick={() => setCurrentStep(4)}
                         data-testid="button-proceed-manual"
                       >
                         <FileText className="h-4 w-4 mr-2" />
@@ -704,7 +755,7 @@ export default function BidWizardPage() {
               </div>
 
               <div className="flex justify-between pt-4">
-                <Button variant="outline" onClick={() => setCurrentStep(1)} data-testid="button-back-to-upload">
+                <Button variant="outline" onClick={() => setCurrentStep(2)} data-testid="button-back-to-upload">
                   <ArrowLeft className="h-4 w-4 mr-2" />
                   Back
                 </Button>
@@ -717,7 +768,7 @@ export default function BidWizardPage() {
           </Card>
         )}
 
-        {currentStep === 3 && (
+        {currentStep === 4 && (
           <Card data-testid="step-confirm-scope">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -885,20 +936,33 @@ export default function BidWizardPage() {
               </div>
 
               <div className="flex justify-between pt-4">
-                <Button variant="outline" onClick={() => setCurrentStep(1)} data-testid="button-back-to-step1">
+                <Button variant="outline" onClick={() => setCurrentStep(3)} data-testid="button-back-to-ai-review">
                   <ArrowLeft className="h-4 w-4 mr-2" />
-                  Back to Upload
+                  Back to AI Review
                 </Button>
-                <Button onClick={() => setCurrentStep(4)} data-testid="button-continue-to-details">
-                  Continue to Bid Details
-                  <ArrowRight className="h-4 w-4 ml-2" />
+                <Button
+                  onClick={() => handleSubmit()}
+                  disabled={createBidMutation.isPending}
+                  data-testid="button-create-bid"
+                >
+                  {createBidMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Creating...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 mr-2" />
+                      Create Bid & Start Takeoff
+                    </>
+                  )}
                 </Button>
               </div>
             </CardContent>
           </Card>
         )}
 
-        {currentStep === 4 && (
+        {currentStep === 1 && (
           <Card data-testid="step-bid-details">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -911,7 +975,7 @@ export default function BidWizardPage() {
             </CardHeader>
             <CardContent>
               <Form {...form}>
-                <form onSubmit={handleSubmit} className="space-y-6">
+                <div className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <FormField
                       control={form.control}
@@ -1154,31 +1218,22 @@ export default function BidWizardPage() {
                     <Button 
                       type="button" 
                       variant="outline" 
-                      onClick={() => setCurrentStep(3)}
-                      data-testid="button-back-to-scope"
+                      onClick={() => setLocation("/bids")}
+                      data-testid="button-back-to-bids"
                     >
                       <ArrowLeft className="h-4 w-4 mr-2" />
-                      Back to Scope
+                      Back to Bids
                     </Button>
                     <Button 
-                      type="submit" 
-                      disabled={createBidMutation.isPending}
-                      data-testid="button-create-bid"
+                      type="button"
+                      onClick={validateBidInfoAndAdvance}
+                      data-testid="button-continue-to-upload"
                     >
-                      {createBidMutation.isPending ? (
-                        <>
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          Creating...
-                        </>
-                      ) : (
-                        <>
-                          <CheckCircle2 className="h-4 w-4 mr-2" />
-                          Create Bid & Start Takeoff
-                        </>
-                      )}
+                      Continue to Upload
+                      <ArrowRight className="h-4 w-4 ml-2" />
                     </Button>
                   </div>
-                </form>
+                </div>
               </Form>
             </CardContent>
           </Card>

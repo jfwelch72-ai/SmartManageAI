@@ -1108,7 +1108,22 @@ export function LineItemFormDialog({
       )}
       
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(handleSubmitWithFlush)} className="space-y-6" data-testid="form-line-item">
+        <form
+          onSubmit={form.handleSubmit(handleSubmitWithFlush)}
+          onKeyDown={(e) => {
+            // Prevent Enter inside single-line inputs from submitting the form
+            // and dismissing the dialog. Allow Enter inside textareas (multi-line)
+            // and on the explicit submit button.
+            if (e.key !== "Enter") return;
+            const target = e.target as HTMLElement;
+            const tag = target.tagName?.toLowerCase();
+            if (tag === "textarea") return;
+            if (tag === "button" && (target as HTMLButtonElement).type === "submit") return;
+            e.preventDefault();
+          }}
+          className="space-y-6"
+          data-testid="form-line-item"
+        >
           {isAdd && useHierarchicalBuilder ? (
             <>
               <HierarchicalLineItemBuilder
@@ -1425,16 +1440,33 @@ export function LineItemFormDialog({
                           Labor Cost ($)
                           {hasRate && (
                             <span className="text-xs text-muted-foreground ml-1">
-                              (auto-calculated)
+                              (auto-calculated, editable)
                             </span>
                           )}
                         </FormLabel>
                         <FormControl>
-                          <Input 
+                          <Input
                             {...numericInputProps(field)}
-                            placeholder="0.00" 
-                            readOnly={hasRate}
-                            className={hasRate ? "bg-muted" : ""}
+                            placeholder="0.00"
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              if (raw === "" || /^\d*\.?\d*$/.test(raw)) {
+                                setNumericDisplayValues(prev => ({ ...prev, [field.name]: raw }));
+                                const cost = raw === "" ? 0 : parseFloat(raw);
+                                const safeCost = Number.isNaN(cost) ? 0 : cost;
+                                field.onChange(safeCost);
+                                form.setValue("laborCost", safeCost, { shouldDirty: true, shouldValidate: false });
+                                // If a rate is set, reverse-derive labor hours from
+                                // the manually-entered cost so the two stay
+                                // consistent for downstream production-rate logic.
+                                const currentRate = form.getValues("laborRateUsed") || 0;
+                                if (currentRate > 0) {
+                                  const derivedHours = Math.round((safeCost / currentRate) * 100) / 100;
+                                  form.setValue("laborHours", derivedHours, { shouldDirty: true, shouldValidate: false });
+                                  setNumericDisplayValues(prev => ({ ...prev, laborHours: String(derivedHours) }));
+                                }
+                              }
+                            }}
                             data-testid={`input-${testPrefix}labor-cost`}
                           />
                         </FormControl>
