@@ -121,6 +121,8 @@ import { ensureFeatureFlagManualChangesTable } from "./ensureFeatureFlagManualCh
 import { ensureDotPayItemMatchHistory } from "./ensureDotPayItemMatchHistory";
 import { ensureDolClassificationMappingsTable } from "./ensureDolClassificationMappingsTable";
 import { ensurePlatformIncidentReviewTables } from "./ensurePlatformIncidentReviewTables";
+import { ensureTakeoffToolChestTable } from "./ensureTakeoffToolChestTable";
+import { ensureTakeoffSheetSetsTables } from "./ensureTakeoffSheetSetsTables";
 import { ensureCrmTranscriptBackfillNotificationsTable } from "./ensureCrmTranscriptBackfillNotificationsTable";
 import { ensureCrmTranscriptBackfillAlertDeliveriesTable } from "./ensureCrmTranscriptBackfillAlertDeliveriesTable";
 import { ensureUsersAlertFailureEmailModeColumn } from "./ensureUsersAlertFailureEmailModeColumn";
@@ -441,6 +443,13 @@ const migrations: MigrationStep[] = [
   // Task #1578 — platform-support incident review tables that back the new
   // "Attach to incident review" action on the Recent alert failures card.
   { name: "platform_incident_review_tables", category: "CREATE_TABLE", fn: ensurePlatformIncidentReviewTables },
+  // Task #2065 — Tool Chest (Step 7). Per-user pinned shelf of frequently
+  // used tools / conditions / assemblies for the takeoff workspace.
+  { name: "takeoff_tool_chest_table", category: "CREATE_TABLE", fn: ensureTakeoffToolChestTable },
+  // Task #2065 — Sheet Sets (Step 12). Named collections of takeoff sheets
+  // that share a workflow context, used by bulk operations such as
+  // applying a calibrated scale to every member of a set.
+  { name: "takeoff_sheet_sets_tables", category: "CREATE_TABLE", fn: ensureTakeoffSheetSetsTables },
 ];
 
 export async function runStartupMigrations(): Promise<void> {

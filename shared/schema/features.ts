@@ -2287,6 +2287,101 @@ export const insertTakeoffConditionSchema = createInsertSchema(takeoffConditions
 export type InsertTakeoffCondition = z.infer<typeof insertTakeoffConditionSchema>;
 export type TakeoffCondition = typeof takeoffConditions.$inferSelect;
 
+// ---------------------------------------------------------------------------
+// Task #2065 — Tool Chest (Step 7)
+//
+// Per-user pinned shelf of frequently-used tools, conditions, and
+// assemblies. Each row references one resource by `(itemKind, itemId)` so
+// the same table can pin a built-in tool (kind="tool"), a saved
+// condition (kind="condition"), or an assembly (kind="assembly").
+//
+// Items can be marked `isShared=true` to expose the pin to the whole
+// organization; the routes layer enforces that only the owner (or an
+// admin) can flip the flag.
+// ---------------------------------------------------------------------------
+export const takeoffToolChestItems = pgTable("takeoff_tool_chest_items", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  itemKind: text("item_kind").notNull(), // "tool" | "condition" | "assembly"
+  itemId: text("item_id").notNull(),     // tool key (e.g. "linear") or UUID of condition/assembly
+  label: text("label"),                   // optional override label
+  color: text("color"),
+  shortcut: text("shortcut"),             // optional single-key/Mod+key binding
+  sortOrder: integer("sort_order").notNull().default(0),
+  isShared: boolean("is_shared").notNull().default(false),
+  lastUsedAt: timestamp("last_used_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("takeoff_tool_chest_items_org_idx").on(table.organizationId),
+  userIdx: index("takeoff_tool_chest_items_user_idx").on(table.userId),
+  uniquePerUser: uniqueIndex("takeoff_tool_chest_items_user_kind_id_uq").on(
+    table.userId,
+    table.itemKind,
+    table.itemId,
+  ),
+}));
+
+export const insertTakeoffToolChestItemSchema = createInsertSchema(takeoffToolChestItems).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffToolChestItem = z.infer<typeof insertTakeoffToolChestItemSchema>;
+export type TakeoffToolChestItem = typeof takeoffToolChestItems.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Task #2065 — Sheet Sets (Step 12)
+//
+// A Sheet Set is a named collection of takeoff sheets that share a
+// workflow context (e.g. "Architectural — Foundation Plans"). Sheet Sets
+// power bulk operations: applying a calibrated scale to every member,
+// running condition takeoffs across the set, exporting consolidated
+// reports, etc.
+//
+// Membership is order-preserving so the sidebar can render the set in a
+// stable visual order. A sheet may belong to multiple sets.
+// ---------------------------------------------------------------------------
+export const takeoffSheetSets = pgTable("takeoff_sheet_sets", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  description: text("description"),
+  color: text("color").notNull().default("#3b82f6"),
+  defaultScalePxPerFoot: doublePrecision("default_scale_px_per_foot"),
+  defaultScaleLabel: text("default_scale_label"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdBy: varchar("created_by").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("takeoff_sheet_sets_org_idx").on(table.organizationId),
+  projectIdx: index("takeoff_sheet_sets_project_idx").on(table.projectId),
+  bidIdx: index("takeoff_sheet_sets_bid_idx").on(table.bidId),
+}));
+
+export const insertTakeoffSheetSetSchema = createInsertSchema(takeoffSheetSets).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTakeoffSheetSet = z.infer<typeof insertTakeoffSheetSetSchema>;
+export type TakeoffSheetSet = typeof takeoffSheetSets.$inferSelect;
+
+export const takeoffSheetSetMembers = pgTable("takeoff_sheet_set_members", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  setId: varchar("set_id").notNull().references(() => takeoffSheetSets.id, { onDelete: "cascade" }),
+  sheetId: varchar("sheet_id").notNull().references(() => takeoffSheets.id, { onDelete: "cascade" }),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  setIdx: index("takeoff_sheet_set_members_set_idx").on(table.setId),
+  sheetIdx: index("takeoff_sheet_set_members_sheet_idx").on(table.sheetId),
+  uniqueMembership: uniqueIndex("takeoff_sheet_set_members_set_sheet_uq").on(
+    table.setId,
+    table.sheetId,
+  ),
+}));
+
+export const insertTakeoffSheetSetMemberSchema = createInsertSchema(takeoffSheetSetMembers).omit({ id: true, createdAt: true });
+export type InsertTakeoffSheetSetMember = z.infer<typeof insertTakeoffSheetSetMemberSchema>;
+export type TakeoffSheetSetMember = typeof takeoffSheetSetMembers.$inferSelect;
+
 export interface AssemblyComponent {
   id: string;
   name: string;
