@@ -13,6 +13,10 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { FormulaBreakdown } from "@/components/calculators/FormulaBreakdown";
+import {
+  buildLineItemFormulaBreakdowns,
+  type FormulaBlock,
+} from "@shared/materialFormulaBreakdown";
 
 // Stone density constants (tons per cubic yard)
 const STONE_DENSITIES: Record<string, number> = {
@@ -674,6 +678,97 @@ export default function MaterialCalculator({
     );
   }, [quantity, unit, value.requiresUnderlayment, value.underlaymentOverlapInches, value.underlaymentWasteFactor]);
 
+  // Build the on-screen "Show Formulas" blocks via the shared helper used by
+  // the estimate PDF exporter (`server/estimate-pdf-service.ts`). Both the
+  // screen and the PDF must agree byte-for-byte, so we route both through
+  // `buildLineItemFormulaBreakdowns` in `shared/materialFormulaBreakdown.ts`.
+  const formulaBlocks = useMemo<FormulaBlock[]>(() => {
+    const wireMeshType = WIRE_MESH_TYPES[value.wireMeshType] || WIRE_MESH_TYPES["6x6_W1.4"];
+    const rebarSize = REBAR_SIZES[value.rebarSize] || REBAR_SIZES["#4"];
+    const sealerType = SEALER_TYPES[value.sealerType] || SEALER_TYPES.CURE_SEAL;
+    return buildLineItemFormulaBreakdowns({
+      quantity,
+      unit,
+      concreteDepthInches: value.concreteDepthInches,
+      dimensionWidthInches: value.dimensionWidthInches,
+      dimensionHeightInches: value.dimensionHeightInches,
+      concreteWasteFactor: value.concreteWasteFactor,
+      calculatedConcreteYards: concreteYards,
+
+      requiresStoneBase: value.requiresStoneBase,
+      stoneType: value.stoneType,
+      stoneDepthInches: value.stoneDepthInches,
+      stoneWasteFactor: value.stoneWasteFactor,
+      calculatedStoneTons: stoneTons,
+
+      requiresExcavation: value.requiresExcavation,
+      excavationDepthInches: value.excavationDepthInches,
+      excavationWidthInches: value.excavationWidthInches,
+      excavationSwellFactor: value.excavationSwellFactor,
+      calculatedExcavationYards: excavationYards,
+
+      requiresWireMesh: value.requiresWireMesh,
+      wireMeshCoverageSF: wireMeshType.coverageSF,
+      wireMeshWasteFactor: value.wireMeshWasteFactor,
+      calculatedWireMeshRolls: wireMeshRolls,
+
+      requiresRebar: value.requiresRebar,
+      rebarSpacingInches: value.rebarSpacingInches,
+      rebarLengthFeet: rebarSize.lengthFt,
+      rebarWasteFactor: value.rebarWasteFactor,
+      calculatedRebarCount: rebarCalc.count,
+
+      requiresDowels: value.requiresDowels,
+      dowelSpacingInches: value.dowelSpacingInches,
+      jointLengthFeet: value.jointLengthFeet,
+      calculatedDowelCount: dowelCount,
+
+      requiresSealer: value.requiresSealer,
+      sealerCoverageSFPerGallon: sealerType.coverageSFPerGallon,
+      sealerCoats: value.sealerCoats,
+      sealerWasteFactor: value.sealerWasteFactor,
+      calculatedSealerGallons: sealerGallons,
+
+      requiresUnderlayment: value.requiresUnderlayment,
+      underlaymentOverlapInches: value.underlaymentOverlapInches,
+      underlaymentWasteFactor: value.underlaymentWasteFactor,
+      calculatedUnderlaymentSF: underlaymentSF,
+    });
+  }, [
+    quantity,
+    unit,
+    value,
+    concreteYards,
+    stoneTons,
+    excavationYards,
+    wireMeshRolls,
+    rebarCalc.count,
+    dowelCount,
+    sealerGallons,
+    underlaymentSF,
+  ]);
+
+  // Group the breakdown blocks by section so each card can render the
+  // matching one. Titles come from `shared/materialFormulaBreakdown.ts`
+  // and start with a stable prefix per section.
+  const blocksBySection = useMemo(() => {
+    const map: Partial<Record<
+      "concrete" | "stone" | "excavation" | "wireMesh" | "rebar" | "dowel" | "sealer" | "underlayment",
+      FormulaBlock
+    >> = {};
+    for (const block of formulaBlocks) {
+      if (block.title.startsWith("Concrete")) map.concrete = block;
+      else if (block.title.startsWith("Stone")) map.stone = block;
+      else if (block.title.startsWith("Excavation")) map.excavation = block;
+      else if (block.title.startsWith("Wire Mesh")) map.wireMesh = block;
+      else if (block.title.startsWith("Rebar")) map.rebar = block;
+      else if (block.title.startsWith("Expansion Joint")) map.dowel = block;
+      else if (block.title.startsWith("Sealer")) map.sealer = block;
+      else if (block.title.startsWith("Plastic Underlayment")) map.underlayment = block;
+    }
+    return map;
+  }, [formulaBlocks]);
+
   // Update calculated values when inputs change
   useEffect(() => {
     const newConcreteYards = concreteYards.toString();
@@ -964,71 +1059,12 @@ export default function MaterialCalculator({
               </div>
               
               {/* Concrete Formula Breakdown */}
-              {showFormulas && concreteYards > 0 && (
+              {showFormulas && blocksBySection.concrete && (
                 <FormulaBreakdown
-                  formula={isLinear 
-                    ? `LF × (Width ÷ 12) × (Height ÷ 12) ÷ 27 × (1 + Waste%)`
-                    : `(Quantity × Depth ÷ 12) ÷ 27 × (1 + Waste%)`
-                  }
-                  steps={isLinear ? (() => {
-                    const w = parseFloat(value.dimensionWidthInches) || 6;
-                    const h = parseFloat(value.dimensionHeightInches) || parseFloat(value.concreteDepthInches) || 4;
-                    const wFt = w / 12;
-                    const hFt = h / 12;
-                    const cuFt = quantity * wFt * hFt;
-                    const cy = cuFt / 27;
-                    return [
-                      { label: "Quantity (LF)", value: `${quantity} LF` },
-                      { label: "Width", value: `${w}" (= ${wFt.toFixed(3)} ft)` },
-                      { label: "Height/Depth", value: `${h}" (= ${hFt.toFixed(3)} ft)` },
-                      {
-                        label: "Volume (cubic feet)",
-                        calculation: `${quantity} × ${wFt.toFixed(3)} × ${hFt.toFixed(3)}`,
-                        value: `${cuFt.toFixed(2)} cu ft`
-                      },
-                      {
-                        label: "Convert to cubic yards",
-                        calculation: `÷ 27`,
-                        value: `${cy.toFixed(3)} CY`
-                      },
-                      {
-                        label: `Add ${value.concreteWasteFactor || "10"}% waste`,
-                        calculation: `× 1.${(value.concreteWasteFactor || "10").padStart(2, "0")}`,
-                        value: `${concreteYards.toFixed(2)} CY`
-                      },
-                    ];
-                  })() : [
-                    { 
-                      label: "Quantity (SF)", 
-                      value: `${quantity} SF` 
-                    },
-                    { 
-                      label: "Depth", 
-                      value: `${value.concreteDepthInches || "4"}"`,
-                    },
-                    { 
-                      label: "Depth in feet", 
-                      calculation: `${value.concreteDepthInches || "4"} ÷ 12`,
-                      value: `${((parseFloat(value.concreteDepthInches) || 4) / 12).toFixed(3)} ft`
-                    },
-                    { 
-                      label: "Volume (cubic feet)", 
-                      calculation: `${quantity} × ${((parseFloat(value.concreteDepthInches) || 4) / 12).toFixed(3)}`,
-                      value: `${(quantity * ((parseFloat(value.concreteDepthInches) || 4) / 12)).toFixed(2)} cu ft`
-                    },
-                    { 
-                      label: "Convert to cubic yards", 
-                      calculation: `÷ 27`,
-                      value: `${((quantity * ((parseFloat(value.concreteDepthInches) || 4) / 12)) / 27).toFixed(2)} CY`
-                    },
-                    { 
-                      label: `Add ${value.concreteWasteFactor || "10"}% waste`, 
-                      calculation: `× 1.${(value.concreteWasteFactor || "10").padStart(2, "0")}`,
-                      value: `${concreteYards.toFixed(2)} CY`
-                    },
-                  ]}
-                  result={concreteYards}
-                  resultUnit="Cubic Yards"
+                  formula={blocksBySection.concrete.formula}
+                  steps={blocksBySection.concrete.steps}
+                  result={blocksBySection.concrete.result}
+                  resultUnit={blocksBySection.concrete.resultUnit}
                 />
               )}
             </CardContent>
@@ -1143,77 +1179,14 @@ export default function MaterialCalculator({
                 </div>
                 
                 {/* Stone Formula Breakdown */}
-                {showFormulas && stoneTons > 0 && (() => {
-                  const stoneDepth = parseFloat(value.stoneDepthInches) || 4;
-                  const stoneWidth = parseFloat(value.dimensionWidthInches) || 24;
-                  const density = STONE_DENSITIES[value.stoneType || "CRUSHED_STONE"];
-                  const wasteFactor = parseFactor(value.stoneWasteFactor, 10);
-                  
-                  return (
-                    <FormulaBreakdown
-                      formula={isLinear 
-                        ? `LF × (Width ÷ 12) × (Depth ÷ 12) ÷ 27 × Density × (1 + Waste%)`
-                        : `(SF × Depth ÷ 12) ÷ 27 × Density × (1 + Waste%)`
-                      }
-                      steps={isLinear ? (() => {
-                        const wFt = stoneWidth / 12;
-                        const dFt = stoneDepth / 12;
-                        const cuFt = quantity * wFt * dFt;
-                        const cy = cuFt / 27;
-                        return [
-                          { label: "Quantity (LF)", value: `${quantity} LF` },
-                          { label: "Width", value: `${stoneWidth}" (= ${wFt.toFixed(3)} ft)` },
-                          { label: "Depth", value: `${stoneDepth}" (= ${dFt.toFixed(3)} ft)` },
-                          {
-                            label: "Volume (cubic feet)",
-                            calculation: `${quantity} × ${wFt.toFixed(3)} × ${dFt.toFixed(3)}`,
-                            value: `${cuFt.toFixed(2)} cu ft`
-                          },
-                          {
-                            label: "Convert to cubic yards",
-                            calculation: `÷ 27`,
-                            value: `${cy.toFixed(3)} CY`
-                          },
-                          {
-                            label: `Apply density (${STONE_TYPE_LABELS[value.stoneType || "CRUSHED_STONE"]})`,
-                            calculation: `× ${density} t/yd³`,
-                            value: `${(cy * density).toFixed(2)} tons`
-                          },
-                          {
-                            label: `Add ${wasteFactor}% waste`,
-                            calculation: `× 1.${wasteFactor.toString().padStart(2, "0")}`,
-                            value: `${stoneTons.toFixed(2)} tons`
-                          },
-                        ];
-                      })() : [
-                        { label: "Quantity (SF)", value: `${quantity} SF` },
-                        { label: "Depth", value: `${stoneDepth}"` },
-                        { 
-                          label: "Volume (cubic feet)", 
-                          calculation: `${quantity} × (${stoneDepth} ÷ 12)`,
-                          value: `${(quantity * stoneDepth / 12).toFixed(2)} cu ft`
-                        },
-                        { 
-                          label: "Convert to cubic yards", 
-                          calculation: `÷ 27`,
-                          value: `${((quantity * stoneDepth / 12) / 27).toFixed(3)} CY`
-                        },
-                        { 
-                          label: `Apply density (${STONE_TYPE_LABELS[value.stoneType || "CRUSHED_STONE"]})`, 
-                          calculation: `× ${density} t/yd³`,
-                          value: `${(((quantity * stoneDepth / 12) / 27) * density).toFixed(2)} tons`
-                        },
-                        { 
-                          label: `Add ${wasteFactor}% waste`, 
-                          calculation: `× 1.${wasteFactor.toString().padStart(2, "0")}`,
-                          value: `${stoneTons.toFixed(2)} tons`
-                        },
-                      ]}
-                      result={stoneTons}
-                      resultUnit="Tons"
-                    />
-                  );
-                })()}
+                {showFormulas && blocksBySection.stone && (
+                  <FormulaBreakdown
+                    formula={blocksBySection.stone.formula}
+                    steps={blocksBySection.stone.steps}
+                    result={blocksBySection.stone.result}
+                    resultUnit={blocksBySection.stone.resultUnit}
+                  />
+                )}
 
                 {/* Warning for specs */}
                 <div className="flex items-start gap-2 p-2 bg-amber-50 dark:bg-amber-950/30 rounded text-xs text-amber-700 dark:text-amber-300">
@@ -1307,66 +1280,14 @@ export default function MaterialCalculator({
                 </div>
                 
                 {/* Excavation Formula Breakdown */}
-                {showFormulas && excavationYards > 0 && (() => {
-                  const excDepth = parseFloat(value.excavationDepthInches) || 12;
-                  const excWidth = parseFloat(value.excavationWidthInches) || 24;
-                  const swellFactor = parseFactor(value.excavationSwellFactor, 25);
-                  const inGroundYards = excavationYards / (1 + swellFactor / 100);
-                  
-                  return (
-                    <FormulaBreakdown
-                      formula={isLinear 
-                        ? `LF × (Width ÷ 12) × (Depth ÷ 12) ÷ 27 × (1 + Swell%)`
-                        : `(SF × Depth ÷ 12) ÷ 27 × (1 + Swell%)`
-                      }
-                      steps={isLinear ? (() => {
-                        const wFt = excWidth / 12;
-                        const dFt = excDepth / 12;
-                        const cuFt = quantity * wFt * dFt;
-                        return [
-                          { label: "Quantity (LF)", value: `${quantity} LF` },
-                          { label: "Trench Width", value: `${excWidth}" (= ${wFt.toFixed(3)} ft)` },
-                          { label: "Excavation Depth", value: `${excDepth}" (= ${dFt.toFixed(3)} ft)` },
-                          {
-                            label: "Volume (cubic feet)",
-                            calculation: `${quantity} × ${wFt.toFixed(3)} × ${dFt.toFixed(3)}`,
-                            value: `${cuFt.toFixed(2)} cu ft`
-                          },
-                          {
-                            label: "In-ground volume",
-                            calculation: `÷ 27`,
-                            value: `${inGroundYards.toFixed(3)} CY`
-                          },
-                          {
-                            label: `Apply ${swellFactor}% swell factor`,
-                            calculation: `× 1.${swellFactor.toString().padStart(2, "0")}`,
-                            value: `${excavationYards.toFixed(2)} CY`
-                          },
-                        ];
-                      })() : [
-                        { label: "Quantity (SF)", value: `${quantity} SF` },
-                        { label: "Excavation Depth", value: `${excDepth}"` },
-                        { 
-                          label: "Volume (cubic feet)", 
-                          calculation: `${quantity} × (${excDepth} ÷ 12)`,
-                          value: `${(quantity * excDepth / 12).toFixed(2)} cu ft`
-                        },
-                        { 
-                          label: "In-ground volume", 
-                          calculation: `÷ 27`,
-                          value: `${inGroundYards.toFixed(3)} CY`
-                        },
-                        { 
-                          label: `Apply ${swellFactor}% swell factor`, 
-                          calculation: `× 1.${swellFactor.toString().padStart(2, "0")}`,
-                          value: `${excavationYards.toFixed(2)} CY`
-                        },
-                      ]}
-                      result={excavationYards}
-                      resultUnit="Cubic Yards"
-                    />
-                  );
-                })()}
+                {showFormulas && blocksBySection.excavation && (
+                  <FormulaBreakdown
+                    formula={blocksBySection.excavation.formula}
+                    steps={blocksBySection.excavation.steps}
+                    result={blocksBySection.excavation.result}
+                    resultUnit={blocksBySection.excavation.resultUnit}
+                  />
+                )}
 
                 {/* Excavation notes */}
                 <div className="flex items-start gap-2 p-2 bg-orange-50 dark:bg-orange-950/30 rounded text-xs text-orange-700 dark:text-orange-300">
@@ -1444,35 +1365,15 @@ export default function MaterialCalculator({
                     </div>
                   </div>
 
-                  {showFormulas && wireMeshRolls > 0 && (() => {
-                    const waste = parseFactor(value.wireMeshWasteFactor, 10);
-                    const sfWithWaste = quantity * (1 + waste / 100);
-                    return (
-                      <FormulaBreakdown
-                        testId="formula-breakdown-wire-mesh"
-                        formula={`Quantity × (1 + Waste%) ÷ 100 SF/roll, rounded up`}
-                        steps={[
-                          { label: "Quantity (SF)", value: `${quantity} SF` },
-                          {
-                            label: `Add ${waste}% waste`,
-                            calculation: `${quantity} × ${(1 + waste / 100).toFixed(2)}`,
-                            value: `${sfWithWaste.toFixed(0)} SF`,
-                          },
-                          {
-                            label: "Convert to rolls (100 SF each)",
-                            calculation: `${sfWithWaste.toFixed(0)} ÷ 100`,
-                            value: `${(sfWithWaste / 100).toFixed(2)} rolls`,
-                          },
-                          {
-                            label: "Round up (full rolls only)",
-                            value: `${wireMeshRolls} rolls`,
-                          },
-                        ]}
-                        result={wireMeshRolls}
-                        resultUnit="Rolls"
-                      />
-                    );
-                  })()}
+                  {showFormulas && blocksBySection.wireMesh && (
+                    <FormulaBreakdown
+                      testId="formula-breakdown-wire-mesh"
+                      formula={blocksBySection.wireMesh.formula}
+                      steps={blocksBySection.wireMesh.steps}
+                      result={blocksBySection.wireMesh.result}
+                      resultUnit={blocksBySection.wireMesh.resultUnit}
+                    />
+                  )}
                 </CardContent>
               )}
             </Card>
@@ -1584,57 +1485,15 @@ export default function MaterialCalculator({
                   </div>
                 </div>
 
-                {showFormulas && rebarCalc.count > 0 && isArea && (() => {
-                  const spacingIn = parseFloat(value.rebarSpacingInches || "12");
-                  const waste = parseFactor(value.rebarWasteFactor, 10);
-                  const sideLength = Math.sqrt(quantity);
-                  const spacingFt = spacingIn / 12;
-                  const barsPerDir = Math.ceil(sideLength / spacingFt) + 1;
-                  const linearFeetPerDir = barsPerDir * sideLength;
-                  const totalLF = linearFeetPerDir * 2;
-                  const lfWithWaste = totalLF * (1 + waste / 100);
-                  return (
-                    <FormulaBreakdown
-                      testId="formula-breakdown-rebar"
-                      formula={`(⌈√Area ÷ Spacing⌉ + 1) × √Area × 2 × (1 + Waste%) ÷ Bar Length`}
-                      steps={[
-                        { label: "Area (SF)", value: `${quantity} SF` },
-                        {
-                          label: "Side length (assume square)",
-                          calculation: `√${quantity}`,
-                          value: `${sideLength.toFixed(2)} ft`,
-                        },
-                        {
-                          label: "Spacing in feet",
-                          calculation: `${spacingIn} ÷ 12`,
-                          value: `${spacingFt.toFixed(2)} ft`,
-                        },
-                        {
-                          label: "Bars per direction (+1 endpoint)",
-                          calculation: `⌈${sideLength.toFixed(2)} ÷ ${spacingFt.toFixed(2)}⌉ + 1`,
-                          value: `${barsPerDir} bars`,
-                        },
-                        {
-                          label: "Total linear feet (both directions)",
-                          calculation: `${barsPerDir} × ${sideLength.toFixed(2)} × 2`,
-                          value: `${totalLF.toFixed(0)} LF`,
-                        },
-                        {
-                          label: `Add ${waste}% waste`,
-                          calculation: `× ${(1 + waste / 100).toFixed(2)}`,
-                          value: `${lfWithWaste.toFixed(0)} LF`,
-                        },
-                        {
-                          label: "Convert to 20' bars",
-                          calculation: `⌈${lfWithWaste.toFixed(0)} ÷ 20⌉`,
-                          value: `${rebarCalc.count} bars`,
-                        },
-                      ]}
-                      result={rebarCalc.count}
-                      resultUnit="Bars"
-                    />
-                  );
-                })()}
+                {showFormulas && blocksBySection.rebar && (
+                  <FormulaBreakdown
+                    testId="formula-breakdown-rebar"
+                    formula={blocksBySection.rebar.formula}
+                    steps={blocksBySection.rebar.steps}
+                    result={blocksBySection.rebar.result}
+                    resultUnit={blocksBySection.rebar.resultUnit}
+                  />
+                )}
               </CardContent>
             )}
           </Card>
@@ -1700,33 +1559,15 @@ export default function MaterialCalculator({
                   </div>
                 </div>
 
-                {showFormulas && dowelCount > 0 && (() => {
-                  const jointLF = parseFloat(value.jointLengthFeet || "0");
-                  const spacingIn = parseFloat(value.dowelSpacingInches || "12");
-                  const spacingFt = spacingIn / 12;
-                  return (
-                    <FormulaBreakdown
-                      testId="formula-breakdown-dowels"
-                      formula={`⌈Joint LF ÷ (Spacing ÷ 12)⌉ + 1 endpoint dowel`}
-                      steps={[
-                        { label: "Joint length", value: `${jointLF} LF` },
-                        { label: "Spacing", value: `${spacingIn}"` },
-                        {
-                          label: "Spacing in feet",
-                          calculation: `${spacingIn} ÷ 12`,
-                          value: `${spacingFt.toFixed(2)} ft`,
-                        },
-                        {
-                          label: "Dowels (+1 endpoint)",
-                          calculation: `⌈${jointLF} ÷ ${spacingFt.toFixed(2)}⌉ + 1`,
-                          value: `${dowelCount} dowels`,
-                        },
-                      ]}
-                      result={dowelCount}
-                      resultUnit="Dowels"
-                    />
-                  );
-                })()}
+                {showFormulas && blocksBySection.dowel && (
+                  <FormulaBreakdown
+                    testId="formula-breakdown-dowels"
+                    formula={blocksBySection.dowel.formula}
+                    steps={blocksBySection.dowel.steps}
+                    result={blocksBySection.dowel.result}
+                    resultUnit={blocksBySection.dowel.resultUnit}
+                  />
+                )}
               </CardContent>
             )}
           </Card>
@@ -1815,39 +1656,15 @@ export default function MaterialCalculator({
                     </div>
                   </div>
 
-                  {showFormulas && sealerGallons > 0 && (() => {
-                    const sealerType = value.sealerType || "CURE_SEAL";
-                    const coverage = SEALER_TYPES[sealerType]?.coverageSFPerGallon || 200;
-                    const coats = parseFloat(value.sealerCoats || "1");
-                    const waste = parseFactor(value.sealerWasteFactor, 10);
-                    const totalSF = quantity * (1 + waste / 100) * coats;
-                    return (
-                      <FormulaBreakdown
-                        testId="formula-breakdown-sealer"
-                        formula={`Quantity × (1 + Waste%) × Coats ÷ Coverage`}
-                        steps={[
-                          { label: "Quantity (SF)", value: `${quantity} SF` },
-                          { label: "Coats", value: `${coats}` },
-                          {
-                            label: "Coverage per gallon",
-                            value: `${coverage} SF/gal`,
-                          },
-                          {
-                            label: `Add ${waste}% waste, multiply by coats`,
-                            calculation: `${quantity} × ${(1 + waste / 100).toFixed(2)} × ${coats}`,
-                            value: `${totalSF.toFixed(0)} SF`,
-                          },
-                          {
-                            label: "Convert to gallons",
-                            calculation: `⌈${totalSF.toFixed(0)} ÷ ${coverage}⌉`,
-                            value: `${sealerGallons.toFixed(2)} gal`,
-                          },
-                        ]}
-                        result={sealerGallons}
-                        resultUnit="Gallons"
-                      />
-                    );
-                  })()}
+                  {showFormulas && blocksBySection.sealer && (
+                    <FormulaBreakdown
+                      testId="formula-breakdown-sealer"
+                      formula={blocksBySection.sealer.formula}
+                      steps={blocksBySection.sealer.steps}
+                      result={blocksBySection.sealer.result}
+                      resultUnit={blocksBySection.sealer.resultUnit}
+                    />
+                  )}
                 </CardContent>
               )}
             </Card>
@@ -1937,42 +1754,15 @@ export default function MaterialCalculator({
                     </div>
                   </div>
 
-                  {showFormulas && underlaymentSF > 0 && (() => {
-                    const overlap = parseFloat(value.underlaymentOverlapInches || "6");
-                    const waste = parseFactor(value.underlaymentWasteFactor, 10);
-                    const overlapFactor = 1 + ((overlap / 12) / 10);
-                    const sfWithOverlap = quantity * overlapFactor;
-                    return (
-                      <FormulaBreakdown
-                        testId="formula-breakdown-underlayment"
-                        formula={`Quantity × (1 + Overlap÷12÷10) × (1 + Waste%)`}
-                        steps={[
-                          { label: "Quantity (SF)", value: `${quantity} SF` },
-                          {
-                            label: "Overlap (10' rolls)",
-                            value: `${overlap}"`,
-                          },
-                          {
-                            label: "Overlap factor",
-                            calculation: `1 + (${overlap}÷12) ÷ 10`,
-                            value: overlapFactor.toFixed(4),
-                          },
-                          {
-                            label: "Add overlap",
-                            calculation: `${quantity} × ${overlapFactor.toFixed(4)}`,
-                            value: `${sfWithOverlap.toFixed(2)} SF`,
-                          },
-                          {
-                            label: `Add ${waste}% waste`,
-                            calculation: `× ${(1 + waste / 100).toFixed(2)}`,
-                            value: `${underlaymentSF} SF`,
-                          },
-                        ]}
-                        result={underlaymentSF}
-                        resultUnit="SF"
-                      />
-                    );
-                  })()}
+                  {showFormulas && blocksBySection.underlayment && (
+                    <FormulaBreakdown
+                      testId="formula-breakdown-underlayment"
+                      formula={blocksBySection.underlayment.formula}
+                      steps={blocksBySection.underlayment.steps}
+                      result={blocksBySection.underlayment.result}
+                      resultUnit={blocksBySection.underlayment.resultUnit}
+                    />
+                  )}
                 </CardContent>
               )}
             </Card>

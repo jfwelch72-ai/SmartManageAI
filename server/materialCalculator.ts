@@ -111,13 +111,14 @@ export interface EquipmentRequirement {
 // Compacted base is denser than loose crushed stone; pea gravel and recycled
 // concrete fall in between. If a stone type isn't recognized we fall back to
 // generic crushed stone (1.5 t/yd³).
-export const STONE_DENSITIES_TONS_PER_CY: Record<string, number> = {
-  CRUSHED_STONE: 1.5,
-  LIMESTONE: 1.35,
-  COMPACTED_BASE: 1.6,
-  PEA_GRAVEL: 1.42,
-  RECYCLED_CONCRETE: 1.45,
-};
+//
+// The constant lives in `shared/materialFormulaBreakdown.ts` so the
+// shared "Show Formulas" helper (used by both the client and the PDF
+// exporter) and this server-side calculator share the exact same
+// numbers. We re-export it here for backward compatibility with
+// existing server consumers.
+import { STONE_DENSITIES_TONS_PER_CY } from "@shared/materialFormulaBreakdown";
+export { STONE_DENSITIES_TONS_PER_CY };
 const DEFAULT_STONE_DENSITY = STONE_DENSITIES_TONS_PER_CY.CRUSHED_STONE;
 
 // Standard polyethylene underlayment rolls are 10 ft wide. With a 6"
