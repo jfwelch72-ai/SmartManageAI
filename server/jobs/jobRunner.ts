@@ -26,6 +26,7 @@ import { pruneProjectLogEmailScheduleAttempts } from "./projectLogEmailScheduleA
 import { purgePlanDocumentMarkupTrash } from "./planDocumentMarkupSoftDeletePurge";
 import { processFailedWageDecisionRetries, processStaleWageDecisions } from "../integrations/providers/dol_davis_bacon/sync";
 import { processDotPayItemsRefresh } from "./dotPayItemsRefresh";
+import { pruneOrphanedTakeoffRecents } from "../takeoffRecentsCleanup";
 import { processMissingWageDecisionReminders } from "../services/davisBaconAdminNotifications";
 import { processIntegrationSyncRetries, recordSyncFailure, recordSyncSuccess } from "../integrations/syncRetry";
 import { pruneSuppressionResets } from "../integrations/audit";
@@ -104,6 +105,14 @@ let planDocumentMarkupTrashPurgeTask: ReturnType<typeof cron.schedule> | null = 
 // added/removed/changed deltas and emails the on-call rotation if any
 // catalog regresses below its `AGENCY_MIN_ITEMS` threshold.
 let dotPayItemsRefreshTask: ReturnType<typeof cron.schedule> | null = null;
+// Task #2129: nightly safety-net for `takeoff_recents`. The bid /
+// project DELETE handlers already call `pruneTakeoffRecentsForEntity`,
+// but the table only FKs to users / organizations — so a row that
+// sneaks in via a raw-SQL migration, an admin script, or a partial
+// mid-delete failure stays orphaned and keeps counting against the
+// per-user 24-entry cap. This sweep drops every row whose
+// `(kind, entityId)` no longer matches a live bid or project.
+let takeoffRecentsOrphanPruneTask: ReturnType<typeof cron.schedule> | null = null;
 // Task #1715: daily digest to org ADMIN/SUPER_ADMIN users summarising
 // every schedule whose latest attempt was FAILURE / NO_RECIPIENTS so
 // admins get a proactive nudge instead of having to remember to open
@@ -954,6 +963,38 @@ export function startJobRunner() {
     }
   });
 
+  // Task #2129: nightly safety-net sweep for `takeoff_recents`. Runs at
+  // 04:45 UTC, after the plan-document markup trash purge (04:15) and
+  // the project geocode sweep (04:30), keeping the nightly cleanup
+  // jobs staggered so they don't pile onto the Postgres pool at the
+  // same minute. The DELETE hooks in `bidRoutes2.ts` /
+  // `projectCrudRoutes.ts` already prune in the common path; this
+  // sweep catches any row that slipped past those hooks (raw-SQL
+  // migration, admin script, partial mid-delete failure) so the
+  // per-user 24-entry cap doesn't quietly fill up with orphans. Logs
+  // per-kind counts so ops can see immediately if a delete hook ever
+  // silently regresses (a sustained non-zero count is the signal).
+  takeoffRecentsOrphanPruneTask = cron.schedule("45 4 * * *", async () => {
+    try {
+      const out = await pruneOrphanedTakeoffRecents();
+      // Log every tick — including the "nothing to prune" path — so
+      // ops have a visible per-run heartbeat in the logs and a
+      // sustained non-zero count is immediately spottable as a
+      // regressed delete hook (rather than being inferred from the
+      // absence of a "0 rows" line).
+      logInfo("Takeoff recents orphan sweep", {
+        bidRowsPruned: out.bidRowsPruned,
+        projectRowsPruned: out.projectRowsPruned,
+        totalPruned: out.totalPruned,
+        durationMs: out.durationMs,
+      });
+      recordJobOutcome("takeoff_recents_orphan_prune", true);
+    } catch (err) {
+      recordJobOutcome("takeoff_recents_orphan_prune", false);
+      logError("Takeoff recents orphan sweep failed", { error: String(err) });
+    }
+  });
+
   // Task #1948: quarterly refresh of every verbatim DOT pay-item
   // catalog. Runs at 04:00 UTC on the 1st of Jan/Apr/Jul/Oct so it
   // lands well outside North-American business hours. The handler is
@@ -1179,6 +1220,10 @@ export function stopJobRunner() {
     dotPayItemsRefreshTask.stop();
     dotPayItemsRefreshTask = null;
   }
+  if (takeoffRecentsOrphanPruneTask) {
+    takeoffRecentsOrphanPruneTask.stop();
+    takeoffRecentsOrphanPruneTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -1267,6 +1312,12 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   // the seed data tracks each agency's published spec book without
   // manual intervention.
   dot_pay_items_refresh: { fn: async () => { await processDotPayItemsRefresh(); }, description: "Quarterly refresh of verbatim DOT pay-item catalogs from each agency's published source; logs added/removed/changed per agency and emails on-call when a catalog drops below AGENCY_MIN_ITEMS", schedule: "0 4 1 1,4,7,10 *" },
+  // Task #2129: nightly safety-net for `takeoff_recents`. Drops every
+  // row whose `(kind, entityId)` no longer matches a live bid /
+  // project so the per-user 24-entry cap can't quietly fill up with
+  // orphans even if the per-delete hooks are bypassed (raw-SQL
+  // migration, admin script, partial mid-delete failure).
+  takeoff_recents_orphan_prune: { fn: async () => { await pruneOrphanedTakeoffRecents(); }, description: "Delete takeoff_recents rows whose (kind, entityId) no longer maps to a live bid (kind='bid') or project (kind='project'); defense-in-depth for the per-delete hooks added in Task #2105", schedule: "45 4 * * *" },
 };
 
 async function processOutbox() {

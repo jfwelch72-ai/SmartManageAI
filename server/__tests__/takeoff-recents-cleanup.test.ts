@@ -6,18 +6,34 @@
  * an in-process db mock so we can assert the WHERE predicate (kind +
  * entityId, across all users — no userId filter) without spinning up
  * Postgres.
+ *
+ * Task #2129 — Same db mock is reused to drive the
+ * `pruneOrphanedTakeoffRecents` nightly safety-net helper. The mock
+ * captures every DELETE so we can assert that the sweep issues two
+ * passes (one per kind), each with a `NOT EXISTS` subquery against
+ * the appropriate parent table, and that the per-kind / total counts
+ * returned to the cron wrapper are sourced from the per-statement
+ * `.returning({ id })` payloads (so the operations log line reflects
+ * the real number of rows the DELETE removed).
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import { PgDialect } from "drizzle-orm/pg-core";
 import { takeoffRecents } from "@shared/schema";
+
+const pgDialect = new PgDialect();
 
 interface CapturedDelete {
   table: string;
   predicate: unknown;
+  predicateSql: string;
 }
 
 const deletes: CapturedDelete[] = [];
 const errorLogs: Array<{ message: string; context?: Record<string, unknown>; error?: Error }> = [];
 let nextDeleteShouldThrow = false;
+// Task #2129 — successive .returning() payloads consumed in the order
+// the per-kind DELETEs run inside `pruneOrphanedTakeoffRecents`.
+let returningQueue: Array<Array<{ id: string }>> = [];
 
 function tableName(t: unknown): string {
   if (!t || typeof t !== "object") return "<unknown>";
@@ -30,17 +46,54 @@ function tableName(t: unknown): string {
   return "<unknown>";
 }
 
+// Render the predicate tree to the SQL string drizzle would emit so
+// we can assert that `pruneOrphanedTakeoffRecents` issues a
+// `NOT EXISTS (SELECT 1 FROM "bids"|"projects" ...)` clause keyed off
+// the right parent table. Uses the real PgDialect so the rendered SQL
+// matches what production would actually send to Postgres.
+function renderSql(node: unknown): string {
+  try {
+    return pgDialect.sqlToQuery(node as never).sql;
+  } catch {
+    return "";
+  }
+}
+
 const dbMock = {
   delete: (t: unknown) => {
     const name = tableName(t);
     return {
-      where: async (predicate: unknown) => {
-        deletes.push({ table: name, predicate });
-        if (nextDeleteShouldThrow) {
-          nextDeleteShouldThrow = false;
-          throw new Error("boom");
-        }
-        return undefined;
+      where: (predicate: unknown) => {
+        const predicateSql = renderSql(predicate);
+        const captured: CapturedDelete = { table: name, predicate, predicateSql };
+        // Task #2105 path: callers `await` the .where(...) directly
+        // without chaining .returning(), so the chain has to be
+        // thenable to satisfy that signature.
+        const thenable: PromiseLike<unknown> & {
+          returning: (sel?: unknown) => Promise<Array<{ id: string }>>;
+        } = {
+          then: (resolve, reject) => {
+            deletes.push(captured);
+            if (nextDeleteShouldThrow) {
+              nextDeleteShouldThrow = false;
+              return Promise.reject(new Error("boom")).then(resolve as never, reject as never);
+            }
+            return Promise.resolve(undefined).then(resolve as never, reject as never);
+          },
+          // Task #2129 path: `pruneOrphanedTakeoffRecents` chains
+          // `.returning({ id: takeoffRecents.id })` so the helper can
+          // count exactly which rows were removed per pass.
+          returning: async (_sel?: unknown) => {
+            deletes.push(captured);
+            if (nextDeleteShouldThrow) {
+              nextDeleteShouldThrow = false;
+              throw new Error("boom");
+            }
+            const next = returningQueue.shift();
+            return next ?? [];
+          },
+        };
+        return thenable;
       },
     };
   },
@@ -61,6 +114,7 @@ beforeEach(() => {
   deletes.length = 0;
   errorLogs.length = 0;
   nextDeleteShouldThrow = false;
+  returningQueue = [];
   vi.resetModules();
 });
 
@@ -164,5 +218,87 @@ describe("pruneTakeoffRecentsForEntity", () => {
       entityId: "proj-uuid-explode",
     });
     expect(errorLogs[0].error).toBeInstanceOf(Error);
+  });
+});
+
+describe("pruneOrphanedTakeoffRecents (Task #2129 nightly safety-net)", () => {
+  it("issues one DELETE per kind, each scoping the NOT EXISTS subquery to the right parent table", async () => {
+    const { pruneOrphanedTakeoffRecents } = await import("../takeoffRecentsCleanup");
+    // Empty per-kind returning() payloads — we only care about the
+    // shape of the issued statements in this assertion.
+    returningQueue = [[], []];
+
+    const result = await pruneOrphanedTakeoffRecents();
+
+    // Two statements: one for kind='bid', one for kind='project'.
+    expect(deletes).toHaveLength(2);
+    expect(deletes[0].table).toBe("takeoff_recents");
+    expect(deletes[1].table).toBe("takeoff_recents");
+
+    const bidSql = deletes[0].predicateSql.toLowerCase();
+    const bidParams = collectParamValues(deletes[0].predicate);
+    expect(bidParams).toContain("bid");
+    expect(bidSql).toContain("not exists");
+    // The bid pass must subquery `bids`, not `projects` — otherwise a
+    // bid-kind row would be deleted whenever any project disappeared.
+    expect(bidSql).toContain('"bids"');
+    expect(bidSql).not.toContain('"projects"');
+
+    const projectSql = deletes[1].predicateSql.toLowerCase();
+    const projectParams = collectParamValues(deletes[1].predicate);
+    expect(projectParams).toContain("project");
+    expect(projectSql).toContain("not exists");
+    expect(projectSql).toContain('"projects"');
+    expect(projectSql).not.toContain('"bids"');
+
+    // No userId filter — the sweep must reclaim orphaned rows across
+    // every user, mirroring `pruneTakeoffRecentsForEntity`.
+    const bidCols = collectColumnNames(deletes[0].predicate);
+    const projectCols = collectColumnNames(deletes[1].predicate);
+    expect(bidCols).not.toContain(takeoffRecents.userId.name);
+    expect(projectCols).not.toContain(takeoffRecents.userId.name);
+
+    // Result counts collapse to zero when nothing is orphaned.
+    expect(result.bidRowsPruned).toBe(0);
+    expect(result.projectRowsPruned).toBe(0);
+    expect(result.totalPruned).toBe(0);
+    expect(result.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("returns per-kind counts sourced from the .returning() payload so ops can spot a regressed hook", async () => {
+    const { pruneOrphanedTakeoffRecents } = await import("../takeoffRecentsCleanup");
+    returningQueue = [
+      [{ id: "tr-1" }, { id: "tr-2" }, { id: "tr-3" }],
+      [{ id: "tr-4" }, { id: "tr-5" }],
+    ];
+
+    const result = await pruneOrphanedTakeoffRecents();
+
+    expect(result.bidRowsPruned).toBe(3);
+    expect(result.projectRowsPruned).toBe(2);
+    expect(result.totalPruned).toBe(5);
+  });
+
+  it("re-throws DB errors so the cron wrapper records a failed sample instead of silently succeeding", async () => {
+    const { pruneOrphanedTakeoffRecents } = await import("../takeoffRecentsCleanup");
+    nextDeleteShouldThrow = true;
+    await expect(pruneOrphanedTakeoffRecents()).rejects.toThrow("boom");
+  });
+});
+
+describe("jobRegistry exposes the nightly takeoff-recents orphan prune", () => {
+  it("registers the job under takeoff_recents_orphan_prune with a nightly schedule", async () => {
+    // The runner pulls in a large dependency graph (cron, db, etc.)
+    // that we don't want to spin up here — stub the heavy modules so
+    // the import resolves without side effects.
+    vi.doMock("node-cron", () => ({
+      default: { schedule: vi.fn(() => ({ stop: vi.fn() })) },
+    }));
+    const { jobRegistry } = await import("../jobs/jobRunner");
+    const entry = jobRegistry["takeoff_recents_orphan_prune"];
+    expect(entry).toBeDefined();
+    expect(typeof entry.fn).toBe("function");
+    // Once-a-day cron — five fields, no slash spec on the minute.
+    expect(entry.schedule).toMatch(/^\d+\s+\d+\s+\*\s+\*\s+\*$/);
   });
 });
