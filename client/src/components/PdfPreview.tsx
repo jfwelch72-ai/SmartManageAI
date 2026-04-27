@@ -221,7 +221,7 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
       canvas.height = viewport.height;
       setCanvasSize({ w: viewport.width, h: viewport.height });
       const ctx = canvas.getContext("2d")!;
-      const task = page.render({ canvasContext: ctx, viewport });
+      const task = page.render({ canvas, canvasContext: ctx, viewport });
       renderTaskRef.current = task;
       await task.promise;
     } catch (err: unknown) {
