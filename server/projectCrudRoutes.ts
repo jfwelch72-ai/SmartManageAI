@@ -183,6 +183,7 @@ import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
 import { sanitizeShortText, sanitizeText } from "./sanitization";
 import { validateBody } from "./utils/validation";
 import { logUpdate, logDelete, logAudit } from "./auditLogger";
+import { pruneTakeoffRecentsForEntity } from "./takeoffRecentsCleanup";
 import { insertNotification, queueOwnerReassignmentNotification } from "./services/notificationService";
 import { geocodePendingProjects } from "./utils/geocodingService";
 import { queueWageDecisionSync } from "./integrations/providers/dol_davis_bacon/sync";
@@ -1516,6 +1517,12 @@ router.delete("/api/projects/:code", requireAuth, requireRoleOrFeature(["ADMIN",
       .delete(projects)
       .where(eq(projects.code, req.params.code))
       .returning();
+
+    // Task #2105 — drop any Takeoff "Recent" rail rows pointing at this
+    // project (across every user) so the per-user 24-entry cap doesn't
+    // get wasted by orphaned cards. The takeoff_recents table only FK's
+    // to users/orgs, so without this hook the rows would linger forever.
+    await pruneTakeoffRecentsForEntity("project", project.id);
 
     await logDelete(req.user!.id, "projects", project.id, { code: project.code, name: project.name }, req);
 

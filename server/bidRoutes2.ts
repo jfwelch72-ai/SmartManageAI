@@ -186,6 +186,7 @@ import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { validateBody } from "./utils/validation";
 import { logUpdate, logDelete, logAudit } from "./auditLogger";
+import { pruneTakeoffRecentsForEntity } from "./takeoffRecentsCleanup";
 import { sanitizeShortText, sanitizeText, sanitizeEmail, sanitizePhone } from "./sanitization";
 import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
 import { assertStorageKeyBelongsToOrg } from "./services/documentRevisionService";
@@ -671,6 +672,12 @@ router.delete("/api/bids/:code", requireAuth, requireRole("ADMIN", "MANAGER"), a
       .delete(bids)
       .where(eq(bids.code, req.params.code))
       .returning();
+
+    // Task #2105 — drop any Takeoff "Recent" rail rows pointing at this
+    // bid (across every user) so the per-user 24-entry cap doesn't get
+    // wasted by orphaned cards. The takeoff_recents table only FK's to
+    // users/orgs, so without this hook the rows would linger forever.
+    await pruneTakeoffRecentsForEntity("bid", bid.id);
 
     await logDelete(req.user!.id, "bids", bid.id, { code: bid.code, name: bid.name }, req);
 
