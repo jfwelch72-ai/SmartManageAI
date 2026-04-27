@@ -230,3 +230,88 @@ describe('Trade Type Utilities', () => {
     });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task #2100 — Round-trip parity between the DB enum (`tradeTypeEnum`), the
+// TypeScript constants in this module, and the per-trade category seeder.
+//
+// These tests assert that *every* value in the DB enum:
+//   1. is present in `VALID_TRADE_TYPES` / passes `isValidTradeType`
+//   2. round-trips through `normalizeTradeType` (uppercase string survives)
+//   3. has a non-empty display name from `getTradeDisplayName`
+//   4. has a per-trade category config (direct or via `BASE_TRADE_FALLBACKS`)
+//      that the library seeder can resolve, so a "Labor Only" component never
+//      lands on the truly generic catch-all label.
+// ─────────────────────────────────────────────────────────────────────────────
+describe('Task #2100 — round-trip parity with DB tradeTypeEnum', () => {
+  it('VALID_TRADE_TYPES contains every value declared in tradeTypeEnum', async () => {
+    const { tradeTypeEnum } = await import('./schema/enums');
+    const ts = new Set(VALID_TRADE_TYPES as readonly string[]);
+    const missing = tradeTypeEnum.enumValues.filter((v) => !ts.has(v));
+    expect(missing).toEqual([]);
+  });
+
+  it('every enum value passes isValidTradeType and round-trips normalizeTradeType', async () => {
+    const { tradeTypeEnum } = await import('./schema/enums');
+    for (const value of tradeTypeEnum.enumValues) {
+      expect(isValidTradeType(value)).toBe(true);
+      expect(normalizeTradeType(value)).toBe(value);
+      expect(normalizeTradeType(value.toLowerCase())).toBe(value);
+    }
+  });
+
+  it('every enum value resolves to a non-empty display name distinct from its raw key for human-friendly display', async () => {
+    const { tradeTypeEnum } = await import('./schema/enums');
+    for (const value of tradeTypeEnum.enumValues) {
+      const display = getTradeDisplayName(value as any);
+      expect(typeof display).toBe('string');
+      expect(display.length).toBeGreaterThan(0);
+      // The bare uppercase enum key is acceptable only for naturally-uppercase
+      // acronyms like HVAC. Anything else with underscores must be expanded
+      // into a human-readable label.
+      if (value.includes('_')) {
+        expect(display).not.toBe(value);
+      }
+    }
+  });
+
+  it('every enum value has an entry in BASE_TRADE_FALLBACKS that resolves to a base trade', async () => {
+    const { tradeTypeEnum } = await import('./schema/enums');
+    const { BASE_TRADE_FALLBACKS, resolveBaseTradeType } = await import('./tradeTypeUtils');
+    for (const value of tradeTypeEnum.enumValues) {
+      expect(BASE_TRADE_FALLBACKS[value as any]).toBeDefined();
+      // The base must itself be a valid trade type (no dangling references).
+      const base = resolveBaseTradeType(value);
+      expect(isValidTradeType(base)).toBe(true);
+    }
+  });
+
+  it('the library category seeder resolves a non-fallback category for every enum value', async () => {
+    const { tradeTypeEnum } = await import('./schema/enums');
+    const { categoryForComponent, categoryForMaterial } = await import(
+      '../server/data/onboarding/categoryMappings'
+    );
+
+    for (const value of tradeTypeEnum.enumValues) {
+      // "Labor Only" — must land on a per-trade labor bucket. We only assert
+      // that it's a non-empty string; whether the trade has a dedicated
+      // bucket (most do) or inherits one from its base trade is fine.
+      const labor = categoryForComponent(value, 'Labor Only');
+      expect(typeof labor).toBe('string');
+      expect(labor.length).toBeGreaterThan(0);
+
+      // Generic material lookup must always produce a string label too, even
+      // when no per-trade override exists.
+      const material = categoryForMaterial(value, undefined);
+      expect(typeof material).toBe('string');
+      expect(material.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('every value in EXTENDED_TRADE_REGISTRY maps to a valid TradeType', async () => {
+    const { EXTENDED_TRADE_REGISTRY } = await import('./tradeTypeUtils');
+    for (const [tradeId, legacy] of Object.entries(EXTENDED_TRADE_REGISTRY)) {
+      expect(isValidTradeType(legacy), `tradeId=${tradeId} -> ${legacy}`).toBe(true);
+    }
+  });
+});

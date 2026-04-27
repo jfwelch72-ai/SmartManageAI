@@ -1,4 +1,4 @@
-import type { TradeType } from "@shared/tradeTypeUtils";
+import { BASE_TRADE_FALLBACKS, type TradeType } from "@shared/tradeTypeUtils";
 
 export interface ComponentRule {
   match: string | string[];
@@ -315,9 +315,29 @@ function tidyFallback(group: string | undefined): string {
   return cleaned.replace(/\b\w/g, c => c.toUpperCase());
 }
 
+/**
+ * Resolve the per-trade category config for any trade type. If the supplied
+ * trade does not have a direct entry, walk the `BASE_TRADE_FALLBACKS` chain
+ * (Task #2100) so heavy-civil enum values like `STRUCTURAL_STEEL` or
+ * `SANITARY_SEWER` automatically inherit a sensible config from their nearest
+ * base trade (here `STEEL_ERECTION` and `EARTHWORK` respectively).
+ */
+export function resolveCategoryConfig(
+  tradeType: string | null | undefined,
+): TradeCategoryConfig | undefined {
+  if (!tradeType) return undefined;
+  const direct = TRADE_CATEGORY_CONFIGS[tradeType as TradeType];
+  if (direct) return direct;
+  const base = BASE_TRADE_FALLBACKS[tradeType as TradeType];
+  if (base && base !== tradeType) {
+    return TRADE_CATEGORY_CONFIGS[base];
+  }
+  return undefined;
+}
+
 /** Resolve a friendly category name for a material based on its `group`. */
 export function categoryForMaterial(tradeType: string | null | undefined, group: string | undefined): string {
-  const cfg = tradeType ? TRADE_CATEGORY_CONFIGS[tradeType as TradeType] : undefined;
+  const cfg = resolveCategoryConfig(tradeType);
   if (group && cfg?.materialGroups?.[group]) return cfg.materialGroups[group];
   if (group && DEFAULT_MATERIAL_GROUP_LABELS[group]) return DEFAULT_MATERIAL_GROUP_LABELS[group];
   if (cfg?.defaultMaterialCategory) return cfg.defaultMaterialCategory;
@@ -326,7 +346,7 @@ export function categoryForMaterial(tradeType: string | null | undefined, group:
 
 /** Resolve a friendly category name for a trade component based on its display name. */
 export function categoryForComponent(tradeType: string | null | undefined, displayName: string): string {
-  const cfg = tradeType ? TRADE_CATEGORY_CONFIGS[tradeType as TradeType] : undefined;
+  const cfg = resolveCategoryConfig(tradeType);
   const stripped = stripQualifiers(displayName);
   const isMaterialOnly = /^material only$/i.test(stripped);
   const isLaborOnly = /^labor only$/i.test(stripped);

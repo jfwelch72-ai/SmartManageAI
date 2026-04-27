@@ -1,3 +1,5 @@
+import { BASE_TRADE_FALLBACKS, type TradeType } from "./tradeTypeUtils";
+
 export interface CostCode {
   code: string;
   description: string;
@@ -507,9 +509,22 @@ const TRADE_COST_CODES: Record<string, Array<{ code: string; description: string
   ],
 };
 
+/**
+ * Look up cost codes for a trade. Falls back to the base trade (per
+ * `BASE_TRADE_FALLBACKS` in `shared/tradeTypeUtils.ts`) and finally to the
+ * generic OTHER catch-all so newer heavy-civil enum values (Task #2100) such
+ * as `STRUCTURAL_STEEL` or `SANITARY_SEWER` automatically inherit a sensible
+ * cost-code set without requiring a hand-written entry per trade.
+ */
 export function getCostCodesForTrade(tradeType: string): CostCode[] {
-  const raw = TRADE_COST_CODES[tradeType] || TRADE_COST_CODES["OTHER"];
-  return withDivision(raw);
+  if (TRADE_COST_CODES[tradeType]) {
+    return withDivision(TRADE_COST_CODES[tradeType]);
+  }
+  const base = BASE_TRADE_FALLBACKS[tradeType as TradeType];
+  if (base && TRADE_COST_CODES[base]) {
+    return withDivision(TRADE_COST_CODES[base]);
+  }
+  return withDivision(TRADE_COST_CODES["OTHER"]);
 }
 
 export { CSI_DIVISIONS, getDivision };
