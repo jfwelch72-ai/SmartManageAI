@@ -2839,7 +2839,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
             ) : previewDocId ? (
               (() => {
                 const doc = documents.find((d: any) => d.id === previewDocId);
-                if (!doc) return <WidgetErrorBoundary fallbackTitle="Takeoff Workspace"><TakeoffWorkspace projectId={project.id} projectCode={project.code} selectedSheetId={selectedSheetId} onSelectSheet={setSelectedSheetId} /></WidgetErrorBoundary>;
+                if (!doc) return <ProjectTakeoffCtaPane projectCode={project.code} selectedSheetId={selectedSheetId} />;
                 const isPdf = doc.mimeType?.includes("pdf") || doc.fileName?.toLowerCase().endsWith(".pdf");
                 const isBim = bimEnabled && (doc.type === "BIM" || doc.fileName?.toLowerCase().endsWith(".ifc"));
 
@@ -3113,12 +3113,14 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                 );
               })()
             ) : (
+              /* Task #2080 — Mirroring the bid Plans tab (Task #2067), the
+                 project Plans tab no longer embeds the full takeoff
+                 workspace when no document is being previewed and we are
+                 not in BIM split view. Instead it shows a CTA that opens
+                 the standalone, full-page Takeoff tool at
+                 /takeoff/project/:projectCode. Split View is still offered
+                 when BIM models exist for the project. */
               <div className="flex flex-col h-full">
-                {/* Task #2073 — Toolbar above the embedded takeoff offers
-                    a one-click jump to the standalone full-page workspace
-                    at /takeoff/project/:projectCode, mirroring the bid
-                    Plans tab. The Split View control sits next to it when
-                    BIM models are uploaded for the project. */}
                 <div className="flex items-center justify-end gap-2 px-2 py-1 border-b bg-muted/20 shrink-0">
                   {bimEnabled && bimDocuments.length > 0 && (
                     <Button
@@ -3132,29 +3134,9 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                       Split View (3D + 2D)
                     </Button>
                   )}
-                  <Button
-                    asChild
-                    size="sm"
-                    variant="outline"
-                    className="h-6 text-[10px] gap-1"
-                    data-testid="button-open-project-takeoff-workspace"
-                  >
-                    <Link
-                      href={
-                        selectedSheetId
-                          ? `/takeoff/project/${project.code}?sheet=${selectedSheetId}`
-                          : `/takeoff/project/${project.code}`
-                      }
-                    >
-                      <Maximize2 className="w-3 h-3" />
-                      Open Full-Screen Takeoff
-                    </Link>
-                  </Button>
                 </div>
                 <div className="flex-1 min-h-0">
-                  <WidgetErrorBoundary fallbackTitle="Takeoff Workspace">
-                    <TakeoffWorkspace projectId={project.id} projectCode={project.code} selectedSheetId={selectedSheetId} onSelectSheet={setSelectedSheetId} />
-                  </WidgetErrorBoundary>
+                  <ProjectTakeoffCtaPane projectCode={project.code} selectedSheetId={selectedSheetId} />
                 </div>
               </div>
             )}
@@ -3379,6 +3361,56 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
           onOpenChange={(o) => { if (!o) setTrashOpenForDocId(null); }}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * Task #2080 — CTA pane that replaces the embedded `<TakeoffWorkspace>`
+ * inside the project Plans tab and points users at the standalone,
+ * full-page workspace at `/takeoff/project/:projectCode`. Mirrors
+ * `TakeoffCtaPane` from `BidPlansTab.tsx` (Task #2067) so both bid and
+ * project Plans tabs route to the same dedicated takeoff tool. When a
+ * sheet is selected on the left, we forward it via `?sheet=<id>` so the
+ * full-screen workspace jumps straight to it.
+ */
+function ProjectTakeoffCtaPane({
+  projectCode,
+  selectedSheetId,
+}: {
+  projectCode: string;
+  selectedSheetId: string | null;
+}) {
+  const href = selectedSheetId
+    ? `/takeoff/project/${projectCode}?sheet=${selectedSheetId}`
+    : `/takeoff/project/${projectCode}`;
+  return (
+    <div
+      className="flex flex-col items-center justify-center h-full text-center px-6 py-10 gap-5"
+      data-testid="project-takeoff-cta-pane"
+    >
+      <div className="rounded-full bg-primary/10 p-4">
+        <Maximize2 className="w-8 h-8 text-primary" />
+      </div>
+      <div className="max-w-md space-y-2">
+        <h3 className="text-lg font-semibold tracking-tight">
+          Open Takeoff in its own workspace
+        </h3>
+        <p className="text-sm text-muted-foreground">
+          Takeoff now runs as a dedicated, full-screen tool with collapsible
+          sidebars, scale calibration, and markups — all of your existing
+          measurements move with you.
+        </p>
+      </div>
+      <Button asChild size="lg" data-testid="button-open-project-takeoff-workspace">
+        <Link href={href}>
+          <Maximize2 className="w-4 h-4 mr-2" />
+          Open Full-Screen Takeoff
+        </Link>
+      </Button>
+      <p className="text-xs text-muted-foreground">
+        Tip: select a sheet on the left and we'll jump straight to it.
+      </p>
     </div>
   );
 }
