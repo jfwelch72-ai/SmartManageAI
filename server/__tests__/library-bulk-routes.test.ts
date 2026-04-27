@@ -4,13 +4,21 @@
  *   DELETE /api/library-items/bulk
  *   POST   /api/library-items/bulk-duplicate
  *
- * Both routes were previously verified only by hand with curl. The cases
+ * Task #2154 extends the same mock harness to cover the sibling re-bucket
+ * route added in Task #2086:
+ *
+ *   PATCH  /api/library-items/bulk
+ *
+ * All three routes were previously verified only by hand with curl. The cases
  * below assert the contract that future schema/auth refactors must keep:
  *   - org-scoped where clause (cross-tenant ids never get touched)
  *   - role gating to ESTIMATOR-or-above
  *   - 401 when there is no authenticated org
  *   - 400 on non-array / empty / oversized id lists (MAX_BULK = 500)
  *   - duplicate copies are saved as `isPrebuilt=false` with a "(copy)" suffix
+ *   - re-bucket rejects destination categories owned by a different tenant
+ *     (returns 404) and accepts `categoryId: null` to move back to
+ *     "Uncategorized"
  *
  * Mocking pattern follows server/__tests__/library-reset-prebuilt-route.test.ts:
  * vitest + supertest with the auth middleware, audit logger, and `db` stubbed.
@@ -90,10 +98,12 @@ vi.mock("drizzle-orm", async (importOriginal) => {
 // In-memory rows. Includes rows owned by other organizations to prove the
 // org-scoped where clause does not leak across tenants.
 let rows: any[] = [];
+let categories: any[] = [];
 let nextGenId = 1;
 const insertedRows: any[] = [];
 
 let LIBRARY_ITEMS: any;
+let LIBRARY_CATEGORIES: any;
 
 function evalExpr(expr: any, row: any): boolean {
   if (!expr) return true;
@@ -103,6 +113,8 @@ function evalExpr(expr: any, row: any): boolean {
   if (expr.__op === "eq") {
     if (expr.col === LIBRARY_ITEMS.organizationId) return row.organizationId === expr.val;
     if (expr.col === LIBRARY_ITEMS.id) return row.id === expr.val;
+    if (LIBRARY_CATEGORIES && expr.col === LIBRARY_CATEGORIES.organizationId) return row.organizationId === expr.val;
+    if (LIBRARY_CATEGORIES && expr.col === LIBRARY_CATEGORIES.id) return row.id === expr.val;
     return true;
   }
   if (expr.__op === "inArray") {
@@ -133,9 +145,11 @@ vi.mock("../db", () => ({
           if (_table === LIBRARY_ITEMS) {
             return resolve(rows.filter((r) => evalExpr(_where, r)));
           }
-          // The bulk routes only read library_items; categories/etc. are
-          // touched only by the unrelated bulk PATCH which is not tested
-          // here, so an empty result is a safe default.
+          // The PATCH bulk route reads library_categories to verify the
+          // destination category belongs to the caller's org.
+          if (_table === LIBRARY_CATEGORIES) {
+            return resolve(categories.filter((c) => evalExpr(_where, c)));
+          }
           return resolve([]);
         } catch (e) {
           reject(e);
@@ -178,13 +192,29 @@ vi.mock("../db", () => ({
       };
       return chain;
     }),
-    update: vi.fn(() => {
-      // Not exercised by the bulk delete/duplicate routes; provided so the
-      // unrelated bulk PATCH route doesn't blow up if exercised by mistake.
+    update: vi.fn((table: any) => {
+      // Used by the PATCH bulk re-bucket route. Applies the `set` payload to
+      // every row matching the where clause and returns the matched ids so
+      // the route can report `updated`.
+      let _set: any = null;
+      let _where: any = null;
       const chain: any = {};
-      chain.set = () => chain;
-      chain.where = () => chain;
-      chain.returning = () => Promise.resolve([]);
+      chain.set = (vals: any) => {
+        _set = vals;
+        return chain;
+      };
+      chain.where = (expr: any) => {
+        _where = expr;
+        return chain;
+      };
+      chain.returning = () => {
+        if (table === LIBRARY_ITEMS) {
+          const matched = rows.filter((r) => evalExpr(_where, r));
+          for (const m of matched) Object.assign(m, _set);
+          return Promise.resolve(matched.map((r) => ({ id: r.id })));
+        }
+        return Promise.resolve([]);
+      };
       return chain;
     }),
   },
@@ -195,6 +225,7 @@ let app: Express;
 beforeAll(async () => {
   const schema = await import("@shared/schema");
   LIBRARY_ITEMS = (schema as any).libraryItems;
+  LIBRARY_CATEGORIES = (schema as any).libraryCategories;
 
   const { default: libraryRoutes } = await import("../libraryRoutes");
   app = express();
@@ -211,6 +242,14 @@ beforeEach(() => {
   nextGenId = 1;
   insertedRows.length = 0;
   auditCalls.length = 0;
+  // Categories used by the PATCH bulk re-bucket route. `cat-1`/`cat-2` are
+  // owned by org-1; `cat-foreign` belongs to org-2 so we can prove the
+  // 404-on-cross-tenant-destination guard.
+  categories = [
+    { id: "cat-1", organizationId: "org-1", name: "Concrete" },
+    { id: "cat-2", organizationId: "org-1", name: "Steel" },
+    { id: "cat-foreign", organizationId: "org-2", name: "Foreign Org Category" },
+  ];
   // Two rows in the caller's org plus one foreign-org row that must never
   // be touched regardless of whether its id is included in the request.
   rows = [
@@ -566,5 +605,173 @@ describe("POST /api/library-items/bulk-duplicate", () => {
     const newValue = JSON.parse(auditCalls[0].newValue);
     expect(newValue.duplicatedCount).toBe(1);
     expect(newValue.duplicatedIds).toEqual([res.body.items[0].id]);
+  });
+});
+
+// Task #2154 — coverage for the bulk re-bucket endpoint added in Task #2086.
+// Same MAX_BULK = 500 cap and same org-scoped where clause as the other two
+// bulk routes, plus an extra cross-tenant guard on the destination categoryId.
+describe("PATCH /api/library-items/bulk", () => {
+  it("returns 401 when unauthenticated", async () => {
+    const res = await request(app)
+      .patch("/api/library-items/bulk")
+      .send({ ids: ["item-a"], categoryId: "cat-2" });
+    expect(res.status).toBe(401);
+    // No row was mutated.
+    expect(rows.find((r) => r.id === "item-a")?.categoryId).toBe("cat-1");
+  });
+
+  it("returns 403 when the caller's role is below ESTIMATOR", async () => {
+    testUser = { id: "u1", organizationId: "org-1", role: "FIELD_WORKER" };
+    const res = await request(app)
+      .patch("/api/library-items/bulk")
+      .send({ ids: ["item-a"], categoryId: "cat-2" });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toMatch(/permission/i);
+    expect(rows.find((r) => r.id === "item-a")?.categoryId).toBe("cat-1");
+  });
+
+  it("returns 400 when ids is missing, not an array, or empty", async () => {
+    testUser = { id: "u1", organizationId: "org-1", role: "ESTIMATOR" };
+    for (const body of [
+      undefined,
+      {},
+      { categoryId: "cat-2" },
+      { ids: null, categoryId: "cat-2" },
+      { ids: "item-a", categoryId: "cat-2" },
+      { ids: 42, categoryId: "cat-2" },
+      { ids: [], categoryId: "cat-2" },
+    ]) {
+      const res = await request(app)
+        .patch("/api/library-items/bulk")
+        .send(body as any);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/non-empty array/i);
+    }
+  });
+
+  it("returns 400 when an id entry is not a non-empty string", async () => {
+    testUser = { id: "u1", organizationId: "org-1", role: "ESTIMATOR" };
+    const res = await request(app)
+      .patch("/api/library-items/bulk")
+      .send({ ids: ["item-a", ""], categoryId: "cat-2" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/non-empty array/i);
+  });
+
+  it("returns 400 when categoryId is neither a string nor null", async () => {
+    testUser = { id: "u1", organizationId: "org-1", role: "ESTIMATOR" };
+    for (const categoryId of [42, true, { id: "cat-2" }, ["cat-2"], undefined]) {
+      const res = await request(app)
+        .patch("/api/library-items/bulk")
+        .send({ ids: ["item-a"], categoryId } as any);
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/categoryId must be a string or null/i);
+    }
+    // Nothing was mutated by any of the rejected payloads.
+    expect(rows.find((r) => r.id === "item-a")?.categoryId).toBe("cat-1");
+  });
+
+  it("returns 400 when ids exceeds the MAX_BULK cap of 500", async () => {
+    testUser = { id: "u1", organizationId: "org-1", role: "ESTIMATOR" };
+    const tooMany = Array.from({ length: 501 }, (_, i) => `id-${i}`);
+    const res = await request(app)
+      .patch("/api/library-items/bulk")
+      .send({ ids: tooMany, categoryId: "cat-2" });
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/more than 500/i);
+  });
+
+  it("accepts exactly 500 ids (cap is inclusive)", async () => {
+    testUser = { id: "u1", organizationId: "org-1", role: "ESTIMATOR" };
+    const ids = Array.from({ length: 500 }, (_, i) => `nope-${i}`);
+    const res = await request(app)
+      .patch("/api/library-items/bulk")
+      .send({ ids, categoryId: "cat-2" });
+    expect(res.status).toBe(200);
+    // None of those ids exist in the seed, so nothing is updated.
+    expect(res.body.updated).toBe(0);
+    expect(res.body.ids).toEqual([]);
+  });
+
+  it("returns 404 when the destination category belongs to a different organization", async () => {
+    testUser = { id: "u1", organizationId: "org-1", role: "ESTIMATOR" };
+    const res = await request(app)
+      .patch("/api/library-items/bulk")
+      .send({ ids: ["item-a", "item-b"], categoryId: "cat-foreign" });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/destination category not found/i);
+    // Items in the caller's org were not re-bucketed.
+    expect(rows.find((r) => r.id === "item-a")?.categoryId).toBe("cat-1");
+    expect(rows.find((r) => r.id === "item-b")?.categoryId).toBe("cat-1");
+  });
+
+  it("returns 404 when the destination category does not exist at all", async () => {
+    testUser = { id: "u1", organizationId: "org-1", role: "ESTIMATOR" };
+    const res = await request(app)
+      .patch("/api/library-items/bulk")
+      .send({ ids: ["item-a"], categoryId: "cat-does-not-exist" });
+    expect(res.status).toBe(404);
+    expect(res.body.error).toMatch(/destination category not found/i);
+    expect(rows.find((r) => r.id === "item-a")?.categoryId).toBe("cat-1");
+  });
+
+  it("re-points ids at a valid destination categoryId and bumps updatedAt (happy path)", async () => {
+    testUser = { id: "u1", organizationId: "org-1", role: "ESTIMATOR" };
+    const before = Date.now();
+    const res = await request(app)
+      .patch("/api/library-items/bulk")
+      .send({ ids: ["item-a", "item-b"], categoryId: "cat-2" });
+    expect(res.status).toBe(200);
+    expect(res.body.updated).toBe(2);
+    expect(res.body.ids.sort()).toEqual(["item-a", "item-b"]);
+
+    const a = rows.find((r) => r.id === "item-a");
+    const b = rows.find((r) => r.id === "item-b");
+    expect(a.categoryId).toBe("cat-2");
+    expect(b.categoryId).toBe("cat-2");
+    // updatedAt was bumped to a Date at-or-after the request started.
+    expect(a.updatedAt).toBeInstanceOf(Date);
+    expect(b.updatedAt).toBeInstanceOf(Date);
+    expect(a.updatedAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(b.updatedAt.getTime()).toBeGreaterThanOrEqual(before);
+  });
+
+  it("accepts categoryId: null to move items back to Uncategorized", async () => {
+    testUser = { id: "u1", organizationId: "org-1", role: "ESTIMATOR" };
+    const res = await request(app)
+      .patch("/api/library-items/bulk")
+      .send({ ids: ["item-a", "item-b"], categoryId: null });
+    expect(res.status).toBe(200);
+    expect(res.body.updated).toBe(2);
+    expect(rows.find((r) => r.id === "item-a")?.categoryId).toBeNull();
+    expect(rows.find((r) => r.id === "item-b")?.categoryId).toBeNull();
+  });
+
+  it("does not update ids that belong to a different organization (cross-tenant isolation)", async () => {
+    testUser = { id: "u1", organizationId: "org-1", role: "ESTIMATOR" };
+    const res = await request(app)
+      .patch("/api/library-items/bulk")
+      .send({ ids: ["item-a", "item-foreign"], categoryId: "cat-2" });
+    expect(res.status).toBe(200);
+    // Only the in-org id was actually updated; the foreign id is silently
+    // filtered out by the org-scoped where clause.
+    expect(res.body.updated).toBe(1);
+    expect(res.body.ids).toEqual(["item-a"]);
+    expect(rows.find((r) => r.id === "item-a")?.categoryId).toBe("cat-2");
+    // The foreign row keeps its original categoryId (null in the seed).
+    expect(rows.find((r) => r.id === "item-foreign")?.categoryId).toBeNull();
+  });
+
+  it("returns 0 when none of the supplied ids belong to the caller", async () => {
+    testUser = { id: "u1", organizationId: "org-1", role: "ESTIMATOR" };
+    const res = await request(app)
+      .patch("/api/library-items/bulk")
+      .send({ ids: ["item-foreign", "ghost-id"], categoryId: "cat-2" });
+    expect(res.status).toBe(200);
+    expect(res.body.updated).toBe(0);
+    expect(res.body.ids).toEqual([]);
+    // Foreign row is intact.
+    expect(rows.find((r) => r.id === "item-foreign")?.categoryId).toBeNull();
   });
 });
