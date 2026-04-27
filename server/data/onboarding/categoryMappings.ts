@@ -47,13 +47,14 @@ export const DEFAULT_COMPONENT_RULES: ComponentRule[] = [
   { match: "Fence", category: "Fencing" },
   { match: ["Roof Membrane", "Roof Insulation", "Flashing"], category: "Roofing Assembly" },
   { match: "Conduit", category: "Conduit & Raceway" },
-  { match: ["Cabling", "Devices", "Receptacles", "Switches", "Grounding", "Service/Transformer", "Panels"], category: "Electrical Distribution" },
+  { match: ["Cabling", "Devices", "Receptacles", "Switches", "Grounding", "Service/Transformer", "Panels", "Wire Pull", "Conductors"], category: "Electrical Distribution" },
   { match: "Lighting Fixtures", category: "Lighting" },
   { match: ["Racks & Patch Panels"], category: "Low Voltage & Communications" },
+  { match: ["Sealants", "Caulking"], category: "Sealants & Caulking" },
   { match: ["Domestic Water", "Sanitary Waste", "Storm Drain", "Gas Piping", "Backflow"], category: "Piping" },
-  { match: "Fixtures (Set & Trim)", category: "Plumbing Fixtures" },
+  { match: ["Fixtures (Set & Trim)", "Water Heater"], category: "Plumbing Fixtures" },
   { match: ["Supply Ductwork", "Return Ductwork", "Exhaust Ductwork", "Grilles", "Diffusers", "Registers"], category: "HVAC Ductwork" },
-  { match: ["RTU", "Refrigerant"], category: "HVAC Equipment" },
+  { match: ["RTU", "Refrigerant", "VAV", "Terminal Unit"], category: "HVAC Equipment" },
   { match: ["Gypsum Board", "Shaftwall", "Soffits/Bulkheads", "Air/Vapor Barrier", "Access Panels"], category: "Drywall Assemblies" },
   { match: ["Paint ", "Stain & Clear Coat"], category: "Painting" },
   { match: "Siding", category: "Siding & Cladding" },
@@ -81,7 +82,10 @@ export const TRADE_CATEGORY_CONFIGS: Partial<Record<TradeType, TradeCategoryConf
     componentRules: [
       { match: "Conduit", category: "Conduit & Raceway" },
       { match: ["Service/Transformer", "Panels", "Grounding"], category: "Service & Distribution" },
-      { match: ["Receptacles", "Switches", "Devices", "Cabling"], category: "Branch Wiring & Devices" },
+      // Task #2099 — wire pull / conductors land alongside the rest of the
+      // branch wiring devices instead of the generic "Components & Assemblies"
+      // bucket.
+      { match: ["Receptacles", "Switches", "Devices", "Cabling", "Wire Pull", "Conductors"], category: "Branch Wiring & Devices" },
       { match: "Lighting Fixtures", category: "Lighting" },
     ],
     defaultLaborCategory: "Labor — Electrical Installation",
@@ -89,7 +93,9 @@ export const TRADE_CATEGORY_CONFIGS: Partial<Record<TradeType, TradeCategoryConf
   PLUMBING: {
     componentRules: [
       { match: ["Domestic Water", "Sanitary Waste", "Storm Drain", "Gas Piping"], category: "Piping" },
-      { match: ["Backflow", "Fixtures (Set & Trim)"], category: "Plumbing Fixtures" },
+      // Task #2099 — water heaters belong in the Plumbing Fixtures bucket so
+      // they no longer fall through to "Components & Assemblies".
+      { match: ["Backflow", "Fixtures (Set & Trim)", "Water Heater"], category: "Plumbing Fixtures" },
     ],
     defaultLaborCategory: "Labor — Plumbing Installation",
   },
@@ -97,7 +103,9 @@ export const TRADE_CATEGORY_CONFIGS: Partial<Record<TradeType, TradeCategoryConf
     componentRules: [
       { match: ["Supply Ductwork", "Return Ductwork", "Exhaust Ductwork"], category: "Ductwork" },
       { match: ["Grilles", "Diffusers", "Registers"], category: "Air Distribution" },
-      { match: ["RTU", "Refrigerant"], category: "Equipment & Refrigerant" },
+      // Task #2099 — VAV boxes / terminal units sit with the rest of the HVAC
+      // equipment instead of falling into "Components & Assemblies".
+      { match: ["RTU", "Refrigerant", "VAV", "Terminal Unit"], category: "Equipment & Refrigerant" },
     ],
     defaultLaborCategory: "Labor — HVAC Installation",
   },
@@ -106,6 +114,9 @@ export const TRADE_CATEGORY_CONFIGS: Partial<Record<TradeType, TradeCategoryConf
       { match: ["Roof Membrane"], category: "Membrane & Underlayment" },
       { match: ["Roof Insulation"], category: "Roof Insulation" },
       { match: ["Flashing"], category: "Flashing & Trim" },
+      // Task #2099 — roofing seeds carry "Sealants" components for shingle/TPO
+      // assemblies; route them to a dedicated Sealants & Caulking bucket.
+      { match: ["Sealants", "Caulking"], category: "Sealants & Caulking" },
     ],
     defaultLaborCategory: "Labor — Roofing Installation",
   },

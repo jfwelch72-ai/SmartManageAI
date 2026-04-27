@@ -227,6 +227,63 @@ describe("Task #2082 — seed sampling produces no leftover Components & Assembl
   });
 });
 
+describe("Task #2099 — roofing/plumbing/HVAC/electrical sealants & fixtures", () => {
+  it("routes ROOFING 'Sealants' into Sealants & Caulking", () => {
+    expect(categoryForComponent("ROOFING", "Sealants")).toBe("Sealants & Caulking");
+  });
+
+  it("routes INSULATION 'Sealants' into Sealants & Caulking via the default rules", () => {
+    expect(categoryForComponent("INSULATION", "Sealants")).toBe("Sealants & Caulking");
+  });
+
+  it("routes WATERPROOFING 'Sealants' into Sealants & Caulking via the default rules", () => {
+    expect(categoryForComponent("WATERPROOFING", "Sealants")).toBe("Sealants & Caulking");
+  });
+
+  it("routes PLUMBING 'Water Heater' into Plumbing Fixtures", () => {
+    expect(categoryForComponent("PLUMBING", "Water Heater")).toBe("Plumbing Fixtures");
+  });
+
+  it("routes HVAC 'VAV Boxes / Terminal Units' into the HVAC equipment bucket", () => {
+    expect(categoryForComponent("HVAC", "VAV Boxes / Terminal Units")).toBe("Equipment & Refrigerant");
+  });
+
+  it("routes ELECTRICAL 'Wire Pull (Conductors)' into Branch Wiring & Devices", () => {
+    expect(categoryForComponent("ELECTRICAL", "Wire Pull (Conductors)")).toBe("Branch Wiring & Devices");
+  });
+
+  it("falls back through the default rules when no trade hint is provided", () => {
+    expect(categoryForComponent(null, "Sealants")).toBe("Sealants & Caulking");
+    expect(categoryForComponent(null, "Caulking")).toBe("Sealants & Caulking");
+    expect(categoryForComponent(null, "Water Heater")).toBe("Plumbing Fixtures");
+    expect(categoryForComponent(null, "VAV Boxes / Terminal Units")).toBe("HVAC Equipment");
+    expect(categoryForComponent(null, "Wire Pull (Conductors)")).toBe("Electrical Distribution");
+  });
+
+  it("never produces 'Components & Assemblies' for any seeded trade after the cleanup", async () => {
+    // Acceptance criterion for Task #2099: after the new rules, the seed
+    // sampler must produce zero "Components & Assemblies" leftovers across
+    // EVERY trade in trade_components.json.
+    const { default: tradeComponents } = await import("../data/onboarding/trade_components.json", {
+      with: { type: "json" },
+    });
+    const { EXTENDED_TRADE_REGISTRY } = await import("@shared/tradeTypeUtils");
+
+    const offenders: Array<{ tradeId: string; componentName: string; legacy: string }> = [];
+    for (const trade of tradeComponents as Array<{ trade_id: string; components: Array<{ display_name: string }> }>) {
+      const legacy = EXTENDED_TRADE_REGISTRY[trade.trade_id] ?? "OTHER";
+      for (const comp of trade.components) {
+        const cat = categoryForComponent(legacy, comp.display_name);
+        if (cat === "Components & Assemblies") {
+          offenders.push({ tradeId: trade.trade_id, componentName: comp.display_name, legacy });
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+});
+
 describe("isLaborComponent", () => {
   it("flags Labor Only", () => {
     expect(isLaborComponent("Labor Only")).toBe(true);
