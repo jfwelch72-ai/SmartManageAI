@@ -2672,6 +2672,9 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       const ctx = await loadEstimateExportContext(estimateId, req.user);
       if (!ctx) return res.status(404).json({ error: "Estimate not found" });
 
+      const includeFormulas = req.query.includeFormulas === "true"
+        || req.query.includeFormulas === "1";
+
       const XLSX = await import("xlsx");
 
       const protocol = (req.headers["x-forwarded-proto"] as string) || req.protocol || "https";
@@ -2747,6 +2750,108 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       if (photoRows.length > 0) {
         const photosSheet = XLSX.utils.json_to_sheet(photoRows);
         XLSX.utils.book_append_sheet(wb, photosSheet, "Photos");
+      }
+
+      if (includeFormulas) {
+        const { buildLineItemFormulaBreakdowns } = await import(
+          "./materialFormulaBreakdown"
+        );
+        const breakdownRows: Array<Record<string, string | number>> = [];
+        for (const li of ctx.lineItems) {
+          const blocks = buildLineItemFormulaBreakdowns({
+            quantity: li.quantity,
+            unit: li.unit,
+            concreteDepthInches: li.concreteDepthInches,
+            dimensionWidthInches: li.dimensionWidthInches,
+            dimensionHeightInches: li.dimensionHeightInches,
+            concreteWasteFactor: li.concreteWasteFactor,
+            calculatedConcreteYards: li.calculatedConcreteYards,
+            requiresStoneBase: li.requiresStoneBase,
+            stoneType: li.stoneType,
+            stoneDepthInches: li.stoneDepthInches,
+            stoneWasteFactor: li.stoneWasteFactor,
+            calculatedStoneTons: li.calculatedStoneTons,
+            requiresExcavation: li.requiresExcavation,
+            excavationDepthInches: li.excavationDepthInches,
+            excavationWidthInches: li.excavationWidthInches,
+            excavationSwellFactor: li.excavationSwellFactor,
+            calculatedExcavationYards: li.calculatedExcavationYards,
+            requiresWireMesh: li.requiresWireMesh,
+            wireMeshCoverageSF: li.wireMeshCoverageSF,
+            wireMeshWasteFactor: li.wireMeshWasteFactor,
+            calculatedWireMeshRolls: li.calculatedWireMeshRolls,
+            requiresRebar: li.requiresRebar,
+            rebarSpacingInches: li.rebarSpacingInches,
+            rebarLengthFeet: li.rebarLengthFeet,
+            rebarWasteFactor: li.rebarWasteFactor,
+            calculatedRebarCount: li.calculatedRebarCount,
+            calculatedRebarLinearFeet: li.calculatedRebarLinearFeet,
+            requiresDowels: li.requiresDowels,
+            dowelSpacingInches: li.dowelSpacingInches,
+            jointLengthFeet: li.jointLengthFeet,
+            calculatedDowelCount: li.calculatedDowelCount,
+            requiresSealer: li.requiresSealer,
+            sealerCoverageSFPerGallon: li.sealerCoverageSFPerGallon,
+            sealerCoats: li.sealerCoats,
+            sealerWasteFactor: li.sealerWasteFactor,
+            calculatedSealerGallons: li.calculatedSealerGallons,
+            requiresUnderlayment: li.requiresUnderlayment,
+            underlaymentOverlapInches: li.underlaymentOverlapInches,
+            underlaymentWasteFactor: li.underlaymentWasteFactor,
+            calculatedUnderlaymentSF: li.calculatedUnderlaymentSF,
+          });
+          for (const block of blocks) {
+            const lastIdx = block.steps.length - 1;
+            block.steps.forEach((step, idx) => {
+              breakdownRows.push({
+                "Line Item": li.description,
+                "Section": block.title,
+                "Formula": block.formula,
+                "Step #": idx + 1,
+                "Label": step.label,
+                "Calculation": step.calculation ?? "",
+                "Value": step.value,
+                "Result": idx === lastIdx ? block.result : "",
+                "Unit": idx === lastIdx ? block.resultUnit : "",
+              });
+            });
+          }
+        }
+        if (breakdownRows.length > 0) {
+          const breakdownSheet = XLSX.utils.json_to_sheet(breakdownRows, {
+            header: [
+              "Line Item",
+              "Section",
+              "Formula",
+              "Step #",
+              "Label",
+              "Calculation",
+              "Value",
+              "Result",
+              "Unit",
+            ],
+          });
+          XLSX.utils.book_append_sheet(wb, breakdownSheet, "Calculation Breakdowns");
+        } else {
+          // Always emit the sheet when the user opted in so the workbook
+          // reflects their toggle choice; an empty sheet with the header
+          // makes it clear no line items had calculator inputs.
+          const emptySheet = XLSX.utils.aoa_to_sheet([
+            [
+              "Line Item",
+              "Section",
+              "Formula",
+              "Step #",
+              "Label",
+              "Calculation",
+              "Value",
+              "Result",
+              "Unit",
+            ],
+            ["(no line items have material calculator inputs)"],
+          ]);
+          XLSX.utils.book_append_sheet(wb, emptySheet, "Calculation Breakdowns");
+        }
       }
 
       const buf = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;

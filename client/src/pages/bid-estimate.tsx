@@ -4,7 +4,7 @@ import { useState, useCallback } from "react";
 import { useBid } from "@/hooks/use-data";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { FileText, CheckCircle, AlertTriangle, Layers, FileSpreadsheet } from "lucide-react";
+import { FileText, CheckCircle, AlertTriangle, Layers } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,6 +23,7 @@ import {
 } from "@/components/MaterialCalculator";
 import { MaterialJobTotals } from "@/components/MaterialCalculator";
 import { EstimatePdfExportButton } from "@/components/EstimatePdfExportButton";
+import { EstimateExcelExportButton } from "@/components/EstimateExcelExportButton";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type {
@@ -734,18 +735,10 @@ export default function BidEstimate() {
               estimateId={estimate.id}
               disabled={estimate.lineItems.length === 0}
             />
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => {
-                window.open(`/api/estimates/${estimate.id}/export/excel`, "_blank");
-              }}
+            <EstimateExcelExportButton
+              estimateId={estimate.id}
               disabled={estimate.lineItems.length === 0}
-              data-testid="button-export-estimate-excel"
-            >
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Export Excel
-            </Button>
+            />
             {estimate.status === "DRAFT" && (
               <Button
                 size="sm"

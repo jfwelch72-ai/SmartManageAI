@@ -272,6 +272,113 @@ describe("Estimate export routes — line item photos", () => {
     }
   });
 
+  it("Excel export omits the 'Calculation Breakdowns' sheet by default", async () => {
+    const res = await request(app)
+      .get(`/api/estimates/${orgA.estimateId}/export/excel`)
+      .buffer(true)
+      .parse((response, callback) => {
+        const data: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => data.push(chunk));
+        response.on("end", () => callback(null, Buffer.concat(data)));
+      })
+      .set("Cookie", `auth_token=${orgA.token}`);
+
+    expect(res.status).toBe(200);
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(res.body as Buffer, { type: "buffer" });
+    expect(wb.SheetNames).not.toContain("Calculation Breakdowns");
+  });
+
+  it("Excel export with includeFormulas=true adds a 'Calculation Breakdowns' sheet matching the formula helper output", async () => {
+    // Seed a calculator-driven line item just for this assertion so
+    // we can verify rows appear and numbers match the helper exactly.
+    const [calcLi] = await db
+      .insert(estimateLineItems)
+      .values({
+        estimateId: orgA.estimateId,
+        category: "CONCRETE",
+        description: `Calc slab ${Date.now()}`,
+        quantity: "100.00",
+        unit: "SF",
+        materialCost: "0.00",
+        laborCost: "0.00",
+        equipmentCost: "0.00",
+        subcontractCost: "0.00",
+        overheadAllocation: "0.00",
+        profitAllocation: "0.00",
+        totalCost: "0.00",
+        concreteDepthInches: "4.00",
+        concreteWasteFactor: "10.00",
+        calculatedConcreteYards: "1.36",
+      })
+      .returning();
+    orgA.lineItemIds.push(calcLi.id);
+
+    const res = await request(app)
+      .get(`/api/estimates/${orgA.estimateId}/export/excel?includeFormulas=true`)
+      .buffer(true)
+      .parse((response, callback) => {
+        const data: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => data.push(chunk));
+        response.on("end", () => callback(null, Buffer.concat(data)));
+      })
+      .set("Cookie", `auth_token=${orgA.token}`);
+
+    expect(res.status).toBe(200);
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(res.body as Buffer, { type: "buffer" });
+    expect(wb.SheetNames).toContain("Calculation Breakdowns");
+
+    interface BreakdownRow {
+      "Line Item"?: string;
+      Section?: string;
+      Formula?: string;
+      "Step #"?: number | string;
+      Label?: string;
+      Calculation?: string;
+      Value?: string;
+      Result?: number | string;
+      Unit?: string;
+    }
+    const rows = XLSX.utils.sheet_to_json<BreakdownRow>(
+      wb.Sheets["Calculation Breakdowns"],
+    );
+    const slabRows = rows.filter((r) => r["Line Item"] === calcLi.description);
+    expect(slabRows.length).toBeGreaterThan(0);
+
+    // All rows for one line-item / section should share the same Formula text.
+    const concreteRows = slabRows.filter((r) => r.Section?.startsWith("Concrete"));
+    expect(concreteRows.length).toBeGreaterThan(0);
+    expect(concreteRows[0].Formula).toMatch(/Quantity.*Depth.*Waste/);
+
+    // Sanity-check against the helper itself so the spreadsheet stays
+    // in lock-step with the on-screen calculator and the PDF.
+    const { buildLineItemFormulaBreakdowns } = await import(
+      "../materialFormulaBreakdown"
+    );
+    const expected = buildLineItemFormulaBreakdowns({
+      quantity: "100.00",
+      unit: "SF",
+      concreteDepthInches: "4.00",
+      concreteWasteFactor: "10.00",
+      calculatedConcreteYards: "1.36",
+    });
+    expect(expected.length).toBeGreaterThan(0);
+    const concreteBlock = expected.find((b) => b.title.startsWith("Concrete"))!;
+    expect(concreteBlock).toBeDefined();
+    expect(concreteRows).toHaveLength(concreteBlock.steps.length);
+    concreteBlock.steps.forEach((step, idx) => {
+      expect(concreteRows[idx].Label).toBe(step.label);
+      expect(concreteRows[idx].Value).toBe(step.value);
+      if (step.calculation !== undefined) {
+        expect(concreteRows[idx].Calculation).toBe(step.calculation);
+      }
+    });
+    const last = concreteRows[concreteRows.length - 1];
+    expect(Number(last.Result)).toBeCloseTo(concreteBlock.result, 2);
+    expect(last.Unit).toBe(concreteBlock.resultUnit);
+  });
+
   it("denies cross-tenant PDF export with 404 when caller's org doesn't own the estimate", async () => {
     const res = await request(app)
       .get(`/api/estimates/${orgA.estimateId}/export/pdf`)
