@@ -9579,6 +9579,41 @@ export const insertUserSettingsSchema = createInsertSchema(userSettings).omit({ 
 export type InsertUserSettings = z.infer<typeof insertUserSettingsSchema>;
 export type UserSettings = typeof userSettings.$inferSelect;
 
+// Task #2079 — Server-side persistence for the per-user "Recent" rail on the
+// Takeoff landing page. The same data still lives in localStorage for
+// instant UX, but rows here are the cross-device source of truth so a user
+// who jumps between desktop and laptop sees the same recent bids/sheets.
+//
+// `kind` is the discriminator from RecentTakeoffEntry ("bid" | "project").
+// `sheetId` is stored as the empty string when the entry refers to the
+// workspace itself rather than a specific sheet — Postgres treats nullable
+// columns as distinct in unique indexes, so coalescing to "" lets us use a
+// straightforward unique constraint for upserts.
+export const takeoffRecents = pgTable("takeoff_recents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(),
+  entityId: varchar("entity_id").notNull(),
+  entityCode: text("entity_code").notNull(),
+  entityName: text("entity_name"),
+  sheetId: varchar("sheet_id").notNull().default(""),
+  sheetName: text("sheet_name"),
+  openedAt: timestamp("opened_at").notNull().defaultNow(),
+}, (table) => ({
+  userOpenedIdx: index("takeoff_recents_user_opened_idx").on(table.userId, table.openedAt),
+  uniqueEntry: unique("takeoff_recents_user_entry_unique").on(
+    table.userId,
+    table.kind,
+    table.entityId,
+    table.sheetId,
+  ),
+}));
+
+export const insertTakeoffRecentSchema = createInsertSchema(takeoffRecents).omit({ id: true });
+export type InsertTakeoffRecent = z.infer<typeof insertTakeoffRecentSchema>;
+export type TakeoffRecent = typeof takeoffRecents.$inferSelect;
+
 // Task #575: User Saved Views — per-user saved view + filter combinations
 export const userSavedViews = pgTable("user_saved_views", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

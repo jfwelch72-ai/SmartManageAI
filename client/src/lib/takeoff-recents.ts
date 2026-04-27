@@ -28,6 +28,16 @@ export interface RecentTakeoffSelector {
 const MAX_ENTRIES = 24;
 const EVENT_NAME = "takeoff-recents-changed";
 
+// Task #2079 — Cross-device sync. We continue to write to localStorage
+// for instant UX, but the canonical store now lives on the server. The
+// client-side cache is reconciled with the server on /takeoff load (see
+// `syncRecentsFromServer` below) and every local write fires a
+// best-effort POST so other devices catch up on their next read.
+const SYNC_ENDPOINT = "/api/takeoff/recents";
+const lastServerSyncAt = new Map<string, number>();
+const inflightSync = new Map<string, Promise<void>>();
+const SERVER_SYNC_INTERVAL_MS = 60 * 1000;
+
 function storageKey(userId: string | null | undefined): string | null {
   if (!userId) return null;
   return `takeoff-recents-${userId}`;
@@ -154,6 +164,108 @@ function writeRecents(userId: string, entries: RecentTakeoffEntry[]): void {
   }
 }
 
+// Merges two lists keyed by (kind, entityId, sheetId), keeping the entry
+// with the most recent `openedAt` and the fresher entityName/sheetName
+// (preferring the side that bumped the timestamp). Server-derived entries
+// override stale local ones so a recent open from another device wins.
+function mergeEntries(
+  a: RecentTakeoffEntry[],
+  b: RecentTakeoffEntry[],
+): RecentTakeoffEntry[] {
+  const byKey = new Map<string, RecentTakeoffEntry>();
+  const keyOf = (e: RecentTakeoffEntry) =>
+    `${e.kind}:${e.entityId}:${e.sheetId ?? ""}`;
+  for (const list of [a, b]) {
+    for (const entry of list) {
+      const key = keyOf(entry);
+      const existing = byKey.get(key);
+      if (!existing || entry.openedAt > existing.openedAt) {
+        byKey.set(key, entry);
+      }
+    }
+  }
+  return Array.from(byKey.values())
+    .sort((x, y) => y.openedAt - x.openedAt)
+    .slice(0, MAX_ENTRIES);
+}
+
+async function postRecentToServer(entry: RecentTakeoffEntry): Promise<void> {
+  if (typeof window === "undefined") return;
+  try {
+    await fetch(SYNC_ENDPOINT, {
+      method: "POST",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(entry),
+    });
+  } catch {
+    // Network errors are tolerable — the next sync will reconcile.
+  }
+}
+
+async function deleteRecentOnServer(
+  selector: RecentTakeoffSelector,
+): Promise<void> {
+  if (typeof window === "undefined") return;
+  try {
+    await fetch(SYNC_ENDPOINT, {
+      method: "DELETE",
+      credentials: "include",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        kind: selector.kind,
+        entityId: selector.entityId,
+        sheetId: selector.sheetId ?? null,
+      }),
+    });
+  } catch {
+    // Network errors are tolerable — local state is the source of truth
+    // until the next sync round-trip.
+  }
+}
+
+// Pulls the canonical server-side rail and merges it into the local cache.
+// Coalesced per-user so concurrent callers (e.g. takeoff-index + the
+// workspace mounting at the same time) only issue one network request,
+// and rate-limited so route changes don't hammer the endpoint.
+export async function syncRecentsFromServer(
+  userId: string | null | undefined,
+  options: { force?: boolean } = {},
+): Promise<void> {
+  if (typeof window === "undefined" || !userId) return;
+  const now = Date.now();
+  const last = lastServerSyncAt.get(userId) ?? 0;
+  if (!options.force && now - last < SERVER_SYNC_INTERVAL_MS) return;
+
+  const existing = inflightSync.get(userId);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    try {
+      const res = await fetch(SYNC_ENDPOINT, { credentials: "include" });
+      if (!res.ok) return;
+      const payload: unknown = await res.json();
+      if (!Array.isArray(payload)) return;
+      const serverEntries: RecentTakeoffEntry[] = [];
+      for (const item of payload) {
+        const entry = toEntry(item);
+        if (entry) serverEntries.push(entry);
+      }
+      const local = readRecents(userId);
+      const merged = mergeEntries(local, serverEntries);
+      writeRecents(userId, merged);
+      lastServerSyncAt.set(userId, Date.now());
+    } catch {
+      // Swallow — UI will fall back to whatever is in localStorage.
+    } finally {
+      inflightSync.delete(userId);
+    }
+  })();
+
+  inflightSync.set(userId, promise);
+  return promise;
+}
+
 export function recordRecent(
   userId: string | null | undefined,
   entry: Omit<RecentTakeoffEntry, "openedAt" | "pinnedAt" | "hidden"> & {
@@ -187,6 +299,14 @@ export function recordRecent(
   );
   filtered.unshift(next);
   writeRecents(userId, capEntries(filtered));
+
+  // Task #2079 — Fire-and-forget POST so the entry follows the user to
+  // their other devices. Local writes already updated the rail
+  // synchronously above so the user never waits on the network. The
+  // server schema only stores the cross-device fields (kind, entity,
+  // sheet, openedAt) — pin/hide flags from Task #2078 are intentionally
+  // device-local, so any extra keys on `next` are ignored server-side.
+  void postRecentToServer(next);
 }
 
 export function pinRecent(
@@ -238,7 +358,14 @@ export function removeRecent(
     // opens it again.
     return { ...e, hidden: true, pinnedAt: null };
   });
-  if (changed) writeRecents(userId, capEntries(next));
+  if (changed) {
+    writeRecents(userId, capEntries(next));
+    // Task #2079 — Mirror the local removal on the server so the entry
+    // doesn't reappear from a sync on another device's next load.
+    // Best-effort; failures are tolerable since the next syncRecents
+    // round-trip will re-apply local state.
+    void deleteRecentOnServer(selector);
+  }
 }
 
 export interface UseRecentTakeoffsResult {
@@ -257,6 +384,9 @@ export function useRecentTakeoffs(
   useEffect(() => {
     setEntries(readRecents(userId));
     if (typeof window === "undefined" || !userId) return;
+    // Pull the latest server-side rail as soon as a user is in scope
+    // (Task #2079 — switching devices should show the same recents).
+    void syncRecentsFromServer(userId);
     const key = storageKey(userId);
     const refresh = () => setEntries(readRecents(userId));
     const onStorage = (e: StorageEvent) => {
@@ -266,11 +396,16 @@ export function useRecentTakeoffs(
       const detail = (e as CustomEvent).detail as { userId?: string } | undefined;
       if (!detail?.userId || detail.userId === userId) refresh();
     };
+    const onFocus = () => {
+      void syncRecentsFromServer(userId);
+    };
     window.addEventListener("storage", onStorage);
     window.addEventListener(EVENT_NAME, onCustom as EventListener);
+    window.addEventListener("focus", onFocus);
     return () => {
       window.removeEventListener("storage", onStorage);
       window.removeEventListener(EVENT_NAME, onCustom as EventListener);
+      window.removeEventListener("focus", onFocus);
     };
   }, [userId]);
 
@@ -283,4 +418,11 @@ export function useRecentTakeoffs(
     .sort((a, b) => b.openedAt - a.openedAt)
     .slice(0, limit);
   return { pinned, recent };
+}
+
+// Test-only escape hatch so unit tests can reset the per-user sync throttle
+// without exporting it through the public API surface.
+export function __resetTakeoffRecentsSyncStateForTests(): void {
+  lastServerSyncAt.clear();
+  inflightSync.clear();
 }

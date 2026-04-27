@@ -232,6 +232,7 @@ import assetManagementRoutes from "./assetManagementRoutes";
 import revenueRecognitionRoutes from "./revenueRecognitionRoutes";
 import riskRoutes from "./riskRoutes";
 import userSettingsRoutes from "./userSettingsRoutes";
+import takeoffRecentsRoutes from "./takeoffRecentsRoutes";
 import executiveDigestRoutes from "./executiveDigestRoutes";
 import emailCampaignRoutes from "./emailCampaignRoutes";
 import savedViewsRoutes from "./savedViewsRoutes";
@@ -462,6 +463,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use("/api", riskRoutes);
 
   app.use(userSettingsRoutes);
+
+  app.use(takeoffRecentsRoutes);
 
   app.use(executiveDigestRoutes);
 

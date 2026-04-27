@@ -10,7 +10,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useBid, useProject } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
 import { useTour } from "@/components/TourProvider";
-import { recordRecent, type RecentTakeoffKind } from "@/lib/takeoff-recents";
+import { recordRecent, syncRecentsFromServer, type RecentTakeoffKind } from "@/lib/takeoff-recents";
 import type { TakeoffSheet } from "@shared/schema";
 
 const LABELED_TOOLBAR_KEY = (uid: string | undefined | null) =>
@@ -103,6 +103,15 @@ export default function TakeoffWorkspacePage() {
       sheetName: null,
     });
   }, [user?.id, recentKind, entityId, entityCode, entityName]);
+
+  // Task #2079 — Pull the latest server-side recents into local cache when
+  // the workspace mounts. Cheap (rate-limited inside the helper) and keeps
+  // the rail consistent if the user opens this page directly without
+  // hitting the takeoff index first.
+  useEffect(() => {
+    if (!user?.id) return;
+    void syncRecentsFromServer(user.id);
+  }, [user?.id]);
 
   // Mirror the same query the takeoff workspace itself uses so we can read
   // the sheet name when recording a "Recent" entry. Cached, so this doesn't
