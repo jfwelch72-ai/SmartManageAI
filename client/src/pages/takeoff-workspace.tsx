@@ -1,5 +1,6 @@
-import { useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 import { Link, useLocation, useRoute } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, FileText, Folder, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +10,8 @@ import { useAuth } from "@/hooks/use-auth";
 import { useBid, useProject } from "@/hooks/use-data";
 import { useToast } from "@/hooks/use-toast";
 import { useTour } from "@/components/TourProvider";
+import { recordRecent, type RecentTakeoffKind } from "@/lib/takeoff-recents";
+import type { TakeoffSheet } from "@shared/schema";
 
 const LABELED_TOOLBAR_KEY = (uid: string | undefined | null) =>
   uid ? `bid-plan-toolbar-labeled-${uid}` : null;
@@ -71,6 +74,80 @@ export default function TakeoffWorkspacePage() {
       // sessionStorage may be unavailable (private mode, SSR, etc).
     }
   }, [contextEntityId, initialSheetId]);
+
+  // Task #2072 — record the workspace open in the per-user "Recent" history
+  // that powers the Takeoff landing page. We log a sheet-less entry as soon
+  // as the bid or project loads (so even browsing without picking a sheet
+  // shows up), and add sheet-specific entries via the `onSelectSheet`
+  // callback below. Task #2073 extended this to also cover project
+  // takeoffs, which use the same recents store with kind="project".
+  const recentKind: RecentTakeoffKind | null = isProjectRoute
+    ? project
+      ? "project"
+      : null
+    : bid
+      ? "bid"
+      : null;
+  const entityId = isProjectRoute ? project?.id ?? null : bid?.id ?? null;
+  const entityCode = isProjectRoute ? project?.code ?? null : bid?.code ?? null;
+  const entityName = isProjectRoute ? project?.name ?? null : bid?.name ?? null;
+
+  useEffect(() => {
+    if (!user?.id || !recentKind || !entityId || !entityCode) return;
+    recordRecent(user.id, {
+      kind: recentKind,
+      entityId,
+      entityCode,
+      entityName,
+      sheetId: null,
+      sheetName: null,
+    });
+  }, [user?.id, recentKind, entityId, entityCode, entityName]);
+
+  // Mirror the same query the takeoff workspace itself uses so we can read
+  // the sheet name when recording a "Recent" entry. Cached, so this doesn't
+  // trigger a second network request.
+  const sheetsQueryKey = recentKind === "project"
+    ? ["/api/projects", entityId, "takeoff", "sheets"]
+    : ["/api/bids", entityId, "takeoff", "sheets"];
+  const { data: sheetsData } = useQuery<TakeoffSheet[]>({
+    queryKey: sheetsQueryKey,
+    enabled: !!entityId,
+  });
+
+  const handleSelectSheet = useCallback(
+    (sheetId: string | null) => {
+      if (!user?.id || !recentKind || !entityId || !entityCode || !sheetId) return;
+      const sheet = (sheetsData ?? []).find((s) => s.id === sheetId) ?? null;
+      recordRecent(user.id, {
+        kind: recentKind,
+        entityId,
+        entityCode,
+        entityName,
+        sheetId,
+        sheetName: sheet?.sheetName ?? null,
+      });
+    },
+    [user?.id, recentKind, entityId, entityCode, entityName, sheetsData],
+  );
+
+  // Capture the deep-linked sheet (?sheet=...) once the sheets list arrives,
+  // since the workspace component initializes its internal selection from
+  // sessionStorage without firing `onSelectSheet`.
+  useEffect(() => {
+    if (!user?.id || !recentKind || !entityId || !entityCode || !initialSheetId) return;
+    if (!sheetsData || sheetsData.length === 0) return;
+    const sheet = sheetsData.find((s) => s.id === initialSheetId);
+    if (!sheet) return;
+    recordRecent(user.id, {
+      kind: recentKind,
+      entityId,
+      entityCode,
+      entityName,
+      sheetId: sheet.id,
+      sheetName: sheet.sheetName ?? null,
+    });
+  }, [user?.id, recentKind, entityId, entityCode, entityName, initialSheetId, sheetsData]);
 
   // Auto-trigger the takeoff tour on first visit to the standalone bid
   // workspace (mirrors the behavior the bid Plans tab used to provide while
@@ -207,6 +284,7 @@ export default function TakeoffWorkspacePage() {
               context={{ type: "project", projectId: project.id, projectCode: project.code }}
               labeled={labeled}
               fullscreenScaleModal
+              onSelectSheet={handleSelectSheet}
             />
           </WidgetErrorBoundary>
         </div>
@@ -265,6 +343,7 @@ export default function TakeoffWorkspacePage() {
             context={{ type: "bid", bidId: bid!.id, bidCode: bid!.code }}
             labeled={labeled}
             fullscreenScaleModal
+            onSelectSheet={handleSelectSheet}
           />
         </WidgetErrorBoundary>
       </div>

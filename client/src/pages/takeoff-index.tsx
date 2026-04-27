@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
 import { Link } from "wouter";
-import { ArrowRight, FileText, Folder, Loader2, Ruler, Search } from "lucide-react";
+import { ArrowRight, Clock, FileText, Folder, Layers, Loader2, Ruler, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { useBids, useProjects } from "@/hooks/use-data";
+import { useAuth } from "@/hooks/use-auth";
+import { useRecentTakeoffs } from "@/lib/takeoff-recents";
 import type { Bid } from "@shared/schema";
 import type { ProjectWithNames } from "@/hooks/use-data";
 
@@ -22,12 +24,75 @@ const ACTIVE_BID_STATUSES = new Set([
 // ACTIVE_BID_STATUSES bias used for the bid list above.
 const ACTIVE_PROJECT_STATUSES = new Set(["ACTIVE", "PLANNING", "BID"]);
 
+const RECENTS_LIMIT = 6;
+
+function formatRelativeTime(timestamp: number): string {
+  const diffMs = Date.now() - timestamp;
+  if (diffMs < 60_000) return "just now";
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  const years = Math.floor(days / 365);
+  return `${years}y ago`;
+}
+
 export default function TakeoffIndexPage() {
   const { data: bids = [], isLoading: bidsLoading } = useBids();
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
+  const { user } = useAuth();
+  const recents = useRecentTakeoffs(user?.id, RECENTS_LIMIT);
   const [search, setSearch] = useState("");
 
   const isLoading = bidsLoading || projectsLoading;
+
+  // Recents are stored locally so the entity name/code there can drift if
+  // the user renames or removes a bid/project. Filter to the bids and
+  // projects the user can still access and prefer the latest name from
+  // the API (Task #2072 + Task #2073).
+  const bidsByCode = useMemo(() => {
+    const map = new Map<string, Bid>();
+    for (const b of bids as Bid[]) {
+      if (b.code) map.set(b.code, b);
+    }
+    return map;
+  }, [bids]);
+
+  const projectsByCode = useMemo(() => {
+    const map = new Map<string, ProjectWithNames>();
+    for (const p of projects as ProjectWithNames[]) {
+      if (p.code) map.set(p.code, p);
+    }
+    return map;
+  }, [projects]);
+
+  const visibleRecents = useMemo(() => {
+    if (recents.length === 0) return [];
+    return recents
+      .map((entry) => {
+        if (entry.kind === "bid") {
+          const fresh = bidsByCode.get(entry.entityCode);
+          if (!fresh) return null;
+          return {
+            ...entry,
+            entityName: fresh.name ?? entry.entityName ?? null,
+            entityCode: fresh.code,
+          };
+        }
+        const fresh = projectsByCode.get(entry.entityCode);
+        if (!fresh) return null;
+        return {
+          ...entry,
+          entityName: fresh.name ?? entry.entityName ?? null,
+          entityCode: fresh.code,
+        };
+      })
+      .filter((e): e is NonNullable<typeof e> => e !== null);
+  }, [recents, bidsByCode, projectsByCode]);
 
   const filteredBids = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -86,6 +151,82 @@ export default function TakeoffIndexPage() {
           </p>
         </div>
       </div>
+
+      {visibleRecents.length > 0 && (
+        <section className="space-y-2" data-testid="takeoff-index-recents">
+          <div className="flex items-center gap-2">
+            <Clock className="w-4 h-4 text-muted-foreground" />
+            <h2 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">
+              Recent
+            </h2>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {visibleRecents.map((entry) => {
+              const basePath = entry.kind === "project"
+                ? `/takeoff/project/${entry.entityCode}`
+                : `/takeoff/${entry.entityCode}`;
+              const href = entry.sheetId
+                ? `${basePath}?sheet=${encodeURIComponent(entry.sheetId)}`
+                : basePath;
+              const testKey = entry.sheetId
+                ? `${entry.kind}-${entry.entityCode}-${entry.sheetId}`
+                : `${entry.kind}-${entry.entityCode}`;
+              return (
+                <Link
+                  key={`${entry.kind}:${entry.entityId}:${entry.sheetId ?? "none"}`}
+                  href={href}
+                  data-testid={`link-takeoff-recent-${testKey}`}
+                >
+                  <Card className="hover-elevate active-elevate-2 transition-colors cursor-pointer h-full">
+                    <CardContent className="flex items-start gap-3 p-3">
+                      <div className="rounded-md bg-muted/60 p-2 shrink-0">
+                        {entry.sheetId ? (
+                          <Layers className="w-4 h-4 text-muted-foreground" />
+                        ) : entry.kind === "project" ? (
+                          <Folder className="w-4 h-4 text-muted-foreground" />
+                        ) : (
+                          <FileText className="w-4 h-4 text-muted-foreground" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="font-medium truncate text-sm"
+                            data-testid={`text-takeoff-recent-title-${testKey}`}
+                          >
+                            {entry.sheetName
+                              || (entry.sheetId
+                                ? "Sheet"
+                                : entry.entityName || entry.entityCode)}
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] font-mono uppercase tracking-wide shrink-0"
+                          >
+                            {entry.entityCode}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">
+                          {entry.sheetId
+                            ? entry.entityName || entry.entityCode
+                            : entry.kind === "project"
+                              ? "Project"
+                              : "Bid"}
+                          <span className="mx-1.5">·</span>
+                          <span data-testid={`text-takeoff-recent-time-${testKey}`}>
+                            {formatRelativeTime(entry.openedAt)}
+                          </span>
+                        </p>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0 mt-1" />
+                    </CardContent>
+                  </Card>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      )}
 
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
