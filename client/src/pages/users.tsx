@@ -74,6 +74,7 @@ import {
   ChevronUp,
   CheckCircle2,
   XCircle,
+  ShieldQuestion,
   FileText,
   Users as UsersIcon,
   Shield,
@@ -91,6 +92,7 @@ import {
   Pencil,
 } from "lucide-react";
 import { EmptyState } from "@/components/EmptyState";
+import { AccessRequestsAdminPanel } from "@/components/AccessRequestsAdminPanel";
 import type { SelectUser } from "@shared/schema";
 
 interface PermissionSet {
@@ -809,6 +811,13 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
             <TabsTrigger value="customization" data-testid="tab-customization">
               <Settings className="w-4 h-4 mr-2" />
               Feature Permissions
+            </TabsTrigger>
+            <TabsTrigger
+              value="access-requests"
+              data-testid="tab-access-requests"
+            >
+              <ShieldQuestion className="w-4 h-4 mr-2" />
+              Access requests
             </TabsTrigger>
           </TabsList>
 
@@ -1597,6 +1606,10 @@ export default function UsersPage({ embedded }: { embedded?: boolean } = {}) {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="access-requests">
+            <AccessRequestsAdminPanel />
           </TabsContent>
         </Tabs>
 

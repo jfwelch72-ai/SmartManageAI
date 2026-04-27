@@ -86,6 +86,11 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   "CRM_STAGE_CHANGE", "CRM_IDLE_OPPORTUNITY",
   "TASK_MENTIONED",
   "DEADLINE_WARNING", "REMINDER",
+  // Task #2143 — self-serve access requests. ACCESS_REQUEST_NEW fans out
+  // to org admins when a user submits a request from the friendly 403
+  // toast (e.g. estimate PDF export). _APPROVED / _DENIED notify the
+  // requester with the admin's outcome (and optional deny note).
+  "ACCESS_REQUEST_NEW", "ACCESS_REQUEST_APPROVED", "ACCESS_REQUEST_DENIED",
   // Task #1260 — Dedicated type for SWPPP corrective action overdue
   // notifications. Previously these piggy-backed on REMINDER, which
   // forced users to silence all reminders to mute SWPPP overdue alerts.

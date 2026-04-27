@@ -81,6 +81,9 @@ Every multi-file uploader in the app shares the same per-batch file count cap, d
 
 Do **not** call `canAccessObjectEntity` / `canAccessObject` on the bid document path: those gates require ADMIN/MANAGER, the file owner, an explicit `filePermissions` row, or the ESTIMATOR-assigned-bid carve-out (which itself requires `bids.estimatorId === userId`). For a teammate ESTIMATOR who can see the bid but is not the assigned estimator, every one of those branches denies, and the read 403s. This was the bug fixed in April 2026 — keep the read endpoints aligned with the list endpoint.
 
+### Self-serve "Request access" flow
+When a user hits a 403 on a feature gated by role (e.g. estimate PDF export's `hasManagementAccess` check), the friendlier 403 toast offers a "Request access" action that opens `client/src/components/RequestAccessDialog.tsx`. The dialog POSTs to `/api/access-requests` (server: `server/accessRequestRoutes.ts`), which inserts an `access_requests` row and fans out an in-app + email `ACCESS_REQUEST_NEW` notification to org admins via `notifyUsers`. Admins triage the queue from `/company-settings` under the new "Access requests" tab (`client/src/components/AccessRequestsAdminPanel.tsx`); approving bumps the user's role and/or flips an allow-listed set of `userDashboardPermissions` flags atomically and notifies the requester (`ACCESS_REQUEST_APPROVED`). Denying records an optional admin note and notifies the requester (`ACCESS_REQUEST_DENIED`). The permission allow-list lives at the top of `accessRequestRoutes.ts` — keep it tight; the full Feature Permissions tab still covers anything outside it.
+
 ### CLI scripts imported by the server bundle
 Any TS file under `scripts/` that the server transitively imports (e.g. `scripts/fetch-dot-pay-items.ts`, imported by `server/jobs/dotPayItemsRefresh.ts` for `runFetcher`) gets folded into `dist/index.js` by `esbuild --bundle`. The classic ESM "is this the entrypoint?" guard
 

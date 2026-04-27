@@ -9,11 +9,13 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { useExportIncludeFormulas } from "@/hooks/use-export-include-formulas";
 import {
   getExportResponseErrorToast,
   getExportThrownErrorToast,
 } from "@/lib/exportErrors";
+import { RequestAccessDialog } from "@/components/RequestAccessDialog";
 
 interface EstimatePdfExportButtonProps {
   estimateId: string;
@@ -38,6 +40,10 @@ export function EstimatePdfExportButton({
   const [open, setOpen] = useState(false);
   const [includeFormulas, setIncludeFormulas] = useExportIncludeFormulas();
   const [isExporting, setIsExporting] = useState(false);
+  // Task #2143 — opens the self-serve "Request access" dialog after a 403,
+  // so the user can ask an admin to grant export access without leaving
+  // the page.
+  const [requestAccessOpen, setRequestAccessOpen] = useState(false);
   const { toast } = useToast();
 
   const filenameFromContentDisposition = (
@@ -66,6 +72,31 @@ export function EstimatePdfExportButton({
     try {
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) {
+        if (res.status === 403) {
+          // Dedicated branch for the most common real-world failure: the
+          // user's role lost `hasManagementAccess`. Surface a friendlier,
+          // actionable message instead of the generic export-error toast,
+          // and offer a one-click "Request access" action that opens the
+          // self-serve dialog (Task #2143) so the user doesn't have to
+          // chase down an admin out-of-band.
+          toast({
+            title: "Export access required",
+            description:
+              "Your role no longer has estimate export access. Request access from an admin and try again once approved.",
+            variant: "destructive",
+            action: (
+              <ToastAction
+                altText="Request access"
+                onClick={() => setRequestAccessOpen(true)}
+                data-testid="toast-action-request-access"
+              >
+                Request access
+              </ToastAction>
+            ),
+          });
+          setOpen(true);
+          return;
+        }
         toast(
           await getExportResponseErrorToast(res, {
             artifact: "PDF",
@@ -154,6 +185,16 @@ export function EstimatePdfExportButton({
           </Button>
         </div>
       </PopoverContent>
+      <RequestAccessDialog
+        open={requestAccessOpen}
+        onOpenChange={setRequestAccessOpen}
+        featureContext="Export estimate PDF"
+        // PDF export is gated by hasManagementAccess, which is role-based
+        // (ADMIN / HUSTLER / MANAGER / ESTIMATOR / SUPERINTENDENT). The
+        // smallest role that unlocks export is ESTIMATOR, so default the
+        // suggestion there — the user can override or leave it blank.
+        defaultRole="ESTIMATOR"
+      />
     </Popover>
   );
 }

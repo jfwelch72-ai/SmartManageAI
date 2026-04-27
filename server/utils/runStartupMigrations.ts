@@ -23,6 +23,7 @@ import { ensureFieldWorkerPermColumns } from "./ensureFieldWorkerPermColumns";
 import { ensurePeerRatingColumns } from "./ensurePeerRatingColumns";
 import { ensureNullablePermissions } from "./ensureNullablePermissions";
 import { ensurePermissionPresetsTable } from "./ensurePermissionPresetsTable";
+import { ensureAccessRequestsTable } from "./ensureAccessRequestsTable";
 import { ensureLidarTables } from "./ensureLidarTables";
 import { ensureErrorLogsTable } from "./ensureErrorLogsTable";
 import { ensureScopeModifierTables } from "./ensureScopeModifierTables";
@@ -218,6 +219,11 @@ const migrations: MigrationStep[] = [
   { name: "peer_rating_columns", category: "ADD_COLUMN", fn: ensurePeerRatingColumns },
   { name: "nullable_permissions", category: "ALTER_TABLE", fn: ensureNullablePermissions },
   { name: "permission_presets_table", category: "CREATE_TABLE", fn: ensurePermissionPresetsTable },
+  // Task #2143 — self-serve "Request access" flow that closes the loop on
+  // the friendlier 403 toast (e.g. estimate PDF export). Order matters:
+  // depends on the `users` and `organizations` tables and on the
+  // `user_role` enum, which all exist by this point.
+  { name: "access_requests_table", category: "CREATE_TABLE", fn: ensureAccessRequestsTable },
   { name: "lidar_tables", category: "CREATE_TABLE", fn: ensureLidarTables },
   { name: "error_logs_table", category: "CREATE_TABLE", fn: ensureErrorLogsTable },
   { name: "scope_modifier_tables", category: "CREATE_TABLE", fn: ensureScopeModifierTables },

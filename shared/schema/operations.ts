@@ -3,6 +3,7 @@ import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgE
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, domainEventStatusEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteBlockTypeEnum, noteTypeEnum, notificationTypeEnum, birthdayReminderCadenceEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum, punchListTradeEnum, punchListPriorityEnum, punchListStatusEnum, warrantyCaseTypeEnum, warrantyCaseStatusEnum, warrantyPriorityEnum, warrantyTaskStatusEnum, warrantyDocumentTypeEnum, leaveRequestStatusEnum, handoverItemStatusEnum, handoverSignoffRoleEnum, assetMaintenanceTypeEnum, maintenanceSystemEnum, recurringFrequencyEnum, costSourceCategoryEnum, costOriginModuleEnum, costTransactionStatusEnum, mobilizationChecklistStatusEnum, mobilizationItemStatusEnum, methodStatementStatusEnum, permitStatusEnum, permitTypeEnum, materialTestStatusEnum, materialTestTypeEnum, ppeTypeEnum, ppeComplianceStatusEnum, projectReportTypeEnum, projectReportStatusEnum } from "./enums";
+import { userRoleEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
 import { aiRuns, contracts, crmOrganisations, crmTranscriptBackfillJobs, dotPayItems, dotSpecBooks, organizationSowItems, quantityCategories, rfis, scopeWorkTypes } from "./features";
 
@@ -3913,3 +3914,81 @@ export type InsertPlatformIncidentReviewAttachment = z.infer<
 >;
 export type PlatformIncidentReviewAttachment =
   typeof platformIncidentReviewAttachments.$inferSelect;
+
+// ---------------------------------------------------------------------------
+// Task #2143 — Self-serve "Request access" flow.
+//
+// When a user hits a 403 (e.g. estimate PDF export gated on
+// `hasManagementAccess`) the friendlier 403 toast now offers a
+// "Request access" action that POSTs an `accessRequests` row and fans out
+// an in-app + email notification to org admins. The admin "Access requests"
+// tab in /company-settings?tab=users lets them approve (which bumps the
+// user's role to `requestedRole` and/or flips the requested permission
+// flags on `userDashboardPermissions`) or deny with a short note that
+// notifies the requester. This closes the loop on task #2117's "ask an
+// admin to grant it" toast — previously users had no in-app path to do so.
+// ---------------------------------------------------------------------------
+export const accessRequestStatusEnum = pgEnum("access_request_status", [
+  "PENDING",
+  "APPROVED",
+  "DENIED",
+]);
+
+export const accessRequests = pgTable(
+  "access_requests",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    organizationId: varchar("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    requesterUserId: varchar("requester_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // Optional role grant request (e.g. "MANAGER"). Null when the user is
+    // only requesting a single feature flag.
+    requestedRole: userRoleEnum("requested_role"),
+    // Optional permission-flag grants. Each entry is a column name on
+    // `user_dashboard_permissions` (e.g. "canViewProjectEstimates"). Stored
+    // as a string array because this is a lightweight grant list, not a
+    // full permission editor — admins can still tweak finer details from
+    // the Feature Permissions tab.
+    requestedPermissions: text("requested_permissions").array(),
+    // Free-text label of what the user was trying to do, e.g.
+    // "Export estimate PDF". Surfaced in the admin queue so they don't
+    // have to chase the requester out-of-band.
+    featureContext: text("feature_context"),
+    // Why the user needs access. Required (>=5 chars) at the API layer.
+    reason: text("reason").notNull(),
+    status: accessRequestStatusEnum("status").notNull().default("PENDING"),
+    decidedById: varchar("decided_by_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    decidedAt: timestamp("decided_at"),
+    // Short note from the admin shown back to the requester on
+    // approve/deny (e.g. "Use temp role then ping me Friday").
+    decisionNote: text("decision_note"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    orgStatusIdx: index("access_requests_org_status_idx").on(
+      table.organizationId,
+      table.status,
+    ),
+    requesterIdx: index("access_requests_requester_idx").on(
+      table.requesterUserId,
+    ),
+  }),
+);
+
+export const insertAccessRequestSchema = createInsertSchema(accessRequests).omit({
+  id: true,
+  status: true,
+  decidedById: true,
+  decidedAt: true,
+  decisionNote: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertAccessRequest = z.infer<typeof insertAccessRequestSchema>;
+export type AccessRequest = typeof accessRequests.$inferSelect;

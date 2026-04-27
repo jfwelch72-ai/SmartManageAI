@@ -54,6 +54,12 @@ const REQUIRED_NOTIFICATION_TYPES = [
   // FAILURE / NO_RECIPIENTS — fan-out to the schedule's last editor +
   // project manager.
   "PROJECT_LOG_EMAIL_FAILED",
+  // Task #2143: self-serve "Request access" flow — fan-out to org admins
+  // when a user submits a request from the friendly 403 toast, and
+  // approve/deny notifications back to the requester.
+  "ACCESS_REQUEST_NEW",
+  "ACCESS_REQUEST_APPROVED",
+  "ACCESS_REQUEST_DENIED",
   // Task #1715: daily digest to org ADMIN / SUPER_ADMIN users
   // summarising every schedule whose latest attempt was
   // FAILURE / NO_RECIPIENTS. Distinct enum value so admins can mute

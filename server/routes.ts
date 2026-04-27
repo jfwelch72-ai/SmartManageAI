@@ -134,6 +134,7 @@ import publicApiRoutes from "./publicApi/routes";
 import devPortalRoutes from "./publicApi/devPortalRoutes";
 import { registerAllProviders } from "./integrations/providers";
 import approvalRoutes from "./approvalRoutes";
+import accessRequestRoutes from "./accessRequestRoutes";
 import workflowRoutes from "./workflowRoutes";
 import documentRevisionRoutes from "./documentRevisionRoutes";
 import drawingSetRoutes from "./drawingSetRoutes";
@@ -418,6 +419,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(vendorRoutes);
 
   app.use("/api/approvals", approvalRoutes);
+  // Task #2143 — self-serve "Request access" flow used by the friendlier
+  // 403 toast (e.g. estimate PDF export) and the admin Access requests
+  // tab in /company-settings?tab=users.
+  app.use("/api/access-requests", accessRequestRoutes);
   app.use("/api/workflows", workflowRoutes);
   app.use("/api/documents", documentRevisionRoutes);
   app.use("/api/projects", drawingSetRoutes);
