@@ -9,6 +9,11 @@ import { logError } from "./utils/logger";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { objectStorageClient, ObjectStorageService } from "./objectStorage";
 import { governedAiCall } from "./services/aiGovernance";
+import {
+  VALID_DB_TRADE_TYPES,
+  isValidDbTradeType as isValidTradeType,
+  type DbTradeType as TradeType,
+} from "./ai/tradeTypeValidation";
 
 const router = Router();
 
@@ -155,20 +160,6 @@ function computeBBoxOverlap(a: { x: number; y: number; w: number; h: number }, b
   return unionArea > 0 ? intersectionArea / unionArea : 0;
 }
 
-const VALID_TRADE_TYPES = [
-  "GENERAL_CONTRACTOR", "CONCRETE", "EARTHWORK", "ASPHALT_PAVING", "ROOFING", "ELECTRICAL",
-  "PLUMBING", "HVAC", "CARPENTRY", "MASONRY", "DRYWALL", "PAINTING", "FLOORING", "LANDSCAPING",
-  "DEMOLITION", "STEEL_ERECTION", "GLAZING", "INSULATION", "FIRE_PROTECTION", "LOW_VOLTAGE",
-  "SOLAR", "WATERPROOFING", "OTHER"
-] as const;
-
-type ValidTradeType = typeof VALID_TRADE_TYPES[number];
-const VALID_TRADE_TYPE_SET: Set<string> = new Set(VALID_TRADE_TYPES);
-
-function isValidTradeType(value: string | null | undefined): value is ValidTradeType {
-  return typeof value === "string" && VALID_TRADE_TYPE_SET.has(value);
-}
-
 async function classifyTradeType(imageUrl: string, orgId: string, userId: string | null | undefined): Promise<{ trade: string; confidence: number }> {
   if (!openai) {
     return { trade: "GENERAL_CONTRACTOR", confidence: 0 };
@@ -189,7 +180,7 @@ async function classifyTradeType(imageUrl: string, orgId: string, userId: string
               content: `You are a construction drawing classifier. Given a blueprint or construction drawing image, identify the PRIMARY trade type it belongs to.
 
 Choose exactly ONE from this list:
-${VALID_TRADE_TYPES.join(", ")}
+${VALID_DB_TRADE_TYPES.join(", ")}
 
 Guidelines:
 - ELECTRICAL: drawings with circuit symbols, panel schedules, outlet/switch symbols, conduit runs
@@ -439,7 +430,7 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
         tradeDetectionConfidence = classification.confidence;
 
         await db.update(aiTakeoffAnalyses)
-          .set({ tradeType: tradeType as ValidTradeType })
+          .set({ tradeType: tradeType as TradeType })
           .where(eq(aiTakeoffAnalyses.id, analysisId));
       }
     }

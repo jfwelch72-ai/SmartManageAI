@@ -48,6 +48,7 @@ import {
   suggestScopeFromBidDocument,
   getModifiersForScopeItem
 } from "./ai/scopePredictionEngine";
+import { normalizeScheduleTaskTradeType } from "./ai/tradeTypeValidation";
 
 const router = Router();
 
@@ -2992,37 +2993,6 @@ router.get("/ai-vendor-comparisons", requireAuth, requireRole("ADMIN", "MANAGER"
 // Routes from aiScheduleRoutes.ts
 // ========================================
 
-const VALID_TRADE_TYPES = [
-  "GENERAL_CONTRACTOR", "CONCRETE", "EARTHWORK", "ASPHALT_PAVING", "ROOFING",
-  "ELECTRICAL", "PLUMBING", "HVAC", "CARPENTRY", "MASONRY", "DRYWALL",
-  "PAINTING", "FLOORING", "LANDSCAPING", "DEMOLITION", "STEEL_ERECTION",
-  "GLAZING", "INSULATION", "FIRE_PROTECTION", "LOW_VOLTAGE", "SOLAR",
-  "WATERPROOFING", "OTHER", "SITE_DEMOLITION", "MASS_EXCAVATION", "TRENCHING",
-  "SHORING", "DEWATERING", "SOIL_STABILIZATION", "ENVIRONMENTAL_REMEDIATION",
-  "WELL_PLUGGING", "STORMWATER_SYSTEMS", "SANITARY_SEWER", "WATERLINE",
-  "FORCE_MAIN", "ROADWAY_CONSTRUCTION", "CURB_AND_GUTTER", "SIDEWALK",
-  "CONCRETE_PAVING", "TRAFFIC_CONTROL", "STRIPING_AND_SIGNAGE", "EROSION_CONTROL",
-  "FENCING_AND_GATES", "CAST_IN_PLACE_CONCRETE", "PRECAST_CONCRETE",
-  "REBAR_AND_POST_TENSION", "STRUCTURAL_STEEL", "METAL_BUILDINGS",
-  "CARPENTRY_FRAMING", "DRYWALL_SYSTEMS", "ACOUSTICAL_CEILINGS",
-  "PAINTING_AND_COATINGS", "FLOORING_SYSTEMS", "ROOFING_SYSTEMS",
-  "MASONRY_SYSTEMS", "GLAZING_SYSTEMS", "ELECTRICAL_UNDERGROUND",
-  "ELECTRICAL_OVERHEAD", "MECHANICAL_PIPING", "HVAC_SYSTEMS", "PLUMBING_SYSTEMS",
-  "FIRE_PROTECTION_SYSTEMS", "LOW_VOLTAGE_SYSTEMS", "SECURITY_AND_ACCESS",
-  "COMMUNICATIONS_IT", "SOLAR_INSTALLATION", "TEMPORARY_POWER",
-  "SURVEY_AND_LAYOUT", "TESTING_AND_INSPECTIONS", "COMMISSIONING",
-  "TEMPORARY_FACILITIES", "GENERAL_CONDITIONS"
-] as const;
-
-function normalizeTradeType(tradeType: string | undefined | null): string | null {
-  if (!tradeType) return null;
-  const normalized = tradeType.toUpperCase().replace(/\s+/g, '_').replace(/-/g, '_');
-  if (VALID_TRADE_TYPES.includes(normalized as any)) {
-    return normalized;
-  }
-  return null;
-}
-
 interface ScheduleTaskData {
   name: string;
   description: string;
@@ -3319,7 +3289,7 @@ Generate a realistic schedule that:
       dependencies: task.dependencies || [],
       isCriticalPath: task.isCriticalPath || false,
       isMilestone: task.isMilestone || false,
-      tradeType: normalizeTradeType(task.tradeType) as any,
+      tradeType: normalizeScheduleTaskTradeType(task.tradeType) as any,
       sowItemIds: task.sowItemIds || [],
       percentComplete: 0,
       plannedStartDate: calculateTaskStartDate(aiResponse.baseline_start_date, aiResponse.tasks, index),
