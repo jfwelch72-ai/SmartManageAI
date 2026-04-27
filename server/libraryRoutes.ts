@@ -21,7 +21,7 @@ import { categoryForMaterial, categoryForComponent, isLaborComponent } from "./d
 import { getLibraryTradeIdsForLegacy } from "../shared/tradeTypeUtils";
 import { requireRole, type AuthRequest } from "./auth";
 import type { UserRole } from "@shared/schema";
-import { logAudit } from "./auditLogger";
+import { logAudit, logCreate, logDelete } from "./auditLogger";
 
 const router = Router();
 
@@ -223,10 +223,17 @@ router.patch("/api/library-items/bulk", async (req: AuthRequest, res: Response, 
 // and capped at MAX_BULK so a runaway selection can't take down the table.
 // Returns the number of rows actually deleted (which may be less than the
 // requested ids if some belonged to a different org or were already gone).
+//
+// Task #2135 — emit one `logDelete` audit entry per deleted row so the bulk
+// path produces the same forensic trail as the single-item delete (an
+// estimator wiping 500 items now leaves 500 audit rows, queryable by
+// entityId for accidental-deletion recovery investigations).
 router.delete("/api/library-items/bulk", async (req: AuthRequest, res: Response, next: NextFunction) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
+  const userId = getUserId(req);
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const { ids } = req.body ?? {};
   if (!Array.isArray(ids) || ids.length === 0 || !ids.every((v) => typeof v === "string" && v.length > 0)) {
@@ -237,9 +244,23 @@ router.delete("/api/library-items/bulk", async (req: AuthRequest, res: Response,
     return res.status(400).json({ error: `Cannot bulk-delete more than ${MAX_BULK} items at once` });
   }
 
+  // Return the full deleted rows so the audit oldValue captures the same
+  // identifying fields the single-item delete records (name, itemNumber,
+  // tradeType, libraryId) instead of just an opaque id list.
   const deleted = await db.delete(libraryItems)
     .where(and(eq(libraryItems.organizationId, orgId), inArray(libraryItems.id, ids)))
-    .returning({ id: libraryItems.id });
+    .returning();
+
+  await Promise.all(deleted.map((row) =>
+    logDelete(userId, "libraryItem", row.id, {
+      name: row.name,
+      itemNumber: row.itemNumber,
+      tradeType: row.tradeType,
+      libraryId: row.libraryId,
+      categoryId: row.categoryId,
+      isPrebuilt: row.isPrebuilt,
+    }, req)
+  ));
 
   res.json({ deleted: deleted.length, ids: deleted.map((r) => r.id) });
 });
@@ -248,10 +269,16 @@ router.delete("/api/library-items/bulk", async (req: AuthRequest, res: Response,
 // the source row (category, trade, costs, etc.) but gets a fresh id, an
 // "(copy)" name suffix, and is marked as a custom (non-prebuilt) item so
 // duplicating a prebuilt seed produces an editable user copy.
+//
+// Task #2135 — emit one `logCreate` audit entry per inserted copy with the
+// originating sourceId in the payload so we can later trace which source
+// row each duplicate came from during forensic review.
 router.post("/api/library-items/bulk-duplicate", async (req: AuthRequest, res: Response, next: NextFunction) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
+  const userId = getUserId(req);
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
 
   const { ids } = req.body ?? {};
   if (!Array.isArray(ids) || ids.length === 0 || !ids.every((v) => typeof v === "string" && v.length > 0)) {
@@ -290,6 +317,19 @@ router.post("/api/library-items/bulk-duplicate", async (req: AuthRequest, res: R
   }));
 
   const inserted = await db.insert(libraryItems).values(copies).returning();
+
+  await Promise.all(inserted.map((row) =>
+    logCreate(userId, "libraryItem", row.id, {
+      name: row.name,
+      itemNumber: row.itemNumber,
+      tradeType: row.tradeType,
+      libraryId: row.libraryId,
+      categoryId: row.categoryId,
+      sourceId: row.sourceId,
+      duplicatedFrom: row.sourceId,
+    }, req)
+  ));
+
   res.json({ duplicated: inserted.length, items: inserted });
 });
 
@@ -310,13 +350,29 @@ router.patch("/api/library-items/:id", async (req: AuthRequest, res: Response, n
   res.json(result);
 });
 
+// Task #2135 — single-item delete now writes a `logDelete` audit entry so
+// the single and bulk paths produce a consistent forensic trail for the
+// "library_item" entity type.
 router.delete("/api/library-items/:id", async (req: AuthRequest, res: Response, next: NextFunction) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
+  const userId = getUserId(req);
+  if (!userId) return res.status(401).json({ error: "Unauthorized" });
   const { id } = req.params;
-  await db.delete(libraryItems)
-    .where(and(eq(libraryItems.id, id), eq(libraryItems.organizationId, orgId)));
+  const [deleted] = await db.delete(libraryItems)
+    .where(and(eq(libraryItems.id, id), eq(libraryItems.organizationId, orgId)))
+    .returning();
+  if (deleted) {
+    await logDelete(userId, "libraryItem", deleted.id, {
+      name: deleted.name,
+      itemNumber: deleted.itemNumber,
+      tradeType: deleted.tradeType,
+      libraryId: deleted.libraryId,
+      categoryId: deleted.categoryId,
+      isPrebuilt: deleted.isPrebuilt,
+    }, req);
+  }
   res.json({ success: true });
 });
 
