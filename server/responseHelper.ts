@@ -11,6 +11,13 @@ export function errorResponse(res: Response, status: number, message: string) {
   res.status(status).json({ success: false, error: message });
 }
 
+// Overloads:
+//   1) No fallback           → T | null
+//   2) Explicit `null` fallback → T | null
+//   3) Non-null fallback     → T   (so callers don't need a trailing `?? []`)
+export function safeJsonParse<T = any>(raw: string | null | undefined): T | null;
+export function safeJsonParse<T = any>(raw: string | null | undefined, fallback: null): T | null;
+export function safeJsonParse<T>(raw: string | null | undefined, fallback: T): T;
 export function safeJsonParse<T = any>(
   raw: string | null | undefined,
   fallback: T | null = null

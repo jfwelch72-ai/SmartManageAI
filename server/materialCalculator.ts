@@ -423,7 +423,7 @@ export function aggregateMaterialRequirements(lineItems: EstimateLineItem[]): Ma
     
     try {
       const requirements: MaterialRequirement[] =
-        safeJsonParse<MaterialRequirement[]>(item.materialRequirementsJson, []) ?? [];
+        safeJsonParse<MaterialRequirement[]>(item.materialRequirementsJson, []);
       for (const req of requirements) {
         const key = `${req.category}:${req.item}:${req.unit}`;
         const existing = aggregated.get(key);
@@ -451,7 +451,7 @@ export function aggregateEquipmentRequirements(lineItems: EstimateLineItem[]): E
     
     try {
       const requirements: EquipmentRequirement[] =
-        safeJsonParse<EquipmentRequirement[]>(item.equipmentRequirementsJson, []) ?? [];
+        safeJsonParse<EquipmentRequirement[]>(item.equipmentRequirementsJson, []);
       for (const req of requirements) {
         const key = `${req.category}:${req.item}`;
         const existing = aggregated.get(key);
