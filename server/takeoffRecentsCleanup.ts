@@ -29,6 +29,15 @@ import { and, eq, sql } from "drizzle-orm";
 import { db } from "./db";
 import { takeoffRecents, bids, projects } from "@shared/schema";
 import { logError } from "./utils/logger";
+import { recordJobMetrics } from "./utils/jobMetrics";
+
+// Task #2156 — Job name used for `recordJobMetrics` so the operations
+// dashboard can trend per-kind row counts and duration over time.
+// Mirrors the constant pattern used by
+// `PLAN_DOCUMENT_MARKUP_TRASH_PURGE_JOB` in
+// `server/jobs/planDocumentMarkupSoftDeletePurge.ts` and matches the
+// job key already used by `recordJobOutcome` in the cron wrapper.
+export const TAKEOFF_RECENTS_ORPHAN_PRUNE_JOB = "takeoff_recents_orphan_prune";
 
 export type TakeoffRecentEntityKind = "bid" | "project";
 
@@ -78,6 +87,18 @@ export interface PruneOrphanedTakeoffRecentsResult {
  * instead of marking every tick as a success when the DB misbehaves
  * (mirrors the pattern used by `purgePlanDocumentMarkupTrash` and the
  * other nightly purge helpers).
+ *
+ * Task #2156 — Per-tick `bidRowsPruned`, `projectRowsPruned`,
+ * `totalPruned`, and `durationMs` are also published via
+ * `recordJobMetrics(TAKEOFF_RECENTS_ORPHAN_PRUNE_JOB, …)` so the
+ * operations dashboard can trend the counts over time and the
+ * existing spike-detection rules in `jobMetricAlerts.ts` apply
+ * automatically. The sample is emitted on every tick — including the
+ * "nothing to prune" path — so the dashboard has a baseline and a
+ * slowly-growing leak in the per-delete hooks (Task #2105) becomes
+ * visible long before it would be noticeable in the logs alone.
+ * Mirrors the metric-sampling pattern used by
+ * `purgePlanDocumentMarkupTrash` (Task #1846).
  */
 export async function pruneOrphanedTakeoffRecents(): Promise<PruneOrphanedTakeoffRecentsResult> {
   const startedAt = Date.now();
@@ -104,11 +125,23 @@ export async function pruneOrphanedTakeoffRecents(): Promise<PruneOrphanedTakeof
 
   const bidRowsPruned = deletedBids.length;
   const projectRowsPruned = deletedProjects.length;
+  const totalPruned = bidRowsPruned + projectRowsPruned;
+  const durationMs = Date.now() - startedAt;
+
+  // Emit a sample on every tick — including the "nothing to prune"
+  // path — so the operations dashboard sees every nightly run and
+  // the spike-detection rules have a baseline to compare against.
+  recordJobMetrics(TAKEOFF_RECENTS_ORPHAN_PRUNE_JOB, {
+    bidRowsPruned,
+    projectRowsPruned,
+    totalPruned,
+    durationMs,
+  });
 
   return {
     bidRowsPruned,
     projectRowsPruned,
-    totalPruned: bidRowsPruned + projectRowsPruned,
-    durationMs: Date.now() - startedAt,
+    totalPruned,
+    durationMs,
   };
 }

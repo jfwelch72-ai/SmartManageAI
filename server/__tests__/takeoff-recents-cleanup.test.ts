@@ -110,11 +110,28 @@ vi.mock("../utils/logger", () => ({
   logDebug: vi.fn(),
 }));
 
+// Task #2156 — capture per-tick `recordJobMetrics` calls so we can
+// assert the nightly sweep publishes a sample on every tick (including
+// the "nothing to prune" path) for the operations dashboard.
+const recordedMetrics: Array<{ job: string; counters: Record<string, number> }> = [];
+vi.mock("../utils/jobMetrics", () => ({
+  recordJobMetrics: vi.fn((job: string, counters: Record<string, number>) => {
+    recordedMetrics.push({ job, counters: { ...counters } });
+    return { timestamp: Date.now(), counters: { ...counters } };
+  }),
+  // Surface members consumed by `jobRunner.ts` so the
+  // `jobRegistry` describe block below can still import the module
+  // without ReferenceErrors after this file's mock takes over.
+  loadJobMetricsFromDb: vi.fn(async () => 0),
+  pruneJobMetricsDb: vi.fn(async () => 0),
+}));
+
 beforeEach(() => {
   deletes.length = 0;
   errorLogs.length = 0;
   nextDeleteShouldThrow = false;
   returningQueue = [];
+  recordedMetrics.length = 0;
   vi.resetModules();
 });
 
@@ -283,6 +300,69 @@ describe("pruneOrphanedTakeoffRecents (Task #2129 nightly safety-net)", () => {
     const { pruneOrphanedTakeoffRecents } = await import("../takeoffRecentsCleanup");
     nextDeleteShouldThrow = true;
     await expect(pruneOrphanedTakeoffRecents()).rejects.toThrow("boom");
+  });
+});
+
+// Task #2156 — assert the nightly sweep publishes a per-tick metrics
+// sample with `bidRowsPruned`, `projectRowsPruned`, `totalPruned`, and
+// `durationMs` so the operations dashboard can trend the per-kind
+// counts over time and the existing spike-detection rules in
+// `jobMetricAlerts.ts` automatically apply (mirrors the metric-
+// sampling pattern used by `purgePlanDocumentMarkupTrash`).
+describe("pruneOrphanedTakeoffRecents publishes job metric samples (Task #2156)", () => {
+  it("records a sample on every tick — including the no-op path — so the dashboard has a baseline", async () => {
+    const {
+      pruneOrphanedTakeoffRecents,
+      TAKEOFF_RECENTS_ORPHAN_PRUNE_JOB,
+    } = await import("../takeoffRecentsCleanup");
+    // No orphaned rows on either pass.
+    returningQueue = [[], []];
+
+    const result = await pruneOrphanedTakeoffRecents();
+
+    expect(result.totalPruned).toBe(0);
+    expect(recordedMetrics).toHaveLength(1);
+    const sample = recordedMetrics[0];
+    expect(sample.job).toBe(TAKEOFF_RECENTS_ORPHAN_PRUNE_JOB);
+    expect(sample.job).toBe("takeoff_recents_orphan_prune");
+    expect(sample.counters.bidRowsPruned).toBe(0);
+    expect(sample.counters.projectRowsPruned).toBe(0);
+    expect(sample.counters.totalPruned).toBe(0);
+    expect(typeof sample.counters.durationMs).toBe("number");
+    expect(sample.counters.durationMs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("records the per-kind row counts so a regressed delete hook is visible on the dashboard", async () => {
+    const { pruneOrphanedTakeoffRecents } = await import("../takeoffRecentsCleanup");
+    returningQueue = [
+      [{ id: "tr-bid-1" }, { id: "tr-bid-2" }, { id: "tr-bid-3" }, { id: "tr-bid-4" }],
+      [{ id: "tr-proj-1" }, { id: "tr-proj-2" }],
+    ];
+
+    const result = await pruneOrphanedTakeoffRecents();
+
+    expect(result.bidRowsPruned).toBe(4);
+    expect(result.projectRowsPruned).toBe(2);
+    expect(result.totalPruned).toBe(6);
+
+    expect(recordedMetrics).toHaveLength(1);
+    const sample = recordedMetrics[0];
+    expect(sample.counters.bidRowsPruned).toBe(4);
+    expect(sample.counters.projectRowsPruned).toBe(2);
+    expect(sample.counters.totalPruned).toBe(6);
+    // Duration must round-trip as a number so the dashboard's
+    // duration sparkline has data.
+    expect(typeof sample.counters.durationMs).toBe("number");
+  });
+
+  it("does NOT record a sample when the sweep throws — the cron wrapper publishes a failed-outcome sample instead", async () => {
+    const { pruneOrphanedTakeoffRecents } = await import("../takeoffRecentsCleanup");
+    nextDeleteShouldThrow = true;
+    await expect(pruneOrphanedTakeoffRecents()).rejects.toThrow("boom");
+    // The sweep aborted before the metrics call ran so we don't
+    // double-publish — the cron wrapper's `recordJobOutcome(_, false)`
+    // path covers the failure case via the same job key.
+    expect(recordedMetrics).toHaveLength(0);
   });
 });
 
