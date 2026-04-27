@@ -17,11 +17,17 @@ function generateState(): string {
   return crypto.randomBytes(32).toString("hex");
 }
 
+// Providers that return to us via cross-site form_post (Apple) need a cookie
+// the browser will actually send on a cross-site POST. SameSite=Lax cookies
+// are dropped on cross-site POSTs, so for those providers we set
+// SameSite=None; Secure. GET-redirect providers (Google, Microsoft) keep
+// SameSite=Lax so their behavior is unchanged.
 function setStateCookie(res: Response, state: string, provider: string) {
+  const crossSitePost = provider === "apple";
   res.cookie(`oauth_state_${provider}`, state, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    secure: crossSitePost ? true : process.env.NODE_ENV === "production",
+    sameSite: crossSitePost ? "none" : "lax",
     maxAge: 10 * 60 * 1000,
     path: "/",
   });
@@ -38,7 +44,13 @@ function validateState(req: Request, provider: string): boolean {
 }
 
 function clearStateCookie(res: Response, provider: string) {
-  res.clearCookie(`oauth_state_${provider}`, { path: "/" });
+  const crossSitePost = provider === "apple";
+  res.clearCookie(`oauth_state_${provider}`, {
+    path: "/",
+    httpOnly: true,
+    secure: crossSitePost ? true : process.env.NODE_ENV === "production",
+    sameSite: crossSitePost ? "none" : "lax",
+  });
 }
 
 async function findOrCreateOAuthUser(
@@ -317,7 +329,7 @@ router.post(
     try {
       if (!validateState(req, "apple")) {
         logError("Apple OAuth state mismatch — possible CSRF");
-        res.redirect("/login?error=apple_failed");
+        res.redirect("/login?error=apple_state_mismatch");
         return;
       }
       clearStateCookie(res, "apple");
@@ -326,7 +338,7 @@ router.post(
 
       if (!code) {
         logError("Apple OAuth callback missing authorization code");
-        res.redirect("/login?error=apple_failed");
+        res.redirect("/login?error=apple_token_exchange_failed");
         return;
       }
 
@@ -349,7 +361,7 @@ router.post(
       if (!tokenRes.ok) {
         const errBody = await tokenRes.text();
         logError("Apple token exchange failed", { status: tokenRes.status, body: errBody });
-        res.redirect("/login?error=apple_failed");
+        res.redirect("/login?error=apple_token_exchange_failed");
         return;
       }
 
@@ -358,48 +370,87 @@ router.post(
 
       if (!idToken) {
         logError("Apple token response missing id_token");
-        res.redirect("/login?error=apple_failed");
+        res.redirect("/login?error=apple_token_exchange_failed");
         return;
       }
 
       const parts = idToken.split(".");
       if (parts.length !== 3) {
-        res.redirect("/login?error=apple_failed");
+        logError("Apple id_token malformed");
+        res.redirect("/login?error=apple_token_invalid");
         return;
       }
 
-      const header = JSON.parse(Buffer.from(parts[0], "base64url").toString());
-      const payload = JSON.parse(
-        Buffer.from(parts[1], "base64url").toString()
-      );
-
-      if (payload.iss !== "https://appleid.apple.com") {
-        logError("Apple id_token issuer mismatch", { iss: payload.iss });
-        res.redirect("/login?error=apple_failed");
+      let header: { kid?: string; alg?: string };
+      try {
+        header = JSON.parse(Buffer.from(parts[0], "base64url").toString());
+      } catch {
+        logError("Apple id_token header could not be parsed");
+        res.redirect("/login?error=apple_token_invalid");
         return;
       }
-      if (payload.aud !== clientId) {
-        logError("Apple id_token audience mismatch", { aud: payload.aud });
-        res.redirect("/login?error=apple_failed");
-        return;
-      }
-      const now = Math.floor(Date.now() / 1000);
-      if (payload.exp && payload.exp < now) {
-        logError("Apple id_token expired");
-        res.redirect("/login?error=apple_failed");
+      if (!header.kid) {
+        logError("Apple id_token header missing kid");
+        res.redirect("/login?error=apple_token_invalid");
         return;
       }
 
       const jwksRes = await fetch(
         "https://appleid.apple.com/auth/keys"
       );
+      if (!jwksRes.ok) {
+        logError("Apple JWKS fetch failed", { status: jwksRes.status });
+        res.redirect("/login?error=apple_token_invalid");
+        return;
+      }
       const jwks = await jwksRes.json();
       const matchingKey = jwks.keys?.find(
         (k: { kid: string }) => k.kid === header.kid
       );
       if (!matchingKey) {
         logError("Apple id_token kid not found in JWKS", { kid: header.kid });
-        res.redirect("/login?error=apple_failed");
+        res.redirect("/login?error=apple_token_invalid");
+        return;
+      }
+
+      // Convert the JWK to a PEM-encoded SPKI public key using Node's
+      // built-in crypto (no extra dependency needed) and verify the
+      // id_token signature with RS256, the issuer and the audience.
+      let publicKeyPem: string;
+      try {
+        publicKeyPem = crypto
+          .createPublicKey({ key: matchingKey, format: "jwk" })
+          .export({ type: "spki", format: "pem" }) as string;
+      } catch (keyErr) {
+        logError(
+          "Apple JWK to PEM conversion failed",
+          {},
+          keyErr instanceof Error ? keyErr : new Error(String(keyErr))
+        );
+        res.redirect("/login?error=apple_token_invalid");
+        return;
+      }
+
+      let payload: {
+        sub?: string;
+        email?: string;
+        email_verified?: boolean | string;
+        iss?: string;
+        aud?: string | string[];
+      };
+      try {
+        payload = jwt.verify(idToken, publicKeyPem, {
+          algorithms: ["RS256"],
+          issuer: "https://appleid.apple.com",
+          audience: clientId,
+        }) as typeof payload;
+      } catch (verifyErr) {
+        logError(
+          "Apple id_token signature verification failed",
+          {},
+          verifyErr instanceof Error ? verifyErr : new Error(String(verifyErr))
+        );
+        res.redirect("/login?error=apple_token_invalid");
         return;
       }
 
@@ -408,6 +459,12 @@ router.post(
       const emailVerified =
         payload.email_verified === true ||
         payload.email_verified === "true";
+
+      if (!sub) {
+        logError("Apple id_token missing sub");
+        res.redirect("/login?error=apple_token_invalid");
+        return;
+      }
 
       if (!email) {
         res.redirect("/login?error=apple_no_email");

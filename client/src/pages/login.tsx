@@ -39,7 +39,14 @@ export default function LoginPage() {
         google_no_email: "Could not retrieve your email from Google.",
         apple_failed: "Apple sign-in failed. Please try again.",
         apple_not_configured: "Apple sign-in is not configured yet.",
-        apple_no_email: "Could not retrieve your email from Apple.",
+        apple_no_email:
+          "Apple did not share an email with us. Please try again and choose to share your email, or sign in with another method.",
+        apple_state_mismatch:
+          "Your Apple sign-in session expired or was blocked by your browser. Please try again.",
+        apple_token_exchange_failed:
+          "We couldn't complete sign-in with Apple. This usually means the Apple Sign-In configuration is incorrect.",
+        apple_token_invalid:
+          "We couldn't verify the response from Apple. Please try again, or sign in with another method.",
         microsoft_failed: "Microsoft sign-in failed. Please try again.",
         microsoft_not_configured: "Microsoft sign-in is not configured yet.",
         microsoft_no_email: "Could not retrieve your email from Microsoft.",
