@@ -64,32 +64,9 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
+import { getSortedTradeOptions } from "@shared/tradeTypeUtils";
 
-const TRADE_OPTIONS = [
-  "GENERAL_CONTRACTOR",
-  "ELECTRICAL",
-  "PLUMBING",
-  "HVAC",
-  "ROOFING",
-  "CONCRETE",
-  "FRAMING",
-  "DRYWALL",
-  "PAINTING",
-  "FLOORING",
-  "LANDSCAPING",
-  "DEMOLITION",
-  "MASONRY",
-  "INSULATION",
-  "WINDOWS_DOORS",
-  "SIDING",
-  "TILE",
-  "CABINETRY",
-  "COUNTERTOPS",
-  "FENCING",
-  "DECKING",
-  "SOLAR",
-  "OTHER",
-];
+const TRADE_OPTIONS = getSortedTradeOptions();
 
 interface BidRequest {
   id: string;
@@ -299,19 +276,19 @@ function CreateBidRequestDialog({ onSuccess }: { onSuccess: () => void }) {
           <div className="grid gap-2">
             <Label>Required Trades *</Label>
             <div className="flex flex-wrap gap-2">
-              {TRADE_OPTIONS.map((trade) => (
+              {TRADE_OPTIONS.map(({ value, label }) => (
                 <Badge
-                  key={trade}
+                  key={value}
                   variant={
-                    formData.requiredTrades.includes(trade)
+                    formData.requiredTrades.includes(value)
                       ? "default"
                       : "outline"
                   }
                   className="cursor-pointer"
-                  onClick={() => handleTradeToggle(trade)}
-                  data-testid={`badge-trade-${trade.toLowerCase()}`}
+                  onClick={() => handleTradeToggle(value)}
+                  data-testid={`badge-trade-${value.toLowerCase()}`}
                 >
-                  {trade.replace(/_/g, " ")}
+                  {label}
                 </Badge>
               ))}
             </div>

@@ -26,14 +26,9 @@ import {
   Building2, Edit, Eye, EyeOff, Award, Percent, ChevronLeft,
   ChevronRight, Users, Filter, Plus, X, SortAsc, Upload, Loader2,
 } from "lucide-react";
+import { getSortedTradeOptions } from "@shared/tradeTypeUtils";
 
-const TRADE_OPTIONS = [
-  "GENERAL_CONTRACTOR", "ELECTRICAL", "PLUMBING", "HVAC", "ROOFING",
-  "CONCRETE", "FRAMING", "DRYWALL", "PAINTING", "FLOORING",
-  "LANDSCAPING", "DEMOLITION", "MASONRY", "INSULATION", "CARPENTRY",
-  "STEEL_ERECTION", "GLAZING", "FIRE_PROTECTION", "LOW_VOLTAGE",
-  "SOLAR", "WATERPROOFING", "OTHER",
-];
+const TRADE_OPTIONS = getSortedTradeOptions();
 
 const AVAILABILITY_OPTIONS = [
   { value: "AVAILABLE", label: "Available", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300" },
@@ -226,8 +221,8 @@ function TalentDirectoryPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Trades</SelectItem>
-                {TRADE_OPTIONS.map((t) => (
-                  <SelectItem key={t} value={t}>{formatTrade(t)}</SelectItem>
+                {TRADE_OPTIONS.map(({ value, label }) => (
+                  <SelectItem key={value} value={value}>{label}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -861,8 +856,8 @@ function MyTalentProfilePage() {
                   <SelectValue placeholder="Select trade" />
                 </SelectTrigger>
                 <SelectContent>
-                  {TRADE_OPTIONS.map((t) => (
-                    <SelectItem key={t} value={t}>{formatTrade(t)}</SelectItem>
+                  {TRADE_OPTIONS.map(({ value, label }) => (
+                    <SelectItem key={value} value={value}>{label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

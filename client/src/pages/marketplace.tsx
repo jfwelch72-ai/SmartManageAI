@@ -62,58 +62,10 @@ import { cn } from "@/lib/utils";
 import EquipmentRentalMarketplacePage from "./equipment-rental-marketplace";
 import TalentPoolPage from "./talent-pool";
 import { format, parseISO } from "date-fns";
+import { getSortedTradeOptions } from "@shared/tradeTypeUtils";
 
-const TRADE_OPTIONS = [
-  "GENERAL_CONTRACTOR",
-  "ELECTRICAL",
-  "PLUMBING",
-  "HVAC",
-  "ROOFING",
-  "CONCRETE",
-  "FRAMING",
-  "DRYWALL",
-  "PAINTING",
-  "FLOORING",
-  "LANDSCAPING",
-  "DEMOLITION",
-  "MASONRY",
-  "INSULATION",
-  "WINDOWS_DOORS",
-  "SIDING",
-  "TILE",
-  "CABINETRY",
-  "COUNTERTOPS",
-  "FENCING",
-  "DECKING",
-  "SOLAR",
-  "OTHER",
-];
-
-const TRADE_TYPES = [
-  "GENERAL_CONTRACTOR",
-  "CONCRETE",
-  "EARTHWORK",
-  "ASPHALT_PAVING",
-  "ROOFING",
-  "ELECTRICAL",
-  "PLUMBING",
-  "HVAC",
-  "CARPENTRY",
-  "MASONRY",
-  "DRYWALL",
-  "PAINTING",
-  "FLOORING",
-  "LANDSCAPING",
-  "DEMOLITION",
-  "STEEL_ERECTION",
-  "GLAZING",
-  "INSULATION",
-  "FIRE_PROTECTION",
-  "LOW_VOLTAGE",
-  "SOLAR",
-  "WATERPROOFING",
-  "OTHER",
-];
+const TRADE_OPTIONS = getSortedTradeOptions();
+const TRADE_TYPES = TRADE_OPTIONS;
 
 const AVAILABILITY_STATUSES = [
   { value: "AVAILABLE", label: "Available" },
@@ -824,9 +776,9 @@ function ContractorDirectory() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Trades</SelectItem>
-                {TRADE_OPTIONS.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {formatTrade(t)}
+                {TRADE_OPTIONS.map(({ value, label }) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -1028,9 +980,9 @@ function CrewMarketplaceTab() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All Trades</SelectItem>
-              {TRADE_TYPES.map((t) => (
-                <SelectItem key={t} value={t}>
-                  {formatTrade(t)}
+              {TRADE_TYPES.map(({ value, label }) => (
+                <SelectItem key={value} value={value}>
+                  {label}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -1666,9 +1618,9 @@ function CreateOrEditCrewListingDialog({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {TRADE_TYPES.map((t) => (
-                    <SelectItem key={t} value={t}>
-                      {formatTrade(t)}
+                  {TRADE_TYPES.map(({ value, label }) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
                     </SelectItem>
                   ))}
                 </SelectContent>

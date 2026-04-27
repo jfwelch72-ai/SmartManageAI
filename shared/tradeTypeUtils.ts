@@ -1069,3 +1069,16 @@ export function getTradeCategory(tradeType: TradeType): string {
 export function formatTradeCategoryLabel(category: string): string {
   return category.replace(/^\d+_/, '').replace(/_/g, ' ');
 }
+
+/**
+ * Task #2122 — return every canonical trade type as a `{ value, label }`
+ * option, sorted alphabetically by display label. Used by the bid-network,
+ * marketplace and talent-pool trade pickers so heavy-civil trades added in
+ * Task #2100 (e.g. SANITARY_SEWER, STRUCTURAL_STEEL, FIRE_PROTECTION_SYSTEMS)
+ * are surfaced everywhere without each screen hard-coding its own short list.
+ */
+export function getSortedTradeOptions(): Array<{ value: TradeType; label: string }> {
+  return VALID_TRADE_TYPES
+    .map((value) => ({ value, label: getTradeDisplayName(value) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
