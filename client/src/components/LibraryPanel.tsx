@@ -28,7 +28,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
   Search, Plus, ChevronDown, ChevronRight, Package, Layers, Ruler,
-  MoreVertical, Pencil, Trash2, Settings, Download, Sparkles, BookOpen, FolderOpen
+  MoreVertical, Pencil, Trash2, Settings, Download, Sparkles, BookOpen, FolderOpen, RefreshCw
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import LibraryItemDialog from "./LibraryItemDialog";
@@ -47,8 +47,12 @@ interface LibraryPanelProps {
 }
 
 export default function LibraryPanel({ projectId, sheetId, measurements }: LibraryPanelProps) {
-  const { user } = useAuth();
+  const { user, permissionRole } = useAuth();
   const { toast } = useToast();
+  // Task #2083 — only admins can wipe + re-seed the prebuilt catalog. HUSTLER
+  // gets owner-equivalent access via permissionRole.
+  const isAdmin = permissionRole === "SUPER_ADMIN" || permissionRole === "ADMIN" || permissionRole === "HUSTLER";
+  const [showResetConfirm, setShowResetConfirm] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedLibraryId, setSelectedLibraryId] = useState<string>("all");
@@ -116,6 +120,29 @@ export default function LibraryPanel({ projectId, sheetId, measurements }: Libra
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message, variant: "destructive" });
+    },
+  });
+
+  // Task #2083 — admin-only reset that wipes all prebuilt items, assemblies,
+  // and categories for the org and re-runs the seed using current category
+  // mappings. Custom (non-prebuilt) rows are preserved.
+  const resetPrebuiltMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/library-items/reset-prebuilt-catalog");
+      return res.json();
+    },
+    onSuccess: (data) => {
+      invalidateItems();
+      invalidateAssemblies();
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string)?.startsWith("/api/library-categories") });
+      setShowResetConfirm(false);
+      toast({
+        title: "Prebuilt Catalog Reset",
+        description: `Removed ${data.deleted?.items ?? 0} items / ${data.deleted?.assemblies ?? 0} assemblies and re-seeded ${data.created?.items ?? 0} items, ${data.created?.assemblies ?? 0} assemblies, ${data.created?.categories ?? 0} categories.`,
+      });
+    },
+    onError: (err: any) => {
+      toast({ title: "Reset failed", description: err.message, variant: "destructive" });
     },
   });
 
@@ -735,9 +762,57 @@ export default function LibraryPanel({ projectId, sheetId, measurements }: Libra
                 </div>
               ))}
             </div>
+            {isAdmin && (
+              <>
+                <Separator />
+                <div className="space-y-2 rounded-md border border-dashed p-3">
+                  <div className="flex items-start gap-2">
+                    <RefreshCw className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium">Reset prebuilt catalog</p>
+                      <p className="text-xs text-muted-foreground">
+                        Removes prebuilt items, assemblies, and categories for your org and re-seeds them with the latest mappings. Your custom items and assemblies are kept.
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setShowResetConfirm(true)}
+                    disabled={resetPrebuiltMutation.isPending}
+                    data-testid="btn-reset-prebuilt-catalog"
+                  >
+                    <RefreshCw className={cn("h-3.5 w-3.5 mr-1", resetPrebuiltMutation.isPending && "animate-spin")} />
+                    {resetPrebuiltMutation.isPending ? "Resetting..." : "Reset prebuilt catalog"}
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={showResetConfirm} onOpenChange={(open) => { if (!resetPrebuiltMutation.isPending) setShowResetConfirm(open); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset prebuilt catalog?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will delete every prebuilt item, prebuilt assembly, and prebuilt category for your organization, then re-seed them using the current trade mappings. Custom items and assemblies you created are preserved, but any custom items filed under a prebuilt category will become uncategorized.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetPrebuiltMutation.isPending} data-testid="btn-cancel-reset-prebuilt">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => { e.preventDefault(); resetPrebuiltMutation.mutate(); }}
+              disabled={resetPrebuiltMutation.isPending}
+              data-testid="btn-confirm-reset-prebuilt"
+            >
+              {resetPrebuiltMutation.isPending ? "Resetting..." : "Reset & re-seed"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <AlertDialog open={!!deleteLibraryId} onOpenChange={() => setDeleteLibraryId(null)}>
         <AlertDialogContent>

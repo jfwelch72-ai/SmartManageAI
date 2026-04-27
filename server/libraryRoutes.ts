@@ -21,10 +21,15 @@ import { categoryForMaterial, categoryForComponent, isLaborComponent } from "./d
 import { getLibraryTradeIdsForLegacy } from "../shared/tradeTypeUtils";
 import { requireRole, type AuthRequest } from "./auth";
 import type { UserRole } from "@shared/schema";
+import { logAudit } from "./auditLogger";
 
 const router = Router();
 
 const ESTIMATOR_PLUS: UserRole[] = ["SUPER_ADMIN", "ADMIN", "HUSTLER", "MANAGER", "SUPERINTENDENT", "ESTIMATOR"];
+// Task #2083 — Reset of the prebuilt catalog is destructive (drops every
+// prebuilt item, category, and assembly for the org) so it is restricted to
+// org admins. HUSTLERs get owner-equivalent access via effectiveRole.
+const PREBUILT_RESET_ROLES: UserRole[] = ["SUPER_ADMIN", "ADMIN", "HUSTLER"];
 
 function getOrgId(req: AuthRequest): string | null {
   return req.user?.organizationId || null;
@@ -37,6 +42,11 @@ function getUserId(req: AuthRequest): string | null {
 function checkEstimatorPlus(req: AuthRequest): boolean {
   const role = (req.user as any)?.effectiveRole || req.user?.role;
   return !!role && ESTIMATOR_PLUS.includes(role as UserRole);
+}
+
+function checkAdmin(req: AuthRequest): boolean {
+  const role = (req.user as any)?.effectiveRole || req.user?.role;
+  return !!role && PREBUILT_RESET_ROLES.includes(role as UserRole);
 }
 
 router.get("/api/custom-libraries", async (req: AuthRequest, res: Response, next: NextFunction) => {
@@ -398,6 +408,181 @@ router.delete("/api/saved-takeoffs/:id", async (req: AuthRequest, res: Response,
   res.json({ success: true });
 });
 
+// Task #2083 — Extracted from the original `seed-from-onboarding` route so the
+// admin "reset prebuilt catalog" route can re-run the same seeding flow after
+// wiping the existing prebuilt rows. Returns the counts the caller needs to
+// surface in API responses and audit log entries.
+async function runPrebuiltSeed(orgId: string, tradeType: string): Promise<{
+  itemsCreated: number;
+  assembliesCreated: number;
+  categoriesCreated: number;
+  tradeIds: string[];
+}> {
+  const tradeIds = getLibraryTradeIdsForLegacy(tradeType);
+
+  const allMaterials = getMaterials();
+  const allFormulas = getFormulas();
+
+  // Task #2068 — collect items along with the category bucket they belong to
+  // so we can create the per-trade categories first and stamp items with the
+  // resulting category id.
+  // Task #2071 — friendly category names come from the per-trade mapping in
+  // ./data/onboarding/categoryMappings instead of the raw `group` slug.
+  const materialItems: Array<{ item: any; categoryName: string }> = [];
+  const seenMaterialIds = new Set<string>();
+
+  for (const tradeId of tradeIds) {
+    const scopes = getScopesByTradeId(tradeId);
+    for (const scope of scopes) {
+      for (const matFamilyId of scope.material_families) {
+        if (seenMaterialIds.has(matFamilyId)) continue;
+        seenMaterialIds.add(matFamilyId);
+        const mat = allMaterials.find(m => m.material_family_id === matFamilyId);
+        if (mat) {
+          materialItems.push({
+            categoryName: categoryForMaterial(tradeType, mat.group),
+            item: {
+              organizationId: orgId,
+              name: mat.display_name,
+              itemNumber: mat.material_family_id,
+              measuredCoverage: 1,
+              unitOfMeasure: mat.canonical_uom,
+              purchaseCoverage: 1,
+              purchaseUnit: mat.canonical_uom,
+              description: mat.group ? `${mat.group} material` : undefined,
+              costTypes: ["material"],
+              unitCosts: { material: 0 },
+              sourceId: `onboarding:material:${mat.material_family_id}`,
+              isPrebuilt: true,
+              tradeType,
+            },
+          });
+        }
+      }
+    }
+
+    const components = getComponentsByTradeId(tradeId);
+    for (const comp of components) {
+      const compSourceId = `onboarding:component:${comp.component_id}`;
+      if (materialItems.some(m => m.item.sourceId === compSourceId)) continue;
+      const isLabor = isLaborComponent(comp.display_name);
+      materialItems.push({
+        categoryName: categoryForComponent(tradeType, comp.display_name),
+        item: {
+          organizationId: orgId,
+          name: comp.display_name,
+          itemNumber: comp.component_id,
+          measuredCoverage: 1,
+          unitOfMeasure: "EA",
+          purchaseCoverage: 1,
+          purchaseUnit: "EA",
+          description: comp.description?.substring(0, 255) || undefined,
+          costTypes: [isLabor ? "labor" : "material"],
+          unitCosts: isLabor ? { labor: 0 } : { material: 0 },
+          sourceId: compSourceId,
+          isPrebuilt: true,
+          tradeType,
+        },
+      });
+    }
+  }
+
+  if (materialItems.length === 0) {
+    for (const mat of allMaterials.slice(0, 50)) {
+      materialItems.push({
+        categoryName: categoryForMaterial(tradeType, mat.group),
+        item: {
+          organizationId: orgId,
+          name: mat.display_name,
+          itemNumber: mat.material_family_id,
+          measuredCoverage: 1,
+          unitOfMeasure: mat.canonical_uom,
+          purchaseCoverage: 1,
+          purchaseUnit: mat.canonical_uom,
+          description: mat.group ? `${mat.group} material` : undefined,
+          costTypes: ["material"],
+          unitCosts: { material: 0 },
+          sourceId: `onboarding:material:${mat.material_family_id}`,
+          isPrebuilt: true,
+          tradeType,
+        },
+      });
+    }
+  }
+
+  // Task #2068 — create / reuse one category per (trade, name) bucket so the
+  // seeded items land under the correct middle tier.
+  const categoryIdByName = new Map<string, string>();
+  let categoriesCreated = 0;
+  const uniqueCategoryNames = Array.from(new Set(materialItems.map(m => m.categoryName)));
+  for (const catName of uniqueCategoryNames) {
+    const sourceId = `onboarding:category:${tradeType}:${catName}`;
+    const existing = await db.select().from(libraryCategories)
+      .where(and(eq(libraryCategories.organizationId, orgId), eq(libraryCategories.sourceId, sourceId)))
+      .limit(1);
+    if (existing.length > 0) {
+      categoryIdByName.set(catName, existing[0].id);
+    } else {
+      const [created] = await db.insert(libraryCategories).values({
+        organizationId: orgId,
+        name: catName,
+        tradeType,
+        sourceId,
+        isPrebuilt: true,
+      }).returning();
+      categoryIdByName.set(catName, created.id);
+      categoriesCreated++;
+    }
+  }
+
+  const itemsToInsert = materialItems.map(({ item, categoryName }) => ({
+    ...item,
+    categoryId: categoryIdByName.get(categoryName) ?? null,
+  }));
+
+  const batchSize = 50;
+  const createdItems: any[] = [];
+  for (let i = 0; i < itemsToInsert.length; i += batchSize) {
+    const batch = itemsToInsert.slice(i, i + batchSize);
+    const results = await db.insert(libraryItems).values(batch).returning();
+    createdItems.push(...results);
+  }
+
+  const itemsBySourceId = new Map<string, any>();
+  createdItems.forEach(item => {
+    if (item.sourceId) itemsBySourceId.set(item.sourceId, item);
+  });
+
+  const prebuiltAssemblies = getPrebuiltAssemblies(tradeType, itemsBySourceId, orgId);
+  let assembliesCreated = 0;
+  for (const asmDef of prebuiltAssemblies) {
+    const { items: asmItems, ...asmData } = asmDef;
+    const [assembly] = await db.insert(libraryAssemblies).values(asmData).returning();
+    if (asmItems?.length) {
+      for (let i = 0; i < asmItems.length; i++) {
+        await db.insert(libraryAssemblyItems).values({
+          assemblyId: assembly.id,
+          name: asmItems[i].name,
+          formula: asmItems[i].formula || "1",
+          wasteFactor: asmItems[i].wasteFactor || 0,
+          unitCost: asmItems[i].unitCost,
+          unit: asmItems[i].unit,
+          itemId: asmItems[i].itemId || null,
+          displayOrder: i,
+        });
+      }
+    }
+    assembliesCreated++;
+  }
+
+  return {
+    itemsCreated: createdItems.length,
+    assembliesCreated,
+    categoriesCreated,
+    tradeIds,
+  };
+}
+
 router.post("/api/library-items/seed-from-onboarding", async (req: AuthRequest, res: Response, next: NextFunction) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -416,172 +601,103 @@ router.post("/api/library-items/seed-from-onboarding", async (req: AuthRequest, 
     if (!org) return res.status(404).json({ error: "Organization not found" });
 
     const tradeType = (org as any).tradeType || "OTHER";
-    const tradeIds = getLibraryTradeIdsForLegacy(tradeType);
-
-    const allMaterials = getMaterials();
-    const allFormulas = getFormulas();
-
-    // Task #2068 — collect items along with the category bucket they belong to
-    // so we can create the per-trade categories first and stamp items with the
-    // resulting category id.
-    // Task #2071 — friendly category names come from the per-trade mapping in
-    // ./data/onboarding/categoryMappings instead of the raw `group` slug.
-    const materialItems: Array<{ item: any; categoryName: string }> = [];
-    const seenMaterialIds = new Set<string>();
-
-    for (const tradeId of tradeIds) {
-      const scopes = getScopesByTradeId(tradeId);
-      for (const scope of scopes) {
-        for (const matFamilyId of scope.material_families) {
-          if (seenMaterialIds.has(matFamilyId)) continue;
-          seenMaterialIds.add(matFamilyId);
-          const mat = allMaterials.find(m => m.material_family_id === matFamilyId);
-          if (mat) {
-            materialItems.push({
-              categoryName: categoryForMaterial(tradeType, mat.group),
-              item: {
-                organizationId: orgId,
-                name: mat.display_name,
-                itemNumber: mat.material_family_id,
-                measuredCoverage: 1,
-                unitOfMeasure: mat.canonical_uom,
-                purchaseCoverage: 1,
-                purchaseUnit: mat.canonical_uom,
-                description: mat.group ? `${mat.group} material` : undefined,
-                costTypes: ["material"],
-                unitCosts: { material: 0 },
-                sourceId: `onboarding:material:${mat.material_family_id}`,
-                isPrebuilt: true,
-                tradeType,
-              },
-            });
-          }
-        }
-      }
-
-      const components = getComponentsByTradeId(tradeId);
-      for (const comp of components) {
-        const compSourceId = `onboarding:component:${comp.component_id}`;
-        if (materialItems.some(m => m.item.sourceId === compSourceId)) continue;
-        const isLabor = isLaborComponent(comp.display_name);
-        materialItems.push({
-          categoryName: categoryForComponent(tradeType, comp.display_name),
-          item: {
-            organizationId: orgId,
-            name: comp.display_name,
-            itemNumber: comp.component_id,
-            measuredCoverage: 1,
-            unitOfMeasure: "EA",
-            purchaseCoverage: 1,
-            purchaseUnit: "EA",
-            description: comp.description?.substring(0, 255) || undefined,
-            costTypes: [isLabor ? "labor" : "material"],
-            unitCosts: isLabor ? { labor: 0 } : { material: 0 },
-            sourceId: compSourceId,
-            isPrebuilt: true,
-            tradeType,
-          },
-        });
-      }
-    }
-
-    if (materialItems.length === 0) {
-      for (const mat of allMaterials.slice(0, 50)) {
-        materialItems.push({
-          categoryName: categoryForMaterial(tradeType, mat.group),
-          item: {
-            organizationId: orgId,
-            name: mat.display_name,
-            itemNumber: mat.material_family_id,
-            measuredCoverage: 1,
-            unitOfMeasure: mat.canonical_uom,
-            purchaseCoverage: 1,
-            purchaseUnit: mat.canonical_uom,
-            description: mat.group ? `${mat.group} material` : undefined,
-            costTypes: ["material"],
-            unitCosts: { material: 0 },
-            sourceId: `onboarding:material:${mat.material_family_id}`,
-            isPrebuilt: true,
-            tradeType,
-          },
-        });
-      }
-    }
-
-    // Task #2068 — create / reuse one category per (trade, name) bucket so the
-    // seeded items land under the correct middle tier.
-    const categoryIdByName = new Map<string, string>();
-    const uniqueCategoryNames = Array.from(new Set(materialItems.map(m => m.categoryName)));
-    for (const catName of uniqueCategoryNames) {
-      const sourceId = `onboarding:category:${tradeType}:${catName}`;
-      const existing = await db.select().from(libraryCategories)
-        .where(and(eq(libraryCategories.organizationId, orgId), eq(libraryCategories.sourceId, sourceId)))
-        .limit(1);
-      if (existing.length > 0) {
-        categoryIdByName.set(catName, existing[0].id);
-      } else {
-        const [created] = await db.insert(libraryCategories).values({
-          organizationId: orgId,
-          name: catName,
-          tradeType,
-          sourceId,
-          isPrebuilt: true,
-        }).returning();
-        categoryIdByName.set(catName, created.id);
-      }
-    }
-
-    const itemsToInsert = materialItems.map(({ item, categoryName }) => ({
-      ...item,
-      categoryId: categoryIdByName.get(categoryName) ?? null,
-    }));
-
-    const batchSize = 50;
-    const createdItems: any[] = [];
-    for (let i = 0; i < itemsToInsert.length; i += batchSize) {
-      const batch = itemsToInsert.slice(i, i + batchSize);
-      const results = await db.insert(libraryItems).values(batch).returning();
-      createdItems.push(...results);
-    }
-
-    const itemsBySourceId = new Map<string, any>();
-    createdItems.forEach(item => {
-      if (item.sourceId) itemsBySourceId.set(item.sourceId, item);
-    });
-
-    const prebuiltAssemblies = getPrebuiltAssemblies(tradeType, itemsBySourceId, orgId);
-    let assembliesCreated = 0;
-    for (const asmDef of prebuiltAssemblies) {
-      const { items: asmItems, ...asmData } = asmDef;
-      const [assembly] = await db.insert(libraryAssemblies).values(asmData).returning();
-      if (asmItems?.length) {
-        for (let i = 0; i < asmItems.length; i++) {
-          await db.insert(libraryAssemblyItems).values({
-            assemblyId: assembly.id,
-            name: asmItems[i].name,
-            formula: asmItems[i].formula || "1",
-            wasteFactor: asmItems[i].wasteFactor || 0,
-            unitCost: asmItems[i].unitCost,
-            unit: asmItems[i].unit,
-            itemId: asmItems[i].itemId || null,
-            displayOrder: i,
-          });
-        }
-      }
-      assembliesCreated++;
-    }
+    const result = await runPrebuiltSeed(orgId, tradeType);
 
     res.json({
       seeded: true,
-      itemsCreated: createdItems.length,
-      assembliesCreated,
+      itemsCreated: result.itemsCreated,
+      assembliesCreated: result.assembliesCreated,
       tradeType,
-      tradeIds,
+      tradeIds: result.tradeIds,
     });
   } catch (error: any) {
     next(error);
   }
 });
+
+// Task #2083 — Admin-only "reset prebuilt catalog" action. The
+// `seed-from-onboarding` route bails out as soon as any prebuilt item exists
+// for the org, which means orgs seeded before category-mapping improvements
+// (e.g. Task #2071) keep their stale "concrete misc" / generic "Components"
+// buckets forever. This endpoint deletes every prebuilt item, prebuilt
+// assembly, and prebuilt category for the org and then re-runs the seed so
+// the catalog picks up current mappings. Custom (non-prebuilt) items and
+// assemblies are preserved — the FK from custom rows to prebuilt categories
+// is `ON DELETE SET NULL`, so any custom item that was filed under a deleted
+// prebuilt category simply becomes uncategorized rather than being deleted.
+router.post("/api/library-items/reset-prebuilt-catalog", async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const orgId = getOrgId(req);
+  const userId = getUserId(req);
+  if (!orgId || !userId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkAdmin(req)) return res.status(403).json({ error: "Admin access required to reset the prebuilt catalog" });
+
+  try {
+    const [org] = await db.select().from(organizations).where(eq(organizations.id, orgId));
+    if (!org) return res.status(404).json({ error: "Organization not found" });
+
+    const tradeType = (org as any).tradeType || "OTHER";
+
+    // Delete prebuilt assemblies first; their child rows in
+    // library_assembly_items / *_groups / *_group_members cascade automatically
+    // via the schema's `onDelete: cascade` FK.
+    const deletedAssemblies = await db.delete(libraryAssemblies)
+      .where(and(eq(libraryAssemblies.organizationId, orgId), eq(libraryAssemblies.isPrebuilt, true)))
+      .returning({ id: libraryAssemblies.id });
+
+    // Delete prebuilt items. Custom assemblies that referenced these items
+    // have `itemId` set to NULL (FK is `onDelete: set null`).
+    const deletedItems = await db.delete(libraryItems)
+      .where(and(eq(libraryItems.organizationId, orgId), eq(libraryItems.isPrebuilt, true)))
+      .returning({ id: libraryItems.id });
+
+    // Delete prebuilt categories last. Any custom item that was assigned to a
+    // prebuilt category has `categoryId` set to NULL (FK is `onDelete: set
+    // null`), so the user keeps the item but loses the category placement —
+    // they can re-file it under a fresh prebuilt category after re-seed.
+    const deletedCategories = await db.delete(libraryCategories)
+      .where(and(eq(libraryCategories.organizationId, orgId), eq(libraryCategories.isPrebuilt, true)))
+      .returning({ id: libraryCategories.id });
+
+    const seedResult = await runPrebuiltSeed(orgId, tradeType);
+
+    await logAudit({
+      userId,
+      action: "UPDATE",
+      entityType: "libraryPrebuiltCatalog",
+      entityId: orgId,
+      oldValue: JSON.stringify({
+        itemsDeleted: deletedItems.length,
+        assembliesDeleted: deletedAssemblies.length,
+        categoriesDeleted: deletedCategories.length,
+      }),
+      newValue: JSON.stringify({
+        tradeType,
+        itemsCreated: seedResult.itemsCreated,
+        assembliesCreated: seedResult.assembliesCreated,
+        categoriesCreated: seedResult.categoriesCreated,
+      }),
+    }, req);
+
+    res.json({
+      reset: true,
+      tradeType,
+      tradeIds: seedResult.tradeIds,
+      deleted: {
+        items: deletedItems.length,
+        assemblies: deletedAssemblies.length,
+        categories: deletedCategories.length,
+      },
+      created: {
+        items: seedResult.itemsCreated,
+        assemblies: seedResult.assembliesCreated,
+        categories: seedResult.categoriesCreated,
+      },
+    });
+  } catch (error: any) {
+    next(error);
+  }
+});
+
 
 function getPrebuiltAssemblies(tradeType: string, itemsBySourceId: Map<string, any>, orgId: string) {
   const assemblies: any[] = [];
