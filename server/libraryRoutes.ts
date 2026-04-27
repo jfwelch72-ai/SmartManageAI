@@ -219,6 +219,80 @@ router.patch("/api/library-items/bulk", async (req: AuthRequest, res: Response, 
   res.json({ updated: updated.length, ids: updated.map((r) => r.id) });
 });
 
+// Task #2113 — bulk delete library items in a single round-trip. Org-scoped
+// and capped at MAX_BULK so a runaway selection can't take down the table.
+// Returns the number of rows actually deleted (which may be less than the
+// requested ids if some belonged to a different org or were already gone).
+router.delete("/api/library-items/bulk", async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
+
+  const { ids } = req.body ?? {};
+  if (!Array.isArray(ids) || ids.length === 0 || !ids.every((v) => typeof v === "string" && v.length > 0)) {
+    return res.status(400).json({ error: "ids must be a non-empty array of strings" });
+  }
+  const MAX_BULK = 500;
+  if (ids.length > MAX_BULK) {
+    return res.status(400).json({ error: `Cannot bulk-delete more than ${MAX_BULK} items at once` });
+  }
+
+  const deleted = await db.delete(libraryItems)
+    .where(and(eq(libraryItems.organizationId, orgId), inArray(libraryItems.id, ids)))
+    .returning({ id: libraryItems.id });
+
+  res.json({ deleted: deleted.length, ids: deleted.map((r) => r.id) });
+});
+
+// Task #2113 — bulk duplicate library items. Each copy keeps every field of
+// the source row (category, trade, costs, etc.) but gets a fresh id, an
+// "(copy)" name suffix, and is marked as a custom (non-prebuilt) item so
+// duplicating a prebuilt seed produces an editable user copy.
+router.post("/api/library-items/bulk-duplicate", async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
+
+  const { ids } = req.body ?? {};
+  if (!Array.isArray(ids) || ids.length === 0 || !ids.every((v) => typeof v === "string" && v.length > 0)) {
+    return res.status(400).json({ error: "ids must be a non-empty array of strings" });
+  }
+  const MAX_BULK = 500;
+  if (ids.length > MAX_BULK) {
+    return res.status(400).json({ error: `Cannot bulk-duplicate more than ${MAX_BULK} items at once` });
+  }
+
+  const sources = await db.select().from(libraryItems)
+    .where(and(eq(libraryItems.organizationId, orgId), inArray(libraryItems.id, ids)));
+  if (sources.length === 0) {
+    return res.json({ duplicated: 0, items: [] });
+  }
+
+  const copies = sources.map((src) => ({
+    organizationId: src.organizationId,
+    name: `${src.name} (copy)`.slice(0, 120),
+    itemNumber: src.itemNumber,
+    measuredCoverage: src.measuredCoverage,
+    unitOfMeasure: src.unitOfMeasure,
+    purchaseCoverage: src.purchaseCoverage,
+    purchaseUnit: src.purchaseUnit,
+    description: src.description,
+    costTypes: src.costTypes,
+    accountingCodes: src.accountingCodes,
+    unitCosts: src.unitCosts,
+    notes: src.notes,
+    libraryId: src.libraryId,
+    tradeType: src.tradeType,
+    categoryId: src.categoryId,
+    sourceId: src.id,
+    isPrebuilt: false,
+    isActive: src.isActive,
+  }));
+
+  const inserted = await db.insert(libraryItems).values(copies).returning();
+  res.json({ duplicated: inserted.length, items: inserted });
+});
+
 router.patch("/api/library-items/:id", async (req: AuthRequest, res: Response, next: NextFunction) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });

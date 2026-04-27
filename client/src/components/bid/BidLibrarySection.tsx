@@ -33,7 +33,7 @@ import LibraryAssemblyDialog from "@/components/LibraryAssemblyDialog";
 import LibraryCategoryManagerDialog from "@/components/LibraryCategoryManagerDialog";
 import { dispatchLibraryEvent } from "@/lib/libraryEvents";
 import { cn } from "@/lib/utils";
-import { CheckSquare, X, FolderInput } from "lucide-react";
+import { CheckSquare, X, FolderInput, Copy } from "lucide-react";
 import { FolderOpen } from "lucide-react";
 import type { LibraryItem, LibraryAssembly, CustomLibrary, SavedTakeoff, LibraryCategory } from "@shared/schema";
 import { getTradeDisplayName, type TradeType } from "@shared/tradeTypeUtils";
@@ -64,10 +64,12 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
   const [showCategoryManager, setShowCategoryManager] = useState(false);
 
   // Task #2086 — multi-select & bulk re-bucket from the bid sidebar.
+  // Task #2113 — same selection now also drives bulk delete & duplicate.
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [showBulkMoveDialog, setShowBulkMoveDialog] = useState(false);
   const [bulkMoveTargetCategoryId, setBulkMoveTargetCategoryId] = useState<string>("");
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
   const exitSelectionMode = () => {
     setSelectionMode(false);
@@ -169,6 +171,39 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
     },
     onError: (err: any) => {
       toast({ title: "Move failed", description: err?.message || "Could not move items", variant: "destructive" });
+    },
+  });
+
+  // Task #2113 — bulk delete selected library items.
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await apiRequest("DELETE", "/api/library-items/bulk", { ids });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string)?.startsWith("/api/library-items") });
+      setShowBulkDeleteConfirm(false);
+      exitSelectionMode();
+      toast({ title: "Items deleted", description: `Deleted ${data?.deleted ?? 0} items.` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Delete failed", description: err?.message || "Could not delete items", variant: "destructive" });
+    },
+  });
+
+  // Task #2113 — bulk duplicate selected library items into custom copies.
+  const bulkDuplicateMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await apiRequest("POST", "/api/library-items/bulk-duplicate", { ids });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string)?.startsWith("/api/library-items") });
+      exitSelectionMode();
+      toast({ title: "Items duplicated", description: `Created ${data?.duplicated ?? 0} copies.` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Duplicate failed", description: err?.message || "Could not duplicate items", variant: "destructive" });
     },
   });
 
@@ -425,6 +460,29 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
                 >
                   <FolderInput className="h-3 w-3 mr-1" /> Move…
                 </Button>
+                {/* Task #2113 — bulk duplicate. */}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="h-5 text-[11px] px-1.5"
+                  disabled={selectedItemIds.size === 0 || bulkDuplicateMutation.isPending}
+                  onClick={() => bulkDuplicateMutation.mutate(Array.from(selectedItemIds))}
+                  data-testid="btn-bid-bulk-duplicate"
+                >
+                  <Copy className="h-3 w-3 mr-1" />
+                  {bulkDuplicateMutation.isPending ? "…" : "Duplicate"}
+                </Button>
+                {/* Task #2113 — bulk delete (confirmation dialog below). */}
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="h-5 text-[11px] px-1.5"
+                  disabled={selectedItemIds.size === 0}
+                  onClick={() => setShowBulkDeleteConfirm(true)}
+                  data-testid="btn-bid-bulk-delete"
+                >
+                  <Trash2 className="h-3 w-3 mr-1" /> Delete
+                </Button>
               </div>
             )}
             {/* Task #2068 — Trade > Category > Item tree. */}
@@ -680,6 +738,36 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => { if (deleteItemId) deleteItemMutation.mutate(deleteItemId); setDeleteItemId(null); }}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Task #2113 — bulk delete confirmation. */}
+      <AlertDialog
+        open={showBulkDeleteConfirm}
+        onOpenChange={(open) => { if (!bulkDeleteMutation.isPending) setShowBulkDeleteConfirm(open); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {selectedItemIds.size} {selectedItemIds.size === 1 ? "item" : "items"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the {selectedItemIds.size} selected library {selectedItemIds.size === 1 ? "item" : "items"}. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeleteMutation.isPending} data-testid="btn-cancel-bid-bulk-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                bulkDeleteMutation.mutate(Array.from(selectedItemIds));
+              }}
+              disabled={bulkDeleteMutation.isPending || selectedItemIds.size === 0}
+              data-testid="btn-confirm-bid-bulk-delete"
+            >
+              {bulkDeleteMutation.isPending ? "Deleting…" : `Delete ${selectedItemIds.size}`}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

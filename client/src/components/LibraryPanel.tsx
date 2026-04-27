@@ -30,7 +30,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import {
   Search, Plus, ChevronDown, ChevronRight, Package, Layers, Ruler,
   MoreVertical, Pencil, Trash2, Settings, Download, Sparkles, BookOpen, FolderOpen, RefreshCw,
-  CheckSquare, X, FolderInput
+  CheckSquare, X, FolderInput, Copy
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import LibraryItemDialog from "./LibraryItemDialog";
@@ -83,10 +83,12 @@ export default function LibraryPanel({ projectId, sheetId, measurements }: Libra
   // Task #2086 — multi-select & bulk re-bucket. Selection mode hides hover
   // affordances and exposes a checkbox per item; the bulk move dialog calls
   // PATCH /api/library-items/bulk to retag everything in one round-trip.
+  // Task #2113 — same selection now also drives bulk delete & duplicate.
   const [selectionMode, setSelectionMode] = useState(false);
   const [selectedItemIds, setSelectedItemIds] = useState<Set<string>>(new Set());
   const [showBulkMoveDialog, setShowBulkMoveDialog] = useState(false);
   const [bulkMoveTargetCategoryId, setBulkMoveTargetCategoryId] = useState<string>("");
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
   const exitSelectionMode = () => {
     setSelectionMode(false);
@@ -211,6 +213,40 @@ export default function LibraryPanel({ projectId, sheetId, measurements }: Libra
     },
     onError: (err: any) => {
       toast({ title: "Move failed", description: err?.message || "Could not move items", variant: "destructive" });
+    },
+  });
+
+  // Task #2113 — bulk delete selected library items in a single round-trip.
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await apiRequest("DELETE", "/api/library-items/bulk", { ids });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      invalidateItems();
+      setShowBulkDeleteConfirm(false);
+      exitSelectionMode();
+      toast({ title: "Items deleted", description: `Deleted ${data?.deleted ?? 0} items.` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Delete failed", description: err?.message || "Could not delete items", variant: "destructive" });
+    },
+  });
+
+  // Task #2113 — bulk duplicate selected library items. Each duplicate is
+  // saved as a custom (non-prebuilt) copy so estimators can edit them.
+  const bulkDuplicateMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await apiRequest("POST", "/api/library-items/bulk-duplicate", { ids });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      invalidateItems();
+      exitSelectionMode();
+      toast({ title: "Items duplicated", description: `Created ${data?.duplicated ?? 0} copies.` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Duplicate failed", description: err?.message || "Could not duplicate items", variant: "destructive" });
     },
   });
 
@@ -518,6 +554,29 @@ export default function LibraryPanel({ projectId, sheetId, measurements }: Libra
                     >
                       <FolderInput className="h-3 w-3 mr-1" /> Move to category…
                     </Button>
+                    {/* Task #2113 — bulk duplicate. */}
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="h-6 text-xs px-2"
+                      disabled={selectedItemIds.size === 0 || bulkDuplicateMutation.isPending}
+                      onClick={() => bulkDuplicateMutation.mutate(Array.from(selectedItemIds))}
+                      data-testid="btn-bulk-duplicate"
+                    >
+                      <Copy className="h-3 w-3 mr-1" />
+                      {bulkDuplicateMutation.isPending ? "Duplicating…" : "Duplicate"}
+                    </Button>
+                    {/* Task #2113 — bulk delete (confirmation dialog below). */}
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      className="h-6 text-xs px-2"
+                      disabled={selectedItemIds.size === 0}
+                      onClick={() => setShowBulkDeleteConfirm(true)}
+                      data-testid="btn-bulk-delete"
+                    >
+                      <Trash2 className="h-3 w-3 mr-1" /> Delete
+                    </Button>
                   </div>
                 )}
                 {!isEmpty && items.length === 0 && !itemsLoading && (
@@ -785,6 +844,36 @@ export default function LibraryPanel({ projectId, sheetId, measurements }: Libra
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => { if (deleteItemId) deleteItemMutation.mutate(deleteItemId); setDeleteItemId(null); }}>Delete</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Task #2113 — bulk delete confirmation. */}
+      <AlertDialog
+        open={showBulkDeleteConfirm}
+        onOpenChange={(open) => { if (!bulkDeleteMutation.isPending) setShowBulkDeleteConfirm(open); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {selectedItemIds.size} {selectedItemIds.size === 1 ? "item" : "items"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the {selectedItemIds.size} selected library {selectedItemIds.size === 1 ? "item" : "items"}. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeleteMutation.isPending} data-testid="btn-cancel-bulk-delete">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                bulkDeleteMutation.mutate(Array.from(selectedItemIds));
+              }}
+              disabled={bulkDeleteMutation.isPending || selectedItemIds.size === 0}
+              data-testid="btn-confirm-bulk-delete"
+            >
+              {bulkDeleteMutation.isPending ? "Deleting…" : `Delete ${selectedItemIds.size}`}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
