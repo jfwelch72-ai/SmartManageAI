@@ -205,7 +205,79 @@ export const TRADE_CATEGORY_CONFIGS: Partial<Record<TradeType, TradeCategoryConf
   GENERAL_CONTRACTOR: {
     defaultLaborCategory: "Labor & Installation",
   },
-  OTHER: {},
+  // Task #2082 — civil/utility long-tail trades funneled into the EARTHWORK
+  // bucket get their own purpose-built category map so the seeded library
+  // produces real sitework groupings instead of "Components & Assemblies".
+  EARTHWORK: {
+    componentRules: [
+      { match: ["Mobilization", "Pressure Washing", "Testing & Certification", "General Scope Item"], category: "General Conditions" },
+      { match: ["Clearing", "Grubbing", "Rough Grading", "Fine Grading", "Mass Excavation"], category: "Earthwork & Grading" },
+      { match: ["Trenching", "Backfill", "Compaction", "Topsoil"], category: "Trenching & Backfill" },
+      { match: ["Stone Base", "Aggregate Base"], category: "Aggregate Base" },
+      { match: ["Erosion", "Silt Fence"], category: "Erosion & Sediment Control" },
+      { match: ["Dewatering"], category: "Dewatering" },
+      { match: ["Shoring"], category: "Shoring & Excavation Support" },
+      {
+        match: [
+          "Sanitary Sewer",
+          "Storm Drain",
+          "Storm Sewer",
+          "Waterline",
+          "Water Main",
+          "Gas Utility",
+          "Gas Piping",
+          "Telecom",
+          "Duct Bank",
+          "Force Main",
+          "Site Utilities",
+        ],
+        category: "Site Utilities",
+      },
+      { match: ["Concrete Sidewalk", "Curb & Gutter", "Sidewalks"], category: "Concrete Flatwork" },
+      { match: ["Asphalt", "Sealcoat", "Tack Coat", "Milling", "Pavement Markings", "Striping"], category: "Paving" },
+      { match: "Fence", category: "Fencing" },
+      { match: ["Tree Removal", "Arborist"], category: "Tree Removal & Clearing" },
+    ],
+    defaultMaterialCategory: "Sitework Materials",
+    defaultLaborCategory: "Labor — Earthwork & Site Utilities",
+    defaultComponentCategory: "Sitework",
+  },
+  // Task #2082 — the OTHER bucket used to be a bare `{}` which let any unmapped
+  // long-tail component fall back to the global "Components & Assemblies"
+  // bucket. The rules below cover the building-envelope, low-voltage, finishes
+  // and sitework long-tails so the seeded library produces friendly groupings.
+  OTHER: {
+    componentRules: [
+      { match: ["Mobilization", "Pressure Washing", "Testing & Certification", "General Scope Item"], category: "General Conditions" },
+      // Building envelope long-tails
+      { match: ["Air/Vapor Barrier", "Air Barrier", "Vapor Barrier", "WRB"], category: "Air & Moisture Barriers" },
+      { match: ["Roof Membrane", "Roof Insulation"], category: "Roofing Assembly" },
+      { match: ["Flashing"], category: "Flashing & Trim" },
+      { match: ["Sealants", "Caulking", "Joint Sealant"], category: "Sealants & Caulking" },
+      { match: "Siding", category: "Siding & Cladding" },
+      // Sitework long-tails (covers stragglers when an org is set to OTHER)
+      { match: ["Clearing", "Grubbing", "Rough Grading", "Fine Grading", "Mass Excavation"], category: "Earthwork & Grading" },
+      { match: ["Trenching", "Backfill", "Compaction", "Topsoil"], category: "Trenching & Backfill" },
+      { match: ["Stone Base", "Aggregate Base"], category: "Aggregate Base" },
+      { match: ["Erosion", "Silt Fence"], category: "Erosion & Sediment Control" },
+      { match: ["Concrete Sidewalk", "Curb & Gutter", "Sidewalks"], category: "Concrete Flatwork" },
+      { match: "Fence", category: "Fencing" },
+      // Finishes long-tails
+      { match: "Countertop", category: "Countertops" },
+      { match: ["Tile"], category: "Tile" },
+      { match: ["Base Trim"], category: "Base & Trim" },
+      { match: ["Flooring", "Epoxy Floor"], category: "Flooring" },
+      // Low voltage / communications long-tails
+      { match: ["Cabling", "Racks & Patch Panels"], category: "Low Voltage & Communications" },
+      { match: ["Devices", "Receptacles", "Switches"], category: "Devices & Trim" },
+      // Landscaping long-tails
+      { match: ["Sod", "Seeding", "Hydroseed"], category: "Lawn Establishment" },
+      { match: ["Planting"], category: "Trees & Shrubs" },
+      { match: ["Mulch"], category: "Soil & Mulch" },
+    ],
+    defaultLaborCategory: "Labor — Specialty Installation",
+    defaultComponentCategory: "Specialty Installations",
+  },
 };
 
 function stripQualifiers(name: string): string {

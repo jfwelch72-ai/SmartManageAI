@@ -7,7 +7,13 @@ export const VALID_TRADE_TYPES = [
   'GENERAL_CONTRACTOR', 'ELECTRICAL', 'PLUMBING', 'HVAC', 'ROOFING',
   'CONCRETE', 'FRAMING', 'DRYWALL', 'PAINTING', 'FLOORING', 'LANDSCAPING',
   'DEMOLITION', 'MASONRY', 'INSULATION', 'WINDOWS_DOORS', 'SIDING', 'TILE',
-  'CABINETRY', 'COUNTERTOPS', 'FENCING', 'DECKING', 'SOLAR', 'OTHER'
+  'CABINETRY', 'COUNTERTOPS', 'FENCING', 'DECKING', 'SOLAR',
+  // EARTHWORK is a first-class DB enum value (see tradeTypeEnum in
+  // shared/schema/enums.ts) used by EXTENDED_TRADE_REGISTRY,
+  // LEGACY_TRADE_CATEGORIES and TRADE_CATEGORY_CONFIGS, so it must be part
+  // of the TradeType union as well.
+  'EARTHWORK',
+  'OTHER'
 ] as const;
 
 export type TradeType = typeof VALID_TRADE_TYPES[number];
@@ -256,6 +262,17 @@ export const TRADE_TYPE_ALIASES: Record<string, TradeType> = {
   'solar company': 'SOLAR',
   'solar installer': 'SOLAR',
   'renewable energy': 'SOLAR',
+
+  // EARTHWORK / Site & Civil
+  'earthwork': 'EARTHWORK',
+  'excavation': 'EARTHWORK',
+  'excavator': 'EARTHWORK',
+  'grading': 'EARTHWORK',
+  'site work': 'EARTHWORK',
+  'sitework': 'EARTHWORK',
+  'site civil': 'EARTHWORK',
+  'site utilities': 'EARTHWORK',
+  'civil contractor': 'EARTHWORK',
 };
 
 export const EXTENDED_TRADE_REGISTRY: Record<string, TradeType> = {
@@ -355,6 +372,25 @@ export const EXTENDED_TRADE_REGISTRY: Record<string, TradeType> = {
   'earthwork_backfill_compaction': 'EARTHWORK',
   'site_utilities_storm_sewer_water': 'EARTHWORK',
   'erosion_control_seeding': 'EARTHWORK',
+  // Task #2082 — additional civil/utility long-tail trades that should land in
+  // the EARTHWORK bucket so they pick up the dedicated category configuration.
+  'earthwork_mass_excavation': 'EARTHWORK',
+  'trenching_backfill': 'EARTHWORK',
+  'grading_fine_grading': 'EARTHWORK',
+  'site_clearing_grubbing': 'EARTHWORK',
+  'soil_stabilization': 'EARTHWORK',
+  'dewatering': 'EARTHWORK',
+  'shoring_excavation_support': 'EARTHWORK',
+  'sanitary_sewer_civil': 'EARTHWORK',
+  'storm_drain_civil': 'EARTHWORK',
+  'waterline_civil': 'EARTHWORK',
+  'gas_utility_civil': 'EARTHWORK',
+  'telecom_duct_bank_civil': 'EARTHWORK',
+  'directional_boring_hdd': 'EARTHWORK',
+  'erosion_sediment_control': 'EARTHWORK',
+  'tree_removal_arborist': 'EARTHWORK',
+  'retaining_walls_segmental_concrete': 'EARTHWORK',
+  'site_lighting_electrical': 'EARTHWORK',
   'siding_exterior_cladding': 'SIDING',
   'eifs_stucco': 'SIDING',
   'metal_wall_panels': 'SIDING',
@@ -366,6 +402,30 @@ export const EXTENDED_TRADE_REGISTRY: Record<string, TradeType> = {
   'elevator_escalator': 'OTHER',
   'signage_wayfinding': 'OTHER',
   'swimming_pool_construction': 'OTHER',
+  // Task #2082 — long-tail specialty trades that have no closer fit fall into
+  // the OTHER bucket so the seed picks them up via the OTHER configuration.
+  'elevators_traction_hydraulic': 'OTHER',
+  'signage_interior_exterior': 'OTHER',
+  'wayfinding_graphics': 'OTHER',
+  'pool_spa': 'OTHER',
+  'well_drilling': 'OTHER',
+  'septic_systems': 'OTHER',
+  'asbestos_abatement': 'OTHER',
+  'lead_abatement': 'OTHER',
+  'mold_remediation': 'OTHER',
+  'tank_removal_ust_ast': 'OTHER',
+  'hazmat_regulated_waste_handling': 'OTHER',
+  'contaminated_soil_remediation': 'OTHER',
+  'playground_equipment': 'OTHER',
+  'bleachers_athletic_equipment': 'OTHER',
+  'conveyors_warehouse': 'OTHER',
+  'dock_levelers': 'OTHER',
+  'operable_walls': 'OTHER',
+  'overhead_crane_systems': 'OTHER',
+  'modular_buildings': 'OTHER',
+  'pre_engineered_metal_buildings_pemb': 'OTHER',
+  'residential_lift': 'OTHER',
+  'specialty_equipment_install': 'OTHER',
 };
 
 export function mapOnboardingTradeIdToLegacy(onboardingTradeId: string): TradeType {
@@ -464,6 +524,7 @@ export function getTradeDisplayName(tradeType: TradeType): string {
     FENCING: 'Fencing',
     DECKING: 'Decking',
     SOLAR: 'Solar',
+    EARTHWORK: 'Earthwork & Site Utilities',
     OTHER: 'Other/Custom',
   };
   
