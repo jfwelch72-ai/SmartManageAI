@@ -478,16 +478,24 @@ export function calculateStudCount(input: WallFramingInput): number {
 }
 
 /**
- * Calculate board feet for lumber
- * Formula: (Thickness × Width × Length) / 12
+ * Calculate board feet for lumber.
+ *
+ * Industry definition: 1 board foot = 144 cubic inches of wood.
+ * With length in FEET (not inches), the canonical formula is:
+ *
+ *   BF = (Thickness_in × Width_in × Length_ft) / 12
+ *
+ * Worked example: a 2"×4"×8' stud
+ *   = (2 × 4 × 8) / 12 = 64 / 12 = 5.333 BF
+ *   With 10% framing waste → 5.87 BF.
  */
 export function calculateBoardFeet(thicknessInches: number, widthInches: number, lengthFeet: number, quantity: number = 1): number {
   validatePositive(thicknessInches, 'Thickness');
   validatePositive(widthInches, 'Width');
   validatePositive(lengthFeet, 'Length');
   validatePositive(quantity, 'Quantity');
-  
-  const boardFeet = (thicknessInches * widthInches * lengthFeet) / 144 * quantity;
+
+  const boardFeet = (thicknessInches * widthInches * lengthFeet) / 12 * quantity;
   return Math.round(boardFeet * (1 + WASTE_FACTORS.framing) * 100) / 100;
 }
 

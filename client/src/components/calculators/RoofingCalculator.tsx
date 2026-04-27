@@ -52,7 +52,13 @@ export default function RoofingCalculator() {
     const footprintArea = footprintLength * footprintWidth;
 
     const pitchMultiplier = Math.sqrt(1 + Math.pow(pitch / 12, 2));
-    const roofArea = footprintArea * pitchMultiplier * 2;
+    // Roof area = horizontal footprint × slope multiplier. The footprint
+    // already covers the horizontal projection of *both* slopes of a gable
+    // roof, so we do NOT multiply by 2 (a previous version did, which
+    // doubled every estimate — for example a flat roof would have come
+    // back as 2× its true area). See server/__tests__/materialCalculator
+    // for the canonical roofing test case.
+    const roofArea = footprintArea * pitchMultiplier;
     const roofAreaWithWaste = roofArea * (1 + waste);
 
     const squares = roofAreaWithWaste / 100;

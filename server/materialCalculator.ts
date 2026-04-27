@@ -2,6 +2,31 @@ import { logError } from "./utils/logger";
 import { safeJsonParse } from "./responseHelper";
 import { EstimateLineItem } from "@shared/schema";
 
+/**
+ * Material calculator — server-side derivations.
+ *
+ * Canonical formulas (also covered by `server/__tests__/materialCalculator.test.ts`):
+ *
+ *   Concrete CY  (slab)   = Quantity_SF × (Depth_in / 12) / 27 × (1 + waste%)
+ *   Concrete CY  (linear) = Quantity_LF × (Width_in/12) × (Height_in/12) / 27 × (1 + waste%)
+ *   Stone Tons            = Quantity_SF × (Depth_in / 12) / 27 × (1 + waste%) × density(stoneType)
+ *                           Densities (t/CY): CRUSHED 1.5 · LIMESTONE 1.35 · COMPACTED_BASE 1.6
+ *                                              PEA_GRAVEL 1.42 · RECYCLED_CONCRETE 1.45
+ *   Excavation CY         = Volume_CY × (1 + swell%)   (default swell 25%)
+ *   Wire Mesh Rolls       = ⌈Quantity_SF × (1 + waste%) / sf_per_roll⌉
+ *   Rebar Pieces          = ⌈total_LF / bar_length⌉   where
+ *                           total_LF = (⌈√Area / spacingFt⌉ + 1) × √Area × 2 × (1 + waste%)
+ *                           — the "+1" accounts for the endpoint bar in each direction.
+ *   Dowel Pieces          = ⌈jointLF / spacingFt⌉ + 1 endpoint dowel
+ *   Sealer Gallons        = ⌈Quantity_SF × coats × (1 + waste%) / coverage_sf_per_gal⌉
+ *   Underlayment SF       = Quantity_SF × (1 + (overlap_in/12) / 10)         ← 10 ft poly rolls
+ *                                       × (1 + waste%)
+ *
+ * Waste-factor handling: every waste/swell input is treated as a percentage
+ * (10 → +10%). When the corresponding field is null/undefined the calculator
+ * falls back to industry defaults baked into each branch (e.g. 10% concrete
+ * waste, 25% excavation swell, 4" stone depth).
+ */
 export interface MaterialCalculationInputs {
   quantity: number;
   unit: string;
@@ -14,6 +39,7 @@ export interface MaterialCalculationInputs {
   requiresStoneBase?: boolean | null;
   stoneDepthInches?: number | null;
   stoneWasteFactor?: number | null;
+  stoneType?: string | null;
   
   requiresExcavation?: boolean | null;
   excavationDepthInches?: number | null;
@@ -73,7 +99,25 @@ export interface EquipmentRequirement {
   notes?: string;
 }
 
-const STONE_DENSITY_TONS_PER_CUBIC_YARD = 1.5;
+// Stone densities (tons per cubic yard) — must match the client-side
+// `STONE_DENSITIES` map in `client/src/components/MaterialCalculator.tsx`.
+// Compacted base is denser than loose crushed stone; pea gravel and recycled
+// concrete fall in between. If a stone type isn't recognized we fall back to
+// generic crushed stone (1.5 t/yd³).
+export const STONE_DENSITIES_TONS_PER_CY: Record<string, number> = {
+  CRUSHED_STONE: 1.5,
+  LIMESTONE: 1.35,
+  COMPACTED_BASE: 1.6,
+  PEA_GRAVEL: 1.42,
+  RECYCLED_CONCRETE: 1.45,
+};
+const DEFAULT_STONE_DENSITY = STONE_DENSITIES_TONS_PER_CY.CRUSHED_STONE;
+
+// Standard polyethylene underlayment rolls are 10 ft wide. With a 6"
+// side-lap, each pass effectively covers 10 - (overlap/12) feet, so the
+// added factor is (overlap/12) / 10. Keep this in sync with
+// `calculateUnderlaymentSF` on the client.
+const UNDERLAYMENT_ROLL_WIDTH_FT = 10;
 
 function parseNumber(value: any): number | null {
   if (value === null || value === undefined) return null;
@@ -140,20 +184,22 @@ export function calculateMaterials(inputs: MaterialCalculationInputs): MaterialC
   if (inputs.requiresStoneBase && isSF && quantity > 0) {
     const stoneDepth = parseNumber(inputs.stoneDepthInches) || 4;
     const stoneWaste = parseNumber(inputs.stoneWasteFactor) || 10;
-    
+    const stoneType = (inputs.stoneType || '').toString().toUpperCase();
+    const density = STONE_DENSITIES_TONS_PER_CY[stoneType] ?? DEFAULT_STONE_DENSITY;
+
     const cubicFeet = quantity * (stoneDepth / 12);
     const cubicYards = cubicFeet / 27;
     const withWaste = cubicYards * (1 + stoneWaste / 100);
-    const tons = withWaste * STONE_DENSITY_TONS_PER_CUBIC_YARD;
-    
+    const tons = withWaste * density;
+
     results.calculatedStoneTons = Math.round(tons * 100) / 100;
-    
+
     results.materialRequirements.push({
       category: 'Aggregates',
       item: 'Stone Base',
       quantity: results.calculatedStoneTons,
       unit: 'Tons',
-      notes: `${stoneDepth}" depth with ${stoneWaste}% waste factor`
+      notes: `${stoneDepth}" depth with ${stoneWaste}% waste factor (${density} t/yd³)`
     });
     
     results.equipmentRequirements.push({
@@ -221,11 +267,16 @@ export function calculateMaterials(inputs: MaterialCalculationInputs): MaterialC
     const rebarLengthFt = parseNumber(inputs.rebarLengthFeet) || 20;
     const wasteFactor = parseNumber(inputs.rebarWasteFactor) || 10;
     
-    const sqFtPerRebar = (spacingInches / 12);
+    const spacingFeet = spacingInches / 12;
     const sideA = Math.sqrt(quantity);
-    const barsInOneDirection = sideA / sqFtPerRebar;
-    const totalBars = barsInOneDirection * 2;
-    
+    // Bars laid at N inches O.C. across a side of length L need
+    // ceil(L / spacing) + 1 bars: one bar at every spacing interval *plus*
+    // the bar that sits on the final endpoint. Without the +1 we
+    // systematically undercount by ~10% on small slabs (e.g. a 10×10 slab
+    // with 12" spacing needs 11 bars, not 10).
+    const barsPerDirection = Math.ceil(sideA / spacingFeet) + 1;
+    const totalBars = barsPerDirection * 2;
+
     const linearFeetPerBar = sideA;
     const totalLinearFeet = totalBars * linearFeetPerBar;
     const linearFeetWithWaste = totalLinearFeet * (1 + wasteFactor / 100);
@@ -263,9 +314,11 @@ export function calculateMaterials(inputs: MaterialCalculationInputs): MaterialC
     }
     
     if (totalJointLength > 0) {
-      const dowelsPerFoot = 12 / spacingInches;
-      const count = Math.ceil(totalJointLength * dowelsPerFoot);
-      
+      const spacingFeet = spacingInches / 12;
+      // Same endpoint logic as rebar: a 10' joint at 12" O.C. needs 11
+      // dowels, not 10. Matches `calculateDowelCount` on the client.
+      const count = Math.ceil(totalJointLength / spacingFeet) + 1;
+
       results.calculatedDowelCount = count;
       
       results.materialRequirements.push({
@@ -309,7 +362,10 @@ export function calculateMaterials(inputs: MaterialCalculationInputs): MaterialC
     const overlapInches = parseNumber(inputs.underlaymentOverlapInches) || 6;
     const wasteFactor = parseNumber(inputs.underlaymentWasteFactor) || 10;
     
-    const overlapFactor = 1 + (overlapInches / 48);
+    // Standard 10' polyethylene rolls — overlap factor matches the
+    // client's `calculateUnderlaymentSF`. A 6" overlap on a 10' roll
+    // yields ~5% extra coverage, not 12.5%.
+    const overlapFactor = 1 + ((overlapInches / 12) / UNDERLAYMENT_ROLL_WIDTH_FT);
     const sfWithOverlap = quantity * overlapFactor;
     const sfWithWaste = sfWithOverlap * (1 + wasteFactor / 100);
     

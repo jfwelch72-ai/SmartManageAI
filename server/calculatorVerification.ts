@@ -603,13 +603,14 @@ function runCarpentryTests(): TestResult[] {
   ));
   
   // Test 2: Board feet - 2×4×8 × 100 pieces
-  // Formula: (2 × 4 × 8) / 144 × 100 × 1.10 = 48.89 BF
+  // Formula: (2 × 4 × 8) / 12 × 100 × 1.10 = 586.67 BF
+  // (1 board foot = 144 cubic inches; with length in feet the divisor is 12.)
   results.push(runTest(
     'CARPENTRY', 'Board Feet', 2,
     calculateBoardFeet,
     [2, 4, 8, 100],
     { thicknessInches: 2, widthInches: 4, lengthFeet: 8, quantity: 100 },
-    48.00, 50.00,
+    580.00, 590.00,
     '100 2×4×8 with 10% waste'
   ));
   
