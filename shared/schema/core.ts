@@ -810,3 +810,27 @@ export const integrationSuppressionResets = pgTable("integration_suppression_res
 
 export type IntegrationSuppressionReset = typeof integrationSuppressionResets.$inferSelect;
 
+// Task #2056 — persistent, cross-replica backing store for the short-lived
+// Apple Sign-In OAuth state values consumed by the cross-site form_post
+// callback. The previous in-memory Map was per-process, so a server restart
+// or load-balanced hop between issuing the state and Apple POSTing it back
+// bounced the user with "Your Apple sign-in session expired or was blocked
+// by your browser." Persisting the state in Postgres makes every issued
+// state visible to every replica for the full ~10-minute TTL, and the
+// atomic `DELETE ... WHERE expires_at > now() RETURNING` consume preserves
+// one-time-use semantics under concurrent callbacks.
+//
+// `state` is a 32-byte random hex string (256 bits of entropy), so it is
+// globally unique on its own and serves as the primary key. `provider`
+// is namespaced by the caller so an Apple state cannot be consumed as a
+// Google state.
+export const oauthState = pgTable("oauth_state", {
+  state: text("state").primaryKey(),
+  provider: text("provider").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+}, (table) => ({
+  expiresAtIdx: index("oauth_state_expires_at_idx").on(table.expiresAt),
+}));
+
+export type OauthState = typeof oauthState.$inferSelect;
+

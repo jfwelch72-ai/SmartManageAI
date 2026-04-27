@@ -292,7 +292,7 @@ function generateAppleClientSecret(): string {
   });
 }
 
-router.get("/api/auth/apple", (req: Request, res: Response) => {
+router.get("/api/auth/apple", async (req: Request, res: Response) => {
   if (!isAppleConfigured()) {
     logWarn("Apple Sign-In requested but APPLE_* env vars are missing or placeholders");
     res.redirect("/login?error=apple_not_configured");
@@ -315,7 +315,24 @@ router.get("/api/auth/apple", (req: Request, res: Response) => {
   }
 
   const clientId = process.env.APPLE_CLIENT_ID!;
-  const state = createOAuthState("apple");
+  let state: string;
+  try {
+    // Task #2056 — `createOAuthState` is now async because the state is
+    // persisted to Postgres so the callback (which may land on a sibling
+    // replica or after a deploy-driven restart) can still find it. A DB
+    // failure here means we cannot guarantee the callback will validate,
+    // so abort the redirect rather than send the user to Apple with a
+    // state we never managed to store.
+    state = await createOAuthState("apple");
+  } catch (err) {
+    logError(
+      "Apple OAuth state persistence failed at /api/auth/apple",
+      {},
+      err instanceof Error ? err : new Error(String(err)),
+    );
+    res.redirect("/login?error=apple_failed");
+    return;
+  }
 
   const redirectUri = `${getCanonicalBaseUrl(req)}/api/auth/apple/callback`;
   const scope = encodeURIComponent("name email");
@@ -363,7 +380,24 @@ router.post(
         res.redirect("/login?error=apple_state_mismatch");
         return;
       }
-      if (!consumeOAuthState("apple", returnedState)) {
+      let stateConsumed = false;
+      try {
+        // Task #2056 — `consumeOAuthState` now reads from a shared Postgres
+        // table so a state issued by any replica can be consumed by any
+        // replica. A DB error is rare but treated as a hard fail rather
+        // than a silent allow, since the alternative would be to bypass
+        // CSRF protection on a transient outage.
+        stateConsumed = await consumeOAuthState("apple", returnedState);
+      } catch (stateErr) {
+        logError(
+          "Apple OAuth state consume failed",
+          {},
+          stateErr instanceof Error ? stateErr : new Error(String(stateErr)),
+        );
+        res.redirect("/login?error=apple_state_mismatch");
+        return;
+      }
+      if (!stateConsumed) {
         // Either the state was never issued by us, was already consumed, or
         // expired (>10 min). All point to a stale/replayed/forged callback.
         logError("Apple OAuth state mismatch — possible CSRF, replay, or expired state");

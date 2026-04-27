@@ -78,6 +78,7 @@ import { ensureProjectLogEmailFailureThresholdSetting } from "./ensureProjectLog
 import { ensureProjectLogEmailFailuresDigestSchedule } from "./ensureProjectLogEmailFailuresDigestSchedule";
 import { ensureProjectLogEmailScheduleAttemptsTable } from "./ensureProjectLogEmailScheduleAttemptsTable";
 import { ensureRateLimitStateTable } from "./ensureRateLimitStateTable";
+import { ensureOauthStateTable } from "./ensureOauthStateTable";
 import { ensureGanttPdfRenderSamplesTable } from "./ensureGanttPdfRenderSamplesTable";
 import { ensurePortfolioPdfRenderSamplesTable } from "./ensurePortfolioPdfRenderSamplesTable";
 import { ensureCrmCsvImportPayloadColumn } from "./ensureCrmCsvImportPayloadColumn";
@@ -303,6 +304,12 @@ const migrations: MigrationStep[] = [
   // attempt on the schedule row.
   { name: "project_log_email_schedule_attempts_table", category: "CREATE_TABLE", fn: ensureProjectLogEmailScheduleAttemptsTable },
   { name: "rate_limit_state_table", category: "CREATE_TABLE", fn: ensureRateLimitStateTable },
+  // Task #2056 — persistent, cross-replica backing store for the
+  // short-lived Apple Sign-In OAuth state values issued by
+  // `/api/auth/apple` and consumed by the cross-site form_post callback
+  // at `/api/auth/apple/callback`. Replaces the per-process in-memory
+  // Map that broke on deploys mid-sign-in and on multi-replica fleets.
+  { name: "oauth_state_table", category: "CREATE_TABLE", fn: ensureOauthStateTable },
   { name: "geocode_status_columns", category: "ADD_COLUMN", fn: ensureGeocodeStatusColumns },
   { name: "gantt_pdf_render_samples_table", category: "CREATE_TABLE", fn: ensureGanttPdfRenderSamplesTable },
   { name: "portfolio_pdf_render_samples_table", category: "CREATE_TABLE", fn: ensurePortfolioPdfRenderSamplesTable },
