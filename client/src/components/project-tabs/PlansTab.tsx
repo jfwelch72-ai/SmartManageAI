@@ -11,7 +11,7 @@ import CarryoverAnnotationsDialog from "@/components/markups/CarryoverAnnotation
 import LayerPickerExportDialog from "@/components/markups/LayerPickerExportDialog";
 import { findSupersededPdfDoc, uploadOutcomeToast } from "@/components/project-tabs/planRevisionMatch";
 import SheetJumpPalette, { useSheetJumpPaletteHotkey, type SheetJumpResult } from "@/components/SheetJumpPalette";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
@@ -27,7 +27,7 @@ import {
   Upload, Download, Eye, FileText, Trash2, FolderOpen, Folder, ChevronRight, ChevronDown,
   Search, MoreVertical, File, Pencil, GripVertical, ArrowRight, Copy, Loader2,
   ExternalLink, X, FolderPlus, Printer, RotateCw, EyeOff, RefreshCw, Box, BookOpen, Columns2, Link2,
-  Building2, Layers, Pin, PinOff, ArrowUpCircle
+  Building2, Layers, Pin, PinOff, ArrowUpCircle, Maximize2
 } from "lucide-react";
 const BimViewer = lazy(() => import("@/components/bid/BimViewer"));
 import BimQuantityDialog from "@/components/bim/BimQuantityDialog";
@@ -3114,8 +3114,13 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
               })()
             ) : (
               <div className="flex flex-col h-full">
-                {bimEnabled && bimDocuments.length > 0 && (
-                  <div className="flex items-center justify-end px-2 py-1 border-b bg-muted/20 shrink-0">
+                {/* Task #2073 — Toolbar above the embedded takeoff offers
+                    a one-click jump to the standalone full-page workspace
+                    at /takeoff/project/:projectCode, mirroring the bid
+                    Plans tab. The Split View control sits next to it when
+                    BIM models are uploaded for the project. */}
+                <div className="flex items-center justify-end gap-2 px-2 py-1 border-b bg-muted/20 shrink-0">
+                  {bimEnabled && bimDocuments.length > 0 && (
                     <Button
                       size="sm"
                       variant="outline"
@@ -3126,8 +3131,26 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                       <Columns2 className="w-3 h-3" />
                       Split View (3D + 2D)
                     </Button>
-                  </div>
-                )}
+                  )}
+                  <Button
+                    asChild
+                    size="sm"
+                    variant="outline"
+                    className="h-6 text-[10px] gap-1"
+                    data-testid="button-open-project-takeoff-workspace"
+                  >
+                    <Link
+                      href={
+                        selectedSheetId
+                          ? `/takeoff/project/${project.code}?sheet=${selectedSheetId}`
+                          : `/takeoff/project/${project.code}`
+                      }
+                    >
+                      <Maximize2 className="w-3 h-3" />
+                      Open Full-Screen Takeoff
+                    </Link>
+                  </Button>
+                </div>
                 <div className="flex-1 min-h-0">
                   <WidgetErrorBoundary fallbackTitle="Takeoff Workspace">
                     <TakeoffWorkspace projectId={project.id} projectCode={project.code} selectedSheetId={selectedSheetId} onSelectSheet={setSelectedSheetId} />

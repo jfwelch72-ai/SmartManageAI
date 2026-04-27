@@ -456,7 +456,13 @@ function Router() {
           Bluebeam-style full-page workspace; /takeoff is a landing page that
           lets the user pick a bid to open. Both gate on the dedicated
           `TAKEOFF` permission so the tool's access can later diverge from
-          BID_DETAIL without touching every route. */}
+          BID_DETAIL without touching every route.
+          Task #2073 — `/takeoff/project/:projectCode` mirrors the bid
+          workspace for project-context takeoff so PMs/estimators can launch
+          the same Bluebeam-style full-page tool from a Project page. The
+          two-segment path is matched ahead of the single-segment bid route
+          so a project code can never be misread as a bid code. */}
+      <Route path="/takeoff/project/:projectCode" component={() => <ProtectedRoute component={TakeoffWorkspacePage} permission={RoutePermissions.TAKEOFF} />} />
       <Route path="/takeoff/:bidCode" component={() => <ProtectedRoute component={TakeoffWorkspacePage} permission={RoutePermissions.TAKEOFF} />} />
       <Route path="/takeoff" component={() => <ProtectedRoute component={TakeoffIndexPage} permission={RoutePermissions.TAKEOFF} />} />
       <Route path="/time-entry" component={() => <ProtectedRoute component={TimeEntryPage} permission={RoutePermissions.TIME_ENTRY} featurePerm="canManageScheduling" />} />
