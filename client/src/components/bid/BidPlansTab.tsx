@@ -1562,7 +1562,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
           ) : previewDocId ? (
             (() => {
               const doc = documents.find((d) => d.id === previewDocId);
-              if (!doc) return <TakeoffCtaPane bidCode={bidCode} />;
+              if (!doc) return <TakeoffCtaPane bidCode={bidCode} selectedSheetId={selectedSheetId} />;
               const isBim = bimEnabled && (doc.type === "BIM" || doc.fileName?.toLowerCase().endsWith(".ifc"));
 
               if (isBim && previewUrlData?.url) {
@@ -1735,7 +1735,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                 />
               </div>
               <div className="flex-1 min-h-0">
-                <TakeoffCtaPane bidCode={bidCode} />
+                <TakeoffCtaPane bidCode={bidCode} selectedSheetId={selectedSheetId} />
               </div>
             </div>
           )}
@@ -1981,7 +1981,16 @@ function BidPlansViewSettingsMenu({
  * `<TakeoffWorkspace>` and points users at the standalone, full-page
  * Takeoff tool at `/takeoff/:bidCode`.
  */
-function TakeoffCtaPane({ bidCode }: { bidCode: string }) {
+function TakeoffCtaPane({
+  bidCode,
+  selectedSheetId,
+}: {
+  bidCode: string;
+  selectedSheetId: string | null;
+}) {
+  const href = selectedSheetId
+    ? `/takeoff/${bidCode}?sheet=${selectedSheetId}`
+    : `/takeoff/${bidCode}`;
   return (
     <div
       className="flex flex-col items-center justify-center h-full text-center px-6 py-10 gap-5"
@@ -2001,7 +2010,7 @@ function TakeoffCtaPane({ bidCode }: { bidCode: string }) {
         </p>
       </div>
       <Button asChild size="lg" data-testid="button-open-takeoff-workspace">
-        <Link href={`/takeoff/${bidCode}`}>
+        <Link href={href}>
           <Maximize2 className="w-4 h-4 mr-2" />
           Open Full-Screen Takeoff
         </Link>
