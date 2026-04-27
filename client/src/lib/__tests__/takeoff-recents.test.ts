@@ -15,6 +15,7 @@ import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __resetTakeoffRecentsSyncStateForTests,
+  clearRecents,
   pinRecent,
   readRecents,
   recordRecent,
@@ -690,6 +691,87 @@ describe("useRecentTakeoffs", () => {
 
       expect(result.current.pinned).toHaveLength(1);
       expect(result.current.recent).toHaveLength(0);
+    } finally {
+      restore();
+    }
+  });
+});
+
+// Task #2104 — "Clear all" wipes the local cache + server table for the
+// current user so other devices come back to an empty rail next load.
+describe("clearRecents", () => {
+  it("clears the localStorage cache (including pinned entries) and DELETEs /api/takeoff/recents/all", async () => {
+    const entries: RecentTakeoffEntry[] = [
+      {
+        kind: "bid",
+        entityId: "bid-1",
+        entityCode: "B-1",
+        sheetId: null,
+        openedAt: 5_000,
+        pinnedAt: 6_000,
+      },
+      {
+        kind: "project",
+        entityId: "project-9",
+        entityCode: "P-9",
+        sheetId: null,
+        openedAt: 4_000,
+      },
+    ];
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+
+    const fetchMock: FetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    const restore = withFetch(fetchMock);
+    try {
+      clearRecents(USER_ID);
+
+      // Local cache is wiped synchronously — even pinned entries go.
+      expect(readRecents(USER_ID)).toEqual([]);
+
+      // Server is told to wipe the user's row set.
+      await Promise.resolve();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [url, init] = fetchMock.mock.calls[0];
+      expect(url).toBe("/api/takeoff/recents/all");
+      expect((init as RequestInit).method).toBe("DELETE");
+    } finally {
+      restore();
+    }
+  });
+
+  it("does not throw when the server DELETE fails", async () => {
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify([
+        {
+          kind: "bid",
+          entityId: "bid-1",
+          entityCode: "B-1",
+          sheetId: null,
+          openedAt: 1_000,
+        },
+      ]),
+    );
+    const fetchMock: FetchMock = vi.fn().mockRejectedValue(new Error("offline"));
+    const restore = withFetch(fetchMock);
+    try {
+      expect(() => clearRecents(USER_ID)).not.toThrow();
+      // Local cache is wiped regardless of network outcome.
+      expect(readRecents(USER_ID)).toEqual([]);
+      await Promise.resolve();
+      await Promise.resolve();
+    } finally {
+      restore();
+    }
+  });
+
+  it("is a no-op without a userId and never hits the network", async () => {
+    const fetchMock: FetchMock = vi.fn();
+    const restore = withFetch(fetchMock);
+    try {
+      clearRecents(null);
+      clearRecents(undefined);
+      expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       restore();
     }

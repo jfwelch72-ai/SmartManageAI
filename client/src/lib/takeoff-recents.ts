@@ -224,6 +224,23 @@ async function deleteRecentOnServer(
   }
 }
 
+// Task #2104 — Mirror of `deleteRecentOnServer` that wipes every entry for
+// the authenticated user. Used by `clearRecents` so a user who hits "Clear
+// all" on one device sees an empty rail when they next load /takeoff on
+// any other device.
+async function deleteAllRecentsOnServer(): Promise<void> {
+  if (typeof window === "undefined") return;
+  try {
+    await fetch(`${SYNC_ENDPOINT}/all`, {
+      method: "DELETE",
+      credentials: "include",
+    });
+  } catch {
+    // Network errors are tolerable — local state is the source of truth
+    // until the next sync round-trip.
+  }
+}
+
 // Pulls the canonical server-side rail and merges it into the local cache.
 // Coalesced per-user so concurrent callers (e.g. takeoff-index + the
 // workspace mounting at the same time) only issue one network request,
@@ -366,6 +383,18 @@ export function removeRecent(
     // round-trip will re-apply local state.
     void deleteRecentOnServer(selector);
   }
+}
+
+// Task #2104 — "Clear all" affordance on the Takeoff index. Wipes the
+// localStorage cache for the user (including pinned entries) and mirrors
+// the wipe to the server so other devices come back to an empty rail.
+// Also resets the per-user sync throttle so the next visit to /takeoff
+// won't immediately refill the cache from a stale server fetch in flight.
+export function clearRecents(userId: string | null | undefined): void {
+  if (!userId || typeof window === "undefined") return;
+  writeRecents(userId, []);
+  lastServerSyncAt.delete(userId);
+  void deleteAllRecentsOnServer();
 }
 
 export interface UseRecentTakeoffsResult {

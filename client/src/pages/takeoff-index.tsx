@@ -11,6 +11,7 @@ import {
   PinOff,
   Ruler,
   Search,
+  Trash2,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -18,9 +19,21 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useBids, useProjects } from "@/hooks/use-data";
 import { useAuth } from "@/hooks/use-auth";
 import {
+  clearRecents,
   pinRecent,
   removeRecent,
   unpinRecent,
@@ -220,6 +233,51 @@ export default function TakeoffIndexPage() {
                   />
                 ))}
               </div>
+            </div>
+          )}
+          {/* Task #2104 — "Clear all" wipes the entire rail (including
+              pinned entries) on both this device and the server, so the
+              user's other devices come back to an empty rail on next
+              load. Wrapped in an AlertDialog so a stray click can't
+              destroy a power user's curated pinned set. */}
+          {user?.id && (
+            <div className="flex justify-end pt-1">
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-muted-foreground"
+                    data-testid="button-takeoff-recents-clear-all"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                    Clear all
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent data-testid="dialog-takeoff-recents-clear-all">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Clear recent takeoffs?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This removes every entry from your Takeoff Recent rail —
+                      including pinned items — on this device and your other
+                      devices. The bids and projects themselves are not
+                      affected.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel data-testid="button-takeoff-recents-clear-cancel">
+                      Cancel
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => clearRecents(user.id)}
+                      data-testid="button-takeoff-recents-clear-confirm"
+                    >
+                      Clear all
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           )}
         </section>

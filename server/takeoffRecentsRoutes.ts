@@ -179,4 +179,20 @@ router.delete("/api/takeoff/recents", requireAuth, async (req: AuthRequest, res,
   }
 });
 
+// Task #2104 — "Clear all" affordance on the Takeoff index. Wipes every
+// recents row for the calling user so the rail comes back empty on every
+// device on next load. Scoped to the authenticated user's rows only —
+// there is intentionally no admin-style "clear another user's rail"
+// variant.
+router.delete("/api/takeoff/recents/all", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const userId = req.user!.id;
+    await db.delete(takeoffRecents).where(eq(takeoffRecents.userId, userId));
+    return res.status(204).end();
+  } catch (error) {
+    logError("Failed to clear takeoff recents", { error: String(error) });
+    return next(error);
+  }
+});
+
 export default router;

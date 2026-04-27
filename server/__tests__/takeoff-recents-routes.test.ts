@@ -337,3 +337,19 @@ describe("DELETE /api/takeoff/recents", () => {
     expect(deletes).toEqual([{ table: "takeoff_recents" }]);
   });
 });
+
+// Task #2104 — "Clear all" wipes every recents row for the calling user.
+describe("DELETE /api/takeoff/recents/all", () => {
+  it("requires auth", async () => {
+    const res = await request(app).delete("/api/takeoff/recents/all");
+    expect(res.status).toBe(401);
+  });
+
+  it("issues a single delete against takeoff_recents for the caller", async () => {
+    const res = await request(app)
+      .delete("/api/takeoff/recents/all")
+      .set(authedHeaders());
+    expect(res.status).toBe(204);
+    expect(deletes).toEqual([{ table: "takeoff_recents" }]);
+  });
+});
