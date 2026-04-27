@@ -10,6 +10,19 @@ export interface RecentTakeoffEntry {
   sheetId?: string | null;
   sheetName?: string | null;
   openedAt: number;
+  // Task #2078 — `pinnedAt` is the timestamp when the user pinned this
+  // entry (null/undefined = not pinned). Pinned entries always render
+  // first and are not capped by the recents limit. `hidden` entries are
+  // suppressed from the UI until the user opens them again, in which case
+  // `recordRecent` clears the flag.
+  pinnedAt?: number | null;
+  hidden?: boolean;
+}
+
+export interface RecentTakeoffSelector {
+  kind: RecentTakeoffKind;
+  entityId: string;
+  sheetId?: string | null;
 }
 
 const MAX_ENTRIES = 24;
@@ -66,6 +79,9 @@ function toEntry(value: unknown): RecentTakeoffEntry | null {
       ? obj.bidName
       : null;
 
+  const pinnedAt = typeof obj.pinnedAt === "number" ? obj.pinnedAt : null;
+  const hidden = obj.hidden === true;
+
   return {
     kind,
     entityId,
@@ -74,6 +90,8 @@ function toEntry(value: unknown): RecentTakeoffEntry | null {
     sheetId: obj.sheetId ?? null,
     sheetName: obj.sheetName ?? null,
     openedAt: obj.openedAt,
+    pinnedAt,
+    hidden,
   };
 }
 
@@ -104,6 +122,27 @@ export function readRecents(userId: string | null | undefined): RecentTakeoffEnt
   }
 }
 
+function matchesSelector(entry: RecentTakeoffEntry, selector: RecentTakeoffSelector): boolean {
+  if (entry.kind !== selector.kind) return false;
+  if (entry.entityId !== selector.entityId) return false;
+  const entrySheet = entry.sheetId ?? null;
+  const selectorSheet = selector.sheetId ?? null;
+  return entrySheet === selectorSheet;
+}
+
+// Cap unpinned entries at MAX_ENTRIES so localStorage doesn't grow without
+// bound. Pinned entries are always preserved — that's the whole point of
+// pinning.
+function capEntries(entries: RecentTakeoffEntry[]): RecentTakeoffEntry[] {
+  const pinned: RecentTakeoffEntry[] = [];
+  const unpinned: RecentTakeoffEntry[] = [];
+  for (const entry of entries) {
+    if (entry.pinnedAt) pinned.push(entry);
+    else unpinned.push(entry);
+  }
+  return [...pinned, ...unpinned.slice(0, MAX_ENTRIES)];
+}
+
 function writeRecents(userId: string, entries: RecentTakeoffEntry[]): void {
   const key = storageKey(userId);
   if (!key) return;
@@ -117,13 +156,21 @@ function writeRecents(userId: string, entries: RecentTakeoffEntry[]): void {
 
 export function recordRecent(
   userId: string | null | undefined,
-  entry: Omit<RecentTakeoffEntry, "openedAt"> & { openedAt?: number },
+  entry: Omit<RecentTakeoffEntry, "openedAt" | "pinnedAt" | "hidden"> & {
+    openedAt?: number;
+  },
 ): void {
   if (!userId || typeof window === "undefined") return;
   if (!entry.entityId || !entry.entityCode) return;
   const existing = readRecents(userId);
   const sheetId = entry.sheetId ?? null;
   const openedAt = entry.openedAt ?? Date.now();
+  // Preserve any existing pinnedAt so re-opening a pinned entry doesn't
+  // unpin it. Re-opening a previously-hidden entry clears the hidden flag
+  // because the user clearly wants to see it again.
+  const prior = existing.find((e) =>
+    matchesSelector(e, { kind: entry.kind, entityId: entry.entityId, sheetId }),
+  );
   const next: RecentTakeoffEntry = {
     kind: entry.kind,
     entityId: entry.entityId,
@@ -132,21 +179,77 @@ export function recordRecent(
     sheetId,
     sheetName: entry.sheetName ?? null,
     openedAt,
+    pinnedAt: prior?.pinnedAt ?? null,
+    hidden: false,
   };
-  const filtered = existing.filter((e) => {
-    if (e.kind !== entry.kind) return true;
-    if (e.entityId !== entry.entityId) return true;
-    const eSheet = e.sheetId ?? null;
-    return eSheet !== sheetId;
-  });
+  const filtered = existing.filter(
+    (e) => !matchesSelector(e, { kind: entry.kind, entityId: entry.entityId, sheetId }),
+  );
   filtered.unshift(next);
-  writeRecents(userId, filtered.slice(0, MAX_ENTRIES));
+  writeRecents(userId, capEntries(filtered));
+}
+
+export function pinRecent(
+  userId: string | null | undefined,
+  selector: RecentTakeoffSelector,
+): void {
+  if (!userId || typeof window === "undefined") return;
+  const existing = readRecents(userId);
+  let changed = false;
+  const next = existing.map((e) => {
+    if (!matchesSelector(e, selector)) return e;
+    if (e.pinnedAt) return e;
+    changed = true;
+    // Clear `hidden` when pinning so the user sees the entry they just
+    // pinned. (Pinning an already-hidden entry would otherwise be silent.)
+    return { ...e, pinnedAt: Date.now(), hidden: false };
+  });
+  if (changed) writeRecents(userId, next);
+}
+
+export function unpinRecent(
+  userId: string | null | undefined,
+  selector: RecentTakeoffSelector,
+): void {
+  if (!userId || typeof window === "undefined") return;
+  const existing = readRecents(userId);
+  let changed = false;
+  const next = existing.map((e) => {
+    if (!matchesSelector(e, selector)) return e;
+    if (!e.pinnedAt) return e;
+    changed = true;
+    return { ...e, pinnedAt: null };
+  });
+  if (changed) writeRecents(userId, capEntries(next));
+}
+
+export function removeRecent(
+  userId: string | null | undefined,
+  selector: RecentTakeoffSelector,
+): void {
+  if (!userId || typeof window === "undefined") return;
+  const existing = readRecents(userId);
+  let changed = false;
+  const next = existing.map((e) => {
+    if (!matchesSelector(e, selector)) return e;
+    if (e.hidden && !e.pinnedAt) return e;
+    changed = true;
+    // Removing also unpins so a "removed" entry stays gone until the user
+    // opens it again.
+    return { ...e, hidden: true, pinnedAt: null };
+  });
+  if (changed) writeRecents(userId, capEntries(next));
+}
+
+export interface UseRecentTakeoffsResult {
+  pinned: RecentTakeoffEntry[];
+  recent: RecentTakeoffEntry[];
 }
 
 export function useRecentTakeoffs(
   userId: string | null | undefined,
   limit = 6,
-): RecentTakeoffEntry[] {
+): UseRecentTakeoffsResult {
   const [entries, setEntries] = useState<RecentTakeoffEntry[]>(() =>
     readRecents(userId),
   );
@@ -171,8 +274,13 @@ export function useRecentTakeoffs(
     };
   }, [userId]);
 
-  return entries
-    .slice()
+  const visible = entries.filter((e) => !e.hidden);
+  const pinned = visible
+    .filter((e) => e.pinnedAt)
+    .sort((a, b) => (b.pinnedAt ?? 0) - (a.pinnedAt ?? 0));
+  const recent = visible
+    .filter((e) => !e.pinnedAt)
     .sort((a, b) => b.openedAt - a.openedAt)
     .slice(0, limit);
+  return { pinned, recent };
 }

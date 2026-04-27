@@ -1,13 +1,32 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type MouseEvent } from "react";
 import { Link } from "wouter";
-import { ArrowRight, Clock, FileText, Folder, Layers, Loader2, Ruler, Search } from "lucide-react";
+import {
+  ArrowRight,
+  Clock,
+  FileText,
+  Folder,
+  Layers,
+  Loader2,
+  Pin,
+  PinOff,
+  Ruler,
+  Search,
+  X,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useBids, useProjects } from "@/hooks/use-data";
 import { useAuth } from "@/hooks/use-auth";
-import { useRecentTakeoffs } from "@/lib/takeoff-recents";
+import {
+  pinRecent,
+  removeRecent,
+  unpinRecent,
+  useRecentTakeoffs,
+  type RecentTakeoffEntry,
+} from "@/lib/takeoff-recents";
 import type { Bid } from "@shared/schema";
 import type { ProjectWithNames } from "@/hooks/use-data";
 
@@ -70,29 +89,38 @@ export default function TakeoffIndexPage() {
     return map;
   }, [projects]);
 
-  const visibleRecents = useMemo(() => {
-    if (recents.length === 0) return [];
-    return recents
-      .map((entry) => {
-        if (entry.kind === "bid") {
-          const fresh = bidsByCode.get(entry.entityCode);
-          if (!fresh) return null;
-          return {
-            ...entry,
-            entityName: fresh.name ?? entry.entityName ?? null,
-            entityCode: fresh.code,
-          };
-        }
-        const fresh = projectsByCode.get(entry.entityCode);
-        if (!fresh) return null;
-        return {
-          ...entry,
-          entityName: fresh.name ?? entry.entityName ?? null,
-          entityCode: fresh.code,
-        };
-      })
-      .filter((e): e is NonNullable<typeof e> => e !== null);
-  }, [recents, bidsByCode, projectsByCode]);
+  const refreshEntry = (entry: RecentTakeoffEntry): RecentTakeoffEntry | null => {
+    if (entry.kind === "bid") {
+      const fresh = bidsByCode.get(entry.entityCode);
+      if (!fresh) return null;
+      return {
+        ...entry,
+        entityName: fresh.name ?? entry.entityName ?? null,
+        entityCode: fresh.code,
+      };
+    }
+    const fresh = projectsByCode.get(entry.entityCode);
+    if (!fresh) return null;
+    return {
+      ...entry,
+      entityName: fresh.name ?? entry.entityName ?? null,
+      entityCode: fresh.code,
+    };
+  };
+
+  const visiblePinned = useMemo(
+    () => recents.pinned
+      .map(refreshEntry)
+      .filter((e): e is NonNullable<typeof e> => e !== null),
+    [recents.pinned, bidsByCode, projectsByCode],
+  );
+  const visibleRecent = useMemo(
+    () => recents.recent
+      .map(refreshEntry)
+      .filter((e): e is NonNullable<typeof e> => e !== null),
+    [recents.recent, bidsByCode, projectsByCode],
+  );
+  const hasRecents = visiblePinned.length > 0 || visibleRecent.length > 0;
 
   const filteredBids = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -152,79 +180,48 @@ export default function TakeoffIndexPage() {
         </div>
       </div>
 
-      {visibleRecents.length > 0 && (
-        <section className="space-y-2" data-testid="takeoff-index-recents">
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-muted-foreground" />
-            <h2 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">
-              Recent
-            </h2>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {visibleRecents.map((entry) => {
-              const basePath = entry.kind === "project"
-                ? `/takeoff/project/${entry.entityCode}`
-                : `/takeoff/${entry.entityCode}`;
-              const href = entry.sheetId
-                ? `${basePath}?sheet=${encodeURIComponent(entry.sheetId)}`
-                : basePath;
-              const testKey = entry.sheetId
-                ? `${entry.kind}-${entry.entityCode}-${entry.sheetId}`
-                : `${entry.kind}-${entry.entityCode}`;
-              return (
-                <Link
-                  key={`${entry.kind}:${entry.entityId}:${entry.sheetId ?? "none"}`}
-                  href={href}
-                  data-testid={`link-takeoff-recent-${testKey}`}
-                >
-                  <Card className="hover-elevate active-elevate-2 transition-colors cursor-pointer h-full">
-                    <CardContent className="flex items-start gap-3 p-3">
-                      <div className="rounded-md bg-muted/60 p-2 shrink-0">
-                        {entry.sheetId ? (
-                          <Layers className="w-4 h-4 text-muted-foreground" />
-                        ) : entry.kind === "project" ? (
-                          <Folder className="w-4 h-4 text-muted-foreground" />
-                        ) : (
-                          <FileText className="w-4 h-4 text-muted-foreground" />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className="font-medium truncate text-sm"
-                            data-testid={`text-takeoff-recent-title-${testKey}`}
-                          >
-                            {entry.sheetName
-                              || (entry.sheetId
-                                ? "Sheet"
-                                : entry.entityName || entry.entityCode)}
-                          </span>
-                          <Badge
-                            variant="outline"
-                            className="text-[10px] font-mono uppercase tracking-wide shrink-0"
-                          >
-                            {entry.entityCode}
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">
-                          {entry.sheetId
-                            ? entry.entityName || entry.entityCode
-                            : entry.kind === "project"
-                              ? "Project"
-                              : "Bid"}
-                          <span className="mx-1.5">·</span>
-                          <span data-testid={`text-takeoff-recent-time-${testKey}`}>
-                            {formatRelativeTime(entry.openedAt)}
-                          </span>
-                        </p>
-                      </div>
-                      <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0 mt-1" />
-                    </CardContent>
-                  </Card>
-                </Link>
-              );
-            })}
-          </div>
+      {hasRecents && (
+        <section className="space-y-4" data-testid="takeoff-index-recents">
+          {visiblePinned.length > 0 && (
+            <div className="space-y-2" data-testid="takeoff-index-pinned">
+              <div className="flex items-center gap-2">
+                <Pin className="w-4 h-4 text-muted-foreground" />
+                <h2 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">
+                  Pinned
+                </h2>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {visiblePinned.map((entry) => (
+                  <RecentCard
+                    key={`pinned:${entry.kind}:${entry.entityId}:${entry.sheetId ?? "none"}`}
+                    entry={entry}
+                    isPinned
+                    userId={user?.id ?? null}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+          {visibleRecent.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-muted-foreground" />
+                <h2 className="text-sm font-semibold tracking-wide uppercase text-muted-foreground">
+                  Recent
+                </h2>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {visibleRecent.map((entry) => (
+                  <RecentCard
+                    key={`recent:${entry.kind}:${entry.entityId}:${entry.sheetId ?? "none"}`}
+                    entry={entry}
+                    isPinned={false}
+                    userId={user?.id ?? null}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
         </section>
       )}
 
@@ -403,5 +400,132 @@ export default function TakeoffIndexPage() {
         </div>
       )}
     </div>
+  );
+}
+
+interface RecentCardProps {
+  entry: RecentTakeoffEntry;
+  isPinned: boolean;
+  userId: string | null;
+}
+
+function RecentCard({ entry, isPinned, userId }: RecentCardProps) {
+  const basePath = entry.kind === "project"
+    ? `/takeoff/project/${entry.entityCode}`
+    : `/takeoff/${entry.entityCode}`;
+  const href = entry.sheetId
+    ? `${basePath}?sheet=${encodeURIComponent(entry.sheetId)}`
+    : basePath;
+  const testKey = entry.sheetId
+    ? `${entry.kind}-${entry.entityCode}-${entry.sheetId}`
+    : `${entry.kind}-${entry.entityCode}`;
+  const selector = {
+    kind: entry.kind,
+    entityId: entry.entityId,
+    sheetId: entry.sheetId ?? null,
+  };
+
+  // Pin/remove buttons sit inside the <Link>, so we have to stop the click
+  // from bubbling up and triggering navigation. Both actions are no-ops if
+  // the user isn't signed in (storage is keyed by userId).
+  const handleTogglePin = (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!userId) return;
+    if (isPinned) unpinRecent(userId, selector);
+    else pinRecent(userId, selector);
+  };
+  const handleRemove = (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!userId) return;
+    removeRecent(userId, selector);
+  };
+
+  return (
+    <Link href={href} data-testid={`link-takeoff-recent-${testKey}`}>
+      <Card className="hover-elevate active-elevate-2 transition-colors cursor-pointer h-full">
+        <CardContent className="flex items-start gap-3 p-3">
+          <div className="rounded-md bg-muted/60 p-2 shrink-0">
+            {entry.sheetId ? (
+              <Layers className="w-4 h-4 text-muted-foreground" />
+            ) : entry.kind === "project" ? (
+              <Folder className="w-4 h-4 text-muted-foreground" />
+            ) : (
+              <FileText className="w-4 h-4 text-muted-foreground" />
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span
+                className="font-medium truncate text-sm"
+                data-testid={`text-takeoff-recent-title-${testKey}`}
+              >
+                {entry.sheetName
+                  || (entry.sheetId
+                    ? "Sheet"
+                    : entry.entityName || entry.entityCode)}
+              </span>
+              <Badge
+                variant="outline"
+                className="text-[10px] font-mono uppercase tracking-wide shrink-0"
+              >
+                {entry.entityCode}
+              </Badge>
+            </div>
+            <p className="text-xs text-muted-foreground truncate mt-0.5">
+              {entry.sheetId
+                ? entry.entityName || entry.entityCode
+                : entry.kind === "project"
+                  ? "Project"
+                  : "Bid"}
+              <span className="mx-1.5">·</span>
+              <span data-testid={`text-takeoff-recent-time-${testKey}`}>
+                {formatRelativeTime(entry.openedAt)}
+              </span>
+            </p>
+          </div>
+          <div className="flex items-center gap-0.5 shrink-0 -mr-1 -mt-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground"
+                  onClick={handleTogglePin}
+                  aria-label={isPinned ? "Unpin" : "Pin"}
+                  data-testid={`button-takeoff-recent-${isPinned ? "unpin" : "pin"}-${testKey}`}
+                >
+                  {isPinned ? (
+                    <PinOff className="w-3.5 h-3.5" />
+                  ) : (
+                    <Pin className="w-3.5 h-3.5" />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{isPinned ? "Unpin" : "Pin"}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground"
+                  onClick={handleRemove}
+                  aria-label="Remove"
+                  data-testid={`button-takeoff-recent-remove-${testKey}`}
+                >
+                  <X className="w-3.5 h-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Remove</TooltipContent>
+            </Tooltip>
+            <ArrowRight className="w-4 h-4 text-muted-foreground ml-0.5 mt-1.5" />
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
   );
 }
