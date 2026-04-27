@@ -8,6 +8,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { useExportIncludeFormulas } from "@/hooks/use-export-include-formulas";
 
 interface EstimateExcelExportButtonProps {
   estimateId: string;
@@ -25,7 +26,7 @@ export function EstimateExcelExportButton({
   disabled,
 }: EstimateExcelExportButtonProps) {
   const [open, setOpen] = useState(false);
-  const [includeFormulas, setIncludeFormulas] = useState(false);
+  const [includeFormulas, setIncludeFormulas] = useExportIncludeFormulas();
 
   const handleExport = () => {
     const params = new URLSearchParams();

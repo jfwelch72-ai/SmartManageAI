@@ -9,6 +9,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
+import { useExportIncludeFormulas } from "@/hooks/use-export-include-formulas";
 
 interface EstimatePdfExportButtonProps {
   estimateId: string;
@@ -31,7 +32,7 @@ export function EstimatePdfExportButton({
   disabled,
 }: EstimatePdfExportButtonProps) {
   const [open, setOpen] = useState(false);
-  const [includeFormulas, setIncludeFormulas] = useState(false);
+  const [includeFormulas, setIncludeFormulas] = useExportIncludeFormulas();
   const [isExporting, setIsExporting] = useState(false);
   const { toast } = useToast();
 
