@@ -488,6 +488,127 @@ router.post("/api/library-assemblies", async (req: AuthRequest, res: Response, n
   res.json(assembly);
 });
 
+// Task #2133 — bulk delete library assemblies in a single round-trip. Org-scoped
+// and capped at MAX_BULK. Cascades to libraryAssemblyItems / Groups / GroupMembers
+// via the FK onDelete: cascade rules in the schema.
+router.delete("/api/library-assemblies/bulk", async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
+
+  const { ids } = req.body ?? {};
+  if (!Array.isArray(ids) || ids.length === 0 || !ids.every((v) => typeof v === "string" && v.length > 0)) {
+    return res.status(400).json({ error: "ids must be a non-empty array of strings" });
+  }
+  const MAX_BULK = 500;
+  if (ids.length > MAX_BULK) {
+    return res.status(400).json({ error: `Cannot bulk-delete more than ${MAX_BULK} assemblies at once` });
+  }
+
+  const deleted = await db.delete(libraryAssemblies)
+    .where(and(eq(libraryAssemblies.organizationId, orgId), inArray(libraryAssemblies.id, ids)))
+    .returning({ id: libraryAssemblies.id });
+
+  res.json({ deleted: deleted.length, ids: deleted.map((r) => r.id) });
+});
+
+// Task #2133 — bulk duplicate library assemblies, including each assembly's
+// child rows in library_assembly_items, library_assembly_item_groups, and
+// library_assembly_item_group_members. Each duplicate keeps the source
+// metadata but is saved as a custom (non-prebuilt) copy with an "(copy)"
+// name suffix so estimators can freely edit it.
+router.post("/api/library-assemblies/bulk-duplicate", async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const orgId = getOrgId(req);
+  if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+  if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
+
+  const { ids } = req.body ?? {};
+  if (!Array.isArray(ids) || ids.length === 0 || !ids.every((v) => typeof v === "string" && v.length > 0)) {
+    return res.status(400).json({ error: "ids must be a non-empty array of strings" });
+  }
+  const MAX_BULK = 500;
+  if (ids.length > MAX_BULK) {
+    return res.status(400).json({ error: `Cannot bulk-duplicate more than ${MAX_BULK} assemblies at once` });
+  }
+
+  const sources = await db.select().from(libraryAssemblies)
+    .where(and(eq(libraryAssemblies.organizationId, orgId), inArray(libraryAssemblies.id, ids)));
+  if (sources.length === 0) {
+    return res.json({ duplicated: 0, assemblies: [] });
+  }
+
+  const sourceIds = sources.map((s) => s.id);
+  const [srcItems, srcGroups] = await Promise.all([
+    db.select().from(libraryAssemblyItems).where(inArray(libraryAssemblyItems.assemblyId, sourceIds)),
+    db.select().from(libraryAssemblyItemGroups).where(inArray(libraryAssemblyItemGroups.assemblyId, sourceIds)),
+  ]);
+  const srcGroupIds = srcGroups.map((g) => g.id);
+  const srcMembers = srcGroupIds.length > 0
+    ? await db.select().from(libraryAssemblyItemGroupMembers).where(inArray(libraryAssemblyItemGroupMembers.groupId, srcGroupIds))
+    : [];
+
+  const copyValues = sources.map((src) => ({
+    organizationId: src.organizationId,
+    name: `${src.name} (copy)`.slice(0, 120),
+    assemblyNumber: src.assemblyNumber,
+    unitOfMeasure: src.unitOfMeasure,
+    description: src.description,
+    libraryId: src.libraryId,
+    sourceId: src.id,
+    isPrebuilt: false,
+    isActive: src.isActive,
+  }));
+  const insertedAssemblies = await db.insert(libraryAssemblies).values(copyValues).returning();
+
+  // .values(array) + .returning() preserves the order of the input rows, so we
+  // can pair source -> copy by index to build the id remap for the child rows.
+  const oldToNewAssemblyId = new Map<string, string>();
+  sources.forEach((src, idx) => {
+    oldToNewAssemblyId.set(src.id, insertedAssemblies[idx].id);
+  });
+
+  if (srcItems.length > 0) {
+    const itemRows = srcItems.map((it) => ({
+      assemblyId: oldToNewAssemblyId.get(it.assemblyId)!,
+      itemId: it.itemId,
+      name: it.name,
+      formula: it.formula,
+      wasteFactor: it.wasteFactor,
+      unitCost: it.unitCost,
+      unit: it.unit,
+      displayOrder: it.displayOrder,
+    }));
+    await db.insert(libraryAssemblyItems).values(itemRows);
+  }
+
+  const oldToNewGroupId = new Map<string, string>();
+  if (srcGroups.length > 0) {
+    const groupRows = srcGroups.map((g) => ({
+      assemblyId: oldToNewAssemblyId.get(g.assemblyId)!,
+      name: g.name,
+      description: g.description,
+      displayOrder: g.displayOrder,
+    }));
+    const insertedGroups = await db.insert(libraryAssemblyItemGroups).values(groupRows).returning();
+    srcGroups.forEach((g, idx) => {
+      oldToNewGroupId.set(g.id, insertedGroups[idx].id);
+    });
+  }
+
+  if (srcMembers.length > 0) {
+    const memberRows = srcMembers.map((m) => ({
+      groupId: oldToNewGroupId.get(m.groupId)!,
+      itemId: m.itemId,
+      name: m.name,
+      formula: m.formula,
+      displayOrder: m.displayOrder,
+    }));
+    await db.insert(libraryAssemblyItemGroupMembers).values(memberRows);
+  }
+
+  res.json({ duplicated: insertedAssemblies.length, assemblies: insertedAssemblies });
+});
+
 router.patch("/api/library-assemblies/:id", async (req: AuthRequest, res: Response, next: NextFunction) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });

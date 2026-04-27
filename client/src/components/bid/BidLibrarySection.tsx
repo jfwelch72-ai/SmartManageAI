@@ -61,6 +61,28 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
   const [deleteAssemblyId, setDeleteAssemblyId] = useState<string | null>(null);
   const [showCategoryManager, setShowCategoryManager] = useState(false);
 
+  // Task #2133 — independent selection mode for assemblies in the bid sidebar.
+  // Items selection is owned by the shared useLibraryBulkSelection hook (see
+  // below); assemblies stay inline because they don't share the items hook's
+  // category re-bucket mutation and need their own toast/test-id/copy.
+  const [assemblySelectionMode, setAssemblySelectionMode] = useState(false);
+  const [selectedAssemblyIds, setSelectedAssemblyIds] = useState<Set<string>>(new Set());
+  const [showAssemblyBulkDeleteConfirm, setShowAssemblyBulkDeleteConfirm] = useState(false);
+
+  const exitAssemblySelectionMode = () => {
+    setAssemblySelectionMode(false);
+    setSelectedAssemblyIds(new Set());
+  };
+
+  const toggleAssemblySelected = (id: string) => {
+    setSelectedAssemblyIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   const { data: libraries = [] } = useQuery<CustomLibrary[]>({
     queryKey: ["/api/custom-libraries"],
   });
@@ -129,6 +151,40 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
     },
     onError: (err: any) => {
       toast({ title: "Error", description: err.message || "Failed to delete assembly", variant: "destructive" });
+    },
+  });
+
+  // Task #2133 — bulk delete selected assemblies in a single round-trip.
+  const bulkDeleteAssembliesMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await apiRequest("DELETE", "/api/library-assemblies/bulk", { ids });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string)?.startsWith("/api/library-assemblies") });
+      setShowAssemblyBulkDeleteConfirm(false);
+      exitAssemblySelectionMode();
+      toast({ title: "Assemblies deleted", description: `Deleted ${data?.deleted ?? 0} assemblies.` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Delete failed", description: err?.message || "Could not delete assemblies", variant: "destructive" });
+    },
+  });
+
+  // Task #2133 — bulk duplicate selected assemblies (clones child items, groups,
+  // and group members) into editable custom copies.
+  const bulkDuplicateAssembliesMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await apiRequest("POST", "/api/library-assemblies/bulk-duplicate", { ids });
+      return res.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ predicate: (q) => (q.queryKey[0] as string)?.startsWith("/api/library-assemblies") });
+      exitAssemblySelectionMode();
+      toast({ title: "Assemblies duplicated", description: `Created ${data?.duplicated ?? 0} copies.` });
+    },
+    onError: (err: any) => {
+      toast({ title: "Duplicate failed", description: err?.message || "Could not duplicate assemblies", variant: "destructive" });
     },
   });
 
@@ -515,57 +571,133 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
         </CollapsibleTrigger>
         <CollapsibleContent>
           <div className="pl-3 pr-1 space-y-0.5 py-0.5">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="w-full justify-start text-[11px] h-6"
-              onClick={() => { setEditAssembly(null); setShowAssemblyDialog(true); }}
-              data-testid="btn-bid-add-assembly"
-            >
-              <Plus className="h-3 w-3 mr-1" /> New Assembly
-            </Button>
-            {filteredAssemblies.map((asm: any) => (
-              <div
-                key={asm.id}
-                className="flex items-center gap-1 px-1.5 py-1 text-[11px] rounded hover:bg-accent/50 group cursor-pointer"
-                data-testid={`bid-library-assembly-${asm.id}`}
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="flex-1 justify-start text-[11px] h-6"
+                onClick={() => { setEditAssembly(null); setShowAssemblyDialog(true); }}
+                data-testid="btn-bid-add-assembly"
               >
-                <Layers className="h-3 w-3 text-muted-foreground shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <div className="truncate font-medium">{asm.name}</div>
-                  <div className="text-muted-foreground truncate text-[10px]">
-                    {asm.assemblyNumber && <span>{asm.assemblyNumber} · </span>}
-                    {asm.unitOfMeasure}
-                    {asm.items && <span> · {asm.items.length} items</span>}
-                  </div>
-                </div>
+                <Plus className="h-3 w-3 mr-1" /> New Assembly
+              </Button>
+              {/* Task #2133 — bulk-edit toggle for assemblies. */}
+              <Button
+                variant={assemblySelectionMode ? "secondary" : "ghost"}
+                size="sm"
+                className="text-[11px] h-6 px-1.5"
+                onClick={() => (assemblySelectionMode ? exitAssemblySelectionMode() : setAssemblySelectionMode(true))}
+                title={assemblySelectionMode ? "Exit selection mode" : "Select assemblies to bulk-edit"}
+                data-testid="btn-bid-toggle-assembly-bulk-select"
+              >
+                {assemblySelectionMode ? <X className="h-3 w-3 mr-1" /> : <CheckSquare className="h-3 w-3 mr-1" />}
+                {assemblySelectionMode ? "Done" : "Select"}
+              </Button>
+            </div>
+            {/* Task #2133 — bulk action bar for assemblies in the bid sidebar. */}
+            {assemblySelectionMode && (
+              <div
+                className="flex items-center gap-1 px-1.5 py-1 rounded bg-accent/60 border border-border/60"
+                data-testid="bid-assembly-bulk-action-bar"
+              >
+                <Checkbox
+                  checked={selectedAssemblyIds.size > 0 && selectedAssemblyIds.size === filteredAssemblies.length}
+                  onCheckedChange={(v) => {
+                    if (v) setSelectedAssemblyIds(new Set(filteredAssemblies.map((a: any) => a.id)));
+                    else setSelectedAssemblyIds(new Set());
+                  }}
+                  className="h-3.5 w-3.5"
+                  data-testid="checkbox-bid-select-all-assemblies"
+                />
+                <span className="text-[11px] flex-1" data-testid="text-bid-selected-assembly-count">
+                  {selectedAssemblyIds.size} selected
+                </span>
                 <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-5 w-5 opacity-0 group-hover:opacity-100 shrink-0"
-                  onClick={(e) => { e.stopPropagation(); handleApplyAssembly(asm); }}
-                  title="Apply to takeoff"
-                  data-testid={`btn-apply-assembly-${asm.id}`}
+                  variant="secondary"
+                  size="sm"
+                  className="h-5 text-[11px] px-1.5"
+                  disabled={selectedAssemblyIds.size === 0 || bulkDuplicateAssembliesMutation.isPending}
+                  onClick={() => bulkDuplicateAssembliesMutation.mutate(Array.from(selectedAssemblyIds))}
+                  data-testid="btn-bid-bulk-duplicate-assemblies"
                 >
-                  <ArrowRight className="h-3 w-3" />
+                  <Copy className="h-3 w-3 mr-1" />
+                  {bulkDuplicateAssembliesMutation.isPending ? "…" : "Duplicate"}
                 </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 shrink-0" data-testid={`btn-bid-assembly-menu-${asm.id}`}>
-                      <MoreVertical className="h-3 w-3" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => { setEditAssembly(asm); setShowAssemblyDialog(true); }} data-testid={`btn-bid-edit-assembly-${asm.id}`}>
-                      <Pencil className="h-3.5 w-3.5 mr-2" /> Edit
-                    </DropdownMenuItem>
-                    <DropdownMenuItem className="text-destructive" onClick={() => setDeleteAssemblyId(asm.id)} data-testid={`btn-bid-delete-assembly-${asm.id}`}>
-                      <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  className="h-5 text-[11px] px-1.5"
+                  disabled={selectedAssemblyIds.size === 0}
+                  onClick={() => setShowAssemblyBulkDeleteConfirm(true)}
+                  data-testid="btn-bid-bulk-delete-assemblies"
+                >
+                  <Trash2 className="h-3 w-3 mr-1" /> Delete
+                </Button>
               </div>
-            ))}
+            )}
+            {filteredAssemblies.map((asm: any) => {
+              const isSelected = selectedAssemblyIds.has(asm.id);
+              return (
+                <div
+                  key={asm.id}
+                  className={cn(
+                    "flex items-center gap-1 px-1.5 py-1 text-[11px] rounded hover:bg-accent/50 group cursor-pointer",
+                    isSelected && "bg-accent/70"
+                  )}
+                  onClick={assemblySelectionMode ? () => toggleAssemblySelected(asm.id) : undefined}
+                  data-testid={`bid-library-assembly-${asm.id}`}
+                >
+                  {assemblySelectionMode ? (
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={() => toggleAssemblySelected(asm.id)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="h-3.5 w-3.5"
+                      data-testid={`checkbox-bid-assembly-${asm.id}`}
+                    />
+                  ) : (
+                    <Layers className="h-3 w-3 text-muted-foreground shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="truncate font-medium">{asm.name}</div>
+                    <div className="text-muted-foreground truncate text-[10px]">
+                      {asm.assemblyNumber && <span>{asm.assemblyNumber} · </span>}
+                      {asm.unitOfMeasure}
+                      {asm.items && <span> · {asm.items.length} items</span>}
+                    </div>
+                  </div>
+                  {!assemblySelectionMode && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-5 w-5 opacity-0 group-hover:opacity-100 shrink-0"
+                        onClick={(e) => { e.stopPropagation(); handleApplyAssembly(asm); }}
+                        title="Apply to takeoff"
+                        data-testid={`btn-apply-assembly-${asm.id}`}
+                      >
+                        <ArrowRight className="h-3 w-3" />
+                      </Button>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-5 w-5 opacity-0 group-hover:opacity-100 shrink-0" data-testid={`btn-bid-assembly-menu-${asm.id}`}>
+                            <MoreVertical className="h-3 w-3" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => { setEditAssembly(asm); setShowAssemblyDialog(true); }} data-testid={`btn-bid-edit-assembly-${asm.id}`}>
+                            <Pencil className="h-3.5 w-3.5 mr-2" /> Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuItem className="text-destructive" onClick={() => setDeleteAssemblyId(asm.id)} data-testid={`btn-bid-delete-assembly-${asm.id}`}>
+                            <Trash2 className="h-3.5 w-3.5 mr-2" /> Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </CollapsibleContent>
       </Collapsible>
@@ -681,6 +813,37 @@ export default function BidLibrarySection({ bidId }: BidLibrarySectionProps) {
         isPending={bulkMoveMutation.isPending}
         testIdPrefix="bid-"
       />
+
+      {/* Task #2133 — bulk delete confirmation for assemblies. */}
+      <AlertDialog
+        open={showAssemblyBulkDeleteConfirm}
+        onOpenChange={(open) => { if (!bulkDeleteAssembliesMutation.isPending) setShowAssemblyBulkDeleteConfirm(open); }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Delete {selectedAssemblyIds.size} {selectedAssemblyIds.size === 1 ? "assembly" : "assemblies"}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete the {selectedAssemblyIds.size} selected {selectedAssemblyIds.size === 1 ? "assembly and its child items/groups" : "assemblies and all of their child items/groups"}. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDeleteAssembliesMutation.isPending} data-testid="btn-cancel-bid-bulk-delete-assemblies">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                bulkDeleteAssembliesMutation.mutate(Array.from(selectedAssemblyIds));
+              }}
+              disabled={bulkDeleteAssembliesMutation.isPending || selectedAssemblyIds.size === 0}
+              data-testid="btn-confirm-bid-bulk-delete-assemblies"
+            >
+              {bulkDeleteAssembliesMutation.isPending ? "Deleting…" : `Delete ${selectedAssemblyIds.size}`}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </>
   );
 }
