@@ -1,10 +1,13 @@
 import { describe, it, expect } from 'vitest';
 
 import {
+  aggregateEquipmentRequirements,
+  aggregateMaterialRequirements,
   calculateMaterials,
   STONE_DENSITIES_TONS_PER_CY,
   type MaterialCalculationInputs,
 } from '../materialCalculator';
+import type { EstimateLineItem } from '@shared/schema';
 import {
   calculateConcreteSlabCY,
   calculateConcreteFootingCY,
@@ -1139,6 +1142,92 @@ describe('server/tradeCalculators — additional helper coverage', () => {
       for (const name of required) {
         expect(typeof (TradeCalculators as Record<string, unknown>)[name]).toBe('function');
       }
+    });
+  });
+});
+
+describe('server/materialCalculator → aggregate{Material,Equipment}Requirements', () => {
+  // Both aggregators read JSON columns off `EstimateLineItem` rows. The
+  // bug fixed in this task was that `safeJsonParse(..., null)` returned
+  // `null` when the JSON was absent or unparseable — and the downstream
+  // `for (const req of requirements)` would then throw at runtime. The
+  // fallback is now `[]` (and the local type is tightened) so the bad
+  // row is silently skipped instead of taking the whole aggregation
+  // down with it.
+  const lineItem = (overrides: Partial<EstimateLineItem>): EstimateLineItem =>
+    ({
+      materialRequirementsJson: null,
+      equipmentRequirementsJson: null,
+      ...overrides,
+    }) as EstimateLineItem;
+
+  describe('aggregateMaterialRequirements', () => {
+    it('returns [] when every row has a null JSON column', () => {
+      expect(
+        aggregateMaterialRequirements([lineItem({}), lineItem({})]),
+      ).toEqual([]);
+    });
+
+    it('skips rows whose JSON is unparseable instead of throwing', () => {
+      const items = [
+        lineItem({ materialRequirementsJson: 'not-json{' }),
+        lineItem({
+          materialRequirementsJson: JSON.stringify([
+            { category: 'Concrete', item: 'Ready Mix', unit: 'CY', quantity: 5 },
+          ]),
+        }),
+      ];
+      expect(() => aggregateMaterialRequirements(items)).not.toThrow();
+      const out = aggregateMaterialRequirements(items);
+      expect(out).toHaveLength(1);
+      expect(out[0]).toMatchObject({ item: 'Ready Mix', quantity: 5 });
+    });
+
+    it('aggregates same-key requirements across rows', () => {
+      const make = (qty: number) =>
+        lineItem({
+          materialRequirementsJson: JSON.stringify([
+            { category: 'Concrete', item: 'Ready Mix', unit: 'CY', quantity: qty },
+          ]),
+        });
+      const out = aggregateMaterialRequirements([make(3), make(4)]);
+      expect(out).toHaveLength(1);
+      expect(out[0].quantity).toBe(7);
+    });
+  });
+
+  describe('aggregateEquipmentRequirements', () => {
+    it('returns [] when every row has a null JSON column', () => {
+      expect(
+        aggregateEquipmentRequirements([lineItem({}), lineItem({})]),
+      ).toEqual([]);
+    });
+
+    it('skips rows whose JSON is unparseable instead of throwing', () => {
+      const items = [
+        lineItem({ equipmentRequirementsJson: '{bad' }),
+        lineItem({
+          equipmentRequirementsJson: JSON.stringify([
+            { category: 'Earthwork', item: 'Excavator', hours: 8 },
+          ]),
+        }),
+      ];
+      expect(() => aggregateEquipmentRequirements(items)).not.toThrow();
+      const out = aggregateEquipmentRequirements(items);
+      expect(out).toHaveLength(1);
+      expect(out[0]).toMatchObject({ item: 'Excavator', hours: 8 });
+    });
+
+    it('aggregates same-key equipment hours across rows', () => {
+      const make = (hours: number) =>
+        lineItem({
+          equipmentRequirementsJson: JSON.stringify([
+            { category: 'Earthwork', item: 'Excavator', hours },
+          ]),
+        });
+      const out = aggregateEquipmentRequirements([make(8), make(4)]);
+      expect(out).toHaveLength(1);
+      expect(out[0].hours).toBe(12);
     });
   });
 });

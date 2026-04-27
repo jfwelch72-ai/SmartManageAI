@@ -422,7 +422,8 @@ export function aggregateMaterialRequirements(lineItems: EstimateLineItem[]): Ma
     if (!item.materialRequirementsJson) continue;
     
     try {
-      const requirements: MaterialRequirement[] = safeJsonParse(item.materialRequirementsJson, null);
+      const requirements: MaterialRequirement[] =
+        safeJsonParse<MaterialRequirement[]>(item.materialRequirementsJson, []) ?? [];
       for (const req of requirements) {
         const key = `${req.category}:${req.item}:${req.unit}`;
         const existing = aggregated.get(key);
@@ -449,7 +450,8 @@ export function aggregateEquipmentRequirements(lineItems: EstimateLineItem[]): E
     if (!item.equipmentRequirementsJson) continue;
     
     try {
-      const requirements: EquipmentRequirement[] = safeJsonParse(item.equipmentRequirementsJson, null);
+      const requirements: EquipmentRequirement[] =
+        safeJsonParse<EquipmentRequirement[]>(item.equipmentRequirementsJson, []) ?? [];
       for (const req of requirements) {
         const key = `${req.category}:${req.item}`;
         const existing = aggregated.get(key);
