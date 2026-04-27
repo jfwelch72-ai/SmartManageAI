@@ -19,6 +19,10 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
+  getExportResponseErrorToast,
+  getExportThrownErrorToast,
+} from "@/lib/exportErrors";
+import {
   DollarSign, FileText, CheckCircle, Clock, AlertTriangle, ArrowRight,
   Plus, Download, Send, Package, Shield, TrendingUp, Loader2,
   Building2, BarChart3, RefreshCw,
@@ -335,6 +339,32 @@ export default function ProgressBillingPage() {
   const { isEnabled } = useFeatureFlags();
   const { permissionRole } = useAuth();
   const dotProgressEstimateEnabled = isEnabled("DOT_PROGRESS_ESTIMATE");
+
+  const downloadAiaPdf = async (
+    url: string,
+    ctx: { artifact: string; subject: string; filename: string },
+  ) => {
+    try {
+      const res = await fetch(url, { credentials: "include" });
+      if (!res.ok) {
+        toast(await getExportResponseErrorToast(res, ctx));
+        return;
+      }
+      const blob = await res.blob();
+      const objectUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = objectUrl;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.download = ctx.filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 60000);
+    } catch (err) {
+      toast(getExportThrownErrorToast(err, ctx));
+    }
+  };
   const [activeTab, setActiveTab] = useState("overview");
   const [createPayAppOpen, setCreatePayAppOpen] = useState(false);
   const [createMaterialOpen, setCreateMaterialOpen] = useState(false);
@@ -760,21 +790,60 @@ export default function ProgressBillingPage() {
                                 <RefreshCw className="h-3.5 w-3.5" />
                               </Button>
                             )}
-                            <Button size="sm" variant="ghost" asChild data-testid={`button-g702-${app.id}`}>
-                              <a href={`/api/aia-billing/pay-applications/${app.id}/g702-pdf`} target="_blank" rel="noopener noreferrer" title="G702 PDF">
-                                <Download className="h-3.5 w-3.5" />
-                              </a>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              data-testid={`button-g702-${app.id}`}
+                              title="G702 PDF"
+                              onClick={() =>
+                                downloadAiaPdf(
+                                  `/api/aia-billing/pay-applications/${app.id}/g702-pdf`,
+                                  {
+                                    artifact: "G702 PDF",
+                                    subject: "AIA pay application",
+                                    filename: `G702-${app.id}.pdf`,
+                                  },
+                                )
+                              }
+                            >
+                              <Download className="h-3.5 w-3.5" />
                             </Button>
-                            <Button size="sm" variant="ghost" asChild data-testid={`button-g703-${app.id}`}>
-                              <a href={`/api/aia-billing/pay-applications/${app.id}/g703-pdf`} target="_blank" rel="noopener noreferrer" title="G703 PDF">
-                                <FileText className="h-3.5 w-3.5" />
-                              </a>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              data-testid={`button-g703-${app.id}`}
+                              title="G703 PDF"
+                              onClick={() =>
+                                downloadAiaPdf(
+                                  `/api/aia-billing/pay-applications/${app.id}/g703-pdf`,
+                                  {
+                                    artifact: "G703 PDF",
+                                    subject: "AIA pay application",
+                                    filename: `G703-${app.id}.pdf`,
+                                  },
+                                )
+                              }
+                            >
+                              <FileText className="h-3.5 w-3.5" />
                             </Button>
                             {dotProgressEstimateEnabled && (
-                              <Button size="sm" variant="ghost" asChild data-testid={`button-dot-progress-estimate-${app.id}`}>
-                                <a href={`/api/dot/progress-estimates/${app.id}/pdf`} target="_blank" rel="noopener noreferrer" title="DOT Progress Estimate PDF">
-                                  <BarChart3 className="h-3.5 w-3.5" />
-                                </a>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                data-testid={`button-dot-progress-estimate-${app.id}`}
+                                title="DOT Progress Estimate PDF"
+                                onClick={() =>
+                                  downloadAiaPdf(
+                                    `/api/dot/progress-estimates/${app.id}/pdf`,
+                                    {
+                                      artifact: "DOT progress estimate PDF",
+                                      subject: "DOT progress estimate",
+                                      filename: `DOT-Progress-Estimate-${app.id}.pdf`,
+                                    },
+                                  )
+                                }
+                              >
+                                <BarChart3 className="h-3.5 w-3.5" />
                               </Button>
                             )}
                           </div>

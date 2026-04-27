@@ -26,6 +26,10 @@ import {
 import { format } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import {
+  getExportResponseErrorToast,
+  getExportThrownErrorToast,
+} from "@/lib/exportErrors";
 
 interface ProjectVaultTabProps {
   projectCode: string;
@@ -239,7 +243,15 @@ export default function ProjectVaultTab({ projectCode, projectId, userRole }: Pr
         }),
       });
 
-      if (!res.ok) throw new Error("Export failed");
+      if (!res.ok) {
+        toast(
+          await getExportResponseErrorToast(res, {
+            artifact: "PDF",
+            subject: "project vault",
+          }),
+        );
+        return;
+      }
 
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
@@ -252,7 +264,7 @@ export default function ProjectVaultTab({ projectCode, projectId, userRole }: Pr
       document.body.removeChild(a);
       toast({ title: "Export complete", description: `PDF with ${selectedDocs.length} documents downloaded.` });
     } catch (err) {
-      toast({ title: "Export failed", description: "Could not generate PDF package.", variant: "destructive" });
+      toast(getExportThrownErrorToast(err, { artifact: "PDF", subject: "project vault" }));
     } finally {
       setIsExporting(false);
     }

@@ -17,6 +17,10 @@ import { EntityDiscussion } from "@/components/messaging/EntityDiscussion";
 import { ChangeOrderFileUploader } from "./ChangeOrderFileUploader";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import {
+  getExportResponseErrorToast,
+  getExportThrownErrorToast,
+} from "@/lib/exportErrors";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { WorkflowTracker } from "@/components/workflow-tracker";
 import { hasManagementAccess } from "@/lib/rbac";
@@ -571,7 +575,15 @@ export function ChangeOrderDialog({
     if (!changeOrder) return;
     try {
       const res = await fetch(`/api/change-orders/${changeOrder.id}/pdf`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to download PDF");
+      if (!res.ok) {
+        toast(
+          await getExportResponseErrorToast(res, {
+            artifact: "PDF",
+            subject: "change order",
+          }),
+        );
+        return;
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -579,8 +591,8 @@ export function ChangeOrderDialog({
       a.download = `ChangeOrder_${changeOrder.changeOrderNumber.replace(/[^a-zA-Z0-9-]/g, '_')}.pdf`;
       a.click();
       URL.revokeObjectURL(url);
-    } catch {
-      toast({ title: "Error", description: "Failed to download PDF", variant: "destructive" });
+    } catch (err) {
+      toast(getExportThrownErrorToast(err, { artifact: "PDF", subject: "change order" }));
     }
   };
 
@@ -588,7 +600,15 @@ export function ChangeOrderDialog({
     if (!changeOrder) return;
     try {
       const res = await fetch(`/api/change-orders/${changeOrder.id}/pdf`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to generate PDF for printing");
+      if (!res.ok) {
+        toast(
+          await getExportResponseErrorToast(res, {
+            artifact: "PDF",
+            subject: "change order",
+          }),
+        );
+        return;
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const printWindow = window.open(url, '_blank');
@@ -598,8 +618,8 @@ export function ChangeOrderDialog({
         });
       }
       setTimeout(() => URL.revokeObjectURL(url), 60000);
-    } catch {
-      toast({ title: "Error", description: "Failed to prepare print view", variant: "destructive" });
+    } catch (err) {
+      toast(getExportThrownErrorToast(err, { artifact: "PDF", subject: "change order" }));
     }
   };
 

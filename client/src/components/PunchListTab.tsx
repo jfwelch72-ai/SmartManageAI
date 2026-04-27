@@ -10,6 +10,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import {
+  getExportResponseErrorToast,
+  getExportThrownErrorToast,
+} from "@/lib/exportErrors";
 import { format } from "date-fns";
 import {
   Plus, ClipboardList, CheckCircle2, XCircle, Clock, Loader2,
@@ -381,13 +385,20 @@ export default function PunchListTab({ projectId, projectCode, userRole }: Punch
     try {
       setPdfLoading(true);
       const r = await fetch(`/api/projects/${projectCode}/punch-list/export/pdf`, { credentials: "include" });
-      if (!r.ok) throw new Error("Export failed");
+      if (!r.ok) {
+        toast(
+          await getExportResponseErrorToast(r, {
+            artifact: "PDF",
+            subject: "punch list",
+          }),
+        );
+        return;
+      }
       const html = await r.text();
       const w = window.open("", "_blank");
       if (w) { w.document.write(html); w.document.close(); w.print(); }
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Unknown error";
-      toast({ title: "Export failed", description: msg, variant: "destructive" });
+      toast(getExportThrownErrorToast(e, { artifact: "PDF", subject: "punch list" }));
     } finally {
       setPdfLoading(false);
     }

@@ -14,6 +14,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import {
+  getExportResponseErrorToast,
+  getExportThrownErrorToast,
+} from "@/lib/exportErrors";
 import { format, isPast, differenceInDays } from "date-fns";
 import type { ChangeOrder } from "@shared/schema";
 import { useCreateChangeOrder, useApproveChangeOrder, useRejectChangeOrder, useRequestApprovalChangeOrder, useSubmitChangeOrder, useReturnToDraftChangeOrder } from "@/hooks/use-data";
@@ -319,8 +323,13 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
       const idsParam = selectedIds.size > 0 ? `?ids=${Array.from(selectedIds).join(',')}` : '';
       const res = await fetch(`/api/change-orders/project/${projectId}/bulk-pdf${idsParam}`, { credentials: "include" });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to export PDFs");
+        toast(
+          await getExportResponseErrorToast(res, {
+            artifact: "PDF ZIP",
+            subject: "change order",
+          }),
+        );
+        return;
       }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -331,8 +340,7 @@ export default function ChangeOrdersTab({ changeOrders, projectCode, projectId, 
       URL.revokeObjectURL(url);
       toast({ title: "Exported", description: "Change orders exported as PDF ZIP" });
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Failed to export PDFs";
-      toast({ title: "Error", description: msg, variant: "destructive" });
+      toast(getExportThrownErrorToast(e, { artifact: "PDF ZIP", subject: "change order" }));
     } finally {
       setBulkPdfLoading(false);
     }

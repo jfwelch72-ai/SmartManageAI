@@ -13,6 +13,10 @@ import { Download, X, ChevronRight, ArrowUp, ArrowDown, Minus, AlertTriangle } f
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
 import { useToast } from "@/hooks/use-toast";
+import {
+  getExportResponseErrorToast,
+  getExportThrownErrorToast,
+} from "@/lib/exportErrors";
 import { ToastAction } from "@/components/ui/toast";
 
 type GroupBy = "program" | "division" | "trade" | "pm" | "none";
@@ -622,29 +626,40 @@ export default function PortfolioPage() {
 
   const handleExport = useCallback(async () => {
     const qs = buildQs(filters);
+    const retryAction = (
+      <ToastAction altText="Retry export" onClick={() => { void handleExport(); }} data-testid="button-retry-export">
+        Retry
+      </ToastAction>
+    );
     try {
       const res = await fetch(`/api/portfolio/summary-pdf?${qs}`, { credentials: "include" });
       if (!res.ok) {
-        let detail = "";
-        try {
-          const ct = res.headers.get("content-type") || "";
-          if (ct.includes("application/json")) {
-            const body = await res.json();
-            detail = body?.detail || body?.error || "";
-          }
-        } catch {}
-        const isRendererOffline = res.status === 503 || res.status === 500;
+        // 503/500 keep the dedicated "renderer offline" toast since the
+        // page also flips a banner; other statuses flow through the shared
+        // helper so the wording matches every other export button.
+        if (res.status === 503 || res.status === 500) {
+          let detail = "";
+          try {
+            const ct = res.headers.get("content-type") || "";
+            if (ct.includes("application/json")) {
+              const body = await res.json();
+              detail = body?.detail || body?.error || "";
+            }
+          } catch {}
+          toast({
+            variant: "destructive",
+            title: "Portfolio export unavailable",
+            description: detail || "The PDF renderer is offline. Please contact an administrator to restore portfolio exports.",
+            action: retryAction,
+          });
+          return;
+        }
         toast({
-          variant: "destructive",
-          title: isRendererOffline ? "Portfolio export unavailable" : "Export failed",
-          description: isRendererOffline
-            ? (detail || "The PDF renderer is offline. Please contact an administrator to restore portfolio exports.")
-            : (detail || `The export request failed (status ${res.status}). Please try again.`),
-          action: (
-            <ToastAction altText="Retry export" onClick={() => { void handleExport(); }} data-testid="button-retry-export">
-              Retry
-            </ToastAction>
-          ),
+          ...(await getExportResponseErrorToast(res, {
+            artifact: "PDF",
+            subject: "portfolio",
+          })),
+          action: retryAction,
         });
         return;
       }
@@ -658,14 +673,8 @@ export default function PortfolioPage() {
       setTimeout(() => URL.revokeObjectURL(url), 5000);
     } catch (err) {
       toast({
-        variant: "destructive",
-        title: "Export failed",
-        description: "Could not reach the server. Check your connection and try again.",
-        action: (
-          <ToastAction altText="Retry export" onClick={() => { void handleExport(); }} data-testid="button-retry-export">
-            Retry
-          </ToastAction>
-        ),
+        ...getExportThrownErrorToast(err, { artifact: "PDF", subject: "portfolio" }),
+        action: retryAction,
       });
     }
   }, [filters, toast]);

@@ -11,6 +11,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import {
+  getExportResponseErrorToast,
+  getExportThrownErrorToast,
+} from "@/lib/exportErrors";
+import {
   Plus,
   Download,
   CheckCircle2,
@@ -159,7 +163,10 @@ export function SovLineItemsEditor({ sov, canEdit, canApprove, onClose }: SovLin
   const downloadPDF = async (sovId: string, mode: string = "all") => {
     try {
       const response = await fetch(`/api/sov/${sovId}/pdf?billingMode=${mode}`, { credentials: "include" });
-      if (!response.ok) throw new Error("Failed to download PDF");
+      if (!response.ok) {
+        toast(await getExportResponseErrorToast(response, { artifact: "PDF", subject: "SOV" }));
+        return;
+      }
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -172,7 +179,7 @@ export function SovLineItemsEditor({ sov, canEdit, canApprove, onClose }: SovLin
       document.body.removeChild(a);
       toast({ title: "PDF downloaded successfully" });
     } catch (error) {
-      toast({ title: "Failed to download PDF", description: "An error occurred", variant: "destructive" });
+      toast(getExportThrownErrorToast(error, { artifact: "PDF", subject: "SOV" }));
     }
   };
 

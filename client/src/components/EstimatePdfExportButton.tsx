@@ -10,6 +10,10 @@ import {
 } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { useExportIncludeFormulas } from "@/hooks/use-export-include-formulas";
+import {
+  getExportResponseErrorToast,
+  getExportThrownErrorToast,
+} from "@/lib/exportErrors";
 
 interface EstimatePdfExportButtonProps {
   estimateId: string;
@@ -62,27 +66,16 @@ export function EstimatePdfExportButton({
     try {
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) {
-        let detail: string | undefined;
-        try {
-          const body = await res.clone().json();
-          if (body && typeof body.error === "string") detail = body.error;
-        } catch {
-          /* non-JSON error body — fall back to status */
-        }
-        if (res.status === 403) {
-          // Dedicated branch for the most common real-world failure: the
-          // user's role lost `hasManagementAccess`. Surface a friendlier,
-          // actionable message instead of the raw server error string.
-          toast({
-            title: "Export access required",
-            description:
-              "Your role no longer has estimate export access. Ask an admin to grant it, then try again.",
-            variant: "destructive",
-          });
-          setOpen(true);
-          return;
-        }
-        throw new Error(detail || `Server responded with ${res.status}`);
+        toast(
+          await getExportResponseErrorToast(res, {
+            artifact: "PDF",
+            subject: "estimate",
+          }),
+        );
+        // Leave the popover open so the user can retry without
+        // re-toggling their export settings.
+        setOpen(true);
+        return;
       }
       const blob = await res.blob();
       const objectUrl = URL.createObjectURL(blob);
@@ -97,16 +90,7 @@ export function EstimatePdfExportButton({
       URL.revokeObjectURL(objectUrl);
       setOpen(false);
     } catch (err) {
-      toast({
-        title: "Couldn't generate PDF",
-        description:
-          err instanceof Error
-            ? `${err.message}. Please try again.`
-            : "Please try again.",
-        variant: "destructive",
-      });
-      // Leave the popover open so the user can retry without re-toggling
-      // their export settings.
+      toast(getExportThrownErrorToast(err, { artifact: "PDF", subject: "estimate" }));
       setOpen(true);
     } finally {
       setIsExporting(false);

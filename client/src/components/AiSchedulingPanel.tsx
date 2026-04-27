@@ -68,6 +68,7 @@ import { Calendar as CalendarPicker } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { getExportThrownErrorToast } from "@/lib/exportErrors";
 import { format, differenceInDays, parseISO } from "date-fns";
 
 interface ScheduleTask {
@@ -402,11 +403,7 @@ export default function AiSchedulingPanel({ projectId, projectCode, projectName,
       }
     } catch (err) {
       console.error("Gantt export failed", err);
-      toast({
-        title: "Export failed",
-        description: err instanceof Error ? err.message : "Unable to export Gantt chart",
-        variant: "destructive",
-      });
+      toast(getExportThrownErrorToast(err, { artifact: "Gantt PDF", subject: "schedule" }));
     } finally {
       setIsExporting(false);
     }
