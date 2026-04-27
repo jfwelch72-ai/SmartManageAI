@@ -11,6 +11,7 @@ import {
   Loader2,
   File,
   ExternalLink,
+  RotateCw,
 } from "lucide-react";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -63,6 +64,7 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
   const [rendering, setRendering] = useState(false);
   const [canvasSize, setCanvasSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
   const [error, setError] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     onPageChange?.(pageNum);
@@ -144,6 +146,15 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
 
     const isSameOrigin = url.startsWith("/") || url.startsWith(window.location.origin);
 
+    const friendlyForStatus = (status: number): string => {
+      if (status === 401) return "You must be signed in to view this PDF.";
+      if (status === 403) return "You don't have permission to view this PDF.";
+      if (status === 404)
+        return "This PDF was not found on the server. It may have been moved or deleted.";
+      if (status >= 500) return "The server failed to deliver this PDF.";
+      return `Could not load PDF (HTTP ${status}).`;
+    };
+
     const loadPdf = async () => {
       try {
         const loadingTask = pdfjsLib.getDocument(
@@ -160,7 +171,24 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
       } catch (err: unknown) {
         if (cancelled) return;
         console.error("PDF load error:", err);
-        setError(err instanceof Error ? err.message : "Failed to load PDF");
+        // PDF.js throws typed exceptions whose `name` and (sometimes) `status`
+        // tell us what actually went wrong. Surface a useful message to the
+        // user instead of the generic "Unable to render PDF preview".
+        let message = err instanceof Error ? err.message : "Failed to load PDF";
+        if (err && typeof err === "object") {
+          const e = err as { name?: string; status?: number; message?: string };
+          if (typeof e.status === "number" && e.status > 0) {
+            message = friendlyForStatus(e.status);
+          } else if (e.name === "MissingPDFException") {
+            message = "This PDF is missing on the server.";
+          } else if (e.name === "InvalidPDFException") {
+            message = "This file is not a valid PDF.";
+          } else if (e.name === "UnexpectedResponseException") {
+            message =
+              "Could not reach the server to load this PDF. Check your connection and try again.";
+          }
+        }
+        setError(message);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -174,7 +202,7 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
         loadingTaskRef.current = null;
       }
     };
-  }, [url]);
+  }, [url, retryNonce]);
 
   const renderPage = useCallback(async () => {
     if (!pdfDoc || !canvasRef.current) return;
@@ -285,14 +313,37 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
   if (error) {
     return (
       <div className="flex items-center justify-center h-full" data-testid="pdf-preview-error">
-        <div className="text-center space-y-4 p-8 max-w-sm">
+        <div className="text-center space-y-4 p-8 max-w-md">
           <File className="w-16 h-16 text-muted-foreground/40 mx-auto" />
-          <p className="text-sm text-muted-foreground">Unable to render PDF preview.</p>
-          {onOpenFile && (
-            <Button variant="outline" onClick={onOpenFile} data-testid="button-open-pdf-fallback">
-              <ExternalLink className="w-4 h-4 mr-2" />Open File
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Unable to render PDF preview</p>
+            <p
+              className="text-xs text-muted-foreground break-words"
+              data-testid="text-pdf-preview-error-detail"
+            >
+              {error}
+            </p>
+          </div>
+          <div className="flex items-center justify-center gap-2 flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRetryNonce((n) => n + 1)}
+              data-testid="button-pdf-retry"
+            >
+              <RotateCw className="w-4 h-4 mr-2" />Retry
             </Button>
-          )}
+            {onOpenFile && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onOpenFile}
+                data-testid="button-open-pdf-fallback"
+              >
+                <ExternalLink className="w-4 h-4 mr-2" />Open File
+              </Button>
+            )}
+          </div>
         </div>
       </div>
     );
