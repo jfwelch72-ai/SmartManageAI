@@ -1,8 +1,13 @@
 import PDFDocument from "pdfkit";
 import { PassThrough } from "stream";
 import { logWarn } from "./utils/logger";
+import {
+  buildLineItemFormulaBreakdowns,
+  type FormulaBlock,
+  type LineItemFormulaInputs,
+} from "./materialFormulaBreakdown";
 
-export interface EstimateLineItemForPdf {
+export interface EstimateLineItemForPdf extends LineItemFormulaInputs {
   id: string;
   description: string;
   category: string;
@@ -48,6 +53,13 @@ export interface EstimatePdfData {
     organizationName?: string;
     primaryColor?: string;
   };
+  /**
+   * When true, append a "Calculation Breakdowns" section that renders the
+   * same step-by-step derivations the user sees behind the Material
+   * Calculator's "Show Formulas" toggle. Defaults to false so existing
+   * exports keep their previous shape unless the caller opts in.
+   */
+  includeFormulas?: boolean;
   resolvePhoto: (
     photoUrl: string,
   ) => Promise<{ buffer: Buffer; contentType?: string } | null>;
@@ -236,6 +248,10 @@ export async function generateEstimatePdf(data: EstimatePdfData): Promise<Buffer
     }
   }
 
+  if (data.includeFormulas) {
+    renderFormulaBreakdowns(doc, data.lineItems, primaryColor);
+  }
+
   doc.end();
 
   return await new Promise<Buffer>((resolve, reject) => {
@@ -244,4 +260,111 @@ export async function generateEstimatePdf(data: EstimatePdfData): Promise<Buffer
     stream.on("end", () => resolve(Buffer.concat(chunks)));
     stream.on("error", reject);
   });
+}
+
+type PdfDoc = InstanceType<typeof PDFDocument>;
+
+function renderFormulaBreakdowns(
+  doc: PdfDoc,
+  lineItems: EstimateLineItemForPdf[],
+  primaryColor: string,
+): void {
+  const itemsWithFormulas = lineItems
+    .map((li) => ({ item: li, blocks: buildLineItemFormulaBreakdowns(li) }))
+    .filter((entry) => entry.blocks.length > 0);
+
+  if (itemsWithFormulas.length === 0) return;
+
+  doc.addPage();
+  doc.fontSize(16).fillColor(primaryColor).font("Helvetica-Bold")
+    .text("Calculation Breakdowns", { align: "center" });
+  doc.font("Helvetica").fontSize(9).fillColor("#6b7280")
+    .text(
+      "Step-by-step derivations behind each calculated quantity. Numbers match the on-screen Material Calculator.",
+      { align: "center" },
+    );
+  doc.moveDown(1);
+
+  for (const { item, blocks } of itemsWithFormulas) {
+    ensureSpace(doc, 80);
+    doc.font("Helvetica-Bold").fontSize(12).fillColor("#111827")
+      .text(item.description || "(no description)");
+    doc.font("Helvetica").fontSize(9).fillColor("#6b7280").text(
+      `${item.category || ""} • ${fmtNum(item.quantity)} ${item.unit || ""} • ${fmtMoney(item.totalCost)}`,
+    );
+    doc.moveDown(0.4);
+
+    for (const block of blocks) {
+      renderFormulaBlock(doc, block, primaryColor);
+    }
+    doc.moveDown(0.6);
+  }
+}
+
+function ensureSpace(doc: PdfDoc, needed: number): void {
+  const pageBottom = doc.page.height - doc.page.margins.bottom;
+  if (doc.y + needed > pageBottom) {
+    doc.addPage();
+  }
+}
+
+function renderFormulaBlock(
+  doc: PdfDoc,
+  block: FormulaBlock,
+  primaryColor: string,
+): void {
+  // Approximate height before drawing so we can avoid splitting a block
+  // mid-row across pages (which makes audits painful).
+  const approxHeight = 60 + block.steps.length * 14;
+  ensureSpace(doc, approxHeight);
+
+  const startY = doc.y;
+  const left = 50;
+  const width = 510;
+
+  doc.font("Helvetica-Bold").fontSize(10).fillColor(primaryColor)
+    .text(block.title, left + 6, startY + 4, { width: width - 12 });
+  let cursor = doc.y + 2;
+
+  doc.font("Courier").fontSize(8).fillColor("#374151")
+    .text(block.formula, left + 6, cursor, { width: width - 12 });
+  cursor = doc.y + 4;
+
+  doc.font("Helvetica").fontSize(8).fillColor("#6b7280")
+    .text("Step-by-step:", left + 6, cursor, { width: width - 12 });
+  cursor = doc.y + 2;
+
+  doc.font("Helvetica").fontSize(8).fillColor("#111827");
+  for (const step of block.steps) {
+    const labelX = left + 6;
+    const valueX = left + width / 2;
+    doc.text(step.label, labelX, cursor, { width: width / 2 - 12 });
+    const labelHeight = doc.heightOfString(step.label, { width: width / 2 - 12 });
+    const right = step.calculation
+      ? `${step.calculation} = ${step.value}`
+      : step.value;
+    doc.font("Courier").fontSize(8).text(right, valueX, cursor, {
+      width: width / 2 - 12,
+      align: "right",
+    });
+    doc.font("Helvetica").fontSize(8);
+    cursor += Math.max(labelHeight, 10) + 2;
+    doc.y = cursor;
+  }
+
+  doc.font("Helvetica-Bold").fontSize(9).fillColor("#111827")
+    .text("Final Result", left + 6, cursor, { width: width / 2 - 12 });
+  doc.font("Courier").fontSize(9).fillColor(primaryColor).text(
+    `${block.result.toFixed(2)} ${block.resultUnit}`,
+    left + width / 2,
+    cursor,
+    { width: width / 2 - 12, align: "right" },
+  );
+  doc.font("Helvetica").fillColor("#111827");
+  cursor = doc.y + 4;
+
+  // Outline the block so PDF readers can see the grouping.
+  doc.rect(left, startY, width, cursor - startY).strokeColor("#d1d5db")
+    .lineWidth(0.5).stroke();
+  doc.y = cursor + 6;
 }

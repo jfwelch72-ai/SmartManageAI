@@ -89,6 +89,122 @@ describe("generateEstimatePdf", () => {
     ]);
   });
 
+  it("includes the calculation breakdowns section when includeFormulas is true", async () => {
+    const baseLineItem = {
+      id: "li-1",
+      description: "Slab on grade",
+      category: "MATERIAL",
+      quantity: 100,
+      unit: "SF",
+      totalCost: 1000,
+      // Material calculator inputs / canonical results.
+      concreteDepthInches: 4,
+      concreteWasteFactor: 10,
+      calculatedConcreteYards: 1.36,
+      requiresRebar: true,
+      rebarSpacingInches: 12,
+      rebarLengthFeet: 20,
+      rebarWasteFactor: 10,
+      calculatedRebarCount: 13,
+    };
+
+    const without = await generateEstimatePdf({
+      estimate: { id: "e4", versionNumber: 1, status: "DRAFT" },
+      context: { title: "No Formulas" },
+      lineItems: [baseLineItem],
+      totals: {
+        materialCost: 1000,
+        laborCost: 0,
+        equipmentCost: 0,
+        subcontractCost: 0,
+        overheadAllocation: 0,
+        profitAllocation: 0,
+        totalCost: 1000,
+      },
+      resolvePhoto: async () => null,
+    });
+
+    const withFormulas = await generateEstimatePdf({
+      estimate: { id: "e4", versionNumber: 1, status: "DRAFT" },
+      context: { title: "With Formulas" },
+      lineItems: [baseLineItem],
+      totals: {
+        materialCost: 1000,
+        laborCost: 0,
+        equipmentCost: 0,
+        subcontractCost: 0,
+        overheadAllocation: 0,
+        profitAllocation: 0,
+        totalCost: 1000,
+      },
+      includeFormulas: true,
+      resolvePhoto: async () => null,
+    });
+
+    expect(without.slice(0, 4).toString()).toBe("%PDF");
+    expect(withFormulas.slice(0, 4).toString()).toBe("%PDF");
+    // Adding the breakdown section should grow the PDF appreciably (it
+    // adds a new page with two formula blocks).
+    expect(withFormulas.length).toBeGreaterThan(without.length + 500);
+  });
+
+  it("does not add a breakdown page when no line item has calculator data", async () => {
+    const without = await generateEstimatePdf({
+      estimate: { id: "e5", versionNumber: 1, status: "DRAFT" },
+      context: { title: "Plain" },
+      lineItems: [
+        {
+          id: "li-1",
+          description: "Generic",
+          category: "MATERIAL",
+          quantity: 1,
+          unit: "EA",
+          totalCost: 100,
+        },
+      ],
+      totals: {
+        materialCost: 100,
+        laborCost: 0,
+        equipmentCost: 0,
+        subcontractCost: 0,
+        overheadAllocation: 0,
+        profitAllocation: 0,
+        totalCost: 100,
+      },
+      resolvePhoto: async () => null,
+    });
+
+    const withFlag = await generateEstimatePdf({
+      estimate: { id: "e5", versionNumber: 1, status: "DRAFT" },
+      context: { title: "Plain" },
+      lineItems: [
+        {
+          id: "li-1",
+          description: "Generic",
+          category: "MATERIAL",
+          quantity: 1,
+          unit: "EA",
+          totalCost: 100,
+        },
+      ],
+      totals: {
+        materialCost: 100,
+        laborCost: 0,
+        equipmentCost: 0,
+        subcontractCost: 0,
+        overheadAllocation: 0,
+        profitAllocation: 0,
+        totalCost: 100,
+      },
+      includeFormulas: true,
+      resolvePhoto: async () => null,
+    });
+
+    // Without any formula data the two PDFs should be byte-for-byte similar
+    // in length (no extra page rendered just because the flag is on).
+    expect(Math.abs(withFlag.length - without.length)).toBeLessThan(200);
+  });
+
   it("renders a placeholder when a photo cannot be resolved", async () => {
     const buf = await generateEstimatePdf({
       estimate: { id: "e3", versionNumber: 1, status: "DRAFT" },

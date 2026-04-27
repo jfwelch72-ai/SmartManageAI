@@ -2579,6 +2579,9 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       const ctx = await loadEstimateExportContext(estimateId, req.user);
       if (!ctx) return res.status(404).json({ error: "Estimate not found" });
 
+      const includeFormulas = req.query.includeFormulas === "true"
+        || req.query.includeFormulas === "1";
+
       const { generateEstimatePdf } = await import("./estimate-pdf-service");
       const pdfBuffer = await generateEstimatePdf({
         estimate: {
@@ -2602,9 +2605,50 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
           notes: li.notes,
           photoUrls: Array.isArray(li.photoUrls) ? li.photoUrls : [],
           photoUrl: li.photoUrl ?? null,
+          // Material calculator inputs / results — used by the optional
+          // step-by-step formula breakdown section in the PDF.
+          concreteDepthInches: li.concreteDepthInches,
+          dimensionWidthInches: li.dimensionWidthInches,
+          dimensionHeightInches: li.dimensionHeightInches,
+          concreteWasteFactor: li.concreteWasteFactor,
+          calculatedConcreteYards: li.calculatedConcreteYards,
+          requiresStoneBase: li.requiresStoneBase,
+          stoneType: li.stoneType,
+          stoneDepthInches: li.stoneDepthInches,
+          stoneWasteFactor: li.stoneWasteFactor,
+          calculatedStoneTons: li.calculatedStoneTons,
+          requiresExcavation: li.requiresExcavation,
+          excavationDepthInches: li.excavationDepthInches,
+          excavationWidthInches: li.excavationWidthInches,
+          excavationSwellFactor: li.excavationSwellFactor,
+          calculatedExcavationYards: li.calculatedExcavationYards,
+          requiresWireMesh: li.requiresWireMesh,
+          wireMeshCoverageSF: li.wireMeshCoverageSF,
+          wireMeshWasteFactor: li.wireMeshWasteFactor,
+          calculatedWireMeshRolls: li.calculatedWireMeshRolls,
+          requiresRebar: li.requiresRebar,
+          rebarSpacingInches: li.rebarSpacingInches,
+          rebarLengthFeet: li.rebarLengthFeet,
+          rebarWasteFactor: li.rebarWasteFactor,
+          calculatedRebarCount: li.calculatedRebarCount,
+          calculatedRebarLinearFeet: li.calculatedRebarLinearFeet,
+          requiresDowels: li.requiresDowels,
+          dowelSpacingInches: li.dowelSpacingInches,
+          jointLengthFeet: li.jointLengthFeet,
+          calculatedDowelCount: li.calculatedDowelCount,
+          requiresSealer: li.requiresSealer,
+          sealerCoverageSFPerGallon: li.sealerCoverageSFPerGallon,
+          sealerCoats: li.sealerCoats,
+          sealerWasteFactor: li.sealerWasteFactor,
+          calculatedSealerGallons: li.calculatedSealerGallons,
+          requiresUnderlayment: li.requiresUnderlayment,
+          underlaymentOverlapInches: li.underlaymentOverlapInches,
+          underlaymentWasteFactor: li.underlaymentWasteFactor,
+          calculatedUnderlaymentSF: li.calculatedUnderlaymentSF,
         })),
         totals: ctx.totals,
         branding: ctx.branding,
+        includeFormulas,
         resolvePhoto: (url) => resolveLineItemPhotoBuffer(url, req.user),
       });
 
@@ -2613,7 +2657,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.send(pdfBuffer);
     } catch (error) {
-      logError("estimate pdf export failed", error);
+      logError("estimate pdf export failed", undefined, error as Error);
       next(error);
     }
   });
