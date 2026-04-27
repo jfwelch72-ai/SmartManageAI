@@ -69,6 +69,19 @@ export function EstimatePdfExportButton({
         } catch {
           /* non-JSON error body — fall back to status */
         }
+        if (res.status === 403) {
+          // Dedicated branch for the most common real-world failure: the
+          // user's role lost `hasManagementAccess`. Surface a friendlier,
+          // actionable message instead of the raw server error string.
+          toast({
+            title: "Export access required",
+            description:
+              "Your role no longer has estimate export access. Ask an admin to grant it, then try again.",
+            variant: "destructive",
+          });
+          setOpen(true);
+          return;
+        }
         throw new Error(detail || `Server responded with ${res.status}`);
       }
       const blob = await res.blob();
