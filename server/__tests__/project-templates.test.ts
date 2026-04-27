@@ -431,6 +431,225 @@ describe("project template capture & instantiate", () => {
   });
 });
 
+describe("project template instantiate — stale snapshot trade types", () => {
+  beforeAll(async () => {
+    await cleanupTestData();
+  });
+
+  afterAll(async () => {
+    await cleanupTestData();
+  });
+
+  it("remaps a known alias and stores null for an unrecognised snapshot tradeType instead of writing a bad value", async () => {
+    const ctx = await seedSourceProject("badtrade");
+
+    // Build a snapshot by hand so we can inject trade names that are NOT
+    // valid `tradeTypeEnum` values. "EXCAVATION" is an alias for EARTHWORK
+    // (so it should be remapped) and "FOOBAR_TRADE" is pure garbage (so it
+    // should be dropped to null with a warning rather than crashing the
+    // insert with a foreign-enum error).
+    const snapshot = {
+      schemaVersion: 1 as const,
+      capturedAt: new Date().toISOString(),
+      source: { projectId: null, projectCode: null },
+      defaults: {
+        payrollFormVariant: "WH_347",
+        autoChangeOrderEnabled: null,
+        geofenceEnforcement: null,
+      },
+      tasks: [
+        {
+          refId: "task_1",
+          parentRefId: null,
+          name: "Aliased Trade Task",
+          description: null,
+          wbsCode: null,
+          outlineLevel: 0,
+          durationDays: 3,
+          isMilestone: false,
+          sortOrder: 0,
+          tradeType: "EXCAVATION",
+          startOffsetDays: 0,
+          endOffsetDays: 3,
+          costCodeId: null,
+        },
+        {
+          refId: "task_2",
+          parentRefId: null,
+          name: "Bogus Trade Task",
+          description: null,
+          wbsCode: null,
+          outlineLevel: 0,
+          durationDays: 2,
+          isMilestone: false,
+          sortOrder: 1,
+          tradeType: "FOOBAR_TRADE",
+          startOffsetDays: 4,
+          endOffsetDays: 6,
+          costCodeId: null,
+        },
+        {
+          refId: "task_3",
+          parentRefId: null,
+          name: "Already Valid Task",
+          description: null,
+          wbsCode: null,
+          outlineLevel: 0,
+          durationDays: 1,
+          isMilestone: false,
+          sortOrder: 2,
+          tradeType: "CONCRETE",
+          startOffsetDays: 7,
+          endOffsetDays: 8,
+          costCodeId: null,
+        },
+        {
+          refId: "task_4",
+          parentRefId: null,
+          name: "Legacy TS Bucket Task",
+          description: null,
+          wbsCode: null,
+          outlineLevel: 0,
+          durationDays: 1,
+          isMilestone: false,
+          sortOrder: 3,
+          // FRAMING is in the shared `VALID_TRADE_TYPES` list (legacy
+          // library bucket) but is not a member of the DB tradeTypeEnum.
+          // Importer must remap it to the closest enum value (CARPENTRY)
+          // rather than crash or silently drop it.
+          tradeType: "FRAMING",
+          startOffsetDays: 9,
+          endOffsetDays: 10,
+          costCodeId: null,
+        },
+        {
+          refId: "task_5",
+          parentRefId: null,
+          name: "Whitespace Trade Task",
+          description: null,
+          wbsCode: null,
+          outlineLevel: 0,
+          durationDays: 1,
+          isMilestone: false,
+          sortOrder: 4,
+          // Snapshot was hand-edited / exported sloppily; the importer
+          // should trim and recover the canonical enum value rather
+          // than reject it as unrecognised.
+          tradeType: "  excavation  ",
+          startOffsetDays: 11,
+          endOffsetDays: 12,
+          costCodeId: null,
+        },
+      ],
+      dependencies: [],
+      documentFolders: [],
+      distributionLists: [],
+      customFieldDefaults: {},
+      costCodes: [],
+      scheduleOfValues: null,
+      rfiCategories: [],
+      submittalCategories: [],
+    };
+
+    const [tpl] = await db
+      .insert(projectTemplates)
+      .values({
+        organizationId: ctx.orgId,
+        name: `${TEST_PREFIX}stale-trade-template`,
+        description: "stale trade names regression",
+        category: "Test",
+        sourceProjectId: null,
+        sourceProjectCode: null,
+        isSystemSeed: false,
+        isActive: true,
+      })
+      .returning();
+    await db.insert(projectTemplateVersions).values({
+      templateId: tpl.id,
+      version: 1,
+      snapshot: snapshot as unknown as Record<string, unknown>,
+      notes: "stale trade names",
+    });
+
+    // Capture any warnings the importer emits so we can assert that the
+    // bogus tradeType produced a clearly attributable diagnostic (and not a
+    // silent coercion). We replace `console.warn` directly because vitest's
+    // own console capture can sit ahead of `vi.spyOn` in some configs.
+    const capturedWarnings: string[] = [];
+    const originalWarn = console.warn;
+    console.warn = (...args: unknown[]) => {
+      capturedWarnings.push(args.map((a) => String(a)).join(" "));
+    };
+
+    let result: Awaited<ReturnType<typeof instantiateProjectFromTemplate>>;
+    try {
+      // The instantiation must succeed without throwing the opaque enum error
+      // that would happen if we wrote "EXCAVATION" or "FOOBAR_TRADE" verbatim.
+      result = await instantiateProjectFromTemplate({
+        template: { id: tpl.id, sourceProjectCode: null },
+        snapshot: snapshot as unknown as Parameters<typeof instantiateProjectFromTemplate>[0]["snapshot"],
+        organizationId: ctx.orgId,
+        createdByUserId: ctx.userId,
+        projectStartDate: new Date("2027-05-01T00:00:00.000Z"),
+        projectInput: {
+          name: `${TEST_PREFIX}stale-trade-instantiated`,
+          clientName: "Stale Trade Client",
+          gcOrganizationId: ctx.orgId,
+        },
+      });
+    } finally {
+      console.warn = originalWarn;
+    }
+
+    // The bogus tradeType must have produced a clearly attributable warning
+    // (so future regressions back to silent coercion will fail this test).
+    expect(
+      capturedWarnings.some(
+        (m) =>
+          m.includes("[projectTemplateInstantiate]") &&
+          m.includes("Unrecognised snapshot tradeType") &&
+          m.includes("FOOBAR_TRADE"),
+      ),
+    ).toBe(true);
+
+    expect(result.taskCount).toBe(5);
+
+    const [newSchedule] = await db
+      .select()
+      .from(projectSchedules)
+      .where(eq(projectSchedules.projectId, result.projectId))
+      .limit(1);
+    const newTasks = await db
+      .select()
+      .from(projectScheduleTasks)
+      .where(eq(projectScheduleTasks.scheduleId, newSchedule.id));
+
+    const aliased = newTasks.find((t) => t.name === "Aliased Trade Task");
+    const bogus = newTasks.find((t) => t.name === "Bogus Trade Task");
+    const valid = newTasks.find((t) => t.name === "Already Valid Task");
+    const legacy = newTasks.find((t) => t.name === "Legacy TS Bucket Task");
+    const whitespace = newTasks.find((t) => t.name === "Whitespace Trade Task");
+
+    expect(aliased).toBeTruthy();
+    expect(bogus).toBeTruthy();
+    expect(valid).toBeTruthy();
+    expect(legacy).toBeTruthy();
+    expect(whitespace).toBeTruthy();
+
+    // EXCAVATION → EARTHWORK via the alias map.
+    expect(aliased!.tradeType).toBe("EARTHWORK");
+    // FOOBAR_TRADE → null (the import refuses to make up a bucket).
+    expect(bogus!.tradeType).toBeNull();
+    // CONCRETE was already a valid enum value and is preserved verbatim.
+    expect(valid!.tradeType).toBe("CONCRETE");
+    // FRAMING is a legacy TS-only bucket that isn't in the DB enum;
+    // the legacy → DB map should land it on CARPENTRY.
+    expect(legacy!.tradeType).toBe("CARPENTRY");
+    // "  excavation  " → trim + uppercase + alias → EARTHWORK.
+    expect(whitespace!.tradeType).toBe("EARTHWORK");
+  });
+});
+
 describe("seedSystemProjectTemplates idempotency", () => {
   it("inserts the 6 system seed templates exactly once across repeated invocations", async () => {
     // Capture baseline counts so the assertion works whether or not the

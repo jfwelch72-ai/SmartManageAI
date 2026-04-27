@@ -10,16 +10,95 @@ import {
   sovLineItems,
   insertProjectSchema,
 } from "@shared/schema";
-import { payrollFormVariantValues, type PayrollFormVariant } from "@shared/schema/enums";
+import {
+  payrollFormVariantValues,
+  tradeTypeEnum,
+  type PayrollFormVariant,
+} from "@shared/schema/enums";
+import {
+  normalizeTradeType,
+  resolveBaseTradeType,
+} from "@shared/tradeTypeUtils";
 import type { ProjectTemplateSnapshot } from "./projectTemplateCapture";
 
-type TradeType =
-  | "GENERAL_CONTRACTOR" | "ELECTRICAL" | "PLUMBING" | "HVAC" | "CARPENTRY"
-  | "ROOFING" | "MASONRY" | "PAINTING" | "FLOORING" | "DRYWALL"
-  | "CONCRETE" | "EXCAVATION" | "LANDSCAPING" | "STEEL" | "GLAZING"
-  | "INSULATION" | "WATERPROOFING" | "DEMOLITION" | "FENCING" | "PAVING"
-  | "OTHER";
 type DependencyType = "FS" | "SS" | "FF" | "SF";
+
+type DbTradeType = (typeof tradeTypeEnum.enumValues)[number];
+
+const DB_TRADE_TYPE_SET = new Set<string>(tradeTypeEnum.enumValues as readonly string[]);
+
+function isDbTradeType(value: string): value is DbTradeType {
+  return DB_TRADE_TYPE_SET.has(value);
+}
+
+/**
+ * Legacy TS-only trade buckets that exist in `VALID_TRADE_TYPES` (for older
+ * library/UI screens) but are NOT members of the `tradeTypeEnum` DB enum.
+ * `resolveBaseTradeType` cannot rescue them because its fallback map points
+ * each to itself. Map the unambiguous ones onto their closest DB-enum
+ * equivalent so a snapshot containing e.g. "FRAMING" still preserves the
+ * author's intent instead of being dropped to null.
+ */
+const LEGACY_TRADE_TO_DB_ENUM: Partial<Record<string, DbTradeType>> = {
+  FRAMING: "CARPENTRY",
+  WINDOWS_DOORS: "GLAZING",
+  FENCING: "FENCING_AND_GATES",
+};
+
+/**
+ * Task #2120 — template snapshots store `tradeType` as a free-form string and
+ * the destination column (`projectScheduleTasks.tradeType`) is the strict
+ * `tradeTypeEnum`. Casting the snapshot value through the enum type without
+ * validation lets a stale or made-up trade name (e.g. "EXCAVATION", which is
+ * an alias rather than an enum value) reach the DB and fail with an opaque
+ * error — or silently store a value that never round-trips. This helper:
+ *   1. Returns null for empty input.
+ *   2. Returns the value verbatim if it is already a valid `tradeTypeEnum`
+ *      member.
+ *   3. Falls back to `normalizeTradeType` to remap aliases / casing /
+ *      heavy-civil legacy names. The shared normaliser may return a
+ *      legacy TS-only bucket (FRAMING, WINDOWS_DOORS, SIDING, TILE,
+ *      CABINETRY, COUNTERTOPS, FENCING, DECKING) that is not in the DB
+ *      enum. For those we first consult `LEGACY_TRADE_TO_DB_ENUM` and
+ *      then `resolveBaseTradeType`; the latter is a best-effort lookup
+ *      and may itself return a non-enum value, so we re-check before
+ *      writing.
+ *   4. If we still cannot land on a meaningful enum value (anything other
+ *      than the catch-all "OTHER"), we log a clear warning and return null
+ *      so the import proceeds without polluting the column.
+ */
+function resolveSnapshotTradeType(raw: string | null | undefined): DbTradeType | null {
+  if (raw === null || raw === undefined) return null;
+  const trimmed = String(raw).trim();
+  if (!trimmed) return null;
+
+  if (isDbTradeType(trimmed)) {
+    return trimmed;
+  }
+
+  const normalized = normalizeTradeType(trimmed);
+  if (normalized) {
+    let dbValue: string;
+    if (isDbTradeType(normalized)) {
+      dbValue = normalized;
+    } else if (LEGACY_TRADE_TO_DB_ENUM[normalized]) {
+      dbValue = LEGACY_TRADE_TO_DB_ENUM[normalized] as string;
+    } else {
+      dbValue = resolveBaseTradeType(normalized);
+    }
+    if (isDbTradeType(dbValue) && dbValue !== "OTHER") {
+      console.warn(
+        `[projectTemplateInstantiate] Remapped snapshot tradeType "${trimmed}" → "${dbValue}"`,
+      );
+      return dbValue;
+    }
+  }
+
+  console.warn(
+    `[projectTemplateInstantiate] Unrecognised snapshot tradeType "${trimmed}", storing null`,
+  );
+  return null;
+}
 
 interface PgRow { max_code?: string | number | null }
 
@@ -200,7 +279,7 @@ export async function instantiateProjectFromTemplate(opts: InstantiateOptions): 
           scheduleId: schedule.id,
           name: override?.name?.trim() || t.name,
           description: t.description,
-          tradeType: (t.tradeType as TradeType | null) ?? null,
+          tradeType: resolveSnapshotTradeType(t.tradeType),
           plannedStartDate: addDays(startDate, t.startOffsetDays),
           plannedEndDate: addDays(startDate, finalEndOffset),
           durationDays: finalDuration,
