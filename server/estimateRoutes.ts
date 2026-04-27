@@ -2860,7 +2860,7 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
       res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
       res.send(buf);
     } catch (error) {
-      logError("estimate excel export failed", error);
+      logError("estimate excel export failed", undefined, error as Error);
       next(error);
     }
   });
