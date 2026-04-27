@@ -41,7 +41,7 @@ import { useFeatureFlags } from "@/hooks/use-feature-flags";
 // `/takeoff/:bidCode` instead of embedding `<TakeoffWorkspace>` for the
 // default no-doc-selected pane. Sheet clicks navigate via wouter.
 import { Link, useLocation } from "wouter";
-import { Maximize2 } from "lucide-react";
+import { TakeoffCtaPane } from "@/components/takeoff/TakeoffCtaPane";
 
 interface BidPlansTabProps {
   bidId: string;
@@ -1562,7 +1562,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
           ) : previewDocId ? (
             (() => {
               const doc = documents.find((d) => d.id === previewDocId);
-              if (!doc) return <TakeoffCtaPane bidCode={bidCode} selectedSheetId={selectedSheetId} />;
+              if (!doc) return <TakeoffCtaPane kind="bid" code={bidCode} selectedSheetId={selectedSheetId} />;
               const isBim = bimEnabled && (doc.type === "BIM" || doc.fileName?.toLowerCase().endsWith(".ifc"));
 
               if (isBim && previewUrlData?.url) {
@@ -1735,7 +1735,7 @@ export default function BidPlansTab({ bidId, bidCode, canEdit, estimateId, onNex
                 />
               </div>
               <div className="flex-1 min-h-0">
-                <TakeoffCtaPane bidCode={bidCode} selectedSheetId={selectedSheetId} />
+                <TakeoffCtaPane kind="bid" code={bidCode} selectedSheetId={selectedSheetId} />
               </div>
             </div>
           )}
@@ -1975,49 +1975,3 @@ function BidPlansViewSettingsMenu({
   );
 }
 
-/**
- * Task #2067 — Call-to-action pane shown inside the bid Plans tab when no
- * document is being previewed. Replaces the previous embedded
- * `<TakeoffWorkspace>` and points users at the standalone, full-page
- * Takeoff tool at `/takeoff/:bidCode`.
- */
-function TakeoffCtaPane({
-  bidCode,
-  selectedSheetId,
-}: {
-  bidCode: string;
-  selectedSheetId: string | null;
-}) {
-  const href = selectedSheetId
-    ? `/takeoff/${bidCode}?sheet=${selectedSheetId}`
-    : `/takeoff/${bidCode}`;
-  return (
-    <div
-      className="flex flex-col items-center justify-center h-full text-center px-6 py-10 gap-5"
-      data-testid="takeoff-cta-pane"
-    >
-      <div className="rounded-full bg-primary/10 p-4">
-        <Maximize2 className="w-8 h-8 text-primary" />
-      </div>
-      <div className="max-w-md space-y-2">
-        <h3 className="text-lg font-semibold tracking-tight">
-          Open Takeoff in its own workspace
-        </h3>
-        <p className="text-sm text-muted-foreground">
-          Takeoff now runs as a dedicated, full-screen tool with collapsible
-          sidebars, scale calibration, and markups — all of your existing
-          measurements move with you.
-        </p>
-      </div>
-      <Button asChild size="lg" data-testid="button-open-takeoff-workspace">
-        <Link href={href}>
-          <Maximize2 className="w-4 h-4 mr-2" />
-          Open Full-Screen Takeoff
-        </Link>
-      </Button>
-      <p className="text-xs text-muted-foreground">
-        Tip: select a sheet on the left and we'll jump straight to it.
-      </p>
-    </div>
-  );
-}

@@ -15,6 +15,7 @@ import { useLocation, Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import TakeoffWorkspace from "@/components/TakeoffWorkspace";
+import { TakeoffCtaPane } from "@/components/takeoff/TakeoffCtaPane";
 import { WidgetErrorBoundary } from "@/components/WidgetErrorBoundary";
 import DocumentRevisionPanel from "@/components/DocumentRevisionPanel";
 import ProjectAddenda from "@/components/ProjectAddenda";
@@ -27,7 +28,7 @@ import {
   Upload, Download, Eye, FileText, Trash2, FolderOpen, Folder, ChevronRight, ChevronDown,
   Search, MoreVertical, File, Pencil, GripVertical, ArrowRight, Copy, Loader2,
   ExternalLink, X, FolderPlus, Printer, RotateCw, EyeOff, RefreshCw, Box, BookOpen, Columns2, Link2,
-  Building2, Layers, Pin, PinOff, ArrowUpCircle, Maximize2
+  Building2, Layers, Pin, PinOff, ArrowUpCircle
 } from "lucide-react";
 const BimViewer = lazy(() => import("@/components/bid/BimViewer"));
 import BimQuantityDialog from "@/components/bim/BimQuantityDialog";
@@ -2839,7 +2840,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
             ) : previewDocId ? (
               (() => {
                 const doc = documents.find((d: any) => d.id === previewDocId);
-                if (!doc) return <ProjectTakeoffCtaPane projectCode={project.code} selectedSheetId={selectedSheetId} />;
+                if (!doc) return <TakeoffCtaPane kind="project" code={project.code} selectedSheetId={selectedSheetId} />;
                 const isPdf = doc.mimeType?.includes("pdf") || doc.fileName?.toLowerCase().endsWith(".pdf");
                 const isBim = bimEnabled && (doc.type === "BIM" || doc.fileName?.toLowerCase().endsWith(".ifc"));
 
@@ -3136,7 +3137,7 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                   )}
                 </div>
                 <div className="flex-1 min-h-0">
-                  <ProjectTakeoffCtaPane projectCode={project.code} selectedSheetId={selectedSheetId} />
+                  <TakeoffCtaPane kind="project" code={project.code} selectedSheetId={selectedSheetId} />
                 </div>
               </div>
             )}
@@ -3365,52 +3366,3 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
   );
 }
 
-/**
- * Task #2080 — CTA pane that replaces the embedded `<TakeoffWorkspace>`
- * inside the project Plans tab and points users at the standalone,
- * full-page workspace at `/takeoff/project/:projectCode`. Mirrors
- * `TakeoffCtaPane` from `BidPlansTab.tsx` (Task #2067) so both bid and
- * project Plans tabs route to the same dedicated takeoff tool. When a
- * sheet is selected on the left, we forward it via `?sheet=<id>` so the
- * full-screen workspace jumps straight to it.
- */
-function ProjectTakeoffCtaPane({
-  projectCode,
-  selectedSheetId,
-}: {
-  projectCode: string;
-  selectedSheetId: string | null;
-}) {
-  const href = selectedSheetId
-    ? `/takeoff/project/${projectCode}?sheet=${selectedSheetId}`
-    : `/takeoff/project/${projectCode}`;
-  return (
-    <div
-      className="flex flex-col items-center justify-center h-full text-center px-6 py-10 gap-5"
-      data-testid="project-takeoff-cta-pane"
-    >
-      <div className="rounded-full bg-primary/10 p-4">
-        <Maximize2 className="w-8 h-8 text-primary" />
-      </div>
-      <div className="max-w-md space-y-2">
-        <h3 className="text-lg font-semibold tracking-tight">
-          Open Takeoff in its own workspace
-        </h3>
-        <p className="text-sm text-muted-foreground">
-          Takeoff now runs as a dedicated, full-screen tool with collapsible
-          sidebars, scale calibration, and markups — all of your existing
-          measurements move with you.
-        </p>
-      </div>
-      <Button asChild size="lg" data-testid="button-open-project-takeoff-workspace">
-        <Link href={href}>
-          <Maximize2 className="w-4 h-4 mr-2" />
-          Open Full-Screen Takeoff
-        </Link>
-      </Button>
-      <p className="text-xs text-muted-foreground">
-        Tip: select a sheet on the left and we'll jump straight to it.
-      </p>
-    </div>
-  );
-}
