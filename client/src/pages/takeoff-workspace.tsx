@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import { Link, useLocation, useRoute } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ExternalLink, FileText, Folder, Loader2 } from "lucide-react";
@@ -157,6 +157,49 @@ export default function TakeoffWorkspacePage() {
       sheetName: sheet.sheetName ?? null,
     });
   }, [user?.id, recentKind, entityId, entityCode, entityName, initialSheetId, sheetsData]);
+
+  // Task #2093 — Deep links like `?sheet=<id>` used to silently fall back
+  // to the first sheet (or none) if the referenced sheet had been deleted,
+  // renamed, or moved to a different bid/project. Once the sheets list
+  // arrives we verify the linked sheet exists for this entity; if not,
+  // pop a non-blocking toast, clear the stale id from sessionStorage, and
+  // strip `?sheet=` from the URL so a refresh doesn't re-trigger the
+  // warning. The ref guards against repeated toasts when sheetsData is
+  // refetched (e.g. window-focus revalidation).
+  const staleSheetWarnedRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialSheetId || !contextEntityId) return;
+    if (!sheetsData) return; // wait for the sheets list to load
+    if (sheetsData.some((s) => s.id === initialSheetId)) return;
+
+    const warnKey = `${contextEntityId}:${initialSheetId}`;
+    if (staleSheetWarnedRef.current === warnKey) return;
+    staleSheetWarnedRef.current = warnKey;
+
+    toast({
+      title: "Plan sheet unavailable",
+      description: isProjectRoute
+        ? "The link you followed points to a sheet that no longer exists or doesn't belong to this project."
+        : "The link you followed points to a sheet that no longer exists or doesn't belong to this bid.",
+    });
+
+    try {
+      sessionStorage.removeItem(`takeoff-sheet-${contextEntityId}`);
+    } catch {
+      // sessionStorage may be unavailable (private mode, SSR, etc).
+    }
+
+    if (typeof window !== "undefined") {
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("sheet");
+        const cleaned = `${url.pathname}${url.search}${url.hash}`;
+        window.history.replaceState(window.history.state, "", cleaned);
+      } catch {
+        // URL/history may be unavailable (SSR); safe to ignore.
+      }
+    }
+  }, [initialSheetId, contextEntityId, sheetsData, isProjectRoute, toast]);
 
   // Auto-trigger the takeoff tour on first visit to the standalone bid
   // workspace (mirrors the behavior the bid Plans tab used to provide while
