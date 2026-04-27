@@ -289,17 +289,30 @@ describe("Estimate export routes — line item photos", () => {
     expect(wb.SheetNames).not.toContain("Calculation Breakdowns");
   });
 
-  it("Excel export with includeFormulas=true adds a 'Calculation Breakdowns' sheet matching the formula helper output", async () => {
+  it("Excel export with includeFormulas=true adds a 'Calculation Breakdowns' sheet matching the formula helper output for concrete + rebar inputs", async () => {
     // Seed a calculator-driven line item just for this assertion so
     // we can verify rows appear and numbers match the helper exactly.
+    // Inputs trigger BOTH the concrete-slab block and the rebar block.
+    const calcInputs = {
+      quantity: "100.00",
+      unit: "SF" as const,
+      concreteDepthInches: "4.00",
+      concreteWasteFactor: "10.00",
+      calculatedConcreteYards: "1.36",
+      requiresRebar: true,
+      rebarSpacingInches: "12.00",
+      rebarLengthFeet: "20.00",
+      rebarWasteFactor: "10.00",
+      calculatedRebarCount: 13,
+    };
     const [calcLi] = await db
       .insert(estimateLineItems)
       .values({
         estimateId: orgA.estimateId,
         category: "CONCRETE",
         description: `Calc slab ${Date.now()}`,
-        quantity: "100.00",
-        unit: "SF",
+        quantity: calcInputs.quantity,
+        unit: calcInputs.unit,
         materialCost: "0.00",
         laborCost: "0.00",
         equipmentCost: "0.00",
@@ -307,9 +320,14 @@ describe("Estimate export routes — line item photos", () => {
         overheadAllocation: "0.00",
         profitAllocation: "0.00",
         totalCost: "0.00",
-        concreteDepthInches: "4.00",
-        concreteWasteFactor: "10.00",
-        calculatedConcreteYards: "1.36",
+        concreteDepthInches: calcInputs.concreteDepthInches,
+        concreteWasteFactor: calcInputs.concreteWasteFactor,
+        calculatedConcreteYards: calcInputs.calculatedConcreteYards,
+        requiresRebar: calcInputs.requiresRebar,
+        rebarSpacingInches: calcInputs.rebarSpacingInches,
+        rebarLengthFeet: calcInputs.rebarLengthFeet,
+        rebarWasteFactor: calcInputs.rebarWasteFactor,
+        calculatedRebarCount: calcInputs.calculatedRebarCount,
       })
       .returning();
     orgA.lineItemIds.push(calcLi.id);
@@ -340,43 +358,109 @@ describe("Estimate export routes — line item photos", () => {
       Result?: number | string;
       Unit?: string;
     }
+
+    // Verify the documented header order is preserved on the sheet.
+    const headerRows = XLSX.utils.sheet_to_json<string[]>(
+      wb.Sheets["Calculation Breakdowns"],
+      { header: 1 },
+    );
+    expect(headerRows[0]).toEqual([
+      "Line Item",
+      "Section",
+      "Formula",
+      "Step #",
+      "Label",
+      "Calculation",
+      "Value",
+      "Result",
+      "Unit",
+    ]);
+
     const rows = XLSX.utils.sheet_to_json<BreakdownRow>(
       wb.Sheets["Calculation Breakdowns"],
     );
     const slabRows = rows.filter((r) => r["Line Item"] === calcLi.description);
     expect(slabRows.length).toBeGreaterThan(0);
 
-    // All rows for one line-item / section should share the same Formula text.
-    const concreteRows = slabRows.filter((r) => r.Section?.startsWith("Concrete"));
-    expect(concreteRows.length).toBeGreaterThan(0);
-    expect(concreteRows[0].Formula).toMatch(/Quantity.*Depth.*Waste/);
-
     // Sanity-check against the helper itself so the spreadsheet stays
     // in lock-step with the on-screen calculator and the PDF.
     const { buildLineItemFormulaBreakdowns } = await import(
       "../materialFormulaBreakdown"
     );
-    const expected = buildLineItemFormulaBreakdowns({
-      quantity: "100.00",
-      unit: "SF",
-      concreteDepthInches: "4.00",
-      concreteWasteFactor: "10.00",
-      calculatedConcreteYards: "1.36",
-    });
+    const expected = buildLineItemFormulaBreakdowns(calcInputs);
     expect(expected.length).toBeGreaterThan(0);
+
+    // Both calculator blocks should be present with at least one step row each.
     const concreteBlock = expected.find((b) => b.title.startsWith("Concrete"))!;
+    const rebarBlock = expected.find((b) => b.title.startsWith("Rebar"))!;
     expect(concreteBlock).toBeDefined();
-    expect(concreteRows).toHaveLength(concreteBlock.steps.length);
-    concreteBlock.steps.forEach((step, idx) => {
-      expect(concreteRows[idx].Label).toBe(step.label);
-      expect(concreteRows[idx].Value).toBe(step.value);
-      if (step.calculation !== undefined) {
-        expect(concreteRows[idx].Calculation).toBe(step.calculation);
-      }
-    });
-    const last = concreteRows[concreteRows.length - 1];
-    expect(Number(last.Result)).toBeCloseTo(concreteBlock.result, 2);
-    expect(last.Unit).toBe(concreteBlock.resultUnit);
+    expect(rebarBlock).toBeDefined();
+
+    for (const block of [concreteBlock, rebarBlock]) {
+      const blockRows = slabRows.filter((r) => r.Section === block.title);
+      expect(
+        blockRows.length,
+        `expected at least one step row for block "${block.title}"`,
+      ).toBeGreaterThan(0);
+      expect(blockRows).toHaveLength(block.steps.length);
+      // All rows in a block share the same Formula text.
+      expect(blockRows[0].Formula).toBe(block.formula);
+      block.steps.forEach((step, idx) => {
+        expect(blockRows[idx].Label).toBe(step.label);
+        expect(blockRows[idx].Value).toBe(step.value);
+        if (step.calculation !== undefined) {
+          expect(blockRows[idx].Calculation).toBe(step.calculation);
+        }
+        expect(Number(blockRows[idx]["Step #"])).toBe(idx + 1);
+      });
+      // Only the last step carries the Result/Unit summary.
+      const last = blockRows[blockRows.length - 1];
+      expect(Number(last.Result)).toBeCloseTo(block.result, 2);
+      expect(last.Unit).toBe(block.resultUnit);
+    }
+  });
+
+  it("Excel export with includeFormulas=true emits the placeholder sheet when no line items have calculator inputs", async () => {
+    // orgB was seeded with two line items, neither of which carries any
+    // material-calculator fields (no concreteDepthInches, no requiresRebar,
+    // etc). The route should still emit the sheet so the toggle is honored,
+    // but populate it with the documented placeholder row.
+    const res = await request(app)
+      .get(`/api/estimates/${orgB.estimateId}/export/excel?includeFormulas=true`)
+      .buffer(true)
+      .parse((response, callback) => {
+        const data: Buffer[] = [];
+        response.on("data", (chunk: Buffer) => data.push(chunk));
+        response.on("end", () => callback(null, Buffer.concat(data)));
+      })
+      .set("Cookie", `auth_token=${orgB.token}`);
+
+    expect(res.status).toBe(200);
+    const XLSX = await import("xlsx");
+    const wb = XLSX.read(res.body as Buffer, { type: "buffer" });
+    expect(wb.SheetNames).toContain("Calculation Breakdowns");
+
+    const aoa = XLSX.utils.sheet_to_json<unknown[]>(
+      wb.Sheets["Calculation Breakdowns"],
+      { header: 1, defval: "" },
+    );
+    expect(aoa[0]).toEqual([
+      "Line Item",
+      "Section",
+      "Formula",
+      "Step #",
+      "Label",
+      "Calculation",
+      "Value",
+      "Result",
+      "Unit",
+    ]);
+    // Placeholder text appears as the only data row when no calculator
+    // inputs are present anywhere on the estimate.
+    const placeholderRow = aoa[1] ?? [];
+    expect(String(placeholderRow[0] ?? "")).toMatch(
+      /no line items have material calculator inputs/i,
+    );
   });
 
   it("denies cross-tenant PDF export with 404 when caller's org doesn't own the estimate", async () => {
