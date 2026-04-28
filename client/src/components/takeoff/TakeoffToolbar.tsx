@@ -39,7 +39,7 @@ const MARKUP_TO_TOOL: Record<MarkupTool, Tool> = {
   FREEHAND: "markup_freehand",
 };
 
-interface TakeoffToolbarProps {
+export interface TakeoffToolbarProps {
   activeTool: Tool;
   onToolSelect: (tool: Tool) => void;
   stageScale: number;
