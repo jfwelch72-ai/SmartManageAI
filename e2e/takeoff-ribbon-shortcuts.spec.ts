@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { installCsrf } from "./helpers/csrf";
+import { clickOnCanvas as clickOnCanvasHelper } from "./helpers/canvasDrag";
 
 const BASE_URL =
   process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
@@ -618,6 +619,118 @@ test.describe("Takeoff Unified Ribbon + Shortcuts", () => {
       "aria-pressed",
       "true",
     );
+  });
+
+  test("T opens the calibrate dialog from a focused ribbon", async ({
+    page,
+  }) => {
+    const suffix = Date.now();
+    await devLogin(page, "ADMIN");
+    const bid = await createBid(page, suffix);
+    await gotoTakeoff(page, bid.code);
+    await focusRibbon(page);
+
+    // The standalone takeoff page mounts <PlanScaleModal> in fullscreen
+    // mode, so the dialog renders with `dialog-plan-scale-fullscreen`.
+    const dialog = page.getByTestId("dialog-plan-scale-fullscreen");
+    await expect(dialog).toHaveCount(0);
+
+    await page.keyboard.press("t");
+    await expect(dialog).toBeVisible({ timeout: 5_000 });
+
+    // Cheat sheet still advertises the binding so users can discover it
+    // alongside the Verify > Calibrate ribbon button.
+    await page.keyboard.press("Escape");
+    await expect(dialog).toHaveCount(0);
+
+    await page.keyboard.press(
+      process.platform === "darwin" ? "Meta+/" : "Control+/",
+    );
+    await expect(page.getByTestId("dialog-cheat-sheet")).toBeVisible();
+    await expect(
+      page.getByTestId("cheat-sheet-row-verify.calibrate"),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+  });
+
+  test("T is gated off while a measurement is mid-draw", async ({ page }) => {
+    await devLogin(page, "ADMIN");
+    // Seed a calibrated sheet (scalePxPerFoot = 10) so the linear tool
+    // actually accepts a first canvas click and flips isDrawing to true.
+    // Without the seeded scale the workspace toasts "Calibrate the sheet
+    // first" and never enters drawing state. Two sheets are required so
+    // the workspace's "toggle thumbnail strip" button (only rendered
+    // when sheets.length > 1) is available.
+    const fixture = await seedTakeoffFixture(page, {
+      sheetCount: 2,
+      versionCount: 1,
+      measurementCount: 0,
+    });
+    await gotoTakeoff(page, fixture.bid.code);
+
+    // Pick the seeded sheet so CanvasStage mounts and a Konva canvas
+    // becomes clickable.
+    await page.getByTestId("button-toggle-thumbnails").click();
+    const thumb = page.getByTestId(
+      `thumbnail-sheet-${fixture.sheetIds[0]}`,
+    );
+    await expect(thumb).toBeVisible({ timeout: 10_000 });
+    await thumb.click();
+    await expect
+      .poll(async () => thumb.getAttribute("data-active"), {
+        timeout: 5_000,
+      })
+      .toBe("true");
+
+    const canvas = page.locator(".konvajs-content canvas").first();
+    await canvas.waitFor({ state: "visible", timeout: 15_000 });
+
+    await focusRibbon(page);
+
+    // Switch to the Linear tool, then click the canvas once to place
+    // the first point — this is the path that flips `isDrawing` true
+    // (see use-takeoff-interactions.ts → "linear" branch).
+    await page.keyboard.press("l");
+    await expect(page.getByTestId("ribbon-tool-linear")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+
+    // Click well inside the canvas. The Konva stage on the standalone
+    // takeoff page renders short and wide (e.g. 1280×~210 in the
+    // default Playwright viewport) when no PDF bitmap is attached, so a
+    // y close to the canvas height risks landing near the bottom edge
+    // and being routed to the status row underneath. (400, 100) is
+    // safely inside both axes.
+    await clickOnCanvasHelper(page, canvas, { x: 400, y: 100 });
+
+    // The drawing-guide-bar overlay only renders while `isDrawing` is
+    // true on a desktop viewport, so its presence proves we're really
+    // mid-draw and the `isToolish` guard inside useTakeoffShortcuts
+    // should now block T.
+    await expect(page.getByTestId("drawing-guide-bar")).toBeVisible({
+      timeout: 5_000,
+    });
+
+    const dialog = page.getByTestId("dialog-plan-scale-fullscreen");
+    await expect(dialog).toHaveCount(0);
+
+    await page.keyboard.press("t");
+
+    // The calibrate dialog must NOT open — `T` is in the `isToolish`
+    // bucket and is suppressed while a draw is in flight. Give the
+    // event loop a moment so any (incorrectly) queued state update
+    // would have rendered before we assert absence.
+    await page.waitForTimeout(250);
+    await expect(dialog).toHaveCount(0);
+
+    // And the draw must still be in flight — the gate didn't accidentally
+    // cancel the in-progress measurement.
+    await expect(page.getByTestId("drawing-guide-bar")).toBeVisible();
+
+    // Bail out of the draw cleanly so the test leaves no in-progress
+    // state behind for any subsequent reruns.
+    await page.keyboard.press("Escape");
   });
 
   test("offline / autosave indicator transitions: idle hidden → offline visible → saved flash → idle hidden", async ({
