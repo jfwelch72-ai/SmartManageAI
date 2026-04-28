@@ -47,6 +47,15 @@ const reorderBodySchema = z.object({
     .min(1),
 });
 
+// Task #2229 — Atomic "move a member from one Sheet Set to another".
+// The UI used to require Remove → Add (two clicks); a single drag now
+// posts here and we delete + insert inside one transaction so the
+// member never disappears in a half-state if either side fails.
+const moveMemberBodySchema = z.object({
+  sheetId: z.string().min(1),
+  fromSetId: z.string().min(1),
+});
+
 const applyScaleBodySchema = z.object({
   scalePxPerFoot: z.number().positive(),
   scaleLabel: z.string().max(64).optional().nullable(),
@@ -402,6 +411,120 @@ router.post(
         }
       });
       res.json({ updated });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// Task #2229 — Drag a member from one set to another in a single
+// transactional hop. `:id` is the destination set; `fromSetId` in the
+// body is the source. Both sets are org-scoped and the sheet itself
+// must be reachable (verifySheetAccess) — the same gates the
+// add-members and remove-member endpoints already use. If the sheet
+// is somehow already a member of the destination (rare; can happen
+// when a sheet sits in two sets), the insert is a no-op and we still
+// remove it from the source so the user-visible "move" intent holds.
+router.post(
+  "/api/takeoff/sheet-sets/:id/move-member",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER", "ESTIMATOR"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const ctx = getOrgContext(req);
+      if (!ctx) {
+        res.status(403).json({ error: "Organization required" });
+        return;
+      }
+      const { id: toSetId } = req.params;
+      const parsed = moveMemberBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid request body", details: parsed.error.flatten() });
+        return;
+      }
+      const { sheetId, fromSetId } = parsed.data;
+      if (fromSetId === toSetId) {
+        res.status(400).json({ error: "Source and destination sets must differ" });
+        return;
+      }
+      const setRows = await db
+        .select()
+        .from(takeoffSheetSets)
+        .where(
+          and(
+            inArray(takeoffSheetSets.id, [toSetId, fromSetId]),
+            eq(takeoffSheetSets.organizationId, ctx.orgId),
+          ),
+        );
+      const fromSet = setRows.find((s) => s.id === fromSetId);
+      const toSet = setRows.find((s) => s.id === toSetId);
+      if (!fromSet || !toSet) {
+        res.status(404).json({ error: "Sheet set not found" });
+        return;
+      }
+      const access = await verifySheetAccess(sheetId, req.user!);
+      if (!access.allowed) {
+        res.status(403).json({ error: `No access to sheet ${sheetId}` });
+        return;
+      }
+
+      let movedSortOrder = -1;
+      let alreadyMember = false;
+      await db.transaction(async (tx) => {
+        // Append at the end of the destination so the move feels like
+        // "drop here last" rather than reshuffling existing members.
+        const [{ maxOrder }] = await tx
+          .select({
+            maxOrder: sql<number>`COALESCE(MAX(${takeoffSheetSetMembers.sortOrder}), -1)`,
+          })
+          .from(takeoffSheetSetMembers)
+          .where(eq(takeoffSheetSetMembers.setId, toSetId));
+        const nextOrder = (maxOrder ?? -1) + 1;
+        // ON CONFLICT DO NOTHING — a try/catch would abort the whole
+        // postgres transaction on a 23505, blocking the source-side
+        // delete that has to run after this insert.
+        const inserted = await tx
+          .insert(takeoffSheetSetMembers)
+          .values({ setId: toSetId, sheetId, sortOrder: nextOrder })
+          .onConflictDoNothing({
+            target: [
+              takeoffSheetSetMembers.setId,
+              takeoffSheetSetMembers.sheetId,
+            ],
+          })
+          .returning({ id: takeoffSheetSetMembers.id });
+        if (inserted.length === 0) {
+          alreadyMember = true;
+        } else {
+          movedSortOrder = nextOrder;
+        }
+        await tx
+          .delete(takeoffSheetSetMembers)
+          .where(
+            and(
+              eq(takeoffSheetSetMembers.setId, fromSetId),
+              eq(takeoffSheetSetMembers.sheetId, sheetId),
+            ),
+          );
+      });
+
+      await logUpdate(
+        ctx.userId,
+        "takeoff_sheet_sets",
+        toSetId,
+        { event: "move-member-before", fromSetId, sheetId },
+        {
+          event: "move-member-after",
+          fromSetId,
+          toSetId,
+          sheetId,
+          alreadyMember,
+          sortOrder: movedSortOrder,
+        },
+        req,
+      );
+
+      res.json({ moved: true, fromSetId, toSetId, sheetId, alreadyMember });
     } catch (error) {
       next(error);
     }

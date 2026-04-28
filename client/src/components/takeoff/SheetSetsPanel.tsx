@@ -70,6 +70,15 @@ import type { TakeoffSheet, TakeoffSheetSet } from "@shared/schema";
  *  re-defining the magic string in two places. */
 export const TAKEOFF_SHEET_DRAG_MIME = "application/x-takeoff-sheet";
 
+/** Task #2229 — Per-source-set marker MIME. Browsers refuse to expose
+ *  dataTransfer payload during dragover for security reasons, but the
+ *  list of MIME `types` IS visible. By stamping a marker keyed off the
+ *  source set's id we can recognise self-set drags during dragover and
+ *  skip the highlight without reading the JSON payload. */
+function sourceSetMime(setId: string): string {
+  return `application/x-takeoff-sheet-source-${setId}`;
+}
+
 interface SheetSetMember {
   id: string;
   setId: string;
@@ -332,6 +341,42 @@ export function SheetSetsPanel(props: SheetSetsPanelProps) {
       }),
   });
 
+  const moveMemberMutation = useMutation({
+    mutationFn: async (input: {
+      sheetId: string;
+      fromSetId: string;
+      toSetId: string;
+    }) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/takeoff/sheet-sets/${input.toSetId}/move-member`,
+        { sheetId: input.sheetId, fromSetId: input.fromSetId },
+      );
+      return (await res.json()) as {
+        moved: boolean;
+        fromSetId: string;
+        toSetId: string;
+        sheetId: string;
+        alreadyMember: boolean;
+      };
+    },
+    onSuccess: (_, variables) => {
+      // Both sides of the move need fresh detail caches; the scope-level
+      // cache is invalidated too because the per-set member counts and
+      // aggregated scale chip both derive from the detail queries.
+      invalidateDetail(variables.fromSetId);
+      invalidateDetail(variables.toSetId);
+      invalidateScope();
+      toast({ title: "Sheet moved" });
+    },
+    onError: (err: Error) =>
+      toast({
+        title: "Could not move sheet",
+        description: err.message,
+        variant: "destructive",
+      }),
+  });
+
   const reorderMutation = useMutation({
     mutationFn: async (input: {
       setId: string;
@@ -527,6 +572,13 @@ export function SheetSetsPanel(props: SheetSetsPanelProps) {
                 addMembersMutation.mutate({ setId: set.id, sheetIds })
               }
               addPending={addMembersMutation.isPending}
+              onMoveMember={(sheetId, fromSetId) =>
+                moveMemberMutation.mutate({
+                  sheetId,
+                  fromSetId,
+                  toSetId: set.id,
+                })
+              }
             />
           ))}
         </ul>
@@ -721,6 +773,10 @@ interface SetRowProps {
   multiSelection: Set<string>;
   onAddSheetIds: (sheetIds: string[]) => void;
   addPending: boolean;
+  /** Task #2229 — Called when a member row dragged from another set
+   *  is dropped on this set row. The mutation lives in the parent
+   *  panel so it can invalidate the source set's detail cache too. */
+  onMoveMember: (sheetId: string, fromSetId: string) => void;
 }
 
 function SetRow(props: SetRowProps) {
@@ -743,6 +799,7 @@ function SetRow(props: SetRowProps) {
     multiSelection,
     onAddSheetIds,
     addPending,
+    onMoveMember,
   } = props;
   const [dropActive, setDropActive] = useState(false);
   const [draggingSheetId, setDraggingSheetId] = useState<string | null>(null);
@@ -801,8 +858,26 @@ function SetRow(props: SetRowProps) {
       data-active-set={isActive ? "true" : "false"}
       onDragOver={(e) => {
         if (!dragHasSheetMime(e)) return;
+        // Task #2229 — A member dragged from this same set marks its
+        // payload with sourceSetMime(set.id). Refusing the drop here
+        // (no preventDefault, no highlight) keeps "drop on own set"
+        // a true no-op without a misleading visual cue. Reordering
+        // inside the set is still handled by the per-member onDragOver
+        // below, which calls preventDefault + stopPropagation.
+        const types = e.dataTransfer?.types;
+        if (types) {
+          for (let i = 0; i < types.length; i++) {
+            if (types[i] === sourceSetMime(set.id)) return;
+          }
+        }
         e.preventDefault();
-        if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+        if (e.dataTransfer) {
+          // "move" when the payload originated from another set,
+          // "copy" when it came from the page-thumbnail strip.
+          const isMove =
+            types && Array.from(types).some((t) => t.startsWith("application/x-takeoff-sheet-source-"));
+          e.dataTransfer.dropEffect = isMove ? "move" : "copy";
+        }
         if (!dropActive) setDropActive(true);
       }}
       onDragLeave={(e) => {
@@ -821,21 +896,39 @@ function SetRow(props: SetRowProps) {
         setDropActive(false);
         const raw = e.dataTransfer.getData(TAKEOFF_SHEET_DRAG_MIME);
         if (!raw) return;
-        // The thumbnail strip serializes the dragged ID as a JSON
-        // payload so a future change can attach metadata (e.g. drag
-        // source) without breaking the contract.
+        // Both the thumbnail strip and member-row drag sources
+        // serialize as JSON so we can attach metadata (e.g. the
+        // sourceSetId for cross-set moves) without breaking the
+        // contract older drag sources rely on.
         let sheetId: string | null = null;
+        let sourceSetId: string | null = null;
         try {
-          const parsed = JSON.parse(raw) as { sheetId?: unknown };
+          const parsed = JSON.parse(raw) as {
+            sheetId?: unknown;
+            sourceSetId?: unknown;
+          };
           if (typeof parsed.sheetId === "string") sheetId = parsed.sheetId;
+          if (typeof parsed.sourceSetId === "string") {
+            sourceSetId = parsed.sourceSetId;
+          }
         } catch {
           // Tolerate raw string IDs for legacy drag sources.
           sheetId = raw;
         }
         if (!sheetId) return;
-        // Skip silently when the sheet is already a member — saves a
-        // 4xx round-trip and matches the "Add sheets" picker behaviour
-        // where duplicates aren't surfaced.
+        // Task #2229 — Dropping a member back onto its own set is a
+        // no-op (the dragover guard above usually prevents this; this
+        // is the belt-and-suspenders second check).
+        if (sourceSetId && sourceSetId === set.id) return;
+        if (sourceSetId) {
+          // Cross-set drag: route through the atomic move endpoint so
+          // the sheet never disappears in a half-state.
+          onMoveMember(sheetId, sourceSetId);
+          return;
+        }
+        // No source set on the payload → coming from the thumbnail
+        // strip. Skip silently when already a member to match the
+        // "Add sheets" picker, which suppresses duplicates server-side.
         if (members.some((m) => m.sheetId === sheetId)) return;
         onAddSheetIds([sheetId]);
       }}
@@ -977,6 +1070,20 @@ function SetRow(props: SetRowProps) {
                       setDraggingSheetId(m.sheetId);
                       e.dataTransfer.effectAllowed = "move";
                       e.dataTransfer.setData("text/plain", m.sheetId);
+                      // Task #2229 — Stamp the same JSON contract the
+                      // page-thumbnail strip uses so any set row can
+                      // accept the drop. `sourceSetId` is what flips
+                      // the parent set's onDrop from "add" into "move",
+                      // and the per-set marker MIME lets the source
+                      // set recognise self-drops during dragover.
+                      e.dataTransfer.setData(
+                        TAKEOFF_SHEET_DRAG_MIME,
+                        JSON.stringify({
+                          sheetId: m.sheetId,
+                          sourceSetId: set.id,
+                        }),
+                      );
+                      e.dataTransfer.setData(sourceSetMime(set.id), "1");
                     }}
                     onDragEnd={() => setDraggingSheetId(null)}
                     onDragOver={(e) => {

@@ -573,4 +573,189 @@ test.describe("Task #2141 — Sheet Sets UI", () => {
     expect(byId.get(b)).toBe(0);
     expect(byId.get(a)).toBe(1);
   });
+
+  // Task #2229 — Drag-and-drop a member between sets.
+  test("drag a sheet member from one set into another (one drag, atomic move)", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await devLogin(page, "ADMIN");
+    const fixture = await seedTakeoffFixture(page, 3);
+    await gotoTakeoff(page, fixture.bid.code);
+
+    // Two sets: A starts with two sheets, B starts with one.
+    const setA = await createSet(page, fixture.bid.id, "PW Move A");
+    const setB = await createSet(page, fixture.bid.id, "PW Move B");
+    await addMembers(page, setA.id, [fixture.sheetIds[0], fixture.sheetIds[1]]);
+    await addMembers(page, setB.id, [fixture.sheetIds[2]]);
+
+    // Open the panel and expand A so its member rows mount (the panel
+    // only keeps one set expanded at a time — that's fine, set B's
+    // collapsed row is still a perfectly valid drop target since the
+    // drop handler lives on the always-rendered <li> wrapper).
+    await page.getByTestId("button-toggle-sheet-sets").click();
+    await expect(page.getByTestId("panel-sheet-sets")).toBeVisible();
+    await page.getByTestId(`button-toggle-expand-set-${setA.id}`).click();
+
+    const memberA0 = page.getByTestId(
+      `set-member-${setA.id}-${fixture.sheetIds[0]}`,
+    );
+    const setBRow = page.getByTestId(`row-sheet-set-${setB.id}`);
+    await expect(memberA0).toBeVisible();
+    await expect(setBRow).toBeVisible();
+
+    // The headless DataTransfer provided by Playwright's drag/drop
+    // primitives can't preserve our custom MIME payload across the
+    // wire, so we drive the same handlers the user would by
+    // dispatching native drag events with a hand-built DataTransfer.
+    // (Playwright's docs recommend exactly this for synthetic drag
+    // contracts.) The `sourceSetId` field is what flips the parent
+    // set's onDrop from "add" into the new atomic move endpoint.
+    await page.evaluate(
+      ({ memberId, targetId, sheetId, sourceSetId }) => {
+        const member = document.querySelector(`[data-testid="${memberId}"]`)!;
+        const target = document.querySelector(`[data-testid="${targetId}"]`)!;
+        const dt = new DataTransfer();
+        dt.effectAllowed = "move";
+        dt.setData("text/plain", sheetId);
+        dt.setData(
+          "application/x-takeoff-sheet",
+          JSON.stringify({ sheetId, sourceSetId }),
+        );
+        dt.setData(`application/x-takeoff-sheet-source-${sourceSetId}`, "1");
+        member.dispatchEvent(
+          new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }),
+        );
+        target.dispatchEvent(
+          new DragEvent("dragenter", { bubbles: true, dataTransfer: dt }),
+        );
+        target.dispatchEvent(
+          new DragEvent("dragover", { bubbles: true, dataTransfer: dt }),
+        );
+        target.dispatchEvent(
+          new DragEvent("drop", { bubbles: true, dataTransfer: dt }),
+        );
+        member.dispatchEvent(
+          new DragEvent("dragend", { bubbles: true, dataTransfer: dt }),
+        );
+      },
+      {
+        memberId: `set-member-${setA.id}-${fixture.sheetIds[0]}`,
+        targetId: `row-sheet-set-${setB.id}`,
+        sheetId: fixture.sheetIds[0],
+        sourceSetId: setA.id,
+      },
+    );
+
+    // The mutation invalidates set A's detail cache — the moved sheet
+    // is gone from A's expanded member list.
+    await expect(
+      page.getByTestId(`set-member-${setA.id}-${fixture.sheetIds[0]}`),
+    ).toHaveCount(0, { timeout: 5_000 });
+
+    // Now switch the expanded set to B and confirm the moved sheet
+    // shows up there. (The panel only keeps one set expanded at a
+    // time, so we collapse A by clicking it before opening B.)
+    await page.getByTestId(`button-toggle-expand-set-${setA.id}`).click();
+    await page.getByTestId(`button-toggle-expand-set-${setB.id}`).click();
+    await expect(
+      page.getByTestId(`set-member-${setB.id}-${fixture.sheetIds[0]}`),
+    ).toBeVisible({ timeout: 5_000 });
+
+    // Server-side check: a fresh GET sees A with one sheet left and
+    // B with two members (the original sheet[2] plus the moved one).
+    const aRes = await page.request.get(
+      `${BASE_URL}/api/takeoff/sheet-sets/${setA.id}`,
+    );
+    const bRes = await page.request.get(
+      `${BASE_URL}/api/takeoff/sheet-sets/${setB.id}`,
+    );
+    expect(aRes.status()).toBe(200);
+    expect(bRes.status()).toBe(200);
+    const aBody = (await aRes.json()) as {
+      members: Array<{ sheetId: string }>;
+    };
+    const bBody = (await bRes.json()) as {
+      members: Array<{ sheetId: string }>;
+    };
+    expect(aBody.members.map((m) => m.sheetId)).toEqual([fixture.sheetIds[1]]);
+    expect(bBody.members.map((m) => m.sheetId).sort()).toEqual(
+      [fixture.sheetIds[2], fixture.sheetIds[0]].sort(),
+    );
+  });
+
+  // Task #2229 — Dropping a member back onto its own set is a no-op
+  // (and the panel doesn't even light up the source set during hover).
+  test("dropping a member back on its own set is a no-op", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await devLogin(page, "ADMIN");
+    const fixture = await seedTakeoffFixture(page, 2);
+    await gotoTakeoff(page, fixture.bid.code);
+
+    const set = await createSet(page, fixture.bid.id, "PW Self Drop");
+    await addMembers(page, set.id, [fixture.sheetIds[0], fixture.sheetIds[1]]);
+
+    await page.getByTestId("button-toggle-sheet-sets").click();
+    await page.getByTestId(`button-toggle-expand-set-${set.id}`).click();
+    await expect(
+      page.getByTestId(`set-member-${set.id}-${fixture.sheetIds[0]}`),
+    ).toBeVisible();
+
+    const before = await page.request.get(
+      `${BASE_URL}/api/takeoff/sheet-sets/${set.id}`,
+    );
+    const beforeBody = (await before.json()) as {
+      members: Array<{ sheetId: string; sortOrder: number }>;
+    };
+    const beforeOrder = [...beforeBody.members]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((m) => m.sheetId);
+
+    await page.evaluate(
+      ({ memberId, targetId, sheetId, sourceSetId }) => {
+        const member = document.querySelector(`[data-testid="${memberId}"]`)!;
+        const target = document.querySelector(`[data-testid="${targetId}"]`)!;
+        const dt = new DataTransfer();
+        dt.effectAllowed = "move";
+        dt.setData("text/plain", sheetId);
+        dt.setData(
+          "application/x-takeoff-sheet",
+          JSON.stringify({ sheetId, sourceSetId }),
+        );
+        dt.setData(`application/x-takeoff-sheet-source-${sourceSetId}`, "1");
+        member.dispatchEvent(
+          new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }),
+        );
+        target.dispatchEvent(
+          new DragEvent("dragover", { bubbles: true, dataTransfer: dt }),
+        );
+        target.dispatchEvent(
+          new DragEvent("drop", { bubbles: true, dataTransfer: dt }),
+        );
+        member.dispatchEvent(
+          new DragEvent("dragend", { bubbles: true, dataTransfer: dt }),
+        );
+      },
+      {
+        memberId: `set-member-${set.id}-${fixture.sheetIds[0]}`,
+        targetId: `row-sheet-set-${set.id}`,
+        sheetId: fixture.sheetIds[0],
+        sourceSetId: set.id,
+      },
+    );
+
+    // No-op: the membership and order are exactly what they were.
+    const after = await page.request.get(
+      `${BASE_URL}/api/takeoff/sheet-sets/${set.id}`,
+    );
+    const afterBody = (await after.json()) as {
+      members: Array<{ sheetId: string; sortOrder: number }>;
+    };
+    const afterOrder = [...afterBody.members]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((m) => m.sheetId);
+    expect(afterOrder).toEqual(beforeOrder);
+  });
 });
