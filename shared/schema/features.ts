@@ -4091,6 +4091,10 @@ export const aiTakeoffSuggestions = pgTable("ai_takeoff_suggestions", {
 }, (table) => ({
   analysisIdx: index("ai_takeoff_sug_analysis_idx").on(table.analysisId),
   orgTradeStatusIdx: index("ai_takeoff_sug_org_trade_status_idx").on(table.organizationId, table.tradeType, table.status),
+  // Task #2343 — DB-level idempotency for the closed-loop insert path
+  // (runtime `persistDetectedItemsAsSuggestions` and the backfill script).
+  // Both call sites can safely ON CONFLICT (analysis_id, item_key) DO NOTHING.
+  analysisItemKeyUq: uniqueIndex("ai_takeoff_sug_analysis_item_key_uq").on(table.analysisId, table.itemKey),
 }));
 
 export const insertAiTakeoffSuggestionSchema = createInsertSchema(aiTakeoffSuggestions).omit({ id: true, createdAt: true, updatedAt: true });

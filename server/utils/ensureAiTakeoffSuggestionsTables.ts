@@ -74,6 +74,43 @@ export async function ensureAiTakeoffSuggestionsTables(): Promise<void> {
          ON ai_takeoff_suggestions (organization_id, trade_type, status)`,
     ));
 
+    // Task #2343 — dedupe any existing duplicates on (analysis_id, item_key)
+    // before installing the unique index. Keeps the row whose status carries
+    // the most signal (ACCEPTED/EDITED beat REJECTED/PENDING), breaking ties
+    // on earliest created_at so we keep the first reviewer's verdict.
+    // No-op once dedupe + the unique index below have run on a given DB.
+    await db.execute(sql.raw(`
+      WITH ranked AS (
+        SELECT id,
+               row_number() OVER (
+                 PARTITION BY analysis_id, item_key
+                 ORDER BY CASE status
+                            WHEN 'ACCEPTED' THEN 0
+                            WHEN 'EDITED' THEN 1
+                            WHEN 'REJECTED' THEN 2
+                            WHEN 'PENDING' THEN 3
+                            ELSE 4
+                          END,
+                          created_at ASC,
+                          id ASC
+               ) AS rn
+          FROM ai_takeoff_suggestions
+      )
+      DELETE FROM ai_takeoff_suggestions s
+       USING ranked
+       WHERE s.id = ranked.id
+         AND ranked.rn > 1
+    `));
+    // Task #2343 — DB-level idempotency for the closed-loop insert path
+    // (`persistDetectedItemsAsSuggestions` and the
+    // `scripts/backfill-ai-takeoff-suggestions.ts` job). Lets both call sites
+    // safely use ON CONFLICT (analysis_id, item_key) DO NOTHING and prevents
+    // duplicate rows under retry / concurrent backfill runs.
+    await db.execute(sql.raw(
+      `CREATE UNIQUE INDEX IF NOT EXISTS ai_takeoff_sug_analysis_item_key_uq
+         ON ai_takeoff_suggestions (analysis_id, item_key)`,
+    ));
+
     await db.execute(sql.raw(`
       CREATE TABLE IF NOT EXISTS ai_takeoff_confidence_calibration (
         id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -133,7 +170,13 @@ export async function ensureAiTakeoffSuggestionsTables(): Promise<void> {
         const unit = String(item.unit ?? "EA");
         const confidence = Number.isFinite(Number(item.confidence)) ? Number(item.confidence) : 75;
         const bboxJson = item.boundingBox ? JSON.stringify(item.boundingBox) : null;
-        await db.execute(sql`
+        // ON CONFLICT against the ai_takeoff_sug_analysis_item_key_uq
+        // unique index keeps this no-op safe even when an item-key collides
+        // (positional `item-1` ids can repeat within a single payload if a
+        // detected-items blob happens to duplicate them) or when the
+        // standalone backfill script has already populated the row.
+        // RETURNING lets `backfilledRows` reflect committed inserts only.
+        const ins = await db.execute(sql`
           INSERT INTO ai_takeoff_suggestions
             (analysis_id, organization_id, trade_type,
              item_key, item_type, description, quantity, unit,
@@ -142,8 +185,10 @@ export async function ensureAiTakeoffSuggestionsTables(): Promise<void> {
             (${row.analysis_id}, ${row.organization_id}, ${row.trade_type}::trade_type,
              ${itemKey}, ${itemType}, ${description}, ${quantity}, ${unit},
              ${confidence}, ${bboxJson}, 'PENDING')
+          ON CONFLICT (analysis_id, item_key) DO NOTHING
+          RETURNING id
         `);
-        backfilledRows++;
+        if ((ins.rows?.length ?? 0) > 0) backfilledRows++;
       }
       backfilledAnalyses++;
     }
