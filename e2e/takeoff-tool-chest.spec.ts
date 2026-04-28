@@ -41,6 +41,73 @@ async function clearChest(page: Page) {
   }
 }
 
+// Drag-lifecycle helpers used by the Task #2215 reorder tests.
+//
+// `ChestSection.handleDrop` reads the React `hoverIndex` state from
+// the closure that was active when its `onDragOver` ran. When all
+// drag events are dispatched in one synchronous tick (single
+// page.evaluate call) React never flushes between dragover and drop,
+// so the drop handler sees a stale hoverIndex of null and bails.
+// Splitting the dragover and drop phases into separate page.evaluate
+// calls lets us await a deterministic UI signal (the `ring-2` drop
+// target class) between them — which is exactly what real-browser
+// drag events do naturally (one task per event).
+async function dispatchDragoverPhase(
+  page: Page,
+  srcSelector: string,
+  dstSelector: string,
+) {
+  await page.evaluate(
+    ({ srcSelector, dstSelector }) => {
+      const src = document.querySelector(srcSelector) as HTMLElement | null;
+      const dst = document.querySelector(dstSelector) as HTMLElement | null;
+      if (!src || !dst) throw new Error("reorder targets not found");
+      const dt = new DataTransfer();
+      (window as unknown as { __chestDt: DataTransfer }).__chestDt = dt;
+      src.dispatchEvent(
+        new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }),
+      );
+      dst.dispatchEvent(
+        new DragEvent("dragenter", { bubbles: true, dataTransfer: dt }),
+      );
+      dst.dispatchEvent(
+        new DragEvent("dragover", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: dt,
+        }),
+      );
+    },
+    { srcSelector, dstSelector },
+  );
+}
+
+async function dispatchDropPhase(
+  page: Page,
+  srcSelector: string,
+  dstSelector: string,
+) {
+  await page.evaluate(
+    ({ srcSelector, dstSelector }) => {
+      const src = document.querySelector(srcSelector) as HTMLElement | null;
+      const dst = document.querySelector(dstSelector) as HTMLElement | null;
+      if (!src || !dst) throw new Error("reorder targets not found");
+      const dt = (window as unknown as { __chestDt: DataTransfer }).__chestDt;
+      dst.dispatchEvent(
+        new DragEvent("drop", {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: dt,
+        }),
+      );
+      src.dispatchEvent(
+        new DragEvent("dragend", { bubbles: true, dataTransfer: dt }),
+      );
+    },
+    { srcSelector, dstSelector },
+  );
+}
+
 async function gotoTakeoff(page: Page, bidCode: string) {
   await page.goto(`${BASE_URL}/takeoff/${bidCode}`, {
     waitUntil: "domcontentloaded",
@@ -215,6 +282,186 @@ test.describe("Takeoff Tool Chest (Task #2139)", () => {
     // Status bar reflects the active tool too — guards against any
     // future ribbon button mapping drift.
     await expect(page.getByTestId("status-tool")).toHaveText("Arrow");
+  });
+
+  test("drag-to-reorder rows persists across reload (Task #2215)", async ({
+    page,
+  }) => {
+    const fixture = await seedTakeoffFixture(page);
+    await gotoTakeoff(page, fixture.bid.code);
+
+    // Seed three owned chest rows with deterministic sortOrder so we
+    // know exactly which row is "first" before the drag.
+    const seedRow = async (itemId: string, sortOrder: number) => {
+      const res = await page.request.post(
+        `${BASE_URL}/api/takeoff/tool-chest`,
+        {
+          data: {
+            itemKind: "tool",
+            itemId,
+            label: null,
+            color: null,
+            shortcut: null,
+            sortOrder,
+            isShared: false,
+          },
+        },
+      );
+      expect(res.status()).toBe(201);
+      return (await res.json()) as { id: string; itemId: string };
+    };
+    const a = await seedRow("linear", 0);
+    const b = await seedRow("area", 1);
+    const c = await seedRow("count", 2);
+
+    await page.getByTestId("ribbon-tool-tool-chest").click();
+    await expect(page.getByTestId("panel-tool-chest")).toBeVisible();
+
+    const section = page.getByTestId("chest-section-mine-tool");
+    await expect(section).toBeVisible();
+
+    const rowOrder = () =>
+      section
+        .locator("[data-testid^='chest-item-']")
+        .evaluateAll((els) =>
+          els.map((el) => (el as HTMLElement).getAttribute("data-testid")!),
+        );
+
+    expect(await rowOrder()).toEqual([
+      `chest-item-${a.id}`,
+      `chest-item-${b.id}`,
+      `chest-item-${c.id}`,
+    ]);
+
+    // Drag the first row (linear) onto the third (count) — the section's
+    // splice-then-insert reorder yields [b, c, a]. Playwright's dragTo
+    // doesn't replay React's onDragStart/onDragOver chain reliably, so
+    // drive the lifecycle events manually with a shared DataTransfer.
+    //
+    // The reorder handler reads `hoverIndex` from React state inside
+    // onDrop — that means dragover and drop must arrive in *separate*
+    // tasks so React can flush the setState in between. Real-browser
+    // drag events naturally satisfy this, but synthetic dispatches
+    // inside one page.evaluate would all run in the same task. Split
+    // the dispatches across page.evaluate calls and stash a single
+    // DataTransfer on the window so each call sees the same payload.
+    const srcSelector = `[data-testid='chest-item-${a.id}']`;
+    const dstSelector = `[data-testid='chest-item-${c.id}']`;
+    await dispatchDragoverPhase(page, srcSelector, dstSelector);
+    // Wait deterministically for the drop-target ring class — that's
+    // the ChestSection's `isDropTarget` styling, which only paints
+    // after React commits the dragover-driven setHoverIndex. Once it's
+    // visible we know the next render's `handleDrop` closure will see
+    // the up-to-date hoverIndex.
+    await expect(page.locator(`${dstSelector}.ring-2`)).toBeVisible();
+    await dispatchDropPhase(page, srcSelector, dstSelector);
+
+    // Optimistic local order updates immediately.
+    await expect
+      .poll(async () => await rowOrder())
+      .toEqual([
+        `chest-item-${b.id}`,
+        `chest-item-${c.id}`,
+        `chest-item-${a.id}`,
+      ]);
+
+    // Server mirror reflects the new sortOrders for owned rows.
+    await expect
+      .poll(async () => {
+        const res = await page.request.get(
+          `${BASE_URL}/api/takeoff/tool-chest`,
+        );
+        const items = (await res.json()) as Array<{
+          id: string;
+          sortOrder: number;
+        }>;
+        return Object.fromEntries(items.map((i) => [i.id, i.sortOrder]));
+      })
+      .toMatchObject({ [b.id]: 0, [c.id]: 1, [a.id]: 2 });
+
+    // Reload — the chest panel re-opens (localStorage), and rows render
+    // in the persisted order pulled fresh from the API.
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(page.getByTestId("unified-takeoff-ribbon")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("panel-tool-chest")).toBeVisible();
+    const sectionAfter = page.getByTestId("chest-section-mine-tool");
+    await expect(sectionAfter).toBeVisible();
+    await expect
+      .poll(async () =>
+        sectionAfter
+          .locator("[data-testid^='chest-item-']")
+          .evaluateAll((els) =>
+            els.map((el) => (el as HTMLElement).getAttribute("data-testid")!),
+          ),
+      )
+      .toEqual([
+        `chest-item-${b.id}`,
+        `chest-item-${c.id}`,
+        `chest-item-${a.id}`,
+      ]);
+  });
+
+  test("reorder rolls back the optimistic order when the server fails (Task #2215)", async ({
+    page,
+  }) => {
+    const fixture = await seedTakeoffFixture(page);
+    await gotoTakeoff(page, fixture.bid.code);
+
+    const seedRow = async (itemId: string, sortOrder: number) => {
+      const res = await page.request.post(
+        `${BASE_URL}/api/takeoff/tool-chest`,
+        {
+          data: {
+            itemKind: "tool",
+            itemId,
+            label: null,
+            color: null,
+            shortcut: null,
+            sortOrder,
+            isShared: false,
+          },
+        },
+      );
+      expect(res.status()).toBe(201);
+      return (await res.json()) as { id: string };
+    };
+    const a = await seedRow("linear", 0);
+    const b = await seedRow("area", 1);
+
+    await page.getByTestId("ribbon-tool-tool-chest").click();
+    const section = page.getByTestId("chest-section-mine-tool");
+    await expect(section).toBeVisible();
+
+    // Force the reorder endpoint to error so the optimistic update is
+    // rolled back. PATCH/DELETE/etc keep their normal behaviour.
+    await page.route("**/api/takeoff/tool-chest/reorder", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "boom" }),
+      }),
+    );
+
+    const srcSel = `[data-testid='chest-item-${a.id}']`;
+    const dstSel = `[data-testid='chest-item-${b.id}']`;
+    await dispatchDragoverPhase(page, srcSel, dstSel);
+    await expect(page.locator(`${dstSel}.ring-2`)).toBeVisible();
+    await dispatchDropPhase(page, srcSel, dstSel);
+
+    // After the failed save the rows revert to the pre-drag order and
+    // the user sees a destructive toast explaining the rollback.
+    await expect
+      .poll(async () =>
+        section
+          .locator("[data-testid^='chest-item-']")
+          .evaluateAll((els) =>
+            els.map((el) => (el as HTMLElement).getAttribute("data-testid")!),
+          ),
+      )
+      .toEqual([`chest-item-${a.id}`, `chest-item-${b.id}`]);
+    await expect(page.getByText("Reorder failed").first()).toBeVisible();
   });
 
   test("kebab menu unpin removes the row optimistically", async ({ page }) => {
