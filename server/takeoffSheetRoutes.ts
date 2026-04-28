@@ -733,6 +733,12 @@ router.get(
         source?: string | null;
         sheetSetId?: string | null;
         supersedesSheetId?: string | null;
+        // Task #2351 — Estimator's optional free-text note attached
+        // to a calibration write (e.g. "Verified against
+        // architect's dimension on A2.1"). Older audit rows that
+        // pre-date the field will simply have it absent, which the
+        // mapper below treats as null.
+        note?: string | null;
       };
 
       const tryParse = (raw: string | null | undefined): ScalePayload | null => {
@@ -771,6 +777,13 @@ router.get(
             previousScaleLabel: oldPayload?.scaleLabel ?? null,
             previousScaleSource: oldPayload?.scaleSource ?? null,
             previousScaleConfidence: oldPayload?.scaleConfidence ?? null,
+            // Task #2351 — Surface the estimator's optional note so
+            // the Scale History panel can render it under the row.
+            // Stored on the audit newValue JSON; absent on
+            // historical rows from before the field shipped.
+            note: typeof newPayload.note === "string" && newPayload.note.length > 0
+              ? newPayload.note
+              : null,
             user: row.userId
               ? {
                   id: row.userId,

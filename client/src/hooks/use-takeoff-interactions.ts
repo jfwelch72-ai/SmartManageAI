@@ -1306,6 +1306,14 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       // measurement so their length/area survives the new
       // calibration.
       existingMeasurementHandling?: "rescale" | "lock";
+      // Task #2351 — Optional free-text note typed in the drawer
+      // (e.g. "Verified against architect's dimension on A2.1").
+      // Forwarded to the calibration PATCH endpoint, which folds
+      // it into the audit row's newValue JSON so the Scale
+      // History panel can surface it inline. Whitespace-only
+      // values are normalised away by the drawer; this hook just
+      // forwards what it receives.
+      note?: string;
     },
   ): Promise<boolean> => {
     if (!selectedSheet || calibrationPoints.length !== 2) {
@@ -1370,6 +1378,13 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       // a value, which keeps the server on its backwards-compatible
       // "rescale" default.
       const handlingMode = options?.existingMeasurementHandling;
+      // Task #2351 — Forward the optional calibration note. The
+      // drawer normalises whitespace and caps length, so by the
+      // time we get here a non-empty string is genuine content
+      // worth persisting on the audit row.
+      const note = typeof options?.note === "string" && options.note.trim().length > 0
+        ? options.note.trim()
+        : undefined;
       await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, {
         scalePxPerFoot,
         units,
@@ -1377,6 +1392,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         scaleSource: "USER_TWO_POINT",
         scaleConfidence: "HIGH",
         ...(handlingMode ? { existingMeasurementHandling: handlingMode } : {}),
+        ...(note ? { note } : {}),
       });
       queryClient.invalidateQueries({ queryKey: sheetsQueryKey || ["/api/projects", projectId, "takeoff", "sheets"] });
       // Task #2326 — Locked rows write `lockedScalePxPerFoot` and

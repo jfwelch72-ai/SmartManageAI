@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
@@ -82,7 +83,18 @@ export interface InlineCalibrationDrawerProps {
    *  OLD scale onto each row. */
   onSaveCalibration: (
     distanceFt?: number,
-    options?: { existingMeasurementHandling?: "rescale" | "lock" },
+    options?: {
+      existingMeasurementHandling?: "rescale" | "lock";
+      /** Task #2351 — Optional free-text note the estimator typed
+       *  alongside this calibration (e.g. "Verified against
+       *  architect's dimension on A2.1"). Whitespace-only values
+       *  are normalised to omitted by the drawer; the parent only
+       *  sees a populated string when there's content worth
+       *  persisting. The PATCH endpoint stores it on the audit
+       *  row's newValue JSON so the Scale History panel can render
+       *  it inline with the calibration entry. */
+      note?: string;
+    },
   ) => void | Promise<void>;
   /** Open the existing PlanScaleModal so the user can pick a known
    *  ratio (e.g. 1/4" = 1'-0") instead of drawing a calibration. */
@@ -208,6 +220,17 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
   // mid-keystroke.
   const [draftDistance, setDraftDistance] = useState(calibrationDistance);
   const [draftRegionLabel, setDraftRegionLabel] = useState("");
+  // Task #2351 — Optional free-text note the estimator can type
+  // alongside the calibration ("Verified against architect's
+  // dimension on A2.1"). Persisted server-side onto the audit
+  // row's newValue JSON and surfaced inline by the Scale History
+  // panel. Local-only until Save commits — a half-typed note
+  // shouldn't leak into a drawer that gets dismissed without
+  // saving. Hard cap matches the server-side validation in
+  // `PATCH /api/takeoff/sheets/:id/calibration` so the UI can't
+  // submit something the route would reject.
+  const [draftNote, setDraftNote] = useState("");
+  const NOTE_MAX_LENGTH = 500;
   // Task #2141 — "Apply to entire Sheet Set". The checkbox enables
   // when an active Sheet Set is propagated through `activeSheetSet`
   // and the parent provides a `onApplyToSheetSet` callback. The
@@ -298,6 +321,15 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
     }
   }, [open]);
 
+  // Task #2351 — Reset the optional note each time the drawer
+  // (re)opens so a previous session's "Verified against …" can't
+  // accidentally piggy-back onto an unrelated calibration.
+  useEffect(() => {
+    if (open) {
+      setDraftNote("");
+    }
+  }, [open]);
+
   useEffect(() => {
     setAiDeltaOverridden(false);
   }, [aiDetectedScale?.pxPerFoot, aiDetectedScale?.label, calibrationDistance]);
@@ -341,11 +373,21 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
     // `onApplyToSheetSet` path: per-sheet locking is the safer
     // default because the bulk path would need its own lock prompt
     // per affected sheet to be honest about scope.
+    // Task #2351 — Only forward a note when the user actually typed
+    // one. Whitespace-only values are normalised away so the audit
+    // log doesn't end up with empty-string noise next to every
+    // calibration. Cap the length defensively to mirror the
+    // server-side validation in the calibration PATCH route.
+    const trimmedNote = draftNote.trim().slice(0, NOTE_MAX_LENGTH);
+    const saveOptions: {
+      existingMeasurementHandling?: "rescale" | "lock";
+      note?: string;
+    } = {};
+    if (isRecalibration) saveOptions.existingMeasurementHandling = existingMeasurementHandling;
+    if (trimmedNote.length > 0) saveOptions.note = trimmedNote;
     await onSaveCalibration(
       draftLengthFt,
-      isRecalibration
-        ? { existingMeasurementHandling }
-        : undefined,
+      Object.keys(saveOptions).length > 0 ? saveOptions : undefined,
     );
     if (
       applyToSheetSet &&
@@ -722,6 +764,39 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
               placeholder="e.g. Foundation detail"
               className="h-8 text-xs"
             />
+          </div>
+
+          {/*
+            Task #2351 — Optional calibration note. Free-text the
+            estimator can attach to the audit row so QA / bid handoff
+            can see *why* the scale was set the way it was
+            ("Verified against architect's dimension on A2.1",
+            "Used the printed bar scale", etc.). The Scale History
+            panel renders the note inline with the entry. Empty /
+            whitespace-only values are normalised away so the audit
+            row stays clean when there's nothing worth saving.
+          */}
+          <div className="flex flex-col gap-1">
+            <Label
+              htmlFor="inline-calibration-note"
+              className="text-[10px] uppercase tracking-wide text-muted-foreground"
+            >
+              Note (optional)
+            </Label>
+            <Textarea
+              id="inline-calibration-note"
+              data-testid="input-inline-calibration-note"
+              value={draftNote}
+              onChange={(e) => setDraftNote(e.target.value.slice(0, NOTE_MAX_LENGTH))}
+              placeholder={`e.g. Verified against architect's dimension on A2.1`}
+              maxLength={NOTE_MAX_LENGTH}
+              className="min-h-[60px] text-xs"
+            />
+            <div className="flex items-center justify-end text-[10px] text-muted-foreground">
+              <span data-testid="text-inline-calibration-note-count">
+                {draftNote.length}/{NOTE_MAX_LENGTH}
+              </span>
+            </div>
           </div>
 
           <div className="flex items-center gap-2">

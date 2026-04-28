@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { History, Ruler, Unlock } from "lucide-react";
+import { History, Ruler, StickyNote, Unlock } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -45,6 +45,11 @@ export interface ScaleHistoryEntry {
   previousScaleLabel: string | null;
   previousScaleSource: string | null;
   previousScaleConfidence: string | null;
+  /** Task #2351 — Estimator's optional free-text note, persisted
+   *  alongside the calibration write (e.g. "Verified against
+   *  architect's dimension on A2.1"). Null on historical rows
+   *  from before the field shipped. */
+  note: string | null;
   user: ScaleHistoryUser | null;
 }
 
@@ -471,6 +476,24 @@ export function ScaleHistoryPanel({
                             ({sourceLabel(entry.previousScaleSource)})
                           </div>
                         )}
+
+                      {entry.note && entry.note.trim().length > 0 && (
+                        <div
+                          className="flex items-start gap-2 rounded-sm border border-dashed bg-muted/40 px-2 py-1.5 text-xs"
+                          data-testid={`scale-history-entry-note-${entry.id}`}
+                        >
+                          <StickyNote
+                            className="w-3 h-3 mt-0.5 shrink-0 text-muted-foreground"
+                            aria-hidden
+                          />
+                          <span
+                            className="whitespace-pre-wrap break-words"
+                            data-testid={`text-scale-history-entry-note-${entry.id}`}
+                          >
+                            {entry.note}
+                          </span>
+                        </div>
+                      )}
 
                       <div className="flex items-center gap-2 pt-1">
                         <Avatar className="h-6 w-6">

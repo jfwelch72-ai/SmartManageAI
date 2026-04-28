@@ -715,3 +715,222 @@ describe("InlineCalibrationDrawer (Task #2326) — existing-measurement handling
     expect(onSaveCalibration.mock.calls[0][1]).toBeUndefined();
   });
 });
+
+/**
+ * Task #2351 — Optional calibration note.
+ *
+ * The drawer surfaces a free-text textarea so estimators can record
+ * *why* a calibration was set the way it was (e.g. "Verified against
+ * architect's dimension on A2.1"). The note round-trips through
+ * `onSaveCalibration` only when there's content worth persisting:
+ * empty / whitespace-only inputs are normalised to "no note" so the
+ * audit log stays clean.
+ */
+describe("InlineCalibrationDrawer (Task #2351) — optional calibration note", () => {
+  it("renders the note textarea (empty by default)", () => {
+    renderDrawer();
+    const textarea = screen.getByTestId(
+      "input-inline-calibration-note",
+    ) as HTMLTextAreaElement;
+    expect(textarea).toBeTruthy();
+    expect(textarea.value).toBe("");
+  });
+
+  it("forwards a typed note through onSaveCalibration on Save", async () => {
+    const onSaveCalibration = vi.fn();
+    renderDrawer({
+      calibrationPoints: [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ],
+      onSaveCalibration,
+    });
+    fireEvent.change(
+      screen.getByTestId("input-inline-calibration-distance"),
+      { target: { value: "10" } },
+    );
+    fireEvent.change(
+      screen.getByTestId("input-inline-calibration-note"),
+      { target: { value: "Verified against architect's dimension on A2.1" } },
+    );
+    fireEvent.click(screen.getByTestId("button-inline-calibration-save"));
+    await waitFor(() => expect(onSaveCalibration).toHaveBeenCalled());
+    expect(onSaveCalibration.mock.calls[0][1]).toEqual({
+      note: "Verified against architect's dimension on A2.1",
+    });
+  });
+
+  it("trims whitespace from the note before forwarding it", async () => {
+    const onSaveCalibration = vi.fn();
+    renderDrawer({
+      calibrationPoints: [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ],
+      onSaveCalibration,
+    });
+    fireEvent.change(
+      screen.getByTestId("input-inline-calibration-distance"),
+      { target: { value: "10" } },
+    );
+    fireEvent.change(
+      screen.getByTestId("input-inline-calibration-note"),
+      { target: { value: "   leading and trailing   " } },
+    );
+    fireEvent.click(screen.getByTestId("button-inline-calibration-save"));
+    await waitFor(() => expect(onSaveCalibration).toHaveBeenCalled());
+    expect(onSaveCalibration.mock.calls[0][1]?.note).toBe(
+      "leading and trailing",
+    );
+  });
+
+  it("omits the note entirely when the textarea is left empty", async () => {
+    const onSaveCalibration = vi.fn();
+    renderDrawer({
+      calibrationPoints: [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ],
+      onSaveCalibration,
+    });
+    fireEvent.change(
+      screen.getByTestId("input-inline-calibration-distance"),
+      { target: { value: "10" } },
+    );
+    fireEvent.click(screen.getByTestId("button-inline-calibration-save"));
+    await waitFor(() => expect(onSaveCalibration).toHaveBeenCalled());
+    // No note → no options object at all (legacy contract preserved).
+    expect(onSaveCalibration.mock.calls[0][1]).toBeUndefined();
+  });
+
+  it("omits a whitespace-only note so the audit log stays clean", async () => {
+    const onSaveCalibration = vi.fn();
+    renderDrawer({
+      calibrationPoints: [
+        { x: 0, y: 0 },
+        { x: 100, y: 0 },
+      ],
+      onSaveCalibration,
+    });
+    fireEvent.change(
+      screen.getByTestId("input-inline-calibration-distance"),
+      { target: { value: "10" } },
+    );
+    fireEvent.change(
+      screen.getByTestId("input-inline-calibration-note"),
+      { target: { value: "   \n\t   " } },
+    );
+    fireEvent.click(screen.getByTestId("button-inline-calibration-save"));
+    await waitFor(() => expect(onSaveCalibration).toHaveBeenCalled());
+    expect(onSaveCalibration.mock.calls[0][1]).toBeUndefined();
+  });
+
+  it("merges the note with the lock-vs-rescale choice on a re-calibration", async () => {
+    const onSaveCalibration = vi.fn();
+    renderDrawer({
+      currentScalePxPerFoot: 8,
+      calibrationPoints: [
+        { x: 100, y: 100 },
+        { x: 200, y: 100 },
+      ],
+      // @ts-expect-error overrides interface doesn't enumerate every prop
+      existingMeasurementCount: 4,
+      onSaveCalibration,
+    });
+    fireEvent.change(
+      screen.getByTestId("input-inline-calibration-distance"),
+      { target: { value: "10" } },
+    );
+    fireEvent.change(
+      screen.getByTestId("input-inline-calibration-note"),
+      { target: { value: "Cross-checked plan stamp" } },
+    );
+    fireEvent.click(screen.getByTestId("radio-existing-handling-lock"));
+    fireEvent.click(screen.getByTestId("button-inline-calibration-save"));
+    await waitFor(() => expect(onSaveCalibration).toHaveBeenCalled());
+    expect(onSaveCalibration.mock.calls[0][1]).toEqual({
+      existingMeasurementHandling: "lock",
+      note: "Cross-checked plan stamp",
+    });
+  });
+
+  it("caps note length at 500 characters", () => {
+    renderDrawer();
+    const textarea = screen.getByTestId(
+      "input-inline-calibration-note",
+    ) as HTMLTextAreaElement;
+    fireEvent.change(textarea, { target: { value: "y".repeat(750) } });
+    expect(textarea.value.length).toBe(500);
+    expect(
+      screen.getByTestId("text-inline-calibration-note-count").textContent,
+    ).toBe("500/500");
+  });
+
+  it("clears the note when the drawer is reopened (no leakage between sessions)", async () => {
+    const { rerender } = renderDrawer({ open: true });
+    fireEvent.change(
+      screen.getByTestId("input-inline-calibration-note"),
+      { target: { value: "First session note" } },
+    );
+    expect(
+      (screen.getByTestId(
+        "input-inline-calibration-note",
+      ) as HTMLTextAreaElement).value,
+    ).toBe("First session note");
+
+    // Close, then reopen — the note should be empty again.
+    rerender(
+      <TooltipProvider>
+        <InlineCalibrationDrawer
+          open={false}
+          onOpenChange={vi.fn()}
+          calibrationMode="idle"
+          setCalibrationMode={vi.fn()}
+          calibrationPoints={[]}
+          setCalibrationPoints={vi.fn()}
+          calibrationDistance=""
+          setCalibrationDistance={vi.fn()}
+          units="ft"
+          setUnits={vi.fn()}
+          currentScalePxPerFoot={null}
+          onSaveCalibration={vi.fn()}
+          onUseStandardScale={vi.fn()}
+          multiCalibMode={false}
+          setMultiCalibMode={vi.fn()}
+          multiCalibPoints={[]}
+          setMultiCalibPoints={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+    rerender(
+      <TooltipProvider>
+        <InlineCalibrationDrawer
+          open={true}
+          onOpenChange={vi.fn()}
+          calibrationMode="idle"
+          setCalibrationMode={vi.fn()}
+          calibrationPoints={[]}
+          setCalibrationPoints={vi.fn()}
+          calibrationDistance=""
+          setCalibrationDistance={vi.fn()}
+          units="ft"
+          setUnits={vi.fn()}
+          currentScalePxPerFoot={null}
+          onSaveCalibration={vi.fn()}
+          onUseStandardScale={vi.fn()}
+          multiCalibMode={false}
+          setMultiCalibMode={vi.fn()}
+          multiCalibPoints={[]}
+          setMultiCalibPoints={vi.fn()}
+        />
+      </TooltipProvider>,
+    );
+    await waitFor(() =>
+      expect(
+        (screen.getByTestId(
+          "input-inline-calibration-note",
+        ) as HTMLTextAreaElement).value,
+      ).toBe(""),
+    );
+  });
+});

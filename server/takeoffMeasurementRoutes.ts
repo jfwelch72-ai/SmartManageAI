@@ -1756,7 +1756,31 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
       return;
     }
 
-    const { scaleLabel, scaleSource, scaleConfidence, existingMeasurementHandling } = req.body;
+    const { scaleLabel, scaleSource, scaleConfidence, existingMeasurementHandling, note } = req.body;
+
+    // Task #2351 — Optional free-text note typed by the estimator
+    // in the InlineCalibrationDrawer (e.g. "Verified against
+    // architect's dimension on A2.1"). Persisted onto the audit
+    // row's newValue JSON so the GET /scale-history endpoint can
+    // surface it inline with the calibration entry. Validate
+    // type/length here so the audit log can't be flooded with
+    // arbitrarily large blobs; the drawer mirrors the same cap.
+    const NOTE_MAX_LENGTH = 500;
+    let resolvedNote: string | null = null;
+    if (note !== undefined && note !== null) {
+      if (typeof note !== "string") {
+        res.status(400).json({ error: "note must be a string" });
+        return;
+      }
+      const trimmedNote = note.trim();
+      if (trimmedNote.length > NOTE_MAX_LENGTH) {
+        res.status(400).json({
+          error: `note must be ${NOTE_MAX_LENGTH} characters or fewer`,
+        });
+        return;
+      }
+      if (trimmedNote.length > 0) resolvedNote = trimmedNote;
+    }
 
     // Task #2326 — Lock-vs-rescale choice. Default is "rescale" so
     // existing callers (legacy sidebar paths, the standard-scale
@@ -1878,6 +1902,11 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
             ? new Date(updated.scaleCalibratedAt as Date | string).toISOString()
             : null,
           source: "calibration",
+          // Task #2351 — Estimator's optional note. Stored on the
+          // audit row's newValue JSON so the Scale History panel
+          // can surface it inline with the calibration entry. Only
+          // included when the user actually typed something.
+          ...(resolvedNote ? { note: resolvedNote } : {}),
         }),
       }, req);
     }
