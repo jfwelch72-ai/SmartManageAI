@@ -2,7 +2,7 @@ import { memo, type ReactNode, type RefObject } from "react";
 import {
   AlertCircle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpCircle,
   CheckCircle2, Copy, GalleryHorizontal, GitCompare, History, Keyboard,
-  Layers, Link2, List, Maximize, Minimize, MoreVertical, PanelRight, Pencil,
+  Layers, Link2, List, Maximize, Maximize2, Minimize, MoreVertical, PanelRight, Pencil,
   Pin, PinOff, Plus, Search, Trash2, Zap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -78,6 +78,13 @@ export interface SheetSelectorBarProps {
   onToggleCrossModule: () => void;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
+  /** Task #2310 — Fit-to-page button surfaced in the sheet header so
+   *  estimators always have a one-click recovery from a panned-off /
+   *  zoomed-out canvas. Wired to the same `zoomToFitRef.current()`
+   *  the keyboard shortcut and vertical toolbar use. Disabled until
+   *  the PDF dims have resolved (`canFitToPage`). */
+  onFitToPage?: () => void;
+  canFitToPage?: boolean;
   /** Task #2141 — Sheet Sets panel toggle + active-set badge. The
    *  badge is shown next to the calibration-status badge so the user
    *  can see at a glance which set is steering navigation. */
@@ -146,6 +153,8 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
     onToggleCrossModule,
     isFullscreen,
     onToggleFullscreen,
+    onFitToPage,
+    canFitToPage = false,
     showSheetSetsToggle = false,
     sheetSetsPanelOpen = false,
     onToggleSheetSetsPanel,
@@ -399,6 +408,38 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
               </>
             )}
           </Badge>
+        )}
+        {/* Task #2310 — Fit-to-page button. Sits right after the
+         *  calibration badge so it's always within thumb-reach on the
+         *  same row as the sheet selector. Visible on every viewport
+         *  (no `hidden sm:` cap) because the "PDF appears missing
+         *  because the user is panned off-canvas" failure mode hits
+         *  phones and tablets harder than desktop. Disabled until the
+         *  PDF dims have actually resolved so the button never
+         *  produces a no-op click. */}
+        {currentSheet && onFitToPage && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={onFitToPage}
+                disabled={!canFitToPage}
+                className="h-7 gap-1 px-2 text-xs shrink-0"
+                data-testid="button-fit-to-page-bar"
+                aria-label="Fit page to view"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Fit</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <div className="flex items-center gap-2">
+                <span>Fit page to view</span>
+                <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">F</kbd>
+              </div>
+            </TooltipContent>
+          </Tooltip>
         )}
         {activeSheetSetName && (
           <Badge

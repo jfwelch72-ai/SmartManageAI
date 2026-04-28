@@ -313,7 +313,17 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [toolBeforeSpacebar, setToolBeforeSpacebar] = useState<Tool | null>(null);
   const [isSpacebarHeld, setIsSpacebarHeld] = useState(false);
   const [pdfImage, setPdfImage] = useState<HTMLImageElement | ImageBitmap | null>(null);
-  const [pageDims, setPageDims] = useState<{ width: number; height: number } | null>(null);
+  // Task #2310 — pageDims carries the owning `sheetId` so the
+  // auto-fit effect (and any other consumer that needs to know
+  // "are these dims for the sheet currently selected?") can
+  // distinguish fresh load from stale-from-previous-sheet state.
+  // The PDF load effect runs async; without this tag, switching from
+  // sheet A → B would briefly leave A's dims in scope and the
+  // auto-fit effect would fire against A's geometry while B's name
+  // is showing in the header. All existing consumers use
+  // `pageDims?.width || 0` style access so adding the field is
+  // type-safe and non-breaking.
+  const [pageDims, setPageDims] = useState<{ width: number; height: number; sheetId: string } | null>(null);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
   const tileRendererEnabled = useMemo(() => isTileRendererEnabled(), []);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -2628,6 +2638,47 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     animateToPosition(targetScale, targetPos);
   };
 
+  // Task #2310 — Auto-fit on first load per sheet.
+  //
+  // Without this, opening a sheet that the workspace previously
+  // remembered at 25% zoom + a deep pan offset (or simply: a sheet
+  // whose page is much larger than the canvas at 1×) would render the
+  // PDF correctly but place it entirely outside the visible viewport,
+  // leaving the user staring at a grid + ruler with no PDF and
+  // assuming the file failed to load.
+  //
+  // We auto-fit exactly once per `currentSheet.id` for the lifetime
+  // of this workspace mount. Each sheet revision is its own
+  // `sheets.id` row, so revising a sheet naturally produces a new
+  // fit. Manual pan/zoom afterwards is preserved — the ref-set
+  // membership prevents re-firing on subsequent renders, viewport
+  // resizes, measurement edits, markup updates, etc.
+  const autoFittedSheetIdsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const sheetId = currentSheet?.id;
+    if (!sheetId) return;
+    if (autoFittedSheetIdsRef.current.has(sheetId)) return;
+    if (!pageDims || !pdfImage) return;
+    // Critical race guard: on a sheet swap, `pdfImage` / `pageDims`
+    // briefly hold the previous sheet's data before the async PDF
+    // load resolves for the new sheet. Without this check, we would
+    // (a) auto-fit using the old sheet's geometry and (b) mark the
+    // new sheetId as already-fitted, suppressing the real first-fit
+    // when the new sheet's PDF actually arrives. `pageDims.sheetId`
+    // is set inside the PDF load effect alongside the dims, so it
+    // always reflects which sheet owns the currently-loaded asset.
+    if (pageDims.sheetId !== sheetId) return;
+    if (stageDimensions.width <= 0 || stageDimensions.height <= 0) return;
+    autoFittedSheetIdsRef.current.add(sheetId);
+    zoomToFitRef.current();
+  }, [
+    currentSheet?.id,
+    pageDims,
+    pdfImage,
+    stageDimensions.width,
+    stageDimensions.height,
+  ]);
+
   useEffect(() => {
     if (!flashMeasurementId) return;
     let animId: number;
@@ -2973,7 +3024,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             currentSheet.sheetIndex || 0,
           );
           if (cancelled) return;
-          setPageDims({ width: dims.width, height: dims.height });
+          setPageDims({ width: dims.width, height: dims.height, sheetId: currentSheet.id });
           setPdfLoadProgress(80);
           // `pdfImage` and `setIsPdfLoading(false)` are driven by the
           // mirroring effect below once `tileRenderer.placeholder`
@@ -2991,7 +3042,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           }
           setPdfLoadProgress(80);
           setPdfImage(res.bitmap);
-          setPageDims({ width: res.width, height: res.height });
+          setPageDims({ width: res.width, height: res.height, sheetId: currentSheet.id });
           setPdfLoadProgress(100);
           setIsPdfLoading(false);
         }
@@ -3498,6 +3549,16 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       onToggleCrossModule: () => setCrossModulePanelOpen((v) => !v),
       isFullscreen,
       onToggleFullscreen: toggleFullscreen,
+      // Task #2310 — Fit-to-page button surfaced on the sheet header
+      // bar. Wired to the same `zoomToFitRef.current()` the keyboard
+      // shortcut (F) and vertical toolbar already use, so the three
+      // entry points stay in lockstep. Disabled until `pageDims` /
+      // `pdfImage` have resolved AND the loaded asset belongs to the
+      // current sheet — avoids a stale-state click that would fit
+      // using the previous sheet's geometry during a sheet swap.
+      onFitToPage: () => zoomToFitRef.current(),
+      canFitToPage:
+        !!pageDims && !!pdfImage && pageDims.sheetId === currentSheet?.id,
       // Task #2141 — Sheet Sets toggle, active-set badge, position chip.
       showSheetSetsToggle: !!sheetSetsCtxId,
       sheetSetsPanelOpen,
