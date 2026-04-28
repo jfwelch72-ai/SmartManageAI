@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Keyboard, Cloud, CloudOff, Loader2, Eye, EyeOff } from "lucide-react";
+import { ChevronDown, ChevronUp, Keyboard, Cloud, CloudOff, Loader2, Eye, EyeOff, Lock, Link2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -90,6 +90,13 @@ export interface UnifiedTakeoffRibbonProps {
   layersActive?: boolean;
   verifyScaleActive?: boolean;
   dimInputActive?: boolean;
+  /** Task #2226 — typed-length lock chip in the ribbon's right rail.
+   *  When `pendingDimLengthFt > 0`, a persistent indicator surfaces
+   *  the locked length (and chain state) so estimators don't lose
+   *  track of an active lock when the cursor leaves the canvas.
+   *  Clicking the chip reopens the Dim Input dialog (same as Tab). */
+  pendingDimLengthFt?: number | null;
+  dimInputRepeat?: boolean;
   /** Cheat-sheet trigger (right-rail keyboard button + Cmd/Ctrl+/). */
   onOpenCheatSheet: () => void;
   /** Offline / autosave indicator state. */
@@ -209,6 +216,8 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
     layersActive,
     verifyScaleActive,
     dimInputActive,
+    pendingDimLengthFt,
+    dimInputRepeat = false,
     onOpenCheatSheet,
     isOffline,
     pendingOutboxCount,
@@ -795,6 +804,54 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
                 Close
               </button>
             </div>
+          )}
+
+          {pendingDimLengthFt != null && pendingDimLengthFt > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  onClick={onOpenDimInput}
+                  className={cn(
+                    "flex items-center gap-1.5 px-2 py-1 rounded border text-[11px] font-mono hover-elevate",
+                    dimInputRepeat
+                      ? "border-amber-300 text-amber-700 dark:text-amber-300 bg-amber-50/60 dark:bg-amber-900/20"
+                      : "border-cyan-300 text-cyan-700 dark:text-cyan-300 bg-cyan-50/60 dark:bg-cyan-900/20",
+                  )}
+                  data-testid="indicator-dim-lock"
+                  data-state={dimInputRepeat ? "chained" : "locked"}
+                  aria-label={
+                    dimInputRepeat
+                      ? `Length chained at ${pendingDimLengthFt.toFixed(2)} ft. Click to edit.`
+                      : `Length locked at ${pendingDimLengthFt.toFixed(2)} ft. Click to edit.`
+                  }
+                >
+                  {dimInputRepeat ? (
+                    <Link2 className="w-3.5 h-3.5" aria-hidden="true" />
+                  ) : (
+                    <Lock className="w-3.5 h-3.5" aria-hidden="true" />
+                  )}
+                  <span className="text-[10px] uppercase tracking-wide">
+                    {dimInputRepeat ? "Chain" : "Lock"}
+                  </span>
+                  <span data-testid="text-dim-lock-length">
+                    {pendingDimLengthFt.toFixed(2)} ft
+                  </span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                <div className="flex items-center gap-2">
+                  <span>
+                    {dimInputRepeat
+                      ? "Chained length stays locked across multiple clicks. Click to edit."
+                      : "Locked to next vertex. Click to edit."}
+                  </span>
+                  <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-muted rounded border">
+                    Tab
+                  </kbd>
+                </div>
+              </TooltipContent>
+            </Tooltip>
           )}
 
           <OfflineAutosaveIndicator

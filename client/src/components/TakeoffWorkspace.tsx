@@ -4535,6 +4535,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             setDimInputOpen(true);
           }}
           dimInputActive={!!pendingDimLengthFt && pendingDimLengthFt > 0}
+          pendingDimLengthFt={pendingDimLengthFt}
+          dimInputRepeat={dimInputRepeat}
           onShowLayers={() => setLayersPopoverOpen((v) => !v)}
           layersActive={layersPopoverOpen || hiddenCategoryIds.size > 0}
           layersPopoverOpen={layersPopoverOpen}
