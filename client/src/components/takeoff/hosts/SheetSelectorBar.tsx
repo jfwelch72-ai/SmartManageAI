@@ -171,8 +171,19 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
         <Select value={selectedSheet || ""} onValueChange={onSelectSheet}>
           {/* Task #2206 — widen the narrow-viewport trigger from 128px to
            *  176px so realistic sheet names like "TFR Construction 2025"
-           *  fit on one line instead of wrapping mid-word. */}
-          <SelectTrigger className="w-44 sm:w-64 min-w-0" data-testid="select-sheet">
+           *  fit on one line instead of wrapping mid-word.
+           *  Task #2298 follow-up — the bar now wraps below sm (so the
+           *  calibration badge stops overlapping its neighbors), which
+           *  in turn let `min-w-0 + flex-shrink: 1` collapse this
+           *  trigger to the width of one or two characters (the field
+           *  visibly read just "Co"). On narrow viewports the trigger
+           *  now uses `flex-1` (with a 10rem floor) so it fills its
+           *  row, and falls back to a fixed 16rem at sm+ where the
+           *  bar fits on a single line. */}
+          <SelectTrigger
+            className="flex-1 min-w-[10rem] sm:flex-none sm:w-64"
+            data-testid="select-sheet"
+          >
             <SelectValue placeholder="Select a sheet..." />
           </SelectTrigger>
           <SelectContent container={workspaceRef.current}>

@@ -3043,9 +3043,51 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         console.error("Error loading PDF:", error);
         setIsPdfLoading(false);
         setPdfLoadProgress(0);
+        // Task #2298 follow-up — the previous toast was a bare
+        // "Failed to load PDF. The file may not be a valid PDF
+        // document." which gives the user no actionable signal.
+        // 1) Suppress the toast for benign races (worker shutdown
+        //    on unmount, AbortError from a fast sheet flip).
+        // 2) For everything else, include the failing sheet name
+        //    and the underlying error message so the user can
+        //    report it (and so a 404 from the server like
+        //    "No PDF file available for this sheet. Please re-import
+        //    the document." actually surfaces instead of being
+        //    masked by the generic message).
+        const rawMessage = error instanceof Error ? error.message : String(error ?? "");
+        const isBenignRace =
+          rawMessage.includes("AbortError") ||
+          rawMessage.includes("Worker was terminated") ||
+          rawMessage.includes("Worker terminated") ||
+          rawMessage.includes("worker is not supported");
+        if (isBenignRace) return;
+        // pdf.js wraps server JSON errors in messages like
+        //   "Unexpected server response (404) while retrieving PDF ..."
+        // Try to fetch the server's `error` field so we surface the
+        // real reason ("No PDF file available", "Access denied", etc.)
+        // instead of the pdf.js wrapper.
+        let serverDetail: string | null = null;
+        try {
+          const probe = await fetch(`/api/takeoff/sheets/${currentSheet.id}/pdf`, {
+            method: "GET",
+            headers: { Accept: "application/json" },
+          });
+          if (!probe.ok) {
+            const ct = probe.headers.get("content-type") || "";
+            if (ct.includes("application/json")) {
+              const body = await probe.json().catch(() => null);
+              if (body && typeof body.error === "string") serverDetail = body.error;
+            }
+            if (!serverDetail) serverDetail = `Server returned ${probe.status}`;
+          }
+        } catch {
+          /* probe failed too — fall through to the raw error */
+        }
+        const sheetName = currentSheet.sheetName || "this sheet";
+        const detail = serverDetail || rawMessage || "The file may not be a valid PDF document.";
         toast({
-          title: "Error",
-          description: "Failed to load PDF. The file may not be a valid PDF document.",
+          title: `Couldn't load "${sheetName}"`,
+          description: detail,
           variant: "destructive",
         });
       }
@@ -3054,7 +3096,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     loadPDF();
     setDetectedScale(null);
     return () => { cancelled = true; };
-  }, [currentSheet?.id, currentSheet?.imageUrl, toast, renderFullPagePlaceholder, tileScheduler, tileRendererEnabled]);
+  }, [currentSheet?.id, currentSheet?.imageUrl, currentSheet?.sheetName, toast, renderFullPagePlaceholder, tileScheduler, tileRendererEnabled]);
 
   const autoDetectedSheetsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
