@@ -36,6 +36,9 @@ import {
   createArcSegment,
   sampleArcPoints,
   computeNetAreaInFt2,
+  computeDistanceInFeet,
+  computeLinearWithDropFt,
+  computePitchedLinearFt,
 } from "@shared/utils/geometry";
 import { type Tool, type MeasurementType, validateHexColor, hexToRgba, TOOL_CONFIG } from "./takeoff/types";
 import { detectScaleFromText, type DetectedScale } from "@/lib/scaleDetection";
@@ -66,6 +69,8 @@ import TakeoffCrossModulePanel from "./takeoff/TakeoffCrossModulePanel";
 import { PageThumbnailStrip } from "./takeoff/PageThumbnailStrip";
 import { TakeoffDialogs } from "./takeoff/TakeoffDialogs";
 import { PlanScaleModal } from "./takeoff/PlanScaleModal";
+import { InlineCalibrationDrawer } from "./takeoff/InlineCalibrationDrawer";
+import type { ParsedDimension } from "@/lib/takeoffTypedInput";
 import { TakeoffSheetCompareDialog } from "./takeoff/TakeoffSheetCompareDialog";
 import { TakeoffPropertiesPanel } from "./takeoff/TakeoffPropertiesPanel";
 import { TakeoffVersionHistory } from "./takeoff/TakeoffVersionHistory";
@@ -327,6 +332,13 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [highlightedAiItem, setHighlightedAiItem] = useState<DetectedItem | null>(null);
   const [preImportDetectedItems, setPreImportDetectedItems] = useState<DetectedItem[]>([]);
   const [scaleModalOpen, setScaleModalOpen] = useState(false);
+  // Task #2140 — Inline calibration drawer (Section 5 of the
+  // interaction map). `T` opens this side-anchored Sheet so the
+  // canvas stays clickable for the two-point pick.
+  const [calibrationDrawerOpen, setCalibrationDrawerOpen] = useState(false);
+  // Tool to restore when the calibration drawer closes — captured at
+  // open time so the canvas returns to whatever the user was doing.
+  const calibrationPrevToolRef = useRef<Tool>("select");
   const [hiddenCategoryIds, setHiddenCategoryIds] = useState<Set<string>>(new Set());
   const [addendaOverlays, setAddendaOverlays] = useState<Record<string, { visible: boolean; opacity: number; imageUrl?: string }>>({});
   const [addendaImages, setAddendaImages] = useState<Record<string, HTMLImageElement>>({});
@@ -1411,7 +1423,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     onNextSheet: handleNextSheet,
     onPrevVersion: handlePrevVersion,
     onNextVersion: handleNextVersion,
-    onOpenCalibrate: () => setScaleModalOpen(true),
+    onOpenCalibrate: () => openCalibrationDrawer(),
     onUndo: () => takeoffHistory.undo(),
     onRedo: () => takeoffHistory.redo(),
     onDuplicateSelection: handleDuplicateSelection,
@@ -1426,6 +1438,316 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       setMarkupEditInitial(null);
     }
   }, [activeTool, selectedMarkupIds]);
+
+  // Task #2140 — Apply a parsed dim from the HUD to the in-progress
+  // draw. We translate the parsed dim into a single new (x,y) point
+  // that we append to `drawingPoints`, then either keep drawing
+  // (`continue`) or synthesize an Enter keypress (`finish`) so the
+  // existing draw-time keyboard handler (which already knows how to
+  // close polygons / commit segments / persist linears) does the
+  // actual save. This keeps the typed-input path from forking the
+  // measurement-creation logic.
+  const commitTypedDimension = useCallback(
+    (parsed: ParsedDimension, mode: "continue" | "finish") => {
+      if (!isDrawing || drawingPoints.length === 0) return;
+      const scale = currentSheet?.scalePxPerFoot;
+      if (!scale || scale <= 0) {
+        toast({
+          title: "Calibrate the sheet first",
+          description: "Typed dimensions need a known scale.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const last = drawingPoints[drawingPoints.length - 1];
+      let nx = last.x;
+      let ny = last.y;
+
+      if (parsed.kind === "delta-xy") {
+        nx = last.x + parsed.dxFt * scale;
+        // Canvas Y axis grows downward — typed positive Δy means
+        // "up the sheet" the way an estimator reads a drawing, so
+        // we flip the sign to match.
+        ny = last.y - parsed.dyFt * scale;
+      } else {
+        let angleDeg: number;
+        if (parsed.kind === "length-angle") {
+          angleDeg = parsed.angleDeg;
+        } else {
+          // Plain length — derive direction from the cursor, then
+          // clamp to the active ortho preset (Section 4 final
+          // paragraph: "the active preset clamps the cursor angle
+          // to the nearest multiple before typed input is applied").
+          const cursor = getStagePointer();
+          if (cursor) {
+            const dx = cursor.x - last.x;
+            const dy = cursor.y - last.y;
+            angleDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+          } else {
+            angleDeg = 0;
+          }
+          const preset = ORTHO_PRESETS[orthoPresetIndex];
+          if (preset != null) {
+            angleDeg = Math.round(angleDeg / preset) * preset;
+          } else if (orthoLock) {
+            // Legacy ortho lock with no active preset → snap to 90.
+            angleDeg = Math.round(angleDeg / 90) * 90;
+          }
+        }
+        const lengthPx = parsed.lengthFt * scale;
+        const rad = (angleDeg * Math.PI) / 180;
+        nx = last.x + lengthPx * Math.cos(rad);
+        ny = last.y + lengthPx * Math.sin(rad);
+      }
+
+      const next = [...drawingPoints, { x: nx, y: ny }];
+
+      // Task #2140 round-8 — Arc has its own 3-point state machine
+      // (start → mid → end) and isn't routed through `Enter` /
+      // `completePolygon`. So we drive it explicitly here:
+      //   - drawingPoints.length === 1 → typed dim places the
+      //     middle (curvature) point. Await the next typed dim or
+      //     click. Tab/Enter behave identically since arc has a
+      //     fixed 3-point grammar.
+      //   - drawingPoints.length === 2 → typed dim places the end
+      //     point, validates collinearity, and persists via
+      //     `createMeasurementMutation` exactly like the click-path
+      //     branch in `use-takeoff-interactions`.
+      if (
+        activeTool === "arc" &&
+        selectedSheet &&
+        currentSheet?.scalePxPerFoot
+      ) {
+        if (drawingPoints.length === 1) {
+          // Place mid (curvature) point, advance state.
+          setDrawingPoints(next);
+          return;
+        }
+        if (drawingPoints.length === 2) {
+          const [startPoint, middlePoint] = drawingPoints;
+          const endPoint = { x: nx, y: ny };
+          const arcSegment = createArcSegment(
+            startPoint,
+            endPoint,
+            middlePoint,
+            currentSheet.scalePxPerFoot,
+          );
+          if (!arcSegment) {
+            toast({
+              title: "Error",
+              description:
+                "Points are collinear - cannot form arc. Try a different dimension.",
+              variant: "destructive",
+            });
+            return;
+          }
+          const existingArcs = measurements.filter((m) => {
+            if (m.type !== "LINEAR") return false;
+            const pts =
+              typeof m.points === "string"
+                ? JSON.parse(m.points)
+                : m.points;
+            return Array.isArray(pts) && pts.length === 3;
+          });
+          createMeasurementMutation.mutate({
+            sheetId: selectedSheet,
+            type: "LINEAR" as const,
+            points: [startPoint, middlePoint, endPoint],
+            label: `Arc ${existingArcs.length + 1}`,
+            categoryId: selectedCategoryId,
+          } as Parameters<typeof createMeasurementMutation.mutate>[0]);
+          // Arc is always a "finish" event — it has no
+          // commit-and-continue analogue.
+          setIsDrawing(false);
+          setDrawingPoints([]);
+          toast({
+            title: "Arc Created",
+            description: `${arcSegment.arcLength.toFixed(2)} LF`,
+          });
+          return;
+        }
+      }
+
+      // For 2-point creators (LINEAR, LINEAR_WITH_DROP,
+      // PITCHED_LINEAR) the click handler in
+      // `use-takeoff-interactions` creates the measurement directly
+      // on the second click — there is no Enter completion path.
+      // So we have to call `createMeasurementMutation` ourselves
+      // for BOTH modes:
+      //   - `finish`  → persist + stop drawing (matches Enter sem.)
+      //   - `continue`→ persist + reset drawingPoints to [endpoint]
+      //                 so the next typed dim / click extends from
+      //                 the new vertex (Tab = commit-and-continue).
+      // For polygon-style tools (area / volume / pitched_area /
+      // surface_area) and the segment tool the existing draw-time
+      // Enter listener completes the in-progress polyline once the
+      // appended point is committed; Tab there continues the draw
+      // by appending the new vertex (no per-segment persistence —
+      // those tools are inherently multi-point).
+      const isLinearFamily =
+        activeTool === "linear" ||
+        activeTool === "linear_with_drop" ||
+        activeTool === "pitched_linear";
+      if (
+        isLinearFamily &&
+        selectedSheet &&
+        currentSheet?.scalePxPerFoot &&
+        next.length >= 2
+      ) {
+        const segmentPoints = [last, { x: nx, y: ny }];
+        const lengthFt = computeDistanceInFeet(
+          segmentPoints,
+          currentSheet.scalePxPerFoot,
+        );
+        if (activeTool === "linear") {
+          createMeasurementMutation.mutate({
+            sheetId: selectedSheet,
+            type: "LINEAR",
+            points: segmentPoints,
+            label: `Line ${measurements.length + 1}`,
+            categoryId: selectedCategoryId,
+          } as Parameters<typeof createMeasurementMutation.mutate>[0]);
+        } else if (activeTool === "linear_with_drop") {
+          const drop = parseFloat(dropDistance) || 0;
+          const finalLength = computeLinearWithDropFt(lengthFt, drop);
+          createMeasurementMutation.mutate({
+            sheetId: selectedSheet,
+            type: "LINEAR_WITH_DROP",
+            points: segmentPoints,
+            label: `Drop Line ${measurements.length + 1}`,
+            categoryId: selectedCategoryId,
+            computedLengthFt: finalLength,
+          } as Parameters<typeof createMeasurementMutation.mutate>[0]);
+        } else {
+          const finalLength = computePitchedLinearFt(lengthFt, pitchRatio);
+          createMeasurementMutation.mutate({
+            sheetId: selectedSheet,
+            type: "PITCHED_LINEAR",
+            points: segmentPoints,
+            label: `Pitched Line ${measurements.length + 1}`,
+            categoryId: selectedCategoryId,
+            pitchRatio,
+            computedLengthFt: finalLength,
+          } as Parameters<typeof createMeasurementMutation.mutate>[0]);
+        }
+        if (mode === "continue") {
+          // Tab — commit-and-continue. Reset the in-progress
+          // polyline so the next typed dim or click extends from
+          // the new endpoint (NOT from the original anchor — that
+          // would replay the just-saved segment).
+          setDrawingPoints([{ x: nx, y: ny }]);
+        } else {
+          // Enter — commit-and-finish. Stop drawing entirely.
+          setIsDrawing(false);
+          setDrawingPoints([]);
+        }
+        return;
+      }
+
+      setDrawingPoints(next);
+
+      if (mode === "finish") {
+        // Defer until React commits the new drawingPoints — the
+        // draw-time `keydown` effect in `use-takeoff-interactions`
+        // re-binds on `drawingPoints` change so by the time our
+        // synthetic Enter fires, the closure already sees the
+        // appended point and will completePolygon/completeSegment.
+        setTimeout(() => {
+          window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+        }, 0);
+      }
+    },
+    [
+      isDrawing,
+      drawingPoints,
+      currentSheet,
+      orthoPresetIndex,
+      orthoLock,
+      activeTool,
+      selectedSheet,
+      selectedCategoryId,
+      measurements.length,
+      dropDistance,
+      pitchRatio,
+      createMeasurementMutation,
+      setIsDrawing,
+      setDrawingPoints,
+      toast,
+    ],
+  );
+
+  // Task #2140 — The HUD only listens while a measure draw is in
+  // progress AND the active tool is one that consumes typed dims.
+  // Notes/counts/markups don't have a "next point" to lock to.
+  // (Most draw flows leave `currentDrawingTool` null — only the arc
+  // tool sets it — so we key off `activeTool` here instead.)
+  //
+  // Arc is supported: see the arc-aware branch in
+  // `commitTypedDimension` which drives the 3-point state machine
+  // directly (no synthetic-Enter dispatch) so typed dimensions can
+  // place the mid + end points without the click-path being the only
+  // path to creation.
+  const dimHudActive =
+    isDrawing &&
+    [
+      "linear",
+      "linear_with_drop",
+      "pitched_linear",
+      "arc",
+      "area",
+      "pitched_area",
+      "surface_area",
+      "volume",
+      "segment",
+      "deduct",
+    ].includes(currentDrawingTool ?? activeTool);
+
+  // Task #2140 — Opening the calibration drawer must also switch the
+  // active tool to "calibrate", because the canvas click handler in
+  // `use-takeoff-interactions.ts` gates two-point pickup on
+  // `activeTool === "calibrate"`. Without this swap, opening the
+  // drawer with `T` would render the side panel but canvas clicks
+  // would still be routed through whatever tool was active before.
+  const openCalibrationDrawer = useCallback(() => {
+    // Don't overwrite the saved "previous tool" if the drawer is
+    // already open (e.g. T pressed twice) — the very first open is
+    // the one we want to restore back to.
+    if (!calibrationDrawerOpen) {
+      calibrationPrevToolRef.current = activeTool;
+    }
+    setCalibrationMode("first-point");
+    setCalibrationPoints([]);
+    setCalibrationDistance("");
+    setActiveTool("calibrate");
+    setCalibrationDrawerOpen(true);
+  }, [
+    calibrationDrawerOpen,
+    activeTool,
+    setCalibrationMode,
+    setCalibrationPoints,
+    setCalibrationDistance,
+    setActiveTool,
+  ]);
+
+  // Single source of truth for "close the calibration drawer and
+  // unwind all the side-effects opening it triggered". Every close
+  // path (drawer's own onOpenChange, the "Use Standard Scale"
+  // handoff, save-success, save-failure rollback) MUST go through
+  // this helper — otherwise we leak `activeTool: "calibrate"` /
+  // `calibrationMode: "first-point"` and the next stage click is
+  // misinterpreted as a calibration point.
+  const closeCalibrationDrawer = useCallback(() => {
+    setCalibrationDrawerOpen(false);
+    setCalibrationMode("idle");
+    setCalibrationPoints([]);
+    setCalibrationDistance("");
+    setActiveTool(calibrationPrevToolRef.current);
+  }, [
+    setCalibrationMode,
+    setCalibrationPoints,
+    setCalibrationDistance,
+    setActiveTool,
+  ]);
 
   useEffect(() => {
     setSelectedMarkupIds(new Set());
@@ -3109,13 +3431,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           toast({ title: "Error", description: error?.message || "Failed to apply scale", variant: "destructive" });
         }
       },
-      onStartCalibration: () => {
-        setCalibrationMode("first-point");
-        setCalibrationPoints([]);
-        setCalibrationDistance("");
-        setActiveTool("calibrate");
-        toast({ title: "Calibration Mode", description: "Click two points on a known distance to calibrate scale" });
-      },
+      // Task #2140 — calibration-by-two-points has moved to
+      // `InlineCalibrationDrawer` (opened via T or sidebar). The modal
+      // is now strictly Standard Scales + Custom ratio, so we no
+      // longer expose an `onStartCalibration` entry point here.
       currentScalePxPerFoot: currentSheet?.scalePxPerFoot ?? null,
     },
     crossModulePanel: {
@@ -3584,18 +3903,69 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           setOrthoLock={setOrthoLock}
           gridEnabled={gridEnabled}
           setGridEnabled={handleToggleGrid}
-          onOpenCalibrate={() => setScaleModalOpen(true)}
+          onOpenCalibrate={() => openCalibrationDrawer()}
           isCalibrated={isCalibrated}
           onOpenCheatSheet={() => setCheatSheetOpen(true)}
           isOffline={isOffline}
           pendingOutboxCount={queueLength}
           isSyncing={isSyncing}
           labeled={labeled}
+          dimHudActive={dimHudActive}
+          dimHudUnits={units}
+          onDimCommit={commitTypedDimension}
         />
       ) : (
         <RibbonHost />
       )}
       <TakeoffShortcutCheatSheet open={cheatSheetOpen} onOpenChange={setCheatSheetOpen} />
+      <InlineCalibrationDrawer
+        open={calibrationDrawerOpen}
+        onOpenChange={(next) => {
+          if (!next) {
+            // Route every close through the shared helper so the
+            // canvas-state teardown (calibrate tool, first-point
+            // mode, picked points) is always undone.
+            closeCalibrationDrawer();
+          } else {
+            setCalibrationDrawerOpen(true);
+          }
+        }}
+        calibrationMode={calibrationMode}
+        setCalibrationMode={setCalibrationMode}
+        calibrationPoints={calibrationPoints}
+        setCalibrationPoints={setCalibrationPoints}
+        calibrationDistance={calibrationDistance}
+        setCalibrationDistance={setCalibrationDistance}
+        units={units}
+        setUnits={setUnits}
+        currentScalePxPerFoot={currentSheet?.scalePxPerFoot ?? null}
+        onSaveCalibration={async (distanceFt) => {
+          // Task #2140 round-7 — Only close the drawer when the
+          // PATCH actually lands. On validation / network failure,
+          // `handleSaveCalibration` toasts and returns false; we
+          // keep the drawer open so the user can correct the
+          // distance / pick fresh points and retry without having
+          // to re-enter the calibration flow.
+          const ok = await handleSaveCalibration(distanceFt);
+          if (ok) {
+            closeCalibrationDrawer();
+          }
+        }}
+        onUseStandardScale={() => {
+          // "Use Standard Scale instead" hands off to the existing
+          // PlanScaleModal. Must go through the shared close helper
+          // so we don't leak `activeTool: "calibrate"` /
+          // `calibrationMode: "first-point"` into the next user
+          // interaction (canvas clicks would still be interpreted
+          // as calibration picks otherwise).
+          closeCalibrationDrawer();
+          setScaleModalOpen(true);
+        }}
+        multiCalibMode={multiCalibMode}
+        setMultiCalibMode={setMultiCalibMode}
+        multiCalibPoints={multiCalibPoints}
+        setMultiCalibPoints={setMultiCalibPoints}
+      />
 
       <div className="flex-1 flex flex-col bg-muted/30 min-h-0 relative">
         <SheetHost />

@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Sparkles, Check, Ruler, Search } from "lucide-react";
+import { Sparkles, Check, Search } from "lucide-react";
 import { COMMON_SCALES } from "./types";
 import { cn } from "@/lib/utils";
 
@@ -15,14 +15,13 @@ interface PlanScaleModalProps {
   open: boolean;
   onClose: () => void;
   onApplyScale: (pxPerFoot: number, units: string, label: string) => void;
-  onStartCalibration: () => void;
   currentScalePxPerFoot: number | null;
   /**
    * Task #2067 — When true, renders the dialog as a near-fullscreen sheet so
-   * the standard scales list, calibration instructions and custom-ratio
-   * inputs all fit comfortably in the standalone Takeoff workspace
-   * (Bluebeam-style). The default sm:max-w-lg sizing is preserved when this
-   * is false so the existing embedded callers keep their compact modal.
+   * the standard scales list and custom-ratio inputs fit comfortably in the
+   * standalone Takeoff workspace (Bluebeam-style). The default sm:max-w-lg
+   * sizing is preserved when this is false so the existing embedded callers
+   * keep their compact modal.
    */
   fullscreen?: boolean;
 }
@@ -31,7 +30,7 @@ const RECOMMENDED_SCALE = '1/4" = 1\'-0"';
 
 type ScaleCategory = "all" | "architectural" | "civil" | "structural";
 
-export function PlanScaleModal({ open, onClose, onApplyScale, onStartCalibration, currentScalePxPerFoot, fullscreen = false }: PlanScaleModalProps) {
+export function PlanScaleModal({ open, onClose, onApplyScale, currentScalePxPerFoot, fullscreen = false }: PlanScaleModalProps) {
   const [activeTab, setActiveTab] = useState("standard");
   const [category, setCategory] = useState<ScaleCategory>("all");
   const [selectedScale, setSelectedScale] = useState<{ label: string; pxPerFoot: number; category: string } | null>(null);
@@ -84,11 +83,6 @@ export function PlanScaleModal({ open, onClose, onApplyScale, onStartCalibration
     }
   };
 
-  const handleStartCalibrate = () => {
-    onStartCalibration();
-    resetAndClose();
-  };
-
   const resetAndClose = () => {
     setSelectedScale(null);
     setSearchQuery("");
@@ -120,15 +114,23 @@ export function PlanScaleModal({ open, onClose, onApplyScale, onStartCalibration
           <DialogDescription>
             {currentScaleLabel
               ? <>Current scale: <span className="font-medium text-foreground">{currentScaleLabel}</span></>
-              : "Select a standard scale, calibrate from a known dimension, or enter a custom ratio."}
+              : "Select a standard scale or enter a custom ratio. To calibrate from a known dimension on the plan, press T to open the inline calibration drawer."}
           </DialogDescription>
         </DialogHeader>
 
+        {/*
+          Task #2140 — The "Calibrate" tab + Start Calibration button
+          previously lived in this modal. Two-point calibration has
+          moved to `InlineCalibrationDrawer` (opened via T or the
+          sidebar) so this modal is now strictly Standard Scales +
+          Custom ratio. See the modal's DialogDescription for the
+          handoff hint and the "Use Standard Scale instead" link in
+          the drawer for the reverse handoff.
+        */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <div className="px-6">
-            <TabsList className="w-full grid grid-cols-3">
+            <TabsList className="w-full grid grid-cols-2">
               <TabsTrigger value="standard" data-testid="tab-standard-scales">Standard Scales</TabsTrigger>
-              <TabsTrigger value="calibrate" data-testid="tab-calibrate">Calibrate</TabsTrigger>
               <TabsTrigger value="custom" data-testid="tab-custom">Custom</TabsTrigger>
             </TabsList>
           </div>
@@ -206,29 +208,6 @@ export function PlanScaleModal({ open, onClose, onApplyScale, onStartCalibration
                 )}
               </div>
             </ScrollArea>
-          </TabsContent>
-
-          <TabsContent value="calibrate" className="mt-0 px-6 pb-2">
-            <div className="py-6 space-y-4">
-              <div className="flex items-center justify-center">
-                <div className="rounded-full bg-primary/10 p-4">
-                  <Ruler className="h-8 w-8 text-primary" />
-                </div>
-              </div>
-              <div className="text-center space-y-2">
-                <h3 className="font-semibold">Manual Calibration</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Click two points on a known dimension line in your drawing, then enter the real-world distance between them.
-                  This provides the most accurate scale for your specific plan.
-                </p>
-              </div>
-              <div className="flex justify-center pt-2">
-                <Button onClick={handleStartCalibrate} data-testid="button-start-calibration">
-                  <Ruler className="h-4 w-4 mr-2" />
-                  Start Calibration
-                </Button>
-              </div>
-            </div>
           </TabsContent>
 
           <TabsContent value="custom" className="mt-0 px-6 pb-2">

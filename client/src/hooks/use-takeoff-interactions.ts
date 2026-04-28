@@ -940,38 +940,81 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     setNotePosition(null);
   }, [noteText, notePosition, selectedSheet, createMeasurementMutation, setNoteDialogOpen, setNoteText, setNotePosition, toast]);
 
-  const handleSaveCalibration = useCallback(async () => {
-    if (!selectedSheet || calibrationPoints.length !== 2 || !calibrationDistance) {
+  // Returns `true` only when the PATCH lands and state has been
+  // reset, so callers (notably the inline drawer in
+  // `TakeoffWorkspace`) can keep the drawer open on validation /
+  // network failure for retry. Task #2140 round-7 review explicitly
+  // called out the previous unconditional-close behavior as a UX
+  // regression.
+  const handleSaveCalibration = useCallback(async (distanceOverrideFt?: number): Promise<boolean> => {
+    if (!selectedSheet || calibrationPoints.length !== 2) {
       toast({ title: "Error", description: "Complete calibration first", variant: "destructive" });
-      return;
+      return false;
     }
-    const distanceValue = parseFloat(calibrationDistance.trim());
+    // The new InlineCalibrationDrawer passes the parsed numeric
+    // distance (always feet) directly so we don't have to read it
+    // back from `calibrationDistance` state, which races the
+    // upstream `setCalibrationDistance` and the closure baked into
+    // this useCallback. Older callers still drive the legacy
+    // string-typed state, so fall back to that when no override is
+    // provided.
+    const usingOverride =
+      typeof distanceOverrideFt === "number" && Number.isFinite(distanceOverrideFt);
+    if (!usingOverride && !calibrationDistance) {
+      toast({ title: "Error", description: "Complete calibration first", variant: "destructive" });
+      return false;
+    }
+    const distanceValue = usingOverride
+      ? (distanceOverrideFt as number)
+      : parseFloat(calibrationDistance.trim());
     if (!Number.isFinite(distanceValue) || distanceValue <= 0) {
       toast({ title: "Error", description: "Please enter a valid distance value", variant: "destructive" });
-      return;
+      return false;
     }
-    const minDistance = units === "ft" ? 0.5 : 0.15;
+    // Override is always in feet; legacy state is in active `units`.
+    // Normalize the min-distance check accordingly.
+    const minDistance = usingOverride
+      ? 0.5
+      : units === "ft"
+        ? 0.5
+        : 0.15;
     if (distanceValue < minDistance) {
-      toast({ title: "Error", description: `Distance must be at least ${minDistance} ${units}. For small details, use a larger reference distance.`, variant: "destructive" });
-      return;
+      toast({
+        title: "Error",
+        description: `Distance must be at least ${minDistance} ${usingOverride ? "ft" : units}. For small details, use a larger reference distance.`,
+        variant: "destructive",
+      });
+      return false;
     }
     const pixelDistance = computePixelDistance(calibrationPoints[0], calibrationPoints[1]);
-    const scalePxPerFoot = units === "ft" ? pixelDistance / distanceValue : pixelDistance / (distanceValue * 3.28084);
+    const scalePxPerFoot = usingOverride
+      ? pixelDistance / distanceValue
+      : units === "ft"
+        ? pixelDistance / distanceValue
+        : pixelDistance / (distanceValue * 3.28084);
     if (!Number.isFinite(scalePxPerFoot) || scalePxPerFoot <= 0) {
       toast({ title: "Error", description: "Invalid calibration value. Please check your measurements.", variant: "destructive" });
-      return;
+      return false;
     }
     try {
       await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, { scalePxPerFoot, units });
       queryClient.invalidateQueries({ queryKey: sheetsQueryKey || ["/api/projects", projectId, "takeoff", "sheets"] });
-      toast({ title: "Success", description: "Calibration saved" });
+      // Surface the resulting scale so the user can verify the
+      // calibration landed where they expected (Task #2140 done
+      // criteria: "Scale set: …").
+      toast({
+        title: "Scale set",
+        description: `Scale set: ${scalePxPerFoot.toFixed(2)} px/ft`,
+      });
       setCalibrationMode("idle");
       setCalibrationPoints([]);
       setCalibrationDistance("");
       setActiveTool("select");
+      return true;
     } catch (error: any) {
       const errorMessage = error?.message || "Failed to save calibration";
       toast({ title: "Error", description: errorMessage, variant: "destructive" });
+      return false;
     }
   }, [selectedSheet, calibrationPoints, calibrationDistance, units, projectId, sheetsQueryKey, setCalibrationMode, setCalibrationPoints, setCalibrationDistance, setActiveTool, toast]);
 

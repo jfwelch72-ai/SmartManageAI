@@ -15,6 +15,8 @@ import {
   type RibbonGroupId,
   type SnapMode,
 } from "./hosts/takeoff-shortcuts";
+import { DimInputHUD } from "./DimInputHUD";
+import type { ParsedDimension, DefaultUnits } from "@/lib/takeoffTypedInput";
 import type { Tool } from "./types";
 
 export interface UnifiedTakeoffRibbonProps {
@@ -51,6 +53,13 @@ export interface UnifiedTakeoffRibbonProps {
   /** Show the labeled (icon + text) variant when the user has the
    *  "labeled toolbar" preference on. */
   labeled?: boolean;
+  /** Task #2140 — Dim Input HUD wiring. The HUD is rendered next to
+   *  the Measure group only when a measure draw is in progress so it
+   *  doesn't intercept keystrokes during normal canvas use. */
+  dimHudActive?: boolean;
+  dimHudUnits?: DefaultUnits;
+  onDimCommit?: (parsed: ParsedDimension, mode: "continue" | "finish") => void;
+  onDimCancelTyped?: () => void;
 }
 
 interface RibbonButtonState {
@@ -87,6 +96,10 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
     pendingOutboxCount,
     isSyncing,
     labeled,
+    dimHudActive = false,
+    dimHudUnits = "ft",
+    onDimCommit,
+    onDimCancelTyped,
   } = props;
 
   // Per-user collapsed state for each ribbon group. Persisted so the
@@ -376,12 +389,30 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
                     );
                   })}
                   {group.id === "constrain" && (
-                    <span
-                      className="ml-1 text-[10px] text-muted-foreground"
+                    <Badge
+                      variant={
+                        ORTHO_PRESETS[orthoPresetIndex] === null
+                          ? "outline"
+                          : "secondary"
+                      }
+                      className="ml-1 text-[9px] uppercase tracking-wide font-mono"
                       data-testid="ribbon-ortho-preset"
+                      data-active={
+                        ORTHO_PRESETS[orthoPresetIndex] === null
+                          ? "false"
+                          : "true"
+                      }
                     >
-                      {orthoPresetLabel}
-                    </span>
+                      ORTHO {orthoPresetLabel}
+                    </Badge>
+                  )}
+                  {group.id === "measure" && onDimCommit && (
+                    <DimInputHUD
+                      active={dimHudActive}
+                      units={dimHudUnits}
+                      onCommit={onDimCommit}
+                      onCancelTyped={onDimCancelTyped}
+                    />
                   )}
                   {group.id === "verify" && isCalibrated && (
                     <Badge

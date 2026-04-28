@@ -106,10 +106,13 @@ Default snap radius: **12 px** at 100 % zoom; auto-scales with zoom.
 
 ---
 
-## 4. Typed-dimension input (Step 5)
+## 4. Typed-dimension input (Step 5) — Implemented (Task #2140)
 
 When a draw is in progress and the user starts typing, the ribbon's
-**Dim Input HUD** captures focus.
+**Dim Input HUD** captures focus. Implemented as `DimInputHUD`
+mounted inside the Measure ribbon group; the parser lives at
+`client/src/lib/takeoffTypedInput.ts` and is unit-tested at
+`client/src/lib/__tests__/takeoffTypedInput.test.ts`.
 
 Grammar (case-insensitive, all whitespace optional):
 
@@ -136,18 +139,37 @@ Examples:
 
 Ortho preset angles (Step 5): **15°, 30°, 45°, 90°**. `Shift+O` cycles;
 the active preset clamps the cursor angle to the nearest multiple before
-typed input is applied.
+typed input is applied. The current preset is shown as a badge in the
+Constrain ribbon group (`ribbon-ortho-preset` test id) and persisted
+alongside the other ribbon prefs.
+
+Tab vs. Enter semantics:
+
+| Key   | Effect                                                      |
+| ----- | ----------------------------------------------------------- |
+| `Tab` | Append the parsed point to `drawingPoints` and keep drawing. |
+| `Enter` | Append, then synthesise an Enter keypress so the existing draw-finish handler closes the polygon / commits the linear / saves the segment. |
+| `Esc` | Clears the HUD buffer (one keypress). A second `Esc` (with empty buffer) cancels the entire draw via the legacy handler. |
 
 ---
 
-## 5. Inline scale calibration (Step 6)
+## 5. Inline scale calibration (Step 6) — Implemented (Task #2140)
 
-- `T` opens the calibration drawer over the current sheet.
-- User picks two reference points; types the real distance using the typed
-  input grammar above.
-- Optional checkbox: **Apply to entire Sheet Set**. When checked, the new
-  scale is propagated to every member sheet via the Sheet Sets API
-  (Step 12).
+- `T` opens `InlineCalibrationDrawer` (a side-anchored shadcn `Sheet`)
+  over the current sheet. The drawer **does not trap focus** so the
+  canvas remains clickable for the two-point pick.
+- User picks two reference points; types the real distance using the
+  Section 4 typed-input grammar. Live parse errors and a preview
+  `px/ft` value are shown beneath the input.
+- Multi-region capture (`Add region` button) is preserved; existing
+  multi-calib state lives in `TakeoffWorkspace` and stays in sync
+  with the sidebar's region list.
+- A `Use Standard Scale` link opens the existing `PlanScaleModal`
+  for users who'd rather pick a known ratio (e.g. `1/4" = 1'-0"`)
+  instead of drawing a calibration line.
+- Optional checkbox: **Apply to entire Sheet Set**. **Disabled** in
+  this task with a "Coming soon" badge — the Sheet Sets task
+  (Step 12) will flip the feature flag and wire the propagation.
 
 ---
 
