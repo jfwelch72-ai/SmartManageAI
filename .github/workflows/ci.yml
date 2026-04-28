@@ -303,6 +303,23 @@ jobs:
       # Match the local Replit layout the task description references so the
       # install + test invocations agree on where the engine binaries live.
       PLAYWRIGHT_BROWSERS_PATH: .cache/ms-playwright
+      # Task #2262 — Single source of truth for the enumerated canvas
+      # spec list, consumed by both the `Verify canvas shard discovers
+      # tests` pre-step and the `Run canvas-heavy specs` step below.
+      # Keeping this list in one job-level env var (rather than copy-
+      # pasting the six paths into both step bodies) makes it
+      # impossible for the verify-step's view of "what should be
+      # covered" to drift from what the test command actually runs —
+      # which is the whole point of the gate. Whitespace-separated so
+      # both `node ... -- $CANVAS_SPECS` and `npx playwright test ...
+      # $CANVAS_SPECS` can word-split it directly.
+      CANVAS_SPECS: >-
+        e2e/takeoff-markup-drawing.spec.ts
+        e2e/plan-markup-group-drag.spec.ts
+        e2e/plan-markup-marquee-select.spec.ts
+        e2e/plan-pins.spec.ts
+        e2e/takeoff-markup-history-wiring.spec.ts
+        e2e/takeoff-markup-undo.spec.ts
 
     steps:
       - name: Checkout repository
@@ -325,6 +342,46 @@ jobs:
 
       - name: Push database schema
         run: npm run db:push -- --force
+
+      # Task #2262 — Same silent-skip guard as Task #2235's
+      # `verify-playwright-projects-non-empty.mjs` (which protects the
+      # adjacent `e2e` job), scoped here to the canvas-shard matrix.
+      # Without this gate two coverage-shrinking edits would slip past
+      # CI: (1) renaming or moving any of the six enumerated spec files
+      # below without updating the YAML list (the path argument would
+      # match no specs), and (2) `--shard=N/2` distribution emptying a
+      # shard for a given engine — Playwright's default "0 tests = OK"
+      # behaviour would let the job report green with half the canvas
+      # coverage gone. The script verifies each enumerated path exists
+      # on disk, runs `playwright test --list --reporter=json
+      # --project=<engine> --shard=N/M <specs>` to enumerate exactly
+      # what this shard would execute, and fails with an actionable
+      # `::error::` annotation if either count is zero. It also writes
+      # a per-shard markdown table to `$GITHUB_STEP_SUMMARY` mirroring
+      # the per-project summary the Task #2235 script emits, so a
+      # reviewer can see at a glance how the six specs split across
+      # the four (engine × shard) runners on every PR.
+      #
+      # CANVAS_SPECS is set as a job-level env var below so the verify
+      # step and the run step share a single source of truth — drift
+      # between the two would defeat the gate.
+      - name: Verify canvas shard discovers tests (${{ matrix.project }} shard ${{ matrix.shard }}/2)
+        # `--expected-enumerated-specs=6` pins the canvas spec list at
+        # exactly six. Any future PR that quietly trims `CANVAS_SPECS`
+        # (the more dangerous variant of the silent-skip bug — every
+        # surviving path still exists on disk and each shard still has
+        # >= 1 test, so without this assertion the gate would still
+        # pass) must also bump this number, which is exactly the human
+        # review signal we want. The same six specs are listed at the
+        # top of `CANVAS_SPECS` (job-level `env`); change one, and the
+        # other has to follow.
+        run: |
+          # shellcheck disable=SC2086 # word-splitting CANVAS_SPECS is intentional
+          node scripts/verify-canvas-shard-non-empty.mjs \
+            --project=${{ matrix.project }} \
+            --shard=${{ matrix.shard }}/2 \
+            --expected-enumerated-specs=6 \
+            -- $CANVAS_SPECS
 
       - name: Run canvas-heavy specs (${{ matrix.project }} shard ${{ matrix.shard }}/2)
         # `--shard=N/2` deals the six enumerated spec files across two
@@ -369,17 +426,19 @@ jobs:
         env:
           PLAYWRIGHT_BLOB_OUTPUT_NAME: report-${{ matrix.project }}-${{ matrix.shard }}-of-2.zip
         run: |
+          # Task #2262 — `$CANVAS_SPECS` (defined at the job level above)
+          # is the single source of truth for the enumerated spec list
+          # shared with the `Verify canvas shard discovers tests`
+          # pre-step. Word-splitting here is intentional so each space-
+          # separated path becomes its own positional argument to
+          # `playwright test`.
+          # shellcheck disable=SC2086
           npx playwright test \
             --project=${{ matrix.project }} \
             --shard=${{ matrix.shard }}/2 \
             --retries=1 \
             --reporter=blob,list \
-            e2e/takeoff-markup-drawing.spec.ts \
-            e2e/plan-markup-group-drag.spec.ts \
-            e2e/plan-markup-marquee-select.spec.ts \
-            e2e/plan-pins.spec.ts \
-            e2e/takeoff-markup-history-wiring.spec.ts \
-            e2e/takeoff-markup-undo.spec.ts
+            $CANVAS_SPECS
 
       - name: Upload Playwright blob report
         if: always()
