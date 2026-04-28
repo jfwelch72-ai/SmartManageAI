@@ -131,23 +131,19 @@ export function usePdfTileRenderer(
   useEffect(() => {
     if (!enabled || !scheduler || !args.sheetUrl || !args.sheetId) {
       setPageDims(null);
-      // Close the prior bitmap before nulling so toggling the tile
-      // renderer off (or clearing sheetId) doesn't leak the GPU-backed
-      // ImageBitmap until the next GC cycle.
-      setPlaceholder((prev) => {
-        if (prev) {
-          try {
-            prev.close();
-          } catch {
-            /* noop */
-          }
-        }
-        return null;
-      });
+      // IMPORTANT: do NOT call .close() on the prior bitmap here. The
+      // consumer (TakeoffWorkspace) keeps its own `pdfImage` ref to the
+      // same ImageBitmap, and Konva draws it on requestAnimationFrame.
+      // If we close synchronously, the next RAF can fire before the
+      // consumer's mirror effect has had a chance to null its `pdfImage`,
+      // throwing "Failed to execute 'drawImage' on 'CanvasRenderingContext2D':
+      // The image source is detached" in dev. The bitmap will be
+      // GC-reclaimed once the consumer's state update lands.
+      setPlaceholder(null);
       setPlaceholderError(null);
       // Reset so a subsequent re-enable / sheet-set is treated as a
-      // fresh load (not a "same sheet" no-op that skips the cancel +
-      // cleanup branch above).
+      // fresh load (not a "same sheet" no-op that skips the cleanup
+      // branch above).
       lastSheetRef.current = null;
       return;
     }
@@ -160,16 +156,12 @@ export function usePdfTileRenderer(
       // failed. Without this reset the placeholderError arm below is
       // unreachable on a sheet switch, because `placeholder` would
       // still be truthy and win the success branch first.
-      setPlaceholder((prev) => {
-        if (prev) {
-          try {
-            prev.close();
-          } catch {
-            /* noop */
-          }
-        }
-        return null;
-      });
+      //
+      // We deliberately do NOT close the bitmap here — the consumer's
+      // pdfImage state still points to it for at least one render after
+      // we null it, and a Konva RAF in that window would throw
+      // "image source is detached". Let GC reclaim it instead.
+      setPlaceholder(null);
       setPageDims(null);
     }
     lastSheetRef.current = args.sheetId;
