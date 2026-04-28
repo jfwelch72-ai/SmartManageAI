@@ -694,6 +694,14 @@ export const takeoffMeasurements = pgTable("takeoff_measurements", {
   computedAreaFt2: doublePrecision("computed_area_ft2"),
   computedVolumeCy: doublePrecision("computed_volume_cy"),
   computedSurfaceAreaFt2: doublePrecision("computed_surface_area_ft2"),
+  // Task #2326 — Per-measurement scale snapshot. When non-null this
+  // measurement is "locked" to that exact px/ft value: subsequent
+  // re-calibrations of the parent sheet must skip it during recompute,
+  // so its computedLengthFt / computedAreaFt2 / etc. stay frozen at the
+  // numbers the estimator approved when they originally drew it.
+  // Set when the user picks "Lock existing measurements at current
+  // scale" in the InlineCalibrationDrawer's re-calibration choice.
+  lockedScalePxPerFoot: doublePrecision("locked_scale_px_per_foot"),
   deductions: text("deductions"),
   metadata: text("metadata"),
   subcontractorId: varchar("subcontractor_id"),

@@ -593,3 +593,125 @@ describe("InlineCalibrationDrawer (Task #2228) — bulk-scale confirm", () => {
     expect(screen.queryByTestId("dialog-bulk-scale-confirm")).toBeNull();
   });
 });
+
+/**
+ * Task #2326 — Lock-vs-rescale choice radio.
+ *
+ * The drawer surfaces a "what should happen to existing measurements?"
+ * radio only when the sheet is BEING re-calibrated — i.e. it already
+ * has a `currentScalePxPerFoot` AND there are measurements that would
+ * silently re-scale otherwise. First-time calibrations skip the
+ * prompt entirely so the legacy fast path keeps its single-click
+ * shape. The chosen handling is forwarded to `onSaveCalibration` so
+ * the server PATCH carries `existingMeasurementHandling`.
+ */
+describe("InlineCalibrationDrawer (Task #2326) — existing-measurement handling choice", () => {
+  it("hides the radio for a brand-new sheet (no current scale)", () => {
+    renderDrawer({
+      currentScalePxPerFoot: null,
+      // @ts-expect-error overrides interface doesn't enumerate every prop
+      existingMeasurementCount: 5,
+    });
+    expect(
+      screen.queryByTestId("inline-calibration-existing-handling"),
+    ).toBeNull();
+  });
+
+  it("hides the radio when the sheet has a scale but no measurements yet", () => {
+    renderDrawer({
+      currentScalePxPerFoot: 8,
+      // @ts-expect-error overrides interface doesn't enumerate every prop
+      existingMeasurementCount: 0,
+    });
+    expect(
+      screen.queryByTestId("inline-calibration-existing-handling"),
+    ).toBeNull();
+  });
+
+  it("renders the radio (defaulting to rescale) on a re-calibration with existing measurements", () => {
+    renderDrawer({
+      currentScalePxPerFoot: 8,
+      // @ts-expect-error overrides interface doesn't enumerate every prop
+      existingMeasurementCount: 3,
+    });
+    expect(
+      screen.getByTestId("inline-calibration-existing-handling"),
+    ).toBeTruthy();
+    const rescale = screen.getByTestId(
+      "radio-existing-handling-rescale",
+    ) as HTMLButtonElement;
+    // Radix RadioGroupItem reflects state via `aria-checked`/`data-state`.
+    expect(rescale.getAttribute("data-state")).toBe("checked");
+  });
+
+  it("forwards the default 'rescale' choice through onSaveCalibration when the user just clicks Save", async () => {
+    const onSaveCalibration = vi.fn();
+    renderDrawer({
+      currentScalePxPerFoot: 8,
+      calibrationPoints: [
+        { x: 100, y: 100 },
+        { x: 200, y: 100 },
+      ],
+      // @ts-expect-error overrides interface doesn't enumerate every prop
+      existingMeasurementCount: 4,
+      onSaveCalibration,
+    });
+    fireEvent.change(
+      screen.getByTestId("input-inline-calibration-distance"),
+      { target: { value: "12.5" } },
+    );
+    fireEvent.click(screen.getByTestId("button-inline-calibration-save"));
+    await waitFor(() => expect(onSaveCalibration).toHaveBeenCalled());
+    // Second arg carries the handling. 12.5 ft is the parsed feet value.
+    const call = onSaveCalibration.mock.calls[0];
+    expect(call[0]).toBeCloseTo(12.5, 5);
+    expect(call[1]).toEqual({ existingMeasurementHandling: "rescale" });
+  });
+
+  it("forwards 'lock' through onSaveCalibration after the user picks the lock radio", async () => {
+    const onSaveCalibration = vi.fn();
+    renderDrawer({
+      currentScalePxPerFoot: 8,
+      calibrationPoints: [
+        { x: 100, y: 100 },
+        { x: 200, y: 100 },
+      ],
+      // @ts-expect-error overrides interface doesn't enumerate every prop
+      existingMeasurementCount: 7,
+      onSaveCalibration,
+    });
+    fireEvent.change(
+      screen.getByTestId("input-inline-calibration-distance"),
+      { target: { value: "10" } },
+    );
+    fireEvent.click(screen.getByTestId("radio-existing-handling-lock"));
+    fireEvent.click(screen.getByTestId("button-inline-calibration-save"));
+    await waitFor(() => expect(onSaveCalibration).toHaveBeenCalled());
+    expect(onSaveCalibration.mock.calls[0][1]).toEqual({
+      existingMeasurementHandling: "lock",
+    });
+  });
+
+  it("does NOT pass the handling option for first-time calibrations (radio not rendered)", async () => {
+    const onSaveCalibration = vi.fn();
+    renderDrawer({
+      currentScalePxPerFoot: null,
+      calibrationPoints: [
+        { x: 100, y: 100 },
+        { x: 200, y: 100 },
+      ],
+      // @ts-expect-error overrides interface doesn't enumerate every prop
+      existingMeasurementCount: 0,
+      onSaveCalibration,
+    });
+    fireEvent.change(
+      screen.getByTestId("input-inline-calibration-distance"),
+      { target: { value: "10" } },
+    );
+    fireEvent.click(screen.getByTestId("button-inline-calibration-save"));
+    await waitFor(() => expect(onSaveCalibration).toHaveBeenCalled());
+    // The handling option is omitted entirely so the server route
+    // stays on its backwards-compatible default (rescale).
+    expect(onSaveCalibration.mock.calls[0][1]).toBeUndefined();
+  });
+});

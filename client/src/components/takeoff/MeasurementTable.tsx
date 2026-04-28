@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ArrowUpDown, ArrowUp, ArrowDown, Search, X, Trash2, Edit2, Check, Eye, Flag } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, Search, X, Trash2, Edit2, Check, Eye, Flag, Lock } from "lucide-react";
 
 // Task #2319 — Source column visual language. Each calibration source
 // gets a stable dot colour so estimators can scan a long list and
@@ -242,6 +242,40 @@ export function MeasurementTable({
                     <div className="flex items-center gap-1.5">
                       <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.color || "#2563eb" }} />
                       <span className="truncate max-w-[120px]">{m.label || `${m.type}-${idx + 1}`}</span>
+                      {/*
+                        Task #2326 — "Locked" badge. When the
+                        measurement carries a `lockedScalePxPerFoot`
+                        snapshot it survived a re-calibration with
+                        the user's "Lock existing measurements"
+                        choice; subsequent calibrations skip it on
+                        the server. Surfaces here so the estimator
+                        can see at a glance which rows are immune
+                        to scale changes (and won't silently shift
+                        when they re-calibrate the sheet).
+                      */}
+                      {m.lockedScalePxPerFoot != null && (
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <span
+                                className="inline-flex items-center gap-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 px-1 py-0.5 text-[9px] font-medium shrink-0"
+                                data-testid={`badge-measurement-locked-${m.id}`}
+                              >
+                                <Lock className="w-2.5 h-2.5" />
+                                Locked
+                              </span>
+                            </TooltipTrigger>
+                            <TooltipContent side="top" className="max-w-[220px] text-xs">
+                              Length and area are frozen at{" "}
+                              <span className="font-mono">
+                                {Number(m.lockedScalePxPerFoot).toFixed(2)} px/ft
+                              </span>
+                              . Future re-calibrations of this sheet
+                              will skip this row.
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      )}
                     </div>
                   )}
                 </TableCell>

@@ -1251,7 +1251,18 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
   // network failure for retry. Task #2140 round-7 review explicitly
   // called out the previous unconditional-close behavior as a UX
   // regression.
-  const handleSaveCalibration = useCallback(async (distanceOverrideFt?: number): Promise<boolean> => {
+  const handleSaveCalibration = useCallback(async (
+    distanceOverrideFt?: number,
+    options?: {
+      // Task #2326 — Lock-vs-rescale choice surfaced by
+      // InlineCalibrationDrawer when the sheet already has
+      // measurements. "rescale" (default) keeps existing behaviour;
+      // "lock" snapshots the OLD px/ft onto every unlocked
+      // measurement so their length/area survives the new
+      // calibration.
+      existingMeasurementHandling?: "rescale" | "lock";
+    },
+  ): Promise<boolean> => {
     if (!selectedSheet || calibrationPoints.length !== 2) {
       toast({ title: "Error", description: "Complete calibration first", variant: "destructive" });
       return false;
@@ -1309,20 +1320,36 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       // than "Scale set: 96.00 px/ft" when a preset matches.
       const matchedPreset = findMatchingPreset(scalePxPerFoot);
       const humanLabel = matchedPreset?.label ?? `${scalePxPerFoot.toFixed(2)} px/ft`;
+      // Task #2326 — Forward the lock-vs-rescale choice. Omitted
+      // entirely on first calibration / when the drawer didn't pass
+      // a value, which keeps the server on its backwards-compatible
+      // "rescale" default.
+      const handlingMode = options?.existingMeasurementHandling;
       await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, {
         scalePxPerFoot,
         units,
         scaleLabel: matchedPreset?.label ?? null,
         scaleSource: "USER_TWO_POINT",
         scaleConfidence: "HIGH",
+        ...(handlingMode ? { existingMeasurementHandling: handlingMode } : {}),
       });
       queryClient.invalidateQueries({ queryKey: sheetsQueryKey || ["/api/projects", projectId, "takeoff", "sheets"] });
+      // Task #2326 — Locked rows write `lockedScalePxPerFoot` and
+      // their cached measurement payloads now lag the DB; refresh
+      // the per-sheet measurements query so the "Locked" badge in
+      // the table appears immediately.
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
       // Surface the resulting scale so the user can verify the
       // calibration landed where they expected (Task #2140 done
-      // criteria: "Scale set: …").
+      // criteria: "Scale set: …"). When the user picked "lock",
+      // mention how many measurements were frozen so the lock isn't
+      // a silent operation.
       toast({
         title: "Scale set",
-        description: `Scale set: ${humanLabel}`,
+        description:
+          handlingMode === "lock"
+            ? `Scale set: ${humanLabel}. Existing measurements locked at the prior scale.`
+            : `Scale set: ${humanLabel}`,
       });
       setCalibrationMode("idle");
       setCalibrationPoints([]);

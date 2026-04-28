@@ -5033,14 +5033,21 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         units={units}
         setUnits={setUnits}
         currentScalePxPerFoot={currentSheet?.scalePxPerFoot ?? null}
-        onSaveCalibration={async (distanceFt) => {
+        onSaveCalibration={async (distanceFt, options) => {
           // Task #2140 round-7 — Only close the drawer when the
           // PATCH actually lands. On validation / network failure,
           // `handleSaveCalibration` toasts and returns false; we
           // keep the drawer open so the user can correct the
           // distance / pick fresh points and retry without having
           // to re-enter the calibration flow.
-          const ok = await handleSaveCalibration(distanceFt);
+          //
+          // Task #2326 — Forward the lock-vs-rescale choice the
+          // drawer surfaces on re-calibration. The hook PATCHes the
+          // sheet calibration endpoint with
+          // `existingMeasurementHandling`, which decides whether
+          // existing measurements rescale or get snapshotted at the
+          // OLD px/ft.
+          const ok = await handleSaveCalibration(distanceFt, options);
           if (ok) {
             closeCalibrationDrawer();
           }
@@ -5089,6 +5096,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               }
             : null
         }
+        // Task #2326 — Drives the lock-vs-rescale prompt in the
+        // drawer. The radio only renders when this is > 0 AND the
+        // sheet has a prior `scalePxPerFoot`, so brand-new sheets
+        // skip the prompt entirely.
+        existingMeasurementCount={measurements.length}
       />
 
       <Dialog open={dimInputOpen} onOpenChange={setDimInputOpen}>

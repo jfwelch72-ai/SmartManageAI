@@ -1304,7 +1304,25 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
       return;
     }
 
-    const { scaleLabel, scaleSource, scaleConfidence } = req.body;
+    const { scaleLabel, scaleSource, scaleConfidence, existingMeasurementHandling } = req.body;
+
+    // Task #2326 — Lock-vs-rescale choice. Default is "rescale" so
+    // existing callers (legacy sidebar paths, the standard-scale
+    // dropdown, AI flows) keep their previous behavior. "lock" is
+    // opt-in via the InlineCalibrationDrawer's choice radio: it
+    // snapshots the OLD px/ft onto every unlocked measurement so
+    // their length/area never silently re-scales against the new
+    // calibration.
+    if (
+      existingMeasurementHandling !== undefined &&
+      existingMeasurementHandling !== "rescale" &&
+      existingMeasurementHandling !== "lock"
+    ) {
+      res.status(400).json({ error: "Invalid existingMeasurementHandling" });
+      return;
+    }
+    const handlingMode: "rescale" | "lock" =
+      existingMeasurementHandling === "lock" ? "lock" : "rescale";
 
     // Task #2320 — every calibration write must record provenance.
     // Default to USER_TWO_POINT/HIGH for backwards-compatible callers
@@ -1326,6 +1344,19 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
       resolvedConfidence = scaleConfidence;
     }
 
+    // Task #2326 — Read the previous scalePxPerFoot up front so that
+    // when handlingMode === "lock" we have the exact px/ft value to
+    // snapshot onto every existing measurement before we overwrite
+    // the sheet's scale below. Race-safety isn't a concern here: the
+    // calibration PATCH is single-tenant per sheet and we issue the
+    // sheet update + measurement updates within the same request.
+    const [previousSheet] = await db
+      .select({ scalePxPerFoot: takeoffSheets.scalePxPerFoot })
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.id, id))
+      .limit(1);
+    const previousScalePxPerFoot = previousSheet?.scalePxPerFoot ?? null;
+
     const [updated] = await db
       .update(takeoffSheets)
       .set({
@@ -1336,6 +1367,11 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
         scaleConfidence: resolvedConfidence,
         scaleCalibratedById: req.user!.id,
         scaleCalibratedAt: new Date(),
+        // Task #2326 — Surface the user's choice to the rest of the
+        // app. Only flip ON when locking; rescaling clears the flag
+        // (the per-measurement snapshots remain authoritative for
+        // already-locked rows).
+        scaleLockedToRevision: handlingMode === "lock",
         updatedAt: new Date(),
       })
       .where(eq(takeoffSheets.id, id))
@@ -1357,8 +1393,39 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
         isNull(takeoffMeasurements.scaleAtCapturePxPerFoot),
       ));
 
+    // Task #2326 — Lock branch: snapshot the OLD scale onto every
+    // unlocked measurement and short-circuit the recompute loop.
+    // Locked measurements keep their previously-stored
+    // computedLengthFt / computedAreaFt2 / etc. untouched, so the
+    // estimator's prior numbers survive the new calibration.
+    // We deliberately don't overwrite an existing
+    // lockedScalePxPerFoot — once a row is locked, its snapshot is
+    // immutable (a follow-up calibration that picks "lock" again
+    // shouldn't replace older snapshots with a fresher OLD scale).
+    if (handlingMode === "lock") {
+      if (previousScalePxPerFoot != null && previousScalePxPerFoot > 0) {
+        for (const measurement of measurements) {
+          if (measurement.lockedScalePxPerFoot != null) continue;
+          await db
+            .update(takeoffMeasurements)
+            .set({
+              lockedScalePxPerFoot: previousScalePxPerFoot,
+              updatedAt: new Date(),
+            })
+            .where(eq(takeoffMeasurements.id, measurement.id));
+        }
+      }
+      res.json(updated);
+      return;
+    }
+
     for (const measurement of measurements) {
       if (!measurement.points) continue;
+      // Task #2326 — Honor previously-locked rows during a rescale.
+      // Once a measurement was snapshotted at a specific px/ft, no
+      // amount of subsequent recalibration is allowed to silently
+      // shift its computed values.
+      if (measurement.lockedScalePxPerFoot != null) continue;
 
       const points = safeParsePoints(measurement.points);
       if (!points || points.length === 0) continue;
@@ -1550,6 +1617,11 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
 
           for (const measurement of measurements) {
             if (!measurement.points) continue;
+            // Task #2326 — Locked measurements (per-row scale snapshot)
+            // must survive bulk recalibration the same way they survive
+            // a per-sheet recalibration; otherwise the batch path
+            // would be a back-door around the lock.
+            if (measurement.lockedScalePxPerFoot != null) continue;
 
             const points = safeParsePoints(measurement.points);
             if (!points || points.length === 0) continue;

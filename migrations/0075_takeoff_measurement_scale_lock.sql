@@ -1,0 +1,23 @@
+-- Task #2326 — Per-measurement scale lock snapshot.
+--
+-- Background: `takeoff_sheets.scale_locked_to_revision` was added a few
+-- tasks ago but no code path honored it. The intent is that when an
+-- estimator re-calibrates a sheet that already has measurements, they
+-- should be able to LOCK the existing measurements to the current
+-- scale instead of silently re-deriving every length / area / volume
+-- against the new px/ft. Today re-calibration is destructive.
+--
+-- We lock at the per-measurement level (not just per-sheet) so that a
+-- subsequent re-calibration after the lock can't silently re-scale
+-- previously-frozen rows: the recompute loop checks
+-- `locked_scale_px_per_foot IS NOT NULL` and skips the row entirely.
+-- The sheet-level boolean stays as a UI hint that "the last
+-- recalibration was a lock", but the snapshot column is the source of
+-- truth.
+--
+-- Nullable on purpose: most rows aren't locked, and we want the
+-- semantic "no snapshot stored" rather than a sentinel. Idempotent
+-- ADD COLUMN IF NOT EXISTS so environments that ran the column
+-- out-of-band still apply cleanly.
+ALTER TABLE "takeoff_measurements"
+  ADD COLUMN IF NOT EXISTS "locked_scale_px_per_foot" double precision;

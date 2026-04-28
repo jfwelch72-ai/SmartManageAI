@@ -20,7 +20,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Ruler, MousePointer, Plus, X, ExternalLink, AlertTriangle } from "lucide-react";
+import { Ruler, MousePointer, Plus, X, ExternalLink, AlertTriangle, Lock, RefreshCcw } from "lucide-react";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   parseTypedDimension,
   type DefaultUnits,
@@ -71,8 +72,18 @@ export interface InlineCalibrationDrawerProps {
    *  which PATCHes the sheet's calibration endpoint. Receives the
    *  parsed numeric distance (always in feet) directly so the parent
    *  doesn't have to read it back from React state — that would race
-   *  the upstream `setCalibrationDistance` call below. */
-  onSaveCalibration: (distanceFt?: number) => void | Promise<void>;
+   *  the upstream `setCalibrationDistance` call below.
+   *
+   *  Task #2326 — When the sheet already has measurements AND a
+   *  prior scale exists, the second arg carries the user's
+   *  lock-vs-rescale choice (see `existingMeasurementCount` below
+   *  for the gate). The parent forwards it to the calibration PATCH
+   *  so the server knows whether to recompute or to snapshot the
+   *  OLD scale onto each row. */
+  onSaveCalibration: (
+    distanceFt?: number,
+    options?: { existingMeasurementHandling?: "rescale" | "lock" },
+  ) => void | Promise<void>;
   /** Open the existing PlanScaleModal so the user can pick a known
    *  ratio (e.g. 1/4" = 1'-0") instead of drawing a calibration. */
   onUseStandardScale: () => void;
@@ -130,6 +141,14 @@ export interface InlineCalibrationDrawerProps {
    *  to swap the typed distance for the detector's value. Optional;
    *  when null/undefined the warning never renders. */
   aiDetectedScale?: { label: string; pxPerFoot: number } | null;
+  /** Task #2326 — Number of measurements that already exist on the
+   *  current sheet. When this is > 0 AND `currentScalePxPerFoot` is
+   *  set (i.e. this is a *re-*calibration, not a first-time one),
+   *  the drawer renders the lock-vs-rescale choice. First-time
+   *  calibration (no prior scale OR no measurements yet) skips the
+   *  prompt — there's nothing to lock. Optional so existing callers
+   *  that don't yet thread the count keep the original behaviour. */
+  existingMeasurementCount?: number;
 }
 
 const APPLY_TO_SHEET_SET_TOOLTIP_DISABLED =
@@ -172,6 +191,7 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
     skipBulkScalePropagationConfirm,
     onSkipBulkScalePropagationConfirmChange,
     aiDetectedScale,
+    existingMeasurementCount,
   } = props;
   // `setMultiCalibMode` is part of the props contract for parity
   // with the existing TakeoffSidebar wiring, but the drawer itself
@@ -254,6 +274,26 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
   const [bulkConfirmDontAsk, setBulkConfirmDontAsk] = useState(false);
   const [aiDeltaOverridden, setAiDeltaOverridden] = useState(false);
 
+  // Task #2326 — Lock-vs-rescale choice. The radio only renders
+  // when this is a real *re-*calibration (a prior scale exists AND
+  // there are existing measurements that would otherwise silently
+  // shift). We default to "rescale" so a user who never engages
+  // with the radio gets the historical behaviour. The local state
+  // resets each time the drawer opens so a previous "lock" pick
+  // can't accidentally leak into the next calibration session.
+  const isRecalibration =
+    currentScalePxPerFoot != null &&
+    currentScalePxPerFoot > 0 &&
+    (existingMeasurementCount ?? 0) > 0;
+  const [existingMeasurementHandling, setExistingMeasurementHandling] = useState<
+    "rescale" | "lock"
+  >("rescale");
+  useEffect(() => {
+    if (open) {
+      setExistingMeasurementHandling("rescale");
+    }
+  }, [open]);
+
   useEffect(() => {
     setAiDeltaOverridden(false);
   }, [aiDetectedScale?.pxPerFoot, aiDetectedScale?.label, calibrationDistance]);
@@ -288,7 +328,21 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
     // currently-open sheet's own scalePxPerFoot still reflects the
     // exact two-point pickup geometry), then fan the resolved scale
     // out to the rest of the active Sheet Set if the user opted in.
-    await onSaveCalibration(draftLengthFt);
+    //
+    // Task #2326 — Forward the lock-vs-rescale choice only when the
+    // recalibration prompt actually rendered. First-time
+    // calibrations (no prior scale OR no measurements) skip the
+    // option so the server stays on its backwards-compatible
+    // default. Apply-to-Sheet-Set still goes through the unmodified
+    // `onApplyToSheetSet` path: per-sheet locking is the safer
+    // default because the bulk path would need its own lock prompt
+    // per affected sheet to be honest about scope.
+    await onSaveCalibration(
+      draftLengthFt,
+      isRecalibration
+        ? { existingMeasurementHandling }
+        : undefined,
+    );
     if (
       applyToSheetSet &&
       sheetSetFlagOn &&
@@ -580,6 +634,74 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
                 </div>
               </div>
             )}
+
+          {/*
+            Task #2326 — Re-calibration prompt. Only shown when the
+            sheet already has a scale AND existing measurements; a
+            fresh sheet has nothing to lock so we don't pester the
+            user. The radio defaults to "rescale" (legacy behaviour).
+            Picking "lock" snapshots the OLD px/ft onto every
+            unlocked measurement server-side and flips
+            `scaleLockedToRevision` on the sheet — measurements
+            keep their previously-computed length / area regardless
+            of where the new calibration lands.
+          */}
+          {isRecalibration && (
+            <div
+              className="rounded border bg-muted/30 px-3 py-2 flex flex-col gap-2"
+              data-testid="inline-calibration-existing-handling"
+            >
+              <Label className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Existing measurements ({existingMeasurementCount})
+              </Label>
+              <RadioGroup
+                value={existingMeasurementHandling}
+                onValueChange={(v) =>
+                  setExistingMeasurementHandling(
+                    v === "lock" ? "lock" : "rescale",
+                  )
+                }
+                className="flex flex-col gap-1.5"
+              >
+                <div className="flex items-start gap-2">
+                  <RadioGroupItem
+                    value="rescale"
+                    id="inline-calibration-handling-rescale"
+                    data-testid="radio-existing-handling-rescale"
+                    className="mt-0.5"
+                  />
+                  <Label
+                    htmlFor="inline-calibration-handling-rescale"
+                    className="text-xs font-normal cursor-pointer leading-snug flex items-start gap-1.5"
+                  >
+                    <RefreshCcw className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+                    <span>
+                      Re-scale existing measurements to the new
+                      calibration
+                    </span>
+                  </Label>
+                </div>
+                <div className="flex items-start gap-2">
+                  <RadioGroupItem
+                    value="lock"
+                    id="inline-calibration-handling-lock"
+                    data-testid="radio-existing-handling-lock"
+                    className="mt-0.5"
+                  />
+                  <Label
+                    htmlFor="inline-calibration-handling-lock"
+                    className="text-xs font-normal cursor-pointer leading-snug flex items-start gap-1.5"
+                  >
+                    <Lock className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground" />
+                    <span>
+                      Lock existing measurements at the current scale
+                      (their lengths and areas won't change)
+                    </span>
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+          )}
 
           <div className="flex flex-col gap-1">
             <Label
