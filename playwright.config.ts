@@ -66,6 +66,13 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
+      // Task #2222 — `takeoff-touch-gestures.spec.ts` requires `hasTouch`
+      // (TouchEvent / Touch constructors and stylus-flavoured PointerEvents)
+      // and runs in the dedicated `chromium-touch` project below. Skip it
+      // here so the same spec doesn't double-fire on the desktop projects
+      // where it would silently no-op (Touch constructor is undefined
+      // without `hasTouch`).
+      testIgnore: /takeoff-touch-gestures\.spec\.ts/,
       use: {
         ...devices["Desktop Chrome"],
         // Use a system-installed chromium when present (Replit / minimal CI
@@ -76,11 +83,29 @@ export default defineConfig({
     },
     {
       name: "firefox",
+      testIgnore: /takeoff-touch-gestures\.spec\.ts/,
       use: { ...devices["Desktop Firefox"] },
     },
     {
       name: "webkit",
+      testIgnore: /takeoff-touch-gestures\.spec\.ts/,
       use: { ...devices["Desktop Safari"] },
+    },
+    {
+      // Task #2222 — Touch-emulation project for the takeoff stylus / palm /
+      // two-finger-rotate spec. Mirrors the `chromium` project's executable
+      // resolution but adds `hasTouch: true` so the page exposes the
+      // TouchEvent / Touch constructors the spec uses to dispatch native
+      // multi-touch sequences against the Konva stage. Runs only the
+      // `takeoff-touch-gestures` spec — the other touch-agnostic specs
+      // already have desktop coverage and don't need a second pass.
+      name: "chromium-touch",
+      testMatch: /takeoff-touch-gestures\.spec\.ts/,
+      use: {
+        ...devices["Desktop Chrome"],
+        hasTouch: true,
+        launchOptions: CHROMIUM_PATH ? { executablePath: CHROMIUM_PATH } : {},
+      },
     },
   ],
   webServer: {
