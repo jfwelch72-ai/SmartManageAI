@@ -13,6 +13,14 @@ export interface MeasurementTablePanelProps {
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onUpdate: (id: string, data: Partial<TakeoffMeasurement>) => void;
+  /**
+   * Task #2334 — Per-row unlock-and-rescale. Forwarded to the
+   * MeasurementTable so the Locked badge can expose an "Unlock &
+   * rescale" affordance that re-derives length/area against the
+   * sheet's current scale. Optional so older callers (tests / panels
+   * that never show locked rows) can omit it without a type break.
+   */
+  onUnlockAndRescale?: (id: string) => void;
 }
 
 function MeasurementTablePanelInner(props: MeasurementTablePanelProps) {
@@ -36,6 +44,7 @@ function MeasurementTablePanelInner(props: MeasurementTablePanelProps) {
           onSelect={props.onSelect}
           onDelete={props.onDelete}
           onUpdate={props.onUpdate}
+          onUnlockAndRescale={props.onUnlockAndRescale}
           scalePxPerFoot={props.scalePxPerFoot ?? undefined}
         />
       </div>

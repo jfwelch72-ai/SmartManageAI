@@ -633,6 +633,78 @@ export function useTakeoffData({
     },
   });
 
+  // Task #2334 — Per-row "Unlock & rescale" mutation. Releases a
+  // measurement from the `lockedScalePxPerFoot` snapshot it was
+  // captured into during a previous re-calibration's lock branch
+  // (Task #2326) and asks the server to re-derive its
+  // `computedLengthFt` / `computedAreaFt2` against the sheet's
+  // current scale. The server is authoritative for the recompute so
+  // the client just invalidates the measurements cache; we don't
+  // optimistically guess at the new quantity values because the
+  // formula depends on per-type geometry that the workspace doesn't
+  // duplicate. The not_found 404 path reuses the existing
+  // `extractMeasurementNotFoundIds` / `pruneDeletedMeasurements`
+  // helpers so a teammate-deleted row drops out of the cache and the
+  // selection set in the same gesture, matching the per-id PATCH.
+  const unlockAndRescaleMeasurementMutation = useMutation({
+    mutationFn: async (id: string) => {
+      if (selectedVersionId && (!selectedVersionData || selectedVersionData.status === "LOCKED")) {
+        throw new Error("Cannot unlock measurements while viewing a locked version");
+      }
+      const res = await apiRequest("POST", `/api/takeoff/measurements/${id}/unlock-rescale`);
+      return res.json() as Promise<TakeoffMeasurement & { unlocked?: boolean }>;
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: measurementsQueryKey });
+      if (selectedSheet) {
+        onCollabBroadcast?.("MEASUREMENT_UPDATED", { sheetId: selectedSheet, measurementId: variables });
+      }
+      // The route returns `unlocked: false` in the idempotent
+      // no-op case (the row was already unlocked — usually a stale
+      // optimistic cache or a teammate beat us to it). Don't claim
+      // we just unlocked something we didn't.
+      if (data && data.unlocked === false) {
+        toast({
+          title: "Already unlocked",
+          description: "This measurement was already tracking the sheet's current scale.",
+        });
+        return;
+      }
+      toast({
+        title: "Measurement unlocked",
+        description: "Length and area now follow the sheet's current scale.",
+      });
+    },
+    onError: (error: unknown, variables) => {
+      const notFoundIds = extractMeasurementNotFoundIds(
+        error,
+        variables ? [variables] : [],
+      );
+      if (notFoundIds.length > 0) {
+        pruneDeletedMeasurements(notFoundIds, measurementsQueryKey);
+        toast({
+          title: "Measurement was deleted",
+          description:
+            "Another teammate removed this measurement, so the unlock could not be applied. The canvas has been refreshed.",
+          variant: "destructive",
+        });
+        return;
+      }
+      // 400 sheet_not_calibrated has its own friendly toast so the
+      // user is told to calibrate the sheet before retrying.
+      const data = (error as { data?: { reason?: string } } | undefined)?.data;
+      if (data?.reason === "sheet_not_calibrated") {
+        toast({
+          title: "Sheet is not calibrated",
+          description: "Calibrate the sheet's scale before unlocking measurements.",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({ title: "Error", description: "Failed to unlock measurement", variant: "destructive" });
+    },
+  });
+
   // Task #1989 — Bulk PATCH for editing N measurements in a single
   // round-trip. Mirrors `bulkUpdateMarkupsMutation` (Task #1752 /
   // #1765) so a multi-select category re-assign / cost-code rename
@@ -1715,6 +1787,7 @@ export function useTakeoffData({
     supersedeSheetMutation,
     createMeasurementMutation,
     updateMeasurementMutation,
+    unlockAndRescaleMeasurementMutation,
     bulkUpdateMeasurementsMutation,
     deleteMeasurementMutation,
     bulkDeleteMeasurementsMutation,

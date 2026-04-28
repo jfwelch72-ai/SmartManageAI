@@ -335,6 +335,121 @@ async function applyProvenanceForInsert(
   return next;
 }
 
+// Task #2334 — Per-measurement recompute helper. Extracted so both the
+// sheet-level re-calibration loop (rescale branch) and the new
+// per-row "Unlock & rescale" endpoint use the exact same per-type
+// formula. Returns the partial update dict (computed length / area /
+// volume / surface area + metadata.perimeterFt) for one row at the
+// supplied target scale, or `null` when the row carries no usable
+// points. Intentionally has no side-effects: callers persist the
+// updates with `db.update(...)` so they can wrap their own audit/log
+// behaviour around it.
+function computeMeasurementRescaleUpdates(
+  measurement: {
+    type: string;
+    points: string | null;
+    depthFeet: number | null;
+    pitchRatio: string | null;
+    metadata: string | null;
+  },
+  scalePxPerFoot: number,
+): Partial<{
+  computedLengthFt: number;
+  computedAreaFt2: number;
+  computedVolumeCy: number;
+  computedSurfaceAreaFt2: number;
+  metadata: string;
+}> | null {
+  if (!measurement.points) return null;
+  const points = safeParsePoints(measurement.points);
+  if (!points || points.length === 0) return null;
+
+  const updates: Partial<{
+    computedLengthFt: number;
+    computedAreaFt2: number;
+    computedVolumeCy: number;
+    computedSurfaceAreaFt2: number;
+    metadata: string;
+  }> = {};
+
+  const mergePerimeterIntoMetadata = (perimeterFt: number) => {
+    const existing: Record<string, unknown> = (() => {
+      try {
+        return measurement.metadata
+          ? (typeof measurement.metadata === "string"
+              ? JSON.parse(measurement.metadata)
+              : measurement.metadata) as Record<string, unknown>
+          : {};
+      } catch {
+        return {};
+      }
+    })();
+    updates.metadata = JSON.stringify({ ...existing, perimeterFt });
+  };
+
+  switch (measurement.type) {
+    case "LINEAR":
+      if (points.length === 3) {
+        const [start, middle, end] = points;
+        const arcSegment = createArcSegment(start, end, middle, scalePxPerFoot);
+        if (arcSegment) {
+          updates.computedLengthFt = arcSegment.arcLength;
+        }
+      } else if (points.length >= 2) {
+        updates.computedLengthFt = computeDistanceInFeet(points, scalePxPerFoot);
+      }
+      break;
+
+    case "AREA":
+      if (points.length >= 3) {
+        updates.computedAreaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
+        mergePerimeterIntoMetadata(computePolygonPerimeterInFt(points, scalePxPerFoot));
+      }
+      break;
+
+    case "PITCHED_AREA":
+      if (points.length >= 3) {
+        let areaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
+        if (measurement.pitchRatio) {
+          areaFt2 = computePitchedAreaFt2(areaFt2, measurement.pitchRatio);
+        }
+        updates.computedAreaFt2 = areaFt2;
+        mergePerimeterIntoMetadata(computePolygonPerimeterInFt(points, scalePxPerFoot));
+      }
+      break;
+
+    case "SURFACE_AREA":
+      if (points.length >= 3) {
+        const surfArea = computePolygonAreaInFt2(points, scalePxPerFoot);
+        updates.computedAreaFt2 = surfArea;
+        updates.computedSurfaceAreaFt2 = surfArea;
+        mergePerimeterIntoMetadata(computePolygonPerimeterInFt(points, scalePxPerFoot));
+      }
+      break;
+
+    case "VOLUME":
+      if (points.length >= 3 && measurement.depthFeet) {
+        const areaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
+        updates.computedAreaFt2 = areaFt2;
+        updates.computedVolumeCy = computeVolumeInCY(areaFt2, measurement.depthFeet);
+        mergePerimeterIntoMetadata(computePolygonPerimeterInFt(points, scalePxPerFoot));
+      }
+      break;
+
+    case "SEGMENT":
+      if (points.length >= 2) {
+        let totalLen = 0;
+        for (let i = 0; i < points.length - 1; i++) {
+          totalLen += computeDistanceInFeet([points[i], points[i + 1]], scalePxPerFoot);
+        }
+        updates.computedLengthFt = totalLen;
+      }
+      break;
+  }
+
+  return updates;
+}
+
 async function computeMeasurementGeometry(
   validated: Record<string, unknown>,
   scalePxPerFoot: number | null,
@@ -785,6 +900,142 @@ router.patch("/api/takeoff/measurements/bulk", requireAuth, async (req: AuthRequ
       });
       return;
     }
+    next(error);
+  }
+});
+
+// Task #2334 — Per-row "Unlock & rescale" endpoint. Released from the
+// `lockedScalePxPerFoot` snapshot a user opted into during a previous
+// re-calibration's lock branch (Task #2326), and re-derives the row's
+// `computedLengthFt` / `computedAreaFt2` / `computedVolumeCy` against
+// the sheet's CURRENT `scalePxPerFoot`. Without this endpoint a
+// mistakenly-locked row could only be released by deleting and re-
+// drawing it; the lock is intentionally sticky against subsequent
+// sheet recalibrations (the rescale loop above skips locked rows on
+// every recalibration), so the only way back to "track the sheet
+// scale" was a destructive redraw.
+//
+// Auth gating mirrors the per-id PATCH below: `verifySheetAccess`
+// covers tenant + role checks (ESTIMATOR / MANAGER / ADMIN +
+// crew-assigned roles, blocking VIEWER through the same access path),
+// and `isMeasurementLocked` blocks edits to rows in a locked version
+// — those rows are immutable for everyone, so an unlock here would be
+// silently un-doable on the next legitimate edit attempt anyway.
+//
+// Behaviour notes:
+//   - 404 (structured): row already gone (teammate-deleted), client
+//     prunes from cache via the same not_found path used for PATCH.
+//   - 403 locked-version: row belongs to a LOCKED takeoff version.
+//   - 200 no-op: row is not currently locked. The endpoint is
+//     idempotent so a double-click can't create a 4xx; we just return
+//     the row unchanged with `unlocked: false` so the client toast
+//     can decide whether to celebrate.
+//   - 400 no-scale: sheet has no `scalePxPerFoot`. Without a target
+//     scale there is no meaningful recompute to perform, and we'd
+//     end up with a row whose computed* values silently went stale
+//     — refuse loudly and ask the user to calibrate first.
+router.post("/api/takeoff/measurements/:id/unlock-rescale", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { id } = req.params;
+    const { takeoffMeasurements, takeoffSheets } = await import("@shared/schema");
+
+    const [existing] = await db
+      .select()
+      .from(takeoffMeasurements)
+      .where(eq(takeoffMeasurements.id, id))
+      .limit(1);
+    if (!existing) {
+      // Mirror the structured 404 the per-id PATCH uses (Task #1970)
+      // so the client `extractMeasurementNotFoundIds` helper can
+      // prune the row out of the cache and the workspace selection.
+      res.status(404).json({
+        error: "Measurement not found — it may have been deleted",
+        reason: "not_found",
+        failedMeasurementIds: [id],
+      });
+      return;
+    }
+
+    const locked = await isMeasurementLocked(id);
+    if (locked) {
+      res.status(403).json({ error: "Cannot unlock a measurement in a locked version" });
+      return;
+    }
+
+    const access = await verifySheetAccess(existing.sheetId, req.user!);
+    if (!access.allowed) {
+      res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Access denied" });
+      return;
+    }
+
+    // Idempotent no-op when the row isn't locked. We return the row
+    // unchanged + `unlocked: false` so the client toast can degrade
+    // gracefully (it shouldn't happen given the badge only renders
+    // when locked, but a stale optimistic cache or a teammate's
+    // earlier unlock could trigger this race).
+    if (existing.lockedScalePxPerFoot == null) {
+      res.json({ ...existing, unlocked: false });
+      return;
+    }
+
+    const [sheet] = await db
+      .select({ scalePxPerFoot: takeoffSheets.scalePxPerFoot })
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.id, existing.sheetId))
+      .limit(1);
+
+    const sheetScale = sheet?.scalePxPerFoot;
+    if (!sheetScale || !Number.isFinite(sheetScale) || sheetScale <= 0) {
+      res.status(400).json({
+        error: "Sheet is not calibrated. Calibrate the sheet before unlocking the row.",
+        reason: "sheet_not_calibrated",
+      });
+      return;
+    }
+
+    // Recompute against the live sheet scale using the shared helper
+    // (same formulas as the calibration loop's rescale branch). The
+    // helper returns `null` for rows that have no usable points
+    // (e.g. COUNT measurements); for those we still clear the lock
+    // but skip the geometry write since there's nothing to compute.
+    const recompute = computeMeasurementRescaleUpdates(existing, sheetScale);
+
+    const setPayload: Record<string, unknown> = {
+      lockedScalePxPerFoot: null,
+      updatedAt: new Date(),
+    };
+    if (recompute) {
+      Object.assign(setPayload, recompute);
+    }
+
+    const [updated] = await db
+      .update(takeoffMeasurements)
+      .set(setPayload)
+      .where(eq(takeoffMeasurements.id, id))
+      .returning();
+
+    await logUpdate(
+      req.user!.id,
+      "takeoff_measurement",
+      id,
+      {
+        lockedScalePxPerFoot: existing.lockedScalePxPerFoot,
+        computedLengthFt: existing.computedLengthFt,
+        computedAreaFt2: existing.computedAreaFt2,
+        computedVolumeCy: existing.computedVolumeCy,
+      },
+      {
+        lockedScalePxPerFoot: null,
+        computedLengthFt: updated.computedLengthFt,
+        computedAreaFt2: updated.computedAreaFt2,
+        computedVolumeCy: updated.computedVolumeCy,
+        action: "unlock_and_rescale",
+      },
+      req,
+    );
+
+    res.json(updated);
+  } catch (error) {
     next(error);
   }
 });
@@ -1621,81 +1872,12 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
       // shift its computed values.
       if (measurement.lockedScalePxPerFoot != null) continue;
 
-      const points = safeParsePoints(measurement.points);
-      if (!points || points.length === 0) continue;
-
-      const updates: Partial<typeof takeoffMeasurements.$inferInsert> = {};
-
       try {
-        switch (measurement.type) {
-          case "LINEAR":
-            if (points.length === 3) {
-              const [start, middle, end] = points;
-              const arcSegment = createArcSegment(start, end, middle, scalePxPerFoot);
-              if (arcSegment) {
-                updates.computedLengthFt = arcSegment.arcLength;
-              }
-            } else if (points.length >= 2) {
-              updates.computedLengthFt = computeDistanceInFeet(points, scalePxPerFoot);
-            }
-            break;
-
-          case "AREA":
-            if (points.length >= 3) {
-              updates.computedAreaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
-              const perimA = computePolygonPerimeterInFt(points, scalePxPerFoot);
-              const metaA: Record<string, unknown> = (() => { try { return measurement.metadata ? (typeof measurement.metadata === "string" ? JSON.parse(measurement.metadata) : measurement.metadata) as Record<string, unknown> : {}; } catch { return {}; } })();
-              updates.metadata = JSON.stringify({ ...metaA, perimeterFt: perimA });
-            }
-            break;
-
-          case "PITCHED_AREA":
-            if (points.length >= 3) {
-              let areaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
-              if (measurement.pitchRatio) {
-                areaFt2 = computePitchedAreaFt2(areaFt2, measurement.pitchRatio);
-              }
-              updates.computedAreaFt2 = areaFt2;
-              const perimPA = computePolygonPerimeterInFt(points, scalePxPerFoot);
-              const metaPA: Record<string, unknown> = (() => { try { return measurement.metadata ? (typeof measurement.metadata === "string" ? JSON.parse(measurement.metadata) : measurement.metadata) as Record<string, unknown> : {}; } catch { return {}; } })();
-              updates.metadata = JSON.stringify({ ...metaPA, perimeterFt: perimPA });
-            }
-            break;
-
-          case "SURFACE_AREA":
-            if (points.length >= 3) {
-              const surfArea = computePolygonAreaInFt2(points, scalePxPerFoot);
-              updates.computedAreaFt2 = surfArea;
-              updates.computedSurfaceAreaFt2 = surfArea;
-              const perimSA = computePolygonPerimeterInFt(points, scalePxPerFoot);
-              const metaSA: Record<string, unknown> = (() => { try { return measurement.metadata ? (typeof measurement.metadata === "string" ? JSON.parse(measurement.metadata) : measurement.metadata) as Record<string, unknown> : {}; } catch { return {}; } })();
-              updates.metadata = JSON.stringify({ ...metaSA, perimeterFt: perimSA });
-            }
-            break;
-
-          case "VOLUME":
-            if (points.length >= 3 && measurement.depthFeet) {
-              const areaFt2 = computePolygonAreaInFt2(points, scalePxPerFoot);
-              updates.computedAreaFt2 = areaFt2;
-              updates.computedVolumeCy = computeVolumeInCY(areaFt2, measurement.depthFeet);
-              const perimV = computePolygonPerimeterInFt(points, scalePxPerFoot);
-              const metaV: Record<string, unknown> = (() => { try { return measurement.metadata ? (typeof measurement.metadata === "string" ? JSON.parse(measurement.metadata) : measurement.metadata) as Record<string, unknown> : {}; } catch { return {}; } })();
-              updates.metadata = JSON.stringify({ ...metaV, perimeterFt: perimV });
-            }
-            break;
-
-          case "SEGMENT":
-            if (points.length >= 2) {
-              let totalLen = 0;
-              for (let i = 0; i < points.length - 1; i++) {
-                totalLen += computeDistanceInFeet([points[i], points[i + 1]], scalePxPerFoot);
-              }
-              updates.computedLengthFt = totalLen;
-            }
-            break;
-        }
-
-        if (Object.keys(updates).length > 0) {
+        // Task #2334 — Delegated to the shared per-measurement helper
+        // so the new "Unlock & rescale" endpoint and this loop stay
+        // byte-for-byte equivalent on the formula side.
+        const updates = computeMeasurementRescaleUpdates(measurement, scalePxPerFoot);
+        if (updates && Object.keys(updates).length > 0) {
           await db
             .update(takeoffMeasurements)
             .set({ ...updates, updatedAt: new Date() })

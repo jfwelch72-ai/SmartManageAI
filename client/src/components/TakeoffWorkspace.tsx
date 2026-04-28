@@ -979,7 +979,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     categories, currentSheet, aggregatedMeasurements,
     sheetsQueryKey,
     importPlanMutation, supersedeSheetMutation, createMeasurementMutation,
-    updateMeasurementMutation, bulkUpdateMeasurementsMutation, deleteMeasurementMutation, bulkDeleteMeasurementsMutation,
+    updateMeasurementMutation, unlockAndRescaleMeasurementMutation, bulkUpdateMeasurementsMutation, deleteMeasurementMutation, bulkDeleteMeasurementsMutation,
     createMarkupMutation, updateMarkupMutation, bulkUpdateMarkupsMutation, deleteMarkupMutation, bulkDeleteMarkupsMutation,
     createSheetLinkMutation, deleteSheetLinkMutation, detectLinksMutation,
     saveCategoryMutation, deleteCategoryMutation,
@@ -4689,6 +4689,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           if (data.metadata !== undefined) previous.metadata = prev.metadata ?? null;
         }
         updateMeasurementMutation.mutate({ id, ...data, previous } as Parameters<typeof updateMeasurementMutation.mutate>[0]);
+      },
+      // Task #2334 — Per-row unlock-and-rescale. The MeasurementTable
+      // surfaces this through the Locked badge so an estimator who
+      // locked by mistake (or who later decides the new sheet scale
+      // is correct after all) can re-derive the row against the
+      // current `scalePxPerFoot` without deleting and redrawing it.
+      onUnlockAndRescale: (id: string) => {
+        unlockAndRescaleMeasurementMutation.mutate(id);
       },
     },
     issueDetail: selectedIssue ? {

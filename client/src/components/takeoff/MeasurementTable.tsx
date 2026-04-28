@@ -5,7 +5,17 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { ArrowUpDown, ArrowUp, ArrowDown, Search, X, Trash2, Edit2, Check, Eye, Flag, Lock } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { ArrowUpDown, ArrowUp, ArrowDown, Search, X, Trash2, Edit2, Check, Eye, Flag, Lock, LockOpen } from "lucide-react";
 
 // Task #2319 — Source column visual language. Each calibration source
 // gets a stable dot colour so estimators can scan a long list and
@@ -28,6 +38,17 @@ interface MeasurementTableProps {
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onUpdate: (id: string, data: Record<string, any>) => void;
+  /**
+   * Task #2334 — Per-row "Unlock & rescale" callback. Released from
+   * the locked-scale snapshot the user opted into during a previous
+   * sheet re-calibration; the workspace re-derives length/area
+   * against the sheet's current scale on the server and invalidates
+   * the cache. Optional so legacy callers (the few unit tests that
+   * render this table without the workspace plumbing) can omit it.
+   * When omitted, the Locked badge stays read-only — there's no
+   * affordance to release the lock.
+   */
+  onUnlockAndRescale?: (id: string) => void;
   scalePxPerFoot?: number | null;
 }
 
@@ -41,6 +62,7 @@ export function MeasurementTable({
   onSelect,
   onDelete,
   onUpdate,
+  onUnlockAndRescale,
   scalePxPerFoot,
 }: MeasurementTableProps) {
   const [search, setSearch] = useState("");
@@ -49,6 +71,15 @@ export function MeasurementTable({
   const [filterType, setFilterType] = useState<string>("all");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editLabel, setEditLabel] = useState("");
+  // Task #2334 — `unlockCandidate` carries the measurement row the
+  // user clicked the unlock button on. Holding the candidate (rather
+  // than just an id) lets the AlertDialog show the row's label and
+  // captured px/ft so the user can see exactly what they're about to
+  // release. Cleared after the action is dispatched OR the dialog is
+  // dismissed; the actual recompute runs server-side via
+  // `onUnlockAndRescale` and the cache invalidation refreshes the
+  // visible Qty value.
+  const [unlockCandidate, setUnlockCandidate] = useState<any | null>(null);
 
   const typeColors: Record<string, string> = {
     LINEAR: "bg-blue-500/20 text-blue-700 dark:text-blue-300",
@@ -254,27 +285,62 @@ export function MeasurementTable({
                         when they re-calibrate the sheet).
                       */}
                       {m.lockedScalePxPerFoot != null && (
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <span
-                                className="inline-flex items-center gap-0.5 rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 px-1 py-0.5 text-[9px] font-medium shrink-0"
-                                data-testid={`badge-measurement-locked-${m.id}`}
-                              >
-                                <Lock className="w-2.5 h-2.5" />
-                                Locked
-                              </span>
-                            </TooltipTrigger>
-                            <TooltipContent side="top" className="max-w-[220px] text-xs">
-                              Length and area are frozen at{" "}
-                              <span className="font-mono">
-                                {Number(m.lockedScalePxPerFoot).toFixed(2)} px/ft
-                              </span>
-                              . Future re-calibrations of this sheet
-                              will skip this row.
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
+                        <span
+                          className="inline-flex items-center rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[9px] font-medium shrink-0"
+                          data-testid={`badge-measurement-locked-${m.id}`}
+                          onClick={e => e.stopPropagation()}
+                        >
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <span className="inline-flex items-center gap-0.5 px-1 py-0.5">
+                                  <Lock className="w-2.5 h-2.5" />
+                                  Locked
+                                </span>
+                              </TooltipTrigger>
+                              <TooltipContent side="top" className="max-w-[220px] text-xs">
+                                Length and area are frozen at{" "}
+                                <span className="font-mono">
+                                  {Number(m.lockedScalePxPerFoot).toFixed(2)} px/ft
+                                </span>
+                                . Future re-calibrations of this sheet
+                                will skip this row.
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                          {/*
+                            Task #2334 — "Unlock & rescale" affordance
+                            on the Locked badge. Only renders when the
+                            workspace passed `onUnlockAndRescale` so a
+                            read-only/embed render of the table stays
+                            non-actionable. Click opens an AlertDialog
+                            confirmation (the action recomputes
+                            length/area against the current sheet
+                            scale on the server, which is
+                            user-visible state) instead of firing
+                            immediately on click.
+                          */}
+                          {onUnlockAndRescale && (
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <button
+                                    type="button"
+                                    aria-label="Unlock and rescale measurement"
+                                    onClick={e => { e.stopPropagation(); setUnlockCandidate(m); }}
+                                    className="inline-flex items-center justify-center pl-0.5 pr-1 py-0.5 rounded-r hover:bg-amber-500/25 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                                    data-testid={`button-measurement-unlock-${m.id}`}
+                                  >
+                                    <LockOpen className="w-2.5 h-2.5" />
+                                  </button>
+                                </TooltipTrigger>
+                                <TooltipContent side="top" className="text-[11px]">
+                                  Unlock &amp; rescale to current sheet scale
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
+                          )}
+                        </span>
                       )}
                     </div>
                   )}
@@ -361,6 +427,59 @@ export function MeasurementTable({
           {totals.cost > 0 && <span className="font-semibold text-foreground">${totals.cost.toFixed(0)}</span>}
         </div>
       )}
+
+      {/*
+        Task #2334 — Unlock-and-rescale confirmation. The dialog
+        spells out exactly what's about to change: the captured
+        px/ft snapshot is dropped, the row's length/area re-derive
+        against the current sheet scale, and the row will once
+        again track future re-calibrations. Important enough to
+        confirm because the dollar value of the row is computed off
+        the recomputed quantity, so a casual click could
+        meaningfully shift estimate totals.
+      */}
+      <AlertDialog
+        open={unlockCandidate !== null}
+        onOpenChange={(open) => { if (!open) setUnlockCandidate(null); }}
+      >
+        <AlertDialogContent data-testid="dialog-measurement-unlock-rescale">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unlock &amp; rescale this measurement?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <span className="font-medium">
+                {unlockCandidate?.label || `${unlockCandidate?.type ?? "Measurement"}`}
+              </span>{" "}
+              is currently locked at{" "}
+              <span className="font-mono">
+                {unlockCandidate?.lockedScalePxPerFoot != null
+                  ? `${Number(unlockCandidate.lockedScalePxPerFoot).toFixed(2)} px/ft`
+                  : "its captured scale"}
+              </span>
+              . Unlocking will re-derive its length and area against the sheet's current scale
+              {scalePxPerFoot != null
+                ? ` (${Number(scalePxPerFoot).toFixed(2)} px/ft)`
+                : ""}
+              , and future re-calibrations of the sheet will once again update this row.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-measurement-unlock">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              data-testid="button-confirm-measurement-unlock"
+              onClick={() => {
+                if (unlockCandidate && onUnlockAndRescale) {
+                  onUnlockAndRescale(unlockCandidate.id);
+                }
+                setUnlockCandidate(null);
+              }}
+            >
+              Unlock &amp; rescale
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
