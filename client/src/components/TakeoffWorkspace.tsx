@@ -4042,6 +4042,15 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       overlayOpacity,
       onOverlayOpacityChange: (v) => setOverlayOpacity(v),
       onCloseOverlaySlider: () => handleSetShowOverlaySlider(false),
+      // Task #2311 — Inline AI Takeoff empty-state CTA card. Rendered
+      // by `<CanvasViewport>` inside the stage area only when the
+      // sheet has zero measurements + zero AI runs to date and the
+      // user hasn't dismissed it for this (user, sheet). Opens the
+      // existing AI panel when accepted; per-(user, sheet) dismissal
+      // persists in localStorage so it doesn't re-appear next session.
+      showAiCta,
+      onOpenAiFromCta: handleOpenAiFromCta,
+      onDismissAiCta: handleDismissAiCta,
     },
   };
 
@@ -4379,15 +4388,6 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       onToggleMeasurementTable: () => setShowMeasurementTable(!showMeasurementTable),
       stageScale,
       currentSheet,
-      // Task #2311 — Inline AI Takeoff empty-state CTA card. Rendered
-      // by `<CanvasViewport>` inside the stage area only when the
-      // sheet has zero measurements + zero AI runs to date and the
-      // user hasn't dismissed it for this (user, sheet). Opens the
-      // existing AI panel when accepted; per-(user, sheet) dismissal
-      // persists in localStorage so it doesn't re-appear next session.
-      showAiCta,
-      onOpenAiFromCta: handleOpenAiFromCta,
-      onDismissAiCta: handleDismissAiCta,
     },
     measurementTable: {
       visible: showMeasurementTable && !!selectedSheet,
