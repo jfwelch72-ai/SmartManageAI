@@ -6,6 +6,16 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import {
+  DEFAULT_ALLOW_TWO_FINGER_ROTATE,
+  DEFAULT_PALM_REJECTION_BAND_PX,
+  DEFAULT_STYLUS_LONG_PRESS_MS,
+  PALM_REJECTION_BAND_MAX_PX,
+  PALM_REJECTION_BAND_MIN_PX,
+  STYLUS_LONG_PRESS_MAX_MS,
+  STYLUS_LONG_PRESS_MIN_MS,
+} from "@shared/schema";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
@@ -22,7 +32,7 @@ import {
   Download, AlertTriangle, Clock, Monitor,
   Sun, Moon, Globe, ExternalLink, Key, Loader2,
   Activity, Settings as SettingsIcon, Users,
-  Lock, Plus, Trash2, Copy, Check, QrCode, Award, Rows3
+  Lock, Plus, Trash2, Copy, Check, QrCode, Award, Rows3, Hand
 } from "lucide-react";
 
 import ProfileEditSection from "@/components/settings/ProfileEditSection";
@@ -46,6 +56,10 @@ interface SettingsData {
   timezone: string | null;
   birthdayDigestWeekday: number;
   birthdayDigestHour: number;
+  // Task #2142 — takeoff stylus prefs
+  allowTwoFingerRotate?: boolean;
+  palmRejectionBandPx?: number;
+  stylusLongPressMs?: number;
 }
 
 const WEEKDAY_OPTIONS = [
@@ -509,6 +523,108 @@ function PreferencesSection() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card data-testid="card-takeoff-stylus-prefs">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Hand className="h-5 w-5" />
+            Takeoff (Mobile / Stylus)
+          </CardTitle>
+          <CardDescription>
+            Tune palm rejection, the stylus long-press snap menu, and the
+            optional two-finger rotate gesture for the takeoff workspace.
+            These settings only affect touch and pen input — mouse input is
+            unchanged.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="toggle-allow-rotate" className="text-sm font-medium">
+                Allow two-finger rotate
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                When off (default), two-finger gestures pan and zoom only —
+                rotate is ignored to prevent accidental sheet rotation while
+                pinching.
+              </p>
+            </div>
+            <Switch
+              id="toggle-allow-rotate"
+              data-testid="switch-allow-two-finger-rotate"
+              checked={currentSettings.allowTwoFingerRotate ?? DEFAULT_ALLOW_TWO_FINGER_ROTATE}
+              onCheckedChange={(checked) => {
+                updateSettingsMutation.mutate({ allowTwoFingerRotate: checked });
+              }}
+              disabled={updateSettingsMutation.isPending}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <Label htmlFor="input-palm-band" className="text-sm font-medium">
+                Palm rejection band (px)
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                Maximum touch contact size, in CSS pixels, that will still be
+                treated as a finger tap while a stylus is in contact. Larger
+                contacts are rejected as palm rest.
+              </p>
+              <Input
+                id="input-palm-band"
+                data-testid="input-palm-rejection-band-px"
+                type="number"
+                min={PALM_REJECTION_BAND_MIN_PX}
+                max={PALM_REJECTION_BAND_MAX_PX}
+                step={1}
+                defaultValue={currentSettings.palmRejectionBandPx ?? DEFAULT_PALM_REJECTION_BAND_PX}
+                onBlur={(e) => {
+                  const raw = Number.parseInt(e.target.value, 10);
+                  if (Number.isNaN(raw)) return;
+                  const clamped = Math.min(
+                    PALM_REJECTION_BAND_MAX_PX,
+                    Math.max(PALM_REJECTION_BAND_MIN_PX, raw),
+                  );
+                  if (clamped === (currentSettings.palmRejectionBandPx ?? DEFAULT_PALM_REJECTION_BAND_PX)) return;
+                  updateSettingsMutation.mutate({ palmRejectionBandPx: clamped });
+                }}
+                disabled={updateSettingsMutation.isPending}
+              />
+            </div>
+
+            <div className="space-y-1">
+              <Label htmlFor="input-long-press" className="text-sm font-medium">
+                Stylus long-press (ms)
+              </Label>
+              <p className="text-xs text-muted-foreground">
+                How long the stylus tip must be held still before the snap
+                menu pops up. Lower values trigger faster but can fire
+                during slow drawing.
+              </p>
+              <Input
+                id="input-long-press"
+                data-testid="input-stylus-long-press-ms"
+                type="number"
+                min={STYLUS_LONG_PRESS_MIN_MS}
+                max={STYLUS_LONG_PRESS_MAX_MS}
+                step={50}
+                defaultValue={currentSettings.stylusLongPressMs ?? DEFAULT_STYLUS_LONG_PRESS_MS}
+                onBlur={(e) => {
+                  const raw = Number.parseInt(e.target.value, 10);
+                  if (Number.isNaN(raw)) return;
+                  const clamped = Math.min(
+                    STYLUS_LONG_PRESS_MAX_MS,
+                    Math.max(STYLUS_LONG_PRESS_MIN_MS, raw),
+                  );
+                  if (clamped === (currentSettings.stylusLongPressMs ?? DEFAULT_STYLUS_LONG_PRESS_MS)) return;
+                  updateSettingsMutation.mutate({ stylusLongPressMs: clamped });
+                }}
+                disabled={updateSettingsMutation.isPending}
+              />
+            </div>
           </div>
         </CardContent>
       </Card>

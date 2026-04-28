@@ -131,6 +131,15 @@ interface UseTakeoffInteractionsParams {
    *  `constraintMode === 'ortho-angle'`; a `null` preset (the
    *  trailing entry) means "off" and skips angular constraint. */
   orthoPresetIndex?: number;
+  /** Task #2142 — Mobile / stylus precision pass. The two-finger
+   *  rotate gesture is opt-in (default false) so accidental pinches
+   *  don't rotate the sheet. When true, the pinch handler additionally
+   *  applies the rotation delta around the gesture's center. */
+  allowTwoFingerRotate?: boolean;
+  /** Task #2142 — Palm rejection band (px). Touches with a contact
+   *  size larger than this band are dropped while a stylus is in
+   *  contact. Pen + mouse events are unaffected. */
+  palmRejectionBandPx?: number;
 }
 
 function inverseRotatePoint(
@@ -201,7 +210,14 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     onRotateCW, onRotateCCW,
     disableLegacyShortcuts,
     enabledSnapModes, constraintMode, orthoPresetIndex,
+    allowTwoFingerRotate = false,
+    palmRejectionBandPx,
   } = params;
+  // Task #2142 — Track the cumulative rotate delta during a single
+  // pinch so we can apply discrete 90° rotations without accidentally
+  // chaining multiple rotations from one continuous gesture. The ref
+  // resets whenever the pinch ends.
+  const pinchRotationAccumRef = useRef<number>(0);
 
   const handleToolSelect = useCallback((tool: Tool) => {
     setActiveTool(tool);
@@ -732,8 +748,27 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       e.evt.preventDefault();
       lastInputTypeRef.current = "touch";
       lastInputTimeRef.current = now;
+      // Task #2142 — Palm rejection on the takeoff canvas. When more
+      // than two touches land at once, only the first two are
+      // legitimately the pinch gesture; any extra contacts are palm
+      // rest. We also drop the lone touch when its contact dimension
+      // exceeds the per-user palm band, which happens on iPad / Surface
+      // when the user rests their hand while drawing with a stylus.
+      const band = typeof palmRejectionBandPx === "number" ? palmRejectionBandPx : 24;
+      if (e.evt.touches && e.evt.touches.length === 1) {
+        const t = e.evt.touches[0];
+        const size = Math.max(
+          t.radiusX ? t.radiusX * 2 : 0,
+          t.radiusY ? t.radiusY * 2 : 0,
+        );
+        if (size > band) {
+          setMouseDownPosition(null);
+          return;
+        }
+      }
       if (e.evt.touches && e.evt.touches.length >= 2) {
         isPinchingRef.current = true;
+        pinchRotationAccumRef.current = 0;
         setMouseDownPosition(null);
         return;
       }
@@ -745,7 +780,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     const pointerPosition = stage.getPointerPosition();
     if (!pointerPosition) return;
     setMouseDownPosition(pointerPosition);
-  }, []);
+  }, [palmRejectionBandPx, setMouseDownPosition]);
 
   const handleStageMouseUp = useCallback((e: any) => {
     const isTouchEvent = e.evt && (e.evt.type === "touchend" || e.evt.changedTouches);
@@ -873,11 +908,13 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     });
   }, [setStageScale, setStagePosition]);
 
+  const lastPinchAngleRef = useRef<number | null>(null);
   const handleTouchMove = useCallback((e: any) => {
     const touches = e.evt?.touches;
     if (!touches || touches.length < 2) {
       lastPinchDistRef.current = null;
       lastPinchCenterRef.current = null;
+      lastPinchAngleRef.current = null;
       if (!isPinchingRef.current) handleStageMouseMove(e);
       return;
     }
@@ -888,6 +925,11 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     const t2 = touches[1];
     const dist = Math.sqrt(Math.pow(t2.clientX - t1.clientX, 2) + Math.pow(t2.clientY - t1.clientY, 2));
     const center = { x: (t1.clientX + t2.clientX) / 2, y: (t1.clientY + t2.clientY) / 2 };
+    // Task #2142 — Track the angle between the two touches so we can
+    // optionally apply a rotation delta (gated behind the per-user
+    // "Allow two-finger rotate" preference). Default-off so accidental
+    // pinch rotations don't spin the sheet.
+    const angle = Math.atan2(t2.clientY - t1.clientY, t2.clientX - t1.clientX);
     if (lastPinchDistRef.current !== null && lastPinchCenterRef.current !== null) {
       const stage = stageRef.current;
       if (!stage) return;
@@ -908,16 +950,48 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         x: stageCenter.x - mousePointTo.x * newScale + dx,
         y: stageCenter.y - mousePointTo.y * newScale + dy,
       });
+
+      // Task #2142 — Apply 90° sheet rotation when the user has opted
+      // in and the cumulative pinch rotation crosses a quarter turn.
+      // Discrete 90° steps prevent fine-grained drift; the canvas only
+      // supports the four cardinal orientations (sheetRotation 0/90/
+      // 180/270) so anything between is meaningless. We accumulate the
+      // signed rotation delta across the lifetime of one pinch, then
+      // fire onRotateCW / onRotateCCW once for every full π/2 it
+      // crosses, decrementing the accumulator by the same amount so
+      // multi-step rotations within one gesture stay possible.
+      if (allowTwoFingerRotate && lastPinchAngleRef.current !== null) {
+        let dAngle = angle - lastPinchAngleRef.current;
+        // Normalize to the shortest path so the wrap-around at ±π
+        // doesn't register as a near-full revolution.
+        if (dAngle > Math.PI) dAngle -= 2 * Math.PI;
+        if (dAngle < -Math.PI) dAngle += 2 * Math.PI;
+        pinchRotationAccumRef.current += dAngle;
+        const QUARTER = Math.PI / 2;
+        while (pinchRotationAccumRef.current >= QUARTER) {
+          pinchRotationAccumRef.current -= QUARTER;
+          if (typeof onRotateCW === "function") onRotateCW();
+        }
+        while (pinchRotationAccumRef.current <= -QUARTER) {
+          pinchRotationAccumRef.current += QUARTER;
+          if (typeof onRotateCCW === "function") onRotateCCW();
+        }
+      }
     }
     lastPinchDistRef.current = dist;
     lastPinchCenterRef.current = center;
-  }, [stageScale, stagePosition, stageRef, handleStageMouseMove, setStageScale, setStagePosition]);
+    lastPinchAngleRef.current = angle;
+  }, [stageScale, stagePosition, stageRef, handleStageMouseMove, setStageScale, setStagePosition, allowTwoFingerRotate, onRotateCW, onRotateCCW, setMouseDownPosition]);
 
   const handleTouchEnd = useCallback((e: any) => {
     const touches = e.evt?.touches;
     if (!touches || touches.length < 2) {
       lastPinchDistRef.current = null;
       lastPinchCenterRef.current = null;
+      // Task #2142 — Reset rotate-gesture bookkeeping so the next
+      // two-finger gesture starts from a fresh angle baseline.
+      lastPinchAngleRef.current = null;
+      pinchRotationAccumRef.current = 0;
     }
     if (isPinchingRef.current) {
       if (!touches || touches.length === 0) isPinchingRef.current = false;

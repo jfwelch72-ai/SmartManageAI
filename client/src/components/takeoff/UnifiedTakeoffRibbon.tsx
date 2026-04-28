@@ -72,6 +72,53 @@ function shortcutKeysFor(shortcutId: string | null | undefined): string | null {
   return SHORTCUT_BY_ID[shortcutId]?.keys ?? null;
 }
 
+// Task #2142 — Narrow-viewport reflow.
+//
+// Below ~768px (typical phone landscape / split-screen tablet) the
+// ribbon shrinks each tool to a touch-unfriendly 32px square and shows
+// every group expanded, which both overflows the viewport horizontally
+// and makes individual tool taps very error-prone with a fingertip.
+//
+// We respond by:
+//  1. Bumping the active tool button hit-target from h-8 → h-11
+//     (44px), which is Apple's iOS HIG and Google's Material minimum
+//     for comfortable touch targets.
+//  2. Default-collapsing the lower-priority secondary groups (snap,
+//     constrain, view, verify, navigate) so the primary "Select /
+//     Measure / Annotate" cluster fits without scrolling. Users can
+//     still expand any collapsed group and the choice is persisted to
+//     localStorage by the existing collapsed-state machinery; we only
+//     change the *default* when the user has no stored preference for
+//     that group yet.
+const NARROW_VIEWPORT_BREAKPOINT_PX = 768;
+const NARROW_DEFAULT_COLLAPSED_GROUPS: ReadonlySet<RibbonGroupId> = new Set<RibbonGroupId>([
+  "snap",
+  "constrain",
+  "view",
+  "verify",
+]);
+
+function useIsNarrowViewport(): boolean {
+  const [narrow, setNarrow] = useState<boolean>(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+    return window.matchMedia(`(max-width: ${NARROW_VIEWPORT_BREAKPOINT_PX - 1}px)`).matches;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mql = window.matchMedia(`(max-width: ${NARROW_VIEWPORT_BREAKPOINT_PX - 1}px)`);
+    const handler = (e: MediaQueryListEvent) => setNarrow(e.matches);
+    // addEventListener is the modern API; older Safari only has the
+    // deprecated addListener fallback, so support both.
+    if (typeof mql.addEventListener === "function") {
+      mql.addEventListener("change", handler);
+      return () => mql.removeEventListener("change", handler);
+    }
+    mql.addListener(handler);
+    return () => mql.removeListener(handler);
+  }, []);
+  return narrow;
+}
+
 export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
   const {
     userId,
@@ -153,9 +200,36 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
     }
   }, [collapsed, storageKey]);
 
-  const toggleGroup = useCallback((id: RibbonGroupId) => {
-    setCollapsed((prev) => ({ ...prev, [id]: !prev[id] }));
-  }, []);
+  const isNarrowViewport = useIsNarrowViewport();
+
+  // When the viewport is narrow we treat low-priority groups as
+  // collapsed-by-default. The actual stored `collapsed` map is the
+  // source of truth once the user touches a group toggle, so explicit
+  // entries (true *or* false) always win over the narrow-default.
+  const isGroupCollapsed = useCallback(
+    (id: RibbonGroupId): boolean => {
+      if (Object.prototype.hasOwnProperty.call(collapsed, id)) {
+        return !!collapsed[id];
+      }
+      if (isNarrowViewport && NARROW_DEFAULT_COLLAPSED_GROUPS.has(id)) {
+        return true;
+      }
+      return false;
+    },
+    [collapsed, isNarrowViewport],
+  );
+
+  const toggleGroup = useCallback(
+    (id: RibbonGroupId) => {
+      // Read through `isGroupCollapsed` so the first toggle on a
+      // narrow viewport flips from the *effective* default (collapsed)
+      // to expanded, instead of going from "no entry" → false (which
+      // would still read as collapsed because of the narrow default).
+      const currentlyCollapsed = isGroupCollapsed(id);
+      setCollapsed((prev) => ({ ...prev, [id]: !currentlyCollapsed }));
+    },
+    [isGroupCollapsed],
+  );
 
   // Roving tabindex per group. Tab moves group → group (each group
   // exposes exactly one tabIndex=0 button at a time); ←/→ moves
@@ -289,10 +363,11 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
       aria-label="Takeoff ribbon"
       className="bg-card border-b shrink-0 w-full overflow-x-auto"
       data-testid="unified-takeoff-ribbon"
+      data-narrow={isNarrowViewport ? "true" : "false"}
     >
       <div className="flex items-stretch gap-0 min-w-max">
         {RIBBON_GROUPS.map((group) => {
-          const isCollapsed = !!collapsed[group.id];
+          const isCollapsed = isGroupCollapsed(group.id);
           const focusedIdx = focusIndexByGroup[group.id] ?? 0;
           return (
             <section
@@ -359,7 +434,10 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
                             aria-pressed={state.active}
                             aria-label={tool.label}
                             className={cn(
-                              "h-8 px-1.5 gap-1 text-xs",
+                              "gap-1 text-xs",
+                              isNarrowViewport
+                                ? "h-11 min-w-[44px] px-3"
+                                : "h-8 px-1.5",
                               state.active && "ring-1 ring-primary/40",
                             )}
                             onFocus={() =>

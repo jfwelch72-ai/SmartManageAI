@@ -63,6 +63,7 @@ import { ensureSequenceTables } from "./ensureSequenceTables";
 import { ensureUserSettingsTableDensity } from "./ensureUserSettingsTableDensity";
 import { ensureUserSettingsCrmBirthdayDigestOptOut } from "./ensureUserSettingsCrmBirthdayDigestOptOut";
 import { ensureUserSettingsBirthdayDigestSchedule } from "./ensureUserSettingsBirthdayDigestSchedule";
+import { ensureUserSettingsTakeoffStylusPrefs } from "./ensureUserSettingsTakeoffStylusPrefs";
 import { ensureCrmCustomFieldTables } from "./ensureCrmCustomFieldTables";
 import { ensureGeocodeStatusColumns } from "./ensureGeocodeStatusColumns";
 import { ensureUserSavedViewsTable } from "./ensureUserSavedViewsTable";
@@ -276,6 +277,7 @@ const migrations: MigrationStep[] = [
   { name: "user_settings_table_density", category: "ADD_COLUMN", fn: ensureUserSettingsTableDensity },
   { name: "user_settings_crm_birthday_digest_opt_out", category: "ADD_COLUMN", fn: ensureUserSettingsCrmBirthdayDigestOptOut },
   { name: "user_settings_birthday_digest_schedule", category: "ADD_COLUMN", fn: ensureUserSettingsBirthdayDigestSchedule },
+  { name: "user_settings_takeoff_stylus_prefs", category: "ADD_COLUMN", fn: ensureUserSettingsTakeoffStylusPrefs },
   { name: "crm_custom_field_tables", category: "CREATE_TABLE", fn: ensureCrmCustomFieldTables },
   { name: "user_saved_views_table", category: "CREATE_TABLE", fn: ensureUserSavedViewsTable },
   { name: "my_work_saved_views_table", category: "CREATE_TABLE", fn: ensureMyWorkSavedViewsTable },

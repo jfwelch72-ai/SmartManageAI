@@ -11,6 +11,15 @@ import type { TimeEntry, UserCertification } from "@shared/schema";
 import { logError, logWarn } from "./utils/logger";
 import { parseOrRespond } from "./utils/validation";
 import { sendCrmContactBirthdayDigestForUser } from "./jobs/jobRunner";
+import {
+  DEFAULT_ALLOW_TWO_FINGER_ROTATE,
+  DEFAULT_PALM_REJECTION_BAND_PX,
+  DEFAULT_STYLUS_LONG_PRESS_MS,
+  PALM_REJECTION_BAND_MAX_PX,
+  PALM_REJECTION_BAND_MIN_PX,
+  STYLUS_LONG_PRESS_MAX_MS,
+  STYLUS_LONG_PRESS_MIN_MS,
+} from "@shared/schema";
 
 const router = Router();
 
@@ -49,6 +58,9 @@ router.get("/api/user-settings", requireAuth, async (req: AuthRequest, res, next
         crmBirthdayDigestOptOut: false,
         birthdayDigestWeekday: 1,
         birthdayDigestHour: 8,
+        allowTwoFingerRotate: DEFAULT_ALLOW_TWO_FINGER_ROTATE,
+        palmRejectionBandPx: DEFAULT_PALM_REJECTION_BAND_PX,
+        stylusLongPressMs: DEFAULT_STYLUS_LONG_PRESS_MS,
       });
     }
     return res.json(settings);
@@ -70,6 +82,10 @@ router.patch("/api/user-settings", requireAuth, async (req: AuthRequest, res, ne
       crmBirthdayDigestOptOut: z.boolean().optional(),
       birthdayDigestWeekday: z.number().int().min(0).max(6).optional(),
       birthdayDigestHour: z.number().int().min(0).max(23).optional(),
+      // Task #2142 — takeoff stylus prefs
+      allowTwoFingerRotate: z.boolean().optional(),
+      palmRejectionBandPx: z.number().int().min(PALM_REJECTION_BAND_MIN_PX).max(PALM_REJECTION_BAND_MAX_PX).optional(),
+      stylusLongPressMs: z.number().int().min(STYLUS_LONG_PRESS_MIN_MS).max(STYLUS_LONG_PRESS_MAX_MS).optional(),
     });
 
     const parsed = parseOrRespond(schema, req.body, res);

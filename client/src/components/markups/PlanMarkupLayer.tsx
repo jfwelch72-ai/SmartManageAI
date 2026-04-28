@@ -66,6 +66,11 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import MarkupRenderer, { type MarkupShape, type MarkupTool } from "./MarkupRenderer";
 import { MarkupTextInput } from "./MarkupTextInput";
+import {
+  ActivePointerTracker,
+  shouldRejectAsPalm,
+} from "@/lib/pointerInput";
+import { useTakeoffStylusPrefs } from "@/hooks/use-takeoff-stylus-prefs";
 
 export interface PlanMarkupLayerProps {
   documentId: string;
@@ -366,6 +371,16 @@ export default function PlanMarkupLayer({
   // is suppressed because Konva's pointermove/up handlers gate on
   // `getPointerPosition` returning a valid coord).
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  // Task #2142 — Palm rejection. The pointer tracker remembers which
+  // pointers (touch / pen / mouse) are currently in contact so we can
+  // tell whether a stylus is active when a stray finger touch arrives.
+  // The band threshold comes from the per-user setting; while a pen is
+  // in contact, finger touches whose contact size exceeds the band are
+  // dropped before they reach the draw / select branches below. Mouse
+  // and pen events are unaffected.
+  const stylusPrefs = useTakeoffStylusPrefs();
+  const pointerTrackerRef = useRef<ActivePointerTracker>(new ActivePointerTracker());
   // Task #1738 — Konva fires `Stage.onClick` even after a drag whose
   // mousedown and mouseup are on the empty stage; without this flag
   // the click handler would immediately call `onSelect(null)` and
@@ -1143,6 +1158,29 @@ export default function PlanMarkupLayer({
 
   const handlePointerDown = useCallback(
     (point: { x: number; y: number }, evt: KonvaEventObject<PointerEvent>) => {
+      // Task #2142 — Palm rejection. Track every incoming pointer in
+      // the per-layer ActivePointerTracker so we know when a stylus is
+      // simultaneously in contact, then drop fat finger touches that
+      // exceed the user's palm rejection band. Pen + mouse events
+      // always fall through. We track BEFORE the rejection test so a
+      // pen-down → palm-down sequence (the common case) correctly
+      // identifies the pen as active.
+      const native = evt?.evt as PointerEvent | undefined;
+      if (native) {
+        pointerTrackerRef.current.down(native);
+        if (
+          shouldRejectAsPalm(native, {
+            penActive: pointerTrackerRef.current.penActive,
+            bandPx: stylusPrefs.palmRejectionBandPx,
+          })
+        ) {
+          // Best-effort: stop Konva's stage from interpreting this as
+          // the start of a draw / marquee gesture by short-circuiting
+          // here. The pointerup handler will still tear the pointer
+          // out of the tracker even if it isn't routed to drawing.
+          return;
+        }
+      }
       // SELECT is a non-drawing mode: clicking shapes is handled by
       // MarkupRenderer's onSelect, and clicking empty stage area is
       // already cleared by MarkupRenderer's onClick. We must NOT clear
@@ -1189,7 +1227,7 @@ export default function PlanMarkupLayer({
         thickness,
       });
     },
-    [activeTool, color, thickness],
+    [activeTool, color, thickness, stylusPrefs.palmRejectionBandPx],
   );
 
   const handlePointerMove = useCallback(
@@ -1319,7 +1357,12 @@ export default function PlanMarkupLayer({
     };
   }, [marqueeActive]);
 
-  const handlePointerUp = useCallback(() => {
+  const handlePointerUp = useCallback((_point?: { x: number; y: number }, evt?: KonvaEventObject<PointerEvent>) => {
+    // Task #2142 — Drop the released pointer from the palm-rejection
+    // tracker so a stylus-released-then-finger-down sequence correctly
+    // re-honors finger taps once the pen is no longer in contact.
+    const native = evt?.evt as PointerEvent | undefined;
+    if (native) pointerTrackerRef.current.up(native);
     // Task #1738 — Commit the marquee selection on pointerup. A drag
     // that never crossed the minimum threshold falls through to a
     // plain click (the existing stage `onClick` handler clears the

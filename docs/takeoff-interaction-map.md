@@ -186,14 +186,25 @@ A user-pinned shelf of frequently-used tools / conditions / assemblies.
 
 ## 7. Mobile / stylus precision
 
-| Gesture                    | Action                                       |
-| -------------------------- | -------------------------------------------- |
-| Single-finger drag         | Pan                                          |
-| Two-finger pinch           | Zoom                                         |
-| Two-finger rotate          | Rotate sheet (only when explicitly enabled). |
-| Stylus tap                 | Place point / activate tool                  |
-| Stylus long-press          | Open snap-mode HUD                           |
-| Palm-rejection band (24px) | Ignore touches whose contact area > stylus.  |
+> **Status:** Implemented (Task #2142). Single pointer-classification
+> utility lives at `client/src/lib/pointerInput.ts` (`classifyPointer`,
+> `shouldRejectAsPalm`, `ActivePointerTracker`, `interpretPinchPan`,
+> `createLongPressDetector`). The takeoff workspace consumes the
+> per-user prefs (`allow_two_finger_rotate`,
+> `palm_rejection_band_px`, `stylus_long_press_ms`) via the
+> `useTakeoffStylusPrefs` hook; defaults are `false / 24px / 500ms`
+> with route-validated min/max clamps. The Settings → Preferences
+> page exposes a "Takeoff (Mobile/Stylus)" card for changing them.
+
+| Gesture                    | Action                                                                                                                  |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Single-finger drag         | Pan.                                                                                                                    |
+| Two-finger pinch           | Zoom (always on).                                                                                                       |
+| Two-finger rotate          | Rotate sheet in 90° steps; gated by per-user `allow_two_finger_rotate` (default **off**).                               |
+| Stylus tap                 | Place point / activate tool. Identified via `pointerType === "pen"` in `classifyPointer`.                               |
+| Stylus long-press          | Opens the snap-mode HUD. Threshold = per-user `stylus_long_press_ms` (default 500ms, clamp 250–1500). Pen pointers only. |
+| Palm-rejection band        | Touches whose contact width / height exceeds `palm_rejection_band_px` (default 24px, clamp 0–96) are dropped from the markup layer and from the canvas pinch handler while a stylus is in contact. |
+| Narrow viewport (<768px)   | Tool buttons promote to 44px hit-targets and the secondary groups (snap, constrain, view, verify) collapse by default. The user's per-group toggle still wins once they touch it. |
 
 ---
 

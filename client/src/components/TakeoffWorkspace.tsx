@@ -32,6 +32,9 @@ import { getSharedScheduler } from "@/lib/takeoff/tileScheduler";
 import { isTileRendererEnabled } from "@/lib/takeoff/tileRendererFlag";
 import { usePdfTileRenderer } from "@/hooks/use-pdf-tile-renderer";
 import { rotateViewportToPageNative, viewportToWorldRect } from "@/lib/takeoff/tileCoords";
+import { useTakeoffStylusPrefs } from "@/hooks/use-takeoff-stylus-prefs";
+import { createLongPressDetector } from "@/lib/pointerInput";
+import * as pdfjsLib from 'pdfjs-dist';
 import {
   createArcSegment,
   sampleArcPoints,
@@ -487,6 +490,14 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   // falls back to in-memory only.
   const [cheatSheetOpen, setCheatSheetOpen] = useState(false);
   const [snapHudOpen, setSnapHudOpen] = useState(false);
+
+  // Task #2142 — Mobile / stylus precision pass. Pulls the per-user
+  // prefs (palm rejection band, stylus long-press ms, allow rotate)
+  // from /api/user-settings so every consumer in the workspace —
+  // PlanMarkupLayer's palm rejection, the long-press → snap HUD
+  // detector below, and the gesture handlers in CanvasViewport — uses
+  // the same source of truth.
+  const stylusPrefs = useTakeoffStylusPrefs();
   const [orthoPresetIndex, setOrthoPresetIndex] = useState(() => ORTHO_PRESETS.length - 1);
   const [enabledSnapModes, setEnabledSnapModesState] = useState<SnapMode[]>(() => {
     const key = snapModesStorageKey(ribbonUserId);
@@ -536,6 +547,40 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const stageRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
+
+  // Task #2142 — Stylus long-press → snap HUD. Watches pointer events
+  // on the canvas container; when the user holds the pen tip still for
+  // `stylusLongPressMs` (within an 8 px movement budget), the snap HUD
+  // pops open at the same place it appears for the keyboard shortcut.
+  // Touch pointers are explicitly excluded (penOnly = true) so taps
+  // and drags don't fire the menu.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const detector = createLongPressDetector({
+      holdMs: stylusPrefs.stylusLongPressMs,
+      penOnly: true,
+      onLongPress: () => {
+        setSnapHudOpen(true);
+      },
+    });
+    const onDown = (e: PointerEvent) => detector.start(e);
+    const onMove = (e: PointerEvent) => detector.move(e);
+    const onUp = (e: PointerEvent) => detector.end(e);
+    el.addEventListener("pointerdown", onDown);
+    el.addEventListener("pointermove", onMove);
+    el.addEventListener("pointerup", onUp);
+    el.addEventListener("pointercancel", onUp);
+    el.addEventListener("pointerleave", onUp);
+    return () => {
+      detector.cancel();
+      el.removeEventListener("pointerdown", onDown);
+      el.removeEventListener("pointermove", onMove);
+      el.removeEventListener("pointerup", onUp);
+      el.removeEventListener("pointercancel", onUp);
+      el.removeEventListener("pointerleave", onUp);
+    };
+  }, [stylusPrefs.stylusLongPressMs]);
 
   const isMarkupTool = (tool: string) => tool.startsWith("markup_");
 
@@ -1279,6 +1324,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     enabledSnapModes: unifiedRibbon ? enabledSnapModes : undefined,
     constraintMode: unifiedRibbon ? constraintMode : undefined,
     orthoPresetIndex: unifiedRibbon ? orthoPresetIndex : undefined,
+    // Task #2142 — flow the per-user mobile/stylus prefs into the
+    // pinch + touch-down handlers so palm rejection and the
+    // (default-off) two-finger rotate gate read the same source of
+    // truth as PlanMarkupLayer and the long-press detector.
+    allowTwoFingerRotate: stylusPrefs.allowTwoFingerRotate,
+    palmRejectionBandPx: stylusPrefs.palmRejectionBandPx,
   });
 
   const {

@@ -9572,6 +9572,14 @@ export const userSettings = pgTable("user_settings", {
   crmBirthdayDigestOptOut: boolean("crm_birthday_digest_opt_out").notNull().default(false),
   birthdayDigestWeekday: integer("birthday_digest_weekday").notNull().default(1),
   birthdayDigestHour: integer("birthday_digest_hour").notNull().default(8),
+  // Task #2142 — Mobile / stylus precision pass for takeoff. Three
+  // per-user knobs that govern palm rejection, the stylus long-press
+  // snap-HUD threshold, and whether two-finger rotate is honored on
+  // touch devices. Defaults match Section 7 of the Takeoff Interaction
+  // Map: rotate stays off, palm band 24px, long-press 500ms.
+  allowTwoFingerRotate: boolean("allow_two_finger_rotate").notNull().default(false),
+  palmRejectionBandPx: integer("palm_rejection_band_px").notNull().default(24),
+  stylusLongPressMs: integer("stylus_long_press_ms").notNull().default(500),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -9583,6 +9591,16 @@ export type TableDensity = (typeof TABLE_DENSITY_VALUES)[number];
 
 export const BIRTHDAY_DIGEST_DEFAULT_WEEKDAY = 1;
 export const BIRTHDAY_DIGEST_DEFAULT_HOUR = 8;
+
+// Task #2142 — Defaults + clamps for the takeoff stylus prefs. Kept in
+// shared/schema so both the PATCH zod and the client form stay in sync.
+export const DEFAULT_ALLOW_TWO_FINGER_ROTATE = false;
+export const DEFAULT_PALM_REJECTION_BAND_PX = 24;
+export const PALM_REJECTION_BAND_MIN_PX = 0;
+export const PALM_REJECTION_BAND_MAX_PX = 96;
+export const DEFAULT_STYLUS_LONG_PRESS_MS = 500;
+export const STYLUS_LONG_PRESS_MIN_MS = 250;
+export const STYLUS_LONG_PRESS_MAX_MS = 1500;
 
 export const insertUserSettingsSchema = createInsertSchema(userSettings).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertUserSettings = z.infer<typeof insertUserSettingsSchema>;
