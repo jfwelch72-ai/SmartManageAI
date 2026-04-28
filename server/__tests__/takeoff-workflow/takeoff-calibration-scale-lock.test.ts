@@ -167,7 +167,38 @@ async function freshSheetWithLinear(initialScalePxPerFoot: number): Promise<{
     color: "#3b82f6",
   });
   expect(mRes.status).toBe(201);
-  return { sheetId, measurementId: (mRes.body as { id: string }).id };
+  const measurementId = (mRes.body as { id: string }).id;
+
+  // Task #2358 — Clear the capture-scale snapshot that the
+  // measurement-create route auto-populates from the sheet's current
+  // scale (Task #2319 backfill). Both calibration branches we're
+  // testing here filter their work loop with
+  // `isNull(scaleAtCapturePxPerFoot)`:
+  //
+  //   • The rescale branch deliberately leaves capture-scale rows
+  //     alone (their quantities are already pinned to the captured
+  //     scale, so a sheet-level recompute would silently shift them).
+  //   • The lock branch piggy-backs on the same SELECT, so without
+  //     clearing this column the lock loop never sees the row and
+  //     `lockedScalePxPerFoot` is never snapshotted — exactly the
+  //     mismatch this test suite was failing on.
+  //
+  // We seed a "legacy" (capture-scale-null) row directly via SQL —
+  // the same pattern the unlock-rescale test uses — so this suite
+  // actually exercises the lock branch's snapshot/short-circuit
+  // behavior end-to-end. The route itself is correct as written;
+  // capture-scale rows are intentionally immune to sheet-level
+  // recompute, and the per-row "Unlock & rescale" endpoint is the
+  // supported way to bring a captured row back in line with a fresh
+  // sheet scale.
+  await db.execute(sql`
+    UPDATE takeoff_measurements
+       SET scale_at_capture_px_per_foot = NULL,
+           scale_at_capture_label = NULL
+     WHERE id = ${measurementId}
+  `);
+
+  return { sheetId, measurementId };
 }
 
 async function fetchMeasurements(sheetId: string): Promise<MeasurementResponse[]> {
