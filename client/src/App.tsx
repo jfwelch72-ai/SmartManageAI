@@ -269,6 +269,8 @@ const NotificationsInboxPage = lazy(() => import("@/pages/notifications"));
 const MyWorkPage = lazy(() => import("@/pages/my-work"));
 const PlanPinsHarnessPage = lazy(() => import("@/pages/test/plan-pins-harness"));
 const DimInputBadgePreviewPage = lazy(() => import("@/pages/test/dim-input-badge-preview"));
+// Task #2289 — Dev-only index page that lists every preview/harness route.
+const PreviewIndexPage = lazy(() => import("@/pages/dev/preview-index"));
 const TrustPage = lazy(() => import("@/pages/trust").then(m => ({ default: m.TrustPage })));
 const SubProcessorsPage = lazy(() => import("@/pages/trust").then(m => ({ default: m.SubProcessorsPage })));
 const StatusPage = lazy(() => import("@/pages/trust").then(m => ({ default: m.StatusPage })));
@@ -624,6 +626,13 @@ function Router() {
       )}
       {import.meta.env.DEV && (
         <Route path="/preview/dim-input-badge" component={DimInputBadgePreviewPage} />
+      )}
+      {/* Task #2289 — Dev-only index of every preview/harness route. */}
+      {import.meta.env.DEV && (
+        <Route path="/preview" component={PreviewIndexPage} />
+      )}
+      {import.meta.env.DEV && (
+        <Route path="/dev" component={PreviewIndexPage} />
       )}
       <Route component={NotFound} />
     </Switch>
