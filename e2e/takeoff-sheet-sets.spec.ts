@@ -108,6 +108,76 @@ async function fetchSheetScale(
   return found?.scalePxPerFoot ?? null;
 }
 
+interface SheetSetMember {
+  sheetId: string;
+  sortOrder: number;
+}
+
+interface SheetSetDetail {
+  id: string;
+  name: string;
+  members: SheetSetMember[];
+}
+
+async function fetchSetDetail(page: Page, setId: string): Promise<SheetSetDetail> {
+  const res = await page.request.get(
+    `${BASE_URL}/api/takeoff/sheet-sets/${setId}`,
+  );
+  expect(res.status()).toBe(200);
+  return (await res.json()) as SheetSetDetail;
+}
+
+/**
+ * Task #2230 — Synthesize a single HTML5 drag-and-drop lifecycle in
+ * the page. Used by the drag-thumbnail-onto-set-row test where the
+ * drop handler reads everything it needs out of the DataTransfer
+ * payload (no React state crosses event boundaries), so a single
+ * `page.evaluate` is enough. Mirrors the pattern in
+ * `takeoff-tool-chest.spec.ts` where the chest item drop also lives
+ * entirely inside one event tick.
+ */
+async function dispatchSheetThumbnailDrop(
+  page: Page,
+  sourceTestId: string,
+  targetTestId: string,
+  payload: { sheetId: string },
+): Promise<void> {
+  await page.evaluate(
+    ({ sourceSel, targetSel, mime, payloadJson }) => {
+      const source = document.querySelector(sourceSel) as HTMLElement | null;
+      const target = document.querySelector(targetSel) as HTMLElement | null;
+      if (!source || !target) {
+        throw new Error(`drag/drop targets not found (${sourceSel} -> ${targetSel})`);
+      }
+      const dt = new DataTransfer();
+      dt.setData(mime, payloadJson);
+      // Match what PageThumbnailStrip writes alongside the custom MIME.
+      dt.setData("text/plain", payloadJson);
+      source.dispatchEvent(
+        new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }),
+      );
+      target.dispatchEvent(
+        new DragEvent("dragenter", { bubbles: true, dataTransfer: dt }),
+      );
+      target.dispatchEvent(
+        new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }),
+      );
+      target.dispatchEvent(
+        new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }),
+      );
+      source.dispatchEvent(
+        new DragEvent("dragend", { bubbles: true, dataTransfer: dt }),
+      );
+    },
+    {
+      sourceSel: `[data-testid='${sourceTestId}']`,
+      targetSel: `[data-testid='${targetTestId}']`,
+      mime: "application/x-takeoff-sheet",
+      payloadJson: JSON.stringify(payload),
+    },
+  );
+}
+
 test.describe("Task #2141 — Sheet Sets UI", () => {
   test.beforeEach(async ({ page }) => {
     await installCsrf(page);
@@ -316,5 +386,191 @@ test.describe("Task #2141 — Sheet Sets UI", () => {
     // the same backend the drawer would have called.
     await page.getByTestId("button-inline-calibration-cancel").click();
     await expect(drawer).toHaveCount(0);
+  });
+
+  // Task #2230 — The two flows below are exposed in the panel today
+  // (see SheetSetsPanel.tsx + PageThumbnailStrip.tsx) but were silently
+  // uncovered by #2141. Both ride on HTML5 drag-and-drop with a
+  // pre-loaded DataTransfer; Playwright's mouse-based `dragTo` won't
+  // ship the custom MIME (TAKEOFF_SHEET_DRAG_MIME) or the
+  // `text/plain` fallback the drop handlers read, so we synthesize
+  // the lifecycle directly via `page.evaluate` (same pattern used by
+  // `takeoff-tool-chest.spec.ts`).
+
+  test("drag a thumbnail from the strip onto a set row appends it as a member", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await devLogin(page, "ADMIN");
+    const fixture = await seedTakeoffFixture(page, 3);
+    await gotoTakeoff(page, fixture.bid.code);
+
+    // Empty set — the drop handler is the only path that adds a
+    // member here, so the post-drop GET must show exactly one.
+    const set = await createSet(page, fixture.bid.id, "PW Drag Set");
+    const before = await fetchSetDetail(page, set.id);
+    expect(before.members).toHaveLength(0);
+
+    // Open the panel and confirm the row is in the DOM (it's also our
+    // drop target).
+    await page.getByTestId("button-toggle-sheet-sets").click();
+    const panel = page.getByTestId("panel-sheet-sets");
+    await expect(panel).toBeVisible();
+    const setRow = page.getByTestId(`row-sheet-set-${set.id}`);
+    await expect(setRow).toBeVisible();
+
+    // The thumbnail strip is collapsed by default in the workspace —
+    // click the SheetSelectorBar toggle to render it before we look
+    // up the source thumbnail.
+    await page.getByTestId("button-toggle-thumbnails").click();
+    await expect(page.getByTestId("panel-thumbnail-strip")).toBeVisible({
+      timeout: 5_000,
+    });
+
+    // The PageThumbnailStrip renders one thumbnail-sheet-{id} button
+    // per sheet. Pick the second sheet so the result is unambiguous
+    // if some future code adds the first sheet automatically.
+    const droppedSheetId = fixture.sheetIds[1];
+    const thumbnail = page.getByTestId(`thumbnail-sheet-${droppedSheetId}`);
+    await expect(thumbnail).toBeVisible({ timeout: 10_000 });
+
+    await dispatchSheetThumbnailDrop(
+      page,
+      `thumbnail-sheet-${droppedSheetId}`,
+      `row-sheet-set-${set.id}`,
+      { sheetId: droppedSheetId },
+    );
+
+    // The mutation invalidates the detail query and toasts on success.
+    // Poll the GET endpoint directly: that's the source of truth and
+    // also the contract the spec is here to defend.
+    await expect
+      .poll(
+        async () => {
+          const detail = await fetchSetDetail(page, set.id);
+          return detail.members.map((m) => m.sheetId);
+        },
+        { timeout: 10_000, message: "set should grow to 1 member after drop" },
+      )
+      .toEqual([droppedSheetId]);
+
+    // Sanity: the panel shows the new member too once the detail
+    // query refetches. Expanding the set surfaces the member row.
+    await page.getByTestId(`button-toggle-expand-set-${set.id}`).click();
+    await expect(
+      page.getByTestId(`set-member-${set.id}-${droppedSheetId}`),
+    ).toBeVisible({ timeout: 10_000 });
+  });
+
+  test("drag-reorder two members within a set updates sortOrder on the server", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await devLogin(page, "ADMIN");
+    const fixture = await seedTakeoffFixture(page, 3);
+    await gotoTakeoff(page, fixture.bid.code);
+
+    // Seed two members up-front via the public API. The append
+    // endpoint assigns sortOrder = 0 then 1 in insertion order, which
+    // we'll flip below.
+    const set = await createSet(page, fixture.bid.id, "PW Reorder Set");
+    const [a, b] = [fixture.sheetIds[0], fixture.sheetIds[1]];
+    await addMembers(page, set.id, [a, b]);
+
+    const initial = await fetchSetDetail(page, set.id);
+    const initialOrder = [...initial.members]
+      .sort((m1, m2) => m1.sortOrder - m2.sortOrder)
+      .map((m) => m.sheetId);
+    expect(initialOrder).toEqual([a, b]);
+
+    // Open the panel and expand the set so the in-list <li>'s render.
+    await page.getByTestId("button-toggle-sheet-sets").click();
+    await expect(page.getByTestId("panel-sheet-sets")).toBeVisible();
+    await page.getByTestId(`button-toggle-expand-set-${set.id}`).click();
+    const memberA = page.getByTestId(`set-member-${set.id}-${a}`);
+    const memberB = page.getByTestId(`set-member-${set.id}-${b}`);
+    await expect(memberA).toBeVisible({ timeout: 10_000 });
+    await expect(memberB).toBeVisible({ timeout: 10_000 });
+
+    // The reorder drop handler in SetRow gates on a local React state
+    // (`draggingSheetId`) set by the source <li>'s `onDragStart`.
+    // React batches that state update, so the closures bound to the
+    // *target* <li>'s `onDragOver`/`onDrop` won't see the new value
+    // until the next render. We split the lifecycle across two
+    // `page.evaluate` calls with a tick in between so the dragstart
+    // commit lands before we synthesize the dragover/drop. (The
+    // single-evaluate pattern in `dispatchSheetThumbnailDrop` works
+    // for the drop-onto-row case because that handler reads only
+    // from DataTransfer.)
+    await page.evaluate(
+      ({ sourceSel }) => {
+        const source = document.querySelector(sourceSel) as HTMLElement | null;
+        if (!source) throw new Error(`drag source not found (${sourceSel})`);
+        const dt = new DataTransfer();
+        dt.setData("text/plain", source.getAttribute("data-testid") ?? "");
+        // The reorder handler doesn't read TAKEOFF_SHEET_DRAG_MIME —
+        // it relies entirely on the React state set in onDragStart —
+        // so just dispatching dragstart is enough to arm the row.
+        source.dispatchEvent(
+          new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }),
+        );
+      },
+      { sourceSel: `[data-testid='set-member-${set.id}-${a}']` },
+    );
+    // Yield to React so the dragstart-driven setState commits before
+    // the target row's drop closure reads `draggingSheetId`.
+    await page.waitForTimeout(50);
+
+    await page.evaluate(
+      ({ sourceSel, targetSel }) => {
+        const source = document.querySelector(sourceSel) as HTMLElement | null;
+        const target = document.querySelector(targetSel) as HTMLElement | null;
+        if (!source || !target) {
+          throw new Error("drop targets not found");
+        }
+        // The reorder drop handler doesn't read DataTransfer at all —
+        // it uses the React `draggingSheetId` state set on dragstart.
+        // We still attach a fresh DataTransfer so the synthetic events
+        // are well-formed.
+        const dt = new DataTransfer();
+        target.dispatchEvent(
+          new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }),
+        );
+        target.dispatchEvent(
+          new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }),
+        );
+        source.dispatchEvent(
+          new DragEvent("dragend", { bubbles: true, dataTransfer: dt }),
+        );
+      },
+      {
+        sourceSel: `[data-testid='set-member-${set.id}-${a}']`,
+        targetSel: `[data-testid='set-member-${set.id}-${b}']`,
+      },
+    );
+
+    // The reorder mutation POSTs to /reorder and the server walks the
+    // members array assigning the supplied sortOrder. Poll the GET
+    // until it reflects the swap. handleReorderDrop splices the
+    // source out, then inserts at the target index — for [a,b] with
+    // source=a/target=b that yields [b, a] with sortOrder 0/1.
+    await expect
+      .poll(
+        async () => {
+          const detail = await fetchSetDetail(page, set.id);
+          return [...detail.members]
+            .sort((m1, m2) => m1.sortOrder - m2.sortOrder)
+            .map((m) => m.sheetId);
+        },
+        { timeout: 10_000, message: "members should swap order after drag-reorder" },
+      )
+      .toEqual([b, a]);
+
+    // Confirm the explicit sortOrder values too — guards against a
+    // future change that flips the ordering field semantics.
+    const after = await fetchSetDetail(page, set.id);
+    const byId = new Map(after.members.map((m) => [m.sheetId, m.sortOrder]));
+    expect(byId.get(b)).toBe(0);
+    expect(byId.get(a)).toBe(1);
   });
 });
