@@ -249,8 +249,8 @@ async function disableWorkerSupport(page: Page): Promise<void> {
 
 /**
  * Task #2298 — Replace `window.Worker` with a stand-in that always
- * responds to scheduler requests with `ok: false` and an
- * `InvalidPDFException` error name. This exercises the
+ * responds to scheduler requests with `ok: false` and a configurable
+ * pdfjs error shape. This exercises the
  * "consumer dispatched into the scheduler, the worker rejected"
  * code path end-to-end without depending on a real `pdfTileWorker`
  * instance:
@@ -260,13 +260,20 @@ async function disableWorkerSupport(page: Page): Promise<void> {
  *     "scheduler unavailable" test above already covers that).
  *   - Every `postMessage({type: "getDocumentInfo" | "renderPage" |
  *     ...})` from the scheduler is answered with the same
- *     `{ ok: false, error, errorName }` shape the real worker posts
- *     when pdfjs throws inside it. The scheduler's `onMessage`
- *     turns that into a `WorkerPdfError` rejection, which the
- *     consumer (PdfPreview) maps to its friendly error UI.
+ *     `{ ok: false, error, errorName, errorStatus }` shape the real
+ *     worker posts when pdfjs throws inside it. The scheduler's
+ *     `onMessage` turns that into a `WorkerPdfError` rejection,
+ *     which the consumer (PdfPreview) maps to its friendly error UI.
  *   - `addInitScript` runs before the app bundle loads, so the
  *     scheduler picks up the stand-in on first use across
  *     navigations and reloads.
+ *
+ * Task #2305 — Parameterised by `errorName` (and optionally
+ * `errorStatus` / `errorMessage`) so each pdfjs rejection branch in
+ * `friendlyForWorkerError` (`MissingPDFException`,
+ * `UnexpectedResponseException`, `InvalidPDFException`, …) gets its
+ * own cross-engine spec. The defaults preserve Task #2298's behaviour
+ * (`InvalidPDFException`, no status) so existing callers stay green.
  *
  * Why this and not `page.route()` to serve garbage PDF bytes: on
  * WebKit, `page.route()` does NOT reliably intercept fetches issued
@@ -276,8 +283,33 @@ async function disableWorkerSupport(page: Page): Promise<void> {
  * exercises the exact same scheduler→`WorkerPdfError`→consumer
  * code path the brief calls out.
  */
-async function injectWorkerRejectingScheduler(page: Page): Promise<void> {
-  await page.addInitScript(() => {
+interface WorkerRejectionShape {
+  errorName: string;
+  errorMessage?: string;
+  errorStatus?: number;
+}
+
+async function injectWorkerRejectingScheduler(
+  page: Page,
+  shape: WorkerRejectionShape = {
+    errorName: "InvalidPDFException",
+    errorMessage:
+      "Invalid PDF structure (Task #2298 synthetic worker rejection)",
+  },
+): Promise<void> {
+  // Resolve the message text up here so the Playwright-side default
+  // for InvalidPDFException keeps the existing Task #2298 wording, and
+  // so callers can read back what was injected if a future spec ever
+  // wants to assert on the raw message too.
+  const reply: WorkerRejectionShape = {
+    errorName: shape.errorName,
+    errorMessage:
+      shape.errorMessage ??
+      `Synthetic worker rejection (${shape.errorName})`,
+    errorStatus: shape.errorStatus,
+  };
+
+  await page.addInitScript((injected: WorkerRejectionShape) => {
     // The set of scheduler request types `pdfTileWorker.ts` accepts.
     // Anything outside this set (e.g. the worker's own internal
     // protocol future expansion) falls through silently — we don't
@@ -317,14 +349,23 @@ async function injectWorkerRejectingScheduler(page: Page): Promise<void> {
         }
         const m = message as { type: string; requestId: number };
         if (!SCHEDULER_TYPES.has(m.type)) return;
-        const reply = {
+        const reply: {
+          type: string;
+          requestId: number;
+          ok: false;
+          error: string;
+          errorName: string;
+          errorStatus?: number;
+        } = {
           type: m.type,
           requestId: m.requestId,
           ok: false,
-          error:
-            "Invalid PDF structure (Task #2298 synthetic worker rejection)",
-          errorName: "InvalidPDFException",
+          error: injected.errorMessage ?? `Synthetic worker rejection (${injected.errorName})`,
+          errorName: injected.errorName,
         };
+        if (typeof injected.errorStatus === "number") {
+          reply.errorStatus = injected.errorStatus;
+        }
         // Defer one microtask so the scheduler's `pending.set(...)`
         // (which runs synchronously after the postMessage call) has
         // already wired up the request before we deliver the reply.
@@ -348,7 +389,7 @@ async function injectWorkerRejectingScheduler(page: Page): Promise<void> {
       writable: true,
       value: WorkerRejectingPdf,
     });
-  });
+  }, reply);
 }
 
 async function readLongTasks(page: Page): Promise<number[]> {
@@ -845,6 +886,190 @@ test.describe("Task #2213 — Worker-only PDF preview path", () => {
     await expect(page.getByTestId("pdf-preview-error")).toBeVisible({
       timeout: 30_000,
     });
+    await expect(page.getByTestId("pdf-preview-canvas")).toHaveCount(0);
+    await expect(page.getByTestId("pdf-preview-loading")).toHaveCount(0);
+  });
+
+  test("PdfPreview surfaces the friendly 'missing on the server' error when the worker rejects with MissingPDFException (Task #2305)", async ({
+    page,
+  }) => {
+    // Task #2305 — Companion to the Task #2298 InvalidPDFException
+    // spec above. `friendlyForWorkerError` has three pdfjs-name
+    // branches (`MissingPDFException`, `InvalidPDFException`,
+    // `UnexpectedResponseException`), but only the InvalidPDFException
+    // branch was exercised end-to-end. A regression that re-mapped
+    // `MissingPDFException` to the generic fallback (`err.message`) —
+    // or worse, dropped the error and left the canvas blank — would
+    // slip through every existing assertion. This spec closes that
+    // gap by synthesising a `MissingPDFException` worker rejection
+    // (no HTTP status, just the pdfjs name) via the same
+    // `injectWorkerRejectingScheduler` helper, then asserting the
+    // exact branch copy.
+    test.setTimeout(120_000);
+
+    const suffix = Date.now();
+    await devLogin(page, "ADMIN");
+
+    const project = await createProject(page, suffix);
+    const doc = await createPlanDocument(page, project.id, suffix);
+
+    await injectWorkerRejectingScheduler(page, {
+      errorName: "MissingPDFException",
+      errorMessage:
+        "Missing PDF (Task #2305 synthetic MissingPDFException rejection)",
+    });
+
+    await page.goto(
+      `${BASE_URL}/projects/${project.code}?tab=plans&documentId=${doc.id}`,
+      { waitUntil: "domcontentloaded" },
+    );
+
+    const errorBlock = page.getByTestId("pdf-preview-error");
+    await expect(errorBlock).toBeVisible({ timeout: 30_000 });
+
+    // The `MissingPDFException` branch in `friendlyForWorkerError`
+    // returns "This PDF is missing on the server." — assert the
+    // distinguishing phrase rather than any worker-error copy so a
+    // future refactor that accidentally routed this name through the
+    // generic fallback (or through the InvalidPDFException copy)
+    // would fail loudly here.
+    const detail = page.getByTestId("text-pdf-preview-error-detail");
+    await expect(detail).toBeVisible();
+    await expect(detail).toContainText(/missing on the server/i);
+    // Specifically MUST NOT show the InvalidPDFException copy or the
+    // scheduler-unavailable copy — those would mean a different
+    // branch fired and we'd be testing the wrong code path.
+    await expect(detail).not.toContainText(/not a valid PDF/i);
+    await expect(detail).not.toContainText(/worker support/i);
+
+    // Blank-canvas regression guard: neither the empty canvas nor a
+    // stuck loading spinner should be left behind once the friendly
+    // error has rendered.
+    await expect(page.getByTestId("pdf-preview-canvas")).toHaveCount(0);
+    await expect(page.getByTestId("pdf-preview-loading")).toHaveCount(0);
+
+    // Cross-engine proof we routed through the worker pool (and not
+    // through the scheduler-unavailable short-circuit).
+    const stats = await readSchedulerStats(page);
+    expect(
+      stats.getDocumentInfoCalls,
+      `expected scheduler.getDocumentInfo to be dispatched at least once before the worker rejected, got ${stats.getDocumentInfoCalls} — wrong code path`,
+    ).toBeGreaterThan(0);
+
+    // Retry button must still re-dispatch through the scheduler so
+    // the user has a path forward even when the document is
+    // permanently missing. The synthetic stand-in keeps rejecting on
+    // every request, so retry re-surfaces the same friendly error.
+    await resetSchedulerStats(page);
+    await page.getByTestId("button-pdf-retry").click();
+
+    await expect
+      .poll(async () => (await readSchedulerStats(page)).getDocumentInfoCalls, {
+        timeout: 30_000,
+        message:
+          "Retry button click did not trigger a new scheduler.getDocumentInfo dispatch — the retry button is not wired to the loader",
+      })
+      .toBeGreaterThan(0);
+
+    await expect(page.getByTestId("pdf-preview-error")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(
+      page.getByTestId("text-pdf-preview-error-detail"),
+    ).toContainText(/missing on the server/i);
+    await expect(page.getByTestId("pdf-preview-canvas")).toHaveCount(0);
+    await expect(page.getByTestId("pdf-preview-loading")).toHaveCount(0);
+  });
+
+  test("PdfPreview surfaces the friendly server-error message when the worker rejects with UnexpectedResponseException + HTTP status (Task #2305)", async ({
+    page,
+  }) => {
+    // Task #2305 — Third pdfjs rejection branch in
+    // `friendlyForWorkerError`. `UnexpectedResponseException` is
+    // pdfjs's "the server returned a non-2xx" failure mode and
+    // carries an HTTP status. The mapping prefers `friendlyForStatus`
+    // when `WorkerPdfError.status > 0`, so a 502 reply maps to "The
+    // server failed to deliver this PDF." (the >= 500 branch). We
+    // pick 502 specifically because it's a typical proxy/upstream
+    // failure that an aborted PDF download or a flaky object-store
+    // request would surface as — exactly the "aborted PDF download"
+    // wording the task title calls out.
+    test.setTimeout(120_000);
+
+    const suffix = Date.now();
+    await devLogin(page, "ADMIN");
+
+    const project = await createProject(page, suffix);
+    const doc = await createPlanDocument(page, project.id, suffix);
+
+    await injectWorkerRejectingScheduler(page, {
+      errorName: "UnexpectedResponseException",
+      errorMessage:
+        "Bad gateway (Task #2305 synthetic UnexpectedResponseException rejection)",
+      errorStatus: 502,
+    });
+
+    await page.goto(
+      `${BASE_URL}/projects/${project.code}?tab=plans&documentId=${doc.id}`,
+      { waitUntil: "domcontentloaded" },
+    );
+
+    const errorBlock = page.getByTestId("pdf-preview-error");
+    await expect(errorBlock).toBeVisible({ timeout: 30_000 });
+
+    // `friendlyForWorkerError` short-circuits to `friendlyForStatus`
+    // when a status is set on the `WorkerPdfError`, and `502 >= 500`
+    // hits the "server failed to deliver this PDF" branch. Asserting
+    // that exact phrase — not just any error text — makes the spec
+    // fail loudly if a future refactor of either function dropped
+    // the status-aware branch and fell back to the raw pdfjs message
+    // (which would be the synthetic "Bad gateway (Task #2305 …)"
+    // text we injected, NOT user-friendly copy).
+    const detail = page.getByTestId("text-pdf-preview-error-detail");
+    await expect(detail).toBeVisible();
+    await expect(detail).toContainText(/server failed to deliver/i);
+    // MUST NOT leak the raw worker error message to the user — that
+    // would mean the friendly mapping was bypassed entirely.
+    await expect(detail).not.toContainText(/Bad gateway/i);
+    await expect(detail).not.toContainText(/Task #2305/);
+    // MUST NOT be the scheduler-unavailable, MissingPDFException, or
+    // InvalidPDFException copy.
+    await expect(detail).not.toContainText(/worker support/i);
+    await expect(detail).not.toContainText(/missing on the server/i);
+    await expect(detail).not.toContainText(/not a valid PDF/i);
+
+    // Blank-canvas regression guard.
+    await expect(page.getByTestId("pdf-preview-canvas")).toHaveCount(0);
+    await expect(page.getByTestId("pdf-preview-loading")).toHaveCount(0);
+
+    // Cross-engine proof we routed through the worker pool.
+    const stats = await readSchedulerStats(page);
+    expect(
+      stats.getDocumentInfoCalls,
+      `expected scheduler.getDocumentInfo to be dispatched at least once before the worker rejected, got ${stats.getDocumentInfoCalls} — wrong code path`,
+    ).toBeGreaterThan(0);
+
+    // Retry button must still re-dispatch through the scheduler. The
+    // synthetic stand-in keeps rejecting with the same 502, so retry
+    // re-surfaces the same friendly error — never a stuck spinner or
+    // a blank canvas.
+    await resetSchedulerStats(page);
+    await page.getByTestId("button-pdf-retry").click();
+
+    await expect
+      .poll(async () => (await readSchedulerStats(page)).getDocumentInfoCalls, {
+        timeout: 30_000,
+        message:
+          "Retry button click did not trigger a new scheduler.getDocumentInfo dispatch — the retry button is not wired to the loader",
+      })
+      .toBeGreaterThan(0);
+
+    await expect(page.getByTestId("pdf-preview-error")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(
+      page.getByTestId("text-pdf-preview-error-detail"),
+    ).toContainText(/server failed to deliver/i);
     await expect(page.getByTestId("pdf-preview-canvas")).toHaveCount(0);
     await expect(page.getByTestId("pdf-preview-loading")).toHaveCount(0);
   });
