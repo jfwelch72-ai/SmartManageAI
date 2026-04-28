@@ -32,7 +32,7 @@ import LibraryItemDialog from "@/components/LibraryItemDialog";
 import { IssuesTab } from "./IssuesTab";
 import type { TakeoffSheet, TakeoffMeasurement, TakeoffMeasurementGroup, QuantityCategory, TakeoffCondition, AssemblyComponent } from "@shared/schema";
 import type { TakeoffMarkupWithAuthor } from "@/hooks/use-takeoff-data";
-import { Zap, Star, Upload as UploadIcon, FileDown, FolderInput } from "lucide-react";
+import { Zap, Star, Upload as UploadIcon, FileDown, FolderInput, PackageOpen } from "lucide-react";
 import { FormulaEditor } from "./FormulaEditor";
 
 function CostCodeField({ measurementId, currentValue, onCommit }: { measurementId: string; currentValue: string; onCommit: (val: string) => void }) {
@@ -214,6 +214,8 @@ interface TakeoffSidebarProps {
   onSaveCondition?: (data: { name: string; measurementType: string; color: string; categoryName?: string; unitCost?: number; costCodeId?: string; labelTemplate?: string; lineStyle?: string; formula?: string; assemblyComponents?: string }) => void;
   onUpdateCondition?: (data: { id: string; [key: string]: string | number | boolean | undefined }) => void;
   onDeleteCondition?: (id: string) => void;
+  /** Task #2139 — Pin a condition to the user's Tool Chest. */
+  onPinConditionToChest?: (cond: TakeoffCondition) => void;
   saveConditionPending?: boolean;
   hideAiMeasurements?: boolean;
   setHideAiMeasurements?: (v: boolean) => void;
@@ -283,7 +285,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     onExportQuantityDelta, onExportBidPackage, onPrintSheet,
     onZoomToMeasurement, onZoomToFitMeasurement,
     conditions = [], activeCondition = null, onActivateCondition, onClearCondition,
-    onSaveCondition, onUpdateCondition, onDeleteCondition, saveConditionPending = false,
+    onSaveCondition, onUpdateCondition, onDeleteCondition, onPinConditionToChest, saveConditionPending = false,
     hideAiMeasurements = false, setHideAiMeasurements,
     measurementLinks,
     typicals = [], onSaveTypical, onDeleteTypical, onStampTypical,
@@ -941,6 +943,18 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                         }} data-testid={`button-toggle-favorite-${cond.id}`}>
                           <Star className={cn("w-3 h-3", cond.isFavorite && "fill-current text-yellow-500")} />
                         </Button>
+                        {onPinConditionToChest && (
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-6 w-6"
+                            title="Pin to Tool Chest"
+                            onClick={(e) => { e.stopPropagation(); onPinConditionToChest(cond); }}
+                            data-testid={`button-pin-condition-${cond.id}`}
+                          >
+                            <PackageOpen className="w-3 h-3" />
+                          </Button>
+                        )}
                         <Button size="icon" variant="ghost" className="h-6 w-6" onClick={(e) => { e.stopPropagation(); setEditingCondition(cond); setCondForm({ name: cond.name, measurementType: cond.measurementType, color: cond.color, categoryName: cond.categoryName || "", unitCost: cond.unitCost ? String(cond.unitCost) : "", costCodeId: cond.costCodeId || "", labelTemplate: cond.labelTemplate || "", lineStyle: cond.lineStyle || "solid", formula: cond.formula || "", assemblyComponents: (() => { try { return cond.assemblyComponents ? JSON.parse(cond.assemblyComponents) : []; } catch { return []; } })() }); setConditionDialogOpen(true); }} data-testid={`button-edit-condition-${cond.id}`}>
                           <Pencil className="w-3 h-3" />
                         </Button>

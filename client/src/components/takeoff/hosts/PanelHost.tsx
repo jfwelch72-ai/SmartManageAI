@@ -15,6 +15,11 @@ import { PlanScaleModal } from "../PlanScaleModal";
 import TakeoffCrossModulePanel from "../TakeoffCrossModulePanel";
 import { IssueDetailPanel } from "../IssueDetailPanel";
 import { TakeoffPropertiesPanel } from "../TakeoffPropertiesPanel";
+// NOTE: the Tool Chest (Task #2139) renders via its own `ToolChestHost`
+// mounted inside the canvas-area container — see ToolChestHost.tsx for
+// why it can't share PanelHost's outer-workspace mount point. The
+// chest's props still flow through `PanelContextSlice.toolChest`, so
+// the panel-slice contract is unchanged.
 import AiTakeoffPanel from "@/components/AiTakeoffPanel";
 import { MeasurementTablePanel } from "./MeasurementTablePanel";
 import { MarkupStylingPanel } from "./MarkupStylingPanel";

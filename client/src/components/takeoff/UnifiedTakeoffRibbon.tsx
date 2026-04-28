@@ -5,6 +5,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
   RIBBON_GROUPS,
   ORTHO_PRESETS,
   SHORTCUT_BY_ID,
@@ -76,6 +82,14 @@ export interface UnifiedTakeoffRibbonProps {
   dimHudUnits?: DefaultUnits;
   onDimCommit?: (parsed: ParsedDimension, mode: "continue" | "finish") => void;
   onDimCancelTyped?: () => void;
+  /** Tool Chest panel toggle — wired to the View ribbon group's
+   *  "Tool Chest" button. */
+  toolChestOpen?: boolean;
+  onToggleToolChest?: () => void;
+  /** Optional callback fired when the user right-clicks a tool button
+   *  in the Measure or Annotate group. The handler typically pins the
+   *  tool to the Tool Chest. When unset, no context menu mounts. */
+  onPinTool?: (input: { toolId: string; label: string }) => void;
 }
 
 interface RibbonButtonState {
@@ -173,6 +187,9 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
     dimHudUnits = "ft",
     onDimCommit,
     onDimCancelTyped,
+    toolChestOpen,
+    onToggleToolChest,
+    onPinTool,
   } = props;
 
   // Per-user collapsed state for each ribbon group. Persisted so the
@@ -308,6 +325,9 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
       if (action === "layers") return { active: !!layersActive, disabled: false };
       if (action === "overlay") return { active: !!overlayActive, disabled: false };
       if (action === "versions") return { active: !!versionsActive, disabled: false };
+      if (action === "tool-chest") {
+        return { active: !!toolChestOpen, disabled: false };
+      }
       return { active: !!tool && activeTool === tool, disabled: false };
     },
     [
@@ -320,6 +340,7 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
       layersActive,
       overlayActive,
       versionsActive,
+      toolChestOpen,
     ],
   );
 
@@ -405,6 +426,10 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
         onShowVersions();
         return;
       }
+      if (action === "tool-chest") {
+        onToggleToolChest?.();
+        return;
+      }
       if (tool) {
         onToolSelect(tool);
       }
@@ -427,6 +452,7 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
       onShowLayers,
       onToggleOverlay,
       onShowVersions,
+      onToggleToolChest,
     ],
   );
 
@@ -492,56 +518,134 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
                     const showShortcut = shortcutKeysFor(tool.shortcutId);
                     const tooltipText = tool.tooltip || tool.label;
                     const refKey = `${group.id}:${idx}`;
+                    const pinnable =
+                      !!onPinTool &&
+                      !disabled &&
+                      (group.id === "measure" || group.id === "annotate");
+                    const buttonEl = (
+                      <Button
+                        ref={setButtonRef(refKey)}
+                        type="button"
+                        size="sm"
+                        variant={state.active ? "secondary" : "ghost"}
+                        disabled={disabled}
+                        onClick={() =>
+                          !disabled &&
+                          handleToolClick(group.id, tool.id, tool.tool, tool.action)
+                        }
+                        tabIndex={focusedIdx === idx ? 0 : -1}
+                        data-testid={`ribbon-tool-${tool.id}`}
+                        data-active={state.active ? "true" : "false"}
+                        data-disabled={disabled ? "true" : "false"}
+                        aria-pressed={state.active}
+                        aria-label={tool.label}
+                        className={cn(
+                          "h-8 px-1.5 gap-1 text-xs",
+                          state.active && "ring-1 ring-primary/40",
+                        )}
+                        onFocus={() =>
+                          setFocusIndexByGroup((prev) => ({ ...prev, [group.id]: idx }))
+                        }
+                      >
+                        <Icon className="w-3.5 h-3.5" />
+                        {labeled && <span className="hidden md:inline">{tool.label}</span>}
+                        {showShortcut && (
+                          <kbd className="hidden lg:inline px-1 py-0 text-[9px] font-mono bg-background/60 rounded border">
+                            {showShortcut}
+                          </kbd>
+                        )}
+                      </Button>
+                    );
+                    const tooltipContent = (
+                      <TooltipContent side="bottom">
+                        <div className="flex items-center gap-2">
+                          <span>{tooltipText}</span>
+                          {showShortcut && (
+                            <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-muted rounded border">
+                              {showShortcut}
+                            </kbd>
+                          )}
+                          {pinnable && (
+                            <span className="text-[9px] text-muted-foreground">· right-click to pin</span>
+                          )}
+                        </div>
+                      </TooltipContent>
+                    );
+                    if (!pinnable) {
+                      return (
+                        <Tooltip key={tool.id}>
+                          <TooltipTrigger asChild>{buttonEl}</TooltipTrigger>
+                          {tooltipContent}
+                        </Tooltip>
+                      );
+                    }
                     return (
-                      <Tooltip key={tool.id}>
-                        <TooltipTrigger asChild>
-                          <Button
-                            ref={setButtonRef(refKey)}
-                            type="button"
-                            size="sm"
-                            variant={state.active ? "secondary" : "ghost"}
-                            disabled={disabled}
-                            onClick={() =>
-                              !disabled &&
-                              handleToolClick(group.id, tool.id, tool.tool, tool.action)
-                            }
-                            tabIndex={focusedIdx === idx ? 0 : -1}
-                            data-testid={`ribbon-tool-${tool.id}`}
-                            data-active={state.active ? "true" : "false"}
-                            data-disabled={disabled ? "true" : "false"}
-                            aria-pressed={state.active}
-                            aria-label={tool.label}
-                            className={cn(
-                              "gap-1 text-xs",
-                              isNarrowViewport
-                                ? "h-11 min-w-[44px] px-3"
-                                : "h-8 px-1.5",
-                              state.active && "ring-1 ring-primary/40",
-                            )}
-                            onFocus={() =>
-                              setFocusIndexByGroup((prev) => ({ ...prev, [group.id]: idx }))
-                            }
+                      <ContextMenu key={tool.id}>
+                        <ContextMenuTrigger asChild>
+                          <span title={`${tooltipText} — right-click to pin`}>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  ref={setButtonRef(refKey)}
+                                  type="button"
+                                  size="sm"
+                                  variant={state.active ? "secondary" : "ghost"}
+                                  disabled={disabled}
+                                  onClick={() =>
+                                    !disabled &&
+                                    handleToolClick(group.id, tool.id, tool.tool, tool.action)
+                                  }
+                                  tabIndex={focusedIdx === idx ? 0 : -1}
+                                  data-testid={`ribbon-tool-${tool.id}`}
+                                  data-active={state.active ? "true" : "false"}
+                                  data-disabled={disabled ? "true" : "false"}
+                                  aria-pressed={state.active}
+                                  aria-label={tool.label}
+                                  className={cn(
+                                    "gap-1 text-xs",
+                                    isNarrowViewport
+                                      ? "h-11 min-w-[44px] px-3"
+                                      : "h-8 px-1.5",
+                                    state.active && "ring-1 ring-primary/40",
+                                  )}
+                                  onFocus={() =>
+                                    setFocusIndexByGroup((prev) => ({ ...prev, [group.id]: idx }))
+                                  }
+                                >
+                                  <Icon className="w-3.5 h-3.5" />
+                                  {labeled && <span className="hidden md:inline">{tool.label}</span>}
+                                  {showShortcut && (
+                                    <kbd className="hidden lg:inline px-1 py-0 text-[9px] font-mono bg-background/60 rounded border">
+                                      {showShortcut}
+                                    </kbd>
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              {tooltipContent}
+                            </Tooltip>
+                          </span>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent>
+                          <ContextMenuItem
+                            onSelect={() => {
+                              // Pin the canonical Tool enum value, not the display id —
+                              // they diverge for Annotate (id "arrow"/"cloud" → tool
+                              // "markup_arrow"/"markup_cloud") and Polyline (id "polyline"
+                              // → tool "segment"). Activation calls `setActiveTool` with
+                              // the stored refId, so storing the display id leaves the
+                              // pinned tool inert. `tool.tool` is non-null for every
+                              // pinnable entry (the `pinnable` guard rules out disabled
+                              // tools, and every enabled measure/annotate tool has a
+                              // non-null `tool`), but fall back to id defensively.
+                              const refId = tool.tool ?? tool.id;
+                              onPinTool?.({ toolId: refId, label: tool.label });
+                            }}
+                            data-testid={`ribbon-tool-pin-${tool.id}`}
                           >
-                            <Icon className="w-3.5 h-3.5" />
-                            {labeled && <span className="hidden md:inline">{tool.label}</span>}
-                            {showShortcut && (
-                              <kbd className="hidden lg:inline px-1 py-0 text-[9px] font-mono bg-background/60 rounded border">
-                                {showShortcut}
-                              </kbd>
-                            )}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">
-                          <div className="flex items-center gap-2">
-                            <span>{tooltipText}</span>
-                            {showShortcut && (
-                              <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-muted rounded border">
-                                {showShortcut}
-                              </kbd>
-                            )}
-                          </div>
-                        </TooltipContent>
-                      </Tooltip>
+                            Pin to Tool Chest
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
                     );
                   })}
                   {group.id === "constrain" && (

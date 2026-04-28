@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, Fragment, type ComponentProps } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, Fragment, type ComponentProps, type DragEvent as ReactDragEvent } from "react";
 import { Stage, Layer, Image as KonvaImage, Line, Circle, Text, Rect, Group } from "react-konva";
 import { MarkupShapeView, type MarkupShape } from "@/components/markups/MarkupRenderer";
 import {
@@ -52,6 +52,11 @@ import {
   computePitchedLinearFt,
 } from "@shared/utils/geometry";
 import { type Tool, type MeasurementType, validateHexColor, hexToRgba, TOOL_CONFIG } from "./takeoff/types";
+import {
+  readChestPayload,
+  usePinToChest,
+  type ChestItemDragPayload,
+} from "./takeoff/toolChest";
 import { detectScaleFromText, type DetectedScale } from "@/lib/scaleDetection";
 import { useTakeoffData } from "@/hooks/use-takeoff-data";
 import { useTakeoffInteractions } from "@/hooks/use-takeoff-interactions";
@@ -72,6 +77,7 @@ import { RibbonHost } from "./takeoff/hosts/RibbonHost";
 import { SheetHost } from "./takeoff/hosts/SheetHost";
 import { CanvasHost } from "./takeoff/hosts/CanvasHost";
 import { PanelHost } from "./takeoff/hosts/PanelHost";
+import { ToolChestHost } from "./takeoff/hosts/ToolChestHost";
 import { CollabHost } from "./takeoff/hosts/CollabHost";
 import { WorkspaceBottomBar } from "./takeoff/hosts/WorkspaceBottomBar";
 import { TakeoffSidebar } from "./takeoff/TakeoffSidebar";
@@ -438,6 +444,15 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [detectedScale, setDetectedScale] = useState<DetectedScale | null>(null);
   const [thumbnailStripOpen, setThumbnailStripOpen] = useState(false);
   const [propertiesPanelOpen, setPropertiesPanelOpen] = useState(false);
+  // Task #2139 — Tool Chest panel toggle (View ribbon group). Persisted
+  // to localStorage so the chest stays open across sheet/page navigations.
+  const [toolChestOpen, setToolChestOpen] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("takeoff-tool-chest-open") === "true";
+    } catch {
+      return false;
+    }
+  });
   const [versionHistoryOpen, setVersionHistoryOpen] = useState(false);
   const [selectedVersionId, setSelectedVersionId] = useState<string | null>(null);
   const [linkNavigationHistory, setLinkNavigationHistory] = useState<string[]>([]);
@@ -2692,6 +2707,107 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     createConditionMutation.mutate(data);
   };
 
+  // Task #2139 — Tool Chest wiring
+  //
+  // The chest is a per-user pinned shelf surfaced as a left-side panel
+  // (PanelHost), toggled from the View ribbon group, and populated via
+  // (a) right-click "Pin" affordances on ribbon tools / sidebar
+  // conditions, and (b) drag-from-chest → drop-on-canvas activations.
+  // Everything funnels through `usePinToChest` + `readChestPayload`
+  // and the `(kind, refId)` pointer protocol so item identity stays
+  // consistent across rename/color overrides.
+  const pinToChestMutation = usePinToChest({
+    onSuccess: (item) => {
+      toast({
+        title: "Pinned to Tool Chest",
+        description: item.label || "Item added to your chest",
+      });
+    },
+    onError: (err) => {
+      const msg = err instanceof Error ? err.message : "Failed to pin item";
+      // Server returns 409 on duplicate (unique on user+kind+itemId).
+      const isDup = /already.*pinned|409|duplicate/i.test(msg);
+      toast({
+        title: isDup ? "Already in Tool Chest" : "Pin Failed",
+        description: isDup ? "This item is already in your chest." : msg,
+        variant: isDup ? "default" : "destructive",
+      });
+    },
+  });
+
+  const handleToggleToolChest = useCallback(() => {
+    setToolChestOpen((prev) => {
+      const next = !prev;
+      try { localStorage.setItem("takeoff-tool-chest-open", next ? "true" : "false"); } catch { /* noop */ }
+      return next;
+    });
+  }, []);
+
+  const handlePinToolToChest = useCallback(
+    (input: { toolId: string; label: string }) => {
+      pinToChestMutation.mutate({
+        kind: "tool",
+        refId: input.toolId,
+        label: input.label,
+      });
+    },
+    [pinToChestMutation],
+  );
+
+  const handlePinConditionToChest = useCallback(
+    (cond: TakeoffCondition) => {
+      pinToChestMutation.mutate({
+        kind: "condition",
+        refId: cond.id,
+        label: cond.name,
+        color: cond.color || null,
+      });
+    },
+    [pinToChestMutation],
+  );
+
+  const handleChestItemDrop = useCallback(
+    (e: ReactDragEvent<HTMLDivElement>) => {
+      const payload: ChestItemDragPayload | null = readChestPayload(e.dataTransfer);
+      if (!payload) return;
+      // Style pre-applied: chest items carry an optional per-row color
+      // override. Apply it to the active markup color *before* switching
+      // tools so the next stroke is drawn in the chest item's color
+      // (matches Task #2139 "drag-to-canvas activation w/ style
+      // pre-applied"). For conditions, `handleActivateCondition` keeps
+      // its own intrinsic color contract; we still update the markup
+      // toolbar swatch so the user sees the same color the chest swatch
+      // showed.
+      if (payload.color) {
+        setMarkupColor(payload.color);
+      }
+      if (payload.kind === "tool") {
+        // Tool chest items map 1:1 to canvas tools.
+        setActiveTool(payload.refId as Tool);
+      } else if (payload.kind === "condition") {
+        const cond = conditions.find((c: TakeoffCondition) => c.id === payload.refId);
+        if (cond) {
+          handleActivateCondition(cond);
+        } else {
+          toast({
+            title: "Condition Missing",
+            description: "The pinned condition no longer exists.",
+            variant: "destructive",
+          });
+        }
+      } else if (payload.kind === "assembly") {
+        // Standalone takeoff workspace doesn't host the assembly
+        // insert dialog; the bid-estimate workspace will wire that
+        // path. Surface a hint instead of silently no-op'ing.
+        toast({
+          title: "Open in Bid",
+          description: "Assemblies activate inside a bid estimate.",
+        });
+      }
+    },
+    [conditions, handleActivateCondition, setMarkupColor, toast],
+  );
+
   // Task #2136 — Per-host context slices. Each slice is memoized
   // independently so unrelated state changes don't ripple across
   // hosts (real per-slice render isolation). Side-effect callbacks
@@ -2752,6 +2868,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     showStructuralGridlines,
     setShowStructuralGridlines,
     labeled,
+    toolChestOpen,
+    onToggleToolChest: handleToggleToolChest,
+    onPinToolToChest: handlePinToolToChest,
   }), [
     activeTool, handleToolSelect, stageScale, selectedMeasurementId, measurements,
     deleteMeasurementMutation, takeoffHistory, snapEnabled, orthoLock,
@@ -2760,6 +2879,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     handleExportQuantityDelta, handleExportBidPackage, handlePrintSheet, isOffline,
     sheetRotation, handleRotate, gridEnabled, handleToggleGrid, isCalibrated,
     showMeasurementLabels, showStructuralGridlines, labeled,
+    toolChestOpen, handleToggleToolChest, handlePinToolToChest,
   ]);
   const handleAcceptDetectedScale = useCallback(async () => {
     if (!selectedSheet || !detectedScale) return;
@@ -3145,6 +3265,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       gridEnabled,
       conditions,
       onActivateCondition: handleActivateCondition,
+      onChestItemDrop: handleChestItemDrop,
       onOpenUploadDialog: () => setUploadDialogOpen(true),
       markupTextInput,
       pdfImageWidth: pdfImage?.width || 0,
@@ -3412,6 +3533,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       onSaveCondition: handleSaveCondition,
       onUpdateCondition: (d: { id: string; [key: string]: string | number | boolean | undefined }) => updateConditionMutation.mutate(d),
       onDeleteCondition: (id: string) => deleteConditionMutation.mutate(id),
+      onPinConditionToChest: handlePinConditionToChest,
       saveConditionPending: createConditionMutation.isPending,
     },
     dialogs: {
@@ -3893,6 +4015,40 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         onClose: () => setPropertiesPanelOpen(false),
       };
     })(),
+    toolChest: {
+      // Task #2139 — left-side pinned shelf. The component reads
+      // `open` and self-mounts, so always provide the slice here.
+      open: toolChestOpen,
+      onClose: () => {
+        setToolChestOpen(false);
+        try { localStorage.setItem("takeoff-tool-chest-open", "false"); } catch { /* noop */ }
+      },
+      // /api/auth/me returns `{ user: {...} }` (see client/src/hooks/use-auth.tsx).
+      // The legacy `currentUser?.id` reads above are best-effort fallbacks
+      // for fields that don't strictly require ownership; the chest needs
+      // the real id to compute `ownedByMe`.
+      currentUserId: currentUser?.user?.id ?? currentUser?.id ?? null,
+      conditions,
+      // Standalone takeoff has no library-assemblies catalogue — the
+      // bid-estimate workspace will pass its own list. Empty here
+      // means assembly chest items render with their stored label
+      // and the resolver flags them as "missing" if any get pinned
+      // outside a bid context.
+      assemblies: [],
+      // Style pre-applied: if the chest item carries a color override,
+      // push it into the active markup color before flipping the tool
+      // so the next stroke is drawn in the chest item's color. The
+      // drag-to-canvas path applies the same color via
+      // `handleChestItemDrop` (see ChestItemDragPayload.color).
+      onActivateTool: (toolId: string, options?: { color?: string | null }) => {
+        if (options?.color) setMarkupColor(options.color);
+        setActiveTool(toolId as Tool);
+      },
+      onActivateCondition: (cond: TakeoffCondition, options?: { color?: string | null }) => {
+        if (options?.color) setMarkupColor(options.color);
+        handleActivateCondition(cond);
+      },
+    },
   };
   const collabSlice: CollabContextSlice = useMemo(() => {
     const sheetLockOwnedByMe =
@@ -3987,6 +4143,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           overlayActive={showOverlaySlider}
           onShowVersions={() => setVersionHistoryOpen(true)}
           versionsActive={versionHistoryOpen}
+          toolChestOpen={toolChestOpen}
+          onToggleToolChest={handleToggleToolChest}
+          onPinTool={handlePinToolToChest}
         />
       ) : (
         <RibbonHost />
@@ -4122,6 +4281,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
         <CanvasHost />
         <WorkspaceBottomBar {...panelSlice.bottomBar} />
+        {/* Tool Chest mounts inside canvas-area so its `top-0 left-0`
+            absolute positioning sits *below* the unified ribbon. The
+            host pulls its props from the panel slice (same context as
+            PanelHost) so the data flow stays slice-driven. */}
+        <ToolChestHost />
       </div>
 
 

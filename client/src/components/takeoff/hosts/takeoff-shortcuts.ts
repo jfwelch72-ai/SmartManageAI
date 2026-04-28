@@ -24,6 +24,7 @@ import {
   PenTool,
   Compass,
   Pencil,
+  PackageOpen,
   type LucideIcon,
 } from "lucide-react";
 import type { Tool } from "../types";
@@ -474,7 +475,8 @@ export interface RibbonToolDef {
     | "layers"
     | "overlay"
     | "versions"
-    | "show-grid";
+    | "show-grid"
+    | "tool-chest";
 }
 
 export interface RibbonGroupDef {
@@ -656,6 +658,15 @@ export const RIBBON_GROUPS: RibbonGroupDef[] = [
         tool: null,
         icon: Grid3x3,
         action: "show-grid",
+      },
+      {
+        id: "tool-chest",
+        label: "Tool Chest",
+        shortcutId: null,
+        tool: null,
+        icon: PackageOpen,
+        action: "tool-chest",
+        tooltip: "Tool Chest — pinned tools, conditions, assemblies",
       },
     ],
   },

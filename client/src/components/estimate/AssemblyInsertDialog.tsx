@@ -6,9 +6,10 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Layers, Search, Package, ArrowRight, CheckCircle, AlertCircle } from "lucide-react";
+import { Layers, Search, Package, ArrowRight, CheckCircle, AlertCircle, PackageOpen } from "lucide-react";
 import { apiRequest, queryClient, bidEstimateKey } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { usePinToChest } from "@/components/takeoff/toolChest";
 
 interface AssemblyItem {
   id: string;
@@ -92,6 +93,26 @@ export function AssemblyInsertDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const { toast } = useToast();
+  // Task #2139 — let users pin a library assembly to their Tool Chest
+  // straight from the picker. Backend stores `(kind="assembly", refId)`
+  // so renaming or recoloring the chest entry doesn't fork the source.
+  const pinAssemblyMutation = usePinToChest({
+    onSuccess: (item) => {
+      toast({
+        title: "Pinned to Tool Chest",
+        description: item.label || "Assembly added to your chest",
+      });
+    },
+    onError: (err) => {
+      const msg = err instanceof Error ? err.message : "Failed to pin assembly";
+      const isDup = /already.*pinned|409|duplicate/i.test(msg);
+      toast({
+        title: isDup ? "Already in Tool Chest" : "Pin Failed",
+        description: isDup ? "This assembly is already pinned." : msg,
+        variant: isDup ? "default" : "destructive",
+      });
+    },
+  });
   const [step, setStep] = useState<"pick" | "preview">("pick");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedAssembly, setSelectedAssembly] = useState<Assembly | null>(null);
@@ -214,6 +235,23 @@ export function AssemblyInsertDialog({
                             </Badge>
                           </div>
                         </div>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 shrink-0"
+                          title="Pin to Tool Chest"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            pinAssemblyMutation.mutate({
+                              kind: "assembly",
+                              refId: assembly.id,
+                              label: assembly.name,
+                            });
+                          }}
+                          data-testid={`button-pin-assembly-${assembly.id}`}
+                        >
+                          <PackageOpen className="w-3.5 h-3.5" />
+                        </Button>
                         <ArrowRight className="w-4 h-4 text-muted-foreground mt-1 shrink-0" />
                       </div>
                     </CardContent>

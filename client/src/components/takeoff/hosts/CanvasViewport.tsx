@@ -1,4 +1,4 @@
-import { memo, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from "react";
+import { memo, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from "react";
 import {
   Layers, Link2, Pencil, Search, Sparkles, Tag, Trash2, Upload, Ruler, Users, X,
 } from "lucide-react";
@@ -73,6 +73,12 @@ export interface CanvasViewportProps {
   conditions: TakeoffCondition[];
   onActivateCondition: (c: TakeoffCondition) => void;
 
+  // Tool Chest drag-drop (Task #2139). Fires when a chest item is
+  // dropped onto the canvas surface — workspace handler activates the
+  // referenced tool/condition/assembly. `null` for orchestrators that
+  // don't wire chest support.
+  onChestItemDrop?: ((e: ReactDragEvent<HTMLDivElement>) => void) | null;
+
   // empty state
   onOpenUploadDialog: () => void;
 
@@ -128,7 +134,7 @@ function CanvasViewportInner(props: CanvasViewportProps) {
     showMobileToolPicker, onToggleMobileToolPicker, onSelectMobileTool,
     openSheetIds, sheets, onSelectSheet, onCloseSheetTab,
     stageScale, currentSheet, snapEnabled, orthoLock, gridEnabled,
-    conditions, onActivateCondition, onOpenUploadDialog,
+    conditions, onActivateCondition, onChestItemDrop, onOpenUploadDialog,
     markupTextInput, pdfImageWidth, pdfImageHeight, sheetRotation, stagePosition,
     workspaceRef, onMarkupTextSubmit, onMarkupTextCancel,
     createLinkMode, createLinkTargetSheet, onCreateLinkTargetChange,
@@ -146,8 +152,24 @@ function CanvasViewportInner(props: CanvasViewportProps) {
       ref={containerRef}
       className="flex-1 overflow-hidden relative"
       style={{ cursor }}
+      data-testid="takeoff-canvas-viewport"
       onContextMenu={onContextMenu}
       onClick={onClick}
+      onDragOver={onChestItemDrop ? (e) => {
+        // Accept the chest MIME so the cursor flips to "copy" and the
+        // drop fires. Only mounting when the workspace wired a handler
+        // so other DnD use-cases stay untouched.
+        if (e.dataTransfer.types.includes("application/x-takeoff-chest-item+json")) {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "copy";
+        }
+      } : undefined}
+      onDrop={onChestItemDrop ? (e) => {
+        if (e.dataTransfer.types.includes("application/x-takeoff-chest-item+json")) {
+          e.preventDefault();
+          onChestItemDrop(e);
+        }
+      } : undefined}
     >
       {calibrationMode !== "idle" && (
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-primary text-primary-foreground px-4 py-2 rounded-full shadow-lg text-sm font-medium flex items-center gap-2 pointer-events-none" data-testid="calibration-mode-banner">

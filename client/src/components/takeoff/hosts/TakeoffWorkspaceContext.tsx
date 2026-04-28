@@ -18,6 +18,7 @@ import type { PageThumbnailStrip } from "../PageThumbnailStrip";
 import type { IssueDetailPanel } from "../IssueDetailPanel";
 import type { TakeoffPropertiesPanel } from "../TakeoffPropertiesPanel";
 import type AiTakeoffPanel from "@/components/AiTakeoffPanel";
+import type { ToolChestPanel } from "../ToolChestPanel";
 import type { CanvasStageProps } from "./CanvasStage";
 import type { SheetSelectorBarProps } from "./SheetSelectorBar";
 import type { CanvasViewportProps } from "./CanvasViewport";
@@ -73,6 +74,13 @@ export interface RibbonContextSlice {
   showStructuralGridlines: boolean;
   setShowStructuralGridlines: Dispatch<SetStateAction<boolean>>;
   labeled: boolean;
+  /** Tool Chest panel toggle (Task #2139). Surfaced in the View ribbon
+   *  group so the chest can mount alongside the other panel hosts. */
+  toolChestOpen: boolean;
+  onToggleToolChest: () => void;
+  /** Right-click → "Pin to Tool Chest" affordance for tool buttons in
+   *  the Measure / Annotate ribbon groups. */
+  onPinToolToChest: (input: { toolId: string; label: string }) => void;
 }
 
 export interface SheetContextSlice {
@@ -163,6 +171,10 @@ export interface PanelContextSlice {
   /** Right-side measurement properties panel (null when no measurement
    *  is selected or the panel is closed). */
   propertiesPanel: ComponentProps<typeof TakeoffPropertiesPanel> | null;
+  /** Tool Chest left-side panel (Task #2139). Always present so the
+   *  panel can mount on demand; the component reads `open` to decide
+   *  whether to render. */
+  toolChest: ComponentProps<typeof ToolChestPanel>;
 }
 
 export interface CollabCollaborator {

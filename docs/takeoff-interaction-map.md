@@ -175,12 +175,107 @@ Tab vs. Enter semantics:
 
 ## 6. Tool Chest (Step 7)
 
-A user-pinned shelf of frequently-used tools / conditions / assemblies.
+> **Status:** Implemented (Task #2139) for the standalone Takeoff workspace at
+> `/takeoff/:bidCode` and `/takeoff/project/:projectCode`. Backed by
+> `GET/POST/PATCH/DELETE /api/takeoff/tool-chest` and the
+> `takeoffToolChestItems` table — each row is a `(userId, itemKind, itemId)`
+> pointer with optional `label` / `color` / `shortcut` / `isShared` overrides.
+> Item identity is the pointer; renaming or recoloring a chest entry does
+> **not** fork the underlying tool / condition / assembly.
 
-- Per-user; an item can be marked `shared` to expose it to the whole org.
-- Drag from the chest onto the canvas to start drawing with that
-  tool/condition pre-selected.
-- Items have a sort order; reordering is local-first then synced.
+A per-user pinned shelf of frequently-used tools, conditions, and assemblies,
+surfaced as a left-side panel host. The chest mounts via a dedicated
+`ToolChestHost` that lives **inside the canvas-area container** (next to
+`<CanvasHost />` / `<WorkspaceBottomBar />`), not inside `PanelHost`. This
+is the only host that scopes its absolute positioning to the canvas area —
+PanelHost owns the right-side stack at the outer workspace level, where
+`top-0` would visually cover the unified ribbon. Both hosts source their
+props from `PanelContextSlice`, so the slice contract is uniform across
+panels.
+
+### Surface
+
+- **Toggle:** View ribbon group → Tool Chest button (icon `PackageOpen`,
+  `data-testid="ribbon-tool-tool-chest"`). No keyboard shortcut — every
+  single-letter key in `view` is already taken.
+- **Panel:** absolute, left-aligned, `data-testid="panel-tool-chest"`.
+  Open state persists to `localStorage["takeoff-tool-chest-open"]` so the
+  chest stays visible across sheet / page navigation and reloads.
+- **Sections** (in order): Tools, Conditions, Assemblies. Each section
+  has a "Mine" subsection for the current user's pins, and a
+  "Shared by org" subsection for `isShared = true` rows owned by other
+  org members. The list endpoint already returns the union (`user OR
+  isShared`); the panel partitions client-side via `partitionChestItems`.
+
+### Pin affordances
+
+- **Ribbon tools:** right-click any Measure / Annotate tool button →
+  context menu → "Pin to Tool Chest"
+  (`data-testid="ribbon-tool-pin-<displayId>"`). The pin stores the
+  **canonical `Tool` enum value** (`tool.tool ?? tool.id`), not the
+  ribbon's display id — the two diverge for Annotate (display
+  `arrow` / `cloud` → tool `markup_arrow` / `markup_cloud`) and for
+  Polyline (display `polyline` → tool `segment`). Activation
+  (`setActiveTool(itemId as Tool)`) consumes the canonical value, so
+  storing the display id would leave Annotate / Polyline pins inert.
+- **Conditions:** the right-side TakeoffSidebar's condition card has a
+  Pin button (`data-testid="button-pin-condition-<id>"`).
+- **Assemblies:** the bid-estimate `AssemblyInsertDialog` exposes a
+  Pin button on each assembly card
+  (`data-testid="button-pin-assembly-<id>"`).
+- All three paths funnel through the `usePinToChest` hook
+  (`POST /api/takeoff/tool-chest`). Backend enforces a unique
+  `(userId, itemKind, itemId)` index → duplicates surface as a 409
+  toast ("Already in Tool Chest").
+
+### Drag-to-canvas activation
+
+- Each row in the chest is a draggable handle. The drag payload is a
+  JSON-encoded `(kind, refId, color?, label?, chestId?)` pointer
+  written to `dataTransfer` under the
+  `application/x-takeoff-chest-item+json` MIME type via
+  `writeChestPayload`.
+- `CanvasViewport` registers `onDragOver` / `onDrop` handlers
+  (`data-testid="takeoff-canvas-viewport"`) that inspect
+  `dataTransfer.types` for that MIME and forward to the workspace's
+  `handleChestItemDrop`. The handler:
+    - **Style pre-applied:** if `payload.color` is set, calls
+      `setMarkupColor(payload.color)` *before* switching tools so the
+      next stroke is drawn in the chest item's color. The click path
+      mirrors this via the `options.color` parameter on
+      `onActivateTool` / `onActivateCondition`.
+    - `kind === "tool"` → `setActiveTool(refId)`.
+    - `kind === "condition"` → looks up the condition and calls
+      `handleActivateCondition` (same path the sidebar uses).
+    - `kind === "assembly"` → toast hint, since standalone Takeoff
+      doesn't host the assembly insert dialog (that's bid-only).
+- Click-to-activate is also supported (`onActivateTool` /
+  `onActivateCondition` props on the panel).
+
+### Item management
+
+- Each row's kebab opens a DropdownMenu
+  (`button-chest-item-menu-<id>`) with:
+    - **Rename** — inline `<Input>` (override stored on the chest row,
+      not the source).
+    - **Color** — submenu of preset swatches; nullable color falls back
+      to the source's color.
+    - **Share** — toggles `isShared`; rows owned by other users render
+      this entry as read-only.
+    - **Unpin** — `DELETE /api/takeoff/tool-chest/:id`. Both rename /
+      color and unpin run optimistic `onMutate` updates with rollback
+      on error.
+- **Reorder:** drag a row by its grip handle to a new slot within the
+  same "Mine" subsection. The panel updates the local React-Query
+  cache immediately, then fires `POST /api/takeoff/tool-chest/reorder`
+  with the final ordered ids. Shared-by-org items are not reorderable
+  (the server rejects writes against rows the user doesn't own → 403).
+
+### Empty state
+
+When the chest has no items the panel renders a centered placeholder
+(`data-testid="chest-empty-state"`) with a one-liner
+("Your chest is empty") and a short tip on how to populate it.
 
 ---
 
