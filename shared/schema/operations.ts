@@ -3992,3 +3992,77 @@ export const insertAccessRequestSchema = createInsertSchema(accessRequests).omit
 });
 export type InsertAccessRequest = z.infer<typeof insertAccessRequestSchema>;
 export type AccessRequest = typeof accessRequests.$inferSelect;
+
+/**
+ * Task #2220 — Takeoff stylus telemetry events.
+ *
+ * Anonymous, tenant-scoped log of the three pen/touch interactions whose
+ * defaults Section 7 of the Takeoff Interaction Map currently tunes by
+ * hand: palm-rejection drops, the long-press snap-HUD opening, and the
+ * two-finger rotate gesture. Records only the values that triggered the
+ * event (dwell ms, contact size px, rotation Δ°) plus device class and
+ * pointer type — NO project / sheet / measurement / user identifiers
+ * beyond `organizationId`, which mirrors the existing tenant scope on
+ * `aiActionAudit` / `websiteAnalyticsEvents`. Backs the per-tenant
+ * P50 / P95 distributions on the platform Stylus Tuning dashboard.
+ */
+export const takeoffStylusTelemetryEvents = pgTable(
+  "takeoff_stylus_telemetry_events",
+  {
+    id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+    organizationId: varchar("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    // PALM_REJECTED | LONG_PRESS | ROTATE_GESTURE — kept as text (not
+    // an enum) so adding a new gesture later doesn't require a
+    // migration. Server-side Zod restricts the accepted values.
+    eventType: text("event_type").notNull(),
+    // "pen" | "touch" | "mouse" — from PointerEvent.pointerType. We
+    // don't UA-fingerprint beyond the device class below.
+    pointerType: text("pointer_type"),
+    // Coarse device class derived from userAgent on the client:
+    // "ios" | "ipados" | "android" | "windows" | "macos" | "other".
+    deviceClass: text("device_class"),
+    // Measured long-press dwell (ms) — wall-clock elapsed from
+    // pointer-down to the moment the HUD opened. Always >= the user's
+    // configured threshold (`configuredThresholdMs` below); the gap
+    // reflects timer/main-thread drift. The dashboard's P50/P95 dwell
+    // therefore reports actual *behavioral* dwell, not the setting.
+    dwellMs: integer("dwell_ms"),
+    // Largest contact dimension in CSS px (PointerEvent width/height
+    // or doubled Touch.radiusX/Y). Drives the palm-band tuning.
+    contactSizePx: doublePrecision("contact_size_px"),
+    // Cumulative rotation Δ in degrees for the gesture (signed:
+    // positive = CCW). Only set on ROTATE_GESTURE events.
+    rotationDeltaDeg: doublePrecision("rotation_delta_deg"),
+    // Palm-rejection band (px) configured at the moment the touch was
+    // dropped. Lets us interpret contactSizePx in context — a 30 px
+    // contact rejected against a 24 px band is normal; against a
+    // 60 px band it's not.
+    bandPx: integer("band_px"),
+    // Configured long-press hold threshold (ms) sourced from the
+    // user's `stylus_long_press_ms` pref at the time of the event.
+    // Stored alongside `dwellMs` so the dashboard can distinguish
+    // setting-distribution (this column) from behavior (dwellMs).
+    configuredThresholdMs: integer("configured_threshold_ms"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => ({
+    orgCreatedIdx: index("takeoff_stylus_telemetry_org_created_idx").on(
+      table.organizationId,
+      table.createdAt,
+    ),
+    eventTypeIdx: index("takeoff_stylus_telemetry_event_type_idx").on(
+      table.eventType,
+    ),
+  }),
+);
+
+export const insertTakeoffStylusTelemetryEventSchema = createInsertSchema(
+  takeoffStylusTelemetryEvents,
+).omit({ id: true, createdAt: true });
+export type InsertTakeoffStylusTelemetryEvent = z.infer<
+  typeof insertTakeoffStylusTelemetryEventSchema
+>;
+export type TakeoffStylusTelemetryEvent =
+  typeof takeoffStylusTelemetryEvents.$inferSelect;

@@ -42,6 +42,7 @@ import { usePdfTileRenderer } from "@/hooks/use-pdf-tile-renderer";
 import { rotateViewportToPageNative, viewportToWorldRect } from "@/lib/takeoff/tileCoords";
 import { useTakeoffStylusPrefs } from "@/hooks/use-takeoff-stylus-prefs";
 import { useStylusLongPress } from "@/hooks/use-stylus-long-press";
+import { recordLongPress } from "@/lib/takeoffStylusTelemetry";
 import * as pdfjsLib from 'pdfjs-dist';
 import {
   createArcSegment,
@@ -741,7 +742,19 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   // instead of mirroring the listener bookkeeping.
   useStylusLongPress(containerRef, {
     holdMs: stylusPrefs.stylusLongPressMs,
-    onLongPress: () => setSnapHudOpen(true),
+    onLongPress: (_pt, meta) => {
+      // Task #2220 — record the *measured* dwell (wall-clock elapsed
+      // from pointer-down to fire) so the platform Stylus Tuning
+      // dashboard surfaces real interaction behavior, not the user's
+      // configured threshold. We also send the configured threshold
+      // alongside so operators can correlate the two distributions.
+      recordLongPress({
+        pointerType: "pen",
+        dwellMs: meta.measuredDwellMs,
+        configuredThresholdMs: meta.configuredHoldMs,
+      });
+      setSnapHudOpen(true);
+    },
   });
 
   const isMarkupTool = (tool: string) => tool.startsWith("markup_");

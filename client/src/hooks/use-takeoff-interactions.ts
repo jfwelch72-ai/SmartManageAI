@@ -3,6 +3,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory } from "@shared/schema";
 import { canonicalTool, type Tool, type MeasurementType } from "@/components/takeoff/types";
+import { recordPalmReject, recordRotateGesture } from "@/lib/takeoffStylusTelemetry";
 import {
   computePixelDistance,
   computeDistanceInFeet,
@@ -902,6 +903,14 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
           t.radiusY ? t.radiusY * 2 : 0,
         );
         if (size > band) {
+          // Task #2220 — anonymous, tenant-scoped telemetry on the
+          // rejected contact. Backs the palm-band tuning column on
+          // the platform Stylus Tuning dashboard.
+          recordPalmReject({
+            pointerType: "touch",
+            contactSizePx: size,
+            bandPx: band,
+          });
           setMouseDownPosition(null);
           return;
         }
@@ -1120,10 +1129,15 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         while (pinchRotationAccumRef.current >= QUARTER) {
           pinchRotationAccumRef.current -= QUARTER;
           if (typeof onRotateCW === "function") onRotateCW();
+          // Task #2220 — record one telemetry event per discrete 90°
+          // step. Sign matches the gesture direction (+ = CCW; this
+          // arm fires for CW so we send −90).
+          recordRotateGesture({ rotationDeltaDeg: -90 });
         }
         while (pinchRotationAccumRef.current <= -QUARTER) {
           pinchRotationAccumRef.current += QUARTER;
           if (typeof onRotateCCW === "function") onRotateCCW();
+          recordRotateGesture({ rotationDeltaDeg: 90 });
         }
       }
     }

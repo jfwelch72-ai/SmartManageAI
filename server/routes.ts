@@ -165,6 +165,7 @@ import takeoffCrossModuleRoutes from "./takeoffCrossModuleRoutes";
 import takeoffToolChestRoutes from "./takeoffToolChestRoutes";
 import takeoffSheetSetRoutes from "./takeoffSheetSetRoutes";
 import takeoffRecentsRoutes from "./takeoffRecentsRoutes";
+import takeoffStylusTelemetryRoutes from "./takeoffStylusTelemetryRoutes";
 import bimRoutes from "./bimRoutes";
 import lidarRoutes from "./lidarRoutes";
 import mobilizationRoutes from "./mobilizationRoutes";
@@ -471,6 +472,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.use(userSettingsRoutes);
 
   app.use(takeoffRecentsRoutes);
+  app.use(takeoffStylusTelemetryRoutes);
 
   app.use(executiveDigestRoutes);
 

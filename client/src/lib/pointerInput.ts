@@ -201,8 +201,18 @@ export interface LongPressDetectorOptions {
   /** Only fire for pen pointers (the takeoff snap-HUD spec). When
    *  false, fires for any pointer kind. Default: true. */
   penOnly?: boolean;
-  /** Callback fired when the long-press completes successfully. */
-  onLongPress: (point: { x: number; y: number }) => void;
+  /** Callback fired when the long-press completes successfully.
+   *  The second argument carries gesture telemetry meta:
+   *  `measuredDwellMs` is the wall-clock elapsed from pointer-down to
+   *  fire (always >= configured `holdMs`; gap reflects timer/main-
+   *  thread drift), and `configuredHoldMs` is the threshold in effect
+   *  for this gesture. Telemetry consumers should record
+   *  `measuredDwellMs` so dwell distributions reflect real interaction
+   *  behavior, not the setting. */
+  onLongPress: (
+    point: { x: number; y: number },
+    meta: { measuredDwellMs: number; configuredHoldMs: number },
+  ) => void;
 }
 
 export interface LongPressDetector {
@@ -224,7 +234,17 @@ export function createLongPressDetector(opts: LongPressDetectorOptions): LongPre
   let timer: ReturnType<typeof setTimeout> | null = null;
   let startX = 0;
   let startY = 0;
+  let startTimeMs = 0;
   let activePointerId: number | null = null;
+
+  // performance.now() when present (monotonic, sub-ms) and Date.now()
+  // otherwise (test environments / very old browsers without
+  // performance API). Both are wall-clock-monotonic enough for the
+  // sub-second dwell measurement we need.
+  const nowMs = (): number =>
+    typeof performance !== "undefined" && typeof performance.now === "function"
+      ? performance.now()
+      : Date.now();
 
   const cancel = () => {
     if (timer !== null) {
@@ -242,9 +262,17 @@ export function createLongPressDetector(opts: LongPressDetectorOptions): LongPre
       activePointerId = evt.pointerId;
       startX = evt.clientX;
       startY = evt.clientY;
+      startTimeMs = nowMs();
       timer = setTimeout(() => {
         timer = null;
-        opts.onLongPress({ x: startX, y: startY });
+        // Measured dwell — wall-clock elapsed since pointer-down.
+        // Always >= holdMs; the gap is timer/main-thread drift and is
+        // the actual signal we want telemetry to surface.
+        const measuredDwellMs = Math.max(0, Math.round(nowMs() - startTimeMs));
+        opts.onLongPress(
+          { x: startX, y: startY },
+          { measuredDwellMs, configuredHoldMs: holdMs },
+        );
       }, holdMs);
     },
     move(evt: PointerEvent) {

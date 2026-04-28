@@ -26,6 +26,7 @@ import {
   AlertTriangle,
   CheckCircle,
   XCircle,
+  PenTool,
 } from "lucide-react";
 import { Link } from "wouter";
 import { format } from "date-fns";
@@ -85,6 +86,26 @@ interface StorageOrg {
   totalFiles: number;
   totalSizeBytes: number;
   totalSizeMB: number;
+}
+
+/** Task #2220 — Per-tenant aggregated takeoff stylus telemetry. The
+ *  shape mirrors the GET /api/platform/monitoring/stylus-telemetry
+ *  response so the table can render P50/P95 cells without any
+ *  client-side percentile math. Null = no observations in the period. */
+interface StylusTuningOrg {
+  organizationId: string;
+  organizationName: string;
+  totalEvents: number;
+  palmRejected: number;
+  longPress: number;
+  rotateGesture: number;
+  dwellMsP50: number | null;
+  dwellMsP95: number | null;
+  configuredThresholdMsP50: number | null;
+  configuredThresholdMsP95: number | null;
+  contactSizePxP50: number | null;
+  contactSizePxP95: number | null;
+  rotationDegP95Abs: number | null;
 }
 
 interface IntegrationOrg {
@@ -751,6 +772,184 @@ function StorageTab() {
   );
 }
 
+/**
+ * Task #2220 — Stylus Tuning tab. Surfaces P50/P95 of long-press
+ * dwell (ms) and palm-rejection contact size (px) per tenant so the
+ * team can decide whether to tighten or loosen the shipping defaults
+ * (palm band 24 px, long-press 500 ms) called out in Section 7 of the
+ * Takeoff Interaction Map. The data source is the anonymous, tenant-
+ * scoped telemetry POSTed from the takeoff workspace; we never
+ * surface user / project / sheet identifiers, only org-level rollups.
+ */
+function StylusTuningTab() {
+  const [period, setPeriod] = useState("30d");
+  const { data, isLoading } = useQuery<{
+    period: string;
+    since: string;
+    defaults: { palmRejectionBandPx: number; stylusLongPressMs: number };
+    organizations: StylusTuningOrg[];
+  }>({
+    queryKey: ["/api/platform/monitoring/stylus-telemetry", period],
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/platform/monitoring/stylus-telemetry?period=${period}`,
+        { credentials: "include" },
+      );
+      if (!res.ok) throw new Error("Failed to fetch");
+      return res.json();
+    },
+  });
+
+  const { sorted, sortKey, sortDir, toggle } = useSortable<StylusTuningOrg>(
+    data?.organizations,
+    "totalEvents",
+  );
+
+  if (isLoading) return <Skeleton className="h-64 w-full" />;
+
+  const fmt = (n: number | null, digits = 0) =>
+    n == null ? "—" : n.toFixed(digits);
+
+  // Highlight P95s that exceed the shipping defaults — those are the
+  // tenants whose hand-tuning the team should look at first.
+  const dwellDefault = data?.defaults.stylusLongPressMs ?? 500;
+  const bandDefault = data?.defaults.palmRejectionBandPx ?? 24;
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <PenTool className="h-5 w-5" />
+              Stylus Tuning by Organization
+            </CardTitle>
+            <CardDescription>
+              Anonymous, tenant-scoped P50/P95 distributions of takeoff
+              palm rejection, stylus long-press, and two-finger rotate
+              gestures. Shipping defaults: palm band {bandDefault} px,
+              long-press {dwellDefault} ms.
+            </CardDescription>
+          </div>
+          <Select value={period} onValueChange={setPeriod}>
+            <SelectTrigger className="w-32" data-testid="select-stylus-period">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="24h">Last 24h</SelectItem>
+              <SelectItem value="7d">Last 7 days</SelectItem>
+              <SelectItem value="30d">Last 30 days</SelectItem>
+              <SelectItem value="90d">Last 90 days</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm" data-testid="table-stylus-tuning">
+            <thead>
+              <tr className="border-b text-left text-muted-foreground">
+                <th className="pb-2 pr-4">
+                  <SortHeader label="Organization" field="organizationName" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("organizationName")} />
+                </th>
+                <th className="pb-2 pr-4 text-right">
+                  <SortHeader label="Events" field="totalEvents" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("totalEvents")} />
+                </th>
+                <th className="pb-2 pr-4 text-right">
+                  <SortHeader label="Palm Rej." field="palmRejected" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("palmRejected")} />
+                </th>
+                <th className="pb-2 pr-4 text-right">
+                  <SortHeader label="Long-press" field="longPress" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("longPress")} />
+                </th>
+                <th className="pb-2 pr-4 text-right">
+                  <SortHeader label="Rotate" field="rotateGesture" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("rotateGesture")} />
+                </th>
+                <th className="pb-2 pr-4 text-right">
+                  <SortHeader label="Dwell P50 (ms, measured)" field="dwellMsP50" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("dwellMsP50")} />
+                </th>
+                <th className="pb-2 pr-4 text-right">
+                  <SortHeader label="Dwell P95 (ms, measured)" field="dwellMsP95" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("dwellMsP95")} />
+                </th>
+                <th className="pb-2 pr-4 text-right">
+                  <SortHeader label="Threshold P95 (ms, configured)" field="configuredThresholdMsP95" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("configuredThresholdMsP95")} />
+                </th>
+                <th className="pb-2 pr-4 text-right">
+                  <SortHeader label="Contact P50 (px)" field="contactSizePxP50" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("contactSizePxP50")} />
+                </th>
+                <th className="pb-2 pr-4 text-right">
+                  <SortHeader label="Contact P95 (px)" field="contactSizePxP95" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("contactSizePxP95")} />
+                </th>
+                <th className="pb-2 text-right">
+                  <SortHeader label="Rotate |Δ°| P95" field="rotationDegP95Abs" sortKey={String(sortKey)} sortDir={sortDir} onToggle={() => toggle("rotationDegP95Abs")} />
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((org) => {
+                // "Hot" = the tenant's configured threshold P95 sits
+                // well below the shipping default, signaling a lot of
+                // their users have manually shortened the threshold —
+                // i.e., the default may be too patient for that fleet.
+                // (Measured dwell is always >= the threshold by
+                // definition, so we can't draw the same conclusion
+                // from `dwellMsP95` alone.)
+                const thresholdHot =
+                  org.configuredThresholdMsP95 != null &&
+                  org.configuredThresholdMsP95 < dwellDefault * 0.6;
+                const contactHot =
+                  org.contactSizePxP95 != null &&
+                  org.contactSizePxP95 > bandDefault * 1.5;
+                return (
+                  <tr
+                    key={org.organizationId}
+                    className="border-b last:border-0 hover:bg-muted/50"
+                    data-testid={`row-stylus-${org.organizationId}`}
+                  >
+                    <td className="py-3 pr-4 font-medium">{org.organizationName}</td>
+                    <td className="py-3 pr-4 text-right">{org.totalEvents.toLocaleString()}</td>
+                    <td className="py-3 pr-4 text-right">{org.palmRejected.toLocaleString()}</td>
+                    <td className="py-3 pr-4 text-right">{org.longPress.toLocaleString()}</td>
+                    <td className="py-3 pr-4 text-right">{org.rotateGesture.toLocaleString()}</td>
+                    <td className="py-3 pr-4 text-right">{fmt(org.dwellMsP50)}</td>
+                    <td className="py-3 pr-4 text-right">{fmt(org.dwellMsP95)}</td>
+                    <td className="py-3 pr-4 text-right">
+                      {thresholdHot ? (
+                        <Badge variant="secondary" data-testid={`badge-threshold-low-${org.organizationId}`}>
+                          {fmt(org.configuredThresholdMsP95)}
+                        </Badge>
+                      ) : (
+                        fmt(org.configuredThresholdMsP95)
+                      )}
+                    </td>
+                    <td className="py-3 pr-4 text-right">{fmt(org.contactSizePxP50, 1)}</td>
+                    <td className="py-3 pr-4 text-right">
+                      {contactHot ? (
+                        <Badge variant="destructive" data-testid={`badge-contact-high-${org.organizationId}`}>
+                          {fmt(org.contactSizePxP95, 1)}
+                        </Badge>
+                      ) : (
+                        fmt(org.contactSizePxP95, 1)
+                      )}
+                    </td>
+                    <td className="py-3 text-right">{fmt(org.rotationDegP95Abs, 1)}</td>
+                  </tr>
+                );
+              })}
+              {sorted.length === 0 && (
+                <tr>
+                  <td colSpan={11} className="py-8 text-center text-muted-foreground" data-testid="text-stylus-empty">
+                    No stylus telemetry collected in this period
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function IntegrationHealthTab() {
   const { data, isLoading } = useQuery<{
     organizations: IntegrationOrg[];
@@ -914,6 +1113,9 @@ export default function PlatformAnalyticsMonitoring() {
               <TabsTrigger value="storage" data-testid="tab-storage">
                 <HardDrive className="h-4 w-4 mr-1.5" /> Storage
               </TabsTrigger>
+              <TabsTrigger value="stylus" data-testid="tab-stylus-tuning">
+                <PenTool className="h-4 w-4 mr-1.5" /> Stylus Tuning
+              </TabsTrigger>
               <TabsTrigger value="integrations" data-testid="tab-integrations">
                 <Link2 className="h-4 w-4 mr-1.5" /> Integrations
               </TabsTrigger>
@@ -931,6 +1133,9 @@ export default function PlatformAnalyticsMonitoring() {
           </TabsContent>
           <TabsContent value="storage">
             <StorageTab />
+          </TabsContent>
+          <TabsContent value="stylus">
+            <StylusTuningTab />
           </TabsContent>
           <TabsContent value="integrations">
             <IntegrationHealthTab />

@@ -38,6 +38,7 @@ import { ensureSocialEngagementColumns } from "./ensureSocialEngagementColumns";
 import { ensureEmailCampaignTables } from "./ensureEmailCampaignTables";
 import { ensureWorkflowTables } from "./ensureWorkflowTables";
 import { ensureMissingDrizzleTables } from "./ensureMissingDrizzleTables";
+import { ensureTakeoffStylusTelemetryEventsTable } from "./ensureTakeoffStylusTelemetryEventsTable";
 import { ensureGeofenceEnhancements } from "./ensureGeofenceEnhancements";
 import { ensureSiteLeaveTable } from "./ensureSiteLeaveTable";
 import { ensurePurchaseOrderColumns } from "./ensurePurchaseOrderColumns";
@@ -246,6 +247,10 @@ const migrations: MigrationStep[] = [
   { name: "email_campaign_tables", category: "CREATE_TABLE", fn: ensureEmailCampaignTables },
   { name: "workflow_tables", category: "CREATE_TABLE", fn: ensureWorkflowTables },
   { name: "missing_drizzle_tables", category: "CREATE_TABLE", fn: ensureMissingDrizzleTables },
+  // Task #2220 — anonymous, tenant-scoped telemetry of takeoff palm
+  // rejection / long-press / two-finger-rotate events. Backs the per-org
+  // P50/P95 distributions on the platform Stylus Tuning dashboard.
+  { name: "takeoff_stylus_telemetry_events", category: "CREATE_TABLE", fn: ensureTakeoffStylusTelemetryEventsTable },
   { name: "geofence_enhancements", category: "ADD_COLUMN", fn: ensureGeofenceEnhancements },
   { name: "site_leave_table", category: "CREATE_TABLE", fn: ensureSiteLeaveTable },
   { name: "purchase_order_columns", category: "ADD_COLUMN", fn: ensurePurchaseOrderColumns },

@@ -36,6 +36,16 @@ export function validateCsrf(req: Request, res: Response, next: NextFunction): v
     "/api/auth/forgot-password",
     "/api/auth/reset-password",
     "/api/stripe/webhook",
+    // Task #2220 — anonymous, tenant-scoped takeoff stylus telemetry.
+    // The client emitter uses navigator.sendBeacon on pagehide /
+    // visibilitychange to ship the final batch before the tab dies;
+    // sendBeacon cannot attach a custom CSRF header, so requiring one
+    // would silently drop end-of-session events from the dataset that
+    // tunes the takeoff defaults. Server-side risk is bounded: the
+    // route is requireAuth, the tenant is taken from the session
+    // (never the body), and the worst-case CSRF abuse is one extra
+    // anonymous row per call in the attacker's own org's dataset.
+    "/api/takeoff/stylus-telemetry/batch",
   ];
   if (
     exempt.includes(req.path) ||

@@ -68,9 +68,11 @@ import MarkupRenderer, { type MarkupShape, type MarkupTool } from "./MarkupRende
 import { MarkupTextInput } from "./MarkupTextInput";
 import {
   ActivePointerTracker,
+  contactSizePx,
   shouldRejectAsPalm,
 } from "@/lib/pointerInput";
 import { useTakeoffStylusPrefs } from "@/hooks/use-takeoff-stylus-prefs";
+import { recordPalmReject } from "@/lib/takeoffStylusTelemetry";
 
 export interface PlanMarkupLayerProps {
   documentId: string;
@@ -1174,6 +1176,15 @@ export default function PlanMarkupLayer({
             bandPx: stylusPrefs.palmRejectionBandPx,
           })
         ) {
+          // Task #2220 — record the rejected contact so the platform
+          // dashboard can surface a per-tenant P95 of contact size and
+          // tell us whether the 24 px default band is right for the
+          // device fleet using the product.
+          recordPalmReject({
+            pointerType: (native.pointerType as "touch" | "pen" | "mouse" | undefined) ?? "touch",
+            contactSizePx: contactSizePx(native),
+            bandPx: stylusPrefs.palmRejectionBandPx,
+          });
           // Best-effort: stop Konva's stage from interpreting this as
           // the start of a draw / marquee gesture by short-circuiting
           // here. The pointerup handler will still tear the pointer

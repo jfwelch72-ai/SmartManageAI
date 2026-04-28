@@ -315,6 +315,29 @@ When the chest has no items the panel renders a centered placeholder
 > (Task #2206: 2026-04-28, all four scenarios pass on iPad Pro
 > Safari/Chrome and Surface Pro Edge/Chrome with shipped defaults).
 
+> **Production telemetry (Task #2220):** the takeoff workspace now
+> emits anonymous, tenant-scoped telemetry whenever the three gestures
+> above fire — `PALM_REJECTED`, `LONG_PRESS`, and `ROTATE_GESTURE`
+> events with the contact size (px), measured long-press dwell (ms),
+> configured long-press threshold (ms), rotation Δ (°), pointer type,
+> and coarse device class. For long-press, **`dwellMs` is the actual
+> wall-clock elapsed from pointer-down to fire** (always >= the
+> configured threshold; the gap reflects timer/main-thread drift), and
+> `configuredThresholdMs` records the user's `stylus_long_press_ms`
+> pref in effect — keep these distinct so the dashboard separates
+> behavior from settings. **No** project / sheet / measurement / user
+> identifiers are sent; the server stamps each row with the
+> authenticated `organizationId`. The events are buffered client-side
+> (`client/src/lib/takeoffStylusTelemetry.ts`, batches of up to 50,
+> flushed every 5 s and on `pagehide` via `sendBeacon`) and persisted
+> to `takeoff_stylus_telemetry_events`. Per-tenant P50 / P95
+> distributions of measured dwell, configured threshold, and
+> contact-size-px are exposed on the SUPER_ADMIN-only **Stylus
+> Tuning** tab of *Platform → Analytics & Monitoring*, which is the
+> source of truth when changing the defaults above. Honors
+> `navigator.doNotTrack` and the `localStorage["takeoff:telemetry"]
+> = "off"` opt-out.
+
 ---
 
 ## 8. Versioning, performance, autosave

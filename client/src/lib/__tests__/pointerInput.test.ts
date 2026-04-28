@@ -123,8 +123,48 @@ describe("pointerInput", () => {
       vi.advanceTimersByTime(499);
       expect(onLongPress).not.toHaveBeenCalled();
       vi.advanceTimersByTime(1);
-      expect(onLongPress).toHaveBeenCalledWith({ x: 50, y: 60 });
+      expect(onLongPress).toHaveBeenCalledWith(
+        { x: 50, y: 60 },
+        expect.objectContaining({
+          configuredHoldMs: 500,
+          // Task #2220 — measured dwell is wall-clock elapsed since
+          // pointer-down, so it must be >= the configured threshold.
+          measuredDwellMs: expect.any(Number) as unknown as number,
+        }),
+      );
+      const meta = onLongPress.mock.calls[0][1] as { measuredDwellMs: number };
+      expect(meta.measuredDwellMs).toBeGreaterThanOrEqual(500);
       vi.useRealTimers();
+    });
+
+    it("reports a measured dwell that grows with main-thread delay", () => {
+      // Demonstrates the *behavioral* metric the dashboard tracks:
+      // when timers fire late (busy main thread), measuredDwellMs
+      // exceeds the configured holdMs. We can't simulate jank with
+      // fake timers (advanceTimersByTime is instantaneous), so verify
+      // that with real timers the measurement is bounded above the
+      // threshold and reasonable.
+      return new Promise<void>((resolve, reject) => {
+        const onLongPress = vi.fn();
+        const det = createLongPressDetector({ holdMs: 50, onLongPress });
+        det.start(fakePointer({ pointerId: 1, pointerType: "pen", clientX: 0, clientY: 0 }));
+        setTimeout(() => {
+          try {
+            expect(onLongPress).toHaveBeenCalledTimes(1);
+            const meta = onLongPress.mock.calls[0][1] as {
+              measuredDwellMs: number;
+              configuredHoldMs: number;
+            };
+            expect(meta.configuredHoldMs).toBe(50);
+            expect(meta.measuredDwellMs).toBeGreaterThanOrEqual(50);
+            // Sanity ceiling — should fire within a small slack.
+            expect(meta.measuredDwellMs).toBeLessThan(500);
+            resolve();
+          } catch (e) {
+            reject(e);
+          }
+        }, 120);
+      });
     });
     it("cancels when movement exceeds budget", () => {
       vi.useFakeTimers();

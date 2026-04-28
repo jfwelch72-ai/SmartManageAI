@@ -60,7 +60,7 @@ export function useStylusLongPress(
       holdMs,
       penOnly,
       movementBudgetPx,
-      onLongPress: (point) => onLongPressRef.current(point),
+      onLongPress: (point, meta) => onLongPressRef.current(point, meta),
     });
     const onDown = (e: PointerEvent) => detector.start(e);
     const onMove = (e: PointerEvent) => detector.move(e);
