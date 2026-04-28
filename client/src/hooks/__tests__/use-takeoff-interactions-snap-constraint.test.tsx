@@ -342,6 +342,201 @@ describe("Task #2192 — useTakeoffInteractions wires unified-ribbon snap modes"
     expect(result.current.currentSnap?.snappedPoint).toEqual({ x: 0, y: 0 });
   });
 
+  // ---------------------------------------------------------------
+  // Task #2198 — Perpendicular and Nearest snap modes drive
+  // resolvePoint and the live HUD. Prior to this task they were
+  // toggleable in the ribbon but produced no canvas-side snap.
+  // ---------------------------------------------------------------
+
+  it("Task #2198 — Perpendicular: cursor near the perpendicular foot of the draw anchor snaps to that foot", () => {
+    // Anchor at (50, 40); horizontal segment along y=0 from (0,0)→(100,0).
+    // Perpendicular foot of the anchor onto the segment is (50, 0).
+    // Cursor placed 1px off that foot, well inside the 12px snap radius.
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: ["perpendicular"],
+          constraintMode: "none",
+          orthoPresetIndex: 4,
+          drawingPoints: [{ x: 50, y: 40 }],
+          measurements: [makeMeasurement("m1", "LINEAR", seg)],
+        }),
+      ),
+    );
+    let resolved!: { x: number; y: number };
+    act(() => {
+      resolved = result.current.resolvePoint({ x: 51, y: 1 });
+    });
+    expect(resolved.x).toBeCloseTo(50, 6);
+    expect(resolved.y).toBeCloseTo(0, 6);
+  });
+
+  it("Task #2198 — Perpendicular: when the mode is OFF the same cursor passes through unchanged", () => {
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: ["endpoint"], // perpendicular omitted
+          constraintMode: "none",
+          orthoPresetIndex: 4,
+          drawingPoints: [{ x: 50, y: 40 }],
+          measurements: [makeMeasurement("m1", "LINEAR", seg)],
+        }),
+      ),
+    );
+    let resolved!: { x: number; y: number };
+    act(() => {
+      resolved = result.current.resolvePoint({ x: 51, y: 1 });
+    });
+    expect(resolved).toEqual({ x: 51, y: 1 });
+  });
+
+  it("Task #2198 — Perpendicular: requires a draw anchor (no snap before first click)", () => {
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: ["perpendicular"],
+          constraintMode: "none",
+          orthoPresetIndex: 4,
+          drawingPoints: [], // no anchor yet
+          measurements: [makeMeasurement("m1", "LINEAR", seg)],
+        }),
+      ),
+    );
+    let resolved!: { x: number; y: number };
+    act(() => {
+      resolved = result.current.resolvePoint({ x: 51, y: 1 });
+    });
+    expect(resolved).toEqual({ x: 51, y: 1 });
+  });
+
+  it("Task #2198 — Nearest: cursor near a segment snaps to the closest point on that segment", () => {
+    // Cursor at (30, 5), 5px above the y=0 segment → nearest point is (30, 0).
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: ["nearest"],
+          constraintMode: "none",
+          orthoPresetIndex: 4,
+          measurements: [makeMeasurement("m1", "LINEAR", seg)],
+        }),
+      ),
+    );
+    let resolved!: { x: number; y: number };
+    act(() => {
+      resolved = result.current.resolvePoint({ x: 30, y: 5 });
+    });
+    expect(resolved.x).toBeCloseTo(30, 6);
+    expect(resolved.y).toBeCloseTo(0, 6);
+  });
+
+  it("Task #2198 — Nearest: when the mode is OFF the same cursor passes through unchanged", () => {
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: ["endpoint"], // nearest omitted
+          constraintMode: "none",
+          orthoPresetIndex: 4,
+          measurements: [makeMeasurement("m1", "LINEAR", seg)],
+        }),
+      ),
+    );
+    let resolved!: { x: number; y: number };
+    act(() => {
+      resolved = result.current.resolvePoint({ x: 30, y: 5 });
+    });
+    expect(resolved).toEqual({ x: 30, y: 5 });
+  });
+
+  it("Task #2198 — Endpoint takes priority over Nearest when both are enabled", () => {
+    // Cursor 1px from the endpoint (0,0); both endpoint and nearest
+    // are in range. Endpoint snap must win because it's higher
+    // priority — the resolved point should be (0,0), not the nearest
+    // foot on the segment (which would be (0.5, 0)).
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: ["endpoint", "nearest"],
+          constraintMode: "none",
+          orthoPresetIndex: 4,
+          measurements: [makeMeasurement("m1", "LINEAR", seg)],
+        }),
+      ),
+    );
+    let resolved!: { x: number; y: number };
+    act(() => {
+      resolved = result.current.resolvePoint({ x: 0.5, y: 0.5 });
+    });
+    expect(resolved.x).toBeCloseTo(0, 6);
+    expect(resolved.y).toBeCloseTo(0, 6);
+  });
+
+  it("Task #2198 — Perpendicular HUD: currentSnap reports type='perpendicular' when only perpendicular fires", () => {
+    // Drive `handleStageMouseMove` with a cursor positioned near the
+    // perpendicular foot of the in-progress anchor. The HUD/badge
+    // tracks `currentSnap.snapTarget.type` so users see why a snap
+    // occurred — Done-criteria of Task #2198.
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: ["perpendicular"],
+          constraintMode: "none",
+          orthoPresetIndex: 4,
+          drawingPoints: [{ x: 50, y: 40 }],
+          measurements: [makeMeasurement("m1", "LINEAR", seg)],
+        }),
+      ),
+    );
+    const fakeStage = {
+      getPointerPosition: () => ({ x: 51, y: 1 }),
+      getAbsoluteTransform: () => ({
+        copy: () => ({
+          invert: () => ({
+            point: (p: { x: number; y: number }) => p,
+          }),
+        }),
+      }),
+    };
+    const fakeEvent = { target: { getStage: () => fakeStage }, evt: {} };
+    act(() => {
+      result.current.handleStageMouseMove(fakeEvent as any);
+    });
+    expect(result.current.currentSnap).not.toBeNull();
+    expect(result.current.currentSnap?.snapTarget?.type).toBe("perpendicular");
+    expect(result.current.currentSnap?.snappedPoint.x).toBeCloseTo(50, 6);
+    expect(result.current.currentSnap?.snappedPoint.y).toBeCloseTo(0, 6);
+  });
+
+  it("Task #2198 — Nearest HUD: currentSnap reports type='nearest' when only nearest fires", () => {
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: ["nearest"],
+          constraintMode: "none",
+          orthoPresetIndex: 4,
+          measurements: [makeMeasurement("m1", "LINEAR", seg)],
+        }),
+      ),
+    );
+    const fakeStage = {
+      getPointerPosition: () => ({ x: 30, y: 5 }),
+      getAbsoluteTransform: () => ({
+        copy: () => ({
+          invert: () => ({
+            point: (p: { x: number; y: number }) => p,
+          }),
+        }),
+      }),
+    };
+    const fakeEvent = { target: { getStage: () => fakeStage }, evt: {} };
+    act(() => {
+      result.current.handleStageMouseMove(fakeEvent as any);
+    });
+    expect(result.current.currentSnap).not.toBeNull();
+    expect(result.current.currentSnap?.snapTarget?.type).toBe("nearest");
+    expect(result.current.currentSnap?.snappedPoint.x).toBeCloseTo(30, 6);
+    expect(result.current.currentSnap?.snappedPoint.y).toBeCloseTo(0, 6);
+  });
+
   it("ortho-angle with a null preset (index 4 = off) skips constraint", () => {
     const { result } = renderHook(() =>
       useTakeoffInteractions(

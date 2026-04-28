@@ -1466,6 +1466,8 @@ function CanvasStageImpl(props: CanvasStageProps) {
                         currentSnap.snapTarget.type === "endpoint" ? "End" :
                         currentSnap.snapTarget.type === "midpoint" ? "Mid" :
                         currentSnap.snapTarget.type === "intersection" ? "Int" :
+                        currentSnap.snapTarget.type === "perpendicular" ? "Perp" :
+                        currentSnap.snapTarget.type === "center" ? "Cen" :
                         currentSnap.snapTarget.type === "nearest" ? "Near" : "Snap"
                       }
                       fontSize={11 / stageScale}

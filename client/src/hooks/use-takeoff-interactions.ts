@@ -20,6 +20,8 @@ import {
 import {
   findSnapTargets,
   findNearestSnap,
+  findPerpendicularSnap,
+  findNearestSnapOnLine,
   applyOrthoLock,
   applyAngleConstraint,
   type SnapResult,
@@ -298,9 +300,32 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
           ? applyOrthoLock(pt, anchor)
           : applyAngleConstraint(pt, anchor, angleStep);
       }
-      if (effectiveSnapEnabled && snapTargets.length > 0) {
-        const snap = findNearestSnap(pt, snapTargets, 12, stageScale);
-        if (snap.isSnapped) return snap.snappedPoint;
+      if (effectiveSnapEnabled) {
+        // 1) Endpoint / midpoint / intersection / center snap (highest
+        //    priority — matches the legacy behaviour exactly).
+        if (snapTargets.length > 0) {
+          const snap = findNearestSnap(pt, snapTargets, 12, stageScale);
+          if (snap.isSnapped) return snap.snappedPoint;
+        }
+        // 2) Task #2198 — Perpendicular snap. Drops the perpendicular
+        //    foot from the in-progress draw anchor onto a nearby
+        //    segment. Requires an anchor (so it's only meaningful
+        //    while drawing). Only active when the unified ribbon
+        //    explicitly enables this mode.
+        if (snapModeConfig?.perpendicular && drawingPoints.length > 0) {
+          const anchor = drawingPoints[drawingPoints.length - 1];
+          const perp = findPerpendicularSnap(pt, anchor, measurements, 12, stageScale);
+          if (perp.isSnapped) return perp.snappedPoint;
+        }
+        // 3) Task #2198 — Nearest-on-line snap. Lower priority than
+        //    perpendicular because it always matches near any line;
+        //    prevents nearest from "swallowing" a more meaningful
+        //    perpendicular target. Only active when the ribbon
+        //    explicitly enables this mode.
+        if (snapModeConfig?.nearest) {
+          const near = findNearestSnapOnLine(pt, measurements, 12, stageScale);
+          if (near.isSnapped) return near.snappedPoint;
+        }
       }
       // Structural gridline snap is gated on the `grid` snap mode when
       // the ribbon owns snap state (so unchecking Grid in the ribbon
@@ -337,7 +362,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       }
       return pt;
     },
-    [angleStep, effectiveSnapEnabled, snapTargets, snapModeConfig, drawingPoints, stageScale, params.showStructuralGridlines, params.structuralGridlines, params.gridlineSnapThreshold]
+    [angleStep, effectiveSnapEnabled, snapTargets, snapModeConfig, drawingPoints, measurements, stageScale, params.showStructuralGridlines, params.structuralGridlines, params.gridlineSnapThreshold]
   );
 
   const completePolygon = useCallback(() => {
@@ -763,12 +788,27 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         : applyAngleConstraint(pt, anchor, angleStep);
     }
     setCursorPosition(pt);
-    if (effectiveSnapEnabled && snapTargets.length > 0) {
-      const snap = findNearestSnap(pt, snapTargets, 12, stageScale);
-      setCurrentSnap(snap.isSnapped ? snap : null);
-    } else {
-      setCurrentSnap(null);
+    // Mirror `resolvePoint`'s priority order so the HUD/badge highlight
+    // matches whichever snap will actually be applied on click. Higher
+    // priority wins: endpoint/midpoint/intersection/center →
+    // perpendicular → nearest. (Grid snaps don't surface in the HUD.)
+    let liveSnap: SnapResult | null = null;
+    if (effectiveSnapEnabled) {
+      if (snapTargets.length > 0) {
+        const snap = findNearestSnap(pt, snapTargets, 12, stageScale);
+        if (snap.isSnapped) liveSnap = snap;
+      }
+      if (!liveSnap && snapModeConfig?.perpendicular && drawingPoints.length > 0) {
+        const anchor = drawingPoints[drawingPoints.length - 1];
+        const perp = findPerpendicularSnap(pt, anchor, measurements, 12, stageScale);
+        if (perp.isSnapped) liveSnap = perp;
+      }
+      if (!liveSnap && snapModeConfig?.nearest) {
+        const near = findNearestSnapOnLine(pt, measurements, 12, stageScale);
+        if (near.isSnapped) liveSnap = near;
+      }
     }
+    setCurrentSnap(liveSnap);
 
     if (isDrawing && drawingPoints.length > 0 && currentSheet?.scalePxPerFoot) {
       const scale = currentSheet.scalePxPerFoot;
@@ -795,7 +835,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     } else if (!isDrawing && runningMeasurement) {
       setRunningMeasurement(null);
     }
-  }, [effectiveSnapEnabled, snapTargets, stageScale, angleStep, drawingPoints, sheetRotation, imageWidth, imageHeight, isDrawing, currentSheet, activeTool, runningMeasurement]);
+  }, [effectiveSnapEnabled, snapTargets, snapModeConfig, measurements, stageScale, angleStep, drawingPoints, sheetRotation, imageWidth, imageHeight, isDrawing, currentSheet, activeTool, runningMeasurement]);
 
   const handleWheel = useCallback((e: any) => {
     e.evt.preventDefault();
