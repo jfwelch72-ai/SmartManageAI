@@ -25,6 +25,30 @@
  *      render their friendly "scheduler unavailable" error UX (and the
  *      print page still flips `__PLAN_PDF_READY=true` so the headless
  *      capture doesn't deadlock).
+ *
+ * Cross-engine notes (Task #2253):
+ *   - Both friendly-error cases run as-is in chromium / firefox /
+ *     webkit. The `Object.defineProperty(window, "Worker", { value:
+ *     undefined })` stub takes the `typeof Worker === "undefined"`
+ *     branch in `getSharedScheduler()` consistently across all three
+ *     engines (verified locally on firefox-1511 and webkit-2272 with
+ *     Playwright 1.59.1).
+ *   - The happy-path canvas-pixel + overlay assertions also run
+ *     cross-engine — pdfjs's worker-mediated render lands an
+ *     `ImageBitmap` on the visible canvas in every engine that exposes
+ *     `Worker` + `OffscreenCanvas`.
+ *   - The "main thread stays free" assertion is gated to chromium.
+ *     `PerformanceObserver`'s `longtask` entry type is a Chromium-only
+ *     extension (the W3C Long Tasks spec is not implemented in
+ *     Gecko/WebKit at the time of writing — see MDN's compat table).
+ *     Firefox and WebKit silently emit no entries, so a
+ *     `longTasks.length` of 0 there proves nothing about whether
+ *     pdfjs is on the main thread; running the assertion would just
+ *     bake in a false-positive "always green" signal that masks real
+ *     regressions on chromium. The regression contract this assertion
+ *     enforces (worker-only pdfjs) is the same on every engine, so
+ *     chromium-only coverage is sufficient — the friendly-error path
+ *     is the cross-engine smoke test for the worker requirement.
  */
 
 import { test, expect, type Page } from "@playwright/test";
@@ -146,6 +170,15 @@ async function createMarkup(
  * worker-mediated PDF render — Vite/React/sidebar bundle hydration on
  * the cold project page produces a large unrelated long task that
  * would otherwise drown out the regression we care about.
+ *
+ * Task #2253 — only Chromium implements the W3C Long Tasks API
+ * (`PerformanceObserver` with `entryTypes: ["longtask"]`). The
+ * try/catch below keeps the init script harmless on Gecko/WebKit
+ * (where `obs.observe({ type: "longtask" })` throws), but the
+ * happy-path test only reads `__longTasks` when it's about to assert
+ * — and that read is itself gated behind `browserName === "chromium"`
+ * so the friendly-error guarantee on the other engines isn't
+ * weakened by an always-empty samples array silently passing.
  */
 async function installLongTaskRecorder(page: Page): Promise<void> {
   await page.addInitScript(() => {
@@ -164,10 +197,9 @@ async function installLongTaskRecorder(page: Page): Promise<void> {
       obs.observe({ type: "longtask", buffered: true });
       w.__longTaskObserver = obs;
     } catch {
-      /* longtask unsupported in this browser — leave samples empty so
-         the assertion below still runs but only fails on real
-         regressions captured by the engines that do support it
-         (Chromium). */
+      /* longtask unsupported in this browser (Gecko / WebKit) — leave
+         samples empty. The chromium-gated assertion below won't run
+         on these engines, so this branch is just defensive. */
     }
   });
 }
@@ -223,14 +255,32 @@ test.describe("Task #2213 — Worker-only PDF preview path", () => {
 
   test("plan-document preview canvas paints non-blank pixels and stays off the main thread", async ({
     page,
+    browserName,
   }) => {
-    test.setTimeout(120_000);
+    // Task #2253 — WebKit's pdfjs render is noticeably slower in the
+    // headless container than chromium/firefox (the cold pdfjs +
+    // worker boot, page rasterisation, and a follow-up zoom re-render
+    // routinely clear 90 s in CI). Bumping the per-test timeout to
+    // 240 s on webkit keeps the cross-engine canvas-pixel coverage
+    // green without inflating the budget for the engines that finish
+    // in well under 60 s.
+    test.setTimeout(browserName === "webkit" ? 240_000 : 120_000);
+
+    // Task #2253 — `longtask` PerformanceObserver entries are a
+    // Chromium-only thing; in Gecko/WebKit `__longTasks` stays empty
+    // forever which would let a regression that re-introduced
+    // main-thread pdfjs sneak past the assertion below. Only install
+    // the recorder on chromium so the assertion that reads it is
+    // operating on real data, never on a vacuously-empty array.
+    const measureLongTasks = browserName === "chromium";
 
     const suffix = Date.now();
     // Install the long-task observer BEFORE navigation so we capture
     // the cold-start paint window — that's where a regression to a
     // synchronous main-thread `pdfjs` would show up.
-    await installLongTaskRecorder(page);
+    if (measureLongTasks) {
+      await installLongTaskRecorder(page);
+    }
     await devLogin(page, "ADMIN");
 
     const project = await createProject(page, suffix);
@@ -311,8 +361,11 @@ test.describe("Task #2213 — Worker-only PDF preview path", () => {
     // document. Everything captured from here through the first
     // non-blank canvas paint is "the initial-paint window for the
     // worker pipeline" — i.e. the exact window the acceptance criterion
-    // calls out.
-    await resetLongTaskRecorder(page);
+    // calls out. (Skipped on engines without `longtask` support — see
+    // `measureLongTasks` above.)
+    if (measureLongTasks) {
+      await resetLongTaskRecorder(page);
+    }
 
     // Open the plan document. This mounts <PdfPreview/>, which
     // dispatches `getDocumentInfo` + `renderPage` to the shared tile
@@ -344,23 +397,38 @@ test.describe("Task #2213 — Worker-only PDF preview path", () => {
     // thread; a regression that re-introduced
     // `pdfjs.getDocument(...).promise.then(p => p.render(...))` on the
     // main thread would trip a >100 ms long task during this window.
-    const initialPaintTasks = await readLongTasks(page);
-    const worstInitialPaint = initialPaintTasks.reduce(
-      (a, b) => Math.max(a, b),
-      0,
-    );
-    expect(
-      worstInitialPaint,
-      `worst main-thread long task during initial paint ${worstInitialPaint.toFixed(0)}ms exceeded ${LONG_TASK_BUDGET_MS}ms — pdfjs may be back on the main thread`,
-    ).toBeLessThan(LONG_TASK_BUDGET_MS);
+    //
+    // Task #2253 — gated to chromium because `longtask` is a
+    // Chromium-only PerformanceEntry type. Running this on Gecko /
+    // WebKit would always observe an empty buffer, which would silently
+    // pass even if pdfjs were back on the main thread on those engines.
+    // The worker contract itself is enforced cross-engine by the
+    // friendly-error tests below — if `getSharedScheduler()` returns
+    // null we surface an error, so the only way the canvas-pixel
+    // assertion above succeeds at all is if the worker pipeline ran.
+    if (measureLongTasks) {
+      const initialPaintTasks = await readLongTasks(page);
+      const worstInitialPaint = initialPaintTasks.reduce(
+        (a, b) => Math.max(a, b),
+        0,
+      );
+      expect(
+        worstInitialPaint,
+        `worst main-thread long task during initial paint ${worstInitialPaint.toFixed(0)}ms exceeded ${LONG_TASK_BUDGET_MS}ms — pdfjs may be back on the main thread`,
+      ).toBeLessThan(LONG_TASK_BUDGET_MS);
+    }
 
     // Additional guard: also verify a fresh re-render through the
-    // worker (triggered via zoom-in) stays off the main thread. The
-    // initial-paint assertion above is the primary contract; this
-    // second check catches regressions that only show up on subsequent
-    // renders (e.g. cache-miss paths or tile-scheduler fallbacks).
+    // worker (triggered via zoom-in) actually paints new pixels into
+    // the canvas. The pixel sample below proves the worker delivered
+    // a fresh ImageBitmap; on chromium we additionally assert the
+    // re-render didn't slip onto the main thread. This catches
+    // regressions that only show up on subsequent renders (e.g.
+    // cache-miss paths or tile-scheduler fallbacks).
     const baseline = await sampleCanvas();
-    await resetLongTaskRecorder(page);
+    if (measureLongTasks) {
+      await resetLongTaskRecorder(page);
+    }
 
     const zoomBtn = page.getByTestId("button-pdf-zoom-in");
     await expect(zoomBtn).toBeEnabled();
@@ -380,12 +448,14 @@ test.describe("Task #2213 — Worker-only PDF preview path", () => {
       })
       .toBeGreaterThan(0);
 
-    const zoomTasks = await readLongTasks(page);
-    const worstZoom = zoomTasks.reduce((a, b) => Math.max(a, b), 0);
-    expect(
-      worstZoom,
-      `worst main-thread long task during zoom re-render ${worstZoom.toFixed(0)}ms exceeded ${LONG_TASK_BUDGET_MS}ms — pdfjs may be back on the main thread`,
-    ).toBeLessThan(LONG_TASK_BUDGET_MS);
+    if (measureLongTasks) {
+      const zoomTasks = await readLongTasks(page);
+      const worstZoom = zoomTasks.reduce((a, b) => Math.max(a, b), 0);
+      expect(
+        worstZoom,
+        `worst main-thread long task during zoom re-render ${worstZoom.toFixed(0)}ms exceeded ${LONG_TASK_BUDGET_MS}ms — pdfjs may be back on the main thread`,
+      ).toBeLessThan(LONG_TASK_BUDGET_MS);
+    }
   });
 
   test("PdfPreview surfaces the friendly worker-unavailable error when the shared scheduler can't be created", async ({
