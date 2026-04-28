@@ -16,6 +16,8 @@ import {
   ResponsiveContainer,
   LineChart,
   Line,
+  BarChart,
+  Bar,
   XAxis,
   YAxis,
   Tooltip as RechartsTooltip,
@@ -60,6 +62,21 @@ interface MyAiAccuracyResponse {
   totals: { PENDING: number; ACCEPTED: number; REJECTED: number; EDITED: number };
   reviewed: number;
   accuracy: number;
+  accuracyByTrade: Array<{
+    tradeType: string;
+    accepted: number;
+    edited: number;
+    rejected: number;
+    pending: number;
+    accuracy: number;
+  }>;
+  accuracyByBucket: Array<{
+    bucket: number;
+    accepted: number;
+    edited: number;
+    rejected: number;
+    accuracy: number;
+  }>;
   trend: Array<{ day: string; accepted: number; rejected: number; accuracy: number }>;
 }
 
@@ -333,6 +350,74 @@ export default function ProfilePage() {
                       />
                     </LineChart>
                   </ResponsiveContainer>
+                </div>
+              )}
+
+              {(myAiAccuracy.accuracyByTrade.length > 0 || myAiAccuracy.accuracyByBucket.length > 0) && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
+                  {myAiAccuracy.accuracyByTrade.length > 0 && (
+                    <div data-testid="chart-my-ai-by-trade">
+                      <p className="text-sm font-medium mb-1 flex items-center gap-1.5">
+                        <TrendingUp className="w-3.5 h-3.5" />
+                        Accuracy by trade
+                      </p>
+                      <p className="text-xs text-muted-foreground mb-2">
+                        Where you accept the AI most often vs. where you push back.
+                      </p>
+                      <div className="h-56">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={myAiAccuracy.accuracyByTrade.map(r => ({
+                              ...r,
+                              accuracyPct: Math.round(r.accuracy * 100),
+                            }))}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis
+                              dataKey="tradeType"
+                              tick={{ fontSize: 10 }}
+                              interval={0}
+                              angle={-30}
+                              textAnchor="end"
+                              height={70}
+                            />
+                            <YAxis tick={{ fontSize: 10 }} domain={[0, 100]} unit="%" />
+                            <RechartsTooltip formatter={(v: number) => `${v}%`} />
+                            <Bar dataKey="accuracyPct" fill="#7c3aed" name="Accuracy" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  )}
+
+                  {myAiAccuracy.accuracyByBucket.length > 0 && (
+                    <div data-testid="chart-my-ai-by-bucket">
+                      <p className="text-sm font-medium mb-1 flex items-center gap-1.5">
+                        <TrendingUp className="w-3.5 h-3.5" />
+                        Accuracy by reported confidence
+                      </p>
+                      <p className="text-xs text-muted-foreground mb-2">
+                        How well the AI's confidence on items you reviewed matched your decisions.
+                      </p>
+                      <div className="h-56">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={myAiAccuracy.accuracyByBucket.map(r => ({
+                              bucket: `${r.bucket}-${r.bucket + 9}%`,
+                              accuracyPct: Math.round(r.accuracy * 100),
+                              reviewed: r.accepted + r.edited + r.rejected,
+                            }))}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis dataKey="bucket" tick={{ fontSize: 11 }} />
+                            <YAxis tick={{ fontSize: 10 }} domain={[0, 100]} unit="%" />
+                            <RechartsTooltip formatter={(v: number) => `${v}%`} />
+                            <Bar dataKey="accuracyPct" fill="#0ea5e9" name="Accuracy" />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
