@@ -24,6 +24,8 @@ import {
 import { MaterialJobTotals } from "@/components/MaterialCalculator";
 import { EstimatePdfExportButton } from "@/components/EstimatePdfExportButton";
 import { EstimateExcelExportButton } from "@/components/EstimateExcelExportButton";
+import AiEstimatorChatPanel from "@/components/AiEstimatorChatPanel";
+import { GenerateDraftEstimateButton } from "@/components/estimate/GenerateDraftEstimateButton";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type {
@@ -98,6 +100,11 @@ export default function BidEstimate() {
   });
 
   const estimate = estimateData?.estimate || null;
+
+  const { data: aiEstimatorStatus } = useQuery<{ enabled: boolean; canTrain: boolean; canManage: boolean; featureFlagOn: boolean; reason: string }>({
+    queryKey: ["/api/ai-estimator/status"],
+    staleTime: 60 * 1000,
+  });
 
   const { data: subcontractorQuotes = [] } = useQuery<BidSubcontractorQuote[]>({
     queryKey: ["/api/bids", bidId, "subcontractor-quotes"],
@@ -731,6 +738,7 @@ export default function BidEstimate() {
           </div>
           <div className="flex items-center gap-3">
             {getStatusBadge(estimate.status)}
+            <GenerateDraftEstimateButton bidId={bid.id} estimateId={estimate.id} />
             <EstimatePdfExportButton
               estimateId={estimate.id}
               disabled={estimate.lineItems.length === 0}
@@ -819,6 +827,8 @@ export default function BidEstimate() {
               onHierarchicalQuantityChange={setHierarchicalQuantity}
               hierarchicalUnit={hierarchicalUnit}
               onHierarchicalUnitChange={setHierarchicalUnit}
+              aiEstimatorEnabled={aiEstimatorStatus?.enabled === true}
+              aiEstimatorBidId={bid.id}
             />
 
             <LineItemFormDialog
@@ -843,6 +853,8 @@ export default function BidEstimate() {
               estimateId={estimate?.id}
               lineItemId={editingLineItem?.id}
               lineItemSource={editingLineItem?.source}
+              aiEstimatorEnabled={aiEstimatorStatus?.enabled === true}
+              aiEstimatorBidId={bid.id}
             />
           </div>
         )}
@@ -856,6 +868,10 @@ export default function BidEstimate() {
           onDelete={handleDeleteLineItem}
           isDeleting={deleteLineItemMutation.isPending}
         />
+
+        <div className="h-[420px]">
+          <AiEstimatorChatPanel bidId={bid.id} estimateId={estimate.id} enabled />
+        </div>
       </main>
 
       {estimate && (

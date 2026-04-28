@@ -62,6 +62,10 @@ export const FEATURE_FLAG_KEYS = [
   // run for that org+trade. Default OFF so existing tenants don't pay
   // extra prompt tokens unexpectedly.
   "AI_TAKEOFF_FEW_SHOT",
+  // Task #2324: AI Estimator workspace (takeoff drafting, estimate
+  // generation, inline suggestions, chat, web research). Off by default;
+  // org admins flip on per-org and then per-user.
+  "AI_ESTIMATOR",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -112,6 +116,7 @@ export const FEATURE_FLAG_LABELS: Record<FeatureFlagKey, string> = {
   HEAVY_CIVIL_PRESET: "Heavy Civil Preset",
   EXTERNAL_DOC_EMAIL: "External Document Email Delivery",
   AI_TAKEOFF_FEW_SHOT: "AI Takeoff – Few-shot Corrections",
+  AI_ESTIMATOR: "AI Estimator (takeoff, estimate, chat)",
 };
 
 export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
@@ -160,6 +165,7 @@ export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
   HEAVY_CIVIL_PRESET: "Activate the heavy-civil dashboard layout, bundled features, and DOT-focused defaults for this organization.",
   EXTERNAL_DOC_EMAIL: "Send Resend emails to external architects/engineers for submittal reviews and forwarded RFIs, including a secure tokenized portal link.",
   AI_TAKEOFF_FEW_SHOT: "Inject up to five recent EDITED takeoff suggestions per trade into the next AI takeoff prompt as a 'Recent corrections' few-shot block.",
+  AI_ESTIMATOR: "AI Estimator workspace: AI-drafted takeoffs, draft estimates, inline cost suggestions, an Ask the Estimator chat, and learning from your historical bids.",
 };
 
 export const FEATURE_FLAG_CATEGORIES = [
@@ -227,6 +233,7 @@ export const FEATURE_FLAG_CATEGORY_MAP: Record<FeatureFlagKey, FeatureFlagCatego
   HEAVY_CIVIL_PRESET: "Heavy Civil & DOT",
   EXTERNAL_DOC_EMAIL: "Core Platform",
   AI_TAKEOFF_FEW_SHOT: "Advanced Tech",
+  AI_ESTIMATOR: "Advanced Tech",
 };
 
 export const HEAVY_CIVIL_TRADE_TYPES: readonly string[] = [
@@ -277,6 +284,9 @@ export const DISABLED_BY_DEFAULT_FLAGS: readonly FeatureFlagKey[] = [
   // Task #2323: few-shot prompt-injection of recent EDITED suggestions
   // is opt-in so existing tenants don't pay extra prompt tokens unexpectedly.
   "AI_TAKEOFF_FEW_SHOT",
+  // Task #2324: AI Estimator is off by default; org admins enable per
+  // org and then per user.
+  "AI_ESTIMATOR",
 ] as const;
 
 export const aiSettings = pgTable("ai_settings", {
@@ -5849,6 +5859,12 @@ export const userDashboardPermissions = pgTable("user_dashboard_permissions", {
   canUseAiFeatures: boolean("can_use_ai_features").default(false),
   canViewSafety: boolean("can_view_safety").default(false),
   canViewAiSummaries: boolean("can_view_ai_summaries").default(false),
+  // Task #2324: AI Estimator workspace per-user gates. canUseAiEstimator
+  // grants access to the takeoff drafting / estimate generation / chat
+  // surfaces; canManageAiEstimator gates the admin enablement page and
+  // manual re-ingest button.
+  canUseAiEstimator: boolean("can_use_ai_estimator").default(false),
+  canManageAiEstimator: boolean("can_manage_ai_estimator").default(false),
 
   // Category 10: Administration (60-66)
   canAccessCompanySettings: boolean("can_access_company_settings").default(false),
@@ -11231,3 +11247,243 @@ export const featureFlagManualChanges = pgTable("feature_flag_manual_changes", {
 export const insertFeatureFlagManualChangeSchema = createInsertSchema(featureFlagManualChanges).omit({ id: true, changedAt: true });
 export type InsertFeatureFlagManualChange = z.infer<typeof insertFeatureFlagManualChangeSchema>;
 export type FeatureFlagManualChange = typeof featureFlagManualChanges.$inferSelect;
+
+// =====================================================================
+// Task #2324 — AI Estimator workspace
+// Per-user enablement, learning pipeline, feedback events, retrieval
+// index, web research cache, and chat session storage.
+// =====================================================================
+
+// Per-user enablement of the AI Estimator. An org admin must explicitly
+// flip a user on (or off). This is independent of the canUseAiEstimator
+// feature permission so orgs can keep the surface dark for users that
+// have it on by role default but haven't been onboarded yet.
+export const aiEstimatorUserAccess = pgTable("ai_estimator_user_access", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  enabled: boolean("enabled").notNull().default(false),
+  canTrain: boolean("can_train").notNull().default(false),
+  enabledByUserId: varchar("enabled_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  enabledAt: timestamp("enabled_at"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("ai_estimator_user_access_org_idx").on(table.organizationId),
+  userIdx: index("ai_estimator_user_access_user_idx").on(table.userId),
+  orgUserUnique: unique("ai_estimator_user_access_org_user_unique").on(table.organizationId, table.userId),
+}));
+export const insertAiEstimatorUserAccessSchema = createInsertSchema(aiEstimatorUserAccess).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAiEstimatorUserAccess = z.infer<typeof insertAiEstimatorUserAccessSchema>;
+export type AiEstimatorUserAccess = typeof aiEstimatorUserAccess.$inferSelect;
+
+// Every AI suggestion (takeoff item, draft estimate line, inline cost
+// suggestion, chat answer) writes a feedback event when the user
+// accepts / edits / rejects it. Captured original vs final values feed
+// the learned-rates store.
+export const aiEstimatorFeedbackEvents = pgTable("ai_estimator_feedback_events", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").references(() => users.id, { onDelete: "set null" }),
+  // What surface generated the suggestion
+  surface: text("surface").notNull(), // 'takeoff_draft' | 'estimate_draft' | 'inline_unit_cost' | 'inline_labor_hours' | 'inline_production_rate' | 'chat_answer' | 'web_research'
+  // What entity the suggestion is about
+  targetType: text("target_type").notNull(), // 'takeoff_measurement' | 'estimate_line_item' | 'cost_code_rate' | 'chat_message'
+  targetId: varchar("target_id"),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "set null" }),
+  estimateId: varchar("estimate_id").references(() => estimates.id, { onDelete: "set null" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  takeoffSheetId: varchar("takeoff_sheet_id").references(() => takeoffSheets.id, { onDelete: "set null" }),
+  costCode: text("cost_code"),
+  tradeType: text("trade_type"),
+  outcome: text("outcome").notNull(), // 'ACCEPTED' | 'EDITED' | 'REJECTED' | 'THUMBS_UP' | 'THUMBS_DOWN'
+  // Captured payloads — original AI suggestion and final user-confirmed value.
+  // Stored as jsonb so we can capture per-field deltas for measurements
+  // (added/deleted/moved/resized/recounted) and for line items
+  // (qty/unit-cost/labor-hours/production-rate/scope-item).
+  originalValue: jsonb("original_value"),
+  finalValue: jsonb("final_value"),
+  comment: text("comment"),
+  // Source link back to the AI audit row that produced the suggestion.
+  aiAuditId: varchar("ai_audit_id"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("ai_estimator_feedback_org_idx").on(table.organizationId),
+  surfaceIdx: index("ai_estimator_feedback_surface_idx").on(table.surface),
+  costCodeIdx: index("ai_estimator_feedback_cost_code_idx").on(table.costCode),
+  createdAtIdx: index("ai_estimator_feedback_created_at_idx").on(table.createdAt),
+  bidIdx: index("ai_estimator_feedback_bid_idx").on(table.bidId),
+  estimateIdx: index("ai_estimator_feedback_estimate_idx").on(table.estimateId),
+}));
+export const insertAiEstimatorFeedbackEventSchema = createInsertSchema(aiEstimatorFeedbackEvents).omit({ id: true, createdAt: true });
+export type InsertAiEstimatorFeedbackEvent = z.infer<typeof insertAiEstimatorFeedbackEventSchema>;
+export type AiEstimatorFeedbackEvent = typeof aiEstimatorFeedbackEvents.$inferSelect;
+
+// Per-org rolling unit-cost / production-rate statistics by cost code
+// (and optionally trade + region + project type). Updated by the
+// ingestion job and immediately by feedback events. Feeds inline
+// suggestions, draft-estimate generation, and chat answers.
+export const aiEstimatorLearnedRates = pgTable("ai_estimator_learned_rates", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  costCode: text("cost_code").notNull(),
+  metric: text("metric").notNull(), // 'unit_cost' | 'labor_hours_per_unit' | 'production_rate'
+  unit: text("unit").notNull(), // 'EA','LF','SF','SY','CY','TON','HR','LS','PCT'
+  tradeType: text("trade_type"),
+  region: text("region"),
+  projectType: text("project_type"),
+  sampleSize: integer("sample_size").notNull().default(0),
+  meanValue: decimal("mean_value", { precision: 14, scale: 4 }),
+  medianValue: decimal("median_value", { precision: 14, scale: 4 }),
+  p25Value: decimal("p25_value", { precision: 14, scale: 4 }),
+  p75Value: decimal("p75_value", { precision: 14, scale: 4 }),
+  minValue: decimal("min_value", { precision: 14, scale: 4 }),
+  maxValue: decimal("max_value", { precision: 14, scale: 4 }),
+  // Raw sample values stored so we can recompute percentiles cheaply
+  // when a new feedback event arrives without scanning every line item.
+  // Capped at 200 most-recent samples per (org, costCode, metric).
+  recentSamples: jsonb("recent_samples").default(sql`'[]'::jsonb`),
+  lastUpdatedAt: timestamp("last_updated_at").notNull().defaultNow(),
+  lastSourceType: text("last_source_type"), // 'historical_actual' | 'estimate_line_item' | 'feedback_event'
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("ai_estimator_learned_rates_org_idx").on(table.organizationId),
+  orgCcIdx: index("ai_estimator_learned_rates_org_cc_idx").on(table.organizationId, table.costCode),
+  uniqByDimensions: uniqueIndex("ai_estimator_learned_rates_uniq").on(
+    table.organizationId,
+    table.costCode,
+    table.metric,
+    table.unit,
+  ),
+}));
+export const insertAiEstimatorLearnedRateSchema = createInsertSchema(aiEstimatorLearnedRates).omit({ id: true, createdAt: true, lastUpdatedAt: true });
+export type InsertAiEstimatorLearnedRate = z.infer<typeof insertAiEstimatorLearnedRateSchema>;
+export type AiEstimatorLearnedRate = typeof aiEstimatorLearnedRates.$inferSelect;
+
+// Knowledge index for retrieval. One row per indexed source: a historical
+// bid, awarded project, completed takeoff, cost ledger posting, etc.
+// Stored with a content snippet and metadata so the chat assistant and
+// draft-estimate generator can pull the most relevant prior records.
+// Vector embeddings are deferred — first-pass retrieval is keyword + tag
+// based using the existing Postgres full-text search, which keeps the
+// data model self-contained.
+export const aiEstimatorKnowledgeIndex = pgTable("ai_estimator_knowledge_index", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  sourceType: text("source_type").notNull(), // 'bid' | 'estimate' | 'estimate_line_item' | 'takeoff_measurement' | 'cost_ledger_posting' | 'historical_cost'
+  sourceId: varchar("source_id").notNull(),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "set null" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  costCode: text("cost_code"),
+  tradeType: text("trade_type"),
+  title: text("title").notNull(),
+  contentSnippet: text("content_snippet").notNull(),
+  // Searchable tag bag for filtering (location, project type, etc).
+  tags: text("tags").array(),
+  // Numeric facets used by the chat tool for quick aggregation
+  // (e.g. unit cost, qty, total cost).
+  numericFacets: jsonb("numeric_facets"),
+  indexedAt: timestamp("indexed_at").notNull().defaultNow(),
+  contentHash: text("content_hash"),
+}, (table) => ({
+  orgIdx: index("ai_estimator_knowledge_org_idx").on(table.organizationId),
+  sourceIdx: index("ai_estimator_knowledge_source_idx").on(table.sourceType, table.sourceId),
+  costCodeIdx: index("ai_estimator_knowledge_cost_code_idx").on(table.costCode),
+  uniqSource: uniqueIndex("ai_estimator_knowledge_uniq_source").on(
+    table.organizationId,
+    table.sourceType,
+    table.sourceId,
+  ),
+}));
+export const insertAiEstimatorKnowledgeIndexSchema = createInsertSchema(aiEstimatorKnowledgeIndex).omit({ id: true, indexedAt: true });
+export type InsertAiEstimatorKnowledgeIndex = z.infer<typeof insertAiEstimatorKnowledgeIndexSchema>;
+export type AiEstimatorKnowledgeIndex = typeof aiEstimatorKnowledgeIndex.$inferSelect;
+
+// Web research cache. The controlled, allow-listed fetcher caches
+// responses here so subsequent AI calls re-use the same content and
+// every output that quotes a web page can render the original source URL.
+export const aiEstimatorWebResearchCache = pgTable("ai_estimator_web_research_cache", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  url: text("url").notNull(),
+  domain: text("domain").notNull(),
+  query: text("query"),
+  title: text("title"),
+  contentSnippet: text("content_snippet").notNull(),
+  contentHash: text("content_hash").notNull(),
+  fetchedAt: timestamp("fetched_at").notNull().defaultNow(),
+  expiresAt: timestamp("expires_at"),
+  fetchedByUserId: varchar("fetched_by_user_id").references(() => users.id, { onDelete: "set null" }),
+}, (table) => ({
+  orgIdx: index("ai_estimator_web_cache_org_idx").on(table.organizationId),
+  domainIdx: index("ai_estimator_web_cache_domain_idx").on(table.domain),
+  uniqUrl: uniqueIndex("ai_estimator_web_cache_uniq_url").on(table.organizationId, table.url),
+}));
+export const insertAiEstimatorWebResearchCacheSchema = createInsertSchema(aiEstimatorWebResearchCache).omit({ id: true, fetchedAt: true });
+export type InsertAiEstimatorWebResearchCache = z.infer<typeof insertAiEstimatorWebResearchCacheSchema>;
+export type AiEstimatorWebResearchCache = typeof aiEstimatorWebResearchCache.$inferSelect;
+
+// Chat sessions for the "Ask the Estimator" panel. Each session is
+// tied to a user and optionally pinned to a bid/estimate/project so
+// retrieval can default-scope to that workspace.
+export const aiEstimatorChatSessions = pgTable("ai_estimator_chat_sessions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "set null" }),
+  estimateId: varchar("estimate_id").references(() => estimates.id, { onDelete: "set null" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  title: text("title"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("ai_estimator_chat_sessions_org_idx").on(table.organizationId),
+  userIdx: index("ai_estimator_chat_sessions_user_idx").on(table.userId),
+  bidIdx: index("ai_estimator_chat_sessions_bid_idx").on(table.bidId),
+}));
+export const insertAiEstimatorChatSessionSchema = createInsertSchema(aiEstimatorChatSessions).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAiEstimatorChatSession = z.infer<typeof insertAiEstimatorChatSessionSchema>;
+export type AiEstimatorChatSession = typeof aiEstimatorChatSessions.$inferSelect;
+
+export const aiEstimatorChatMessages = pgTable("ai_estimator_chat_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  sessionId: varchar("session_id").notNull().references(() => aiEstimatorChatSessions.id, { onDelete: "cascade" }),
+  role: text("role").notNull(), // 'user' | 'assistant' | 'system'
+  content: text("content").notNull(),
+  // Citations: array of { type: 'org' | 'web', sourceType?, sourceId?, title?, url? }
+  citations: jsonb("citations"),
+  feedbackOutcome: text("feedback_outcome"), // null | 'THUMBS_UP' | 'THUMBS_DOWN'
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  sessionIdx: index("ai_estimator_chat_messages_session_idx").on(table.sessionId),
+  createdAtIdx: index("ai_estimator_chat_messages_created_at_idx").on(table.createdAt),
+}));
+export const insertAiEstimatorChatMessageSchema = createInsertSchema(aiEstimatorChatMessages).omit({ id: true, createdAt: true });
+export type InsertAiEstimatorChatMessage = z.infer<typeof insertAiEstimatorChatMessageSchema>;
+export type AiEstimatorChatMessage = typeof aiEstimatorChatMessages.$inferSelect;
+
+// Tracks ingestion job runs so the admin page can show "last refresh /
+// records ingested / errors" and so the manual re-ingest button is idempotent.
+export const aiEstimatorIngestRuns = pgTable("ai_estimator_ingest_runs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  triggeredByUserId: varchar("triggered_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  triggerType: text("trigger_type").notNull().default("MANUAL"), // 'MANUAL' | 'SCHEDULED' | 'EVENT'
+  status: text("status").notNull().default("RUNNING"), // 'RUNNING' | 'SUCCEEDED' | 'FAILED'
+  bidsIngested: integer("bids_ingested").notNull().default(0),
+  estimatesIngested: integer("estimates_ingested").notNull().default(0),
+  lineItemsIngested: integer("line_items_ingested").notNull().default(0),
+  takeoffsIngested: integer("takeoffs_ingested").notNull().default(0),
+  costPostingsIngested: integer("cost_postings_ingested").notNull().default(0),
+  ratesUpdated: integer("rates_updated").notNull().default(0),
+  errorMessage: text("error_message"),
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+}, (table) => ({
+  orgIdx: index("ai_estimator_ingest_runs_org_idx").on(table.organizationId),
+  startedAtIdx: index("ai_estimator_ingest_runs_started_at_idx").on(table.startedAt),
+}));
+export const insertAiEstimatorIngestRunSchema = createInsertSchema(aiEstimatorIngestRuns).omit({ id: true, startedAt: true });
+export type InsertAiEstimatorIngestRun = z.infer<typeof insertAiEstimatorIngestRunSchema>;
+export type AiEstimatorIngestRun = typeof aiEstimatorIngestRuns.$inferSelect;

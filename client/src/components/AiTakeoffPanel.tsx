@@ -48,6 +48,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { AiTakeoffScaleStatusBanner } from "./AiTakeoffScaleStatusBanner";
+import { DraftFullTakeoffButton } from "@/components/takeoff/DraftFullTakeoffButton";
 
 export interface BoundingBox {
   x: number;
@@ -724,6 +725,7 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
                 </>
               )}
             </Button>
+            <DraftFullTakeoffButton bidId={bidId} projectId={projectId} />
           </div>
         )}
 

@@ -272,6 +272,7 @@ export const RoutePermissions = {
   TIME_ENTRY: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageTimeClock : hasManagementAccess(role),
   TIME_CLOCK_MANAGER: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageTimeClock : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
   AI_PM: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canUseAiFeatures : hasManagementAccess(role),
+  AI_ESTIMATOR_ADMIN: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageAiEstimator : isOrganizationAdmin(role),
   CFO: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCFODashboard : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
   TM_DAILY: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTMDaily : role === "ADMIN" || role === "MANAGER" || role === "SUPERINTENDENT" || role === "HUSTLER",
   TM_BILLING: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessTMBilling : role === "ADMIN" || role === "MANAGER" || role === "HUSTLER",
@@ -451,6 +452,8 @@ export interface FeaturePerms {
   canUseAiFeatures?: boolean;
   canViewSafety?: boolean;
   canViewAiSummaries?: boolean;
+  canUseAiEstimator?: boolean;
+  canManageAiEstimator?: boolean;
   canAccessCompanySettings?: boolean;
   canManageUsers?: boolean;
   canAccessApprovals?: boolean;

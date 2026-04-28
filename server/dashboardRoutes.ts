@@ -225,6 +225,7 @@ type FeaturePermissionKeys =
   | 'canManageHiring' | 'canAccessHiringInterviews' | 'canManageHiringSettings'
   | 'canPostSocialMedia' | 'canManageWebsite' | 'canAccessExecutiveDigest'
   | 'canUseAiFeatures' | 'canViewSafety' | 'canViewAiSummaries'
+  | 'canUseAiEstimator' | 'canManageAiEstimator'
   | 'canAccessCompanySettings' | 'canManageUsers' | 'canAccessApprovals' | 'canAccessAuditLogs'
   | 'canAccessReports' | 'canAccessEnterpriseSettings' | 'canManageAISettings'
   | 'canViewProjectBudget' | 'canViewProjectEstimates' | 'canViewProjectProcurement'
@@ -266,6 +267,7 @@ const ALL_FALSE: PermissionSet = {
   canManageHiring: false, canAccessHiringInterviews: false, canManageHiringSettings: false,
   canPostSocialMedia: false, canManageWebsite: false, canAccessExecutiveDigest: false,
   canUseAiFeatures: false, canViewSafety: false, canViewAiSummaries: false,
+  canUseAiEstimator: false, canManageAiEstimator: false,
   canAccessCompanySettings: false, canManageUsers: false, canAccessApprovals: false,
   canAccessAuditLogs: false, canAccessReports: false, canAccessEnterpriseSettings: false,
   canManageAISettings: false,
@@ -309,6 +311,7 @@ const ALL_TRUE: PermissionSet = {
   canManageHiring: true, canAccessHiringInterviews: true, canManageHiringSettings: true,
   canPostSocialMedia: true, canManageWebsite: true, canAccessExecutiveDigest: true,
   canUseAiFeatures: true, canViewSafety: true, canViewAiSummaries: true,
+  canUseAiEstimator: true, canManageAiEstimator: true,
   canAccessCompanySettings: true, canManageUsers: true, canAccessApprovals: true,
   canAccessAuditLogs: true, canAccessReports: true, canAccessEnterpriseSettings: true,
   canManageAISettings: true,
@@ -419,6 +422,7 @@ export const ROLE_DEFAULT_PERMISSIONS: Record<string, PermissionSet> = {
     canAccessMarketplace: true,
     canManageEquipment: true, canManageProcurement: true,
     canUseAiFeatures: true,
+    canUseAiEstimator: true,
     canAccessReports: true,
     canViewProjectBudget: true, canViewProjectEstimates: true, canViewProjectProcurement: true,
     canViewProjectReceipts: true, canViewProjectTimeEntries: true, canViewProjectSubcontractors: true,

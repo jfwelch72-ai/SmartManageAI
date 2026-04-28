@@ -149,6 +149,7 @@ const LeaveManagementPage = lazy(() => import("@/pages/leave-management"));
 const TimeClockPage = lazy(() => import("@/pages/time-clock"));
 const TimeClockManagerPage = lazy(() => import("@/pages/time-clock-manager"));
 const AISettingsPage = lazy(() => import("@/pages/ai-settings"));
+const AiEstimatorAdminPage = lazy(() => import("@/pages/ai-estimator-admin"));
 const CrewsPage = lazy(() => import("@/pages/crews"));
 const DispatchBoardPage = lazy(() => import("@/pages/dispatch-board"));
 const CostRatesPage = lazy(() => import("@/pages/cost-rates"));
@@ -434,6 +435,7 @@ function Router() {
       {/* Admin-only routes */}
       <Route path="/users" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=users" />} permission={RoutePermissions.USERS} />} />
       <Route path="/ai-settings" component={() => <ProtectedRoute component={() => <Redirect to="/company-settings?tab=ai-settings" />} permission={RoutePermissions.AI_SETTINGS} />} />
+      <Route path="/ai-estimator/admin" component={() => <ProtectedRoute component={AiEstimatorAdminPage} permission={RoutePermissions.AI_ESTIMATOR_ADMIN} featurePerm="canManageAiEstimator" />} />
       <Route path="/cost-rates" component={() => <ProtectedRoute component={CostRatesPage} permission={RoutePermissions.COST_RATES} featurePerm="canViewFinancials" />} />
       <Route path="/crews" component={() => <ProtectedRoute component={CrewsPage} permission={RoutePermissions.CREWS} featurePerm="canManageScheduling" />} />
       <Route path="/dispatch-board" component={() => <ProtectedRoute component={DispatchBoardPage} permission={RoutePermissions.DISPATCH_BOARD} featurePerm="canManageScheduling" />} />

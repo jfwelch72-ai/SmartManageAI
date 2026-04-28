@@ -354,6 +354,7 @@ export type FeaturePermissionKey =
   | 'canManageHiring' | 'canAccessHiringInterviews' | 'canManageHiringSettings'
   | 'canPostSocialMedia' | 'canManageWebsite' | 'canAccessExecutiveDigest'
   | 'canUseAiFeatures' | 'canViewSafety' | 'canViewAiSummaries'
+  | 'canUseAiEstimator' | 'canManageAiEstimator'
   | 'canAccessCompanySettings' | 'canManageUsers' | 'canAccessApprovals' | 'canAccessAuditLogs'
   | 'canAccessReports' | 'canAccessEnterpriseSettings' | 'canManageAISettings'
   | 'canViewProjectBudget' | 'canViewProjectEstimates' | 'canViewProjectProcurement'

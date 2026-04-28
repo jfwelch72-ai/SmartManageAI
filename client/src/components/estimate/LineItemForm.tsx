@@ -30,6 +30,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import StandardizedScopeSelector, { ScopeSelectionData } from "@/components/StandardizedScopeSelector";
+import AiSuggestionAffordance from "@/components/AiSuggestionAffordance";
 import HierarchicalLineItemBuilder, { LineItemSelectionData } from "@/components/HierarchicalLineItemBuilder";
 import ModifierSelector from "@/components/ModifierSelector";
 import { UomSelect } from "@/components/UomSelect";
@@ -315,6 +316,8 @@ interface LineItemFormDialogProps {
   onHierarchicalQuantityChange?: (q: number) => void;
   hierarchicalUnit?: string;
   onHierarchicalUnitChange?: (u: string) => void;
+  aiEstimatorEnabled?: boolean;
+  aiEstimatorBidId?: string;
 }
 
 interface HistoricalCostRecord {
@@ -989,6 +992,8 @@ export function LineItemFormDialog({
   onHierarchicalQuantityChange,
   hierarchicalUnit = "",
   onHierarchicalUnitChange,
+  aiEstimatorEnabled = false,
+  aiEstimatorBidId,
 }: LineItemFormDialogProps) {
   const isAdd = mode === "add";
   const isEdit = mode === "edit";
@@ -1326,7 +1331,21 @@ export function LineItemFormDialog({
               name="materialCost"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Material Cost ($)</FormLabel>
+                  <FormLabel className="flex items-center gap-2">
+                    Material Cost ($)
+                    {aiEstimatorEnabled && selectedScopeData?.workTypeCode && form.watch("unit") ? (
+                      <AiSuggestionAffordance
+                        enabled={aiEstimatorEnabled}
+                        metric="unit_cost"
+                        costCode={selectedScopeData.workTypeCode}
+                        unit={form.watch("unit")}
+                        currentValue={Number(field.value) || null}
+                        onApply={(v) => form.setValue("materialCost", v, { shouldDirty: true })}
+                        bidId={aiEstimatorBidId}
+                        estimateId={estimateId}
+                      />
+                    ) : null}
+                  </FormLabel>
                   <FormControl>
                     <Input 
                       {...numericInputProps(field)}
