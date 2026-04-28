@@ -1,6 +1,7 @@
 import { test, expect, type Page } from "@playwright/test";
 import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { installCsrf, authedRequest } from "./helpers/csrf";
+import { objectKeyToResolvableFileUrl } from "./helpers/uploadFixturePdf";
 
 // Task #2189 — Tile renderer + worker pipeline render-correctness gate.
 //
@@ -250,19 +251,14 @@ async function uploadDeterministicSheet(
     throw new Error(`Presigned PUT failed (${status}): ${await putRes.text()}`);
   }
 
-  // `/api/objects/upload` hands back a raw bucket-prefixed key like
-  // `/replit-objstore-XXX/<orgId>/uploads/<uuid>`. The takeoff plan
-  // route stores `imageUrl` verbatim, but `/api/takeoff/sheets/:id/pdf`
-  // → `resolveGcsFile()` only knows how to look up
-  //   • `/objects/...` paths, and
-  //   • `https://storage.googleapis.com/...` URLs.
-  // Wrapping the raw key in the GCS URL form is the cheapest way to
-  // make the resolver happy without leaking the privateObjectDir into
-  // the test, and it's the same shape that older upload flows used to
-  // hand back to clients before the `/objects/...` short-form existed.
-  const fileUrl = objectKey.startsWith("/")
-    ? `https://storage.googleapis.com${objectKey}`
-    : `https://storage.googleapis.com/${objectKey}`;
+  // The raw `objectKey` returned by `/api/objects/upload` (a
+  // bucket-prefixed path like `/replit-objstore-XXX/<orgId>/uploads/
+  // <uuid>`) isn't a form `server/takeoffSheetRoutes.ts →
+  // resolveGcsFile()` can resolve, so storing it verbatim as
+  // `imageUrl` would 404 the PDF stream and leave the canvas blank.
+  // The shared helper wraps the key in the same GCS URL shape the
+  // upload helper hands back, so the resolver can find the file.
+  const fileUrl = objectKeyToResolvableFileUrl(objectKey);
 
   const planRes = await authedRequest(
     page,

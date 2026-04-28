@@ -35,8 +35,41 @@ export interface UploadFixturePdfOptions {
 export interface UploadFixturePdfResult {
   /** The storage object key returned by /api/objects/upload. */
   objectKey: string;
+  /**
+   * A `fileUrl` form of the uploaded object that the server's
+   * `resolveGcsFile()` (in `server/takeoffSheetRoutes.ts`) can actually
+   * resolve. `/api/objects/upload` hands back a raw bucket-prefixed
+   * key like `/replit-objstore-XXX/<orgId>/uploads/<uuid>`, but
+   * `resolveGcsFile()` only understands `/objects/...` paths or
+   * `https://storage.googleapis.com/...` URLs. Storing the raw key as
+   * `imageUrl` on a takeoff sheet makes `/api/takeoff/sheets/:id/pdf`
+   * 404 — which silently turns specs that need the PDF to actually
+   * render (like the tile renderer perf harness) into no-ops. Pass
+   * this `fileUrl` to `POST /api/bids/:bidId/takeoff/plans` (or the
+   * project equivalent) so the stored `imageUrl` resolves later.
+   */
+  fileUrl: string;
   /** Length in bytes of the uploaded PDF (handy when the caller needs it). */
   fileSize: number;
+}
+
+/**
+ * Convert the raw bucket-prefixed `objectKey` returned by
+ * `/api/objects/upload` into a `fileUrl` that
+ * `server/takeoffSheetRoutes.ts → resolveGcsFile()` can resolve.
+ *
+ * The `https://storage.googleapis.com/<bucket>/<object>` form is the
+ * same shape older upload flows handed back to clients before the
+ * `/objects/...` short-form existed; using it here avoids leaking the
+ * private object dir into the test runtime while keeping the resolver
+ * happy. Exported so specs that don't go through `uploadFixturePdf`
+ * (e.g. ones that build their own deterministic PDFs) can apply the
+ * same wrapping without re-implementing the rule.
+ */
+export function objectKeyToResolvableFileUrl(objectKey: string): string {
+  return objectKey.startsWith("/")
+    ? `https://storage.googleapis.com${objectKey}`
+    : `https://storage.googleapis.com/${objectKey}`;
 }
 
 /**
@@ -51,9 +84,18 @@ export interface UploadFixturePdfResult {
  *   placeholder URLs that simply skip the ACL step on a different code
  *   path).
  *
- * Returns the storage objectKey, which can be passed straight through as
- * the `fileUrl` of POST /api/documents (or the `objectKey`/`fileUrl` of
- * POST /api/bids/:bidId/takeoff/plans).
+ * Returns:
+ *   - `objectKey`: the raw bucket-prefixed key returned by
+ *     `/api/objects/upload`. Pass as the `fileUrl` of POST
+ *     `/api/documents` (the documents route normalizes it on its own
+ *     code path).
+ *   - `fileUrl`: an `https://storage.googleapis.com/...` form of the
+ *     same object that `server/takeoffSheetRoutes.ts → resolveGcsFile()`
+ *     can resolve. Pass this (NOT the raw `objectKey`) as `fileUrl`
+ *     when creating takeoff plans via POST `/api/bids/:bidId/takeoff/plans`
+ *     or the project equivalent — passing the raw key makes
+ *     `/api/takeoff/sheets/:id/pdf` 404 and the canvas silently stays
+ *     blank.
  */
 export async function uploadFixturePdf(
   page: Page,
@@ -101,5 +143,9 @@ export async function uploadFixturePdf(
     );
   }
 
-  return { objectKey, fileSize: pdf.length };
+  return {
+    objectKey,
+    fileUrl: objectKeyToResolvableFileUrl(objectKey),
+    fileSize: pdf.length,
+  };
 }
