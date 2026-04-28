@@ -429,7 +429,8 @@ router.post("/api/time-clock/clock-in", requireAuth, async (req: AuthRequest, re
       geofenceOverrideReason: z.string().optional().nullable(),
     });
 
-    const data = schema.parse(sanitizedBody);
+    const data = parseOrRespond(schema, sanitizedBody, res);
+    if (!data) return;
 
     const [activeShift] = await db
       .select()
@@ -612,7 +613,8 @@ router.post("/api/time-clock/clock-out", requireAuth, async (req: AuthRequest, r
       geofenceOverrideReason: z.string().optional().nullable(),
     });
 
-    const data = schema.parse(sanitizedBody);
+    const data = parseOrRespond(schema, sanitizedBody, res);
+    if (!data) return;
 
     const [activeShift] = await db
       .select()
@@ -857,7 +859,8 @@ router.patch("/api/time-clock/my-shifts/:id/notes", requireAuth, async (req: Aut
       notes: z.string(),
     });
 
-    const data = schema.parse(sanitizedBody);
+    const data = parseOrRespond(schema, sanitizedBody, res);
+    if (!data) return;
 
     const [shift] = await db
       .select()
@@ -1081,7 +1084,8 @@ router.post("/api/time-clock/shifts/:id/adjust", requireAuth, requireRole("ADMIN
       adminOverride: z.boolean().optional(),
     });
 
-    const data = schema.parse(sanitizedBody);
+    const data = parseOrRespond(schema, sanitizedBody, res);
+    if (!data) return;
 
     const [shiftWithUser] = await db
       .select({ shift: timeClockShifts, userOrgId: users.organizationId })
@@ -1175,7 +1179,8 @@ router.post("/api/time-clock/shift/:id/admin-clock-out", requireAuth, requireRol
       reason: z.string().min(1, "Reason is required"),
     });
 
-    const data = schema.parse(sanitizedBody);
+    const data = parseOrRespond(schema, sanitizedBody, res);
+    if (!data) return;
 
     const [shiftWithUser] = await db
       .select({ shift: timeClockShifts, userOrgId: users.organizationId })
@@ -1361,7 +1366,8 @@ router.post("/api/time-clock/shifts/:id/reject", requireAuth, requireRole("ADMIN
       reason: z.string().min(1, "Rejection reason is required"),
     });
 
-    const data = schema.parse(sanitizedBody);
+    const data = parseOrRespond(schema, sanitizedBody, res);
+    if (!data) return;
 
     const [shiftWithUser] = await db
       .select({ shift: timeClockShifts, userOrgId: users.organizationId })

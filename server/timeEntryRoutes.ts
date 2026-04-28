@@ -190,7 +190,8 @@ router.post("/api/time-entries/:id/reject", requireAuth, requireRole("ADMIN", "M
       reason: req.body.reason ? sanitizeText(req.body.reason) : undefined,
     };
 
-    const data = schema.parse(sanitizedBody);
+    const data = parseOrRespond(schema, sanitizedBody, res);
+    if (!data) return;
 
     const [entry] = await db
       .select({
