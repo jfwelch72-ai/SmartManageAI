@@ -84,13 +84,43 @@ function parseMixedOrFraction(s: string): number | null {
 // Parse a drawing-scale string emitted by the model (or read from a title block)
 // into a px-per-foot value, normalising inch/foot tick marks and the words
 // "inch"/"foot". Handles common architectural ("1/4\" = 1'-0\""), civil
-// ("1\" = 20'") and metric ratio ("1:50") forms.
-export function parseDrawingScaleString(input: string | null | undefined): {
-  pxPerFoot: number;
-  label: string;
-  source: "architectural" | "civil" | "ratio";
-} | null {
+// ("1\" = 20'"), metric ratio ("1:50", "1:100 (mm)") and inverted civil
+// ("20' = 1\"") forms. Title-block callouts that explicitly disclaim a
+// paper-space scale ("NTS", "AS SHOWN", "NOT TO SCALE") are recognised and
+// returned with `source: "not-to-scale"` so callers can suppress the
+// mismatch warning instead of false-alarming on a numeric comparison.
+export type ParsedDrawingScale =
+  | {
+      pxPerFoot: number;
+      label: string;
+      source: "architectural" | "civil" | "ratio";
+    }
+  | {
+      pxPerFoot: null;
+      label: "NTS" | "AS SHOWN";
+      source: "not-to-scale";
+    };
+
+export function parseDrawingScaleString(
+  input: string | null | undefined,
+): ParsedDrawingScale | null {
   if (!input || typeof input !== "string") return null;
+
+  // Detect explicit not-to-scale callouts BEFORE the inch/foot normalisation
+  // below — that pass swaps the literal words IN/INCH/FT/FEET/FOOT for tick
+  // marks, which would otherwise mangle phrases like "AS SHOWN".
+  const upperRaw = input.trim().toUpperCase().replace(/\s+/g, " ");
+  if (upperRaw) {
+    const ntsMatch = upperRaw.match(
+      /^(?:SCALE\s*[:=]?\s*)?(NTS|N\.T\.S\.?|NOT\s+TO\s+SCALE|AS\s+SHOWN)$/,
+    );
+    if (ntsMatch) {
+      const tag = ntsMatch[1];
+      const label: "NTS" | "AS SHOWN" = /AS\s+SHOWN/.test(tag) ? "AS SHOWN" : "NTS";
+      return { pxPerFoot: null, label, source: "not-to-scale" };
+    }
+  }
+
   const raw = input
     .replace(/[\u2032\u2019]/g, "'")
     .replace(/[\u2033\u201C\u201D\u2036]/g, '"')
@@ -133,8 +163,30 @@ export function parseDrawingScaleString(input: string | null | undefined): {
     }
   }
 
-  // Metric ratio: 1:N
-  const ratio = text.match(/^(?:SCALE\s*[:=]\s*)?1\s*:\s*(\d+)$/i);
+  // Inverted civil: N' = M"   (e.g. "20' = 1\"" — same scale as 1" = 20').
+  // Some title blocks (and the model) write the ground distance first.
+  const inverted = text.match(/^(?:SCALE\s*[:=]\s*)?(\d+(?:\.\d+)?)\s*'\s*=\s*(\d+(?:\.\d+)?)\s*"$/i);
+  if (inverted) {
+    const feet = parseFloat(inverted[1]);
+    const inches = parseFloat(inverted[2]);
+    if (feet > 0 && inches > 0) {
+      const px = (inches * 96) / feet;
+      // Normalise the label into the canonical "M\" = N'" form so downstream
+      // snapping/UI matches the existing civil/architectural labels.
+      const inchesLabel = inches === Math.trunc(inches) ? `${inches}` : `${inches}`;
+      const feetLabel = feet === Math.trunc(feet) ? `${feet}` : `${feet}`;
+      const label = inches === 1 ? `1" = ${feetLabel}'` : `${inchesLabel}" = ${feetLabel}'`;
+      return { pxPerFoot: px, label, source: feet >= 5 ? "civil" : "architectural" };
+    }
+  }
+
+  // Metric ratio: 1:N, optionally followed by a unit suffix the model likes
+  // to volunteer for metric sheets — bare "mm"/"cm"/"m", parenthesised
+  // "(mm)", or the word "METRIC". The ratio itself is dimensionless so the
+  // suffix doesn't change the px/ft calculation; we just need to accept it.
+  const ratio = text.match(
+    /^(?:SCALE\s*[:=]\s*)?1\s*:\s*(\d+)(?:\s*\(\s*(?:MM|CM|M|METRIC)\s*\))?(?:\s+(?:MM|CM|M|METRIC))?$/i,
+  );
   if (ratio) {
     const r = parseInt(ratio[1], 10);
     if (r > 0) {
@@ -157,6 +209,11 @@ export function buildScaleMismatchWarning(
   if (!calibratedPxPerFoot || calibratedPxPerFoot <= 0) return null;
   const detected = parseDrawingScaleString(detectedScaleString);
   if (!detected) return null;
+  // Documented rationale: when the title block explicitly disclaims a
+  // paper-space scale ("NTS", "AS SHOWN", "NOT TO SCALE") there is no
+  // numeric scale to compare against, so a mismatch warning would be a
+  // false alarm. Stay silent and let the user trust their calibration.
+  if (detected.source === "not-to-scale" || detected.pxPerFoot == null) return null;
   const snapped = findMatchingPreset(detected.pxPerFoot) ?? {
     label: detected.label,
     pxPerFoot: detected.pxPerFoot,

@@ -194,3 +194,124 @@ describe("Task #2322 — scale-mismatch warning", () => {
     expect(buildScaleMismatchWarning(null, 24, '1/4" = 1\'-0"')).toBeNull();
   });
 });
+
+describe("Task #2337 — broader scale-string variants", () => {
+  it("parses metric ratios with bare unit suffixes", () => {
+    // 1:50 → (96*12)/50 = 23.04 px/ft
+    expect(parseDrawingScaleString("1:50 mm")).toMatchObject({
+      pxPerFoot: (96 * 12) / 50,
+      label: "1:50",
+      source: "ratio",
+    });
+    expect(parseDrawingScaleString("1:100 cm")).toMatchObject({
+      pxPerFoot: (96 * 12) / 100,
+      label: "1:100",
+      source: "ratio",
+    });
+    expect(parseDrawingScaleString("SCALE: 1:200 metric")).toMatchObject({
+      pxPerFoot: (96 * 12) / 200,
+      label: "1:200",
+      source: "ratio",
+    });
+  });
+
+  it("parses metric ratios with parenthesised unit suffixes", () => {
+    expect(parseDrawingScaleString("1:100 (mm)")).toMatchObject({
+      pxPerFoot: (96 * 12) / 100,
+      label: "1:100",
+      source: "ratio",
+    });
+    expect(parseDrawingScaleString("1:50(MM)")).toMatchObject({
+      pxPerFoot: (96 * 12) / 50,
+      label: "1:50",
+      source: "ratio",
+    });
+    expect(parseDrawingScaleString("Scale = 1:25 (metric)")).toMatchObject({
+      pxPerFoot: (96 * 12) / 25,
+      label: "1:25",
+      source: "ratio",
+    });
+  });
+
+  it("parses inverted civil scales (N' = 1\")", () => {
+    // 20' = 1" → 96/20 = 4.8 px/ft, identical to 1" = 20'
+    expect(parseDrawingScaleString("20' = 1\"")).toMatchObject({
+      pxPerFoot: 96 / 20,
+      label: "1\" = 20'",
+      source: "civil",
+    });
+    expect(parseDrawingScaleString("SCALE: 50' = 1\"")).toMatchObject({
+      pxPerFoot: 96 / 50,
+      label: "1\" = 50'",
+      source: "civil",
+    });
+    // Inverted with non-1 inches: 40' = 2" → (2*96)/40 = 4.8 px/ft
+    expect(parseDrawingScaleString("40' = 2\"")).toMatchObject({
+      pxPerFoot: (2 * 96) / 40,
+      label: "2\" = 40'",
+      source: "civil",
+    });
+    // Architectural-range inverted: 1' = 1" → arch range (feet < 5)
+    expect(parseDrawingScaleString("1' = 1\"")).toMatchObject({
+      pxPerFoot: 96,
+      source: "architectural",
+    });
+  });
+
+  it("recognises NTS / N.T.S. / NOT TO SCALE callouts as not-to-scale", () => {
+    for (const s of ["NTS", "nts", "N.T.S.", "n.t.s", "Not To Scale", "NOT TO SCALE"]) {
+      const parsed = parseDrawingScaleString(s);
+      expect(parsed).not.toBeNull();
+      expect(parsed!.source).toBe("not-to-scale");
+      expect(parsed!.pxPerFoot).toBeNull();
+      expect(parsed!.label).toBe("NTS");
+    }
+    expect(parseDrawingScaleString("SCALE: NTS")).toMatchObject({
+      source: "not-to-scale",
+      label: "NTS",
+      pxPerFoot: null,
+    });
+  });
+
+  it("recognises AS SHOWN / SCALE AS SHOWN callouts as not-to-scale", () => {
+    for (const s of ["AS SHOWN", "as shown", "Scale: As Shown", "SCALE AS SHOWN"]) {
+      const parsed = parseDrawingScaleString(s);
+      expect(parsed).not.toBeNull();
+      expect(parsed!.source).toBe("not-to-scale");
+      expect(parsed!.pxPerFoot).toBeNull();
+      expect(parsed!.label).toBe("AS SHOWN");
+    }
+  });
+
+  it("does not warn when the detected scale is explicitly not-to-scale", () => {
+    // Even with a calibrated sheet, NTS / AS SHOWN should suppress the
+    // mismatch warning — there's no numeric paper-space scale to compare.
+    expect(buildScaleMismatchWarning("NTS", 24, '1/4" = 1\'-0"')).toBeNull();
+    expect(buildScaleMismatchWarning("N.T.S.", 24, '1/4" = 1\'-0"')).toBeNull();
+    expect(buildScaleMismatchWarning("NOT TO SCALE", 24, '1/4" = 1\'-0"')).toBeNull();
+    expect(buildScaleMismatchWarning("AS SHOWN", 24, '1/4" = 1\'-0"')).toBeNull();
+    expect(buildScaleMismatchWarning("SCALE: AS SHOWN", 4.8, '1" = 20\'')).toBeNull();
+  });
+
+  it("does warn when an inverted civil scale disagrees with the calibration", () => {
+    // Sheet calibrated to 1/4" = 1' (24 px/ft); model returns "20' = 1\""
+    // (4.8 px/ft) — that's a real mismatch and should warn.
+    const warn = buildScaleMismatchWarning("20' = 1\"", 24, '1/4" = 1\'-0"');
+    expect(warn).not.toBeNull();
+    expect(warn).toContain("1\" = 20'");
+    expect(warn).toContain('1/4" = 1\'-0"');
+  });
+
+  it("does not warn when an inverted civil scale agrees with the calibration", () => {
+    // 20' = 1"  ≡  1" = 20'  → 4.8 px/ft. Calibrated to 4.8 → silent.
+    expect(buildScaleMismatchWarning("20' = 1\"", 4.8, '1" = 20\'')).toBeNull();
+  });
+
+  it("does not warn when a metric ratio with a unit suffix matches the calibration", () => {
+    // 1:48 ≈ 24 px/ft (96*12/48 = 24); within 5% of the 1/4" = 1' preset.
+    expect(buildScaleMismatchWarning("1:48 (mm)", 24, '1/4" = 1\'-0"')).toBeNull();
+    // Big mismatch should still warn:
+    const warn = buildScaleMismatchWarning("1:100 (mm)", 24, '1/4" = 1\'-0"');
+    expect(warn).not.toBeNull();
+  });
+});
