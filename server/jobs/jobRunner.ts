@@ -105,6 +105,13 @@ let planDocumentMarkupTrashPurgeTask: ReturnType<typeof cron.schedule> | null = 
 // added/removed/changed deltas and emails the on-call rotation if any
 // catalog regresses below its `AGENCY_MIN_ITEMS` threshold.
 let dotPayItemsRefreshTask: ReturnType<typeof cron.schedule> | null = null;
+// Task #2323: nightly recompute of per-(org, trade, confidence-bucket)
+// empirical acceptance rate for AI takeoff. Reads the last 90 days of
+// reviewed `ai_takeoff_suggestions` and upserts one row per bucket with
+// >=30 samples into `ai_takeoff_confidence_calibration` so
+// `processAiTakeoff` can override the model-reported confidence with
+// the org's empirical signal at display time.
+let aiTakeoffCalibrationTask: ReturnType<typeof cron.schedule> | null = null;
 // Task #2129: nightly safety-net for `takeoff_recents`. The bid /
 // project DELETE handlers already call `pruneTakeoffRecentsForEntity`,
 // but the table only FKs to users / organizations — so a row that
@@ -1040,6 +1047,23 @@ export function startJobRunner() {
     }
   });
 
+  // Task #2323: nightly AI takeoff confidence calibration. Runs at
+  // 03:30 UTC — well outside North-American business hours and not
+  // colliding with the 03:00 takeoff-recents prune. The recompute is
+  // a single GROUP BY + per-bucket UPSERT and finishes in <1s for
+  // typical orgs, so we don't bother with overlap guards.
+  aiTakeoffCalibrationTask = cron.schedule("30 3 * * *", async () => {
+    try {
+      const { runAiTakeoffCalibrationJob } = await import("../aiTakeoffFeatureRoutes");
+      const out = await runAiTakeoffCalibrationJob();
+      logInfo("AI takeoff calibration tick", { rowsUpserted: out.rowsUpserted });
+      recordJobOutcome("ai_takeoff_calibration", true);
+    } catch (err) {
+      recordJobOutcome("ai_takeoff_calibration", false);
+      logError("AI takeoff calibration failed", { error: String(err) });
+    }
+  });
+
   logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, provider email sync, provider push-back drain, periodic report, DB health check, scheduled campaign, project geocoding, weekly CRM birthday digest, and daily CRM birthday email schedulers)");
 }
 
@@ -1195,6 +1219,10 @@ export function stopJobRunner() {
   if (wageDecisionMissingReminderTask) {
     wageDecisionMissingReminderTask.stop();
     wageDecisionMissingReminderTask = null;
+  }
+  if (aiTakeoffCalibrationTask) {
+    aiTakeoffCalibrationTask.stop();
+    aiTakeoffCalibrationTask = null;
   }
   if (wageDecisionRetryTask) {
     wageDecisionRetryTask.stop();

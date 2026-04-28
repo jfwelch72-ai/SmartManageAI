@@ -380,4 +380,16 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
     helper: "ensurePasskeyRpIdColumn",
     note: "Task #2190 — adds nullable rp_id column so passkey verification can use the credential's own RP ID rather than a global one.",
   },
+  "0074_user_settings_skip_bulk_scale_propagation_confirm.sql": {
+    skip: "Task #2228 — `reconcileSchemaDrift` auto-applies the nullable boolean ADD COLUMN on dev DBs and `npx drizzle-kit push` covers prod.",
+  },
+  // Task #2323 — AI takeoff closed-loop feedback. Creates the
+  // ai_takeoff_suggestions + ai_takeoff_confidence_calibration tables
+  // plus their two enum types and indexes, and backfills one PENDING
+  // suggestion row per detected item from existing
+  // ai_takeoff_analyses.detected_items_json blobs.
+  "0075_ai_takeoff_suggestions.sql": {
+    helper: "ensureAiTakeoffSuggestionsTables",
+    note: "Task #2323 — also runs the one-shot suggestion-row backfill from existing detected_items_json blobs.",
+  },
 };

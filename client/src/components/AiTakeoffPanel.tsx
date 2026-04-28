@@ -12,6 +12,9 @@ import { Progress } from "@/components/ui/progress";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { 
   Sparkles, 
   Loader2, 
@@ -35,7 +38,10 @@ import {
   Layers,
   SlidersHorizontal,
   ScanSearch,
-  RefreshCw
+  RefreshCw,
+  Pencil,
+  ThumbsDown,
+  Ban
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -84,16 +90,43 @@ function RegionThumbnail({ bbox, label }: { bbox: BoundingBox; label: string }) 
   );
 }
 
+// Task #2323 — when the workspace finishes its per-item POST loop it
+// returns one new shape so the panel can stitch suggestion ids to
+// freshly-created measurement ids and POST a single bulk-accept.
+export interface ItemImportResult {
+  succeeded: number;
+  failed: number;
+  failedItems: string[];
+  // aiItem.id (e.g. "item-3") -> created takeoff_measurement.id
+  measurementIdsByItemId?: Record<string, string>;
+}
+
 interface AiTakeoffPanelProps {
   projectId?: string;
   bidId?: string;
   sheetId?: string | null;
-  onItemsImported?: (items: DetectedItem[]) => Promise<{ succeeded: number; failed: number; failedItems: string[] }>;
+  onItemsImported?: (items: DetectedItem[]) => Promise<ItemImportResult>;
   onClose?: () => void;
   onHighlightItem?: (item: DetectedItem | null) => void;
   onDetectedItemsChanged?: (items: DetectedItem[]) => void;
   showOverlays?: boolean;
   onToggleOverlays?: (show: boolean) => void;
+}
+
+// Reject-reason codes — must stay in sync with `aiTakeoffRejectReasonEnum`
+// in `shared/schema/enums.ts`.
+const REJECT_REASONS: Array<{ value: string; label: string }> = [
+  { value: "NOT_PRESENT", label: "Not present in drawing" },
+  { value: "WRONG_TRADE", label: "Wrong trade" },
+  { value: "DUPLICATE", label: "Duplicate" },
+  { value: "WRONG_QUANTITY", label: "Wrong quantity" },
+  { value: "WRONG_LOCATION", label: "Wrong location" },
+  { value: "OTHER", label: "Other" },
+];
+
+interface SuggestionLite {
+  id: string;
+  itemKey: string;
 }
 
 const ITEM_TYPE_ICONS: Record<string, any> = {
@@ -152,7 +185,21 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
   const [selectedTradeType, setSelectedTradeType] = useState("AUTO_DETECT");
   const [compareRunId, setCompareRunId] = useState<string | null>(null);
   const [hoveredItemId, setHoveredItemId] = useState<string | null>(null);
-  
+
+  // Task #2323 — closed-loop feedback state. `localEdits` and
+  // `localRejections` are keyed by detected-item id (e.g. "item-3").
+  // Edits stay client-side until the user actually imports; rejects
+  // POST immediately so a "wrong" item is reported even if the user
+  // never imports anything else from the run.
+  const [localEdits, setLocalEdits] = useState<Record<string, { quantity?: number; unit?: string; itemType?: string }>>({});
+  const [rejectedItemIds, setRejectedItemIds] = useState<Set<string>>(new Set());
+  const [editDialogItem, setEditDialogItem] = useState<DetectedItem | null>(null);
+  const [editForm, setEditForm] = useState<{ quantity: string; unit: string; itemType: string }>({
+    quantity: "",
+    unit: "",
+    itemType: "",
+  });
+
   const { toast } = useToast();
 
   interface AnalysisResult {
@@ -197,6 +244,87 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
     queryKey: ["/api/ai-features/takeoff/results", compareRunId],
     enabled: !!compareRunId,
   });
+
+  // Task #2323 — suggestion id lookup for the active analysis. Refetched
+  // whenever the analysis is COMPLETE so accept/reject actions can call
+  // the per-suggestion endpoints without round-tripping per row.
+  const { data: suggestionsData } = useQuery<{ suggestions: Array<SuggestionLite & Record<string, unknown>> }>({
+    queryKey: ["/api/ai-features/takeoff/suggestions/by-analysis", analysisId],
+    enabled: !!analysisId && analysisResults?.status === "COMPLETE",
+  });
+  const suggestionIdByItemKey = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of suggestionsData?.suggestions ?? []) {
+      map.set(s.itemKey, s.id);
+    }
+    return map;
+  }, [suggestionsData]);
+
+  const rejectMutation = useMutation({
+    mutationFn: async (input: { suggestionId: string; reason: string; note?: string }) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/ai-features/takeoff/suggestions/${input.suggestionId}/reject`,
+        { reason: input.reason, note: input.note },
+      );
+      return res.json();
+    },
+  });
+
+  const handleRejectItem = (item: DetectedItem, reason: string) => {
+    const sid = suggestionIdByItemKey.get(item.id);
+    if (!sid) {
+      // No suggestion row (older analysis prior to backfill) — fall
+      // back to local-only rejection so the user still gets feedback.
+      setRejectedItemIds((prev) => { const n = new Set(prev); n.add(item.id); return n; });
+      setSelectedItems((prev) => { const n = new Set(prev); n.delete(item.id); return n; });
+      toast({ title: "Marked as rejected (local only)", description: "Older analysis — no server-side feedback row." });
+      return;
+    }
+    rejectMutation.mutate(
+      { suggestionId: sid, reason },
+      {
+        onSuccess: () => {
+          setRejectedItemIds((prev) => { const n = new Set(prev); n.add(item.id); return n; });
+          setSelectedItems((prev) => { const n = new Set(prev); n.delete(item.id); return n; });
+          toast({ title: "Suggestion rejected", description: REJECT_REASONS.find(r => r.value === reason)?.label });
+        },
+        onError: (err: Error) => {
+          toast({ title: "Reject failed", description: err.message, variant: "destructive" });
+        },
+      },
+    );
+  };
+
+  const handleOpenEdit = (item: DetectedItem) => {
+    const existingEdit = localEdits[item.id] ?? {};
+    setEditDialogItem(item);
+    setEditForm({
+      quantity: String(existingEdit.quantity ?? item.quantity),
+      unit: existingEdit.unit ?? item.unit,
+      itemType: existingEdit.itemType ?? item.itemType,
+    });
+  };
+
+  const handleSaveEdit = () => {
+    if (!editDialogItem) return;
+    const qtyNum = Number(editForm.quantity);
+    if (!Number.isFinite(qtyNum) || qtyNum <= 0) {
+      toast({ title: "Invalid quantity", description: "Quantity must be a positive number", variant: "destructive" });
+      return;
+    }
+    setLocalEdits((prev) => ({
+      ...prev,
+      [editDialogItem.id]: {
+        quantity: qtyNum !== editDialogItem.quantity ? qtyNum : undefined,
+        unit: editForm.unit && editForm.unit !== editDialogItem.unit ? editForm.unit : undefined,
+        itemType: editForm.itemType && editForm.itemType !== editDialogItem.itemType ? editForm.itemType : undefined,
+      },
+    }));
+    // Auto-select the row so the user knows it'll be imported on next click.
+    setSelectedItems((prev) => { const n = new Set(prev); n.add(editDialogItem.id); return n; });
+    setEditDialogItem(null);
+  };
 
   const analyzeMutation = useMutation({
     mutationFn: async () => {
@@ -266,9 +394,25 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
     });
   };
 
+  // Task #2323 — apply pending local edits to a detected item before
+  // sending it through the import flow. Returns a fresh object so the
+  // workspace's `metadata.aiItemId` still points to the original AI key.
+  const applyEdit = (item: DetectedItem): DetectedItem => {
+    const e = localEdits[item.id];
+    if (!e) return item;
+    return {
+      ...item,
+      quantity: e.quantity ?? item.quantity,
+      unit: e.unit ?? item.unit,
+      itemType: e.itemType ?? item.itemType,
+    };
+  };
+
   const handleImportSelected = async () => {
     if (!analysisResults?.detectedItems) return;
-    const itemsToImport = analysisResults.detectedItems.filter((i: DetectedItem) => selectedItems.has(i.id));
+    const itemsToImport = analysisResults.detectedItems
+      .filter((i: DetectedItem) => selectedItems.has(i.id) && !rejectedItemIds.has(i.id))
+      .map(applyEdit);
     if (itemsToImport.length === 0) return;
 
     if (onItemsImported) {
@@ -277,6 +421,41 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
         const result = await onItemsImported(itemsToImport);
         setImportDialogOpen(false);
         setSelectedItems(new Set());
+
+        // Task #2323 — close the loop. Build per-suggestion acceptances
+        // and POST one bulk-accept per import batch. Edited rows are
+        // bucketed as EDITED on the backend automatically when any field
+        // differs from the suggestion.
+        if (analysisId && suggestionIdByItemKey.size > 0) {
+          const acceptances = itemsToImport
+            .map((item) => {
+              const suggestionId = suggestionIdByItemKey.get(item.id);
+              if (!suggestionId) return null;
+              const measurementId = result.measurementIdsByItemId?.[item.id];
+              const edit = localEdits[item.id];
+              return {
+                suggestionId,
+                measurementId,
+                editedQuantity: edit?.quantity,
+                editedUnit: edit?.unit,
+                editedItemType: edit?.itemType,
+              };
+            })
+            .filter((a): a is NonNullable<typeof a> => a !== null);
+          if (acceptances.length > 0) {
+            try {
+              await apiRequest("POST", "/api/ai-features/takeoff/suggestions/bulk-accept", {
+                analysisId,
+                acceptances,
+                rejections: [],
+              });
+              setLocalEdits({});
+            } catch (bulkErr) {
+              console.warn("bulk-accept failed (non-fatal):", bulkErr);
+            }
+          }
+        }
+
         if (result.failed === 0) {
           toast({
             title: "Items Imported",
@@ -637,13 +816,20 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
                     
                     {isExpanded && (
                       <div className="border-t">
-                        {items.map((item, idx) => (
+                        {items.map((item, idx) => {
+                          const isRejected = rejectedItemIds.has(item.id);
+                          const edit = localEdits[item.id];
+                          const displayedQty = edit?.quantity ?? item.quantity;
+                          const displayedUnit = edit?.unit ?? item.unit;
+                          const hasEdit = !!edit && (edit.quantity !== undefined || edit.unit !== undefined || edit.itemType !== undefined);
+                          return (
                           <div 
                             key={item.id}
                             className={cn(
                               "px-4 py-3 flex items-start gap-3 hover-elevate cursor-pointer transition-colors",
                               idx !== items.length - 1 && "border-b",
-                              hoveredItemId === item.id && "bg-primary/5"
+                              hoveredItemId === item.id && "bg-primary/5",
+                              isRejected && "opacity-50"
                             )}
                             onMouseEnter={() => {
                               setHoveredItemId(item.id);
@@ -653,11 +839,13 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
                               setHoveredItemId(null);
                               onHighlightItem?.(null);
                             }}
+                            data-testid={`row-suggestion-${item.id}`}
                           >
                             <Checkbox
                               id={item.id}
                               checked={selectedItems.has(item.id)}
                               onCheckedChange={() => handleToggleItem(item.id)}
+                              disabled={isRejected}
                               className="mt-0.5"
                               data-testid={`checkbox-item-${item.id}`}
                             />
@@ -673,9 +861,24 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
                                 >
                                   {item.confidence}%
                                 </Badge>
+                                {hasEdit && (
+                                  <Badge variant="outline" className="text-[9px] border-amber-500/50 text-amber-600" data-testid={`badge-edited-${item.id}`}>
+                                    edited
+                                  </Badge>
+                                )}
+                                {isRejected && (
+                                  <Badge variant="destructive" className="text-[9px]" data-testid={`badge-rejected-${item.id}`}>
+                                    rejected
+                                  </Badge>
+                                )}
                               </div>
                               <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
-                                <span className="font-mono">{item.quantity} {item.unit}</span>
+                                <span className={cn("font-mono", hasEdit && "text-amber-600 dark:text-amber-400")}>
+                                  {displayedQty} {displayedUnit}
+                                  {hasEdit && (
+                                    <span className="text-[10px] ml-1 line-through opacity-70">({item.quantity} {item.unit})</span>
+                                  )}
+                                </span>
                                 {item.suggestedSowItem && (
                                   <span className="text-xs">
                                     &rarr; {item.suggestedSowItem.code}
@@ -689,8 +892,55 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
                                 </div>
                               )}
                             </div>
+                            {!isRejected && (
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7"
+                                  onClick={(e) => { e.stopPropagation(); handleOpenEdit(item); }}
+                                  title="Edit and accept"
+                                  data-testid={`button-edit-${item.id}`}
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                                      title="Reject suggestion"
+                                      onClick={(e) => e.stopPropagation()}
+                                      data-testid={`button-reject-${item.id}`}
+                                    >
+                                      <ThumbsDown className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-56 p-2" align="end" onClick={(e) => e.stopPropagation()}>
+                                    <div className="text-xs font-medium mb-2">Why is this wrong?</div>
+                                    <div className="space-y-1">
+                                      {REJECT_REASONS.map((r) => (
+                                        <Button
+                                          key={r.value}
+                                          variant="ghost"
+                                          size="sm"
+                                          className="w-full justify-start h-8 text-xs"
+                                          onClick={() => handleRejectItem(item, r.value)}
+                                          data-testid={`button-reject-reason-${r.value}-${item.id}`}
+                                        >
+                                          <Ban className="w-3 h-3 mr-2" />
+                                          {r.label}
+                                        </Button>
+                                      ))}
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
+                            )}
                           </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                   </Card>
@@ -788,6 +1038,64 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
           </div>
         </div>
       )}
+
+      {/* Task #2323 — Edit-and-accept dialog */}
+      <Dialog open={!!editDialogItem} onOpenChange={(open) => !open && setEditDialogItem(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit suggestion</DialogTitle>
+            <DialogDescription>
+              Change the quantity, unit, or item type before importing. Edits are tracked
+              for the AI accuracy dashboard.
+            </DialogDescription>
+          </DialogHeader>
+          {editDialogItem && (
+            <div className="space-y-3">
+              <div className="text-sm text-muted-foreground">{editDialogItem.description}</div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label htmlFor="edit-qty" className="text-xs">Quantity</Label>
+                  <Input
+                    id="edit-qty"
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={editForm.quantity}
+                    onChange={(e) => setEditForm((f) => ({ ...f, quantity: e.target.value }))}
+                    data-testid="input-edit-quantity"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="edit-unit" className="text-xs">Unit</Label>
+                  <Input
+                    id="edit-unit"
+                    value={editForm.unit}
+                    onChange={(e) => setEditForm((f) => ({ ...f, unit: e.target.value }))}
+                    data-testid="input-edit-unit"
+                  />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="edit-type" className="text-xs">Item type</Label>
+                <Input
+                  id="edit-type"
+                  value={editForm.itemType}
+                  onChange={(e) => setEditForm((f) => ({ ...f, itemType: e.target.value }))}
+                  data-testid="input-edit-item-type"
+                />
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogItem(null)} data-testid="button-edit-cancel">
+              Cancel
+            </Button>
+            <Button onClick={handleSaveEdit} data-testid="button-edit-save">
+              Save edits
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
         <DialogContent>

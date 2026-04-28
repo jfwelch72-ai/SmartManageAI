@@ -188,6 +188,10 @@ const JobMetricsDashboard = lazy(() => import("@/pages/JobMetricsDashboard"));
 const DotPayItemsRefreshAdminPage = lazy(
   () => import("@/pages/admin/dot-pay-items-refresh"),
 );
+// Task #2323 — Org-admin AI takeoff closed-loop feedback dashboard.
+const AiTakeoffAccuracyPage = lazy(
+  () => import("@/pages/admin/ai-takeoff-accuracy"),
+);
 const VendorPricingPage = lazy(() => import("@/pages/vendor-pricing"));
 const MobileSyncPage = lazy(() => import("@/pages/mobile-sync"));
 const CompanySettingsPage = lazy(() => import("@/pages/company-settings"));
@@ -612,6 +616,8 @@ function Router() {
       <Route path="/admin/jobs/metrics" component={() => <ProtectedRoute component={JobMetricsDashboard} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       {/* Task #1962 — DOT pay-item refresh history + Run-now (Super Admin). */}
       <Route path="/admin/jobs/dot-pay-items-refresh" component={() => <ProtectedRoute component={DotPayItemsRefreshAdminPage} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
+      {/* Task #2323 — Org-admin AI takeoff accuracy dashboard. */}
+      <Route path="/admin/ai-takeoff-accuracy" component={() => <ProtectedRoute component={AiTakeoffAccuracyPage} permission={(role) => role === "ADMIN" || role === "SUPER_ADMIN" || role === "MANAGER"} />} />
       <Route path="/admin/subscriptions" component={() => <ProtectedRoute component={() => <Redirect to="/admin/tools" />} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/support" component={() => <ProtectedRoute component={() => <Redirect to="/admin/tools" />} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />
       <Route path="/admin/audit" component={() => <ProtectedRoute component={() => <Redirect to="/admin/tools" />} permission={RoutePermissions.PLATFORM_ADMIN} skipOnboardingCheck />} />

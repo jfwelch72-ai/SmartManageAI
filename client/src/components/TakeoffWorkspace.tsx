@@ -4736,6 +4736,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           };
 
           const newMeasurementIds: string[] = [];
+          // Task #2323 — track aiItemId -> created measurement id so the
+          // panel can stitch them onto the closed-loop bulk-accept call.
+          const measurementIdsByItemId: Record<string, string> = {};
           const imgH = pdfImage?.height || 1500;
 
           const LINEAR_UNITS = new Set(["lf", "lm", "ft", "m", "in", "linear feet", "linear meters", "feet", "meters", "inches"]);
@@ -4824,7 +4827,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 }),
               });
               const created = await res.json();
-              if (created?.id) newMeasurementIds.push(created.id);
+              if (created?.id) {
+                newMeasurementIds.push(created.id);
+                measurementIdsByItemId[item.id] = created.id;
+              }
               succeeded++;
             } catch (err) {
               console.error(`Failed to import AI item: ${item.description}`, err);
@@ -4848,7 +4854,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               flashSequence();
             }
           }
-          return { succeeded, failed, failedItems };
+          return { succeeded, failed, failedItems, measurementIdsByItemId };
         },
       },
     } : null,

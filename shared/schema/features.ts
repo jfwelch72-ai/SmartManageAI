@@ -2,7 +2,7 @@ import { sql } from "drizzle-orm";
 import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, uniqueIndex, json, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
-import { addendumRecipientTypeEnum, addendumStatusEnum, aiBidDocumentAnalysisStatusEnum, aiCoDraftStatusEnum, aiContractDocumentAnalysisStatusEnum, contractStatusEnum, contractTypeEnum, contractRedlineStatusEnum, contractApprovalDecisionEnum, clauseCategoryEnum, signatureRequestStatusEnum, signerStatusEnum, aiInsightModuleEnum, aiInsightSeverityEnum, aiTakeoffModeEnum, aiTakeoffStatusEnum, aiTaskPriorityEnum, aiTaskStatusEnum, approvalEntityTypeEnum, approvalStatusEnum, atsProviderEnum, bidEquipmentSourceEnum, bidInvitationStatusEnum, bidRequestStatusEnum, bidResponseStatusEnum, blogCommentStatusEnum, blogPostStatusEnum, conversationTypeEnum, crewAvailabilityStatusEnum, crmActivityTypeEnum, crmCallDirectionEnum, crmCallOutcomeEnum, crmCallStatusEnum, crmCustomFieldEntityEnum, crmCustomFieldTypeEnum, crmContactRoleEnum, crmNoteTypeEnum, crmOrgStatusEnum, crmOrganisationTypeEnum, crmPipelineStageEnum, crmPreferredContactEnum, crmLostCategoryEnum, crmQuoteAcceptanceStatusEnum, crmLeadScoringOperatorEnum, crmSequenceStatusEnum, crmSequenceStepTypeEnum, crmSequenceEnrollmentStatusEnum, crmSequenceExecutionStatusEnum, crmSequenceEmailEventTypeEnum, crmSequenceExitReasonEnum, crmQuoteApprovalStatusEnum, dataSubjectRequestStatusEnum, dataSubjectRequestTypeEnum, documentRevisionSourceEnum, documentRevisionStatusEnum, emailClassificationEnum, emailProviderEnum, emailTaskSourceEnum, emailThreadStatusEnum, hiringActivityTypeEnum, hiringCandidateStageEnum, hiringCompensationTypeEnum, hiringEmploymentTypeEnum, hiringInterviewStatusEnum, hiringJobStatusEnum, hiringSyncStatusEnum, hustlerDelegateRoleEnum, hustlerLinkRequestStatusEnum, installationStatusEnum, lidarScanStatusEnum, lidarAnnotationTypeEnum, lidarComparisonTypeEnum, unifiedPaymentMethodEnum, unifiedPaymentStatusEnum, invoiceTypeEnum, integrationConnectionStatusEnum, integrationEventStatusEnum, integrationProviderEnum, issueSeverityEnum, issueStatusEnum, jobsiteAnalysisStatusEnum, lienWaiverStatusEnum, lienWaiverTypeEnum, locationLevelEnum, maintenanceTypeEnum, measurementReviewStatusEnum, measurementSourceEnum, measurementStatusEnum, measurementTypeEnum, takeoffVersionStatusEnum, messageEntityTypeEnum, mobilePlatformEnum, offlineEntityTypeEnum, offlineOperationTypeEnum, offlineSyncStatusEnum, organizationDocumentTypeEnum, organizationDocumentVisibilityEnum, overheadCostActionEnum, overheadCostCategoryEnum, overheadCostFrequencyEnum, portalChatPriorityEnum, portalChatThreadCategoryEnum, portalChatThreadStatusEnum, pricebookImportJobStatusEnum, pricebookStatusEnum, pricingApprovalStatusEnum, pricingSourceTypeEnum, projectEquipmentPlanStatusEnum, repairStatusEnum, retentionActionEnum, retentionEntityTypeEnum, rewardTypeEnum, rfiCategoryEnum, rfiPriorityEnum, rfiStatusEnum, scheduleDependencyTypeEnum, scheduleGeneratedByEnum, scheduleTaskStatusEnum, socialAccountStatusEnum, socialPlatformEnum, socialPostStatusEnum, sovPaymentMethodEnum, sovStatusEnum, storedMaterialStatusEnum, retentionReleaseTypeEnum, retentionReleaseStatusEnum, sowAuditActionEnum, ssoProviderEnum, submittalCategoryEnum, submittalItemStatusEnum, submittalPhaseEnum, submittalReviewRoleEnum, submittalReviewStatusEnum, submittalStatusEnum, submittalTypeEnum, syncStatusEnum, tradeTypeEnum, transmittalStatusEnum, userRoleEnum, vendorEnrollmentStatusEnum, voiceLogStatusEnum, websiteDeploymentActionEnum, websitePageTypeEnum, websiteProjectStatusEnum, websiteStatusEnum, takeoffIssueCategoryEnum, takeoffIssueStatusEnum, talentAvailabilityEnum, talentProfileVisibilityEnum, workflowEntityTypeEnum, riskCategoryEnum, riskStatusEnum, workflowTemplateStatusEnum, workflowInstanceStatusEnum, videoCallStatusEnum, workflowNotificationChannelEnum, dotAgencyKindEnum, dotPayItemTypeEnum, dbeCertificationTypeEnum, suretyBondTypeEnum, suretyBondStatusEnum, haulTicketStatusEnum, swpppInspectionTypeEnum, idrStatusEnum, buyAmericaStatusEnum } from "./enums";
+import { addendumRecipientTypeEnum, addendumStatusEnum, aiBidDocumentAnalysisStatusEnum, aiCoDraftStatusEnum, aiContractDocumentAnalysisStatusEnum, contractStatusEnum, contractTypeEnum, contractRedlineStatusEnum, contractApprovalDecisionEnum, clauseCategoryEnum, signatureRequestStatusEnum, signerStatusEnum, aiInsightModuleEnum, aiInsightSeverityEnum, aiTakeoffModeEnum, aiTakeoffStatusEnum, aiTakeoffSuggestionStatusEnum, aiTakeoffRejectReasonEnum, aiTaskPriorityEnum, aiTaskStatusEnum, approvalEntityTypeEnum, approvalStatusEnum, atsProviderEnum, bidEquipmentSourceEnum, bidInvitationStatusEnum, bidRequestStatusEnum, bidResponseStatusEnum, blogCommentStatusEnum, blogPostStatusEnum, conversationTypeEnum, crewAvailabilityStatusEnum, crmActivityTypeEnum, crmCallDirectionEnum, crmCallOutcomeEnum, crmCallStatusEnum, crmCustomFieldEntityEnum, crmCustomFieldTypeEnum, crmContactRoleEnum, crmNoteTypeEnum, crmOrgStatusEnum, crmOrganisationTypeEnum, crmPipelineStageEnum, crmPreferredContactEnum, crmLostCategoryEnum, crmQuoteAcceptanceStatusEnum, crmLeadScoringOperatorEnum, crmSequenceStatusEnum, crmSequenceStepTypeEnum, crmSequenceEnrollmentStatusEnum, crmSequenceExecutionStatusEnum, crmSequenceEmailEventTypeEnum, crmSequenceExitReasonEnum, crmQuoteApprovalStatusEnum, dataSubjectRequestStatusEnum, dataSubjectRequestTypeEnum, documentRevisionSourceEnum, documentRevisionStatusEnum, emailClassificationEnum, emailProviderEnum, emailTaskSourceEnum, emailThreadStatusEnum, hiringActivityTypeEnum, hiringCandidateStageEnum, hiringCompensationTypeEnum, hiringEmploymentTypeEnum, hiringInterviewStatusEnum, hiringJobStatusEnum, hiringSyncStatusEnum, hustlerDelegateRoleEnum, hustlerLinkRequestStatusEnum, installationStatusEnum, lidarScanStatusEnum, lidarAnnotationTypeEnum, lidarComparisonTypeEnum, unifiedPaymentMethodEnum, unifiedPaymentStatusEnum, invoiceTypeEnum, integrationConnectionStatusEnum, integrationEventStatusEnum, integrationProviderEnum, issueSeverityEnum, issueStatusEnum, jobsiteAnalysisStatusEnum, lienWaiverStatusEnum, lienWaiverTypeEnum, locationLevelEnum, maintenanceTypeEnum, measurementReviewStatusEnum, measurementSourceEnum, measurementStatusEnum, measurementTypeEnum, takeoffVersionStatusEnum, messageEntityTypeEnum, mobilePlatformEnum, offlineEntityTypeEnum, offlineOperationTypeEnum, offlineSyncStatusEnum, organizationDocumentTypeEnum, organizationDocumentVisibilityEnum, overheadCostActionEnum, overheadCostCategoryEnum, overheadCostFrequencyEnum, portalChatPriorityEnum, portalChatThreadCategoryEnum, portalChatThreadStatusEnum, pricebookImportJobStatusEnum, pricebookStatusEnum, pricingApprovalStatusEnum, pricingSourceTypeEnum, projectEquipmentPlanStatusEnum, repairStatusEnum, retentionActionEnum, retentionEntityTypeEnum, rewardTypeEnum, rfiCategoryEnum, rfiPriorityEnum, rfiStatusEnum, scheduleDependencyTypeEnum, scheduleGeneratedByEnum, scheduleTaskStatusEnum, socialAccountStatusEnum, socialPlatformEnum, socialPostStatusEnum, sovPaymentMethodEnum, sovStatusEnum, storedMaterialStatusEnum, retentionReleaseTypeEnum, retentionReleaseStatusEnum, sowAuditActionEnum, ssoProviderEnum, submittalCategoryEnum, submittalItemStatusEnum, submittalPhaseEnum, submittalReviewRoleEnum, submittalReviewStatusEnum, submittalStatusEnum, submittalTypeEnum, syncStatusEnum, tradeTypeEnum, transmittalStatusEnum, userRoleEnum, vendorEnrollmentStatusEnum, voiceLogStatusEnum, websiteDeploymentActionEnum, websitePageTypeEnum, websiteProjectStatusEnum, websiteStatusEnum, takeoffIssueCategoryEnum, takeoffIssueStatusEnum, talentAvailabilityEnum, talentProfileVisibilityEnum, workflowEntityTypeEnum, riskCategoryEnum, riskStatusEnum, workflowTemplateStatusEnum, workflowInstanceStatusEnum, videoCallStatusEnum, workflowNotificationChannelEnum, dotAgencyKindEnum, dotPayItemTypeEnum, dbeCertificationTypeEnum, suretyBondTypeEnum, suretyBondStatusEnum, haulTicketStatusEnum, swpppInspectionTypeEnum, idrStatusEnum, buyAmericaStatusEnum } from "./enums";
 import { bids, organizations, projects, users } from "./core";
 import { changeOrders, estimateLineItems, estimates, planDocuments, projectInspections, tasks, tmTickets } from "./operations";
 
@@ -56,6 +56,12 @@ export const FEATURE_FLAG_KEYS = [
   // them or an RFI is forwarded to an external assignee. Default OFF so
   // existing tenants don't unexpectedly start emailing strangers.
   "EXTERNAL_DOC_EMAIL",
+  // Task #2323 — when on, processAiTakeoff injects up to 5 recent EDITED
+  // suggestions per trade (where qty delta >10%) as a "Recent corrections
+  // from your team" block in the system prompt for the next AI takeoff
+  // run for that org+trade. Default OFF so existing tenants don't pay
+  // extra prompt tokens unexpectedly.
+  "AI_TAKEOFF_FEW_SHOT",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -105,6 +111,7 @@ export const FEATURE_FLAG_LABELS: Record<FeatureFlagKey, string> = {
   DOT_PROGRESS_ESTIMATE: "DOT Progress Estimate",
   HEAVY_CIVIL_PRESET: "Heavy Civil Preset",
   EXTERNAL_DOC_EMAIL: "External Document Email Delivery",
+  AI_TAKEOFF_FEW_SHOT: "AI Takeoff – Few-shot Corrections",
 };
 
 export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
@@ -152,6 +159,7 @@ export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
   DOT_PROGRESS_ESTIMATE: "Generate state-DOT-style monthly progress estimate PDFs grouped by spec section.",
   HEAVY_CIVIL_PRESET: "Activate the heavy-civil dashboard layout, bundled features, and DOT-focused defaults for this organization.",
   EXTERNAL_DOC_EMAIL: "Send Resend emails to external architects/engineers for submittal reviews and forwarded RFIs, including a secure tokenized portal link.",
+  AI_TAKEOFF_FEW_SHOT: "Inject up to five recent EDITED takeoff suggestions per trade into the next AI takeoff prompt as a 'Recent corrections' few-shot block.",
 };
 
 export const FEATURE_FLAG_CATEGORIES = [
@@ -218,6 +226,7 @@ export const FEATURE_FLAG_CATEGORY_MAP: Record<FeatureFlagKey, FeatureFlagCatego
   DOT_PROGRESS_ESTIMATE: "Heavy Civil & DOT",
   HEAVY_CIVIL_PRESET: "Heavy Civil & DOT",
   EXTERNAL_DOC_EMAIL: "Core Platform",
+  AI_TAKEOFF_FEW_SHOT: "Advanced Tech",
 };
 
 export const HEAVY_CIVIL_TRADE_TYPES: readonly string[] = [
@@ -265,6 +274,9 @@ export const DISABLED_BY_DEFAULT_FLAGS: readonly FeatureFlagKey[] = [
   "HEAVY_CIVIL_PRESET",
   // Task #1599: external email branch is opt-in.
   "EXTERNAL_DOC_EMAIL",
+  // Task #2323: few-shot prompt-injection of recent EDITED suggestions
+  // is opt-in so existing tenants don't pay extra prompt tokens unexpectedly.
+  "AI_TAKEOFF_FEW_SHOT",
 ] as const;
 
 export const aiSettings = pgTable("ai_settings", {
@@ -4022,6 +4034,68 @@ export const aiTakeoffAnalyses = pgTable("ai_takeoff_analyses", {
 export const insertAiTakeoffAnalysisSchema = createInsertSchema(aiTakeoffAnalyses).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertAiTakeoffAnalysis = z.infer<typeof insertAiTakeoffAnalysisSchema>;
 export type AiTakeoffAnalysis = typeof aiTakeoffAnalyses.$inferSelect;
+
+// ============================================
+// Task #2323 — AI takeoff closed-loop feedback
+// One row per detected item; replaces the inline JSON for *tracking*
+// (the JSON blob on aiTakeoffAnalyses stays for backward-compat reads).
+// ============================================
+export const aiTakeoffSuggestions = pgTable("ai_takeoff_suggestions", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  analysisId: varchar("analysis_id").notNull().references(() => aiTakeoffAnalyses.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  tradeType: tradeTypeEnum("trade_type").notNull(),
+  // Original AI-detected payload, mirrored from detected_items_json for the
+  // accuracy dashboard and calibration job (no JSON parse needed at query time).
+  itemKey: text("item_key").notNull(),                  // matches DetectedItem.id (e.g. "item-3")
+  itemType: text("item_type").notNull(),
+  description: text("description").notNull(),
+  quantity: doublePrecision("quantity").notNull(),
+  unit: text("unit").notNull(),
+  confidence: doublePrecision("confidence").notNull(),  // model-reported, 0-100
+  boundingBoxJson: text("bounding_box_json"),
+  // Review state ----------------------------------------------------------
+  status: aiTakeoffSuggestionStatusEnum("status").notNull().default("PENDING"),
+  reviewedByUserId: varchar("reviewed_by_user_id").references(() => users.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at"),
+  acceptedMeasurementId: varchar("accepted_measurement_id").references(() => takeoffMeasurements.id, { onDelete: "set null" }),
+  // EDITED diff (populated when user changed quantity/unit/itemType at import)
+  editedQuantity: doublePrecision("edited_quantity"),
+  editedUnit: text("edited_unit"),
+  editedItemType: text("edited_item_type"),
+  // REJECTED reason
+  rejectReason: aiTakeoffRejectReasonEnum("reject_reason"),
+  rejectNote: text("reject_note"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  analysisIdx: index("ai_takeoff_sug_analysis_idx").on(table.analysisId),
+  orgTradeStatusIdx: index("ai_takeoff_sug_org_trade_status_idx").on(table.organizationId, table.tradeType, table.status),
+}));
+
+export const insertAiTakeoffSuggestionSchema = createInsertSchema(aiTakeoffSuggestions).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAiTakeoffSuggestion = z.infer<typeof insertAiTakeoffSuggestionSchema>;
+export type AiTakeoffSuggestion = typeof aiTakeoffSuggestions.$inferSelect;
+
+// Confidence calibration table — populated nightly by the cron job and
+// read at processAiTakeoff time to override displayed confidence with
+// per-org empirical acceptance rates when sample_count >= 30.
+export const aiTakeoffConfidenceCalibration = pgTable("ai_takeoff_confidence_calibration", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  tradeType: tradeTypeEnum("trade_type").notNull(),
+  // Buckets are 60, 70, 80, 90 — the lower bound of [60-69], [70-79], etc.
+  modelConfidenceBucket: integer("model_confidence_bucket").notNull(),
+  empiricalAcceptanceRate: doublePrecision("empirical_acceptance_rate").notNull(),  // 0..1
+  sampleCount: integer("sample_count").notNull(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgTradeBucketUq: uniqueIndex("ai_takeoff_calib_org_trade_bucket_uq").on(table.organizationId, table.tradeType, table.modelConfidenceBucket),
+}));
+
+export const insertAiTakeoffConfidenceCalibrationSchema = createInsertSchema(aiTakeoffConfidenceCalibration).omit({ id: true, updatedAt: true });
+export type InsertAiTakeoffConfidenceCalibration = z.infer<typeof insertAiTakeoffConfidenceCalibrationSchema>;
+export type AiTakeoffConfidenceCalibration = typeof aiTakeoffConfidenceCalibration.$inferSelect;
 
 // ============================================
 // FEATURE B: PROJECT SCHEDULES

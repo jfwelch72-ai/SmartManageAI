@@ -1,14 +1,21 @@
 import { Router , NextFunction } from "express";
 import { db } from "./db";
 import { sensitiveLimiter } from "./rateLimiter";
-import { aiTakeoffAnalyses, organizations, takeoffSheets } from "@shared/schema";
-import { eq, desc, and } from "drizzle-orm";
+import {
+  aiTakeoffAnalyses,
+  aiTakeoffSuggestions,
+  aiTakeoffConfidenceCalibration,
+  organizations,
+  takeoffSheets,
+} from "@shared/schema";
+import { eq, desc, and, gte, lte, sql, inArray, isNotNull } from "drizzle-orm";
 import { z } from "zod";
 import { type AuthRequest, requireAuth, requireRole } from "./auth";
-import { logError } from "./utils/logger";
+import { logError, logInfo } from "./utils/logger";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { objectStorageClient, ObjectStorageService } from "./objectStorage";
 import { governedAiCall } from "./services/aiGovernance";
+import { isFeatureEnabled } from "./services/featureFlagService";
 import {
   VALID_DB_TRADE_TYPES,
   isValidDbTradeType as isValidTradeType,
@@ -111,6 +118,11 @@ interface RawDetectedItem {
   confidence: number;
   boundingBox?: { x: number; y: number; w: number; h: number };
   suggestedSowItem?: { code: string; description: string };
+  // Task #2323 — when calibration overrides the model-reported value,
+  // we keep the raw model confidence here so the UI can show "model
+  // said X%, your team historically accepts Y%" tooltips.
+  rawConfidence?: number;
+  calibrationSamples?: number;
 }
 
 function deduplicateDetectedItems(items: RawDetectedItem[]): RawDetectedItem[] {
@@ -179,7 +191,7 @@ async function classifyTradeType(imageUrl: string, orgId: string, userId: string
   try {
     const govResult = await governedAiCall({
       orgId,
-      userId,
+      userId: userId ?? null,
       actionType: "takeoff_analysis",
       inputRefs: {},
       fn: async () => {
@@ -278,6 +290,167 @@ const TRADE_DETECTION_PROMPTS: Record<string, string> = {
   STEEL_ERECTION: "Focus on: columns by section size (EA, note weight/LF), beams/girders (LF, note section), open web joists (EA, note series), metal deck by gauge (SF), connections/base plates (EA), stair stringers/treads (EA or flights). Reference structural steel schedules.",
   GENERAL_CONTRACTOR: "Comprehensive analysis across all visible trades. Group detected items by trade type (structural, architectural, mechanical, electrical, plumbing, sitework). Measure using appropriate units for each trade. Identify the drawing type (plan, elevation, section, detail) and note any visible dimensions, scales, or specifications.",
 };
+
+// Task #2323 — bucket a model-reported confidence into the [60, 70, 80, 90]
+// lower-bound buckets used by the calibration table. Anything below 60 falls
+// into the 60 bucket so we still apply the org's empirical rate when it has
+// enough samples.
+function confidenceBucket(c: number): number {
+  if (c >= 90) return 90;
+  if (c >= 80) return 80;
+  if (c >= 70) return 70;
+  return 60;
+}
+
+// Task #2323 — pulls the per-(org, trade) calibration map. Returns a Map keyed
+// by bucket -> { rate, samples } so the per-item override can be applied without
+// a query per item.
+async function loadCalibrationMap(
+  organizationId: string,
+  tradeType: string,
+): Promise<Map<number, { rate: number; samples: number }>> {
+  const rows = await db.select({
+    bucket: aiTakeoffConfidenceCalibration.modelConfidenceBucket,
+    rate: aiTakeoffConfidenceCalibration.empiricalAcceptanceRate,
+    samples: aiTakeoffConfidenceCalibration.sampleCount,
+  })
+    .from(aiTakeoffConfidenceCalibration)
+    .where(and(
+      eq(aiTakeoffConfidenceCalibration.organizationId, organizationId),
+      eq(aiTakeoffConfidenceCalibration.tradeType, tradeType as TradeType),
+    ));
+  const map = new Map<number, { rate: number; samples: number }>();
+  for (const row of rows) {
+    map.set(row.bucket, { rate: Number(row.rate), samples: row.samples });
+  }
+  return map;
+}
+
+const FEW_SHOT_SAMPLE_LIMIT = 5;
+const FEW_SHOT_QTY_DELTA_THRESHOLD = 0.1; // 10%
+
+// Task #2323 — fetches up to N recent EDITED suggestions for the (org, trade)
+// where the user changed quantity by >10%, and renders them as a compact
+// "Recent corrections from your team" block. Capped at ~500 tokens. Returns
+// "" when feature flag is off or no usable corrections exist.
+async function buildFewShotCorrectionsBlock(
+  organizationId: string,
+  tradeType: string,
+): Promise<string> {
+  try {
+    const enabled = await isFeatureEnabled(organizationId, "AI_TAKEOFF_FEW_SHOT");
+    if (!enabled) return "";
+
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+    const rows = await db.select({
+      itemType: aiTakeoffSuggestions.itemType,
+      description: aiTakeoffSuggestions.description,
+      quantity: aiTakeoffSuggestions.quantity,
+      unit: aiTakeoffSuggestions.unit,
+      editedQuantity: aiTakeoffSuggestions.editedQuantity,
+      editedUnit: aiTakeoffSuggestions.editedUnit,
+    })
+      .from(aiTakeoffSuggestions)
+      .where(and(
+        eq(aiTakeoffSuggestions.organizationId, organizationId),
+        eq(aiTakeoffSuggestions.tradeType, tradeType as TradeType),
+        eq(aiTakeoffSuggestions.status, "EDITED"),
+        gte(aiTakeoffSuggestions.reviewedAt, ninetyDaysAgo),
+        isNotNull(aiTakeoffSuggestions.editedQuantity),
+      ))
+      .orderBy(desc(aiTakeoffSuggestions.reviewedAt))
+      .limit(50);
+
+    const usable = rows
+      .filter((r) => {
+        const orig = Number(r.quantity);
+        const edited = Number(r.editedQuantity);
+        if (!Number.isFinite(orig) || !Number.isFinite(edited) || orig === 0) return false;
+        return Math.abs(edited - orig) / Math.abs(orig) > FEW_SHOT_QTY_DELTA_THRESHOLD;
+      })
+      .slice(0, FEW_SHOT_SAMPLE_LIMIT);
+
+    if (usable.length === 0) return "";
+
+    const lines = usable.map((r) => {
+      const unit = r.editedUnit || r.unit;
+      const arrow = `${r.quantity} ${r.unit} -> ${r.editedQuantity} ${unit}`;
+      const desc = (r.description || r.itemType || "").slice(0, 80);
+      return `- "${desc}": ${arrow}`;
+    });
+
+    return `\nRecent corrections from your team (apply these patterns):\n${lines.join("\n")}\n`;
+  } catch (err) {
+    logError(
+      "Few-shot corrections lookup failed (non-fatal):",
+      { organizationId, tradeType },
+      err instanceof Error ? err : new Error(String(err)),
+    );
+    return "";
+  }
+}
+
+// Task #2323 — Persist per-item suggestion rows for the closed-loop dashboard.
+// Adjusts each item's `confidence` to the org's empirical acceptance rate when
+// the bucket has >=30 samples, and exposes both the original + adjusted values
+// in metadata so the UI can show a tooltip explaining which one is in effect.
+async function persistSuggestionsAndApplyCalibration(
+  analysis: { id: string; organizationId: string },
+  tradeType: string,
+  detectedItems: RawDetectedItem[],
+): Promise<{ items: RawDetectedItem[]; calibrationApplied: boolean }> {
+  if (detectedItems.length === 0) {
+    return { items: detectedItems, calibrationApplied: false };
+  }
+  const calibration = await loadCalibrationMap(analysis.organizationId, tradeType);
+
+  let calibrationApplied = false;
+  const adjusted: RawDetectedItem[] = detectedItems.map((item) => {
+    const bucket = confidenceBucket(item.confidence);
+    const entry = calibration.get(bucket);
+    if (entry && entry.samples >= 30) {
+      calibrationApplied = true;
+      const displayed = Math.round(entry.rate * 100);
+      return {
+        ...item,
+        confidence: displayed,
+        rawConfidence: item.confidence,
+        calibrationSamples: entry.samples,
+      };
+    }
+    return item;
+  });
+
+  // Insert suggestion rows in a single batch.
+  try {
+    await db.insert(aiTakeoffSuggestions).values(
+      adjusted.map((item) => ({
+        analysisId: analysis.id,
+        organizationId: analysis.organizationId,
+        tradeType: tradeType as TradeType,
+        itemKey: item.id,
+        itemType: item.itemType,
+        description: item.description,
+        // Persist the model-reported confidence so calibration math stays
+        // honest — `rawConfidence` falls back to `confidence` when no
+        // override was applied.
+        quantity: item.quantity,
+        unit: item.unit,
+        confidence: (item as any).rawConfidence ?? item.confidence,
+        boundingBoxJson: item.boundingBox ? JSON.stringify(item.boundingBox) : null,
+        status: "PENDING" as const,
+      })),
+    );
+  } catch (err) {
+    logError(
+      "Failed to persist ai_takeoff_suggestions rows:",
+      { analysisId: analysis.id, count: adjusted.length },
+      err instanceof Error ? err : new Error(String(err)),
+    );
+  }
+
+  return { items: adjusted, calibrationApplied };
+}
 
 async function processAiTakeoff(analysisId: string, tradeType: string, focusAreas?: string[], needsAutoDetection?: boolean, userId?: string | null) {
   const startTime = Date.now();
@@ -478,6 +651,12 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
         // sheet is uncalibrated, the clause tells the model to flag low
         // confidence on dimension-derived units (LF, SF, CY).
         const scaleGroundingClause = buildScaleGroundingClause(sheetCalibration);
+        // Task #2323 — closed-loop few-shot. Empty string when feature
+        // flag is off or no usable corrections exist.
+        const fewShotBlock = await buildFewShotCorrectionsBlock(
+          analysis.organizationId,
+          tradeType,
+        );
 
         const govResult = await governedAiCall({
           orgId: analysis.organizationId,
@@ -494,6 +673,7 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
 ${tradePrompt}
 ${focusAreaPrompt}
 ${scaleGroundingClause}
+${fewShotBlock}
 Analyze the image and extract all measurable quantities for a construction estimate.
 
 IMPORTANT: For each detected item, provide a bounding box indicating where on the drawing it was found.
@@ -746,6 +926,20 @@ Return JSON with:
       aiNotes = `Demo mode: Generated ${detectedItems.length} sample items for ${tradeType} trade.`;
     }
 
+    // Task #2323 — apply per-org confidence calibration overrides AND
+    // persist one PENDING suggestion row per detected item so the
+    // accept/reject/edit-and-accept flow has something to update.
+    const { items: calibratedItems, calibrationApplied } =
+      await persistSuggestionsAndApplyCalibration(
+        { id: analysisId, organizationId: analysis.organizationId },
+        tradeType,
+        detectedItems,
+      );
+    detectedItems = calibratedItems;
+    if (calibrationApplied) {
+      (metadata as Record<string, unknown>).calibrationApplied = true;
+    }
+
     await db.update(aiTakeoffAnalyses)
       .set({
         status: "COMPLETE",
@@ -977,5 +1171,556 @@ router.get("/ai-features/takeoff/history/:contextId", requireAuth, async (req: A
     next(error);
   }
 });
+
+// ===========================================================================
+// Task #2323 — Closed-loop AI takeoff feedback endpoints
+// ===========================================================================
+
+const REJECT_REASONS = [
+  "WRONG_TRADE",
+  "DUPLICATE",
+  "NOT_PRESENT",
+  "WRONG_QUANTITY",
+  "WRONG_LOCATION",
+  "OTHER",
+] as const;
+
+// Routes are gated to roles that legitimately review takeoff output. Field
+// workers don't review AI suggestions, so they're excluded.
+const TAKEOFF_REVIEWER_ROLES = ["ADMIN", "MANAGER", "ESTIMATOR", "SUPERINTENDENT"] as const;
+
+const rejectBodySchema = z.object({
+  reason: z.enum(REJECT_REASONS),
+  note: z.string().max(2000).optional(),
+});
+
+const acceptBodySchema = z.object({
+  // Optional — when present, links the suggestion to the resulting
+  // takeoff measurement so we can later trace back from a measurement.
+  measurementId: z.string().optional(),
+});
+
+const editAndAcceptBodySchema = z.object({
+  measurementId: z.string().optional(),
+  editedQuantity: z.number().optional(),
+  editedUnit: z.string().max(32).optional(),
+  editedItemType: z.string().max(128).optional(),
+});
+
+const bulkAcceptBodySchema = z.object({
+  analysisId: z.string(),
+  // Each entry maps suggestion id -> resulting measurement id (optional)
+  // and optional edits when the user changed the row before importing.
+  acceptances: z.array(z.object({
+    suggestionId: z.string(),
+    measurementId: z.string().optional(),
+    editedQuantity: z.number().optional(),
+    editedUnit: z.string().max(32).optional(),
+    editedItemType: z.string().max(128).optional(),
+  })).default([]),
+  rejections: z.array(z.object({
+    suggestionId: z.string(),
+    reason: z.enum(REJECT_REASONS).default("NOT_PRESENT"),
+    note: z.string().max(2000).optional(),
+  })).default([]),
+});
+
+// Resolve suggestion + ensure org match. Returns null on miss.
+async function loadSuggestionForOrg(suggestionId: string, organizationId: string) {
+  const [row] = await db.select()
+    .from(aiTakeoffSuggestions)
+    .where(and(
+      eq(aiTakeoffSuggestions.id, suggestionId),
+      eq(aiTakeoffSuggestions.organizationId, organizationId),
+    ));
+  return row ?? null;
+}
+
+// POST /api/ai-features/takeoff/suggestions/:id/accept
+router.post(
+  "/ai-features/takeoff/suggestions/:id/accept",
+  sensitiveLimiter,
+  requireAuth,
+  requireRole(...TAKEOFF_REVIEWER_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      const userId = req.user?.id;
+      if (!organizationId || !userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const parsed = acceptBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid body", details: parsed.error.flatten() });
+      }
+
+      const sug = await loadSuggestionForOrg(req.params.id, organizationId);
+      if (!sug) return res.status(404).json({ error: "Suggestion not found" });
+
+      const [updated] = await db.update(aiTakeoffSuggestions)
+        .set({
+          status: "ACCEPTED",
+          reviewedByUserId: userId,
+          reviewedAt: new Date(),
+          acceptedMeasurementId: parsed.data.measurementId ?? sug.acceptedMeasurementId ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(aiTakeoffSuggestions.id, sug.id))
+        .returning();
+
+      res.json({ suggestion: updated });
+    } catch (error) { next(error); }
+  },
+);
+
+// POST /api/ai-features/takeoff/suggestions/:id/reject
+router.post(
+  "/ai-features/takeoff/suggestions/:id/reject",
+  sensitiveLimiter,
+  requireAuth,
+  requireRole(...TAKEOFF_REVIEWER_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      const userId = req.user?.id;
+      if (!organizationId || !userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const parsed = rejectBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid body", details: parsed.error.flatten() });
+      }
+
+      const sug = await loadSuggestionForOrg(req.params.id, organizationId);
+      if (!sug) return res.status(404).json({ error: "Suggestion not found" });
+
+      const [updated] = await db.update(aiTakeoffSuggestions)
+        .set({
+          status: "REJECTED",
+          reviewedByUserId: userId,
+          reviewedAt: new Date(),
+          rejectReason: parsed.data.reason,
+          rejectNote: parsed.data.note ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(aiTakeoffSuggestions.id, sug.id))
+        .returning();
+
+      res.json({ suggestion: updated });
+    } catch (error) { next(error); }
+  },
+);
+
+// POST /api/ai-features/takeoff/suggestions/:id/edit-and-accept
+router.post(
+  "/ai-features/takeoff/suggestions/:id/edit-and-accept",
+  sensitiveLimiter,
+  requireAuth,
+  requireRole(...TAKEOFF_REVIEWER_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      const userId = req.user?.id;
+      if (!organizationId || !userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const parsed = editAndAcceptBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid body", details: parsed.error.flatten() });
+      }
+
+      const sug = await loadSuggestionForOrg(req.params.id, organizationId);
+      if (!sug) return res.status(404).json({ error: "Suggestion not found" });
+
+      const data = parsed.data;
+      // Detect whether anything actually changed vs the suggestion. If
+      // not, treat as a plain accept so the EDITED bucket stays clean
+      // for the few-shot lookup.
+      const qtyChanged = data.editedQuantity !== undefined && data.editedQuantity !== sug.quantity;
+      const unitChanged = data.editedUnit !== undefined && data.editedUnit !== sug.unit;
+      const typeChanged = data.editedItemType !== undefined && data.editedItemType !== sug.itemType;
+      const hasEdits = qtyChanged || unitChanged || typeChanged;
+
+      const [updated] = await db.update(aiTakeoffSuggestions)
+        .set({
+          status: hasEdits ? "EDITED" : "ACCEPTED",
+          reviewedByUserId: userId,
+          reviewedAt: new Date(),
+          acceptedMeasurementId: data.measurementId ?? sug.acceptedMeasurementId ?? null,
+          editedQuantity: data.editedQuantity ?? null,
+          editedUnit: data.editedUnit ?? null,
+          editedItemType: data.editedItemType ?? null,
+          updatedAt: new Date(),
+        })
+        .where(eq(aiTakeoffSuggestions.id, sug.id))
+        .returning();
+
+      res.json({ suggestion: updated });
+    } catch (error) { next(error); }
+  },
+);
+
+// POST /api/ai-features/takeoff/suggestions/bulk-accept
+// Used by `TakeoffWorkspace`'s import-detected-items loop to commit a
+// whole panel's worth of decisions in one round-trip.
+router.post(
+  "/ai-features/takeoff/suggestions/bulk-accept",
+  sensitiveLimiter,
+  requireAuth,
+  requireRole(...TAKEOFF_REVIEWER_ROLES),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      const userId = req.user?.id;
+      if (!organizationId || !userId) return res.status(401).json({ error: "Unauthorized" });
+
+      const parsed = bulkAcceptBodySchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid body", details: parsed.error.flatten() });
+      }
+      const { analysisId, acceptances, rejections } = parsed.data;
+
+      // Org-scope guard: confirm the analysis belongs to this org so we
+      // can't bulk-touch suggestion rows belonging to another tenant.
+      const [analysis] = await db.select({ id: aiTakeoffAnalyses.id })
+        .from(aiTakeoffAnalyses)
+        .where(and(
+          eq(aiTakeoffAnalyses.id, analysisId),
+          eq(aiTakeoffAnalyses.organizationId, organizationId),
+        ));
+      if (!analysis) return res.status(404).json({ error: "Analysis not found" });
+
+      const now = new Date();
+      let acceptedCount = 0;
+      let editedCount = 0;
+      let rejectedCount = 0;
+
+      for (const acc of acceptances) {
+        const [sug] = await db.select()
+          .from(aiTakeoffSuggestions)
+          .where(and(
+            eq(aiTakeoffSuggestions.id, acc.suggestionId),
+            eq(aiTakeoffSuggestions.analysisId, analysisId),
+            eq(aiTakeoffSuggestions.organizationId, organizationId),
+          ));
+        if (!sug) continue;
+
+        const qtyChanged = acc.editedQuantity !== undefined && acc.editedQuantity !== sug.quantity;
+        const unitChanged = acc.editedUnit !== undefined && acc.editedUnit !== sug.unit;
+        const typeChanged = acc.editedItemType !== undefined && acc.editedItemType !== sug.itemType;
+        const hasEdits = qtyChanged || unitChanged || typeChanged;
+        const status = hasEdits ? "EDITED" : "ACCEPTED";
+
+        await db.update(aiTakeoffSuggestions)
+          .set({
+            status,
+            reviewedByUserId: userId,
+            reviewedAt: now,
+            acceptedMeasurementId: acc.measurementId ?? sug.acceptedMeasurementId ?? null,
+            editedQuantity: acc.editedQuantity ?? null,
+            editedUnit: acc.editedUnit ?? null,
+            editedItemType: acc.editedItemType ?? null,
+            updatedAt: now,
+          })
+          .where(eq(aiTakeoffSuggestions.id, sug.id));
+
+        if (hasEdits) editedCount++;
+        else acceptedCount++;
+      }
+
+      if (rejections.length > 0) {
+        const rejectIds = rejections.map((r) => r.suggestionId);
+        // Pull existing rows once so we can apply per-id reason/note
+        // without N+1 selects.
+        const existing = await db.select()
+          .from(aiTakeoffSuggestions)
+          .where(and(
+            inArray(aiTakeoffSuggestions.id, rejectIds),
+            eq(aiTakeoffSuggestions.analysisId, analysisId),
+            eq(aiTakeoffSuggestions.organizationId, organizationId),
+          ));
+        const existingIds = new Set(existing.map((e) => e.id));
+        for (const r of rejections) {
+          if (!existingIds.has(r.suggestionId)) continue;
+          await db.update(aiTakeoffSuggestions)
+            .set({
+              status: "REJECTED",
+              reviewedByUserId: userId,
+              reviewedAt: now,
+              rejectReason: r.reason,
+              rejectNote: r.note ?? null,
+              updatedAt: now,
+            })
+            .where(eq(aiTakeoffSuggestions.id, r.suggestionId));
+          rejectedCount++;
+        }
+      }
+
+      res.json({
+        analysisId,
+        accepted: acceptedCount,
+        edited: editedCount,
+        rejected: rejectedCount,
+      });
+    } catch (error) { next(error); }
+  },
+);
+
+// GET /api/ai-features/takeoff/accuracy?days=30
+// Returns per-org accuracy stats for the admin dashboard. Aggregates
+// (status counts, accuracy %, accuracy-by-trade, accuracy-by-confidence-bucket,
+// 7-day trendline) over the last `days` days (default 30, max 180).
+router.get(
+  "/ai-features/takeoff/accuracy",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
+
+      const days = Math.min(Math.max(Number(req.query.days ?? 30) || 30, 1), 180);
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+      const baseWhere = and(
+        eq(aiTakeoffSuggestions.organizationId, organizationId),
+        gte(aiTakeoffSuggestions.createdAt, since),
+      );
+
+      // Status breakdown
+      const statusRows = await db.select({
+        status: aiTakeoffSuggestions.status,
+        count: sql<number>`count(*)::int`,
+      })
+        .from(aiTakeoffSuggestions)
+        .where(baseWhere)
+        .groupBy(aiTakeoffSuggestions.status);
+
+      const totals = { PENDING: 0, ACCEPTED: 0, REJECTED: 0, EDITED: 0 };
+      for (const r of statusRows) {
+        if (r.status in totals) totals[r.status as keyof typeof totals] = Number(r.count);
+      }
+      const reviewed = totals.ACCEPTED + totals.REJECTED + totals.EDITED;
+      // Accuracy = (accepted + edited) / reviewed. Edits still count as
+      // "model was directionally right" — they're not full rejects.
+      const accuracy = reviewed > 0
+        ? (totals.ACCEPTED + totals.EDITED) / reviewed
+        : 0;
+
+      // Per-trade
+      const tradeRows = await db.select({
+        tradeType: aiTakeoffSuggestions.tradeType,
+        status: aiTakeoffSuggestions.status,
+        count: sql<number>`count(*)::int`,
+      })
+        .from(aiTakeoffSuggestions)
+        .where(baseWhere)
+        .groupBy(aiTakeoffSuggestions.tradeType, aiTakeoffSuggestions.status);
+
+      const byTrade = new Map<string, { accepted: number; edited: number; rejected: number; pending: number }>();
+      for (const r of tradeRows) {
+        const t = r.tradeType as string;
+        if (!byTrade.has(t)) byTrade.set(t, { accepted: 0, edited: 0, rejected: 0, pending: 0 });
+        const slot = byTrade.get(t)!;
+        const c = Number(r.count);
+        if (r.status === "ACCEPTED") slot.accepted = c;
+        else if (r.status === "EDITED") slot.edited = c;
+        else if (r.status === "REJECTED") slot.rejected = c;
+        else if (r.status === "PENDING") slot.pending = c;
+      }
+      const accuracyByTrade = Array.from(byTrade.entries()).map(([tradeType, s]) => {
+        const r = s.accepted + s.edited + s.rejected;
+        return {
+          tradeType,
+          accepted: s.accepted,
+          edited: s.edited,
+          rejected: s.rejected,
+          pending: s.pending,
+          accuracy: r > 0 ? (s.accepted + s.edited) / r : 0,
+        };
+      }).sort((a, b) => b.accepted + b.edited + b.rejected - (a.accepted + a.edited + a.rejected));
+
+      // Per-confidence-bucket. We use the same 60/70/80/90 buckets as
+      // the calibration table so the dashboard maps 1:1 to what the job
+      // writes.
+      const bucketRows = await db.execute(sql`
+        SELECT CASE
+                 WHEN confidence >= 90 THEN 90
+                 WHEN confidence >= 80 THEN 80
+                 WHEN confidence >= 70 THEN 70
+                 ELSE 60
+               END AS bucket,
+               status,
+               count(*)::int AS count
+          FROM ai_takeoff_suggestions
+         WHERE organization_id = ${organizationId}
+           AND created_at >= ${since}
+         GROUP BY bucket, status
+      `);
+      const byBucket = new Map<number, { accepted: number; edited: number; rejected: number; pending: number }>();
+      for (const r of (bucketRows.rows as Array<{ bucket: number; status: string; count: number }>)) {
+        const b = Number(r.bucket);
+        if (!byBucket.has(b)) byBucket.set(b, { accepted: 0, edited: 0, rejected: 0, pending: 0 });
+        const slot = byBucket.get(b)!;
+        const c = Number(r.count);
+        if (r.status === "ACCEPTED") slot.accepted = c;
+        else if (r.status === "EDITED") slot.edited = c;
+        else if (r.status === "REJECTED") slot.rejected = c;
+        else if (r.status === "PENDING") slot.pending = c;
+      }
+      const accuracyByBucket = [60, 70, 80, 90].map((b) => {
+        const s = byBucket.get(b) ?? { accepted: 0, edited: 0, rejected: 0, pending: 0 };
+        const r = s.accepted + s.edited + s.rejected;
+        return {
+          bucket: b,
+          accepted: s.accepted,
+          edited: s.edited,
+          rejected: s.rejected,
+          accuracy: r > 0 ? (s.accepted + s.edited) / r : 0,
+        };
+      });
+
+      // Daily trendline (reviewed only).
+      const trendRows = await db.execute(sql`
+        SELECT to_char(date_trunc('day', reviewed_at), 'YYYY-MM-DD') AS day,
+               sum(CASE WHEN status IN ('ACCEPTED', 'EDITED') THEN 1 ELSE 0 END)::int AS accepted,
+               sum(CASE WHEN status = 'REJECTED' THEN 1 ELSE 0 END)::int AS rejected
+          FROM ai_takeoff_suggestions
+         WHERE organization_id = ${organizationId}
+           AND reviewed_at IS NOT NULL
+           AND reviewed_at >= ${since}
+         GROUP BY day
+         ORDER BY day ASC
+      `);
+      const trend = (trendRows.rows as Array<{ day: string; accepted: number; rejected: number }>)
+        .map((r) => {
+          const total = Number(r.accepted) + Number(r.rejected);
+          return {
+            day: r.day,
+            accepted: Number(r.accepted),
+            rejected: Number(r.rejected),
+            accuracy: total > 0 ? Number(r.accepted) / total : 0,
+          };
+        });
+
+      // Top reject reasons
+      const reasonRows = await db.select({
+        reason: aiTakeoffSuggestions.rejectReason,
+        count: sql<number>`count(*)::int`,
+      })
+        .from(aiTakeoffSuggestions)
+        .where(and(
+          baseWhere,
+          eq(aiTakeoffSuggestions.status, "REJECTED"),
+          isNotNull(aiTakeoffSuggestions.rejectReason),
+        ))
+        .groupBy(aiTakeoffSuggestions.rejectReason);
+      const rejectReasons = reasonRows
+        .filter((r) => r.reason !== null)
+        .map((r) => ({ reason: r.reason as string, count: Number(r.count) }))
+        .sort((a, b) => b.count - a.count);
+
+      res.json({
+        windowDays: days,
+        totals,
+        reviewed,
+        accuracy,
+        accuracyByTrade,
+        accuracyByBucket,
+        trend,
+        rejectReasons,
+      });
+    } catch (error) { next(error); }
+  },
+);
+
+// GET /api/ai-features/takeoff/suggestions/by-analysis/:analysisId
+// Lightweight helper used by the takeoff panel + import flow to map
+// detected-item keys to suggestion ids without re-running the analysis.
+router.get(
+  "/ai-features/takeoff/suggestions/by-analysis/:analysisId",
+  requireAuth,
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
+
+      const [analysis] = await db.select({ id: aiTakeoffAnalyses.id })
+        .from(aiTakeoffAnalyses)
+        .where(and(
+          eq(aiTakeoffAnalyses.id, req.params.analysisId),
+          eq(aiTakeoffAnalyses.organizationId, organizationId),
+        ));
+      if (!analysis) return res.status(404).json({ error: "Analysis not found" });
+
+      const rows = await db.select()
+        .from(aiTakeoffSuggestions)
+        .where(eq(aiTakeoffSuggestions.analysisId, req.params.analysisId));
+      res.json({ suggestions: rows });
+    } catch (error) { next(error); }
+  },
+);
+
+// ===========================================================================
+// Task #2323 — Calibration job (exported so the cron runner can call it).
+// ===========================================================================
+
+const CALIBRATION_MIN_SAMPLES = 30;
+
+/**
+ * Recomputes the per-(organization, trade, bucket) empirical acceptance rate
+ * from the last 90 days of reviewed suggestions and upserts it into
+ * `ai_takeoff_confidence_calibration`. Intended to run nightly via node-cron.
+ *
+ * Definition: acceptance_rate = (ACCEPTED + EDITED) / (ACCEPTED + EDITED + REJECTED).
+ * Edits count toward acceptance because the model's identification was
+ * directionally correct — only the quantity/unit/type was tweaked.
+ */
+export async function runAiTakeoffCalibrationJob(): Promise<{ rowsUpserted: number }> {
+  const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const rows = await db.execute(sql`
+    SELECT organization_id,
+           trade_type,
+           CASE
+             WHEN confidence >= 90 THEN 90
+             WHEN confidence >= 80 THEN 80
+             WHEN confidence >= 70 THEN 70
+             ELSE 60
+           END AS bucket,
+           sum(CASE WHEN status IN ('ACCEPTED', 'EDITED') THEN 1 ELSE 0 END)::int AS accepted,
+           sum(CASE WHEN status = 'REJECTED' THEN 1 ELSE 0 END)::int AS rejected
+      FROM ai_takeoff_suggestions
+     WHERE reviewed_at IS NOT NULL
+       AND reviewed_at >= ${since}
+     GROUP BY organization_id, trade_type, bucket
+  `);
+
+  let rowsUpserted = 0;
+  for (const r of (rows.rows as Array<{
+    organization_id: string;
+    trade_type: string;
+    bucket: number;
+    accepted: number;
+    rejected: number;
+  }>)) {
+    const samples = Number(r.accepted) + Number(r.rejected);
+    if (samples < CALIBRATION_MIN_SAMPLES) continue;
+    const rate = Number(r.accepted) / samples;
+    await db.execute(sql`
+      INSERT INTO ai_takeoff_confidence_calibration
+        (organization_id, trade_type, model_confidence_bucket,
+         empirical_acceptance_rate, sample_count, updated_at)
+      VALUES
+        (${r.organization_id}, ${r.trade_type}::trade_type, ${r.bucket},
+         ${rate}, ${samples}, now())
+      ON CONFLICT (organization_id, trade_type, model_confidence_bucket)
+      DO UPDATE SET empirical_acceptance_rate = EXCLUDED.empirical_acceptance_rate,
+                    sample_count = EXCLUDED.sample_count,
+                    updated_at = EXCLUDED.updated_at
+    `);
+    rowsUpserted++;
+  }
+  logInfo(
+    `[ai-takeoff-calibration] upserted ${rowsUpserted} rows from suggestions reviewed since ${since.toISOString()}`,
+  );
+  return { rowsUpserted };
+}
 
 export default router;

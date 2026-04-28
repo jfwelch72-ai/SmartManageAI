@@ -24,6 +24,7 @@ import { ensurePeerRatingColumns } from "./ensurePeerRatingColumns";
 import { ensureNullablePermissions } from "./ensureNullablePermissions";
 import { ensurePermissionPresetsTable } from "./ensurePermissionPresetsTable";
 import { ensureAccessRequestsTable } from "./ensureAccessRequestsTable";
+import { ensureAiTakeoffSuggestionsTables } from "./ensureAiTakeoffSuggestionsTables";
 import { ensureLidarTables } from "./ensureLidarTables";
 import { ensureErrorLogsTable } from "./ensureErrorLogsTable";
 import { ensureScopeModifierTables } from "./ensureScopeModifierTables";
@@ -233,6 +234,14 @@ const migrations: MigrationStep[] = [
   // depends on the `users` and `organizations` tables and on the
   // `user_role` enum, which all exist by this point.
   { name: "access_requests_table", category: "CREATE_TABLE", fn: ensureAccessRequestsTable },
+  // Task #2323 — closed-loop AI takeoff feedback. Per-suggestion
+  // accept/reject/edit-and-accept tracking + per-org confidence
+  // calibration. Backfills one PENDING suggestion row per detected
+  // item from existing detected_items_json blobs so the accuracy
+  // dashboard has signal on day one. Order matters: depends on
+  // organizations, users, ai_takeoff_analyses, takeoff_measurements,
+  // and the trade_type enum — all in place by this point.
+  { name: "ai_takeoff_suggestions_tables", category: "CREATE_TABLE", fn: ensureAiTakeoffSuggestionsTables },
   { name: "lidar_tables", category: "CREATE_TABLE", fn: ensureLidarTables },
   { name: "error_logs_table", category: "CREATE_TABLE", fn: ensureErrorLogsTable },
   { name: "scope_modifier_tables", category: "CREATE_TABLE", fn: ensureScopeModifierTables },

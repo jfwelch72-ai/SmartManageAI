@@ -84,6 +84,15 @@ Do **not** call `canAccessObjectEntity` / `canAccessObject` on the bid document 
 ### Self-serve "Request access" flow
 When a user hits a 403 on a feature gated by role (e.g. estimate PDF export's `hasManagementAccess` check), the friendlier 403 toast offers a "Request access" action that opens `client/src/components/RequestAccessDialog.tsx`. The dialog POSTs to `/api/access-requests` (server: `server/accessRequestRoutes.ts`), which inserts an `access_requests` row and fans out an in-app + email `ACCESS_REQUEST_NEW` notification to org admins via `notifyUsers`. Admins triage the queue from `/company-settings` under the new "Access requests" tab (`client/src/components/AccessRequestsAdminPanel.tsx`); approving bumps the user's role and/or flips an allow-listed set of `userDashboardPermissions` flags atomically and notifies the requester (`ACCESS_REQUEST_APPROVED`). Denying records an optional admin note and notifies the requester (`ACCESS_REQUEST_DENIED`). The permission allow-list lives at the top of `accessRequestRoutes.ts` — keep it tight; the full Feature Permissions tab still covers anything outside it.
 
+### AI Takeoff closed-loop feedback (Task #2323)
+The AI takeoff workflow persists a per-suggestion review trail used to retrain confidence presentation:
+
+- `ai_takeoff_suggestions` mirrors each `detected_items_json` entry as its own row (status `PENDING/ACCEPTED/EDITED/REJECTED`, optional edited qty/unit/itemType, reject reason). `processAiTakeoff` inserts these rows alongside the analysis; backfill helper covers historical analyses.
+- `ai_takeoff_confidence_calibration` is rebuilt nightly by `runAiTakeoffCalibrationJob` (cron `30 3 * * *` in `server/jobs/jobRunner.ts`) over the trailing 90 days. Buckets are 60/70/80/90 lower bounds; only buckets with `sample_count >= 30` are upserted. Acceptance counts `ACCEPTED + EDITED`.
+- At analysis time, `processAiTakeoff` reads the per-(org, trade, bucket) acceptance rate and overrides the displayed confidence; recent `EDITED` rows are also injected as few-shot corrections in the next prompt.
+- API endpoints live under `/api/ai-features/takeoff/`: per-suggestion `accept`, `reject`, `edit-and-accept`; `suggestions/bulk-accept` (used by `TakeoffWorkspace` import path), `suggestions-by-analysis/:id`, and `accuracy?days=N` (KPIs + trade/bucket/trend/reject-reason aggregation, ADMIN/MANAGER only).
+- `AiTakeoffPanel.tsx` exposes per-row Reject (6 reasons) + Edit-and-accept dialogs; `/admin/ai-takeoff-accuracy` (ADMIN/SUPER_ADMIN/MANAGER) renders Recharts dashboards from the accuracy endpoint.
+
 ### CLI scripts imported by the server bundle
 Any TS file under `scripts/` that the server transitively imports (e.g. `scripts/fetch-dot-pay-items.ts`, imported by `server/jobs/dotPayItemsRefresh.ts` for `runFetcher`) gets folded into `dist/index.js` by `esbuild --bundle`. The classic ESM "is this the entrypoint?" guard
 

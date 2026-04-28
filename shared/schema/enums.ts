@@ -662,6 +662,25 @@ export const sowAuditActionEnum = pgEnum("sow_audit_action", ["CREATE", "UPDATE"
 export const aiTakeoffStatusEnum = pgEnum("ai_takeoff_status", ["PENDING", "PROCESSING", "COMPLETE", "FAILED"]);
 export const aiTakeoffModeEnum = pgEnum("ai_takeoff_mode", ["QUICK", "DETAILED"]);
 
+// Task #2323 — closed-loop AI takeoff feedback. Per-suggestion review status
+// captures whether a user accepted, rejected, or edited each AI-detected
+// item, and the structured reason for rejections feeds the per-org accuracy
+// dashboard and confidence recalibration job.
+export const aiTakeoffSuggestionStatusEnum = pgEnum("ai_takeoff_suggestion_status", [
+  "PENDING",
+  "ACCEPTED",
+  "REJECTED",
+  "EDITED",
+]);
+export const aiTakeoffRejectReasonEnum = pgEnum("ai_takeoff_reject_reason", [
+  "WRONG_TRADE",
+  "DUPLICATE",
+  "NOT_PRESENT",
+  "WRONG_QUANTITY",
+  "WRONG_LOCATION",
+  "OTHER",
+]);
+
 export const scheduleGeneratedByEnum = pgEnum("schedule_generated_by", ["AI", "MANUAL"]);
 export const scheduleTaskStatusEnum = pgEnum("schedule_task_status", ["NOT_STARTED", "IN_PROGRESS", "COMPLETE", "DELAYED", "ON_HOLD"]);
 export const scheduleDependencyTypeEnum = pgEnum("schedule_dependency_type", ["FS", "SS", "FF", "SF"]);
