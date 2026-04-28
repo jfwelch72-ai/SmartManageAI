@@ -1014,6 +1014,12 @@ router.post("/api/takeoff/measurements/:id/unlock-rescale", requireAuth, async (
       .where(eq(takeoffMeasurements.id, id))
       .returning();
 
+    // Task #2356 — Capture the live sheet scale used for the rescale
+    // in the audit payload so the takeoff history panel can show a
+    // stable "captured scale" value even if the sheet is later
+    // re-calibrated. Without this, the panel would have to display
+    // whatever scalePxPerFoot the sheet has *now*, which can drift
+    // away from the value that was actually applied at unlock time.
     await logUpdate(
       req.user!.id,
       "takeoff_measurement",
@@ -1026,6 +1032,7 @@ router.post("/api/takeoff/measurements/:id/unlock-rescale", requireAuth, async (
       },
       {
         lockedScalePxPerFoot: null,
+        sheetScalePxPerFoot: sheetScale,
         computedLengthFt: updated.computedLengthFt,
         computedAreaFt2: updated.computedAreaFt2,
         computedVolumeCy: updated.computedVolumeCy,

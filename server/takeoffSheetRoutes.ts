@@ -1,8 +1,8 @@
 import { Router, NextFunction } from "express";
 import { logError } from "./utils/logger";
 import { db } from "./db";
-import { bids, bidDocuments, takeoffSheets, quantityCategories, bimStoreyAssociations, projects, auditLog, users } from "@shared/schema";
-import { eq, and, max, desc } from "drizzle-orm";
+import { bids, bidDocuments, takeoffSheets, takeoffMeasurements, quantityCategories, bimStoreyAssociations, projects, auditLog, users } from "@shared/schema";
+import { eq, and, max, desc, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit, logCreate } from "./auditLogger";
@@ -836,6 +836,128 @@ router.get(
         if (calibrator) currentCalibrator = calibrator;
       }
 
+      // Task #2356 — Surface unlock-and-rescale activity for the
+      // sheet's measurements alongside the calibration timeline. The
+      // unlock endpoint stamps an `action: "unlock_and_rescale"`
+      // payload on the takeoff_measurement entity (with the prior
+      // lockedScalePxPerFoot, the captured sheet scale, and the
+      // before/after computed length/area/volume) — fold those rows
+      // into the panel so estimators and managers can review which
+      // rows were unlocked, by whom, and how much the quantity moved.
+      type UnlockPayload = {
+        action?: string;
+        lockedScalePxPerFoot?: number | null;
+        sheetScalePxPerFoot?: number | null;
+        computedLengthFt?: number | null;
+        computedAreaFt2?: number | null;
+        computedVolumeCy?: number | null;
+      };
+      const tryParseUnlock = (
+        raw: string | null | undefined,
+      ): UnlockPayload | null => {
+        if (!raw || typeof raw !== "string") return null;
+        const trimmed = raw.trim();
+        if (!trimmed.startsWith("{")) return null;
+        try {
+          return JSON.parse(trimmed) as UnlockPayload;
+        } catch {
+          return null;
+        }
+      };
+
+      const measurementRows = await db
+        .select({ id: takeoffMeasurements.id, label: takeoffMeasurements.label, type: takeoffMeasurements.type })
+        .from(takeoffMeasurements)
+        .where(eq(takeoffMeasurements.sheetId, sheetId));
+
+      const measurementMeta = new Map(
+        measurementRows.map((m) => [m.id, { label: m.label, type: m.type }]),
+      );
+
+      let unlockRescaleEntries: Array<{
+        id: string;
+        createdAt: string;
+        measurementId: string;
+        measurementLabel: string | null;
+        measurementType: string | null;
+        previousLockedScalePxPerFoot: number | null;
+        sheetScalePxPerFoot: number | null;
+        beforeLengthFt: number | null;
+        afterLengthFt: number | null;
+        beforeAreaFt2: number | null;
+        afterAreaFt2: number | null;
+        beforeVolumeCy: number | null;
+        afterVolumeCy: number | null;
+        user: typeof currentCalibrator;
+      }> = [];
+
+      if (measurementRows.length > 0) {
+        const measurementIds = measurementRows.map((m) => m.id);
+        const measurementAuditRows = await db
+          .select({
+            id: auditLog.id,
+            createdAt: auditLog.createdAt,
+            entityId: auditLog.entityId,
+            oldValue: auditLog.oldValue,
+            newValue: auditLog.newValue,
+            userId: auditLog.userId,
+            userFirstName: users.firstName,
+            userLastName: users.lastName,
+            userEmail: users.email,
+            userAvatarUrl: users.avatarUrl,
+          })
+          .from(auditLog)
+          .leftJoin(users, eq(auditLog.userId, users.id))
+          .where(
+            and(
+              eq(auditLog.entityType, "takeoff_measurement"),
+              inArray(auditLog.entityId, measurementIds),
+            ),
+          )
+          .orderBy(desc(auditLog.createdAt));
+
+        unlockRescaleEntries = measurementAuditRows
+          .map((row) => {
+            const newPayload = tryParseUnlock(row.newValue);
+            if (!newPayload || newPayload.action !== "unlock_and_rescale") return null;
+            const oldPayload = tryParseUnlock(row.oldValue);
+            const meta = measurementMeta.get(row.entityId);
+            return {
+              id: row.id,
+              createdAt:
+                row.createdAt instanceof Date
+                  ? row.createdAt.toISOString()
+                  : new Date(row.createdAt as string).toISOString(),
+              measurementId: row.entityId,
+              measurementLabel: meta?.label ?? null,
+              measurementType: meta?.type ?? null,
+              previousLockedScalePxPerFoot:
+                oldPayload?.lockedScalePxPerFoot ?? null,
+              // Older audit rows (pre-Task #2356) don't carry the
+              // captured sheet scale. Fall back to `null` so the UI
+              // can show "—" rather than misleadingly displaying a
+              // newer scale that wasn't actually applied at that time.
+              sheetScalePxPerFoot: newPayload.sheetScalePxPerFoot ?? null,
+              beforeLengthFt: oldPayload?.computedLengthFt ?? null,
+              afterLengthFt: newPayload.computedLengthFt ?? null,
+              beforeAreaFt2: oldPayload?.computedAreaFt2 ?? null,
+              afterAreaFt2: newPayload.computedAreaFt2 ?? null,
+              beforeVolumeCy: oldPayload?.computedVolumeCy ?? null,
+              afterVolumeCy: newPayload.computedVolumeCy ?? null,
+              user: row.userId
+                ? {
+                    id: row.userId,
+                    firstName: row.userFirstName,
+                    lastName: row.userLastName,
+                    email: row.userEmail,
+                    avatarUrl: row.userAvatarUrl,
+                  }
+                : null,
+            };
+          })
+          .filter((e): e is NonNullable<typeof e> => e !== null);
+      }
+
       res.json({
         sheetId,
         current: sheet
@@ -853,6 +975,7 @@ router.get(
           : null,
         entries,
         notes,
+        unlockRescaleEntries,
       });
     } catch (error) {
       next(error);

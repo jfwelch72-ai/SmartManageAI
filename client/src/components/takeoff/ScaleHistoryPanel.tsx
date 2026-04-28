@@ -1,6 +1,7 @@
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { History, Ruler } from "lucide-react";
+import { History, Ruler, Unlock } from "lucide-react";
 import {
   Sheet,
   SheetContent,
@@ -11,6 +12,13 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
 export interface ScaleHistoryUser {
@@ -48,6 +56,23 @@ export interface ScaleHistoryNote {
   user: ScaleHistoryUser | null;
 }
 
+export interface UnlockRescaleEntry {
+  id: string;
+  createdAt: string;
+  measurementId: string;
+  measurementLabel: string | null;
+  measurementType: string | null;
+  previousLockedScalePxPerFoot: number | null;
+  sheetScalePxPerFoot: number | null;
+  beforeLengthFt: number | null;
+  afterLengthFt: number | null;
+  beforeAreaFt2: number | null;
+  afterAreaFt2: number | null;
+  beforeVolumeCy: number | null;
+  afterVolumeCy: number | null;
+  user: ScaleHistoryUser | null;
+}
+
 export interface ScaleHistoryResponse {
   sheetId: string;
   current: {
@@ -61,7 +86,10 @@ export interface ScaleHistoryResponse {
   } | null;
   entries: ScaleHistoryEntry[];
   notes: ScaleHistoryNote[];
+  unlockRescaleEntries?: UnlockRescaleEntry[];
 }
+
+type HistoryFilter = "all" | "calibrations" | "unlock_rescale";
 
 interface ScaleHistoryPanelProps {
   open: boolean;
@@ -152,12 +180,56 @@ function safeFormatDate(iso: string): string {
   }
 }
 
+function formatPxPerFoot(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${value.toFixed(2)} px/ft`;
+}
+
+function formatNumber(
+  value: number | null | undefined,
+  fractionDigits: number,
+): string {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return value.toLocaleString(undefined, {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  });
+}
+
+function formatDelta(before: number | null, after: number | null, fractionDigits: number): string {
+  if (before == null || after == null || !Number.isFinite(before) || !Number.isFinite(after)) {
+    return "—";
+  }
+  const delta = after - before;
+  const sign = delta > 0 ? "+" : delta < 0 ? "−" : "";
+  return `${sign}${Math.abs(delta).toLocaleString(undefined, {
+    minimumFractionDigits: fractionDigits,
+    maximumFractionDigits: fractionDigits,
+  })}`;
+}
+
+function measurementTypeLabel(type: string | null | undefined): string {
+  switch (type) {
+    case "LINEAR":
+      return "Linear";
+    case "AREA":
+      return "Area";
+    case "VOLUME":
+      return "Volume";
+    case "COUNT":
+      return "Count";
+    default:
+      return type ?? "Measurement";
+  }
+}
+
 export function ScaleHistoryPanel({
   open,
   onOpenChange,
   sheetId,
   sheetName,
 }: ScaleHistoryPanelProps) {
+  const [filter, setFilter] = useState<HistoryFilter>("all");
   const { data, isLoading, isError } = useQuery<ScaleHistoryResponse>({
     queryKey: ["/api/takeoff/sheets", sheetId, "scale-history"],
     queryFn: async () => {
@@ -170,6 +242,13 @@ export function ScaleHistoryPanel({
     },
     enabled: open && !!sheetId,
   });
+
+  const unlockEntries = useMemo(
+    () => data?.unlockRescaleEntries ?? [],
+    [data?.unlockRescaleEntries],
+  );
+  const showCalibrations = filter === "all" || filter === "calibrations";
+  const showUnlockRescale = filter === "all" || filter === "unlock_rescale";
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -281,7 +360,41 @@ export function ScaleHistoryPanel({
 
             <Separator />
 
-            {data?.entries.length === 0 ? (
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs uppercase text-muted-foreground tracking-wide">
+                Filter activity
+              </div>
+              <Select
+                value={filter}
+                onValueChange={(value) => setFilter(value as HistoryFilter)}
+              >
+                <SelectTrigger
+                  className="h-8 w-[180px] text-xs"
+                  data-testid="select-scale-history-filter"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all" data-testid="option-scale-history-filter-all">
+                    All activity
+                  </SelectItem>
+                  <SelectItem
+                    value="calibrations"
+                    data-testid="option-scale-history-filter-calibrations"
+                  >
+                    Calibrations only
+                  </SelectItem>
+                  <SelectItem
+                    value="unlock_rescale"
+                    data-testid="option-scale-history-filter-unlock-rescale"
+                  >
+                    Unlock &amp; rescale only
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {showCalibrations && (data?.entries.length === 0 ? (
               <div
                 className="text-center py-8 text-muted-foreground text-sm"
                 data-testid="text-scale-history-empty"
@@ -382,6 +495,178 @@ export function ScaleHistoryPanel({
                   );
                 })}
               </ol>
+            ))}
+
+            {showUnlockRescale && (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 text-xs uppercase text-muted-foreground tracking-wide">
+                  <Unlock className="w-3 h-3" />
+                  Unlock &amp; rescale
+                </div>
+                {unlockEntries.length === 0 ? (
+                  <div
+                    className="text-center py-6 text-muted-foreground text-sm"
+                    data-testid="text-unlock-rescale-empty"
+                  >
+                    No unlock-and-rescale activity recorded for this sheet.
+                  </div>
+                ) : (
+                  <ol
+                    className="space-y-3"
+                    data-testid="list-unlock-rescale"
+                  >
+                    {unlockEntries.map((entry) => {
+                      const sheetScale =
+                        entry.sheetScalePxPerFoot ??
+                        data?.current?.scalePxPerFoot ??
+                        null;
+                      const showLengthDelta =
+                        entry.beforeLengthFt != null ||
+                        entry.afterLengthFt != null;
+                      const showAreaDelta =
+                        entry.beforeAreaFt2 != null ||
+                        entry.afterAreaFt2 != null;
+                      const showVolumeDelta =
+                        entry.beforeVolumeCy != null ||
+                        entry.afterVolumeCy != null;
+                      return (
+                        <li
+                          key={entry.id}
+                          className="rounded-md border p-3 space-y-2"
+                          data-testid={`unlock-rescale-entry-${entry.id}`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div
+                              className="flex items-center gap-2 text-sm font-medium"
+                              data-testid={`text-unlock-rescale-label-${entry.id}`}
+                            >
+                              <Unlock className="w-3.5 h-3.5 text-muted-foreground" />
+                              <span>
+                                {entry.measurementLabel ?? "Untitled measurement"}
+                              </span>
+                              <Badge
+                                variant="outline"
+                                className="font-normal text-[10px] uppercase"
+                              >
+                                {measurementTypeLabel(entry.measurementType)}
+                              </Badge>
+                            </div>
+                            <span
+                              className="text-xs text-muted-foreground whitespace-nowrap"
+                              data-testid={`text-unlock-rescale-time-${entry.id}`}
+                            >
+                              {safeFormatDate(entry.createdAt)}
+                            </span>
+                          </div>
+
+                          <div
+                            className="text-xs grid grid-cols-2 gap-x-3 gap-y-1"
+                            data-testid={`text-unlock-rescale-scale-${entry.id}`}
+                          >
+                            <div className="text-muted-foreground">
+                              Prior locked scale
+                            </div>
+                            <div className="font-mono text-right">
+                              {formatPxPerFoot(entry.previousLockedScalePxPerFoot)}
+                            </div>
+                            <div className="text-muted-foreground">
+                              Captured sheet scale
+                            </div>
+                            <div className="font-mono text-right">
+                              {formatPxPerFoot(sheetScale)}
+                              {entry.sheetScalePxPerFoot == null &&
+                                data?.current?.scalePxPerFoot != null && (
+                                  <span className="text-[10px] text-muted-foreground ml-1">
+                                    (current)
+                                  </span>
+                                )}
+                            </div>
+                          </div>
+
+                          {(showLengthDelta || showAreaDelta || showVolumeDelta) && (
+                            <div className="rounded border bg-muted/30 p-2 text-xs space-y-1">
+                              {showLengthDelta && (
+                                <div
+                                  className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center"
+                                  data-testid={`text-unlock-rescale-length-${entry.id}`}
+                                >
+                                  <span className="text-muted-foreground">Length (ft)</span>
+                                  <span className="font-mono">
+                                    {formatNumber(entry.beforeLengthFt, 2)}
+                                  </span>
+                                  <span className="text-muted-foreground">→</span>
+                                  <span className="font-mono">
+                                    {formatNumber(entry.afterLengthFt, 2)}
+                                    <span className="ml-1 text-muted-foreground">
+                                      ({formatDelta(entry.beforeLengthFt, entry.afterLengthFt, 2)})
+                                    </span>
+                                  </span>
+                                </div>
+                              )}
+                              {showAreaDelta && (
+                                <div
+                                  className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center"
+                                  data-testid={`text-unlock-rescale-area-${entry.id}`}
+                                >
+                                  <span className="text-muted-foreground">Area (ft²)</span>
+                                  <span className="font-mono">
+                                    {formatNumber(entry.beforeAreaFt2, 1)}
+                                  </span>
+                                  <span className="text-muted-foreground">→</span>
+                                  <span className="font-mono">
+                                    {formatNumber(entry.afterAreaFt2, 1)}
+                                    <span className="ml-1 text-muted-foreground">
+                                      ({formatDelta(entry.beforeAreaFt2, entry.afterAreaFt2, 1)})
+                                    </span>
+                                  </span>
+                                </div>
+                              )}
+                              {showVolumeDelta && (
+                                <div
+                                  className="grid grid-cols-[1fr_auto_auto_auto] gap-2 items-center"
+                                  data-testid={`text-unlock-rescale-volume-${entry.id}`}
+                                >
+                                  <span className="text-muted-foreground">Volume (CY)</span>
+                                  <span className="font-mono">
+                                    {formatNumber(entry.beforeVolumeCy, 2)}
+                                  </span>
+                                  <span className="text-muted-foreground">→</span>
+                                  <span className="font-mono">
+                                    {formatNumber(entry.afterVolumeCy, 2)}
+                                    <span className="ml-1 text-muted-foreground">
+                                      ({formatDelta(entry.beforeVolumeCy, entry.afterVolumeCy, 2)})
+                                    </span>
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          <div className="flex items-center gap-2 pt-1">
+                            <Avatar className="h-6 w-6">
+                              {entry.user?.avatarUrl ? (
+                                <AvatarImage
+                                  src={entry.user.avatarUrl}
+                                  alt={userDisplayName(entry.user)}
+                                />
+                              ) : null}
+                              <AvatarFallback className="text-[10px]">
+                                {userInitials(entry.user)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span
+                              className="text-xs"
+                              data-testid={`text-unlock-rescale-user-${entry.id}`}
+                            >
+                              {userDisplayName(entry.user)}
+                            </span>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                )}
+              </div>
             )}
 
             {data && data.notes.length > 0 && (
