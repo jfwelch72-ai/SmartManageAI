@@ -464,6 +464,178 @@ test.describe("Takeoff Tool Chest (Task #2139)", () => {
     await expect(page.getByText("Reorder failed").first()).toBeVisible();
   });
 
+  test("Alt+ArrowUp / Alt+ArrowDown reorders pinned rows from the keyboard (Task #2238)", async ({
+    page,
+  }) => {
+    const fixture = await seedTakeoffFixture(page);
+    await gotoTakeoff(page, fixture.bid.code);
+
+    // Three owned rows in a known starting order.
+    const seedRow = async (itemId: string, sortOrder: number) => {
+      const res = await page.request.post(
+        `${BASE_URL}/api/takeoff/tool-chest`,
+        {
+          data: {
+            itemKind: "tool",
+            itemId,
+            label: null,
+            color: null,
+            shortcut: null,
+            sortOrder,
+            isShared: false,
+          },
+        },
+      );
+      expect(res.status()).toBe(201);
+      return (await res.json()) as { id: string };
+    };
+    const a = await seedRow("linear", 0);
+    const b = await seedRow("area", 1);
+    const c = await seedRow("count", 2);
+
+    await page.getByTestId("ribbon-tool-tool-chest").click();
+    const section = page.getByTestId("chest-section-mine-tool");
+    await expect(section).toBeVisible();
+
+    const rowOrder = () =>
+      section
+        .locator("[data-testid^='chest-item-']")
+        .evaluateAll((els) =>
+          els.map((el) => (el as HTMLElement).getAttribute("data-testid")!),
+        );
+
+    expect(await rowOrder()).toEqual([
+      `chest-item-${a.id}`,
+      `chest-item-${b.id}`,
+      `chest-item-${c.id}`,
+    ]);
+
+    // Visually-hidden hint exposes the shortcut to assistive tech.
+    const hint = page.getByTestId("chest-keyboard-hint-tool");
+    await expect(hint).toHaveText(/Alt.*Arrow Up.*Alt.*Arrow Down/i);
+
+    // Focus the first row, then press Alt+ArrowDown twice — `linear`
+    // should walk past `area` and `count` to the bottom of the list.
+    const rowA = page.getByTestId(`chest-item-${a.id}`);
+    await rowA.focus();
+    await expect(rowA).toBeFocused();
+    await expect(rowA).toHaveAttribute(
+      "aria-keyshortcuts",
+      "Alt+ArrowUp Alt+ArrowDown",
+    );
+
+    await page.keyboard.press("Alt+ArrowDown");
+    await expect
+      .poll(async () => await rowOrder())
+      .toEqual([
+        `chest-item-${b.id}`,
+        `chest-item-${a.id}`,
+        `chest-item-${c.id}`,
+      ]);
+    // Focus rides along with the moved row so successive presses keep
+    // moving the same item.
+    await expect(rowA).toBeFocused();
+
+    await page.keyboard.press("Alt+ArrowDown");
+    await expect
+      .poll(async () => await rowOrder())
+      .toEqual([
+        `chest-item-${b.id}`,
+        `chest-item-${c.id}`,
+        `chest-item-${a.id}`,
+      ]);
+
+    // Already at the bottom — another Alt+ArrowDown is a no-op.
+    await page.keyboard.press("Alt+ArrowDown");
+    expect(await rowOrder()).toEqual([
+      `chest-item-${b.id}`,
+      `chest-item-${c.id}`,
+      `chest-item-${a.id}`,
+    ]);
+
+    // Walk back up one slot.
+    await page.keyboard.press("Alt+ArrowUp");
+    await expect
+      .poll(async () => await rowOrder())
+      .toEqual([
+        `chest-item-${b.id}`,
+        `chest-item-${a.id}`,
+        `chest-item-${c.id}`,
+      ]);
+
+    // Server mirror should reflect the latest ordering — Alt+Down,
+    // Alt+Down, Alt+Up leaves [b, a, c] with sortOrders 0/1/2.
+    await expect
+      .poll(async () => {
+        const res = await page.request.get(
+          `${BASE_URL}/api/takeoff/tool-chest`,
+        );
+        const items = (await res.json()) as Array<{
+          id: string;
+          sortOrder: number;
+        }>;
+        return Object.fromEntries(items.map((i) => [i.id, i.sortOrder]));
+      })
+      .toMatchObject({ [b.id]: 0, [a.id]: 1, [c.id]: 2 });
+  });
+
+  test("Alt+Arrow keyboard reorder rolls back when the server fails (Task #2238)", async ({
+    page,
+  }) => {
+    const fixture = await seedTakeoffFixture(page);
+    await gotoTakeoff(page, fixture.bid.code);
+
+    const seedRow = async (itemId: string, sortOrder: number) => {
+      const res = await page.request.post(
+        `${BASE_URL}/api/takeoff/tool-chest`,
+        {
+          data: {
+            itemKind: "tool",
+            itemId,
+            label: null,
+            color: null,
+            shortcut: null,
+            sortOrder,
+            isShared: false,
+          },
+        },
+      );
+      expect(res.status()).toBe(201);
+      return (await res.json()) as { id: string };
+    };
+    const a = await seedRow("linear", 0);
+    const b = await seedRow("area", 1);
+
+    await page.getByTestId("ribbon-tool-tool-chest").click();
+    const section = page.getByTestId("chest-section-mine-tool");
+    await expect(section).toBeVisible();
+
+    await page.route("**/api/takeoff/tool-chest/reorder", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "boom" }),
+      }),
+    );
+
+    const rowA = page.getByTestId(`chest-item-${a.id}`);
+    await rowA.focus();
+    await page.keyboard.press("Alt+ArrowDown");
+
+    // The optimistic local move is rolled back to the original order
+    // and the destructive toast surfaces the failure to the user.
+    await expect
+      .poll(async () =>
+        section
+          .locator("[data-testid^='chest-item-']")
+          .evaluateAll((els) =>
+            els.map((el) => (el as HTMLElement).getAttribute("data-testid")!),
+          ),
+      )
+      .toEqual([`chest-item-${a.id}`, `chest-item-${b.id}`]);
+    await expect(page.getByText("Reorder failed").first()).toBeVisible();
+  });
+
   test("kebab menu unpin removes the row optimistically", async ({ page }) => {
     const fixture = await seedTakeoffFixture(page);
     await gotoTakeoff(page, fixture.bid.code);

@@ -178,18 +178,22 @@ interface ItemRowProps {
   onRename: (next: string) => void;
   onColorChange: (next: string) => void;
   onToggleShared: () => void;
+  /** Keyboard reorder hook (Task #2238). Provided only for owned rows
+   *  in a draggable section; absent for shared/org rows. */
+  onMoveBy?: (delta: -1 | 1) => void;
 }
 
 function ItemRow(props: ItemRowProps) {
   const {
     item, index, ownedByMe, draggable, isDragging, isDropTarget,
     onActivate, onDragStart, onDragOver, onDragEnd, onDrop,
-    onUnpin, onRename, onColorChange, onToggleShared,
+    onUnpin, onRename, onColorChange, onToggleShared, onMoveBy,
   } = props;
   const kind = item.row.itemKind as ChestItemKind;
   const [renaming, setRenaming] = useState(false);
   const [draftLabel, setDraftLabel] = useState(item.label);
   const inputRef = useRef<HTMLInputElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (renaming) {
@@ -218,17 +222,48 @@ function ItemRow(props: ItemRowProps) {
     setRenaming(false);
   };
 
+  // Keyboard reorder (Task #2238) — Alt+ArrowUp / Alt+ArrowDown moves
+  // the focused row one slot within its section. Only owned rows in a
+  // draggable section receive `onMoveBy`; shared/org rows ignore it.
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    if (renaming || !onMoveBy) return;
+    if (!e.altKey || e.shiftKey || e.ctrlKey || e.metaKey) return;
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      e.stopPropagation();
+      onMoveBy(-1);
+      // Keep focus on this row across the re-render so the next
+      // Alt+Arrow keystroke continues moving the same item. React
+      // preserves the keyed DOM node, so re-asserting focus on the
+      // ref is enough even if the parent reordered the children.
+      requestAnimationFrame(() => rowRef.current?.focus());
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      e.stopPropagation();
+      onMoveBy(1);
+      requestAnimationFrame(() => rowRef.current?.focus());
+    }
+  };
+
+  const canKeyboardReorder = !!onMoveBy;
+
   return (
     <div
+      ref={rowRef}
       draggable={draggable}
       onDragStart={handleDragStart}
       onDragOver={(e) => onDragOver(index, e)}
       onDragEnd={onDragEnd}
       onDrop={(e) => { e.preventDefault(); onDrop(); }}
       onClick={() => { if (!renaming && item.resolved) onActivate(); }}
+      onKeyDown={handleKeyDown}
+      tabIndex={renaming ? -1 : 0}
+      aria-keyshortcuts={canKeyboardReorder ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
+      title={canKeyboardReorder ? "Drag, or press Alt+↑ / Alt+↓ to reorder" : undefined}
       className={cn(
         "group flex items-center gap-2 px-2 py-1.5 rounded-md border bg-background hover-elevate transition-colors",
         "cursor-grab active:cursor-grabbing select-none",
+        "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         isDragging && "opacity-50",
         isDropTarget && "ring-2 ring-primary",
         !item.resolved && "opacity-60",
@@ -413,6 +448,19 @@ function ChestSection(props: SectionProps) {
     handleDragEnd();
   };
 
+  // Task #2238 — keyboard reorder. Mirrors the splice-then-commit
+  // pattern from handleDrop so the optimistic local order and the
+  // persisted server order stay in lockstep with the drag path.
+  const handleMoveBy = (idx: number, delta: -1 | 1) => {
+    const target = idx + delta;
+    if (target < 0 || target >= items.length) return;
+    const next = [...items];
+    const [moved] = next.splice(idx, 1);
+    next.splice(target, 0, moved);
+    setDraft(next);
+    onCommitOrder(next.map((r) => r.row.id));
+  };
+
   const isEmpty = items.length === 0 && shared.length === 0;
   if (isEmpty) return null;
 
@@ -429,7 +477,22 @@ function ChestSection(props: SectionProps) {
         <Badge variant="secondary" className="text-[9px] px-1 h-3.5">{items.length + shared.length}</Badge>
       </div>
       {items.length > 0 && (
-        <div className="space-y-1" data-testid={`chest-section-mine-${kind}`}>
+        <div
+          className="space-y-1"
+          data-testid={`chest-section-mine-${kind}`}
+          role="list"
+          aria-describedby={`chest-section-${kind}-keyboard-hint`}
+        >
+          {/* Visually-hidden shortcut hint (Task #2238). Surfaces the
+            * Alt+Arrow reorder shortcut to screen readers and is
+            * referenced by aria-describedby on the listbox above. */}
+          <span
+            id={`chest-section-${kind}-keyboard-hint`}
+            className="sr-only"
+            data-testid={`chest-keyboard-hint-${kind}`}
+          >
+            Press Alt plus Arrow Up or Alt plus Arrow Down on a focused row to reorder it within this section.
+          </span>
           {items.map((item, idx) => (
             <ItemRow
               key={item.row.id}
@@ -448,6 +511,7 @@ function ChestSection(props: SectionProps) {
               onRename={(label) => onUpdate(item.row.id, { label })}
               onColorChange={(color) => onUpdate(item.row.id, { color })}
               onToggleShared={() => onUpdate(item.row.id, { isShared: !item.row.isShared })}
+              onMoveBy={(delta) => handleMoveBy(idx, delta)}
             />
           ))}
         </div>
