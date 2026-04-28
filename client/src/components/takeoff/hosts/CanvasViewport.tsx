@@ -150,7 +150,11 @@ function CanvasViewportInner(props: CanvasViewportProps) {
   return (
     <div
       ref={containerRef}
-      className="flex-1 overflow-hidden relative"
+      // tabIndex=-1 keeps the canvas out of the natural Tab order but
+      // lets host UI (e.g. the Layers ribbon popover, Task #2202) call
+      // .focus() to return focus here when a transient overlay closes.
+      tabIndex={-1}
+      className="flex-1 overflow-hidden relative outline-none"
       style={{ cursor }}
       data-testid="takeoff-canvas-viewport"
       onContextMenu={onContextMenu}

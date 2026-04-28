@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Keyboard, Cloud, CloudOff, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronUp, Keyboard, Cloud, CloudOff, Loader2, Eye, EyeOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, PopoverAnchor, PopoverContent } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -54,8 +57,25 @@ export interface UnifiedTakeoffRibbonProps {
   onStartVerifyScale: () => void;
   /** Verify > Dim Input — open the typed-dimension input dialog. */
   onOpenDimInput: () => void;
-  /** View > Layers — open the categories visibility popover. */
+  /** View > Layers — toggle the categories visibility popover. */
   onShowLayers: () => void;
+  /** Controlled open state for the Layers popover anchored to the
+   *  ribbon button. The parent owns the state so other UI (the
+   *  sidebar's full layer panel, keyboard shortcuts, etc.) can react
+   *  to it. */
+  layersPopoverOpen?: boolean;
+  /** Called when Radix wants to close the popover (outside click,
+   *  Escape, etc.). Parent should mirror the value into its
+   *  `layersPopoverOpen` state. */
+  onLayersPopoverOpenChange?: (open: boolean) => void;
+  /** Called after the popover closes so the parent can return focus
+   *  to the canvas (or wherever it makes sense in the host UI). */
+  onLayersPopoverClose?: () => void;
+  /** Measurement categories displayed inside the Layers popover with
+   *  per-category visibility checkboxes bound to `hiddenCategoryIds`. */
+  layersCategories?: ReadonlyArray<{ id: string; name: string; color: string }>;
+  hiddenCategoryIds?: ReadonlySet<string>;
+  onToggleCategoryVisibility?: (id: string) => void;
   /** View > Overlay — toggle the addenda overlay opacity panel. */
   onToggleOverlay: () => void;
   /** View > Versions — open the version history panel. */
@@ -171,6 +191,12 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
     onStartVerifyScale,
     onOpenDimInput,
     onShowLayers,
+    layersPopoverOpen = false,
+    onLayersPopoverOpenChange,
+    onLayersPopoverClose,
+    layersCategories,
+    hiddenCategoryIds,
+    onToggleCategoryVisibility,
     onToggleOverlay,
     onShowVersions,
     overlayActive,
@@ -518,10 +544,20 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
                     const showShortcut = shortcutKeysFor(tool.shortcutId);
                     const tooltipText = tool.tooltip || tool.label;
                     const refKey = `${group.id}:${idx}`;
+                    // Task #2139 — measure/annotate tools can be right-
+                    // click-pinned to the Tool Chest. View-group tools
+                    // (Layers/Overlay/etc.) and disabled tools are not
+                    // pinnable.
                     const pinnable =
                       !!onPinTool &&
                       !disabled &&
                       (group.id === "measure" || group.id === "annotate");
+
+                    // Single source of truth for the actual button.
+                    // Both the Tooltip path and the ContextMenu path
+                    // render the same button element (with narrow-
+                    // viewport touch-target sizing from Task #2142 and
+                    // Task #2202's aria-haspopup/expanded for Layers).
                     const buttonEl = (
                       <Button
                         ref={setButtonRef(refKey)}
@@ -538,9 +574,14 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
                         data-active={state.active ? "true" : "false"}
                         data-disabled={disabled ? "true" : "false"}
                         aria-pressed={state.active}
+                        aria-haspopup={tool.action === "layers" ? "dialog" : undefined}
+                        aria-expanded={tool.action === "layers" ? layersPopoverOpen : undefined}
                         aria-label={tool.label}
                         className={cn(
-                          "h-8 px-1.5 gap-1 text-xs",
+                          "gap-1 text-xs",
+                          isNarrowViewport
+                            ? "h-11 min-w-[44px] px-3"
+                            : "h-8 px-1.5",
                           state.active && "ring-1 ring-primary/40",
                         )}
                         onFocus={() =>
@@ -571,81 +612,95 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
                         </div>
                       </TooltipContent>
                     );
-                    if (!pinnable) {
+                    // Tooltip-wrapped button. Used directly for Layers
+                    // (which then gets its own Popover) and as the
+                    // inner content for pinnable tools.
+                    const buttonNode = (
+                      <Tooltip>
+                        <TooltipTrigger asChild>{buttonEl}</TooltipTrigger>
+                        {tooltipContent}
+                      </Tooltip>
+                    );
+                    // Task #2202 — anchor a one-click visibility
+                    // popover to the Layers ribbon button. The popover
+                    // is controlled (`open` from parent) so the
+                    // existing button click handler keeps owning the
+                    // toggle, and we only forward outside-click /
+                    // Escape closes back through onOpenChange. Focus
+                    // is returned to the canvas via onCloseAutoFocus →
+                    // onLayersPopoverClose so estimators can
+                    // immediately keep drawing. Layers lives in the
+                    // "view" group, so `pinnable` is always false here
+                    // and the ContextMenu wrapping below is a no-op
+                    // for it.
+                    if (tool.action === "layers") {
                       return (
-                        <Tooltip key={tool.id}>
-                          <TooltipTrigger asChild>{buttonEl}</TooltipTrigger>
-                          {tooltipContent}
-                        </Tooltip>
+                        <Popover
+                          key={tool.id}
+                          open={layersPopoverOpen}
+                          onOpenChange={(next) => {
+                            if (!next) onLayersPopoverOpenChange?.(false);
+                          }}
+                        >
+                          <PopoverAnchor asChild>{buttonNode}</PopoverAnchor>
+                          <PopoverContent
+                            side="bottom"
+                            align="start"
+                            sideOffset={6}
+                            className="w-64 p-0"
+                            data-testid="popover-layers"
+                            onCloseAutoFocus={(e) => {
+                              e.preventDefault();
+                              onLayersPopoverClose?.();
+                            }}
+                          >
+                            <LayersPopoverPanel
+                              categories={layersCategories ?? []}
+                              hiddenCategoryIds={hiddenCategoryIds ?? new Set<string>()}
+                              onToggleCategoryVisibility={onToggleCategoryVisibility}
+                            />
+                          </PopoverContent>
+                        </Popover>
                       );
                     }
+                    if (pinnable) {
+                      return (
+                        <ContextMenu key={tool.id}>
+                          <ContextMenuTrigger asChild>
+                            <span title={`${tooltipText} — right-click to pin`}>
+                              {buttonNode}
+                            </span>
+                          </ContextMenuTrigger>
+                          <ContextMenuContent>
+                            <ContextMenuItem
+                              onSelect={() => {
+                                // Pin the canonical Tool enum value, not the display id —
+                                // they diverge for Annotate (id "arrow"/"cloud" → tool
+                                // "markup_arrow"/"markup_cloud") and Polyline (id "polyline"
+                                // → tool "segment"). Activation calls `setActiveTool` with
+                                // the stored refId, so storing the display id leaves the
+                                // pinned tool inert. `tool.tool` is non-null for every
+                                // pinnable entry (the `pinnable` guard rules out disabled
+                                // tools, and every enabled measure/annotate tool has a
+                                // non-null `tool`), but fall back to id defensively.
+                                const refId = tool.tool ?? tool.id;
+                                onPinTool?.({ toolId: refId, label: tool.label });
+                              }}
+                              data-testid={`ribbon-tool-pin-${tool.id}`}
+                            >
+                              Pin to Tool Chest
+                            </ContextMenuItem>
+                          </ContextMenuContent>
+                        </ContextMenu>
+                      );
+                    }
+                    // Default: tooltip-wrapped button with the React
+                    // key on the outer Tooltip.
                     return (
-                      <ContextMenu key={tool.id}>
-                        <ContextMenuTrigger asChild>
-                          <span title={`${tooltipText} — right-click to pin`}>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button
-                                  ref={setButtonRef(refKey)}
-                                  type="button"
-                                  size="sm"
-                                  variant={state.active ? "secondary" : "ghost"}
-                                  disabled={disabled}
-                                  onClick={() =>
-                                    !disabled &&
-                                    handleToolClick(group.id, tool.id, tool.tool, tool.action)
-                                  }
-                                  tabIndex={focusedIdx === idx ? 0 : -1}
-                                  data-testid={`ribbon-tool-${tool.id}`}
-                                  data-active={state.active ? "true" : "false"}
-                                  data-disabled={disabled ? "true" : "false"}
-                                  aria-pressed={state.active}
-                                  aria-label={tool.label}
-                                  className={cn(
-                                    "gap-1 text-xs",
-                                    isNarrowViewport
-                                      ? "h-11 min-w-[44px] px-3"
-                                      : "h-8 px-1.5",
-                                    state.active && "ring-1 ring-primary/40",
-                                  )}
-                                  onFocus={() =>
-                                    setFocusIndexByGroup((prev) => ({ ...prev, [group.id]: idx }))
-                                  }
-                                >
-                                  <Icon className="w-3.5 h-3.5" />
-                                  {labeled && <span className="hidden md:inline">{tool.label}</span>}
-                                  {showShortcut && (
-                                    <kbd className="hidden lg:inline px-1 py-0 text-[9px] font-mono bg-background/60 rounded border">
-                                      {showShortcut}
-                                    </kbd>
-                                  )}
-                                </Button>
-                              </TooltipTrigger>
-                              {tooltipContent}
-                            </Tooltip>
-                          </span>
-                        </ContextMenuTrigger>
-                        <ContextMenuContent>
-                          <ContextMenuItem
-                            onSelect={() => {
-                              // Pin the canonical Tool enum value, not the display id —
-                              // they diverge for Annotate (id "arrow"/"cloud" → tool
-                              // "markup_arrow"/"markup_cloud") and Polyline (id "polyline"
-                              // → tool "segment"). Activation calls `setActiveTool` with
-                              // the stored refId, so storing the display id leaves the
-                              // pinned tool inert. `tool.tool` is non-null for every
-                              // pinnable entry (the `pinnable` guard rules out disabled
-                              // tools, and every enabled measure/annotate tool has a
-                              // non-null `tool`), but fall back to id defensively.
-                              const refId = tool.tool ?? tool.id;
-                              onPinTool?.({ toolId: refId, label: tool.label });
-                            }}
-                            data-testid={`ribbon-tool-pin-${tool.id}`}
-                          >
-                            Pin to Tool Chest
-                          </ContextMenuItem>
-                        </ContextMenuContent>
-                      </ContextMenu>
+                      <Tooltip key={tool.id}>
+                        <TooltipTrigger asChild>{buttonEl}</TooltipTrigger>
+                        {tooltipContent}
+                      </Tooltip>
                     );
                   })}
                   {group.id === "constrain" && (
@@ -765,6 +820,100 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
           </Tooltip>
         </div>
       </div>
+    </div>
+  );
+}
+
+interface LayersPopoverPanelProps {
+  categories: ReadonlyArray<{ id: string; name: string; color: string }>;
+  hiddenCategoryIds: ReadonlySet<string>;
+  onToggleCategoryVisibility?: (id: string) => void;
+}
+
+/**
+ * One-click visibility toggles for every measurement category, rendered
+ * inside the Layers ribbon popover (Task #2202). Each row maps to an
+ * entry in `hiddenCategoryIds`: checked = visible, unchecked = hidden.
+ * The full layer-management UI (rename / delete / label toggles) still
+ * lives in the sidebar; this is the quick on/off complement.
+ */
+function LayersPopoverPanel({
+  categories,
+  hiddenCategoryIds,
+  onToggleCategoryVisibility,
+}: LayersPopoverPanelProps) {
+  const visibleCount = categories.length - categories.filter((c) => hiddenCategoryIds.has(c.id)).length;
+  return (
+    <div className="flex flex-col" data-testid="layers-popover-panel">
+      <div className="flex items-center justify-between px-3 py-2 border-b">
+        <div className="flex items-center gap-1.5">
+          <Eye className="w-3.5 h-3.5 text-muted-foreground" />
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Layers
+          </span>
+        </div>
+        <span
+          className="text-[10px] text-muted-foreground"
+          data-testid="text-layers-popover-count"
+        >
+          {visibleCount}/{categories.length} visible
+        </span>
+      </div>
+      {categories.length === 0 ? (
+        <p
+          className="text-xs text-muted-foreground text-center px-3 py-6"
+          data-testid="text-layers-popover-empty"
+        >
+          No categories yet. Create one from the sidebar to organize measurements.
+        </p>
+      ) : (
+        <ScrollArea className="max-h-[320px]">
+          <ul className="py-1" role="list">
+            {categories.map((category) => {
+              const isHidden = hiddenCategoryIds.has(category.id);
+              const checkboxId = `layers-popover-checkbox-${category.id}`;
+              return (
+                <li key={category.id} className="px-1">
+                  <label
+                    htmlFor={checkboxId}
+                    className={cn(
+                      "flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover-elevate",
+                      isHidden && "opacity-60",
+                    )}
+                    data-testid={`row-layers-popover-${category.id}`}
+                  >
+                    <Checkbox
+                      id={checkboxId}
+                      checked={!isHidden}
+                      onCheckedChange={() => onToggleCategoryVisibility?.(category.id)}
+                      aria-label={isHidden ? `Show ${category.name}` : `Hide ${category.name}`}
+                      data-testid={`checkbox-layers-popover-${category.id}`}
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="w-3 h-3 rounded-sm flex-shrink-0 border"
+                      style={{ backgroundColor: isHidden ? "transparent" : category.color, borderColor: category.color }}
+                    />
+                    <span
+                      className={cn(
+                        "text-sm flex-1 min-w-0 truncate",
+                        isHidden && "line-through text-muted-foreground",
+                      )}
+                    >
+                      {category.name}
+                    </span>
+                    {isHidden ? (
+                      <EyeOff className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" aria-hidden="true" />
+                    ) : (
+                      <Eye className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" aria-hidden="true" />
+                    )}
+                  </label>
+                </li>
+              );
+            })}
+          </ul>
+        </ScrollArea>
+      )}
     </div>
   );
 }

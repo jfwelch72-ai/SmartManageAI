@@ -4139,6 +4139,18 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           dimInputActive={!!pendingDimLengthFt && pendingDimLengthFt > 0}
           onShowLayers={() => setLayersPopoverOpen((v) => !v)}
           layersActive={layersPopoverOpen || hiddenCategoryIds.size > 0}
+          layersPopoverOpen={layersPopoverOpen}
+          onLayersPopoverOpenChange={setLayersPopoverOpen}
+          onLayersPopoverClose={() => {
+            // Task #2202 — return focus to the canvas viewport so
+            // estimators can keep drawing immediately after toggling
+            // visibility, without having to click the canvas again.
+            // CanvasViewport sets tabIndex=-1 to make this possible.
+            containerRef.current?.focus({ preventScroll: true });
+          }}
+          layersCategories={categories}
+          hiddenCategoryIds={hiddenCategoryIds}
+          onToggleCategoryVisibility={handleToggleCategoryVisibility}
           onToggleOverlay={() => setShowOverlaySlider((v) => !v)}
           overlayActive={showOverlaySlider}
           onShowVersions={() => setVersionHistoryOpen(true)}
