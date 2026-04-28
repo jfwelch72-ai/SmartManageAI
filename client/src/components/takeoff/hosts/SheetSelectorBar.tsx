@@ -156,9 +156,15 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
   return (
     <div className="h-12 sm:h-14 bg-card border-b px-2 sm:px-4 flex items-center justify-between gap-2 sm:gap-4">
       <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
-        <Label className="text-xs sm:text-sm font-medium shrink-0">Sheet:</Label>
+        {/* Task #2206 — hide the redundant "Sheet:" label below sm so the
+         *  selector itself has room to breathe on iPad portrait / Surface
+         *  split-screen. The dropdown UI is obvious without the label. */}
+        <Label className="text-xs sm:text-sm font-medium shrink-0 hidden sm:inline-flex">Sheet:</Label>
         <Select value={selectedSheet || ""} onValueChange={onSelectSheet}>
-          <SelectTrigger className="w-32 sm:w-64" data-testid="select-sheet">
+          {/* Task #2206 — widen the narrow-viewport trigger from 128px to
+           *  176px so realistic sheet names like "TFR Construction 2025"
+           *  fit on one line instead of wrapping mid-word. */}
+          <SelectTrigger className="w-44 sm:w-64 min-w-0" data-testid="select-sheet">
             <SelectValue placeholder="Select a sheet..." />
           </SelectTrigger>
           <SelectContent container={workspaceRef.current}>
@@ -378,7 +384,7 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
               <Button
                 variant={propertiesPanelOpen ? "default" : "outline"}
                 size="sm"
-                className="h-7 w-7 p-0"
+                className="h-7 w-7 p-0 hidden md:inline-flex"
                 onClick={onTogglePropertiesPanel}
                 data-testid="button-properties-panel"
               >
@@ -390,7 +396,7 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
         )}
         {collabSlot}
         {showHideResolvedToggle && (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="hide-resolved-toggle">
+          <div className="hidden md:flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="hide-resolved-toggle">
             <Switch
               id="hide-resolved"
               checked={hideResolvedIssues}
@@ -453,6 +459,7 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
               <Button
                 variant={crossModulePanelOpen ? "secondary" : "ghost"}
                 size="icon"
+                className="hidden md:inline-flex"
                 onClick={onToggleCrossModule}
                 data-testid="button-toggle-cross-module"
               >

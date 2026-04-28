@@ -186,6 +186,34 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     try { return localStorage.getItem("takeoff-snap-enabled") !== "false"; } catch { return true; }
   });
   useEffect(() => { try { localStorage.setItem("takeoff-snap-enabled", String(snapEnabled)); } catch {} }, [snapEnabled]);
+
+  // Task #2206 follow-up — window-level pen tracker. Use capture-phase so
+  // we observe pen pointerdown/up even if a child element calls
+  // stopPropagation. We only care about pointerType === "pen"; finger and
+  // mouse events are ignored here. Any tab-hide / window-blur clears the
+  // set so the rejector cannot be permanently armed by a missed pointerup.
+  useEffect(() => {
+    const onPenDown = (e: PointerEvent) => {
+      if (e.pointerType === "pen") activePenIdsRef.current.add(e.pointerId);
+    };
+    const onPenUp = (e: PointerEvent) => {
+      if (e.pointerType === "pen") activePenIdsRef.current.delete(e.pointerId);
+    };
+    const reset = () => activePenIdsRef.current.clear();
+    const onVisibility = () => { if (document.hidden) reset(); };
+    window.addEventListener("pointerdown", onPenDown, true);
+    window.addEventListener("pointerup", onPenUp, true);
+    window.addEventListener("pointercancel", onPenUp, true);
+    window.addEventListener("blur", reset);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pointerdown", onPenDown, true);
+      window.removeEventListener("pointerup", onPenUp, true);
+      window.removeEventListener("pointercancel", onPenUp, true);
+      window.removeEventListener("blur", reset);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, []);
   const [orthoLock, setOrthoLock] = useState(() => {
     try { return localStorage.getItem("takeoff-ortho-lock") === "true"; } catch { return false; }
   });
@@ -200,6 +228,15 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
   const isPinchingRef = useRef(false);
   const lastPinchDistRef = useRef<number | null>(null);
   const lastPinchCenterRef = useRef<{ x: number; y: number } | null>(null);
+  // Task #2206 follow-up — track which stylus pointers are currently in
+  // contact with the screen at the document level. The canvas-level palm
+  // rejection below only fires when at least one pen is active; without
+  // this gate, normal fingertip taps on iPad (whose contact diameter
+  // routinely exceeds 24 px) would always be dropped, breaking
+  // finger-driven measurement entirely. Tracker self-heals on tab hide /
+  // window blur so a missed `pointerup` (pen lifted out of hover range,
+  // app-switch, etc.) does not leave the rejector stuck on.
+  const activePenIdsRef = useRef<Set<number>>(new Set());
 
   const {
     projectId, sheetsQueryKey, selectedSheet, currentSheet, measurements, activeTool, setActiveTool,
@@ -848,8 +885,17 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       // rest. We also drop the lone touch when its contact dimension
       // exceeds the per-user palm band, which happens on iPad / Surface
       // when the user rests their hand while drawing with a stylus.
+      //
+      // Task #2206 follow-up — gate the single-touch rejector on
+      // `activePenIdsRef` so we only drop fat finger contacts while a
+      // stylus is *actually* in contact. Without this gate, plain
+      // fingertip taps on iPad (typical contact diameter 30–60 px) were
+      // unconditionally rejected against the 24 px default band, which
+      // made finger-driven measurement appear broken even with no pen
+      // anywhere near the screen.
       const band = typeof palmRejectionBandPx === "number" ? palmRejectionBandPx : 24;
-      if (e.evt.touches && e.evt.touches.length === 1) {
+      const penActive = activePenIdsRef.current.size > 0;
+      if (penActive && e.evt.touches && e.evt.touches.length === 1) {
         const t = e.evt.touches[0];
         const size = Math.max(
           t.radiusX ? t.radiusX * 2 : 0,

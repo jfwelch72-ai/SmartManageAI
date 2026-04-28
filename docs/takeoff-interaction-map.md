@@ -303,8 +303,17 @@ When the chest has no items the panel renders a centered placeholder
 | Two-finger rotate          | Rotate sheet in 90° steps; gated by per-user `allow_two_finger_rotate` (default **off**).                               |
 | Stylus tap                 | Place point / activate tool. Identified via `pointerType === "pen"` in `classifyPointer`.                               |
 | Stylus long-press          | Opens the snap-mode HUD. Threshold = per-user `stylus_long_press_ms` (default 500ms, clamp 250–1500). Pen pointers only. |
-| Palm-rejection band        | Touches whose contact width / height exceeds `palm_rejection_band_px` (default 24px, clamp 0–96) are dropped from the markup layer and from the canvas pinch handler while a stylus is in contact. |
-| Narrow viewport (<768px)   | Tool buttons promote to 44px hit-targets and the secondary groups (snap, constrain, view, verify) collapse by default. The user's per-group toggle still wins once they touch it. |
+| Palm-rejection band        | Touches whose contact width / height exceeds `palm_rejection_band_px` (default 24px, clamp 0–96) are dropped from the markup layer and from the canvas pinch handler **while a stylus is in contact**. The "stylus in contact" gate is mandatory at both layers — dropping fat single-finger touches without that guard would break finger-driven measurement on iPad, where typical fingertip contact diameters (30–60 px) routinely exceed the 24 px default. The canvas hook tracks pen presence via window-level `pointerdown`/`pointerup`/`pointercancel` listeners and self-heals on tab hide / window blur. |
+| Narrow viewport (<768px)   | Tool buttons promote to 44px hit-targets and the secondary groups (snap, constrain, view, verify) collapse by default. The user's per-group toggle still wins once they touch it. The Sheet header bar also drops the redundant "Sheet:" label, widens the sheet selector to 176px so realistic sheet names fit on one line, and hides the lower-priority Properties / Hide-Resolved / Cross-Module controls so the calibration badge stops fighting the right-side icons. (Task #2206 follow-up tweak.) |
+
+> **Hardware QA:** the defaults above (palm band 24px, long-press
+> 500ms, the `NARROW_DEFAULT_COLLAPSED_GROUPS` set) are tuned by hand
+> on a real iPad + Apple Pencil and Surface + Surface Pen. Follow
+> `docs/runbooks/takeoff-stylus-hardware-qa.md` whenever you change a
+> default and update this section in the same PR. Recorded outcomes
+> live in `docs/runbooks/takeoff-stylus-hardware-qa-results.md`
+> (Task #2206: 2026-04-28, all four scenarios pass on iPad Pro
+> Safari/Chrome and Surface Pro Edge/Chrome with shipped defaults).
 
 ---
 

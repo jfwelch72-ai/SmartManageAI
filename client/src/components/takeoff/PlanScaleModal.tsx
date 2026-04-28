@@ -101,10 +101,15 @@ export function PlanScaleModal({ open, onClose, onApplyScale, currentScalePxPerF
   // the standards list and calibration instructions get more room. The
   // standard-scales `<ScrollArea>` height also grows so users can browse the
   // full COMMON_SCALES list without paging.
+  // Task #2206 follow-up — clamp the non-fullscreen dialog to 90% of the
+  // dynamic viewport height (`dvh` so iOS Safari's URL bar doesn't push
+  // the footer off-screen) and lay it out as a flex column. The standards
+  // ScrollArea then takes `flex-1 min-h-0` so the Cancel / Done footer is
+  // always pinned to the bottom even on small phones / iPad portrait.
   const dialogClass = fullscreen
     ? "max-w-[95vw] w-[95vw] sm:max-w-[1100px] h-[90vh] p-0 gap-0 overflow-hidden flex flex-col"
-    : "sm:max-w-lg p-0 gap-0 overflow-hidden";
-  const scrollAreaHeight = fullscreen ? "h-[calc(90vh-280px)]" : "h-[240px]";
+    : "sm:max-w-lg max-h-[90dvh] p-0 gap-0 overflow-hidden flex flex-col";
+  const scrollAreaHeight = fullscreen ? "h-[calc(90vh-280px)]" : "flex-1 min-h-0";
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && resetAndClose()}>
@@ -127,7 +132,7 @@ export function PlanScaleModal({ open, onClose, onApplyScale, currentScalePxPerF
           handoff hint and the "Use Standard Scale instead" link in
           the drawer for the reverse handoff.
         */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full flex-1 min-h-0 flex flex-col">
           <div className="px-6">
             <TabsList className="w-full grid grid-cols-2">
               <TabsTrigger value="standard" data-testid="tab-standard-scales">Standard Scales</TabsTrigger>
@@ -135,7 +140,7 @@ export function PlanScaleModal({ open, onClose, onApplyScale, currentScalePxPerF
             </TabsList>
           </div>
 
-          <TabsContent value="standard" className="mt-0 px-6 pb-2">
+          <TabsContent value="standard" className="mt-0 px-6 pb-2 flex-1 min-h-0 flex flex-col">
             <div className="flex items-center gap-2 my-3">
               <div className="relative flex-1">
                 <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />

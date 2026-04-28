@@ -340,6 +340,25 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       return next;
     });
   };
+  // Task #2206 follow-up — narrow-viewport sidebar override. The
+  // persisted `sidebarCollapsed` reflects the user's desktop preference
+  // (and is what the regular toggle button mutates). On mobile / iPad
+  // portrait we always start with the sidebar collapsed so the central
+  // canvas actually has room to render the PDF — otherwise the
+  // categories sidebar + (optional) properties panel squeeze the canvas
+  // to a sliver. Tap-to-open is provided by `narrowSidebarOpen` and
+  // resets every time we (re-)enter mobile mode so rotating back to
+  // desktop restores the persisted preference. The properties panel is
+  // simply hidden on mobile — it'd otherwise consume 288 px of the
+  // already-narrow viewport.
+  const [narrowSidebarOpen, setNarrowSidebarOpen] = useState(false);
+  useEffect(() => {
+    if (isMobile) setNarrowSidebarOpen(false);
+  }, [isMobile]);
+  const effectiveSidebarCollapsed = isMobile ? !narrowSidebarOpen : sidebarCollapsed;
+  const effectiveToggleSidebar = isMobile
+    ? () => setNarrowSidebarOpen((prev) => !prev)
+    : toggleSidebarCollapsed;
   const [hideAiMeasurements, setHideAiMeasurements] = useState(() => {
     try { return localStorage.getItem("takeoff-hide-ai-measurements") === "true"; } catch { return false; }
   });
@@ -3874,8 +3893,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       setCalibrationPoints,
       workspaceRef,
       aiPanelOpen,
-      collapsed: sidebarCollapsed,
-      onToggleCollapse: toggleSidebarCollapsed,
+      collapsed: effectiveSidebarCollapsed,
+      onToggleCollapse: effectiveToggleSidebar,
       onApplyPresetScale: handleApplyPresetScale,
       sheets,
       onCompareRevisions: hasRevisionHistory ? () => setCompareDialogOpen(true) : undefined,
@@ -4405,7 +4424,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       };
     })(),
     propertiesPanel: (() => {
-      if (!propertiesPanelOpen || !selectedMeasurementId) return null;
+      // Task #2206 follow-up — the inline properties panel is 288 px
+      // wide and would consume most of an iPad-portrait viewport. Hide
+      // it on mobile so the canvas keeps the room it needs; the user
+      // can still inspect a measurement via the floating selection
+      // toolbar / context menu.
+      if (!propertiesPanelOpen || !selectedMeasurementId || isMobile) return null;
       const selectedMeasurement = measurements.find(m => m.id === selectedMeasurementId);
       if (!selectedMeasurement) return null;
       return {
