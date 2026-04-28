@@ -570,9 +570,47 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   // opens a small modal. Submitting locks the next vertex placed during
   // a drawing tool to the typed length (in feet). The hook clears the
   // value through `onConsumeDimLength` after the next click.
+  //
+  // Task #2203 — Polygon / segment workflows often want the same
+  // length applied across several clicks in a row (e.g. typing
+  // 12, 8, 12, 8 to lay out a rectangle is just "12, Tab, click,
+  // change to 8, click, click, change back to 12, click"). When
+  // `dimInputRepeat` is on, `onConsumeDimLength` becomes a no-op so
+  // the lock survives until the user explicitly clears it.
   const [pendingDimLengthFt, setPendingDimLengthFt] = useState<number | null>(null);
   const [dimInputOpen, setDimInputOpen] = useState(false);
   const [dimInputValue, setDimInputValue] = useState("");
+  const [dimInputRepeat, setDimInputRepeat] = useState<boolean>(() => {
+    try {
+      return window.localStorage.getItem("takeoff-dim-input-repeat") === "true";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        "takeoff-dim-input-repeat",
+        String(dimInputRepeat),
+      );
+    } catch {
+      /* ignore */
+    }
+  }, [dimInputRepeat]);
+  // Refs so the Tab keydown listener (which we only want to bind once)
+  // can read the live values without re-binding on every state change.
+  const dimInputRepeatRef = useRef(dimInputRepeat);
+  useEffect(() => {
+    dimInputRepeatRef.current = dimInputRepeat;
+  }, [dimInputRepeat]);
+  const pendingDimLengthFtRef = useRef<number | null>(pendingDimLengthFt);
+  useEffect(() => {
+    pendingDimLengthFtRef.current = pendingDimLengthFt;
+  }, [pendingDimLengthFt]);
+  const dimInputOpenRef = useRef(dimInputOpen);
+  useEffect(() => {
+    dimInputOpenRef.current = dimInputOpen;
+  }, [dimInputOpen]);
   // Polar-tracking step in degrees. 15° matches the cheat-sheet spec.
   const polarAngleStep = 15;
   // Layers popover open state — quick toggle of category visibility
@@ -1331,7 +1369,15 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     constraintMode,
     polarAngleStep,
     pendingDimLengthFt,
-    onConsumeDimLength: () => setPendingDimLengthFt(null),
+    onConsumeDimLength: () => {
+      // Task #2203 — Honour the dialog's "repeat / chain" mode. When
+      // on, the typed length stays locked across multiple clicks so
+      // users can lay out a polygon / segment polyline at a fixed
+      // step (e.g. 12, 8, 12, 8 for a rectangle). Cleared explicitly
+      // via the dialog's Clear button or by toggling repeat off.
+      if (dimInputRepeatRef.current) return;
+      setPendingDimLengthFt(null);
+    },
     disableLegacyShortcuts: unifiedRibbon,
     // Task #2192 — When the unified ribbon is mounted, hand the
     // canvas drawing engine the granular snap-mode set, the
@@ -1771,6 +1817,52 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       "segment",
       "deduct",
     ].includes(currentDrawingTool ?? activeTool);
+
+  // Task #2203 — Pressing Tab while drawing reopens the Dim Input
+  // dialog with the current locked length pre-filled, so users can
+  // tweak the chained length without breaking out of the draw to
+  // hunt for the ribbon button. Only active during a measure draw
+  // (`dimHudActive`) and only when focus is inside the takeoff
+  // workspace root (so we don't hijack Tab focus cycles in unrelated
+  // panels / global UI). The typed-input HUD already swallows Tab in
+  // capture phase when its own buffer is non-empty, so we never
+  // compete with that flow. Suppressed when the dialog is already
+  // open so Tab keeps its native focus-cycle behaviour inside the
+  // dialog itself.
+  useEffect(() => {
+    if (!dimHudActive) return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      if (event.ctrlKey || event.metaKey || event.altKey || event.shiftKey) return;
+      if (dimInputOpenRef.current) return;
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName ?? "";
+      if (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+      // Only intercept when focus is inside the workspace (or on the
+      // body itself, which is the default when Konva-managed canvas
+      // surfaces aren't focusable). This keeps normal Tab focus
+      // traversal working in unrelated UI / overlays that may be open.
+      const root = workspaceRef.current;
+      const active = (target as Node | null) ?? document.activeElement;
+      const focusInsideWorkspace =
+        !!root && (root === active || (active instanceof Node && root.contains(active)));
+      const focusOnBody = active === document.body || active === null;
+      if (!focusInsideWorkspace && !focusOnBody) return;
+      event.preventDefault();
+      const current = pendingDimLengthFtRef.current;
+      setDimInputValue(current && current > 0 ? String(current) : "");
+      setDimInputOpen(true);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [dimHudActive]);
 
   // Task #2140 — Opening the calibration drawer must also switch the
   // active tool to "calibrate", because the canvas click handler in
@@ -3123,6 +3215,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     isDrawing,
     drawingPoints,
     cursorPosition,
+    pendingDimLengthFt,
+    dimInputRepeat,
     showAiOverlays,
     hideAiMeasurements,
     hideResolvedIssues,
@@ -4219,36 +4313,66 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
             <DialogDescription>
               Type the exact length (in feet) for the next vertex. The
               segment will lock to that distance along your cursor
-              direction. Clears after one click.
+              direction. With <strong>Repeat</strong> off, the lock
+              clears after one click; with it on, the same length stays
+              active across every click until you clear it — useful for
+              laying out polygons or segment chains at a fixed step.
+              Press <kbd className="px-1 rounded border bg-muted text-[10px]">Tab</kbd>{" "}
+              while drawing to reopen this dialog.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-2">
-            <Label htmlFor="dim-input-length">Length (ft)</Label>
-            <Input
-              id="dim-input-length"
-              type="number"
-              step="0.01"
-              min="0"
-              placeholder="e.g. 12.5"
-              value={dimInputValue}
-              onChange={(e) => setDimInputValue(e.target.value)}
-              data-testid="input-dim-length"
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  const v = parseFloat(dimInputValue);
-                  if (Number.isFinite(v) && v > 0) {
-                    setPendingDimLengthFt(v);
-                    setDimInputOpen(false);
-                    toast({
-                      title: "Length Locked",
-                      description: `Next vertex will commit at ${v.toFixed(2)} ft.`,
-                    });
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <Label htmlFor="dim-input-length">Length (ft)</Label>
+              <Input
+                id="dim-input-length"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="e.g. 12.5"
+                value={dimInputValue}
+                onChange={(e) => setDimInputValue(e.target.value)}
+                data-testid="input-dim-length"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const v = parseFloat(dimInputValue);
+                    if (Number.isFinite(v) && v > 0) {
+                      setPendingDimLengthFt(v);
+                      setDimInputOpen(false);
+                      toast({
+                        title: dimInputRepeat
+                          ? "Length Chained"
+                          : "Length Locked",
+                        description: dimInputRepeat
+                          ? `Each click will commit at ${v.toFixed(2)} ft until you clear.`
+                          : `Next vertex will commit at ${v.toFixed(2)} ft.`,
+                      });
+                    }
                   }
-                }
-              }}
-            />
+                }}
+              />
+            </div>
+            <div className="flex items-center justify-between rounded border bg-muted/30 px-3 py-2">
+              <div className="space-y-0.5">
+                <Label
+                  htmlFor="switch-dim-repeat"
+                  className="text-sm font-medium cursor-pointer"
+                >
+                  Repeat / chain
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Keep this length active across every click.
+                </p>
+              </div>
+              <Switch
+                id="switch-dim-repeat"
+                checked={dimInputRepeat}
+                onCheckedChange={setDimInputRepeat}
+                data-testid="switch-dim-repeat"
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -4276,13 +4400,15 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
                 setPendingDimLengthFt(v);
                 setDimInputOpen(false);
                 toast({
-                  title: "Length Locked",
-                  description: `Next vertex will commit at ${v.toFixed(2)} ft.`,
+                  title: dimInputRepeat ? "Length Chained" : "Length Locked",
+                  description: dimInputRepeat
+                    ? `Each click will commit at ${v.toFixed(2)} ft until you clear.`
+                    : `Next vertex will commit at ${v.toFixed(2)} ft.`,
                 });
               }}
               data-testid="button-dim-apply"
             >
-              Lock Length
+              {dimInputRepeat ? "Chain Length" : "Lock Length"}
             </Button>
           </DialogFooter>
         </DialogContent>

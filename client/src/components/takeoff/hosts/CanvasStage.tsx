@@ -76,6 +76,21 @@ export interface CanvasStageProps {
   isDrawing: boolean;
   drawingPoints: Point[];
   cursorPosition: Point | null;
+  /**
+   * Task #2203 — Typed dimension lock active for the next vertex (in
+   * feet). When set and the user is mid-draw, the canvas paints a
+   * small "Locked: 12 ft" badge near the cursor so the active length
+   * is visible without darting back to the ribbon. `null` / `0` hides
+   * the badge.
+   */
+  pendingDimLengthFt?: number | null;
+  /**
+   * Task #2203 — When true, the typed dimension lock is in chain mode
+   * (stays active across multiple clicks). The badge swaps to a
+   * "Chain" label so the user can tell at a glance that the next
+   * click won't release the lock.
+   */
+  dimInputRepeat?: boolean;
 
   showAiOverlays: boolean;
   hideAiMeasurements: boolean;
@@ -218,6 +233,8 @@ function CanvasStageImpl(props: CanvasStageProps) {
     isDrawing,
     drawingPoints,
     cursorPosition,
+    pendingDimLengthFt,
+    dimInputRepeat,
     showAiOverlays,
     hideAiMeasurements,
     hideResolvedIssues,
@@ -1588,6 +1605,48 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     opacity={0.6}
                   />
                 )}
+
+                {/* Task #2203 — Active typed-dimension lock badge.
+                    Floats below the cursor while a draw is in progress
+                    so the user always sees the locked length without
+                    looking up at the ribbon. Chain mode swaps to an
+                    amber palette + "Chain" label. */}
+                {isDrawing &&
+                  cursorPosition &&
+                  pendingDimLengthFt != null &&
+                  pendingDimLengthFt > 0 &&
+                  (() => {
+                    const label = dimInputRepeat ? "Chain" : "Lock";
+                    const lengthText = `${label}: ${pendingDimLengthFt.toFixed(2)} ft`;
+                    const fill = dimInputRepeat
+                      ? "rgba(180, 83, 9, 0.9)"
+                      : "rgba(8, 145, 178, 0.9)";
+                    const textColor = "#ffffff";
+                    return (
+                      <Group listening={false} data-testid="dim-input-cursor-badge">
+                        <Rect
+                          x={cursorPosition.x + 18 / stageScale}
+                          y={cursorPosition.y + 10 / stageScale}
+                          width={Math.max(70, lengthText.length * 7) / stageScale}
+                          height={18 / stageScale}
+                          fill={fill}
+                          cornerRadius={3 / stageScale}
+                          shadowColor="rgba(0,0,0,0.3)"
+                          shadowBlur={3 / stageScale}
+                          shadowOffset={{ x: 0, y: 1 / stageScale }}
+                        />
+                        <Text
+                          x={cursorPosition.x + 24 / stageScale}
+                          y={cursorPosition.y + 13 / stageScale}
+                          text={lengthText}
+                          fontSize={11 / stageScale}
+                          fill={textColor}
+                          fontStyle="bold"
+                          fontFamily="monospace"
+                        />
+                      </Group>
+                    );
+                  })()}
 
                 {issues.map((issue: any) => {
                   if (!issue.position) return null;
