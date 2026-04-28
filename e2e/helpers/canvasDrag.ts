@@ -56,6 +56,18 @@
  * shapes and the same "did the click land on the wrong spot?"
  * debugging problem applies there too.
  *
+ * Task #2302 makes the canvas-relative helpers resilient to clicks
+ * that miss the visible canvas. `clickOnCanvas` and `dragOnCanvas`
+ * now compute the canvas's *visible* region (intersection of the
+ * bounding box with the page viewport), attach it to the trace
+ * alongside the raw bounding box, and throw a descriptive error when
+ * any resolved point lands outside it. Konva's React-side hit
+ * detection silently drops clicks that land within a few pixels of
+ * the canvas's bottom/right edge (or past it entirely when the stage
+ * extends past the viewport) — without this guard the surrounding
+ * spec would time out 15s later on an unrelated `waitForRequest` and
+ * the failure mode would not be obvious from the report.
+ *
  * Task #1885 finishes the centralization for the plan-side specs by
  * adding three small siblings:
  *
@@ -219,6 +231,165 @@ function fmtBox(box: { x: number; y: number; width: number; height: number }): s
     `[${box.x.toFixed(1)},${box.y.toFixed(1)} ` +
     `${box.width.toFixed(1)}×${box.height.toFixed(1)}]`
   );
+}
+
+/** Axis-aligned rectangle in viewport pixels. */
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Intersect two axis-aligned rectangles, returning `null` when the
+ * rectangles do not overlap. Used to compute the visible portion of a
+ * canvas (the intersection of its bounding box with the viewport).
+ */
+export function intersectRects(a: Rect, b: Rect): Rect | null {
+  const x = Math.max(a.x, b.x);
+  const y = Math.max(a.y, b.y);
+  const right = Math.min(a.x + a.width, b.x + b.width);
+  const bottom = Math.min(a.y + a.height, b.y + b.height);
+  if (right <= x || bottom <= y) return null;
+  return { x, y, width: right - x, height: bottom - y };
+}
+
+/**
+ * `true` when `point` lies inside (inclusive of edges) `rect`.
+ *
+ * Edges are treated as inclusive so a coordinate placed exactly on
+ * the canvas's right/bottom edge isn't classified as "outside" — the
+ * silent-drop pitfall the visible-region check exists to surface only
+ * happens a few pixels *past* the edge.
+ */
+function pointInRect(point: Point, rect: Rect): boolean {
+  return (
+    point.x >= rect.x &&
+    point.x <= rect.x + rect.width &&
+    point.y >= rect.y &&
+    point.y <= rect.y + rect.height
+  );
+}
+
+/** Cached canvas geometry resolved from `boundingBox()` + viewport. */
+interface CanvasGeometry {
+  /** Raw `boundingBox()` from Playwright. Always set when present. */
+  box: Rect | null;
+  /** Page viewport size, or `null` if Playwright can't report one. */
+  viewport: { width: number; height: number } | null;
+  /**
+   * Intersection of `box` with the viewport, i.e. the portion of the
+   * canvas that's actually on-screen and reachable by a pointer event.
+   * `null` when the canvas is entirely off-screen or has no bounding
+   * box. Konva's React-side hit detection silently drops clicks that
+   * land outside this region — the visible-region check below uses it
+   * to throw a clear error instead of letting the spec time out
+   * waiting for a `handleStageClick` that never fires.
+   */
+  visible: Rect | null;
+}
+
+/**
+ * Resolve the canvas's bounding box and visible region in one pass.
+ *
+ * Centralized so `clickOnCanvas` and `dragOnCanvas` share a single
+ * source of truth for "where on screen does the canvas actually live"
+ * — including the trace attachment fields and the off-canvas guard.
+ */
+async function resolveCanvasGeometry(
+  page: Page,
+  canvas: Locator,
+): Promise<CanvasGeometry> {
+  const box = await canvas.boundingBox();
+  let viewport: { width: number; height: number } | null = null;
+  try {
+    viewport = page.viewportSize();
+  } catch {
+    viewport = null;
+  }
+  let visible: Rect | null = null;
+  if (box && viewport) {
+    visible = intersectRects(box, {
+      x: 0,
+      y: 0,
+      width: viewport.width,
+      height: viewport.height,
+    });
+  } else if (box && !viewport) {
+    // No viewport reported (rare) — fall back to the raw bounding box
+    // so the off-canvas guard stays usable rather than throwing on
+    // every click.
+    visible = box;
+  }
+  return { box, viewport, visible };
+}
+
+/**
+ * Build a descriptive error message for the off-canvas guard. The
+ * message includes the canvas-relative point, the resolved viewport
+ * point, the raw bounding box, the viewport size, and the visible
+ * canvas region — everything a future spec author needs to figure out
+ * which coordinate to nudge inward (no more silent 15s
+ * `waitForRequest` timeouts).
+ */
+function describeOffCanvasPoint(
+  kind: string,
+  relative: Point,
+  resolved: Point,
+  geometry: CanvasGeometry,
+): string {
+  const parts: string[] = [
+    `${kind}: canvas-relative ${fmtPoint(relative)} resolved to ${fmtPoint(resolved)} ` +
+      `which lies outside the visible canvas region`,
+  ];
+  if (geometry.visible) {
+    parts.push(`visible region ${fmtBox(geometry.visible)}`);
+  } else {
+    parts.push("visible region is empty (canvas is fully off-screen)");
+  }
+  if (geometry.box) {
+    parts.push(`raw bounding box ${fmtBox(geometry.box)}`);
+  }
+  if (geometry.viewport) {
+    parts.push(
+      `viewport ${geometry.viewport.width}×${geometry.viewport.height}`,
+    );
+  }
+  parts.push(
+    "Konva's React-side hit detection silently drops clicks outside the visible region — " +
+      "pick canvas-relative coordinates whose resolved viewport position is fully inside it.",
+  );
+  return parts.join(". ");
+}
+
+/**
+ * Throw a descriptive error when any of `points` lies outside the
+ * canvas's visible region. Used by `clickOnCanvas` / `dragOnCanvas`
+ * to surface the silent-drop pitfall (clicks within a few pixels of
+ * the canvas's bottom/right edge that never reach `handleStageClick`)
+ * with a clear, actionable message instead of letting the spec time
+ * out on a downstream `waitForRequest`.
+ */
+function assertPointsInsideVisibleRegion(
+  kind: string,
+  geometry: CanvasGeometry,
+  points: Array<{ relative: Point; resolved: Point }>,
+): void {
+  if (!geometry.visible) {
+    // No bounding box, no viewport, or zero-area intersection —
+    // surface the same descriptive error from the first point so the
+    // failure mode is consistent with the in-region case.
+    if (points.length === 0) return;
+    const first = points[0]!;
+    throw new Error(describeOffCanvasPoint(kind, first.relative, first.resolved, geometry));
+  }
+  const offending = points.find((p) => !pointInRect(p.resolved, geometry.visible!));
+  if (offending) {
+    throw new Error(
+      describeOffCanvasPoint(kind, offending.relative, offending.resolved, geometry),
+    );
+  }
 }
 
 /**
@@ -449,8 +620,8 @@ export async function dragOnCanvas(
     `${fmtPoint(start)} → ${fmtPoint(end)} (canvas-relative)`;
 
   await test.step(stepTitle, async () => {
-    const box = await canvas.boundingBox();
-    if (!box) {
+    const geometry = await resolveCanvasGeometry(page, canvas);
+    if (!geometry.box) {
       await attachGesture("canvas-drag.gesture", {
         kind: "dragOnCanvas",
         browserName,
@@ -460,6 +631,7 @@ export async function dragOnCanvas(
       });
       throw new Error("Canvas has no bounding box");
     }
+    const box = geometry.box;
     const offset = (p: Point): Point => ({ x: box.x + p.x, y: box.y + p.y });
     const resolvedStart = offset(start);
     const resolvedEnd = offset(end);
@@ -469,6 +641,11 @@ export async function dragOnCanvas(
       kind: "dragOnCanvas",
       browserName,
       canvasBoundingBox: box,
+      // Task #2302 — record the visible canvas region (intersection
+      // of the bounding box with the viewport) alongside the raw
+      // bounding box so a failing spec shows both in the trace.
+      visibleCanvasRegion: geometry.visible,
+      viewport: geometry.viewport,
       relative: { start, end, intermediate: options.intermediate ?? null },
       resolved: {
         from: resolvedStart,
@@ -478,6 +655,25 @@ export async function dragOnCanvas(
       preMoves: options.preMoves ?? true,
       tuning: getDragTuning(browserName),
     });
+
+    // Task #2302 — guard against silent-drop pitfalls (clicks within
+    // a few pixels of the canvas's bottom/right edge that never reach
+    // `handleStageClick`, or clicks past the right edge that miss
+    // the canvas entirely). Throw a descriptive error here instead of
+    // letting the surrounding spec time out on a downstream wait.
+    const checkedPoints: Array<{ relative: Point; resolved: Point }> = [
+      { relative: start, resolved: resolvedStart },
+      { relative: end, resolved: resolvedEnd },
+    ];
+    if (options.intermediate && resolvedIntermediate) {
+      for (let i = 0; i < options.intermediate.length; i += 1) {
+        checkedPoints.push({
+          relative: options.intermediate[i]!,
+          resolved: resolvedIntermediate[i]!,
+        });
+      }
+    }
+    assertPointsInsideVisibleRegion("dragOnCanvas", geometry, checkedPoints);
 
     // Trace-viewer group title now that we know the canvas bounding box —
     // having the box inline makes it possible to tell at a glance whether
@@ -525,8 +721,8 @@ export async function clickOnCanvas(
   // can include the resolved viewport coordinates. That makes a failing
   // click-based spec scannable in the Playwright HTML report without
   // having to expand the step's JSON attachment.
-  const box = await canvas.boundingBox();
-  if (!box) {
+  const geometry = await resolveCanvasGeometry(page, canvas);
+  if (!geometry.box) {
     await attachGesture("canvas-drag.gesture", {
       kind: "clickOnCanvas",
       browserName,
@@ -535,6 +731,7 @@ export async function clickOnCanvas(
     });
     throw new Error("Canvas has no bounding box");
   }
+  const box = geometry.box;
   const resolved: Point = { x: box.x + point.x, y: box.y + point.y };
   const tuning = getDragTuning(browserName);
 
@@ -547,10 +744,27 @@ export async function clickOnCanvas(
       kind: "clickOnCanvas",
       browserName,
       canvasBoundingBox: box,
+      // Task #2302 — record the visible canvas region (intersection
+      // of the bounding box with the viewport) alongside the raw
+      // bounding box so a failing spec shows both in the trace.
+      visibleCanvasRegion: geometry.visible,
+      viewport: geometry.viewport,
       relative: { point },
       resolved: { point: resolved },
       tuning,
     });
+
+    // Task #2302 — guard against the silent-drop pitfall: clicks
+    // within a few pixels of the canvas's bottom/right edge (or past
+    // it entirely on a viewport that's narrower than the stage's
+    // logical canvas) silently fail to reach `handleStageClick` and
+    // the surrounding spec ends up timing out on a downstream
+    // `waitForRequest` with no obvious cause. Throwing here surfaces
+    // the resolved viewport coordinate, the visible region, and the
+    // raw bounding box so the offending coordinate is easy to spot.
+    assertPointsInsideVisibleRegion("clickOnCanvas", geometry, [
+      { relative: point, resolved },
+    ]);
 
     await page.mouse.move(resolved.x, resolved.y);
     await page.mouse.move(resolved.x, resolved.y);

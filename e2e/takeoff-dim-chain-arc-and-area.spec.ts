@@ -101,27 +101,21 @@ test.describe("Takeoff Dim Input — chain mode on ARC + AREA (Task #2269)", () 
     // Four cursor positions whose RESOLVED (post-`applyFixedLength`)
     // vertices stay well outside the close-on-first-vertex threshold
     // (10 px in image space — `use-takeoff-interactions.ts:771-772`).
-    // Two pitfalls drove the final coordinate choice:
+    // The naive choice of a 200 px square (cursors at the corners of a
+    // 200 px box) does NOT work: each clamped segment is only 125 px,
+    // so when the path doubles back, the resolved fourth point can
+    // land within 10 px of the first depending on rounding. We use a
+    // "snake" trajectory that monotonically moves AWAY from the first
+    // vertex — every subsequent resolved vertex is provably >
+    // EXPECTED_PX from v1, so close-on-first can never accidentally
+    // fire and Enter is the only commit path.
     //
-    //   1. The naive choice of a 200 px square (cursors at the corners
-    //      of a 200 px box) does NOT work: each clamped segment is
-    //      only 125 px, so when the path doubles back, the resolved
-    //      fourth point can land within 10 px of the first depending
-    //      on rounding. We use a "snake" trajectory that monotonically
-    //      moves AWAY from the first vertex — every subsequent
-    //      resolved vertex is provably > EXPECTED_PX from v1, so
-    //      close-on-first can never accidentally fire and Enter is
-    //      the only commit path.
-    //   2. The seeded sheet renders into a Konva canvas roughly
-    //      ~600 px tall at our 1600x1000 viewport, so click coords
-    //      with y ≥ ~580 land within a few pixels of the canvas's
-    //      bottom edge. Konva's React-side hit detection does not
-    //      reliably register clicks that close to the boundary
-    //      (mouseDown fires but the synthesized stage-click never
-    //      reaches `handleStageClick`), which would silently drop a
-    //      vertex and leave the polygon with one fewer point than the
-    //      test asked for. We keep every cursor y ≤ 400 so every
-    //      click is comfortably inside the canvas.
+    // Off-canvas safety (clicks landing within a few pixels of the
+    // canvas's bottom/right edge silently dropping) is enforced by
+    // `clickOnCanvas` itself (Task #2302) — if a coordinate lands
+    // outside the visible canvas region the helper throws with the
+    // resolved point, viewport size, and visible region inline, so
+    // there's no need to hand-document a "y ≤ 400" safe box here.
     //
     // Resolved coordinates (computed with `applyFixedLength` projecting
     // each cursor onto the prior anchor's ray at exactly 125 image px):
@@ -171,10 +165,9 @@ test.describe("Takeoff Dim Input — chain mode on ARC + AREA (Task #2269)", () 
     // future regression dropped the chain gate from
     // `onConsumeDimLength`, the SECOND polygon's interior segments
     // would snap to cursor distance and this loop would fail.
-    // Cursor x values are kept ≤ 1200 because at our 1600x1000
-    // viewport the canvas's right edge sits a few pixels inside the
-    // viewport's right edge — anything past ~1300 risks the same
-    // off-canvas-click silent-drop pitfall called out for polygon #1.
+    // Off-canvas safety is again enforced by `clickOnCanvas` (Task
+    // #2302), so the cursor x values are picked purely on the snake
+    // trajectory, not as a hand-tuned safe box.
     const secondPolygonCommit = captureNextCommit(page);
     await clickOnCanvas(page, canvas, { x: 500, y: 100 });
     await expectChipStillChained(page);
@@ -235,23 +228,14 @@ test.describe("Takeoff Dim Input — chain mode on ARC + AREA (Task #2269)", () 
     // place the cursors well past EXPECTED_PX in distinct directions
     // to keep the resolved triple non-collinear.
     //
-    // Two layout pitfalls drove the cursor box (x ∈ [300, 1100],
-    // y ∈ [100, 350]):
-    //
-    //   1. The Konva stage's canvas DOM extends from viewport x=0
-    //      across the full 1600 px width — including the area UNDER
-    //      the left navigation sidebar. The sidebar overlay sits on
-    //      top of the canvas in z-order, so any click whose viewport
-    //      x lands inside the sidebar's footprint (~200 px wide on
-    //      a fresh page) is silently swallowed by the sidebar
-    //      instead of reaching the Konva stage. We keep cursor x
-    //      ≥ 300 so the resolved viewport coordinate is safely past
-    //      the sidebar even when the canvas reports `box.x = 0`.
-    //   2. The seeded sheet's canvas is ~607 px tall and Konva's
-    //      React-side hit detection drops clicks that land within a
-    //      few pixels of the boundary (the same silent-drop pitfall
-    //      called out in the AREA test above). y ≤ 350 keeps every
-    //      click comfortably inside the visible canvas region.
+    // Cursor x is kept ≥ 300 so the resolved viewport coordinate is
+    // safely past the left navigation sidebar — the sidebar overlay
+    // sits on top of the Konva stage's full-viewport-width canvas in
+    // z-order and silently swallows clicks whose viewport x lands
+    // inside its footprint (~200 px wide). The visible-canvas region
+    // check in `clickOnCanvas` (Task #2302) only catches points that
+    // miss the canvas bounding box itself, not points that hit the
+    // canvas-but-are-occluded-by-an-overlay.
     const firstArcCommit = captureNextCommit(page);
     await clickOnCanvas(page, canvas, { x: 300, y: 100 });
     await expectChipStillChained(page);
