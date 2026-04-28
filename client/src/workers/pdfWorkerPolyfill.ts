@@ -34,6 +34,16 @@
  *   (`__tests__/pdfWorkerPolyfill.test.ts`) so that a future
  *   `pdfjs-dist` upgrade that changes the underlying assumption is
  *   noticed instead of silently re-breaking the worker.
+ *
+ * Task #2263 — Upstream fix:
+ *   The unguarded `window.matchMedia(...)` lives in `ColorManager.convert`
+ *   in upstream pdf.js (`src/display/editor/tools.js`). A patch that
+ *   guards it on `typeof window !== "undefined"` is staged at
+ *   `patches/pdfjs-dist-worker-window-guard.upstream.patch` and is
+ *   waiting on a maintainer to open the PR against
+ *   https://github.com/mozilla/pdf.js. See `patches/README.md` for the
+ *   full submission status and the cleanup checklist for deleting this
+ *   file once the fix is published in `pdfjs-dist`.
  */
 
 interface MediaQueryListLike {

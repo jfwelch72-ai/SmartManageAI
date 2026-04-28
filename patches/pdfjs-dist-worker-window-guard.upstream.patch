@@ -1,0 +1,91 @@
+From: Replit task #2263
+Subject: [PATCH] Guard DOM-only color helpers so pdf.js can run inside a Worker
+
+pdf.js v5 is otherwise worker-friendly: getDocument / getPage / page.render
+all already work with an OffscreenCanvas inside a dedicated module worker.
+The one remaining footgun is `ColorManager.convert`, which reaches
+`window.matchMedia("(forced-colors: active)")` with no environment guard.
+In a worker `window` is undefined and the call throws
+`ReferenceError: window is not defined`, breaking the very first
+page.render() call.
+
+`ColorScheme.isDarkMode` already uses optional chaining
+(`window?.matchMedia?.(...)`) and is safe; only `ColorManager.convert`
+needs to be brought up to the same standard. We also add a tiny helper
+so future DOM-only forced-colors code paths can opt in by calling it
+instead of inlining the check (and re-introducing the same footgun).
+
+Without the guard, every consumer that runs pdfjs-dist inside a worker
+has to ship a `window` / `matchMedia` polyfill on the worker global.
+With it, the worker can `import "pdfjs-dist"` directly and behave the
+same as the main-thread bundle.
+
+Target file in upstream source tree:
+  src/display/editor/tools.js  (the file that defines ColorManager)
+
+Indices and surrounding lines below are illustrative — please regenerate
+against the current upstream HEAD before posting; the change itself is
+the four-line guard inside `convert()` and the matching helper above it.
+
+---
+diff --git a/src/display/editor/tools.js b/src/display/editor/tools.js
+--- a/src/display/editor/tools.js
++++ b/src/display/editor/tools.js
+@@
++// Worker-safe check for the OS "forced colors" / high-contrast mode.
++// Returns false (the default render path) when `window` is unavailable
++// — e.g. when pdf.js runs inside a dedicated Web Worker — instead of
++// throwing `ReferenceError: window is not defined`. Mirrors the
++// optional-chaining style already used by `ColorScheme.isDarkMode`.
++function isForcedColorsActive() {
++  return (
++    typeof window !== "undefined" &&
++    !!window.matchMedia?.("(forced-colors: active)").matches
++  );
++}
++
+ class ColorManager {
+   static _colorsMapping = new Map([
+     ["CanvasText", [0, 0, 0]],
+     ["Canvas", [255, 255, 255]],
+   ]);
+
+   get _colors() {
+     const colors = new Map([
+       ["CanvasText", null],
+       ["Canvas", null],
+     ]);
+     getColorValues(colors);
+     return shadow(this, "_colors", colors);
+   }
+
+   convert(color) {
+     const rgb = getRGB(color);
+-    if (!window.matchMedia("(forced-colors: active)").matches) {
++    if (!isForcedColorsActive()) {
+       return rgb;
+     }
+     for (const [name, RGB] of this._colors) {
+       if (RGB.every((x, i) => x === rgb[i])) {
+         return ColorManager._colorsMapping.get(name);
+       }
+     }
+     return rgb;
+   }
+--
+
+Test plan for upstream reviewers
+================================
+1. Run the existing test suite: `gulp lint && gulp unittest && gulp browsertest`
+   — none of the high-contrast / forced-colors regression tests change
+   behaviour because `window` is always defined in the browser harnesses.
+2. Add a node-side smoke test that imports `tools.js` after deleting
+   `globalThis.window` and asserts `new ColorManager().convert("#abc")`
+   returns the rgb triple instead of throwing. (This is the exact
+   failure mode reproduced in worker contexts.)
+3. Confirm that with this patch a dedicated module worker can call
+   `getDocument(...).promise` followed by `page.render({ canvas, ... })`
+   without first installing a `window` shim. The downstream consumer
+   that motivated this patch (Replit, task #2263) maintains a worker
+   harness that asserts exactly this and will drop its shim once the
+   guard is in place.
