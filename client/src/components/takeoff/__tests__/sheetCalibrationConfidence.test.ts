@@ -9,7 +9,11 @@
  * before they take off any quantities. These cases are the contract.
  */
 import { describe, it, expect } from "vitest";
-import { computeSheetCalibrationConfidence } from "../sheetCalibrationConfidence";
+import {
+  computeSheetCalibrationConfidence,
+  measurementHasDrift,
+  selectDriftingMeasurementIds,
+} from "../sheetCalibrationConfidence";
 
 describe("computeSheetCalibrationConfidence", () => {
   it("returns UNVERIFIED for a sheet with no scale at all", () => {
@@ -176,5 +180,81 @@ describe("computeSheetCalibrationConfidence", () => {
       [],
     );
     expect(result.tooltip.toLowerCase()).toContain("calibration");
+  });
+});
+
+/**
+ * Task #2345 — Per-row drift selectors. The bulk + per-row remediation
+ * UI uses these instead of the sheet-level scoring above so the table
+ * can render an "in drift" badge per row and a bulk button with an
+ * accurate count. The contract is intentionally narrow: drift only
+ * counts when BOTH labels are non-null and they differ — an
+ * unlabelled capture (legacy data) is the sheet-level concern.
+ */
+describe("measurementHasDrift", () => {
+  it("flags a measurement whose capture label disagrees with the sheet's current label", () => {
+    expect(
+      measurementHasDrift(
+        { scaleLabel: '1/4" = 1\'-0"' },
+        { scaleAtCaptureLabel: '1/8" = 1\'-0"' },
+      ),
+    ).toBe(true);
+  });
+
+  it("does NOT flag a measurement whose capture label matches the sheet", () => {
+    expect(
+      measurementHasDrift(
+        { scaleLabel: '1/4" = 1\'-0"' },
+        { scaleAtCaptureLabel: '1/4" = 1\'-0"' },
+      ),
+    ).toBe(false);
+  });
+
+  it("does NOT flag rows when the sheet has no current label (sheet-level concern)", () => {
+    expect(
+      measurementHasDrift(
+        { scaleLabel: null },
+        { scaleAtCaptureLabel: '1/8" = 1\'-0"' },
+      ),
+    ).toBe(false);
+  });
+
+  it("does NOT flag rows that lack a capture label (legacy data)", () => {
+    expect(
+      measurementHasDrift(
+        { scaleLabel: '1/4" = 1\'-0"' },
+        { scaleAtCaptureLabel: null },
+      ),
+    ).toBe(false);
+  });
+
+  it("ignores leading / trailing whitespace before comparing", () => {
+    expect(
+      measurementHasDrift(
+        { scaleLabel: '  1/4" = 1\'-0"  ' },
+        { scaleAtCaptureLabel: '1/4" = 1\'-0"' },
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("selectDriftingMeasurementIds", () => {
+  it("returns ids of only the drifting measurements", () => {
+    const sheet = { scaleLabel: '1/4" = 1\'-0"' };
+    const ids = selectDriftingMeasurementIds(sheet, [
+      { id: "a", scaleAtCaptureLabel: '1/8" = 1\'-0"' },
+      { id: "b", scaleAtCaptureLabel: '1/4" = 1\'-0"' },
+      { id: "c", scaleAtCaptureLabel: null },
+      { id: "d", scaleAtCaptureLabel: '3/16" = 1\'-0"' },
+    ]);
+    expect(ids.sort()).toEqual(["a", "d"]);
+  });
+
+  it("returns an empty array when the sheet has no current label", () => {
+    const ids = selectDriftingMeasurementIds(
+      { scaleLabel: null },
+      [{ id: "a", scaleAtCaptureLabel: '1/8" = 1\'-0"' }],
+    );
+    expect(ids).toEqual([]);
   });
 });

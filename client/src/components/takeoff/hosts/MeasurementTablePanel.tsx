@@ -9,6 +9,12 @@ export interface MeasurementTablePanelProps {
   categories: QuantityCategory[];
   selectedMeasurementId: string | null;
   scalePxPerFoot: number | null | undefined;
+  // Task #2345 — drift remediation pass-throughs. Optional so the
+  // panel works for embedders that haven't wired the feature yet.
+  scaleLabel?: string | null;
+  onRemediateDrift?: (measurementId: string, action: "recapture" | "mark_stale") => void;
+  onBulkRemediateDrift?: (action: "recapture" | "mark_stale") => void;
+  isRemediatingDrift?: boolean;
   onClose: () => void;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
@@ -46,6 +52,10 @@ function MeasurementTablePanelInner(props: MeasurementTablePanelProps) {
           onUpdate={props.onUpdate}
           onUnlockAndRescale={props.onUnlockAndRescale}
           scalePxPerFoot={props.scalePxPerFoot ?? undefined}
+          scaleLabel={props.scaleLabel ?? undefined}
+          onRemediateDrift={props.onRemediateDrift}
+          onBulkRemediateDrift={props.onBulkRemediateDrift}
+          isRemediatingDrift={props.isRemediatingDrift}
         />
       </div>
     </div>

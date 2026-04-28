@@ -1506,6 +1506,56 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     onError: (e: Error) => toast({ title: "Reject failed", description: e.message, variant: "destructive" }),
   });
 
+  // Task #2345 — Drift remediation mutations. Per-row and bulk
+  // share the same invalidation set as the review queue (because
+  // "mark stale" flips a measurement back into PENDING) plus the
+  // sheet's measurements list (because "recapture" recomputes
+  // length/area/volume on those rows). We deliberately don't surface
+  // the long failure list from the bulk endpoint here — the route
+  // already returns `remediated` (count) and `ids` (success), and
+  // any per-row failure was logged server-side; for the toast we
+  // just use the aggregate count.
+  const remediateDriftMutation = useMutation({
+    mutationFn: async ({ measurementId, action }: { measurementId: string; action: "recapture" | "mark_stale" }) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/takeoff/measurements/${measurementId}/remediate-drift`,
+        { action },
+      );
+      return res.json();
+    },
+    onSuccess: (_data, vars) => {
+      invalidateAfterReview();
+      toast({
+        title: vars.action === "recapture" ? "Recaptured at current scale" : "Marked as stale",
+        description:
+          vars.action === "recapture"
+            ? "Snapshot updated and quantities recomputed."
+            : "Sent to the review queue for triage.",
+      });
+    },
+    onError: (e: Error) => toast({ title: "Drift remediation failed", description: e.message, variant: "destructive" }),
+  });
+  const bulkRemediateDriftMutation = useMutation({
+    mutationFn: async ({ sheetId, action }: { sheetId: string; action: "recapture" | "mark_stale" }) => {
+      const res = await apiRequest(
+        "POST",
+        `/api/takeoff/sheets/${sheetId}/remediate-drift`,
+        { action },
+      );
+      return res.json() as Promise<{ action: string; remediated: number; ids: string[] }>;
+    },
+    onSuccess: (data, vars) => {
+      invalidateAfterReview();
+      toast({
+        title: vars.action === "recapture"
+          ? `Recaptured ${data.remediated} measurement${data.remediated === 1 ? "" : "s"}`
+          : `Marked ${data.remediated} measurement${data.remediated === 1 ? "" : "s"} as stale`,
+      });
+    },
+    onError: (e: Error) => toast({ title: "Bulk drift remediation failed", description: e.message, variant: "destructive" }),
+  });
+
   const moveIssueMutation = useMutation({
     mutationFn: async ({ issueId, sheetId, position }: { issueId: string; sheetId?: string; position?: { x: number; y: number } }) => {
       const body: Record<string, unknown> = {};
@@ -4675,6 +4725,15 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       categories,
       selectedMeasurementId,
       scalePxPerFoot: currentSheet?.scalePxPerFoot,
+      // Task #2345 — drift remediation pass-throughs.
+      scaleLabel: currentSheet?.scaleLabel ?? null,
+      onRemediateDrift: (measurementId: string, action: "recapture" | "mark_stale") =>
+        remediateDriftMutation.mutate({ measurementId, action }),
+      onBulkRemediateDrift: (action: "recapture" | "mark_stale") => {
+        if (!selectedSheet) return;
+        bulkRemediateDriftMutation.mutate({ sheetId: selectedSheet, action });
+      },
+      isRemediatingDrift: remediateDriftMutation.isPending || bulkRemediateDriftMutation.isPending,
       onClose: () => setShowMeasurementTable(false),
       onSelect: (id: string) => setSelectedMeasurementId(id),
       onDelete: (id: string) => {

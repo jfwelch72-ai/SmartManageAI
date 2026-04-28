@@ -186,6 +186,56 @@ function detectDrift(
   return { hasDrift: false, driftLabels: [] };
 }
 
+/**
+ * Task #2345 — Per-measurement drift selector. A single row is in
+ * drift when it carries a non-empty `scaleAtCaptureLabel` snapshot
+ * that disagrees with the sheet's current `scaleLabel`. Rows whose
+ * snapshot is null/empty (legacy rows committed before the snapshot
+ * column shipped, or count-style measurements that were never
+ * stamped) are intentionally NOT flagged — there's no captured label
+ * to disagree with, so a "Recapture at current scale" affordance
+ * would have nothing to compare against. Rows on a sheet whose
+ * current `scaleLabel` itself is null are also not flagged: the
+ * sheet has no authoritative label to recapture *to*.
+ *
+ * The chip-level `detectDrift` above also flags multi-label drift
+ * across the sheet (two captures against different labels even if
+ * one matches). The per-row selector deliberately doesn't: each
+ * row's affordance is about *its own* snapshot, not about the
+ * sheet's mixed history. The bulk action on the sheet remains the
+ * way to remediate a multi-label situation.
+ */
+export function measurementHasDrift(
+  sheet: SheetCalibrationInput | null | undefined,
+  measurement: MeasurementCalibrationInput | null | undefined,
+): boolean {
+  if (!sheet || !measurement) return false;
+  const sheetLabel = normalizeLabel(sheet.scaleLabel);
+  const captured = normalizeLabel(measurement.scaleAtCaptureLabel);
+  if (!sheetLabel || !captured) return false;
+  return sheetLabel !== captured;
+}
+
+/**
+ * Task #2345 — Bulk helper: project the IDs of all drifting
+ * measurements on a sheet so the bulk-remediate action and the
+ * "N drifting" count can read from the same source of truth as the
+ * per-row affordance.
+ */
+export function selectDriftingMeasurementIds<
+  T extends MeasurementCalibrationInput & { id: string },
+>(
+  sheet: SheetCalibrationInput | null | undefined,
+  measurements: ReadonlyArray<T>,
+): string[] {
+  if (!sheet) return [];
+  const out: string[] = [];
+  for (const m of measurements) {
+    if (measurementHasDrift(sheet, m)) out.push(m.id);
+  }
+  return out;
+}
+
 const LEVEL_LABEL: Record<SheetCalibrationConfidenceLevel, string> = {
   HIGH: "High",
   MEDIUM: "Medium",

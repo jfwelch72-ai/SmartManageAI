@@ -2183,6 +2183,393 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
   }
 });
 
+// Task #2345 — Drift remediation. Task #2332's confidence chip already
+// surfaces "this sheet's measurements were captured against a
+// different scale label than the sheet now reads"; this endpoint is
+// the corresponding *fix*. Two actions are supported:
+//
+//   - "recapture": re-stamp `scale_at_capture_label` /
+//     `scale_at_capture_px_per_foot` from the sheet's current scale
+//     and recompute geometry against that new scale. Equivalent to
+//     telling the server "the original capture was wrong; this row
+//     was always meant to be against the sheet's current scale."
+//     This intentionally clears any per-row `lockedScalePxPerFoot`
+//     snapshot from Task #2326 — the user is explicitly opting back
+//     into the sheet's authoritative scale for this row, so the
+//     prior lock no longer applies.
+//
+//   - "mark_stale": leave the snapshot and quantities untouched but
+//     flip `needsReview = true` and (re)open a PENDING reviewStatus
+//     so the row surfaces in the review queue (Task #2321) for an
+//     estimator to triage manually. Used when a user knows the row
+//     is wrong but wants to fix it later instead of blindly
+//     re-stamping it.
+//
+// Pre-conditions enforced by the route (all of which 4xx, never 5xx):
+//   - The sheet must currently carry a non-null `scaleLabel` AND
+//     `scalePxPerFoot` (you can't recapture against an unlabelled
+//     sheet, and you can't recompute geometry without a scale).
+//   - The measurement's `scaleAtCaptureLabel` must be non-null and
+//     differ from the sheet's current label (i.e. drift actually
+//     exists per `measurementHasDrift`). Idempotent no-ops on
+//     non-drifting rows would still write an audit entry, which
+//     would let a malicious caller flood the audit log.
+//   - Standard sheet access + locked-version checks (mirror of the
+//     per-id PATCH route).
+//
+// Audit-log shape:
+//   action = "UPDATE" (audit_action enum doesn't have a dedicated
+//     drift code; using a structured `op` field in newValue keeps
+//     QA filters working without an enum migration).
+//   newValue = JSON describing { op, fromLabel, toLabel, fromPxPerFoot,
+//     toPxPerFoot, recomputedColumns? }.
+async function applyDriftRecapture(
+  measurement: typeof takeoffMeasurements.$inferSelect,
+  sheet: { scalePxPerFoot: number | null; scaleLabel: string | null },
+): Promise<{
+  updates: Partial<typeof takeoffMeasurements.$inferInsert>;
+  newRow: typeof takeoffMeasurements.$inferSelect;
+}> {
+  // Force the new snapshot, clear stale computed columns, then run
+  // `computeMeasurementGeometry` which will pick up the new
+  // `scaleAtCapturePxPerFoot` (its `effectiveScale = captureScale ??
+  // scalePxPerFoot` resolves to the new value because we set the
+  // capture-scale field above).
+  const seed: Record<string, unknown> = {
+    points: measurement.points,
+    type: measurement.type,
+    pitchRatio: measurement.pitchRatio,
+    depthFeet: measurement.depthFeet,
+    metadata: measurement.metadata,
+    scaleAtCaptureLabel: sheet.scaleLabel,
+    scaleAtCapturePxPerFoot: sheet.scalePxPerFoot,
+    computedLengthFt: undefined,
+    computedAreaFt2: undefined,
+    computedVolumeCy: undefined,
+    computedSurfaceAreaFt2: undefined,
+  };
+  const computed = await computeMeasurementGeometry(seed, sheet.scalePxPerFoot);
+  // Build the update payload. Only forward the columns we actually
+  // recomputed plus the snapshot fields; everything else on the row
+  // is left alone.
+  const updates: Partial<typeof takeoffMeasurements.$inferInsert> = {
+    scaleAtCaptureLabel: sheet.scaleLabel,
+    scaleAtCapturePxPerFoot: sheet.scalePxPerFoot,
+    // Clear the per-row scale lock from Task #2326 — the user is
+    // explicitly re-opting into the sheet's authoritative scale.
+    lockedScalePxPerFoot: null,
+    updatedAt: new Date(),
+  };
+  for (const key of [
+    "computedLengthFt",
+    "computedAreaFt2",
+    "computedVolumeCy",
+    "computedSurfaceAreaFt2",
+    "metadata",
+  ] as const) {
+    if (computed[key] !== undefined) {
+      (updates as Record<string, unknown>)[key] = computed[key];
+    }
+  }
+  const [newRow] = await db
+    .update(takeoffMeasurements)
+    .set(updates)
+    .where(eq(takeoffMeasurements.id, measurement.id))
+    .returning();
+  return { updates, newRow };
+}
+
+async function applyDriftMarkStale(
+  measurement: typeof takeoffMeasurements.$inferSelect,
+  sheet: { scaleLabel: string | null },
+  userId: string,
+): Promise<typeof takeoffMeasurements.$inferSelect> {
+  // Append (not replace) a system note so any prior reviewer note
+  // survives. Capped to keep the column from ballooning if the same
+  // row is marked stale repeatedly across calibrations.
+  const stamp = new Date().toISOString();
+  const stalePhrase =
+    `Scale drift flagged ${stamp} — captured at "${measurement.scaleAtCaptureLabel ?? "?"}" but sheet now reads "${sheet.scaleLabel ?? "?"}".`;
+  const combinedNote = measurement.reviewNote
+    ? `${measurement.reviewNote}\n${stalePhrase}`.slice(0, 4000)
+    : stalePhrase;
+  const [newRow] = await db
+    .update(takeoffMeasurements)
+    .set({
+      needsReview: true,
+      // Re-open the queue item so a previously-approved row that
+      // drifted gets eyes on it again. We deliberately do NOT clear
+      // reviewedById/At — the prior decision is part of the row's
+      // history and the queue UI will show "previously approved by …
+      // before scale changed".
+      reviewStatus: "PENDING",
+      reviewRequestedById: userId,
+      reviewRequestedAt: new Date(),
+      reviewNote: combinedNote,
+      updatedAt: new Date(),
+    })
+    .where(eq(takeoffMeasurements.id, measurement.id))
+    .returning();
+  return newRow;
+}
+
+const driftRemediateActionSchema = z.enum(["recapture", "mark_stale"]);
+
+router.post("/api/takeoff/measurements/:id/remediate-drift", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { id } = req.params;
+    const parsedAction = driftRemediateActionSchema.safeParse(req.body?.action);
+    if (!parsedAction.success) {
+      res.status(400).json({ error: "action must be \"recapture\" or \"mark_stale\"" });
+      return;
+    }
+    const action = parsedAction.data;
+
+    const [existing] = await db
+      .select()
+      .from(takeoffMeasurements)
+      .where(eq(takeoffMeasurements.id, id))
+      .limit(1);
+    if (!existing) {
+      res.status(404).json({
+        error: "Measurement not found — it may have been deleted",
+        reason: "not_found",
+        failedMeasurementIds: [id],
+      });
+      return;
+    }
+
+    const access = await verifySheetAccess(existing.sheetId, req.user!);
+    if (!access.allowed) {
+      res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Access denied" });
+      return;
+    }
+
+    // Refuse to mutate a row in a locked version — same contract as
+    // the per-id PATCH route. Locked-version protection has a
+    // different intent than per-row scale lock.
+    const locked = await isMeasurementLocked(id);
+    if (locked) {
+      res.status(403).json({ error: "Cannot remediate a measurement in a locked version" });
+      return;
+    }
+
+    const [sheet] = await db
+      .select({
+        scalePxPerFoot: takeoffSheets.scalePxPerFoot,
+        scaleLabel: takeoffSheets.scaleLabel,
+      })
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.id, existing.sheetId))
+      .limit(1);
+
+    if (!sheet) {
+      res.status(404).json({ error: "Sheet not found" });
+      return;
+    }
+
+    // Drift-existence check. Inlined rather than imported from the
+    // client-side selector because the `client/` directory isn't on
+    // the server's module graph; the contract is one-line and is
+    // covered by both the client unit test and the server integration
+    // test below.
+    const sheetLabel = (sheet.scaleLabel ?? "").trim();
+    const captureLabel = (existing.scaleAtCaptureLabel ?? "").trim();
+    if (!sheetLabel || !captureLabel || sheetLabel === captureLabel) {
+      res.status(409).json({
+        error: "This measurement is not in scale drift — nothing to remediate.",
+        reason: "no_drift",
+      });
+      return;
+    }
+
+    if (action === "recapture") {
+      if (!sheet.scalePxPerFoot || sheet.scalePxPerFoot <= 0) {
+        res.status(409).json({ error: "Sheet has no current scalePxPerFoot to recapture against" });
+        return;
+      }
+      const { newRow } = await applyDriftRecapture(existing, {
+        scalePxPerFoot: sheet.scalePxPerFoot,
+        scaleLabel: sheet.scaleLabel,
+      });
+      await logUpdate(
+        req.user!.id,
+        "takeoff_measurement",
+        id,
+        {
+          scaleAtCaptureLabel: existing.scaleAtCaptureLabel,
+          scaleAtCapturePxPerFoot: existing.scaleAtCapturePxPerFoot,
+        },
+        {
+          op: "drift_recapture",
+          fromLabel: existing.scaleAtCaptureLabel,
+          toLabel: sheet.scaleLabel,
+          fromPxPerFoot: existing.scaleAtCapturePxPerFoot,
+          toPxPerFoot: sheet.scalePxPerFoot,
+        },
+        req,
+      );
+      res.json(newRow);
+      return;
+    }
+
+    // action === "mark_stale"
+    const newRow = await applyDriftMarkStale(existing, { scaleLabel: sheet.scaleLabel }, req.user!.id);
+    await logUpdate(
+      req.user!.id,
+      "takeoff_measurement",
+      id,
+      {
+        needsReview: existing.needsReview,
+        reviewStatus: existing.reviewStatus,
+      },
+      {
+        op: "drift_mark_stale",
+        fromLabel: existing.scaleAtCaptureLabel,
+        toLabel: sheet.scaleLabel,
+      },
+      req,
+    );
+    res.json(newRow);
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/api/takeoff/sheets/:sheetId/remediate-drift", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { sheetId } = req.params;
+    const parsedAction = driftRemediateActionSchema.safeParse(req.body?.action);
+    if (!parsedAction.success) {
+      res.status(400).json({ error: "action must be \"recapture\" or \"mark_stale\"" });
+      return;
+    }
+    const action = parsedAction.data;
+
+    const access = await verifySheetAccess(sheetId, req.user!);
+    if (!access.allowed) {
+      res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Sheet not found" });
+      return;
+    }
+
+    // Refuse the bulk action when the active version is locked (no
+    // partial-success here — the whole sheet's measurements share the
+    // same version, so a single locked check is enough).
+    const draftVersionId = await getActiveDraftVersionId(sheetId);
+    if (!draftVersionId && (await hasAnyVersions(sheetId))) {
+      res.status(403).json({ error: "Sheet is locked. Create a new version to remediate measurements." });
+      return;
+    }
+
+    const [sheet] = await db
+      .select({
+        scalePxPerFoot: takeoffSheets.scalePxPerFoot,
+        scaleLabel: takeoffSheets.scaleLabel,
+      })
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.id, sheetId))
+      .limit(1);
+    if (!sheet) {
+      res.status(404).json({ error: "Sheet not found" });
+      return;
+    }
+    const sheetLabel = (sheet.scaleLabel ?? "").trim();
+    if (!sheetLabel) {
+      res.status(409).json({
+        error: "Sheet has no current scaleLabel — set the calibration label before bulk-remediating drift.",
+        reason: "no_sheet_label",
+      });
+      return;
+    }
+    if (action === "recapture" && (!sheet.scalePxPerFoot || sheet.scalePxPerFoot <= 0)) {
+      res.status(409).json({ error: "Sheet has no current scalePxPerFoot to recapture against" });
+      return;
+    }
+
+    // Filter to only the rows that actually drift. Done in SQL so a
+    // sheet with thousands of measurements doesn't pull every row
+    // into Node just to drop the matching ones.
+    const candidates = await db
+      .select()
+      .from(takeoffMeasurements)
+      .where(and(
+        eq(takeoffMeasurements.sheetId, sheetId),
+        isNotNull(takeoffMeasurements.scaleAtCaptureLabel),
+      ));
+    const drifters = candidates.filter((m) => {
+      const cap = (m.scaleAtCaptureLabel ?? "").trim();
+      return cap.length > 0 && cap !== sheetLabel;
+    });
+
+    if (drifters.length === 0) {
+      res.json({ action, remediated: 0, ids: [] });
+      return;
+    }
+
+    const remediatedIds: string[] = [];
+    for (const m of drifters) {
+      try {
+        if (action === "recapture") {
+          await applyDriftRecapture(m, {
+            scalePxPerFoot: sheet.scalePxPerFoot,
+            scaleLabel: sheet.scaleLabel,
+          });
+          await logUpdate(
+            req.user!.id,
+            "takeoff_measurement",
+            m.id,
+            {
+              scaleAtCaptureLabel: m.scaleAtCaptureLabel,
+              scaleAtCapturePxPerFoot: m.scaleAtCapturePxPerFoot,
+            },
+            {
+              op: "drift_recapture",
+              bulk: true,
+              fromLabel: m.scaleAtCaptureLabel,
+              toLabel: sheet.scaleLabel,
+              fromPxPerFoot: m.scaleAtCapturePxPerFoot,
+              toPxPerFoot: sheet.scalePxPerFoot,
+            },
+            req,
+          );
+        } else {
+          await applyDriftMarkStale(m, { scaleLabel: sheet.scaleLabel }, req.user!.id);
+          await logUpdate(
+            req.user!.id,
+            "takeoff_measurement",
+            m.id,
+            {
+              needsReview: m.needsReview,
+              reviewStatus: m.reviewStatus,
+            },
+            {
+              op: "drift_mark_stale",
+              bulk: true,
+              fromLabel: m.scaleAtCaptureLabel,
+              toLabel: sheet.scaleLabel,
+            },
+            req,
+          );
+        }
+        remediatedIds.push(m.id);
+      } catch (error) {
+        // Log but keep going — a single bad row shouldn't poison the
+        // bulk action. Mirrors the calibration loop's per-row
+        // try/catch shape.
+        logError(
+          `Drift remediation failed for measurement ${m.id}:`,
+          { sheetId, action },
+          error instanceof Error ? error : new Error(String(error)),
+        );
+      }
+    }
+
+    res.json({ action, remediated: remediatedIds.length, ids: remediatedIds });
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Update sheet rotation
 router.patch("/api/takeoff/sheets/:id/rotation", requireAuth, async (req: AuthRequest, res, next) => {
   try {

@@ -15,7 +15,16 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { ArrowUpDown, ArrowUp, ArrowDown, Search, X, Trash2, Edit2, Check, Eye, Flag, Lock, LockOpen } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ArrowUpDown, ArrowUp, ArrowDown, Search, X, Trash2, Edit2, Check, Eye, Flag, Lock, LockOpen, AlertTriangle, RefreshCw, ChevronDown } from "lucide-react";
+import { measurementHasDrift, selectDriftingMeasurementIds } from "./sheetCalibrationConfidence";
 
 // Task #2319 — Source column visual language. Each calibration source
 // gets a stable dot colour so estimators can scan a long list and
@@ -50,6 +59,17 @@ interface MeasurementTableProps {
    */
   onUnlockAndRescale?: (id: string) => void;
   scalePxPerFoot?: number | null;
+  // Task #2345 — Drift remediation. The sheet's *current* scale label
+  // is what the per-row drift selector and the bulk action compare
+  // each measurement's `scaleAtCaptureLabel` against. When omitted
+  // (older callers, or sheets with no calibration label), no drift
+  // affordance renders. The two callbacks fan out to the workspace
+  // mutation layer; both are optional so legacy embedders keep
+  // working until they wire them up.
+  scaleLabel?: string | null;
+  onRemediateDrift?: (measurementId: string, action: "recapture" | "mark_stale") => void;
+  onBulkRemediateDrift?: (action: "recapture" | "mark_stale") => void;
+  isRemediatingDrift?: boolean;
 }
 
 type SortField = "label" | "type" | "category" | "length" | "area" | "volume" | "count" | "cost";
@@ -64,6 +84,10 @@ export function MeasurementTable({
   onUpdate,
   onUnlockAndRescale,
   scalePxPerFoot,
+  scaleLabel,
+  onRemediateDrift,
+  onBulkRemediateDrift,
+  isRemediatingDrift,
 }: MeasurementTableProps) {
   const [search, setSearch] = useState("");
   const [sortField, setSortField] = useState<SortField>("label");
@@ -165,6 +189,24 @@ export function MeasurementTable({
 
   const uniqueTypes = [...new Set(measurements.map(m => m.type))].sort();
 
+  // Task #2345 — Drift bookkeeping. Compute a Set<id> of drifting
+  // rows once per render so the row-level lookup is O(1) and the
+  // bulk-action button has the same count the user sees in the
+  // affordance column. The selector is a no-op when `scaleLabel` is
+  // null/undefined (older callers, or sheets with no calibration
+  // label) so existing embedders stay quiet.
+  const driftSheet = useMemo(
+    () => ({ scaleLabel: scaleLabel ?? null }),
+    [scaleLabel],
+  );
+  const driftIds = useMemo(
+    () => new Set(selectDriftingMeasurementIds(driftSheet, measurements)),
+    [driftSheet, measurements],
+  );
+  const driftCount = driftIds.size;
+  const driftEnabled =
+    !!scaleLabel && (!!onRemediateDrift || !!onBulkRemediateDrift);
+
   const totals = useMemo(() => {
     const t = { lf: 0, sf: 0, cy: 0, ea: 0, cost: 0 };
     sortedFiltered.forEach(m => {
@@ -219,6 +261,64 @@ export function MeasurementTable({
         <Badge variant="secondary" className="text-[10px] shrink-0">
           {sortedFiltered.length}/{measurements.length}
         </Badge>
+        {/*
+          Task #2345 — Bulk drift remediation. Renders only when the
+          sheet has a current scaleLabel AND there is at least one
+          drifting row, so the toolbar stays quiet on healthy sheets.
+          The DropdownMenu lets the estimator choose which remediation
+          to apply across all drifting rows in one shot; the per-row
+          dropdown (added below in the label cell) exposes the same
+          two actions for surgical fixes.
+        */}
+        {driftEnabled && driftCount > 0 && onBulkRemediateDrift && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 px-2 text-[10px] gap-1 border-amber-500/60 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300"
+                disabled={isRemediatingDrift}
+                data-testid="button-bulk-remediate-drift"
+              >
+                <AlertTriangle className="w-3 h-3" />
+                {driftCount} drift{driftCount === 1 ? "" : "ed"}
+                <ChevronDown className="w-3 h-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuLabel className="text-xs">
+                Remediate {driftCount} drifting row{driftCount === 1 ? "" : "s"}
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => onBulkRemediateDrift("recapture")}
+                disabled={isRemediatingDrift}
+                data-testid="button-bulk-recapture-drift"
+              >
+                <RefreshCw className="w-3 h-3 mr-2" />
+                <div className="flex flex-col">
+                  <span className="text-xs">Recapture at current scale</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    Re-stamp snapshot to "{scaleLabel}" and recompute quantities
+                  </span>
+                </div>
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => onBulkRemediateDrift("mark_stale")}
+                disabled={isRemediatingDrift}
+                data-testid="button-bulk-mark-stale-drift"
+              >
+                <Flag className="w-3 h-3 mr-2" />
+                <div className="flex flex-col">
+                  <span className="text-xs">Mark as stale (review later)</span>
+                  <span className="text-[10px] text-muted-foreground">
+                    Send to review queue without changing quantities
+                  </span>
+                </div>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
       </div>
 
       <div className="flex-1 overflow-auto">
@@ -284,6 +384,57 @@ export function MeasurementTable({
                         to scale changes (and won't silently shift
                         when they re-calibrate the sheet).
                       */}
+                      {/*
+                        Task #2345 — Per-row drift affordance. Renders
+                        only when this specific measurement's
+                        capture-label disagrees with the sheet's
+                        current label AND the workspace wired up the
+                        per-row callback. Sits next to the Locked
+                        badge so a row that's both locked and drifted
+                        shows both signals — that combination is rare
+                        but legitimate (a user locked a row, then
+                        recalibrated the sheet to a different label
+                        without choosing "preserve quantities").
+                      */}
+                      {driftEnabled && driftIds.has(m.id) && onRemediateDrift && (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                            <button
+                              className="inline-flex items-center gap-0.5 rounded bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 px-1 py-0.5 text-[9px] font-medium shrink-0 disabled:opacity-50"
+                              disabled={isRemediatingDrift}
+                              data-testid={`badge-measurement-drift-${m.id}`}
+                              title={`Captured at "${m.scaleAtCaptureLabel}" — sheet now reads "${scaleLabel}"`}
+                            >
+                              <AlertTriangle className="w-2.5 h-2.5" />
+                              Drift
+                            </button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="start" className="w-56" onClick={(e) => e.stopPropagation()}>
+                            <DropdownMenuLabel className="text-[11px]">
+                              Captured: <span className="font-mono">{m.scaleAtCaptureLabel}</span>
+                              <br />
+                              Sheet now: <span className="font-mono">{scaleLabel}</span>
+                            </DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem
+                              onClick={() => onRemediateDrift(m.id, "recapture")}
+                              disabled={isRemediatingDrift}
+                              data-testid={`button-recapture-drift-${m.id}`}
+                            >
+                              <RefreshCw className="w-3 h-3 mr-2" />
+                              <span className="text-xs">Recapture at current scale</span>
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => onRemediateDrift(m.id, "mark_stale")}
+                              disabled={isRemediatingDrift}
+                              data-testid={`button-mark-stale-drift-${m.id}`}
+                            >
+                              <Flag className="w-3 h-3 mr-2" />
+                              <span className="text-xs">Mark as stale</span>
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      )}
                       {m.lockedScalePxPerFoot != null && (
                         <span
                           className="inline-flex items-center rounded bg-amber-500/15 text-amber-700 dark:text-amber-300 text-[9px] font-medium shrink-0"
