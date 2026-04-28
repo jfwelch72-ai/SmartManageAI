@@ -308,6 +308,68 @@ test.describe("Takeoff Unified Ribbon + Shortcuts", () => {
       .not.toBe(before);
   });
 
+  test("Shift+O walks the full ortho preset cycle 15° → 30° → 45° → 90° → off", async ({
+    page,
+  }) => {
+    const suffix = Date.now();
+    await devLogin(page, "ADMIN");
+    const bid = await createBid(page, suffix);
+    await gotoTakeoff(page, bid.code);
+    await focusRibbon(page);
+
+    const presetLabel = page.getByTestId("ribbon-ortho-preset");
+    const orthoAngleBtn = page.getByTestId("ribbon-tool-ortho-angle");
+
+    // Workspace seeds orthoPresetIndex at ORTHO_PRESETS.length - 1, which
+    // maps to the trailing `null` (== "off"). The first Shift+O bumps the
+    // cycle into the 15° slot, which is also where the constrain mode
+    // flips to "ortho-angle" and the ortho-angle button starts reporting
+    // aria-pressed=true. The final Shift+O (5th press) lands us back on
+    // "off" with the constrain group reset to "none".
+    await expect(presetLabel).toHaveText("off");
+    await expect(orthoAngleBtn).toHaveAttribute("aria-pressed", "false");
+
+    const cycle: Array<{ label: string; angleActive: boolean }> = [
+      { label: "15°", angleActive: true },
+      { label: "30°", angleActive: true },
+      { label: "45°", angleActive: true },
+      { label: "90°", angleActive: true },
+      { label: "off", angleActive: false },
+    ];
+    for (const step of cycle) {
+      await page.keyboard.press("Shift+O");
+      await expect(presetLabel).toHaveText(step.label);
+      await expect(orthoAngleBtn).toHaveAttribute(
+        "aria-pressed",
+        step.angleActive ? "true" : "false",
+      );
+    }
+  });
+
+  test("G toggles grid snap and flips ribbon-tool-show-grid aria-pressed", async ({
+    page,
+  }) => {
+    const suffix = Date.now();
+    await devLogin(page, "ADMIN");
+    const bid = await createBid(page, suffix);
+    await gotoTakeoff(page, bid.code);
+    await focusRibbon(page);
+
+    const gridBtn = page.getByTestId("ribbon-tool-show-grid");
+
+    // gridEnabled hydrates from localStorage and falls back to false on a
+    // fresh browser context, so the View > Grid button starts inactive.
+    await expect(gridBtn).toHaveAttribute("aria-pressed", "false");
+
+    await page.keyboard.press("g");
+    await expect(gridBtn).toHaveAttribute("aria-pressed", "true");
+
+    // Pressing G again toggles the snap back off — confirms the binding
+    // is a real toggle and not a one-shot enable.
+    await page.keyboard.press("g");
+    await expect(gridBtn).toHaveAttribute("aria-pressed", "false");
+  });
+
   test("[ / ] navigates between seeded sheets and updates the active thumbnail", async ({
     page,
   }) => {
@@ -616,8 +678,39 @@ test.describe("Takeoff Unified Ribbon + Shortcuts", () => {
     const polylineBtn = page.getByTestId("ribbon-tool-polyline");
     await expect(polylineBtn).toBeFocused();
 
+    // ArrowLeft walks back to the previous tool in the same group.
+    await page.keyboard.press("ArrowLeft");
+    await expect(linearBtn).toBeFocused();
+
     // Enter activates the focused tool.
     await page.keyboard.press("Enter");
-    await expect(polylineBtn).toHaveAttribute("aria-pressed", "true");
+    await expect(linearBtn).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("Tab moves focus group → group across the active tool of each group", async ({
+    page,
+  }) => {
+    const suffix = Date.now();
+    await devLogin(page, "ADMIN");
+    const bid = await createBid(page, suffix);
+    await gotoTakeoff(page, bid.code);
+
+    // Roving tabindex puts exactly one button per group in the natural
+    // tab order. With no prior interaction, focusedIdx defaults to 0 for
+    // every group, so Tab from Select > Select should land on
+    // Measure > Linear, then Annotate > Note, etc.
+    const selectBtn = page.getByTestId("ribbon-tool-select");
+    await selectBtn.focus();
+    await expect(selectBtn).toBeFocused();
+
+    await page.keyboard.press("Tab");
+    await expect(page.getByTestId("ribbon-tool-linear")).toBeFocused();
+
+    await page.keyboard.press("Tab");
+    await expect(page.getByTestId("ribbon-tool-note")).toBeFocused();
+
+    // Shift+Tab walks the same chain backwards group → group.
+    await page.keyboard.press("Shift+Tab");
+    await expect(page.getByTestId("ribbon-tool-linear")).toBeFocused();
   });
 });
