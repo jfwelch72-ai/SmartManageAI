@@ -28,7 +28,7 @@ import {
   Upload, Download, Eye, FileText, Trash2, FolderOpen, Folder, ChevronRight, ChevronDown,
   Search, MoreVertical, File, Pencil, GripVertical, ArrowRight, Copy, Loader2,
   ExternalLink, X, FolderPlus, Printer, RotateCw, EyeOff, RefreshCw, Box, BookOpen, Columns2, Link2,
-  Building2, Layers, Pin, PinOff, ArrowUpCircle, Sparkles
+  Building2, Layers, Pin, PinOff, ArrowUpCircle
 } from "lucide-react";
 import { AiTakeoffSheetPicker } from "@/components/takeoff/AiTakeoffSheetPicker";
 const BimViewer = lazy(() => import("@/components/bid/BimViewer"));

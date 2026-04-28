@@ -12,7 +12,7 @@ import {
   Upload, Download, Eye, FileText, Trash2, FolderOpen, Folder, ChevronRight, ChevronDown,
   Search, MoreVertical, File, Plus, Pencil, GripVertical, ArrowRight, Copy, Loader2,
   ExternalLink, X, FolderPlus, Printer, RotateCw, EyeOff, RefreshCw, Box, BookOpen, Columns2, Link2,
-  Building2, Settings2, Type, Sparkles
+  Building2, Settings2, Type
 } from "lucide-react";
 import { AiTakeoffSheetPicker } from "@/components/takeoff/AiTakeoffSheetPicker";
 

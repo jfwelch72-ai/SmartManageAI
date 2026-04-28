@@ -1004,7 +1004,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     id: string;
     takeoffSheetId: string | null;
   }
-  const { data: aiCtaHistory } = useQuery<{ analyses: AiCtaHistoryEntry[] }>({
+  const { data: aiCtaHistory, isSuccess: aiCtaHistoryLoaded } = useQuery<{ analyses: AiCtaHistoryEntry[] }>({
     queryKey: [
       `/api/ai-features/takeoff/history/${aiHistoryContextId}?type=${aiHistoryContextType}`,
     ],
@@ -1014,7 +1014,13 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     if (!aiCtaHistory?.analyses || !selectedSheet) return false;
     return aiCtaHistory.analyses.some((a) => a.takeoffSheetId === selectedSheet);
   }, [aiCtaHistory, selectedSheet]);
-  const showAiCta = aiCtaPreconditionMet && !aiCtaSheetHasRuns;
+  // Wait for the AI history query to resolve before showing the card.
+  // Otherwise on the first render after a sheet switch the card would
+  // briefly flash for sheets that already have prior AI runs (review
+  // feedback) — `aiCtaHistory` is undefined while loading, so
+  // `aiCtaSheetHasRuns` would falsely report "no runs" until the
+  // request returns.
+  const showAiCta = aiCtaPreconditionMet && aiCtaHistoryLoaded && !aiCtaSheetHasRuns;
   const handleDismissAiCta = useCallback(() => {
     setAiCtaDismissed(true);
     if (!aiCtaStorageKey) return;
