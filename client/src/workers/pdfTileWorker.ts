@@ -11,15 +11,26 @@
  * replies with the same `requestId` and either an `ok: true` payload
  * or `ok: false, error: string`. ImageBitmaps are transferred (zero
  * copy) via the second `postMessage` argument.
+ *
+ * Task #2219 — pdfjs-dist v5 reaches `window.matchMedia(...)` on the
+ * render path with no environment guard, which crashes a worker the
+ * very first time it tries to render a page. We installed the
+ * polyfill (`installPdfWorkerGlobals`) before *any* `pdfjs-dist`
+ * code is loaded by:
+ *   1. Statically importing only the polyfill function (hoisted).
+ *   2. Calling the polyfill in module body (runs synchronously).
+ *   3. Loading `pdfjs-dist` itself via `await import(...)` so the
+ *      module evaluation order is encoded in real, executable code
+ *      instead of import-statement ordering. This removes the
+ *      previous "remember to keep these two `import` lines in this
+ *      exact order" footgun — an import sorter or refactor can no
+ *      longer silently re-break PDF rendering.
  */
 
-// MUST be the first import: installs the `window` / `matchMedia`
-// shim in the worker global so pdfjs-dist v5's ColorManager doesn't
-// blow up with "window is not defined" the first time we render.
-// See `pdfWorkerPolyfill.ts` for the full rationale.
-import "./pdfWorkerPolyfill";
-
-import * as pdfjsLib from "pdfjs-dist";
+import {
+  installPdfWorkerGlobals,
+  type PdfWorkerGlobalShim,
+} from "./pdfWorkerPolyfill";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import {
   BASE_RENDER_SCALE,
@@ -27,12 +38,28 @@ import {
   type ZoomBucket,
 } from "../lib/takeoff/tileCoords";
 
-if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-    "pdfjs-dist/build/pdf.worker.min.mjs",
-    import.meta.url,
-  ).toString();
-}
+installPdfWorkerGlobals(globalThis as unknown as PdfWorkerGlobalShim);
+
+// Dynamic import wrapped in an IIFE-promise: the polyfill above runs
+// synchronously *before* this dynamic import begins, so pdfjs's module
+// initializer is guaranteed to see the shimmed `window` / `matchMedia`.
+//
+// We deliberately avoid top-level `await` here so the worker stays
+// compatible with the project's current `tsconfig.json` (which doesn't
+// pin a `target` recent enough for TLA). Every async handler awaits
+// `pdfjsLibPromise` once before touching pdfjs, which is effectively
+// free after the first request because the promise resolves once and
+// stays resolved.
+const pdfjsLibPromise: Promise<typeof import("pdfjs-dist")> = (async () => {
+  const lib = await import("pdfjs-dist");
+  if (!lib.GlobalWorkerOptions.workerSrc) {
+    lib.GlobalWorkerOptions.workerSrc = new URL(
+      "pdfjs-dist/build/pdf.worker.min.mjs",
+      import.meta.url,
+    ).toString();
+  }
+  return lib;
+})();
 
 type Req =
   | {
@@ -198,6 +225,7 @@ async function loadDoc(sheetUrl: string): Promise<PDFDocumentProxy> {
   let p = docCache.get(sheetUrl);
   if (p) return p;
   p = (async () => {
+    const pdfjsLib = await pdfjsLibPromise;
     const task = pdfjsLib.getDocument({
       url: sheetUrl,
       withCredentials: true,

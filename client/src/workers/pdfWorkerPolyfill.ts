@@ -1,52 +1,81 @@
 /**
- * Task #2189 — Worker-context polyfill that must run *before* the
- * `pdfjs-dist` import in `pdfTileWorker.ts`.
+ * Task #2189 / #2219 — Worker-context shim for `pdfjs-dist`.
  *
- * Why this lives in its own module:
- *   ES module imports are hoisted, so any inline code placed above
- *   the `import * as pdfjsLib from "pdfjs-dist"` statement still
- *   runs *after* pdf.js's module initializer. The only way to make
- *   sure the polyfill installs first is to put it in a separate
- *   module that is imported before pdfjs-dist — declaration order
- *   between imports is preserved.
+ * Background:
+ *   pdf.js v5's `ColorManager.convert` (and a handful of sibling
+ *   helpers) reach `window.matchMedia("(forced-colors: active)")` with
+ *   no `typeof window !== "undefined"` guard. In a dedicated module
+ *   worker `window` is undefined and the call throws
+ *   `ReferenceError: window is not defined`, which surfaces in the
+ *   takeoff workspace as the "Failed to load PDF" toast and a
+ *   permanently blank canvas.
  *
- * What we polyfill and why:
- *   pdf.js v5's `ColorManager.convert` (called on every page render
- *   through `Util.makeColors` → forced-colors detection) reaches
- *   `window.matchMedia("(forced-colors: active)")` with no
- *   environment guard. In a dedicated worker `window` is undefined
- *   and the call throws `ReferenceError: window is not defined`,
- *   which surfaces in our app as the "Failed to load PDF" toast and
- *   a permanently blank takeoff canvas. Mapping `window` to the
- *   worker global plus a no-op `matchMedia` that always reports
- *   `matches: false` keeps pdf.js on its standard (non-forced-color)
- *   render path without pulling in any DOM dependencies.
+ *   Mapping `window` to the worker global plus a no-op `matchMedia`
+ *   that always reports `matches: false` keeps pdf.js on its standard
+ *   (non-forced-color) render path without pulling in any DOM
+ *   dependencies.
+ *
+ * Why this is now an exported function instead of a side-effect
+ * module:
+ *   The previous version of this file installed the polyfill at
+ *   import-evaluation time and relied on the rule "import this module
+ *   *before* `pdfjs-dist` in `pdfTileWorker.ts`". ESM hoists imports,
+ *   so any future contributor reordering the imports (e.g. an
+ *   automatic import sorter) silently breaks PDF rendering.
+ *
+ *   Exporting a function lets the worker entry call it from the
+ *   module body — which is guaranteed to run after the (now
+ *   dynamically imported) `pdfjs-dist`'s static dependencies but
+ *   before pdfjs itself is loaded. The order is encoded in code
+ *   that has to physically execute, not in import declaration
+ *   ordering.
+ *
+ *   The function is also covered by a unit test
+ *   (`__tests__/pdfWorkerPolyfill.test.ts`) so that a future
+ *   `pdfjs-dist` upgrade that changes the underlying assumption is
+ *   noticed instead of silently re-breaking the worker.
  */
 
-interface MutableWorkerGlobal {
+interface MediaQueryListLike {
+  matches: boolean;
+  media: string;
+  onchange: null;
+  addListener: () => void;
+  removeListener: () => void;
+  addEventListener: () => void;
+  removeEventListener: () => void;
+  dispatchEvent: () => boolean;
+}
+
+export interface PdfWorkerGlobalShim {
   window?: unknown;
-  matchMedia?: (query: string) => unknown;
+  matchMedia?: (query: string) => MediaQueryListLike;
 }
 
-const workerGlobal = (
-  typeof globalThis !== "undefined" ? globalThis : (0, eval)("this")
-) as unknown as MutableWorkerGlobal;
-
-if (typeof workerGlobal.window === "undefined") {
-  workerGlobal.window = workerGlobal;
+/**
+ * Install the `window` / `matchMedia` shims required by pdfjs-dist
+ * onto the supplied target. Idempotent: existing values are left
+ * untouched, so a future host that grows real implementations
+ * (e.g. a `WindowOrWorkerGlobalScope` polyfill from a bundler)
+ * isn't clobbered.
+ *
+ * The target is typed loosely so callers can pass either the worker
+ * global (`globalThis`) or a stand-in object in tests.
+ */
+export function installPdfWorkerGlobals(target: PdfWorkerGlobalShim): void {
+  if (typeof target.window === "undefined") {
+    target.window = target;
+  }
+  if (typeof target.matchMedia === "undefined") {
+    target.matchMedia = (query: string): MediaQueryListLike => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      dispatchEvent: () => false,
+    });
+  }
 }
-
-if (typeof workerGlobal.matchMedia === "undefined") {
-  workerGlobal.matchMedia = (query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: () => undefined,
-    removeListener: () => undefined,
-    addEventListener: () => undefined,
-    removeEventListener: () => undefined,
-    dispatchEvent: () => false,
-  });
-}
-
-export {};
