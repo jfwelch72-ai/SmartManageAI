@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { installCsrf } from "./helpers/csrf";
+import { dispatchHtml5Drop } from "./helpers/htmlDrag";
 
 const BASE_URL =
   process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
@@ -237,42 +238,26 @@ test.describe("Takeoff Tool Chest (Task #2139)", () => {
     // Synthesize a drag-and-drop. Playwright's `dragTo` doesn't ship
     // the chest's custom MIME type, so dispatch the lifecycle events
     // manually with a DataTransfer pre-loaded with the chest payload —
-    // this matches what the production drag handler reads.
+    // this matches what the production drag handler reads. The
+    // canvas drop handler reads only from DataTransfer (no React
+    // state crosses event boundaries) so the single-tick variant is
+    // appropriate here.
     const canvas = page.getByTestId("takeoff-canvas-viewport");
     await expect(canvas).toBeVisible();
 
-    await page.evaluate(
-      ({ rowSelector, dropSelector }) => {
-        const row = document.querySelector(rowSelector) as HTMLElement | null;
-        const drop = document.querySelector(dropSelector) as HTMLElement | null;
-        if (!row || !drop) throw new Error("drag/drop targets not found");
-        const dt = new DataTransfer();
-        dt.setData(
-          "application/x-takeoff-chest-item+json",
-          JSON.stringify({
-            kind: "tool",
-            refId: "markup_arrow",
-            color: "#dc2626",
-            label: "Arrow",
-          }),
-        );
-        row.dispatchEvent(new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }));
-        drop.dispatchEvent(
-          new DragEvent("dragenter", { bubbles: true, dataTransfer: dt }),
-        );
-        drop.dispatchEvent(
-          new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }),
-        );
-        drop.dispatchEvent(
-          new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }),
-        );
-        row.dispatchEvent(new DragEvent("dragend", { bubbles: true, dataTransfer: dt }));
+    await dispatchHtml5Drop({
+      source: chestRow,
+      target: canvas,
+      payload: {
+        mime: "application/x-takeoff-chest-item+json",
+        data: JSON.stringify({
+          kind: "tool",
+          refId: "markup_arrow",
+          color: "#dc2626",
+          label: "Arrow",
+        }),
       },
-      {
-        rowSelector: `[data-testid='chest-item-${seeded.id}']`,
-        dropSelector: "[data-testid='takeoff-canvas-viewport']",
-      },
-    );
+    });
 
     // The Annotate ribbon group renders the arrow tool with display
     // id "arrow" (pin stores canonical "markup_arrow", activation

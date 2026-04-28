@@ -8,6 +8,7 @@
 
 import { test, expect, type Page } from "@playwright/test";
 import { authedRequest, installCsrf } from "./helpers/csrf";
+import { dispatchHtml5Drop, dispatchHtml5Reorder } from "./helpers/htmlDrag";
 
 const BASE_URL =
   process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
@@ -125,57 +126,6 @@ async function fetchSetDetail(page: Page, setId: string): Promise<SheetSetDetail
   );
   expect(res.status()).toBe(200);
   return (await res.json()) as SheetSetDetail;
-}
-
-/**
- * Task #2230 — Synthesize a single HTML5 drag-and-drop lifecycle in
- * the page. Used by the drag-thumbnail-onto-set-row test where the
- * drop handler reads everything it needs out of the DataTransfer
- * payload (no React state crosses event boundaries), so a single
- * `page.evaluate` is enough. Mirrors the pattern in
- * `takeoff-tool-chest.spec.ts` where the chest item drop also lives
- * entirely inside one event tick.
- */
-async function dispatchSheetThumbnailDrop(
-  page: Page,
-  sourceTestId: string,
-  targetTestId: string,
-  payload: { sheetId: string },
-): Promise<void> {
-  await page.evaluate(
-    ({ sourceSel, targetSel, mime, payloadJson }) => {
-      const source = document.querySelector(sourceSel) as HTMLElement | null;
-      const target = document.querySelector(targetSel) as HTMLElement | null;
-      if (!source || !target) {
-        throw new Error(`drag/drop targets not found (${sourceSel} -> ${targetSel})`);
-      }
-      const dt = new DataTransfer();
-      dt.setData(mime, payloadJson);
-      // Match what PageThumbnailStrip writes alongside the custom MIME.
-      dt.setData("text/plain", payloadJson);
-      source.dispatchEvent(
-        new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }),
-      );
-      target.dispatchEvent(
-        new DragEvent("dragenter", { bubbles: true, dataTransfer: dt }),
-      );
-      target.dispatchEvent(
-        new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }),
-      );
-      target.dispatchEvent(
-        new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }),
-      );
-      source.dispatchEvent(
-        new DragEvent("dragend", { bubbles: true, dataTransfer: dt }),
-      );
-    },
-    {
-      sourceSel: `[data-testid='${sourceTestId}']`,
-      targetSel: `[data-testid='${targetTestId}']`,
-      mime: "application/x-takeoff-sheet",
-      payloadJson: JSON.stringify(payload),
-    },
-  );
 }
 
 test.describe("Task #2141 — Sheet Sets UI", () => {
@@ -394,8 +344,9 @@ test.describe("Task #2141 — Sheet Sets UI", () => {
   // pre-loaded DataTransfer; Playwright's mouse-based `dragTo` won't
   // ship the custom MIME (TAKEOFF_SHEET_DRAG_MIME) or the
   // `text/plain` fallback the drop handlers read, so we synthesize
-  // the lifecycle directly via `page.evaluate` (same pattern used by
-  // `takeoff-tool-chest.spec.ts`).
+  // the lifecycle through the shared `htmlDrag` helpers (Task #2242)
+  // — same MIME + text/plain shape, but factored out so the next
+  // drag spec doesn't have to re-derive it.
 
   test("drag a thumbnail from the strip onto a set row appends it as a member", async ({
     page,
@@ -434,12 +385,18 @@ test.describe("Task #2141 — Sheet Sets UI", () => {
     const thumbnail = page.getByTestId(`thumbnail-sheet-${droppedSheetId}`);
     await expect(thumbnail).toBeVisible({ timeout: 10_000 });
 
-    await dispatchSheetThumbnailDrop(
-      page,
-      `thumbnail-sheet-${droppedSheetId}`,
-      `row-sheet-set-${set.id}`,
-      { sheetId: droppedSheetId },
-    );
+    // Single-tick drop: the SheetSetsPanel SetRow `onDrop` reads
+    // the sheetId straight off the `application/x-takeoff-sheet`
+    // payload (no React state from PageThumbnailStrip crosses the
+    // event boundary), so the all-in-one variant is correct here.
+    await dispatchHtml5Drop({
+      source: thumbnail,
+      target: setRow,
+      payload: {
+        mime: "application/x-takeoff-sheet",
+        data: JSON.stringify({ sheetId: droppedSheetId }),
+      },
+    });
 
     // The mutation invalidates the detail query and toasts on success.
     // Poll the GET endpoint directly: that's the source of truth and
@@ -496,58 +453,21 @@ test.describe("Task #2141 — Sheet Sets UI", () => {
     // (`draggingSheetId`) set by the source <li>'s `onDragStart`.
     // React batches that state update, so the closures bound to the
     // *target* <li>'s `onDragOver`/`onDrop` won't see the new value
-    // until the next render. We split the lifecycle across two
-    // `page.evaluate` calls with a tick in between so the dragstart
-    // commit lands before we synthesize the dragover/drop. (The
-    // single-evaluate pattern in `dispatchSheetThumbnailDrop` works
-    // for the drop-onto-row case because that handler reads only
-    // from DataTransfer.)
-    await page.evaluate(
-      ({ sourceSel }) => {
-        const source = document.querySelector(sourceSel) as HTMLElement | null;
-        if (!source) throw new Error(`drag source not found (${sourceSel})`);
-        const dt = new DataTransfer();
-        dt.setData("text/plain", source.getAttribute("data-testid") ?? "");
-        // The reorder handler doesn't read TAKEOFF_SHEET_DRAG_MIME —
-        // it relies entirely on the React state set in onDragStart —
-        // so just dispatching dragstart is enough to arm the row.
-        source.dispatchEvent(
-          new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }),
-        );
+    // until the next render. The shared `dispatchHtml5Reorder`
+    // helper splits the lifecycle across two `page.evaluate` calls
+    // with a 50ms React-flush wait between them so the dragstart
+    // commit lands before we synthesize the dragover/drop. The
+    // production `onDragStart` writes the source's testid under
+    // `text/plain` for the OS-level drag image — pass it through
+    // so the synthesized DataTransfer matches.
+    await dispatchHtml5Reorder({
+      source: memberA,
+      target: memberB,
+      payload: {
+        mime: "text/plain",
+        data: `set-member-${set.id}-${a}`,
       },
-      { sourceSel: `[data-testid='set-member-${set.id}-${a}']` },
-    );
-    // Yield to React so the dragstart-driven setState commits before
-    // the target row's drop closure reads `draggingSheetId`.
-    await page.waitForTimeout(50);
-
-    await page.evaluate(
-      ({ sourceSel, targetSel }) => {
-        const source = document.querySelector(sourceSel) as HTMLElement | null;
-        const target = document.querySelector(targetSel) as HTMLElement | null;
-        if (!source || !target) {
-          throw new Error("drop targets not found");
-        }
-        // The reorder drop handler doesn't read DataTransfer at all —
-        // it uses the React `draggingSheetId` state set on dragstart.
-        // We still attach a fresh DataTransfer so the synthetic events
-        // are well-formed.
-        const dt = new DataTransfer();
-        target.dispatchEvent(
-          new DragEvent("dragover", { bubbles: true, cancelable: true, dataTransfer: dt }),
-        );
-        target.dispatchEvent(
-          new DragEvent("drop", { bubbles: true, cancelable: true, dataTransfer: dt }),
-        );
-        source.dispatchEvent(
-          new DragEvent("dragend", { bubbles: true, dataTransfer: dt }),
-        );
-      },
-      {
-        sourceSel: `[data-testid='set-member-${set.id}-${a}']`,
-        targetSel: `[data-testid='set-member-${set.id}-${b}']`,
-      },
-    );
+    });
 
     // The reorder mutation POSTs to /reorder and the server walks the
     // members array assigning the supplied sortOrder. Poll the GET
