@@ -144,6 +144,31 @@ test.describe("Takeoff Tool Chest (Task #2139)", () => {
     page,
   }) => {
     const fixture = await seedTakeoffFixture(page);
+
+    // Task #2303 — the canvas status bar (which renders `status-tool`)
+    // is gated on `selectedSheet` in CanvasViewport, and the workspace
+    // doesn't auto-pick a sheet on first mount. Seed the same
+    // sessionStorage slot the workspace reads in its useState
+    // initializer, BEFORE navigation, so the seeded sheet is already
+    // selected on the first render and the status bar is visible
+    // when the drop fires. Same `addInitScript` trick the
+    // takeoff-tile-renderer-render spec's `pinSelectedSheet` helper
+    // uses for its sheet-selection seeding.
+    await page.addInitScript(
+      ({ bidId, sheetId }: { bidId: string; sheetId: string }) => {
+        try {
+          window.sessionStorage.setItem(`takeoff-sheet-${bidId}`, sheetId);
+          window.sessionStorage.setItem(
+            `takeoff-sheet-${bidId}-open-tabs`,
+            JSON.stringify([sheetId]),
+          );
+        } catch {
+          // sessionStorage may be unavailable (private mode, SSR) — noop.
+        }
+      },
+      { bidId: fixture.bid.id, sheetId: fixture.sheetIds[0] },
+    );
+
     await gotoTakeoff(page, fixture.bid.code);
 
     // Seed a chest row directly so the drag target is deterministic.
@@ -176,6 +201,16 @@ test.describe("Takeoff Tool Chest (Task #2139)", () => {
     // Sanity: the pinned arrow tool is NOT the active tool yet.
     const arrowToolBtn = page.getByTestId("ribbon-tool-arrow");
     await expect(arrowToolBtn).toHaveAttribute("aria-pressed", "false");
+
+    // Confirm the seeded sheet is actually selected before we
+    // dispatch the drop — `status-tool` only renders inside
+    // CanvasViewport's `selectedSheet && (...)` branch, so its
+    // visibility is the deterministic precondition for the assertion
+    // below. Without this gate the post-drop assertion would race
+    // the sheet-selection useEffect on slower engines.
+    await expect(page.getByTestId("status-tool")).toBeVisible({
+      timeout: 15_000,
+    });
 
     // Synthesize a drag-and-drop. Playwright's `dragTo` doesn't ship
     // the chest's custom MIME type, so dispatch the lifecycle events
