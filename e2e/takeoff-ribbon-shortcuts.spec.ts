@@ -704,9 +704,12 @@ test.describe("Takeoff Unified Ribbon + Shortcuts", () => {
     await gotoTakeoff(page, bid.code);
     await focusRibbon(page);
 
-    // The standalone takeoff page mounts <PlanScaleModal> in fullscreen
-    // mode, so the dialog renders with `dialog-plan-scale-fullscreen`.
-    const dialog = page.getByTestId("dialog-plan-scale-fullscreen");
+    // T opens the inline calibration drawer (Radix dialog with
+    // `modal={false}` so canvas clicks pass through to Konva — see
+    // InlineCalibrationDrawer.tsx). Task #2140 moved two-point
+    // calibration here from PlanScaleModal, so the drawer is the
+    // single mounted overlay we should see when T fires.
+    const dialog = page.getByTestId("inline-calibration-drawer");
     await expect(dialog).toHaveCount(0);
 
     await page.keyboard.press("t");
@@ -786,12 +789,12 @@ test.describe("Takeoff Unified Ribbon + Shortcuts", () => {
       timeout: 5_000,
     });
 
-    const dialog = page.getByTestId("dialog-plan-scale-fullscreen");
+    const dialog = page.getByTestId("inline-calibration-drawer");
     await expect(dialog).toHaveCount(0);
 
     await page.keyboard.press("t");
 
-    // The calibrate dialog must NOT open — `T` is in the `isToolish`
+    // The calibrate drawer must NOT open — `T` is in the `isToolish`
     // bucket and is suppressed while a draw is in flight. Give the
     // event loop a moment so any (incorrectly) queued state update
     // would have rendered before we assert absence.
@@ -805,6 +808,203 @@ test.describe("Takeoff Unified Ribbon + Shortcuts", () => {
     // Bail out of the draw cleanly so the test leaves no in-progress
     // state behind for any subsequent reruns.
     await page.keyboard.press("Escape");
+  });
+
+  test("T is a no-op while another modal/popover is already open", async ({
+    page,
+    browserName,
+  }) => {
+    const suffix = Date.now();
+    await devLogin(page, "ADMIN");
+    const bid = await createBid(page, suffix);
+    await gotoTakeoff(page, bid.code);
+    await focusRibbon(page);
+
+    // Open the cheat-sheet overlay first — it's a Radix Dialog with
+    // role="dialog", which is exactly the shape `shouldIgnoreEvent`
+    // inside useTakeoffShortcuts walks the composedPath looking for.
+    // If the gate ever drifts (e.g. the role check is dropped),
+    // pressing T here would stack the calibrate drawer on top and
+    // this test would see it appear.
+    const mod = browserName === "webkit" ? "Meta" : "Control";
+    await page.keyboard.press(`${mod}+/`);
+    const cheatSheet = page.getByTestId("dialog-cheat-sheet");
+    await expect(cheatSheet).toBeVisible();
+
+    const calibrateDialog = page.getByTestId("inline-calibration-drawer");
+    await expect(calibrateDialog).toHaveCount(0);
+
+    await page.keyboard.press("t");
+
+    // Wait a frame so any (incorrectly) queued state update would have
+    // rendered before we assert absence — otherwise a passing test
+    // could just be a race.
+    await page.waitForTimeout(250);
+    await expect(calibrateDialog).toHaveCount(0);
+    // Cheat-sheet must still own the screen — T didn't close it
+    // either (close-modal is a separate intent owned by Esc).
+    await expect(cheatSheet).toBeVisible();
+
+    await page.keyboard.press("Escape");
+    await expect(cheatSheet).toHaveCount(0);
+  });
+
+  test("T does not open the calibrate dialog while focus is inside a text field", async ({
+    page,
+  }) => {
+    const suffix = Date.now();
+    await devLogin(page, "ADMIN");
+    const bid = await createBid(page, suffix);
+    await gotoTakeoff(page, bid.code);
+    await focusRibbon(page);
+
+    // Inject a top-level textarea so the test isolates the
+    // INPUT/TEXTAREA branch of `shouldIgnoreEvent` from the Radix
+    // dialog/portal branch — both gates need to hold independently
+    // (the dialog branch is already exercised by the "T while modal
+    // is open" test above).
+    await page.evaluate(() => {
+      const ta = document.createElement("textarea");
+      ta.id = "__pw_test_textarea__";
+      ta.setAttribute("data-testid", "pw-test-textarea");
+      document.body.appendChild(ta);
+      ta.focus();
+    });
+    const textarea = page.getByTestId("pw-test-textarea");
+    await expect(textarea).toBeFocused();
+
+    const calibrateDialog = page.getByTestId("inline-calibration-drawer");
+    await expect(calibrateDialog).toHaveCount(0);
+
+    await page.keyboard.press("t");
+
+    // The shortcut handler must bail in `shouldIgnoreEvent` (tag ===
+    // "TEXTAREA") and not preventDefault, so the keystroke flows into
+    // the textarea exactly like any other typed character. If the
+    // gate ever drops, the calibrate drawer would open AND the
+    // browser would still type the "t" into the field.
+    await page.waitForTimeout(250);
+    await expect(calibrateDialog).toHaveCount(0);
+    await expect(textarea).toHaveValue("t");
+  });
+
+  test("T re-opens the calibrate dialog after a draw is started then cancelled with Esc", async ({
+    page,
+  }) => {
+    await devLogin(page, "ADMIN");
+    // Same calibrated-sheet seed as the "T is gated off" test — a
+    // pre-set scalePxPerFoot is required so the linear tool actually
+    // accepts a first canvas click and flips `isDrawing` true.
+    const fixture = await seedTakeoffFixture(page, {
+      sheetCount: 2,
+      versionCount: 1,
+      measurementCount: 0,
+    });
+    await gotoTakeoff(page, fixture.bid.code);
+
+    await page.getByTestId("button-toggle-thumbnails").click();
+    const thumb = page.getByTestId(
+      `thumbnail-sheet-${fixture.sheetIds[0]}`,
+    );
+    await expect(thumb).toBeVisible({ timeout: 10_000 });
+    await thumb.click();
+    await expect
+      .poll(async () => thumb.getAttribute("data-active"), {
+        timeout: 5_000,
+      })
+      .toBe("true");
+
+    const canvas = page.locator(".konvajs-content canvas").first();
+    await canvas.waitFor({ state: "visible", timeout: 15_000 });
+
+    await focusRibbon(page);
+
+    // Start a linear draw — places the first point and flips
+    // `isDrawing` true. The drawing-guide-bar overlay only renders
+    // while a draw is in flight, so it's our "really mid-draw" probe.
+    await page.keyboard.press("l");
+    await expect(page.getByTestId("ribbon-tool-linear")).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await clickOnCanvasHelper(page, canvas, { x: 400, y: 100 });
+    await expect(page.getByTestId("drawing-guide-bar")).toBeVisible({
+      timeout: 5_000,
+    });
+
+    // Cancel the draw cleanly with Esc — the in-flight handler in
+    // use-takeoff-interactions clears drawingPoints and flips
+    // isDrawing back to false, so the `isToolish` gate must fully
+    // release. (Drawing-guide-bar disappearing is the visible signal
+    // that `isDrawing === false` on the React side.)
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("drawing-guide-bar")).toHaveCount(0, {
+      timeout: 5_000,
+    });
+
+    // Now T should be back to opening the calibrate drawer. If the
+    // gate ever fails to clear (e.g. an `isDrawing` ref gets stuck
+    // true after cancel), this assertion would time out.
+    const calibrateDialog = page.getByTestId("inline-calibration-drawer");
+    await expect(calibrateDialog).toHaveCount(0);
+
+    await focusRibbon(page);
+    await page.keyboard.press("t");
+    await expect(calibrateDialog).toBeVisible({ timeout: 5_000 });
+
+    await page.keyboard.press("Escape");
+    await expect(calibrateDialog).toHaveCount(0);
+  });
+
+  test("T pressed from inside the calibrate dialog itself does not stack a second dialog", async ({
+    page,
+  }) => {
+    const suffix = Date.now();
+    await devLogin(page, "ADMIN");
+    const bid = await createBid(page, suffix);
+    await gotoTakeoff(page, bid.code);
+    await focusRibbon(page);
+
+    const calibrateDialog = page.getByTestId("inline-calibration-drawer");
+    await expect(calibrateDialog).toHaveCount(0);
+
+    await page.keyboard.press("t");
+    await expect(calibrateDialog).toBeVisible({ timeout: 5_000 });
+    await expect(calibrateDialog).toHaveCount(1);
+
+    // The drawer is rendered with `modal={false}` and
+    // `onOpenAutoFocus={(e) => e.preventDefault()}` so canvas clicks
+    // pass through. That also means focus stays on `<body>` after T
+    // — pressing T again from there still hits the open-calibrate
+    // intent, but `openCalibrationDrawer` is idempotent (it only
+    // re-runs the same `setCalibrationDrawerOpen(true)` setter), so
+    // a single drawer remains.
+    await page.keyboard.press("t");
+    await page.waitForTimeout(250);
+    await expect(calibrateDialog).toHaveCount(1);
+    await expect(calibrateDialog).toBeVisible();
+
+    // Now move focus into the drawer's distance input — that's the
+    // realistic state when a user is mid-calibration. Pressing T must
+    // bail at `shouldIgnoreEvent` (tag === "INPUT" *and* a
+    // `role="dialog"` ancestor) and just type the literal "t" into
+    // the field. The drawer count must still be exactly 1.
+    const distanceInput = page.getByTestId(
+      "input-inline-calibration-distance",
+    );
+    await distanceInput.click();
+    await expect(distanceInput).toBeFocused();
+
+    await page.keyboard.press("t");
+    await page.waitForTimeout(250);
+    await expect(calibrateDialog).toHaveCount(1);
+    await expect(calibrateDialog).toBeVisible();
+    await expect(distanceInput).toHaveValue("t");
+
+    // Esc closes the drawer cleanly via Radix's own handler — proves
+    // the drawer wasn't left in a stale state by the T presses.
+    await page.keyboard.press("Escape");
+    await expect(calibrateDialog).toHaveCount(0);
   });
 
   test("offline / autosave indicator transitions: idle hidden → offline visible → saved flash → idle hidden", async ({
