@@ -692,6 +692,45 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const containerRef = useRef<HTMLDivElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
 
+  // Task #2237 — Shared canvas-focus return. CanvasViewport renders the
+  // viewport `<div>` with `tabIndex=-1` and `data-testid=
+  // "takeoff-canvas-viewport"`, so `.focus()` here lands on that element
+  // (the same target onLayersPopoverClose has used since Task #2202).
+  // Wrappers below route every "overlay just closed" path through this
+  // helper so estimators don't have to re-click the canvas before the
+  // single-key tool shortcuts work again.
+  const focusCanvasViewport = useCallback(() => {
+    containerRef.current?.focus({ preventScroll: true });
+  }, []);
+
+  // Task #2237 — Wrap setSnapHudOpen so all three close paths
+  // (Esc / `S` toggle / "Close" button in the ribbon) hand keyboard
+  // focus back to the canvas viewport. The Snap HUD is a plain
+  // conditional render rather than a Radix Popover, so without this
+  // wrapper closing leaves focus on `<body>` (or the unmounted close
+  // button), and `v`/`l`/`a`/etc. wouldn't fire until the user clicked
+  // the canvas again.
+  const handleSetSnapHudOpen = useCallback(
+    (next: boolean) => {
+      setSnapHudOpen(next);
+      if (!next) focusCanvasViewport();
+    },
+    [focusCanvasViewport],
+  );
+
+  // Task #2237 — Same treatment for the audit overlay opacity slider
+  // (`data-testid="overlay-opacity-slider"`). It's another ribbon-
+  // anchored transient overlay with no Radix focus management, so
+  // closing via the X button or via re-pressing the View > Overlays
+  // toggle previously left focus on the unmounted button.
+  const handleSetShowOverlaySlider = useCallback(
+    (next: boolean) => {
+      setShowOverlaySlider(next);
+      if (!next) focusCanvasViewport();
+    },
+    [focusCanvasViewport],
+  );
+
   // Task #2142 — Stylus long-press → snap HUD. When the user holds the
   // pen tip still for `stylusLongPressMs` (within an 8 px movement
   // budget), the snap HUD pops open at the same place it appears for
@@ -1687,7 +1726,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     orthoLock,
     setOrthoLock,
     snapHudOpen,
-    setSnapHudOpen,
+    setSnapHudOpen: handleSetSnapHudOpen,
     setCheatSheetOpen,
     gridEnabled,
     setGridEnabled: handleToggleGrid,
@@ -3749,7 +3788,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       showOverlaySlider,
       overlayOpacity,
       onOverlayOpacityChange: (v) => setOverlayOpacity(v),
-      onCloseOverlaySlider: () => setShowOverlaySlider(false),
+      onCloseOverlaySlider: () => handleSetShowOverlaySlider(false),
     },
   };
 
@@ -3838,6 +3877,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         setSelectedVersionId(versionId);
         setVersionHistoryOpen(false);
       },
+      // Task #2237 — Hand keyboard focus back to the canvas viewport
+      // when the version history sheet closes (Esc / outside click /
+      // X button). Otherwise Radix returns focus to the Versions
+      // ribbon button and the user has to click the canvas before
+      // ribbon shortcuts work again.
+      onCloseFocusReturn: focusCanvasViewport,
     },
     sidebar: {
       selectedSheet,
@@ -4072,7 +4117,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       showCostPanel,
       onToggleCostPanel: () => setShowCostPanel(!showCostPanel),
       showOverlaySlider,
-      onToggleOverlaySlider: () => setShowOverlaySlider(!showOverlaySlider),
+      onToggleOverlaySlider: () => handleSetShowOverlaySlider(!showOverlaySlider),
       showMeasurementTable,
       onToggleMeasurementTable: () => setShowMeasurementTable(!showMeasurementTable),
       stageScale,
@@ -4528,7 +4573,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           enabledSnapModes={enabledSnapModes}
           setEnabledSnapModes={setEnabledSnapModes}
           snapHudOpen={snapHudOpen}
-          setSnapHudOpen={setSnapHudOpen}
+          setSnapHudOpen={handleSetSnapHudOpen}
           constraintMode={constraintMode}
           setConstraintMode={setConstraintMode}
           orthoPresetIndex={orthoPresetIndex}
@@ -4566,18 +4611,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           layersActive={layersPopoverOpen || hiddenCategoryIds.size > 0}
           layersPopoverOpen={layersPopoverOpen}
           onLayersPopoverOpenChange={setLayersPopoverOpen}
-          onLayersPopoverClose={() => {
-            // Task #2202 — return focus to the canvas viewport so
-            // estimators can keep drawing immediately after toggling
-            // visibility, without having to click the canvas again.
-            // CanvasViewport sets tabIndex=-1 to make this possible.
-            containerRef.current?.focus({ preventScroll: true });
-          }}
+          onLayersPopoverClose={focusCanvasViewport}
           layersCategories={categories}
           hiddenCategoryIds={hiddenCategoryIds}
           onToggleCategoryVisibility={handleToggleCategoryVisibility}
           onSetAllCategoriesVisibility={handleSetAllCategoriesVisibility}
-          onToggleOverlay={() => setShowOverlaySlider((v) => !v)}
+          onToggleOverlay={() => handleSetShowOverlaySlider(!showOverlaySlider)}
           overlayActive={showOverlaySlider}
           onShowVersions={() => setVersionHistoryOpen(true)}
           versionsActive={versionHistoryOpen}

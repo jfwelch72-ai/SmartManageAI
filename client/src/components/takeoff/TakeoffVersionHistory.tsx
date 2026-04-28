@@ -25,6 +25,14 @@ interface TakeoffVersionHistoryProps {
   projectId?: string;
   bidId?: string;
   onVersionSwitch?: (versionId: string) => void;
+  /**
+   * Task #2237 — Fired by Radix's `onCloseAutoFocus` after the Sheet
+   * unmounts so the workspace can return keyboard focus to the
+   * takeoff canvas viewport instead of letting it land on the
+   * Versions ribbon button. Optional: when omitted we let Radix's
+   * default focus-return-to-trigger behaviour run.
+   */
+  onCloseFocusReturn?: () => void;
 }
 
 interface ComparisonDelta {
@@ -61,7 +69,7 @@ function formatCost(value: number): string {
   return `${sign}₱${Math.abs(value).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 }
 
-export function TakeoffVersionHistory({ open, onOpenChange, sheetId, projectId, bidId, onVersionSwitch }: TakeoffVersionHistoryProps) {
+export function TakeoffVersionHistory({ open, onOpenChange, sheetId, projectId, bidId, onVersionSwitch, onCloseFocusReturn }: TakeoffVersionHistoryProps) {
   const { toast } = useToast();
   const [compareA, setCompareA] = useState("");
   const [compareB, setCompareB] = useState("");
@@ -112,7 +120,18 @@ export function TakeoffVersionHistory({ open, onOpenChange, sheetId, projectId, 
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+      <SheetContent
+        side="right"
+        className="w-full sm:max-w-2xl overflow-y-auto"
+        onCloseAutoFocus={onCloseFocusReturn ? (e) => {
+          // Task #2237 — Override Radix's default focus-return-to-trigger
+          // so the workspace can re-focus the canvas viewport instead.
+          // Without preventDefault Radix would re-focus the Versions
+          // ribbon button and our `.focus()` would be clobbered.
+          e.preventDefault();
+          onCloseFocusReturn();
+        } : undefined}
+      >
         <SheetHeader className="mb-4">
           <SheetTitle className="flex items-center gap-2">
             <History className="w-5 h-5" />
