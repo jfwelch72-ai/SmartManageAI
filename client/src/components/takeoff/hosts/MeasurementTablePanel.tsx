@@ -27,6 +27,16 @@ export interface MeasurementTablePanelProps {
    * that never show locked rows) can omit it without a type break.
    */
   onUnlockAndRescale?: (id: string) => void;
+  /**
+   * Task #2357 — Bulk unlock-and-rescale. Forwarded to the
+   * MeasurementTable so the toolbar can surface an "Unlock all
+   * locked" action that releases every locked row in one round-trip
+   * via `/api/takeoff/measurements/bulk-unlock-rescale`. Optional so
+   * older callers stay non-actionable (the button only renders when
+   * the callback is wired AND there is at least one locked row).
+   */
+  onBulkUnlockAndRescale?: (ids: string[]) => void | Promise<void>;
+  isBulkUnlocking?: boolean;
 }
 
 function MeasurementTablePanelInner(props: MeasurementTablePanelProps) {
@@ -51,6 +61,8 @@ function MeasurementTablePanelInner(props: MeasurementTablePanelProps) {
           onDelete={props.onDelete}
           onUpdate={props.onUpdate}
           onUnlockAndRescale={props.onUnlockAndRescale}
+          onBulkUnlockAndRescale={props.onBulkUnlockAndRescale}
+          isBulkUnlocking={props.isBulkUnlocking}
           scalePxPerFoot={props.scalePxPerFoot ?? undefined}
           scaleLabel={props.scaleLabel ?? undefined}
           onRemediateDrift={props.onRemediateDrift}

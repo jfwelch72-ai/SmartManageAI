@@ -1047,6 +1047,317 @@ router.post("/api/takeoff/measurements/:id/unlock-rescale", requireAuth, async (
   }
 });
 
+// Task #2357 — Bulk "Unlock & rescale" endpoint. Mirrors the per-row
+// `/api/takeoff/measurements/:id/unlock-rescale` route above (Task
+// #2334) for batches: a busy sheet may carry dozens of rows that
+// were locked by a mistaken "Lock existing measurements" choice on a
+// previous re-calibration, and the per-row affordance turned that
+// recovery into a many-clicks slog. The bulk endpoint accepts an
+// array of measurement ids, runs the same gating + audit logging the
+// per-row route does on every row, and applies all the unlocks
+// atomically inside a single transaction so a mid-batch failure
+// rolls back cleanly instead of leaving the canvas half-unlocked.
+//
+// Failure shape mirrors the bulk PATCH at `/api/takeoff/measurements/bulk`
+// so the client's existing `extractMeasurementNotFoundIds` /
+// `pruneDeletedMeasurements` helpers (Task #1970) plug in unchanged:
+//   - 404 not_found  — one or more ids no longer exist
+//   - 403 access_denied — caller can't see the sheet
+//   - 403 locked — one or more rows belong to a LOCKED version
+//   - 400 cross_sheet — payload mixed measurements from multiple sheets
+//   - 400 sheet_not_calibrated — sheet has no `scalePxPerFoot`; the
+//     per-row route already refuses this loudly because there's no
+//     meaningful target scale to rescale against, so we mirror it
+//     here for the whole batch (every row shares the sheet by the
+//     cross_sheet check above)
+//   - 400 validation
+//
+// Per-row idempotency from the per-row route is preserved at the row
+// level: rows that aren't currently locked (`lockedScalePxPerFoot
+// IS NULL`) are returned in the response unchanged and counted in
+// `alreadyUnlockedIds`, but do NOT emit an audit-log entry — there's
+// nothing to log because nothing changed. The caller's toast can
+// pivot off `unlockedCount` to decide whether to celebrate.
+//
+// Audit logging matches the per-row route: one `logUpdate` per row
+// that actually flipped, with the same `action: "unlock_and_rescale"`
+// marker so the audit trail reads identically whether the unlock
+// came from the per-row badge or the bulk toolbar.
+//
+// Route MUST be registered before `/api/takeoff/measurements/:id`
+// or Express will route "bulk-unlock-rescale" into `:id` and 404.
+router.post("/api/takeoff/measurements/bulk-unlock-rescale", requireAuth, async (req: AuthRequest, res, next) => {
+  const startedAt = Date.now();
+  let batchCount = 0;
+  try {
+    const { takeoffMeasurements, takeoffSheets, takeoffVersions } = await import("@shared/schema");
+
+    const bulkSchema = z.object({
+      ids: z.array(z.string().min(1)).min(1).max(500),
+    });
+
+    const validated = parseOrRespond(bulkSchema, req.body, res);
+    if (!validated) return;
+    // De-dupe input so a caller passing the same id twice can't
+    // double-log or trip the cross_sheet check on a phantom dup.
+    const ids = Array.from(new Set(validated.ids));
+    batchCount = ids.length;
+
+    const rows = await db
+      .select()
+      .from(takeoffMeasurements)
+      .where(inArray(takeoffMeasurements.id, ids));
+
+    if (rows.length !== ids.length) {
+      const present = new Set(rows.map((r) => r.id));
+      const missing = ids.filter((id) => !present.has(id));
+      recordJobMetrics("takeoff_measurements_bulk_unlock_rescale", {
+        error: 1,
+        count: batchCount,
+        ms: Date.now() - startedAt,
+      });
+      res.status(404).json({
+        error: "Some measurements could not be unlocked because they no longer exist",
+        reason: "not_found",
+        failedMeasurementIds: missing,
+        failuresByReason: [
+          {
+            reason: "not_found",
+            failedMeasurementIds: missing,
+            message: "Some measurements could not be unlocked because they no longer exist",
+          },
+        ],
+      });
+      return;
+    }
+
+    // Same-sheet enforcement — every legitimate caller (the
+    // MeasurementTable bulk button) operates inside a single sheet.
+    // Refuse mixed-sheet payloads up front so a malformed request
+    // can't silently mutate rows on unrelated sheets.
+    const firstSheetId = rows[0].sheetId;
+    const crossSheet: string[] = [];
+    for (const r of rows) {
+      if (r.sheetId !== firstSheetId) crossSheet.push(r.id);
+    }
+
+    const sheetAccess = await verifySheetAccess(firstSheetId, req.user!);
+    if (!sheetAccess.allowed) {
+      recordJobMetrics("takeoff_measurements_bulk_unlock_rescale", {
+        error: 1,
+        count: batchCount,
+        ms: Date.now() - startedAt,
+      });
+      const status = sheetAccess.sheet ? 403 : 404;
+      const reason: "access_denied" | "not_found" = sheetAccess.sheet ? "access_denied" : "not_found";
+      const message = sheetAccess.reason || "Access denied";
+      res.status(status).json({
+        error: message,
+        reason,
+        failedMeasurementIds: ids,
+        failuresByReason: [{ reason, failedMeasurementIds: ids, message }],
+      });
+      return;
+    }
+
+    // Locked-version enforcement — one batched query instead of N
+    // `isMeasurementLocked` lookups, mirroring the bulk PATCH path.
+    const versionIds = Array.from(
+      new Set(rows.map((r) => r.takeoffVersionId).filter((v): v is string => !!v)),
+    );
+    const lockedRowIds: string[] = [];
+    if (versionIds.length > 0) {
+      const lockedVersions = await db
+        .select({ id: takeoffVersions.id })
+        .from(takeoffVersions)
+        .where(and(inArray(takeoffVersions.id, versionIds), eq(takeoffVersions.status, "LOCKED")));
+      const lockedSet = new Set(lockedVersions.map((v) => v.id));
+      for (const r of rows) {
+        if (r.takeoffVersionId && lockedSet.has(r.takeoffVersionId)) {
+          lockedRowIds.push(r.id);
+        }
+      }
+    }
+
+    const groups: Array<{
+      reason: "cross_sheet" | "locked";
+      ids: string[];
+      message: string;
+    }> = [];
+    if (crossSheet.length > 0) {
+      groups.push({
+        reason: "cross_sheet",
+        ids: crossSheet,
+        message: "Some measurements belong to a different sheet and were not unlocked",
+      });
+    }
+    if (lockedRowIds.length > 0) {
+      groups.push({
+        reason: "locked",
+        ids: lockedRowIds,
+        message: "Some measurements belong to a locked version and were not unlocked",
+      });
+    }
+    if (groups.length > 0) {
+      const allFailed = Array.from(new Set(groups.flatMap((g) => g.ids)));
+      const status = groups.some((g) => g.reason === "locked") ? 403 : 400;
+      const dominant = groups.reduce((acc, g) =>
+        g.ids.length > acc.ids.length ? g : acc,
+      );
+      recordJobMetrics("takeoff_measurements_bulk_unlock_rescale", {
+        error: 1,
+        count: batchCount,
+        ms: Date.now() - startedAt,
+      });
+      res.status(status).json({
+        error: groups.map((g) => g.message).join("; "),
+        reason: dominant.reason,
+        failedMeasurementIds: allFailed,
+        failuresByReason: groups.map((g) => ({
+          reason: g.reason,
+          failedMeasurementIds: g.ids,
+          message: g.message,
+        })),
+      });
+      return;
+    }
+
+    // Sheet calibration — same gate the per-row route enforces. We
+    // refuse the whole batch rather than partially-applying because
+    // (a) every row shares the same sheet by the cross_sheet check
+    // above, so the answer is the same for every row, and (b) the
+    // user-visible alternative (silently leaving lockedScalePxPerFoot
+    // populated for some rows) would be more confusing than a clear
+    // "calibrate first" error.
+    const [sheet] = await db
+      .select({ scalePxPerFoot: takeoffSheets.scalePxPerFoot })
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.id, firstSheetId))
+      .limit(1);
+
+    const sheetScale = sheet?.scalePxPerFoot;
+    if (!sheetScale || !Number.isFinite(sheetScale) || sheetScale <= 0) {
+      recordJobMetrics("takeoff_measurements_bulk_unlock_rescale", {
+        error: 1,
+        count: batchCount,
+        ms: Date.now() - startedAt,
+      });
+      res.status(400).json({
+        error: "Sheet is not calibrated. Calibrate the sheet before unlocking these rows.",
+        reason: "sheet_not_calibrated",
+        failedMeasurementIds: ids,
+        failuresByReason: [
+          {
+            reason: "sheet_not_calibrated",
+            failedMeasurementIds: ids,
+            message: "Sheet is not calibrated. Calibrate the sheet before unlocking these rows.",
+          },
+        ],
+      });
+      return;
+    }
+
+    // Apply the unlocks inside a single transaction so a mid-batch
+    // failure rolls back cleanly. Rows that aren't currently locked
+    // (`lockedScalePxPerFoot IS NULL`) are returned unchanged and
+    // counted in `alreadyUnlockedIds` — same idempotent contract as
+    // the per-row route.
+    const alreadyUnlockedIds: string[] = [];
+    const updated = await db.transaction(async (tx) => {
+      const out: typeof rows = [];
+      for (const existing of rows) {
+        if (existing.lockedScalePxPerFoot == null) {
+          alreadyUnlockedIds.push(existing.id);
+          out.push(existing);
+          continue;
+        }
+
+        const recompute = computeMeasurementRescaleUpdates(existing, sheetScale);
+        const setPayload: Record<string, unknown> = {
+          lockedScalePxPerFoot: null,
+          updatedAt: new Date(),
+        };
+        if (recompute) {
+          Object.assign(setPayload, recompute);
+        }
+
+        const [row] = await tx
+          .update(takeoffMeasurements)
+          .set(setPayload)
+          .where(eq(takeoffMeasurements.id, existing.id))
+          .returning();
+
+        if (row) {
+          out.push(row);
+          // Task #2356 parity — capture the live sheet scale used for
+          // the rescale in the audit's "after" payload so the takeoff
+          // history panel renders bulk-unlock entries identically to
+          // per-row unlock entries (same "captured scale" value, same
+          // shape). Without this the bulk-vs-per-row history rows
+          // would diverge in `sheetScalePxPerFoot`, breaking the
+          // history panel's diff rendering.
+          await logUpdate(
+            req.user!.id,
+            "takeoff_measurement",
+            existing.id,
+            {
+              lockedScalePxPerFoot: existing.lockedScalePxPerFoot,
+              computedLengthFt: existing.computedLengthFt,
+              computedAreaFt2: existing.computedAreaFt2,
+              computedVolumeCy: existing.computedVolumeCy,
+            },
+            {
+              lockedScalePxPerFoot: null,
+              sheetScalePxPerFoot: sheetScale,
+              computedLengthFt: row.computedLengthFt,
+              computedAreaFt2: row.computedAreaFt2,
+              computedVolumeCy: row.computedVolumeCy,
+              action: "unlock_and_rescale",
+            },
+            req,
+          );
+        }
+      }
+      return out;
+    });
+
+    const unlockedCount = updated.length - alreadyUnlockedIds.length;
+    recordJobMetrics("takeoff_measurements_bulk_unlock_rescale", {
+      ok: 1,
+      count: batchCount,
+      ms: Date.now() - startedAt,
+    });
+    res.json({
+      measurements: updated.map((r) => ({
+        ...r,
+        points: safeParsePoints(r.points) || [],
+      })),
+      unlockedCount,
+      alreadyUnlockedIds,
+    });
+  } catch (error: unknown) {
+    recordJobMetrics("takeoff_measurements_bulk_unlock_rescale", {
+      error: 1,
+      count: batchCount,
+      ms: Date.now() - startedAt,
+    });
+    logError(
+      "Error bulk-unlocking measurements:",
+      {},
+      error instanceof Error ? error : new Error(String(error)),
+    );
+    if (error instanceof ZodError) {
+      res.status(400).json({
+        error: "Invalid bulk unlock payload",
+        reason: "validation",
+        details: error.errors,
+      });
+      return;
+    }
+    next(error);
+  }
+});
+
 router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;

@@ -984,7 +984,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     categories, currentSheet, aggregatedMeasurements,
     sheetsQueryKey,
     importPlanMutation, supersedeSheetMutation, createMeasurementMutation,
-    updateMeasurementMutation, unlockAndRescaleMeasurementMutation, bulkUpdateMeasurementsMutation, deleteMeasurementMutation, bulkDeleteMeasurementsMutation,
+    updateMeasurementMutation, unlockAndRescaleMeasurementMutation, bulkUnlockAndRescaleMeasurementsMutation, bulkUpdateMeasurementsMutation, deleteMeasurementMutation, bulkDeleteMeasurementsMutation,
     createMarkupMutation, updateMarkupMutation, bulkUpdateMarkupsMutation, deleteMarkupMutation, bulkDeleteMarkupsMutation,
     createSheetLinkMutation, deleteSheetLinkMutation, detectLinksMutation,
     saveCategoryMutation, deleteCategoryMutation,
@@ -4828,6 +4828,19 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       onUnlockAndRescale: (id: string) => {
         unlockAndRescaleMeasurementMutation.mutate(id);
       },
+      // Task #2357 — Bulk unlock-and-rescale. Same recovery path as
+      // the per-row affordance above but for every locked row at
+      // once: an estimator who chose "Lock existing measurements" on
+      // a re-calibration by mistake can release the whole sheet in
+      // one click instead of clicking each badge individually.
+      onBulkUnlockAndRescale: async (ids: string[]) => {
+        // Use mutateAsync so the table can await success before
+        // clearing its selection. If the request rejects (network
+        // failure, 4xx), the user keeps their selection so they can
+        // retry without re-checking every row.
+        await bulkUnlockAndRescaleMeasurementsMutation.mutateAsync(ids);
+      },
+      isBulkUnlocking: bulkUnlockAndRescaleMeasurementsMutation.isPending,
     },
     issueDetail: selectedIssue ? {
       issue: selectedIssue,

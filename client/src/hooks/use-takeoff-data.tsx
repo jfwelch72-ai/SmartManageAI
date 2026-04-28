@@ -735,6 +735,87 @@ export function useTakeoffData({
     },
   });
 
+  // Task #2357 — Bulk "Unlock & rescale" mutation. Releases N
+  // measurements from their `lockedScalePxPerFoot` snapshots in one
+  // round-trip and asks the server to re-derive each row's
+  // `computedLengthFt` / `computedAreaFt2` against the sheet's
+  // current scale. Companion to `unlockAndRescaleMeasurementMutation`
+  // above (Task #2334) for the per-row affordance: an estimator who
+  // mistakenly chose "Lock existing measurements" on a sheet
+  // re-calibration can release every locked row in a single click
+  // instead of clicking each lock icon individually.
+  //
+  // The server is authoritative for the recompute (formulas depend on
+  // per-type geometry the workspace doesn't duplicate), so we just
+  // invalidate the measurements cache and broadcast a per-row
+  // collab event so other viewers see the rescaled values right
+  // away. The toast count comes from the server's `unlockedCount`
+  // (so already-unlocked rows in the batch don't inflate the message)
+  // and the not_found / sheet_not_calibrated error shapes mirror the
+  // per-row mutation so the existing `extractMeasurementNotFoundIds`
+  // / `pruneDeletedMeasurements` helpers prune deleted rows out of
+  // the cache + selection in the same gesture.
+  const bulkUnlockAndRescaleMeasurementsMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      if (selectedVersionId && (!selectedVersionData || selectedVersionData.status === "LOCKED")) {
+        throw new Error("Cannot unlock measurements while viewing a locked version");
+      }
+      const res = await apiRequest("POST", `/api/takeoff/measurements/bulk-unlock-rescale`, { ids });
+      return res.json() as Promise<{
+        measurements: TakeoffMeasurement[];
+        unlockedCount: number;
+        alreadyUnlockedIds: string[];
+      }>;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: measurementsQueryKey });
+      if (selectedSheet) {
+        for (const m of data.measurements) {
+          onCollabBroadcast?.("MEASUREMENT_UPDATED", { sheetId: selectedSheet, measurementId: m.id });
+        }
+      }
+      const count = data.unlockedCount;
+      if (count === 0) {
+        toast({
+          title: "Already unlocked",
+          description: "These measurements were already tracking the sheet's current scale.",
+        });
+        return;
+      }
+      toast({
+        title: count === 1 ? "Measurement unlocked" : `${count} measurements unlocked`,
+        description: "Length and area now follow the sheet's current scale.",
+      });
+    },
+    onError: (error: unknown, variables) => {
+      const notFoundIds = extractMeasurementNotFoundIds(error, variables ?? []);
+      if (notFoundIds.length > 0) {
+        pruneDeletedMeasurements(notFoundIds, measurementsQueryKey);
+        toast({
+          title: "Some measurements were deleted",
+          description:
+            "Another teammate removed one or more of these measurements, so the unlock could not be applied. The canvas has been refreshed.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const data = (error as { data?: { reason?: string } } | undefined)?.data;
+      if (data?.reason === "sheet_not_calibrated") {
+        toast({
+          title: "Sheet is not calibrated",
+          description: "Calibrate the sheet's scale before unlocking these measurements.",
+          variant: "destructive",
+        });
+        return;
+      }
+      toast({
+        title: "Error",
+        description: "Failed to unlock measurements",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Task #1989 — Bulk PATCH for editing N measurements in a single
   // round-trip. Mirrors `bulkUpdateMarkupsMutation` (Task #1752 /
   // #1765) so a multi-select category re-assign / cost-code rename
@@ -1818,6 +1899,7 @@ export function useTakeoffData({
     createMeasurementMutation,
     updateMeasurementMutation,
     unlockAndRescaleMeasurementMutation,
+    bulkUnlockAndRescaleMeasurementsMutation,
     bulkUpdateMeasurementsMutation,
     deleteMeasurementMutation,
     bulkDeleteMeasurementsMutation,
