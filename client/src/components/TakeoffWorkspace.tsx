@@ -88,6 +88,7 @@ import { PageThumbnailStrip } from "./takeoff/PageThumbnailStrip";
 import { TakeoffDialogs } from "./takeoff/TakeoffDialogs";
 import { PlanScaleModal } from "./takeoff/PlanScaleModal";
 import { InlineCalibrationDrawer } from "./takeoff/InlineCalibrationDrawer";
+import { computeSheetCalibrationConfidence } from "./takeoff/sheetCalibrationConfidence";
 import { SheetSetsPanel } from "./takeoff/SheetSetsPanel";
 import { ToastAction } from "@/components/ui/toast";
 import type { ParsedDimension } from "@/lib/takeoffTypedInput";
@@ -3868,6 +3869,21 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
               return idx === -1 ? null : idx;
             })()
           : null,
+      // Task #2332 — Pre-compute the sheet-level capture-scale
+      // confidence so the header chip in `SheetSelectorBar` doesn't
+      // have to crack open every measurement on render. The helper
+      // combines `scaleSource` + `scaleConfidence` (server-vouched
+      // band) with the count + drift of `scaleAtCaptureLabel`
+      // snapshots actually committed against this sheet, then
+      // demotes one notch when capture labels disagree with the
+      // sheet's current label. `openCalibrationDrawer` is the same
+      // entry point the bottom-bar chip and the `T` shortcut use, so
+      // a click from the header lands in the identical drawer flow.
+      calibrationConfidence: computeSheetCalibrationConfidence(
+        currentSheet ?? null,
+        measurements,
+      ),
+      onOpenCalibration: openCalibrationDrawer,
     },
     thumbnailStrip:
       thumbnailStripOpen && sheets.length > 1
@@ -3916,6 +3932,13 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     issues.length, hideResolvedIssues, context?.type, crossModulePanelOpen,
     isFullscreen, toggleFullscreen,
     sheetSetsCtxId, sheetSetsPanelOpen, activeSheetSetId, activeSheetSetDetail,
+    // Task #2332 — `selectorBar.calibrationConfidence` reads the
+    // sheet's measurement list to detect drift between captured
+    // scale labels and to surface the measurement count, so the
+    // memo must rebuild whenever the measurement list changes
+    // (insert, edit, delete) — otherwise the chip would stay stale
+    // until something else in the slice happened to update.
+    measurements,
     // Task #2310 — `selectorBar.canFitToPage` reads `pageDims` /
     // `pdfImage` so we must re-build the slice when those change,
     // otherwise the Fit button stays disabled even after the PDF

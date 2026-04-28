@@ -15,7 +15,9 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import type { TakeoffSheet } from "@shared/schema";
+import type { SheetCalibrationConfidence } from "../sheetCalibrationConfidence";
 
 export interface SheetSelectorBarPinControls {
   isPinned: boolean;
@@ -107,6 +109,18 @@ export interface SheetSelectorBarProps {
   /** Whether the current sheet is part of the active set. Drives the
    *  small "1/N" position chip rendered alongside the badge. */
   currentSheetIndexInSet?: number | null;
+  /** Task #2332 — Pre-computed sheet-level capture-scale confidence,
+   *  replaces the old binary "Calibrated / Not Calibrated" badge with
+   *  a four-level (HIGH/MEDIUM/LOW/UNVERIFIED) chip. The workspace
+   *  derives this from the sheet's `scaleSource`/`scaleConfidence`,
+   *  the measurements captured against it, and any drift between
+   *  captured scale labels. Optional so older callers / tests that
+   *  don't compute it still render a sensible UNVERIFIED chip. */
+  calibrationConfidence?: SheetCalibrationConfidence | null;
+  /** Task #2332 — Click target for the confidence chip; opens the
+   *  same calibration drawer the `T` shortcut and bottom-bar chip
+   *  use. When omitted the chip stays read-only. */
+  onOpenCalibration?: () => void;
 }
 
 /** Sheet header toolbar — sheet selector, sheet-actions menu, thumbnail toggle,
@@ -171,6 +185,8 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
     activeSheetSetName = null,
     activeSheetSetMemberCount = 0,
     currentSheetIndexInSet = null,
+    calibrationConfidence = null,
+    onOpenCalibration,
   } = props;
   return (
     /* Task #2298 — on narrow viewports the sheet header packs ~10
@@ -386,38 +402,107 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
           </Button>
         )}
         {currentSheet && (
-          /* Task #2298 — compact calibration badge on narrow viewports
-           *  so the long "Calibrated (ft)" text stops overlapping the
-           *  collab avatars and right-side buttons. Full text returns
-           *  at sm+ where there's room. The full label is set as
-           *  `aria-label` on the badge so screen readers always read
-           *  "Calibrated (ft)" / "Not Calibrated" regardless of which
-           *  visual variant is active (the per-variant spans are hidden
-           *  from a11y via aria-hidden so they don't double-read). */
-          <Badge
-            variant="outline"
-            className="shrink-0 whitespace-nowrap"
-            data-testid="badge-calibration-status"
-            aria-label={
-              currentSheet.scalePxPerFoot
-                ? `Calibrated (${currentSheet.units})`
-                : "Not Calibrated"
-            }
-          >
-            {currentSheet.scalePxPerFoot ? (
-              <>
-                <CheckCircle2 className="w-3 h-3 mr-1 text-green-500 sm:hidden" aria-hidden="true" />
-                <span className="hidden sm:inline" aria-hidden="true">Calibrated </span>
-                <span aria-hidden="true">({currentSheet.units})</span>
-              </>
+          /* Task #2332 — Sheet-level capture-scale confidence chip.
+           *  Replaces the old binary "Calibrated / Not Calibrated"
+           *  badge with a four-level (HIGH/MEDIUM/LOW/UNVERIFIED)
+           *  indicator computed by `computeSheetCalibrationConfidence`
+           *  in TakeoffWorkspace from `scaleSource`/`scaleConfidence`,
+           *  the sheet's measurement count, and any drift between
+           *  captured `scaleAtCaptureLabel` snapshots. The chip is a
+           *  button when `onOpenCalibration` is wired so an estimator
+           *  can jump straight to the calibration drawer; falls back
+           *  to a static badge otherwise so legacy callers/tests
+           *  still render. The original `data-testid="badge-calibration-status"`
+           *  is preserved for backward compatibility with existing
+           *  e2e tests; the new four-level state is additionally
+           *  exposed via `data-confidence` and the dot/icon/tooltip
+           *  test-ids inside the chip body.
+           *
+           *  Task #2298 follow-up — the chip stays compact (icon-only
+           *  with "ft" suffix below sm) so the wrapped header row
+           *  doesn't overflow on phones. The full label and tooltip
+           *  rationale are mirrored into `aria-label` so screen
+           *  readers always read the verbose form. */
+          (() => {
+            const confidence =
+              calibrationConfidence ?? {
+                confidence: "UNVERIFIED" as const,
+                label: "Unverified",
+                dotClass: "bg-red-500 dark:bg-red-400",
+                chipClass:
+                  "border-red-500/50 text-red-700 dark:text-red-300 hover:bg-red-500/10",
+                sourceText: "Scale not yet verified",
+                tooltip:
+                  "This sheet isn't calibrated yet. Click to open the calibration tool.",
+                measurementCount: 0,
+                hasDrift: false,
+                driftLabels: [] as string[],
+              };
+            const ariaLabel = `Scale confidence: ${confidence.label}. ${confidence.sourceText}.${
+              confidence.hasDrift ? " Captured scale labels disagree with the sheet's current label." : ""
+            }`;
+            const chipBody = (
+              <span
+                className="flex items-center gap-1.5"
+                aria-hidden="true"
+              >
+                <span
+                  className={cn(
+                    "inline-block w-2 h-2 rounded-full shrink-0",
+                    confidence.dotClass,
+                  )}
+                  data-testid="dot-scale-confidence"
+                />
+                <span className="hidden sm:inline tabular-nums text-[11px] font-medium">
+                  {confidence.label}
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  ({currentSheet.units})
+                </span>
+                {confidence.hasDrift && (
+                  <AlertCircle
+                    className="w-3 h-3 text-amber-500 shrink-0"
+                    data-testid="icon-scale-drift"
+                  />
+                )}
+              </span>
+            );
+            return onOpenCalibration ? (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={onOpenCalibration}
+                    className={cn(
+                      "inline-flex items-center gap-1 shrink-0 whitespace-nowrap",
+                      "h-6 px-2 rounded-md border bg-background",
+                      "transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+                      confidence.chipClass,
+                    )}
+                    data-testid="badge-calibration-status"
+                    data-confidence={confidence.confidence}
+                    aria-label={ariaLabel}
+                  >
+                    {chipBody}
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom" className="max-w-xs text-xs leading-relaxed">
+                  <p data-testid="text-scale-confidence-tooltip">{confidence.tooltip}</p>
+                </TooltipContent>
+              </Tooltip>
             ) : (
-              <>
-                <AlertCircle className="w-3 h-3 mr-1 text-amber-500 sm:hidden" aria-hidden="true" />
-                <span className="hidden sm:inline" aria-hidden="true">Not Calibrated</span>
-                <span className="sm:hidden" aria-hidden="true">No scale</span>
-              </>
-            )}
-          </Badge>
+              <Badge
+                variant="outline"
+                className={cn("shrink-0 whitespace-nowrap", confidence.chipClass)}
+                data-testid="badge-calibration-status"
+                data-confidence={confidence.confidence}
+                aria-label={ariaLabel}
+                title={confidence.tooltip}
+              >
+                {chipBody}
+              </Badge>
+            );
+          })()
         )}
         {/* Task #2310 — Fit-to-page button. Sits right after the
          *  calibration badge so it's always within thumb-reach on the
