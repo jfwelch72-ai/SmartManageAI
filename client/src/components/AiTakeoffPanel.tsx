@@ -41,7 +41,9 @@ import {
   RefreshCw,
   Pencil,
   ThumbsDown,
-  Ban
+  Ban,
+  Maximize2,
+  Scissors
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -650,6 +652,33 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
                     {analysisResults.metadata.drawingScale}
                   </span>
                 )}
+                {analysisResults.metadata.pageSize && (
+                  <span className="flex items-center gap-1" data-testid="text-page-size">
+                    <FileText className="w-3 h-3" />
+                    {analysisResults.metadata.pageSize}
+                  </span>
+                )}
+                {/* Task #2336 — Show estimators which raster scale the AI
+                    actually used so they can tell whether fine symbols are
+                    missing because of the rasterizer or the prompt. The
+                    "capped at 30 MP" suffix appears when the 30 megapixel
+                    cap engaged. */}
+                {typeof analysisResults.metadata.rasterScale === "number" && (
+                  <span className="flex items-center gap-1" data-testid="text-raster-scale">
+                    <Maximize2 className="w-3 h-3" />
+                    Rendered at {analysisResults.metadata.rasterScale.toFixed(2)}×
+                    {analysisResults.metadata.rasterCapped && (
+                      <>
+                        , capped at{" "}
+                        {Math.round(
+                          (Number(analysisResults.metadata.rasterMaxPixels) || 30 * 1024 * 1024) /
+                            (1024 * 1024),
+                        )}{" "}
+                        MP
+                      </>
+                    )}
+                  </span>
+                )}
                 {analysisResults.processingTimeMs && (
                   <span className="flex items-center gap-1">
                     <Clock className="w-3 h-3" />
@@ -709,6 +738,21 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
                     <RefreshCw className="w-3 h-3 mr-1" />
                     Retry
                   </Button>
+                </div>
+              )}
+              {/* Task #2336 — When the 30 MP raster cap engaged, the AI saw
+                  the sheet at less than the desired tier (2.0/3.0/4.0×) so
+                  fine symbols may be missing. Invite the user to split the
+                  sheet into tiles to recover detail. */}
+              {analysisResults.metadata.rasterCapped && (
+                <div
+                  className="flex items-start gap-1.5 px-3 py-2 rounded-md bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 w-full"
+                  data-testid="banner-raster-capped"
+                >
+                  <Scissors className="w-4 h-4 text-blue-600 flex-shrink-0 mt-0.5" />
+                  <span className="text-xs text-blue-700 dark:text-blue-400 flex-1">
+                    Rendered at the maximum supported resolution. Splitting this sheet into tiles would let the AI see more detail.
+                  </span>
                 </div>
               )}
               {/* Task #2322 — Surface scale-mismatch warnings emitted by the

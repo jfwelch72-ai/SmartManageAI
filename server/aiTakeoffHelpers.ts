@@ -7,20 +7,33 @@
 // limits and the `canvas` package's safe allocation range.
 export const MAX_RASTER_PIXELS = 30 * 1024 * 1024;
 
+export interface RasterScaleResult {
+  // Final raster scale to pass to PDF.js `getViewport({ scale })`.
+  scale: number;
+  // True when the desired tier (2.0 / 3.0 / 4.0) was clamped down because the
+  // resulting pixel area would exceed `MAX_RASTER_PIXELS`. Surfaced to the UI
+  // (Task #2336) so estimators can tell when fine symbols may be missing
+  // because the sheet was rendered at the maximum supported resolution.
+  capped: boolean;
+}
+
 // Adaptive PDF rasterization. PDF.js viewport widths/heights at `scale = 1`
 // are in CSS pixels at 1 px = 1/72 inch, so the source page size in inches is
 // `width / 72`. Larger physical sheets (civil 30x42, 36x48) need a higher
 // raster scale so fine symbols (outlets, valves, meter pits) survive the
 // resample to the model. We cap the resulting pixel area at
 // `MAX_RASTER_PIXELS` so we don't blow past the OpenAI request limit.
-export function computeRasterScale(viewportWidthAt1: number, viewportHeightAt1: number): number {
+export function computeRasterScale(
+  viewportWidthAt1: number,
+  viewportHeightAt1: number,
+): RasterScaleResult {
   if (
     !Number.isFinite(viewportWidthAt1) ||
     !Number.isFinite(viewportHeightAt1) ||
     viewportWidthAt1 <= 0 ||
     viewportHeightAt1 <= 0
   ) {
-    return 2.0;
+    return { scale: 2.0, capped: false };
   }
   const widthIn = viewportWidthAt1 / 72;
   const heightIn = viewportHeightAt1 / 72;
@@ -36,12 +49,14 @@ export function computeRasterScale(viewportWidthAt1: number, viewportHeightAt1: 
     scale = 4.0;
   }
 
+  let capped = false;
   const pixelArea = viewportWidthAt1 * viewportHeightAt1 * scale * scale;
   if (pixelArea > MAX_RASTER_PIXELS) {
-    const capped = Math.sqrt(MAX_RASTER_PIXELS / (viewportWidthAt1 * viewportHeightAt1));
-    scale = Math.max(1.0, capped);
+    const cappedScale = Math.sqrt(MAX_RASTER_PIXELS / (viewportWidthAt1 * viewportHeightAt1));
+    scale = Math.max(1.0, cappedScale);
+    capped = true;
   }
-  return scale;
+  return { scale, capped };
 }
 
 export interface SheetCalibration {

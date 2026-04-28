@@ -472,6 +472,13 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
     // every analysis. `db.select()` already pulls every column on the row, so
     // we just hold a reference to the loaded record.
     let sheetCalibration: SheetCalibration | null = null;
+    // Task #2336 — Track which raster scale was actually applied to the page
+    // and whether the 30 MP cap engaged, so we can surface the trade-off in
+    // the takeoff result panel. Both stay null when no PDF was rendered (e.g.
+    // the source was already an image, the file was too large to render, or
+    // we fell through to demo/fallback mode).
+    let rasterScaleUsed: number | null = null;
+    let rasterCapped = false;
 
     // Try to get image from takeoff sheet if provided
     if (analysis?.takeoffSheetId) {
@@ -557,8 +564,13 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
                 // Task #2322 — Adaptive rasterization. Use the source page
                 // size to pick a higher raster scale on large civil sheets so
                 // fine symbols survive, capped by `MAX_RASTER_PIXELS`.
+                // Task #2336 — Capture the resolved scale + cap flag so the
+                // UI can show estimators what raster scale the AI saw.
                 const baseViewport = page.getViewport({ scale: 1 });
-                const scale = computeRasterScale(baseViewport.width, baseViewport.height);
+                const rasterResult = computeRasterScale(baseViewport.width, baseViewport.height);
+                const scale = rasterResult.scale;
+                rasterScaleUsed = scale;
+                rasterCapped = rasterResult.capped;
                 const viewport = page.getViewport({ scale });
 
                 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -791,6 +803,12 @@ Return your analysis as JSON with this exact structure:
             analysisMethod: analysisMode === "DETAILED" ? "OpenAI Vision (Multi-Pass)" : "OpenAI Vision",
             analysisSource: "openai_vision",
             ...(scaleMismatchWarning ? { scaleMismatchWarning } : {}),
+            // Task #2336 — Surface the resolved raster scale + cap flag so
+            // the panel can show "Rendered at 2.14×, capped at 30 MP" and
+            // hint that splitting the sheet would let the AI see more detail.
+            ...(rasterScaleUsed !== null ? { rasterScale: rasterScaleUsed } : {}),
+            ...(rasterScaleUsed !== null ? { rasterCapped } : {}),
+            ...(rasterScaleUsed !== null ? { rasterMaxPixels: MAX_RASTER_PIXELS } : {}),
           };
 
           if (analysisMode === "DETAILED" && detectedItems.length > 0) {

@@ -97,10 +97,10 @@ describe("Task #2322 — adaptive PDF rasterization", () => {
 
   it("uses scale 2.0 for ARCH D / 24x36 sheets and smaller", () => {
     // 24x36 at scale 2.0: 24*36*72^2*4 = 17.9 MP, well under the 30 MP cap.
-    expect(computeRasterScale(inchesToViewport(24), inchesToViewport(36))).toBe(2.0);
-    expect(computeRasterScale(inchesToViewport(36), inchesToViewport(24))).toBe(2.0); // landscape
-    expect(computeRasterScale(inchesToViewport(11), inchesToViewport(17))).toBe(2.0); // tabloid
-    expect(computeRasterScale(inchesToViewport(8.5), inchesToViewport(11))).toBe(2.0); // letter
+    expect(computeRasterScale(inchesToViewport(24), inchesToViewport(36))).toEqual({ scale: 2.0, capped: false });
+    expect(computeRasterScale(inchesToViewport(36), inchesToViewport(24))).toEqual({ scale: 2.0, capped: false }); // landscape
+    expect(computeRasterScale(inchesToViewport(11), inchesToViewport(17))).toEqual({ scale: 2.0, capped: false }); // tabloid
+    expect(computeRasterScale(inchesToViewport(8.5), inchesToViewport(11))).toEqual({ scale: 2.0, capped: false }); // letter
   });
 
   it("uses scale 3.0 for sheets larger than 24x36 when under the pixel-area cap", () => {
@@ -109,13 +109,13 @@ describe("Task #2322 — adaptive PDF rasterization", () => {
     // behaviour — so the un-capped 3.0 path is exercised with a synthetic
     // 17×37 sheet (longSide > 36, shortSide ≤ 36) whose area at 3.0 stays
     // under the cap.
-    expect(computeRasterScale(inchesToViewport(17), inchesToViewport(37))).toBe(3.0);
+    expect(computeRasterScale(inchesToViewport(17), inchesToViewport(37))).toEqual({ scale: 3.0, capped: false });
   });
 
   it("uses scale 4.0 for sheets larger than 36x48 when under the pixel-area cap", () => {
     // Same shape of synthetic case for the > 36x48 branch: longSide > 48,
     // shortSide kept narrow so area at 4.0 stays under the cap.
-    expect(computeRasterScale(inchesToViewport(7), inchesToViewport(50))).toBe(4.0);
+    expect(computeRasterScale(inchesToViewport(7), inchesToViewport(50))).toEqual({ scale: 4.0, capped: false });
   });
 
   it("caps the rendered pixel area at MAX_RASTER_PIXELS (~30 MP)", () => {
@@ -124,30 +124,34 @@ describe("Task #2322 — adaptive PDF rasterization", () => {
     {
       const w = inchesToViewport(30);
       const h = inchesToViewport(42);
-      const scale = computeRasterScale(w, h);
-      const area = w * h * scale * scale;
+      const result = computeRasterScale(w, h);
+      const area = w * h * result.scale * result.scale;
       expect(area).toBeLessThanOrEqual(MAX_RASTER_PIXELS + 1);
       // Cap should land us between 2.0 and the desired 3.0.
-      expect(scale).toBeGreaterThan(2.0);
-      expect(scale).toBeLessThan(3.0);
+      expect(result.scale).toBeGreaterThan(2.0);
+      expect(result.scale).toBeLessThan(3.0);
+      // Task #2336 — `capped: true` is the signal the UI uses to show the
+      // "rendered at the maximum supported resolution" hint.
+      expect(result.capped).toBe(true);
     }
 
     // 60x96 huge sheet: would be ~380 MP at 4.0. Cap holds it to ~30 MP.
     {
       const w = inchesToViewport(60);
       const h = inchesToViewport(96);
-      const scale = computeRasterScale(w, h);
-      const area = w * h * scale * scale;
+      const result = computeRasterScale(w, h);
+      const area = w * h * result.scale * result.scale;
       expect(area).toBeLessThanOrEqual(MAX_RASTER_PIXELS + 1);
-      expect(scale).toBeGreaterThanOrEqual(1.0);
-      expect(scale).toBeLessThan(4.0);
+      expect(result.scale).toBeGreaterThanOrEqual(1.0);
+      expect(result.scale).toBeLessThan(4.0);
+      expect(result.capped).toBe(true);
     }
   });
 
   it("falls back to scale 2.0 on degenerate inputs", () => {
-    expect(computeRasterScale(0, 0)).toBe(2.0);
-    expect(computeRasterScale(NaN, 100)).toBe(2.0);
-    expect(computeRasterScale(-1, 100)).toBe(2.0);
+    expect(computeRasterScale(0, 0)).toEqual({ scale: 2.0, capped: false });
+    expect(computeRasterScale(NaN, 100)).toEqual({ scale: 2.0, capped: false });
+    expect(computeRasterScale(-1, 100)).toEqual({ scale: 2.0, capped: false });
   });
 });
 
