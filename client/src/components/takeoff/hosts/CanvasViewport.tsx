@@ -1,6 +1,6 @@
 import { memo, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type ReactNode, type RefObject } from "react";
 import {
-  Layers, Link2, Pencil, Search, Sparkles, Tag, Trash2, Upload, Ruler, Users, X,
+  Layers, Link2, Pencil, Search, Send, ShieldCheck, ShieldX, Sparkles, Tag, Trash2, Upload, Ruler, Users, X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -110,6 +110,15 @@ export interface CanvasViewportProps {
   onMeasurementContextEdit: (measurement: TakeoffMeasurement) => void;
   onMeasurementContextProperties: (measurement: TakeoffMeasurement) => void;
   onMeasurementContextDelete: (measurement: TakeoffMeasurement) => void;
+  // Task #2321 — second-eye review workflow. Wired only when the
+  // workspace is showing a bid (review queue is bid-scoped).
+  // - "Send to reviewer" is exposed for any measurement.
+  // - Approve / Reject are exposed only for measurements whose
+  //   `needsReview === true` AND the caller is allowed to act on
+  //   them (workspace gates the prop on the user's role + !self).
+  onMeasurementContextSendToReviewer?: (measurement: TakeoffMeasurement) => void;
+  onMeasurementContextApproveReview?: (measurement: TakeoffMeasurement) => void;
+  onMeasurementContextRejectReview?: (measurement: TakeoffMeasurement) => void;
 
   // live cost panel
   categories: QuantityCategory[];
@@ -152,6 +161,8 @@ function CanvasViewportInner(props: CanvasViewportProps) {
     contextMenuPos, onContextMenuCreateLink, onContextMenuDetectLinks,
     measurementContextMenu, measurements,
     onMeasurementContextEdit, onMeasurementContextProperties, onMeasurementContextDelete,
+    onMeasurementContextSendToReviewer,
+    onMeasurementContextApproveReview, onMeasurementContextRejectReview,
     categories, showCostPanel, onCloseCostPanel,
     showOverlaySlider, overlayOpacity, onOverlayOpacityChange, onCloseOverlaySlider,
     stageSlot,
@@ -655,6 +666,36 @@ function CanvasViewportInner(props: CanvasViewportProps) {
             >
               <Tag className="w-3.5 h-3.5" /> Properties
             </button>
+            {onMeasurementContextSendToReviewer && (
+              <button
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent flex items-center gap-2"
+                onClick={() => onMeasurementContextSendToReviewer(ctxMeasurement)}
+                data-testid="context-menu-send-to-reviewer"
+              >
+                <Send className="w-3.5 h-3.5" /> Send to reviewer
+              </button>
+            )}
+            {/* Task #2321 — Approve / Reject only appear when this row is
+                actually awaiting a decision; gating happens in the
+                workspace based on the caller's role + non-self check. */}
+            {ctxMeasurement.needsReview && onMeasurementContextApproveReview && (
+              <button
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent flex items-center gap-2"
+                onClick={() => onMeasurementContextApproveReview(ctxMeasurement)}
+                data-testid="context-menu-approve-review"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" /> Approve review
+              </button>
+            )}
+            {ctxMeasurement.needsReview && onMeasurementContextRejectReview && (
+              <button
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent flex items-center gap-2 text-destructive"
+                onClick={() => onMeasurementContextRejectReview(ctxMeasurement)}
+                data-testid="context-menu-reject-review"
+              >
+                <ShieldX className="w-3.5 h-3.5" /> Reject review
+              </button>
+            )}
             <button
               className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent text-destructive flex items-center gap-2"
               onClick={() => onMeasurementContextDelete(ctxMeasurement)}

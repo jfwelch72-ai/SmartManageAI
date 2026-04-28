@@ -163,6 +163,28 @@ export const notificationTypeEnum = pgEnum("notification_type", [
   // independently of the per-failure / repeated-failure pings the
   // dashboard already raises.
   "PROJECT_LOG_EMAIL_FAILURES_DIGEST",
+  // Task #2321 — second-eye takeoff measurement review workflow.
+  // _REQUESTED fans out to the assigned reviewer (or all org reviewers
+  // when no specific assignee was given) when an estimator clicks
+  // "Send to reviewer" on a measurement; _APPROVED / _REJECTED fan
+  // back to the original requester when the reviewer settles the
+  // queue item, carrying the optional `reviewNote` rejection reason.
+  "MEASUREMENT_REVIEW_REQUESTED",
+  "MEASUREMENT_REVIEW_APPROVED",
+  "MEASUREMENT_REVIEW_REJECTED",
+]);
+
+// Task #2321 — review-status state machine for individual takeoff
+// measurements. NULL means "never been queued for review" so the
+// existing measurement set is unaffected. PENDING is set when an
+// estimator queues the row; APPROVED / REJECTED are written by the
+// reviewer's decision. REJECTED keeps `needsReview = true` so the
+// row stays on the queue (a senior estimator who rejected the work
+// is asking for changes, not silently retiring the question).
+export const measurementReviewStatusEnum = pgEnum("measurement_review_status", [
+  "PENDING",
+  "APPROVED",
+  "REJECTED",
 ]);
 
 export const leaveRequestStatusEnum = pgEnum("leave_request_status", ["PENDING", "APPROVED", "DENIED"]);

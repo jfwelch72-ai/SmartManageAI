@@ -2,6 +2,7 @@ import { useState } from "react";
 import { type ScopeSelectionData } from "@/components/StandardizedScopeSelector";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { BidReviewSummaryChip } from "@/components/takeoff/BidReviewSummaryChip";
 import {
   Edit,
   FileText,
@@ -15,6 +16,7 @@ import {
   Brain,
   Clock,
   AlertTriangle,
+  ShieldCheck,
 } from "lucide-react";
 import {
   Select,
@@ -846,6 +848,10 @@ export default function BidDetailPage() {
                   Submitted {format(new Date(bid.submittedAt), "MMM d, yyyy h:mm a")}
                 </Badge>
               )}
+              {/* Task #2321 — second-eye review status chip. Only shown
+                  when the bid has at least one measurement, so a fresh
+                  bid doesn't get a confusing "Reviewed: 0/0" pill. */}
+              <BidReviewSummaryChip bidId={bid.id} bidCode={bid.code} />
               {bid.status === "AWARDED" && bid.convertedToProjectId ? (
                 <Badge
                   className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 cursor-pointer hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"

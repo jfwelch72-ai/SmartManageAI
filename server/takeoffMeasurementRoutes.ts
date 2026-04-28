@@ -4,13 +4,16 @@ import {
   bids,
   takeoffSheets,
   projects,
+  takeoffMeasurements,
+  users,
   organizations,
   MEASUREMENT_NEEDS_REVIEW_DEFAULT_VALUE_THRESHOLD,
   MEASUREMENT_NEEDS_REVIEW_SNAP_RATIO_THRESHOLD,
 } from "@shared/schema";
-import { eq, and, inArray, isNull } from "drizzle-orm";
+import { eq, and, inArray, isNull, isNotNull, sql, desc } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { z, ZodError } from "zod";
-import { requireAuth, type AuthRequest } from "./auth";
+import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { sanitizeShortText } from "./sanitization";
 import { createArcSegment, computeDistanceInFeet, computePolygonAreaInFt2, computePolygonPerimeterInFt, computeVolumeInCY, computePitchedAreaFt2 } from "@shared/utils/geometry";
 import { verifySheetAccess, safeParsePoints, verifyGroupAccess, getActiveDraftVersionId, getDefaultVersionId, getDefaultVersionIdsBatch, hasAnyVersions, isMeasurementLocked } from "./takeoffHelpers";
@@ -18,6 +21,7 @@ import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import { logError } from "./utils/logger";
 import { recordJobMetrics } from "./utils/jobMetrics";
 import { parseOrRespond } from "./utils/validation";
+import { notifyUsers, getApproverUserIds } from "./services/approvalNotificationService";
 
 const router = Router();
 
@@ -1763,6 +1767,471 @@ router.patch("/api/takeoff/sheets/:id/assignment", requireAuth, async (req: Auth
       .returning();
 
     res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Task #2321 — Second-eye review workflow
+//
+// Senior estimators want a forced "right of refusal" on high-dollar takeoff
+// measurements before the bid is locked & submitted. The workflow keeps a
+// per-measurement state machine (NULL → PENDING → APPROVED|REJECTED) plus
+// a queue flag (`needs_review`) that survives a rejection so the original
+// owner can fix the line and resubmit. APPROVED and REJECTED both notify
+// the requester; REQUEST notifies all org-level reviewers (ADMIN/MANAGER)
+// or a single explicitly-chosen reviewer.
+//
+// All four endpoints below share the `loadMeasurementForReview` helper
+// which pulls the measurement plus its parent bid/sheet/project so we can
+// scope to the caller's organization (defence-in-depth — RBAC checks the
+// route, but takeoff data is sensitive enough to warrant a hard org guard
+// per row). Org cross-tenant attempts return 404 (not 403) so attackers
+// can't enumerate measurement IDs.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// SQL fragment that converts a measurement row into its dollar value
+// regardless of takeoff type. Used by both the bid-lock gate and the
+// review-summary endpoint so the two views never disagree.
+//
+// Area-like (AREA / PITCHED_AREA / SURFACE_AREA) → unit_cost * computed_area_ft2
+// Length-like (LINEAR / LINEAR_WITH_DROP / PITCHED_LINEAR) → unit_cost * computed_length_ft
+// VOLUME → unit_cost * computed_volume_cy
+// COUNT → unit_cost * count
+// NOTE / anything else → 0 (NOTE is metadata, not quantity)
+//
+// IMPORTANT: every literal compared to ${takeoffMeasurements.type} must
+// match a real value in the `measurement_type` Postgres enum, otherwise
+// the whole query fails to plan with "invalid input value for enum".
+// We cast to text so future schema enum additions don't crash this
+// query before the corresponding ALTER TYPE … ADD VALUE has run.
+const measurementDollarValueSql = sql`(
+  COALESCE(${takeoffMeasurements.unitCost}, 0) * COALESCE(
+    CASE ${takeoffMeasurements.type}::text
+      WHEN 'AREA' THEN ${takeoffMeasurements.computedAreaFt2}
+      WHEN 'PITCHED_AREA' THEN ${takeoffMeasurements.computedAreaFt2}
+      WHEN 'SURFACE_AREA' THEN ${takeoffMeasurements.computedAreaFt2}
+      WHEN 'LINEAR' THEN ${takeoffMeasurements.computedLengthFt}
+      WHEN 'LINEAR_WITH_DROP' THEN ${takeoffMeasurements.computedLengthFt}
+      WHEN 'PITCHED_LINEAR' THEN ${takeoffMeasurements.computedLengthFt}
+      WHEN 'VOLUME' THEN ${takeoffMeasurements.computedVolumeCy}
+      WHEN 'COUNT' THEN ${takeoffMeasurements.count}
+      ELSE 0
+    END,
+    0
+  )
+)`;
+
+async function loadMeasurementForReview(measurementId: string, orgId: string) {
+  // Single round-trip — measurement + sheet + bid + project so we can
+  // verify cross-tenant isolation and resolve the bid for notification
+  // entity-id linking. Joining instead of N+1 keeps the hot path fast
+  // (the right-click menu is fired one-row-at-a-time).
+  const [row] = await db
+    .select({
+      measurement: takeoffMeasurements,
+      bidId: bids.id,
+      bidCode: bids.code,
+      bidName: bids.name,
+      bidOrgId: bids.gcOrganizationId,
+    })
+    .from(takeoffMeasurements)
+    .innerJoin(takeoffSheets, eq(takeoffSheets.id, takeoffMeasurements.sheetId))
+    .innerJoin(bids, eq(bids.id, takeoffSheets.bidId))
+    .where(and(eq(takeoffMeasurements.id, measurementId), eq(bids.gcOrganizationId, orgId)))
+    .limit(1);
+  return row || null;
+}
+
+// POST /api/takeoff/measurements/:id/request-review
+// Body: { reviewerId?: string, note?: string }
+// Flips needs_review=true, sets reviewStatus=PENDING, fans out a
+// MEASUREMENT_REVIEW_REQUESTED notification to either the chosen
+// reviewer or all org-level approvers (excluding the requester).
+const requestReviewSchema = z.object({
+  reviewerId: z.string().min(1).optional().nullable(),
+  note: z.string().max(2000).optional().nullable(),
+});
+router.post("/api/takeoff/measurements/:id/request-review", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const orgId = req.user?.organizationId;
+    const userId = req.user?.id;
+    if (!orgId || !userId) return res.status(401).json({ error: "Unauthenticated" });
+
+    const parsed = requestReviewSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "Invalid body", details: parsed.error.flatten() });
+    }
+    const { reviewerId, note } = parsed.data;
+
+    const ctx = await loadMeasurementForReview(req.params.id, orgId);
+    if (!ctx) return res.status(404).json({ error: "Measurement not found" });
+
+    // If a specific reviewer is named, make sure they're in the same org
+    // so we don't leak measurements across tenants by mis-routing a
+    // notification.
+    if (reviewerId) {
+      const [reviewer] = await db
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, reviewerId), eq(users.organizationId, orgId), eq(users.isActive, true)))
+        .limit(1);
+      if (!reviewer) {
+        return res.status(400).json({ error: "Reviewer not found in your organization" });
+      }
+    }
+
+    const sanitizedNote = note ? sanitizeShortText(note, 2000) : null;
+
+    const [updated] = await db
+      .update(takeoffMeasurements)
+      .set({
+        needsReview: true,
+        reviewStatus: "PENDING",
+        reviewRequestedById: userId,
+        reviewRequestedAt: new Date(),
+        reviewerId: reviewerId ?? null,
+        // Clear any previous decision so the reviewer's UI doesn't
+        // show stale "approved by Jane on …" text from a prior round.
+        reviewedById: null,
+        reviewedAt: null,
+        reviewNote: sanitizedNote,
+        updatedAt: new Date(),
+      })
+      .where(eq(takeoffMeasurements.id, req.params.id))
+      .returning();
+
+    // Recipient pool: the explicit reviewer if provided, otherwise all
+    // org-level approvers minus the requester (we never want a senior
+    // who clicks "send to reviewer" on their own row to ping themselves).
+    const recipients = reviewerId
+      ? [reviewerId]
+      : await getApproverUserIds(orgId, userId);
+
+    if (recipients.length > 0) {
+      await notifyUsers(
+        recipients,
+        {
+          type: "MEASUREMENT_REVIEW_REQUESTED",
+          title: `Takeoff review requested${ctx.bidCode ? ` — ${ctx.bidCode}` : ""}`,
+          message: `${updated.label || "A measurement"} on bid ${ctx.bidName ?? ctx.bidCode ?? ""} needs a second-eye review.`,
+          relatedEntityId: ctx.bidId,
+          relatedEntityType: "bid",
+        },
+        orgId,
+      );
+    }
+
+    await logUpdate(userId, "takeoff_measurement", updated.id, ctx.measurement, updated, req);
+    res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Shared body schema for approve/reject — both accept an optional note
+// (which becomes the human-readable comment shown in the queue page),
+// and both expect the caller to be in the same org as the measurement.
+const decisionSchema = z.object({ note: z.string().max(2000).optional().nullable() });
+
+// Authorization helper — approve/reject are only valid for senior
+// estimator roles AND the caller must not be the original requester
+// (no rubber-stamping your own work). If the row was sent to a
+// specific reviewer, only that reviewer or another approver may act.
+// Returns null on success, otherwise an Express response error code.
+function denyReviewerDecision(
+  ctxMeasurement: { reviewRequestedById: string | null; reviewerId: string | null },
+  userId: string,
+): { status: number; error: string } | null {
+  if (ctxMeasurement.reviewRequestedById && ctxMeasurement.reviewRequestedById === userId) {
+    return { status: 403, error: "You cannot review a measurement you requested review on." };
+  }
+  return null;
+}
+
+// POST /api/takeoff/measurements/:id/approve-review
+// Closes the queue item: needs_review=false, reviewStatus=APPROVED.
+// Restricted to ADMIN/MANAGER/SUPERINTENDENT — these are the only
+// roles whose word counts as a "second eye" for bid-lock purposes.
+router.post(
+  "/api/takeoff/measurements/:id/approve-review",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"),
+  async (req: AuthRequest, res, next) => {
+  try {
+    const orgId = req.user?.organizationId;
+    const userId = req.user?.id;
+    if (!orgId || !userId) return res.status(401).json({ error: "Unauthenticated" });
+
+    const parsed = decisionSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "Invalid body" });
+    const note = parsed.data.note ? sanitizeShortText(parsed.data.note, 2000) : null;
+
+    const ctx = await loadMeasurementForReview(req.params.id, orgId);
+    if (!ctx) return res.status(404).json({ error: "Measurement not found" });
+
+    const denial = denyReviewerDecision(ctx.measurement, userId);
+    if (denial) return res.status(denial.status).json({ error: denial.error });
+
+    // Only allow a decision on a row that is actually pending. This
+    // prevents two reviewers from racing each other and double-flipping
+    // the row from PENDING → APPROVED → REJECTED in the wrong order.
+    if (!ctx.measurement.needsReview || ctx.measurement.reviewStatus !== "PENDING") {
+      return res.status(409).json({ error: "Measurement is not awaiting review" });
+    }
+
+    const [updated] = await db
+      .update(takeoffMeasurements)
+      .set({
+        needsReview: false,
+        reviewStatus: "APPROVED",
+        reviewedById: userId,
+        reviewedAt: new Date(),
+        // Preserve the requester's note on the row, but tack the
+        // reviewer's note on with a delimiter so both are auditable.
+        reviewNote: note ? note : ctx.measurement.reviewNote,
+        updatedAt: new Date(),
+      })
+      .where(eq(takeoffMeasurements.id, req.params.id))
+      .returning();
+
+    if (ctx.measurement.reviewRequestedById && ctx.measurement.reviewRequestedById !== userId) {
+      await notifyUsers(
+        [ctx.measurement.reviewRequestedById],
+        {
+          type: "MEASUREMENT_REVIEW_APPROVED",
+          title: `Takeoff approved — ${ctx.bidCode ?? ""}`,
+          message: `${updated.label || "Your measurement"} was approved.`,
+          relatedEntityId: ctx.bidId,
+          relatedEntityType: "bid",
+        },
+        orgId,
+      );
+    }
+
+    await logUpdate(userId, "takeoff_measurement", updated.id, ctx.measurement, updated, req);
+    res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/takeoff/measurements/:id/reject-review
+// Keeps the queue item OPEN (needs_review stays true) so the requester
+// sees the same row in their "needs fixing" filter; reviewStatus moves
+// to REJECTED and a notification carries the reviewer's note back.
+// Same auth contract as approve-review.
+router.post(
+  "/api/takeoff/measurements/:id/reject-review",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER", "SUPERINTENDENT"),
+  async (req: AuthRequest, res, next) => {
+  try {
+    const orgId = req.user?.organizationId;
+    const userId = req.user?.id;
+    if (!orgId || !userId) return res.status(401).json({ error: "Unauthenticated" });
+
+    const parsed = decisionSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ error: "Invalid body" });
+    const note = parsed.data.note ? sanitizeShortText(parsed.data.note, 2000) : null;
+
+    const ctx = await loadMeasurementForReview(req.params.id, orgId);
+    if (!ctx) return res.status(404).json({ error: "Measurement not found" });
+
+    const denial = denyReviewerDecision(ctx.measurement, userId);
+    if (denial) return res.status(denial.status).json({ error: denial.error });
+
+    if (!ctx.measurement.needsReview || ctx.measurement.reviewStatus !== "PENDING") {
+      return res.status(409).json({ error: "Measurement is not awaiting review" });
+    }
+
+    const [updated] = await db
+      .update(takeoffMeasurements)
+      .set({
+        // Intentionally leave needs_review = true so the requester
+        // still sees this row in "my queue" and can fix-then-resubmit.
+        // The next request-review call will reset reviewedAt/By etc.
+        needsReview: true,
+        reviewStatus: "REJECTED",
+        reviewedById: userId,
+        reviewedAt: new Date(),
+        reviewNote: note ? note : ctx.measurement.reviewNote,
+        updatedAt: new Date(),
+      })
+      .where(eq(takeoffMeasurements.id, req.params.id))
+      .returning();
+
+    if (ctx.measurement.reviewRequestedById && ctx.measurement.reviewRequestedById !== userId) {
+      await notifyUsers(
+        [ctx.measurement.reviewRequestedById],
+        {
+          type: "MEASUREMENT_REVIEW_REJECTED",
+          title: `Takeoff needs changes — ${ctx.bidCode ?? ""}`,
+          message: `${updated.label || "Your measurement"} was rejected${note ? `: ${note}` : ""}.`,
+          relatedEntityId: ctx.bidId,
+          relatedEntityType: "bid",
+        },
+        orgId,
+      );
+    }
+
+    await logUpdate(userId, "takeoff_measurement", updated.id, ctx.measurement, updated, req);
+    res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/takeoff/review-queue
+//
+// Returns every measurement in the caller's org that still needs
+// review, sorted by **dollar value descending** by default — the
+// product spec is "show me the riskiest items first", so a senior
+// estimator scanning the queue should never miss a six-figure row
+// hiding below a $50 paint touch-up.
+//
+// Server-side filters (all optional, all combine with AND):
+//   ?bidId=<uuid>         — only items belonging to that bid
+//   ?bidCode=<code>       — same, but uses the human-readable code
+//                           the bid header chip already passes
+//   ?projectId=<uuid>     — only items belonging to that project
+//   ?reviewerId=<uuid>    — only items explicitly assigned to that
+//                           reviewer (NULL reviewerId rows are the
+//                           org-wide queue; pass `unassigned` to
+//                           target those specifically)
+//
+// We join `users` twice (requester + assigned reviewer) so the UI
+// can render names without a follow-up batch lookup, and join
+// `projects` so `?projectId` can be honoured without an extra hop.
+router.get("/api/takeoff/review-queue", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const orgId = req.user?.organizationId;
+    if (!orgId) return res.status(401).json({ error: "Unauthenticated" });
+
+    const requester = alias(users, "rev_requester");
+    const reviewer = alias(users, "rev_reviewer");
+
+    const filters = [
+      eq(takeoffMeasurements.needsReview, true),
+      eq(bids.gcOrganizationId, orgId),
+    ];
+    if (typeof req.query.bidId === "string" && req.query.bidId) {
+      filters.push(eq(bids.id, req.query.bidId));
+    }
+    if (typeof req.query.bidCode === "string" && req.query.bidCode) {
+      filters.push(eq(bids.code, req.query.bidCode));
+    }
+    if (typeof req.query.projectId === "string" && req.query.projectId) {
+      // Task #2321 — `bids` doesn't carry a project FK directly; the
+      // canonical takeoff→project linkage is on `takeoffSheets.projectId`,
+      // and bids that have been converted also expose `convertedToProjectId`.
+      // Match either so deep-links from a project page (sheet-level) and
+      // post-conversion pages (bid-level) both resolve correctly.
+      filters.push(sql`(${takeoffSheets.projectId} = ${req.query.projectId} OR ${bids.convertedToProjectId} = ${req.query.projectId})`);
+    }
+    if (typeof req.query.reviewerId === "string" && req.query.reviewerId) {
+      if (req.query.reviewerId === "unassigned") {
+        // SQL: reviewer_id IS NULL — handled inline because Drizzle's
+        // isNull import would clash with the existing isNotNull import.
+        filters.push(sql`${takeoffMeasurements.reviewerId} IS NULL`);
+      } else {
+        filters.push(eq(takeoffMeasurements.reviewerId, req.query.reviewerId));
+      }
+    }
+
+    const rows = await db
+      .select({
+        id: takeoffMeasurements.id,
+        label: takeoffMeasurements.label,
+        type: takeoffMeasurements.type,
+        source: takeoffMeasurements.source,
+        reviewStatus: takeoffMeasurements.reviewStatus,
+        reviewRequestedAt: takeoffMeasurements.reviewRequestedAt,
+        reviewRequestedById: takeoffMeasurements.reviewRequestedById,
+        reviewerId: takeoffMeasurements.reviewerId,
+        reviewedAt: takeoffMeasurements.reviewedAt,
+        reviewedById: takeoffMeasurements.reviewedById,
+        reviewNote: takeoffMeasurements.reviewNote,
+        unitCost: takeoffMeasurements.unitCost,
+        count: takeoffMeasurements.count,
+        computedLengthFt: takeoffMeasurements.computedLengthFt,
+        computedAreaFt2: takeoffMeasurements.computedAreaFt2,
+        computedVolumeCy: takeoffMeasurements.computedVolumeCy,
+        metadata: takeoffMeasurements.metadata,
+        sheetId: takeoffMeasurements.sheetId,
+        sheetName: takeoffSheets.sheetName,
+        sheetScalePxPerFoot: takeoffSheets.scalePxPerFoot,
+        sheetScaleLabel: takeoffSheets.scaleLabel,
+        bidId: bids.id,
+        bidCode: bids.code,
+        bidName: bids.name,
+        // Task #2321 — `bids.convertedToProjectId` is the column on the
+        // schema (`projectId` is on `takeoffSheets`, not `bids`). Surface
+        // both: prefer the bid's converted project, fall back to the
+        // sheet's project so project-level takeoffs still surface.
+        projectId: takeoffSheets.projectId,
+        convertedToProjectId: bids.convertedToProjectId,
+        requestedByName: sql<string | null>`COALESCE(${requester.firstName} || ' ' || ${requester.lastName}, ${requester.email})`.as("requested_by_name"),
+        reviewerName: sql<string | null>`COALESCE(${reviewer.firstName} || ' ' || ${reviewer.lastName}, ${reviewer.email})`.as("reviewer_name"),
+        dollarValue: sql<number>`${measurementDollarValueSql}`.as("dollar_value"),
+      })
+      .from(takeoffMeasurements)
+      .innerJoin(takeoffSheets, eq(takeoffSheets.id, takeoffMeasurements.sheetId))
+      .innerJoin(bids, eq(bids.id, takeoffSheets.bidId))
+      .leftJoin(requester, eq(requester.id, takeoffMeasurements.reviewRequestedById))
+      .leftJoin(reviewer, eq(reviewer.id, takeoffMeasurements.reviewerId))
+      .where(and(...filters))
+      .orderBy(desc(measurementDollarValueSql), desc(takeoffMeasurements.reviewRequestedAt))
+      .limit(500);
+
+    res.json(rows);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/bids/:bidId/takeoff/review-summary
+// Used by the bid-detail header chip ("Reviewed: X/Y" + dollar pct).
+// We compute both a row-count summary and a dollar-weighted summary
+// because the bid-lock gate uses dollars but the human-readable chip
+// uses the row count (which estimators intuit faster).
+router.get("/api/bids/:bidId/takeoff/review-summary", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const orgId = req.user?.organizationId;
+    if (!orgId) return res.status(401).json({ error: "Unauthenticated" });
+
+    // Verify bid belongs to caller's org first so we don't leak counts
+    // for other tenants' bids.
+    const [bid] = await db
+      .select({ id: bids.id })
+      .from(bids)
+      .where(and(eq(bids.id, req.params.bidId), eq(bids.gcOrganizationId, orgId)))
+      .limit(1);
+    if (!bid) return res.status(404).json({ error: "Bid not found" });
+
+    const [summary] = await db
+      .select({
+        totalRows: sql<number>`COUNT(*)::int`,
+        approvedRows: sql<number>`COUNT(*) FILTER (WHERE ${takeoffMeasurements.reviewStatus} = 'APPROVED')::int`,
+        pendingRows: sql<number>`COUNT(*) FILTER (WHERE ${takeoffMeasurements.needsReview} = true)::int`,
+        totalDollars: sql<number>`COALESCE(SUM(${measurementDollarValueSql}), 0)::float8`,
+        approvedDollars: sql<number>`COALESCE(SUM(${measurementDollarValueSql}) FILTER (WHERE ${takeoffMeasurements.reviewStatus} = 'APPROVED'), 0)::float8`,
+      })
+      .from(takeoffMeasurements)
+      .innerJoin(takeoffSheets, eq(takeoffSheets.id, takeoffMeasurements.sheetId))
+      .where(eq(takeoffSheets.bidId, req.params.bidId));
+
+    res.json({
+      totalRows: summary?.totalRows ?? 0,
+      approvedRows: summary?.approvedRows ?? 0,
+      pendingRows: summary?.pendingRows ?? 0,
+      totalDollars: summary?.totalDollars ?? 0,
+      approvedDollars: summary?.approvedDollars ?? 0,
+      approvedDollarPct: summary && summary.totalDollars > 0
+        ? (summary.approvedDollars / summary.totalDollars) * 100
+        : 0,
+    });
   } catch (error) {
     next(error);
   }

@@ -3095,6 +3095,92 @@ router.post("/api/bids/:code/submit", requireAuth, requireRole("ADMIN", "MANAGER
       });
     }
 
+    // Task #2321 — bid-lock gate. If the org has opted-in to the
+    // second-eye review workflow by setting a non-null
+    // `takeoffReviewBidLockThresholdPct`, refuse to submit the bid
+    // until the percentage of dollar-value reviewed-and-approved
+    // measurements meets the threshold. We compute the value
+    // server-side (rather than trusting a client-side summary) so
+    // an estimator can't bypass the gate by tampering with the UI.
+    //
+    // The gate is intentionally org-scoped (not bid-scoped) — admins
+    // configure it once on the organisations row and every bid in
+    // that org inherits it. NULL = gate disabled (default for every
+    // existing org so this task ships without behavioural drift).
+    try {
+      const { organizations: orgsTbl } = await import("@shared/schema");
+      const [orgRow] = await db
+        .select({ threshold: orgsTbl.takeoffReviewBidLockThresholdPct })
+        .from(orgsTbl)
+        .where(eq(orgsTbl.id, bid.gcOrganizationId))
+        .limit(1);
+      const thresholdRaw = orgRow?.threshold;
+      // Decimal columns come back as strings from pg-node; coerce
+      // before comparing. A truly-zero threshold is a valid setting
+      // (it just means "any approval is enough") so we only skip
+      // when the column is null/undefined or empty.
+      if (thresholdRaw !== null && thresholdRaw !== undefined && thresholdRaw !== "") {
+        const threshold = Number(thresholdRaw);
+        if (!Number.isNaN(threshold) && threshold > 0) {
+          const { takeoffMeasurements: tmTbl, takeoffSheets: tsTbl } = await import("@shared/schema");
+          // Task #2321 — IMPORTANT: this formula must stay in lock-step with
+          // `measurementDollarValueSql` in server/takeoffMeasurementRoutes.ts.
+          // Both are queried in different request paths (this gate vs the
+          // bid-detail review-summary chip) and a divergence would let a
+          // bid pass the gate while the chip claims it shouldn't (or
+          // vice-versa). The cast-to-text trick avoids "invalid input
+          // value for enum" if the schema enum drifts ahead of the DB.
+          const dollarSql = sql`(
+            COALESCE(${tmTbl.unitCost}, 0) * COALESCE(
+              CASE ${tmTbl.type}::text
+                WHEN 'AREA' THEN ${tmTbl.computedAreaFt2}
+                WHEN 'PITCHED_AREA' THEN ${tmTbl.computedAreaFt2}
+                WHEN 'SURFACE_AREA' THEN ${tmTbl.computedAreaFt2}
+                WHEN 'LINEAR' THEN ${tmTbl.computedLengthFt}
+                WHEN 'LINEAR_WITH_DROP' THEN ${tmTbl.computedLengthFt}
+                WHEN 'PITCHED_LINEAR' THEN ${tmTbl.computedLengthFt}
+                WHEN 'VOLUME' THEN ${tmTbl.computedVolumeCy}
+                WHEN 'COUNT' THEN ${tmTbl.count}
+                ELSE 0
+              END,
+              0
+            )
+          )`;
+          const [summary] = await db
+            .select({
+              totalDollars: sql<number>`COALESCE(SUM(${dollarSql}), 0)::float8`,
+              approvedDollars: sql<number>`COALESCE(SUM(${dollarSql}) FILTER (WHERE ${tmTbl.reviewStatus} = 'APPROVED'), 0)::float8`,
+            })
+            .from(tmTbl)
+            .innerJoin(tsTbl, eq(tsTbl.id, tmTbl.sheetId))
+            .where(eq(tsTbl.bidId, bid.id));
+          const total = summary?.totalDollars ?? 0;
+          const approved = summary?.approvedDollars ?? 0;
+          // No measurements means nothing to review and the gate
+          // doesn't fire — submission of a takeoff-less bid is a
+          // legitimate flow (services-only bids).
+          if (total > 0) {
+            const pct = (approved / total) * 100;
+            if (pct < threshold) {
+              return res.status(422).json({
+                error: "Bid cannot be submitted until the takeoff review threshold is met.",
+                code: "REVIEW_THRESHOLD_NOT_MET",
+                approvedDollars: approved,
+                totalDollars: total,
+                approvedDollarPct: pct,
+                requiredPct: threshold,
+              });
+            }
+          }
+        }
+      }
+    } catch (gateErr) {
+      // Defensive — if the gate query itself fails, we don't want to
+      // hard-block submissions across the entire platform. Log and
+      // continue; the surface area for the gate is admin-opt-in.
+      logError("[bid] review gate check failed; allowing submission", { bidId: bid.id }, gateErr instanceof Error ? gateErr : new Error(String(gateErr)));
+    }
+
     const bidSubmitSchema = z.object({
       recipientEmail: z.string().email().optional(),
     });

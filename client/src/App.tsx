@@ -132,6 +132,8 @@ const BidEstimate = lazy(() => import("@/pages/bid-estimate"));
 // Task #2067 — Standalone full-page Takeoff workspace + index landing page.
 const TakeoffWorkspacePage = lazy(() => import("@/pages/takeoff-workspace"));
 const TakeoffIndexPage = lazy(() => import("@/pages/takeoff-index"));
+// Task #2321 — Second-eye review queue page.
+const TakeoffReviewQueuePage = lazy(() => import("@/pages/takeoff-review-queue"));
 const HistoricalCostsPage = lazy(() => import("@/pages/historical-costs"));
 const ProjectsPage = lazy(() => import("@/pages/projects"));
 const ProjectTemplatesPage = lazy(() => import("@/pages/project-templates"));
@@ -466,6 +468,10 @@ function Router() {
           two-segment path is matched ahead of the single-segment bid route
           so a project code can never be misread as a bid code. */}
       <Route path="/takeoff/project/:projectCode" component={() => <ProtectedRoute component={TakeoffWorkspacePage} permission={RoutePermissions.TAKEOFF} />} />
+      {/* Task #2321 — Review queue must be matched BEFORE the
+          /takeoff/:bidCode workspace route, otherwise wouter would
+          treat "review-queue" as a bid code and 404. */}
+      <Route path="/takeoff/review-queue" component={() => <ProtectedRoute component={TakeoffReviewQueuePage} permission={RoutePermissions.TAKEOFF} />} />
       <Route path="/takeoff/:bidCode" component={() => <ProtectedRoute component={TakeoffWorkspacePage} permission={RoutePermissions.TAKEOFF} />} />
       <Route path="/takeoff" component={() => <ProtectedRoute component={TakeoffIndexPage} permission={RoutePermissions.TAKEOFF} />} />
       <Route path="/time-entry" component={() => <ProtectedRoute component={TimeEntryPage} permission={RoutePermissions.TIME_ENTRY} featurePerm="canManageScheduling" />} />

@@ -102,6 +102,14 @@ export const organizations = pgTable("organizations", {
   // (e.g. mega-projects where every takeoff line is six figures) or
   // down per organization without redeploying.
   takeoffReviewValueThreshold: decimal("takeoff_review_value_threshold", { precision: 12, scale: 2 }).notNull().default("25000"),
+  // Task #2321 — bid-lock gate for the second-eye takeoff review
+  // workflow. When NULL the gate is OFF (default behaviour, no
+  // change for existing orgs); when set 0..100, the bid /submit
+  // endpoint refuses to lock a bid whose reviewed-percentage by
+  // dollar value is below this threshold. Stored as decimal so
+  // admins can pick e.g. 95.0 without integer rounding the next
+  // time the review-summary recomputes.
+  takeoffReviewBidLockThresholdPct: decimal("takeoff_review_bid_lock_threshold_pct", { precision: 5, scale: 2 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

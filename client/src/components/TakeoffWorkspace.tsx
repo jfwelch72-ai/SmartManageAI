@@ -1406,6 +1406,63 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     onError: () => toast({ title: "Error", description: "Failed to create issue", variant: "destructive" }),
   });
 
+  // Task #2321 — "Send to reviewer" right-click action. Calls the
+  // request-review endpoint with no explicit reviewer (server fans out
+  // to all org-level approvers). Invalidates both the bid review
+  // summary and the queue list so the header chip and the queue page
+  // reflect the new pending row immediately.
+  const invalidateAfterReview = () => {
+    const ctxBidId = context?.type === "bid" ? context.bidId : undefined;
+    if (ctxBidId) queryClient.invalidateQueries({ queryKey: ["/api/bids", ctxBidId, "takeoff/review-summary"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/takeoff/review-queue"] });
+    // Refresh the in-canvas measurements so the row picks up the
+    // new needs_review/reviewStatus values without a page reload.
+    if (selectedSheet) queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+  };
+  const requestReviewMutation = useMutation({
+    mutationFn: async (measurementId: string) => {
+      const res = await apiRequest("POST", `/api/takeoff/measurements/${measurementId}/request-review`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      invalidateAfterReview();
+      toast({ title: "Sent for review", description: "A senior estimator has been notified." });
+    },
+    onError: (e: Error) => toast({ title: "Failed to send for review", description: e.message, variant: "destructive" }),
+  });
+
+  // Task #2321 — Approve / Reject from the right-click menu so
+  // reviewers don't have to leave the canvas just to clear an item
+  // from the queue. The dialog for capturing a rejection note is
+  // owned by the queue page; from the canvas we send a generic
+  // "rejected from canvas" note so the requester still sees a
+  // notification (with a clear hint to check the queue page for
+  // detailed reasoning if needed).
+  const approveReviewMutation = useMutation({
+    mutationFn: async (measurementId: string) => {
+      const res = await apiRequest("POST", `/api/takeoff/measurements/${measurementId}/approve-review`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      invalidateAfterReview();
+      toast({ title: "Approved" });
+    },
+    onError: (e: Error) => toast({ title: "Approve failed", description: e.message, variant: "destructive" }),
+  });
+  const rejectReviewMutation = useMutation({
+    mutationFn: async (measurementId: string) => {
+      const res = await apiRequest("POST", `/api/takeoff/measurements/${measurementId}/reject-review`, {
+        note: "Rejected from canvas — see review queue for details.",
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      invalidateAfterReview();
+      toast({ title: "Rejected — requester notified" });
+    },
+    onError: (e: Error) => toast({ title: "Reject failed", description: e.message, variant: "destructive" }),
+  });
+
   const moveIssueMutation = useMutation({
     mutationFn: async ({ issueId, sheetId, position }: { issueId: string; sheetId?: string; position?: { x: number; y: number } }) => {
       const body: Record<string, unknown> = {};
@@ -4123,6 +4180,56 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         deleteMeasurementMutation.mutate(m);
         setMeasurementContextMenu(null);
       },
+      // Task #2321 — Only expose the "Send to reviewer" item when this
+      // workspace is in bid context. Project-level takeoffs aren't
+      // bound to the bid-lock review gate so the action would have
+      // nowhere meaningful to fan out the notification.
+      onMeasurementContextSendToReviewer: context?.type === "bid"
+        ? (m) => {
+            requestReviewMutation.mutate(m.id);
+            setMeasurementContextMenu(null);
+          }
+        : undefined,
+      // Task #2321 — Approve / Reject right-click actions. Gated to:
+      //   1. bid-context workspaces (queue is bid-scoped)
+      //   2. caller is in an approver role (server enforces; we hide
+      //      the menu items here so non-approvers don't see
+      //      affordances that would always 403)
+      //   3. caller did not request review on this row (no
+      //      self-approval — the canvas component sees ALL of the
+      //      caller's roles + own user id via currentUser)
+      onMeasurementContextApproveReview: context?.type === "bid" && (
+        currentUser?.user?.role === "ADMIN"
+        || currentUser?.user?.role === "MANAGER"
+        || currentUser?.user?.role === "SUPERINTENDENT"
+        || currentUser?.role === "ADMIN"
+        || currentUser?.role === "MANAGER"
+        || currentUser?.role === "SUPERINTENDENT"
+      ) ? (m) => {
+          if (m.reviewRequestedById && (m.reviewRequestedById === currentUser?.user?.id || m.reviewRequestedById === currentUser?.id)) {
+            toast({ title: "Cannot self-approve", description: "You requested review on this measurement.", variant: "destructive" });
+            setMeasurementContextMenu(null);
+            return;
+          }
+          approveReviewMutation.mutate(m.id);
+          setMeasurementContextMenu(null);
+        } : undefined,
+      onMeasurementContextRejectReview: context?.type === "bid" && (
+        currentUser?.user?.role === "ADMIN"
+        || currentUser?.user?.role === "MANAGER"
+        || currentUser?.user?.role === "SUPERINTENDENT"
+        || currentUser?.role === "ADMIN"
+        || currentUser?.role === "MANAGER"
+        || currentUser?.role === "SUPERINTENDENT"
+      ) ? (m) => {
+          if (m.reviewRequestedById && (m.reviewRequestedById === currentUser?.user?.id || m.reviewRequestedById === currentUser?.id)) {
+            toast({ title: "Cannot self-reject", description: "You requested review on this measurement.", variant: "destructive" });
+            setMeasurementContextMenu(null);
+            return;
+          }
+          rejectReviewMutation.mutate(m.id);
+          setMeasurementContextMenu(null);
+        } : undefined,
       categories,
       showCostPanel,
       onCloseCostPanel: () => setShowCostPanel(false),
