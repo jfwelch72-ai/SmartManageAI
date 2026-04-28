@@ -20,6 +20,7 @@ import {
   hexToRgba,
   TOOL_CONFIG,
 } from "../types";
+import { formatPolarGuideLabel } from "@/lib/takeoffPolarLabel";
 import type { TakeoffCondition, TakeoffMeasurement, TakeoffSheet } from "@shared/schema";
 import type { DetectedItem } from "@/components/AiTakeoffPanel";
 import type { useMutation } from "@tanstack/react-query";
@@ -1291,9 +1292,11 @@ function CanvasStageImpl(props: CanvasStageProps) {
                       safeScale) *
                     2;
                   let activeIdx = -1;
+                  let cursorDistPx = 0;
                   if (cursorPosition) {
                     const dx = cursorPosition.x - anchor.x;
                     const dy = cursorPosition.y - anchor.y;
+                    cursorDistPx = Math.sqrt(dx * dx + dy * dy);
                     if (dx !== 0 || dy !== 0) {
                       const cursorDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
                       const idx = Math.round(cursorDeg / step);
@@ -1304,6 +1307,35 @@ function CanvasStageImpl(props: CanvasStageProps) {
                   const baseDash = [4 / safeScale, 4 / safeScale];
                   const activeStroke = 1.5 / safeScale;
                   const activeDash = [8 / safeScale, 4 / safeScale];
+                  /* Task #2236 — Cursor-side label for the highlighted
+                   * ray. Hidden when the cursor is sitting on the
+                   * anchor (no meaningful bearing) — we use a small
+                   * 4-screen-pixel deadband so jitter at the start of
+                   * a draw doesn't flicker the label in/out. */
+                  const labelDeadbandPx = 4 / safeScale;
+                  const showLabel =
+                    cursorPosition != null &&
+                    activeIdx !== -1 &&
+                    cursorDistPx > labelDeadbandPx;
+                  let labelText = "";
+                  if (showLabel) {
+                    const snappedScreenDeg = activeIdx * step;
+                    const distFt = currentSheet?.scalePxPerFoot
+                      ? cursorDistPx / currentSheet.scalePxPerFoot
+                      : null;
+                    labelText = formatPolarGuideLabel(snappedScreenDeg, distFt);
+                  }
+                  // Compact, monospace badge sized to the text. Offset
+                  // away from the cursor so it doesn't sit under the
+                  // crosshair and obscure the snap point.
+                  const labelFontSize = 11 / safeScale;
+                  const labelCharW = 6.6 / safeScale;
+                  const labelPadX = 6 / safeScale;
+                  const labelPadY = 4 / safeScale;
+                  const labelW = labelText.length * labelCharW + labelPadX * 2;
+                  const labelH = labelFontSize + labelPadY * 2;
+                  const labelX = (cursorPosition?.x ?? 0) + 16 / safeScale;
+                  const labelY = (cursorPosition?.y ?? 0) - 32 / safeScale;
                   return (
                     <>
                       {Array.from({ length: rayCount }, (_, i) => {
@@ -1323,6 +1355,30 @@ function CanvasStageImpl(props: CanvasStageProps) {
                           />
                         );
                       })}
+                      {showLabel && (
+                        <Group listening={false} data-testid="polar-guide-label">
+                          <Rect
+                            x={labelX}
+                            y={labelY}
+                            width={labelW}
+                            height={labelH}
+                            fill="rgba(6, 182, 212, 0.92)"
+                            cornerRadius={3 / safeScale}
+                            shadowColor="rgba(0,0,0,0.35)"
+                            shadowBlur={3 / safeScale}
+                            shadowOffset={{ x: 0, y: 1 / safeScale }}
+                          />
+                          <Text
+                            x={labelX + labelPadX}
+                            y={labelY + labelPadY}
+                            text={labelText}
+                            fontSize={labelFontSize}
+                            fill="#ffffff"
+                            fontStyle="bold"
+                            fontFamily="monospace"
+                          />
+                        </Group>
+                      )}
                     </>
                   );
                 })()}
