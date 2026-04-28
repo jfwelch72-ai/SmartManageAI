@@ -546,6 +546,7 @@ export const NavItems: Record<string, NavItem> = {
   '/company-settings': { href: '/company-settings', label: 'Company Settings', testId: 'nav-company-settings', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessCompanySettings : isOrganizationAdmin(role) || role === "MANAGER" || role === "HUSTLER" },
   '/scope-settings': { href: '/scope-settings', label: 'Scope Settings', testId: 'nav-scope-settings', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessScopeSettings : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "HUSTLER" },
   '/ai-settings': { href: '/ai-settings', label: 'AI Settings', testId: 'nav-ai-settings', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageAISettings : isOrganizationAdmin(role) || role === "HUSTLER" },
+  '/ai-estimator/admin': { href: '/ai-estimator/admin', label: 'AI Estimator', testId: 'nav-ai-estimator-admin', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageAiEstimator : isOrganizationAdmin(role) },
   '/audit-logs': { href: '/audit-logs', label: 'Audit Logs', testId: 'nav-audit-logs', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessAuditLogs : isOrganizationAdmin(role) || role === "HUSTLER" },
   '/reports': { href: '/reports', label: 'Reports', testId: 'nav-reports', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canAccessReports : role === "ADMIN" || role === "MANAGER" || role === "ESTIMATOR" || role === "SUPERINTENDENT" || role === "HUSTLER" },
   '/website-builder': { href: '/website-builder', label: 'Website Builder', testId: 'nav-website-builder', visible: (role?: string, perms?: FeaturePerms) => perms ? !!perms.canManageWebsite : isOrganizationAdmin(role) || role === "HUSTLER" },
@@ -576,7 +577,7 @@ export const NavigationConfig = {
   marketplaceMenu: [NavItems['/marketplace']],
   hiringMenu: [NavItems['/hiring']],
   insightsMenu: [NavItems['/portfolio'], NavItems['/executive-digest']],
-  administrationMenu: [NavItems['/users'], NavItems['/company-settings'], NavItems['/scope-settings'], NavItems['/ai-settings'], NavItems['/audit-logs'], NavItems['/reports'], NavItems['/approvals'], NavItems['/admin/log-email-failures']],
+  administrationMenu: [NavItems['/users'], NavItems['/company-settings'], NavItems['/scope-settings'], NavItems['/ai-settings'], NavItems['/ai-estimator/admin'], NavItems['/audit-logs'], NavItems['/reports'], NavItems['/approvals'], NavItems['/admin/log-email-failures']],
   toolsMenu: [NavItems['/website-builder'], NavItems['/social-media'], NavItems['/calculator']],
   timeClockMenu: [NavItems['/time-clock'], NavItems['/time-clock-manager'], NavItems['/tm-daily']],
 };
@@ -602,7 +603,7 @@ const ADMIN_WORKFLOW: WorkflowGroup[] = [
   { key: 'finance', label: 'Finance', itemHrefs: ['/cfo-dashboard', '/tm-billing', '/progress-billing', '/cost-rates', '/production-rates', '/subcontractor-payables', '/overhead-costs'] },
   { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/dispatch-board', '/equipment', '/procurement-module', '/approvals', '/lidar-scans', '/permits', '/compliance'] },
   { key: 'field_compliance', label: 'Field Compliance', itemHrefs: ['/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
-  { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/ai-settings', '/audit-logs', '/reports', '/admin/log-email-failures'] },
+  { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/ai-settings', '/ai-estimator/admin', '/audit-logs', '/reports', '/admin/log-email-failures'] },
   { key: 'marketing', label: 'Marketing', itemHrefs: ['/website-builder', '/social-media', '/email-campaigns'] },
   { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
 ];
