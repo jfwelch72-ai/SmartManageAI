@@ -45,10 +45,18 @@
  *     `longTasks.length` of 0 there proves nothing about whether
  *     pdfjs is on the main thread; running the assertion would just
  *     bake in a false-positive "always green" signal that masks real
- *     regressions on chromium. The regression contract this assertion
- *     enforces (worker-only pdfjs) is the same on every engine, so
- *     chromium-only coverage is sufficient — the friendly-error path
- *     is the cross-engine smoke test for the worker requirement.
+ *     regressions on chromium.
+ *   - Task #2292 — to give Firefox and WebKit an actual signal (not
+ *     just "no longtask, therefore green"), the spec now also reads
+ *     `window.__pdfTileSchedulerStats` — a small call counter we
+ *     instrument inside `tileScheduler.ts`. The counter increments
+ *     every time a `getDocumentInfo` / `renderPage` call is dispatched
+ *     through the worker pool, so a regression that re-introduced
+ *     main-thread `pdfjs.getDocument(url).promise.then(p => p.render())`
+ *     (bypassing the scheduler entirely) would leave the counters at 0
+ *     even though the canvas eventually paints. That assertion runs on
+ *     chromium, firefox, *and* webkit and catches the same class of
+ *     regression on every engine without relying on the longtask API.
  */
 
 import { test, expect, type Page } from "@playwright/test";
@@ -246,6 +254,53 @@ async function readLongTasks(page: Page): Promise<number[]> {
   });
 }
 
+interface SchedulerStats {
+  renderPageCalls: number;
+  getDocumentInfoCalls: number;
+}
+
+/**
+ * Task #2292 — Read the cross-engine call counter that
+ * `tileScheduler.ts` exposes on `window.__pdfTileSchedulerStats`. The
+ * counter increments every time a `getDocumentInfo` / `renderPage`
+ * call is dispatched through the worker pool, so a non-zero value on
+ * Firefox / WebKit proves pdfjs ran via the worker (not on the main
+ * thread). Returns zeroes if the object hasn't been attached yet —
+ * that's the actual regression signal: the counter object is created
+ * lazily on first scheduler dispatch, so "still undefined after the
+ * canvas painted" means the consumer bypassed the scheduler.
+ */
+async function readSchedulerStats(page: Page): Promise<SchedulerStats> {
+  return await page.evaluate(() => {
+    const w = window as unknown as {
+      __pdfTileSchedulerStats?: SchedulerStats;
+    };
+    const s = w.__pdfTileSchedulerStats;
+    return {
+      renderPageCalls: s?.renderPageCalls ?? 0,
+      getDocumentInfoCalls: s?.getDocumentInfoCalls ?? 0,
+    };
+  });
+}
+
+/**
+ * Reset the scheduler stats to zero so the next assertion measures
+ * only dispatches that happen *after* this call (e.g. so the zoom
+ * re-render assertion isn't trivially satisfied by counters left over
+ * from the initial paint).
+ */
+async function resetSchedulerStats(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const w = window as unknown as {
+      __pdfTileSchedulerStats?: SchedulerStats;
+    };
+    if (w.__pdfTileSchedulerStats) {
+      w.__pdfTileSchedulerStats.renderPageCalls = 0;
+      w.__pdfTileSchedulerStats.getDocumentInfoCalls = 0;
+    }
+  });
+}
+
 test.use({ viewport: { width: 1600, height: 1000 }, video: "off" });
 
 test.describe("Task #2213 — Worker-only PDF preview path", () => {
@@ -367,6 +422,14 @@ test.describe("Task #2213 — Worker-only PDF preview path", () => {
       await resetLongTaskRecorder(page);
     }
 
+    // Task #2292 — also reset the cross-engine scheduler call counter
+    // so the assertion below only counts dispatches that happen during
+    // the initial-paint window we're about to open. (No project-detail
+    // load mounts a PDF preview, so in practice the counter is already
+    // 0 here, but resetting makes the intent explicit and keeps the
+    // assertion robust if cold-start behaviour ever changes.)
+    await resetSchedulerStats(page);
+
     // Open the plan document. This mounts <PdfPreview/>, which
     // dispatches `getDocumentInfo` + `renderPage` to the shared tile
     // scheduler worker. If pdfjs were back on the main thread, this
@@ -390,6 +453,27 @@ test.describe("Task #2213 — Worker-only PDF preview path", () => {
     await expect(page.getByTestId("pdf-preview-overlay")).toBeVisible({
       timeout: 15_000,
     });
+
+    // Task #2292 — cross-engine "pdfjs flowed through the worker pool"
+    // assertion. Unlike the chromium-only longtask gate below, this
+    // runs on chromium, firefox, and webkit alike. The counter is
+    // incremented inside `tileScheduler.getDocumentInfo` /
+    // `tileScheduler.renderPage`, so a regression that re-introduced
+    // main-thread `pdfjs.getDocument(url).promise.then(p => p.render())`
+    // (bypassing the scheduler) would leave the counters at 0 even
+    // though the canvas painted above. This is the first assertion in
+    // this spec that catches a Firefox- or Safari-only regression in
+    // the worker contract — the canvas-pixel test alone only proves
+    // pixels arrived, not where the work happened.
+    const initialPaintStats = await readSchedulerStats(page);
+    expect(
+      initialPaintStats.getDocumentInfoCalls,
+      `expected scheduler.getDocumentInfo to be dispatched at least once during initial paint, got ${initialPaintStats.getDocumentInfoCalls} — pdfjs may be bypassing the worker pool`,
+    ).toBeGreaterThan(0);
+    expect(
+      initialPaintStats.renderPageCalls,
+      `expected scheduler.renderPage to be dispatched at least once during initial paint, got ${initialPaintStats.renderPageCalls} — pdfjs may be rendering the page on the main thread`,
+    ).toBeGreaterThan(0);
 
     // Initial-paint long-task ceiling: pdfjs MUST stay off the main
     // thread during the open-document-to-first-paint window. With the
@@ -429,6 +513,10 @@ test.describe("Task #2213 — Worker-only PDF preview path", () => {
     if (measureLongTasks) {
       await resetLongTaskRecorder(page);
     }
+    // Task #2292 — also reset the scheduler counter so the post-zoom
+    // assertion below only counts the re-render dispatch (and not the
+    // initial-paint dispatches we already asserted on above).
+    await resetSchedulerStats(page);
 
     const zoomBtn = page.getByTestId("button-pdf-zoom-in");
     await expect(zoomBtn).toBeEnabled();
@@ -456,6 +544,19 @@ test.describe("Task #2213 — Worker-only PDF preview path", () => {
         `worst main-thread long task during zoom re-render ${worstZoom.toFixed(0)}ms exceeded ${LONG_TASK_BUDGET_MS}ms — pdfjs may be back on the main thread`,
       ).toBeLessThan(LONG_TASK_BUDGET_MS);
     }
+
+    // Task #2292 — cross-engine guard for the zoom re-render path.
+    // Subsequent renders go through a separate code path from the
+    // initial paint (cache-miss handling, scale change, etc.), so a
+    // regression that only fell back to main-thread pdfjs on the
+    // re-render path would slip past the initial-paint assertion
+    // above. Asserting `renderPageCalls > 0` after the zoom-in
+    // pinpoints that class of regression on Firefox / WebKit too.
+    const zoomStats = await readSchedulerStats(page);
+    expect(
+      zoomStats.renderPageCalls,
+      `expected scheduler.renderPage to be dispatched at least once during zoom re-render, got ${zoomStats.renderPageCalls} — pdfjs may be re-rendering on the main thread`,
+    ).toBeGreaterThan(0);
   });
 
   test("PdfPreview surfaces the friendly worker-unavailable error when the shared scheduler can't be created", async ({

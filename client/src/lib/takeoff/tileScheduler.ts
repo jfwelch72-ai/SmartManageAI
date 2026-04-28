@@ -38,6 +38,57 @@ interface PendingRequest {
 
 let nextRequestId = 1;
 
+/**
+ * Task #2292 — Cross-engine call counter for the worker pipeline.
+ *
+ * The chromium-only `longtask` PerformanceObserver gate in
+ * `e2e/pdf-preview-worker-only.spec.ts` proves "no main-thread JS
+ * burst happened during render" but is silently a no-op on
+ * Gecko/WebKit (those engines never emit `longtask` entries). To get
+ * a real "pdfjs actually flowed through the worker pool" signal on
+ * every engine, we expose a tiny call counter here that the e2e spec
+ * can read via `page.evaluate`.
+ *
+ * The counters increment as soon as a `getDocumentInfo` /
+ * `renderPage` call is dispatched (i.e. after the worker `postMessage`
+ * fires). A regression that re-introduced main-thread
+ * `pdfjs.getDocument(url).promise.then(p => p.render(...))` in any
+ * `<PdfPreview>` / `<PlanDocumentPrintPage>` consumer would bypass
+ * this scheduler entirely, so the canvas could still paint pixels but
+ * the counters would stay at 0 on every engine — which is the
+ * cross-engine assertion the spec now enforces.
+ *
+ * The shape is intentionally minimal so app code paths stay cheap; we
+ * only attach the object on first use so non-browser environments
+ * (jsdom, server-side rendering) don't try to mutate `window`.
+ */
+export interface TileSchedulerStats {
+  /** Number of `scheduler.renderPage(...)` dispatches since page load. */
+  renderPageCalls: number;
+  /** Number of `scheduler.getDocumentInfo(...)` dispatches since page load. */
+  getDocumentInfoCalls: number;
+}
+
+declare global {
+  interface Window {
+    __pdfTileSchedulerStats?: TileSchedulerStats;
+  }
+}
+
+function bumpStat(field: keyof TileSchedulerStats): void {
+  if (typeof window === "undefined") return;
+  const existing = window.__pdfTileSchedulerStats;
+  if (!existing) {
+    window.__pdfTileSchedulerStats = {
+      renderPageCalls: 0,
+      getDocumentInfoCalls: 0,
+      [field]: 1,
+    } as TileSchedulerStats;
+    return;
+  }
+  existing[field] = (existing[field] ?? 0) + 1;
+}
+
 function spawnWorker(): Worker {
   return new Worker(
     new URL("../../workers/pdfTileWorker.ts", import.meta.url),
@@ -351,6 +402,11 @@ export class TileScheduler {
    * importing pdfjs on the main thread.
    */
   getDocumentInfo(sheetUrl: string): Promise<{ numPages: number }> {
+    // Task #2292 — record the dispatch on the cross-engine counter
+    // before posting to the worker so the e2e spec can prove the
+    // worker pipeline ran on Firefox / Safari (where the longtask
+    // observer is silent). See `bumpStat` above.
+    bumpStat("getDocumentInfoCalls");
     return this.dispatchOnce<{ numPages: number }>({
       type: "getDocumentInfo",
       sheetUrl,
@@ -373,6 +429,14 @@ export class TileScheduler {
         cancel: () => undefined,
       };
     }
+    // Task #2292 — record the dispatch on the cross-engine counter so
+    // the e2e spec can prove a full-page render flowed through the
+    // worker pool on Firefox / Safari (where the longtask observer is
+    // silent). Bumped here (not after `postMessage`) so the counter
+    // reflects user-visible intent even if the worker subsequently
+    // rejects — the regression we're guarding against is "a consumer
+    // bypassed the scheduler entirely", not "the worker errored".
+    bumpStat("renderPageCalls");
     const pw = this.pickLeastBusy();
     const requestId = nextRequestId++;
     let cancelled = false;
