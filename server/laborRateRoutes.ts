@@ -27,6 +27,7 @@ import { logAudit } from "./auditLogger";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { queueWageDecisionSync } from "./integrations/providers/dol_davis_bacon/sync";
 import { logWarn } from "./utils/logger";
+import { parseOrRespond } from "./utils/validation";
 
 // Task #1331: when a prevailing wage rate row references a Davis-Bacon
 // decision number that hasn't been imported yet, kick off a background sync
@@ -81,10 +82,11 @@ router.post("/classifications", requireAuth, requireRole("ADMIN", "MANAGER", "ES
       return res.status(400).json({ error: "Organization required" });
     }
 
-    const data = insertJobClassificationSchema.parse({
+    const data = parseOrRespond(insertJobClassificationSchema, {
       ...req.body,
       organizationId
-    });
+    }, res);
+    if (!data) return;
 
     const [classification] = await db
       .insert(jobClassifications)
@@ -636,10 +638,11 @@ router.post("/employee-classifications", requireAuth, requireRole("ADMIN", "MANA
       return res.status(400).json({ error: "Organization required" });
     }
 
-    const data = insertEmployeeClassificationSchema.parse({
+    const data = parseOrRespond(insertEmployeeClassificationSchema, {
       ...req.body,
       organizationId
-    });
+    }, res);
+    if (!data) return;
 
     if (data.isPrimary) {
       await db
@@ -974,7 +977,7 @@ router.post("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER
       : (breakdownSum > 0 ? breakdownSum.toFixed(2) : "0");
     const totalRate = (parseFloat(wageRate) + parseFloat(effectiveFringe)).toFixed(2);
 
-    const data = insertPrevailingWageRateSchema.parse({
+    const data = parseOrRespond(insertPrevailingWageRateSchema, {
       ...rest,
       wageRate,
       fringeRate: effectiveFringe,
@@ -984,7 +987,8 @@ router.post("/prevailing-wage-rates", requireAuth, requireRole("ADMIN", "MANAGER
       fringeTrainingRate: fringeTrainingRate || "0",
       totalRate,
       organizationId
-    });
+    }, res);
+    if (!data) return;
 
     const [rate] = await db
       .insert(prevailingWageRates)
@@ -1822,10 +1826,11 @@ router.post("/salary-categories", requireAuth, requireRole("ADMIN", "MANAGER"), 
     const organizationId = req.user!.organizationId;
     if (!organizationId) return res.status(400).json({ error: "Organization required" });
 
-    const data = insertAnnualSalaryCategorySchema.parse({
+    const data = parseOrRespond(insertAnnualSalaryCategorySchema, {
       ...req.body,
       organizationId
-    });
+    }, res);
+    if (!data) return;
 
     const [category] = await db
       .insert(annualSalaryCategories)
@@ -1934,7 +1939,8 @@ router.post("/burden-rates", requireAuth, requireRole("ADMIN", "MANAGER"), async
       body.burdenPercentage = String(totalPercent);
     }
 
-    const data = insertBurdenRateSchema.parse(body);
+    const data = parseOrRespond(insertBurdenRateSchema, body, res);
+    if (!data) return;
 
     const [rate] = await db
       .insert(burdenRates)
@@ -2066,10 +2072,11 @@ router.post("/cost-assignments", requireAuth, requireRole("ADMIN", "MANAGER"), a
     const organizationId = req.user!.organizationId;
     if (!organizationId) return res.status(400).json({ error: "Organization required" });
 
-    const data = insertEmployeeCostAssignmentSchema.parse({
+    const data = parseOrRespond(insertEmployeeCostAssignmentSchema, {
       ...req.body,
       organizationId
-    });
+    }, res);
+    if (!data) return;
 
     const [salaryCategory] = await db
       .select()

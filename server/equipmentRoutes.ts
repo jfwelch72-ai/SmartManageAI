@@ -648,6 +648,7 @@ import { getOrgIdForFilter, verifyOrgAccess } from "./orgFilter";
 import { insertNotification } from "./services/notificationService";
 import { governedAiCall } from "./services/aiGovernance";
 import { eventBus } from "./events";
+import { parseOrRespond } from "./utils/validation";
 
 const router = Router();
 
@@ -1782,11 +1783,12 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
         endDate: req.body.endDate ? new Date(req.body.endDate) : undefined,
       };
       
-      const validatedData = insertEquipmentRateProfileSchema.parse({
+      const validatedData = parseOrRespond(insertEquipmentRateProfileSchema, {
         ...bodyWithDates,
         equipmentId,
         createdById: userId,
-      });
+      }, res);
+      if (!validatedData) return;
       
       // If this is marked as active, deactivate other profiles
       if (validatedData.isActive) {
@@ -2049,7 +2051,8 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
       
       const userId = req.user?.id;
       
-      const validatedData = insertRentalVendorSchema.parse(req.body);
+      const validatedData = parseOrRespond(insertRentalVendorSchema, req.body, res);
+      if (!validatedData) return;
       
       const dataWithOrg = {
         ...validatedData,
@@ -2249,10 +2252,11 @@ router.use("/api/equipment", requireAuth, requireFeaturePermission('canManageEqu
         return res.status(404).json({ error: "Rental vendor not found" });
       }
       
-      const validatedData = insertRentalEquipmentCatalogSchema.parse({
+      const validatedData = parseOrRespond(insertRentalEquipmentCatalogSchema, {
         ...req.body,
         vendorId,
-      });
+      }, res);
+      if (!validatedData) return;
       
       const [newItem] = await db.insert(rentalEquipmentCatalog).values(validatedData).returning();
       

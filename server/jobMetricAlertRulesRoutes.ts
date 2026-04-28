@@ -8,6 +8,7 @@ import { Router, type Response, type NextFunction } from "express";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit } from "./auditLogger";
+import { parseOrRespond } from "./utils/validation";
 import {
   upsertJobMetricAlertRule,
   deleteJobMetricAlertRule,
@@ -37,7 +38,8 @@ router.post(
   requireRole("SUPER_ADMIN"),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const parsed = upsertJobMetricAlertRuleSchema.parse(req.body);
+      const parsed = parseOrRespond(upsertJobMetricAlertRuleSchema, req.body, res);
+      if (!parsed) return;
       const rule = await upsertJobMetricAlertRule(parsed);
       await logAudit(
         {

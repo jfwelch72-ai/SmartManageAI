@@ -144,6 +144,7 @@ import { logAudit } from "./auditLogger";
 import { sanitizeText } from "./sanitization";
 import { notifyApprovers, notifySubmitter } from "./services/approvalNotificationService";
 import { z } from "zod";
+import { parseOrRespond } from "./utils/validation";
 
 const router = Router();
 
@@ -478,7 +479,8 @@ router.post("/api/overtime-rules", requireAuth, requireRole("ADMIN", "MANAGER"),
       consecutiveDayThreshold: z.number().optional().default(7),
     });
 
-    const data = schema.parse(req.body);
+    const data = parseOrRespond(schema, req.body, res);
+    if (!data) return;
     const orgId = req.user!.organizationId;
 
     const dailyThreshold = data.dailyThreshold || String(data.dailyOtThreshold);
@@ -578,7 +580,8 @@ router.patch("/api/overtime-rules/:id", requireAuth, requireRole("ADMIN", "MANAG
       isActive: z.boolean().optional(),
     });
 
-    const data = schema.parse(req.body);
+    const data = parseOrRespond(schema, req.body, res);
+    if (!data) return;
     const orgId = req.user!.organizationId;
 
     const [existing] = await db.select().from(overtimeRules)

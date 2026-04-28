@@ -298,7 +298,7 @@ import {
 import { eq, and, desc, sql, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import { z } from "zod";
-import { validateBody } from "./utils/validation";
+import { validateBody, parseOrRespond } from "./utils/validation";
 import { requireAuth, requireRole, AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { notifyDocumentEvent } from "./services/documentNotificationService";
@@ -593,7 +593,8 @@ router.post("/rfi", requireAuth, requireRole("SUPER_ADMIN", "ADMIN", "MANAGER", 
       rfiData.dateRequired = new Date(rfiData.dateRequired);
     }
 
-    const validated = insertRfiSchema.parse(rfiData);
+    const validated = parseOrRespond(insertRfiSchema, rfiData, res);
+    if (!validated) return;
 
     const [newRfi] = await db.insert(rfis).values(validated).returning();
 

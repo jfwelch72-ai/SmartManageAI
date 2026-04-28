@@ -104,6 +104,7 @@ import { safetyTrainings, safetyTrainingAssignments, insertSafetyTrainingSchema,
 import { eq, and, inArray, desc, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { AuthRequest } from "./auth";
+import { parseOrRespond } from "./utils/validation";
 
 const router = Router();
 
@@ -194,11 +195,12 @@ router.post("/api/safety-training", requireAuth, async (req: AuthRequest, res, n
     if (!isSafetyAdmin(req.user!.role)) {
       return res.status(403).json({ error: "Insufficient permissions" });
     }
-    const parsed = insertSafetyTrainingSchema.parse({
+    const parsed = parseOrRespond(insertSafetyTrainingSchema, {
       ...req.body,
       organizationId: req.user!.organizationId,
       createdBy: req.user!.id,
-    });
+    }, res);
+    if (!parsed) return;
     const [created] = await db.insert(safetyTrainings).values(parsed).returning();
     res.status(201).json(created);
   } catch (err: any) {

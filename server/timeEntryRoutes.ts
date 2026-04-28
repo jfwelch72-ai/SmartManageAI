@@ -7,6 +7,7 @@ import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit } from "./auditLogger";
 import { sanitizeText } from "./sanitization";
 import { z } from "zod";
+import { parseOrRespond } from "./utils/validation";
 import { getOrgIdForFilter } from "./orgFilter";
 import { createApprovalRequest } from "./services/approvalService";
 import { isFeatureEnabled } from "./services/featureFlagService";
@@ -264,7 +265,8 @@ const bulkApproveHandler = async (req: AuthRequest, res: any, next: NextFunction
       entryIds: z.array(z.string()).min(1, "At least one entry ID is required"),
     });
 
-    const data = schema.parse(req.body);
+    const data = parseOrRespond(schema, req.body, res);
+    if (!data) return;
 
     const entries = await db
       .select({

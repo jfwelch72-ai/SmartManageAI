@@ -10,6 +10,7 @@ import { verifySheetAccess, safeParsePoints } from "./takeoffHelpers";
 import { logError } from "./utils/logger";
 import { recordJobMetrics } from "./utils/jobMetrics";
 import { broadcastTakeoffEvent } from "./takeoffCollaboration";
+import { parseOrRespond } from "./utils/validation";
 
 const router = Router();
 
@@ -378,10 +379,11 @@ router.post("/api/projects/:code/quantity-categories", requireAuth, async (req: 
       description: req.body.description ? sanitizeText(req.body.description) : undefined,
     };
 
-    const validated = insertQuantityCategorySchema.parse({
+    const validated = parseOrRespond(insertQuantityCategorySchema, {
       projectId: project.id,  // Use the internal UUID, not the code
       ...sanitizedBody,
-    });
+    }, res);
+    if (!validated) return;
 
     const [category] = await db
       .insert(quantityCategories)
@@ -522,7 +524,8 @@ router.post("/api/takeoff/markups", requireAuth, requireRole("ADMIN", "MANAGER",
       points: Array.isArray(req.body.points) ? JSON.stringify(req.body.points) : req.body.points,
     };
 
-    const validated = insertTakeoffMarkupSchema.parse(body);
+    const validated = parseOrRespond(insertTakeoffMarkupSchema, body, res);
+    if (!validated) return;
 
     const access = await verifySheetAccess(validated.sheetId, req.user!);
     if (!access.allowed) {
@@ -612,7 +615,8 @@ router.patch("/api/takeoff/markups/bulk", requireAuth, async (req: AuthRequest, 
         .max(500),
     });
 
-    const validated = bulkSchema.parse(req.body);
+    const validated = parseOrRespond(bulkSchema, req.body, res);
+    if (!validated) return;
     batchCount = validated.updates.length;
     const ids = validated.updates.map((u) => u.id);
 
@@ -809,7 +813,8 @@ router.patch("/api/takeoff/markups/:markupId", requireAuth, async (req: AuthRequ
       points: z.array(z.object({ x: z.number(), y: z.number() })).optional(),
     }).refine((data) => Object.keys(data).length > 0, { message: "No fields to update" });
 
-    const validated = updateSchema.parse(req.body);
+    const validated = parseOrRespond(updateSchema, req.body, res);
+    if (!validated) return;
 
     const [markup] = await db
       .select()
@@ -934,7 +939,8 @@ router.delete("/api/takeoff/markups/bulk", requireAuth, async (req: AuthRequest,
       ids: z.array(z.string().min(1)).min(1).max(500),
     });
 
-    const validated = bulkSchema.parse(req.body);
+    const validated = parseOrRespond(bulkSchema, req.body, res);
+    if (!validated) return;
     // De-duplicate caller-supplied ids so a payload that lists the
     // same row twice doesn't trip the `rows.length !== ids.length`
     // not-found check below.
@@ -1143,7 +1149,8 @@ router.post("/api/takeoff/markups/restore-bulk", requireAuth, async (req: AuthRe
       ).min(1).max(500),
     });
 
-    const validated = bulkSchema.parse(req.body);
+    const validated = parseOrRespond(bulkSchema, req.body, res);
+    if (!validated) return;
     batchCount = validated.markups.length;
     const ids = validated.markups.map((m) => m.id);
 
@@ -1456,7 +1463,8 @@ router.post("/api/takeoff/sheet-links", requireAuth, requireRole("ADMIN", "MANAG
       return;
     }
 
-    const validated = insertTakeoffSheetLinkSchema.parse(req.body);
+    const validated = parseOrRespond(insertTakeoffSheetLinkSchema, req.body, res);
+    if (!validated) return;
 
     const [link] = await db
       .insert(takeoffSheetLinks)
@@ -1949,7 +1957,8 @@ router.post("/api/takeoff/conditions", requireAuth, async (req: AuthRequest, res
       return;
     }
     const body = { ...req.body, organizationId: resolvedOrgId };
-    const parsed = insertTakeoffConditionSchema.parse(body);
+    const parsed = parseOrRespond(insertTakeoffConditionSchema, body, res);
+    if (!parsed) return;
     const [condition] = await db.insert(takeoffConditions).values(parsed).returning();
     res.json(condition);
   } catch (error) {
@@ -1973,7 +1982,8 @@ router.patch("/api/takeoff/conditions/:id", requireAuth, async (req: AuthRequest
     const [existing] = await db.select().from(takeoffConditions).where(and(...conditions)).limit(1);
     if (!existing) { res.status(404).json({ error: "Condition not found" }); return; }
     const updateSchema = insertTakeoffConditionSchema.partial().omit({ organizationId: true });
-    const validated = updateSchema.parse(req.body);
+    const validated = parseOrRespond(updateSchema, req.body, res);
+    if (!validated) return;
     const updateData = { ...validated, updatedAt: new Date() };
     const [updated] = await db.update(takeoffConditions).set(updateData).where(and(...conditions)).returning();
     res.json(updated);

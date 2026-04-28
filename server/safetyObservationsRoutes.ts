@@ -8,6 +8,7 @@ import {
   projects,
 } from "@shared/schema";
 import { eq, and, desc, sql, gte, lte } from "drizzle-orm";
+import { parseOrRespond } from "./utils/validation";
 
 const router = Router();
 
@@ -63,13 +64,14 @@ router.post("/api/safety/observations", requireAuth, async (req: AuthRequest, re
     }
 
     const userName = `${req.user!.firstName || ""} ${req.user!.lastName || ""}`.trim();
-    const parsed = insertSafetyObservationSchema.parse({
+    const parsed = parseOrRespond(insertSafetyObservationSchema, {
       ...req.body,
       organizationId: orgId,
       observedBy: req.user!.id,
       observedByName: req.body.observedByName || userName || "Unknown",
       observedAt: req.body.observedAt ? new Date(req.body.observedAt) : new Date(),
-    });
+    }, res);
+    if (!parsed) return;
 
     const [created] = await db.insert(safetyObservations).values(parsed).returning();
 

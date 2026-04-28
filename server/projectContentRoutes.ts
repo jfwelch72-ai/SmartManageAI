@@ -9,6 +9,7 @@ import { sanitizeText } from "./sanitization";
 import { emitMessageNew } from "./messagingEvents";
 import { logError } from "./utils/logger";
 import { assertStorageKeyBelongsToOrg } from "./services/documentRevisionService";
+import { parseOrRespond } from "./utils/validation";
 
 const router = Router();
 
@@ -591,7 +592,8 @@ router.post("/api/cost-codes", requireAuth, requireRole("ADMIN"), async (req: Au
       }
     }
 
-    const parsed = insertOrgCostCodeSchema.parse({ ...req.body, organizationId: orgId, isCustom });
+    const parsed = parseOrRespond(insertOrgCostCodeSchema, { ...req.body, organizationId: orgId, isCustom }, res);
+    if (!parsed) return;
     const insertData: Record<string, any> = { ...parsed };
     if (parsed.isActive === false) {
       insertData.deactivatedById = req.user!.id;

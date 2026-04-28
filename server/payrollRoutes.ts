@@ -327,7 +327,7 @@ import { getOrgIdForFilter } from "./orgFilter";
 import { deliverNotification, type NotificationRecord } from "./services/notificationDelivery";
 import { insertNotification } from "./services/notificationService";
 import { successResponse } from "./responseHelper";
-import { validateBody } from "./utils/validation";
+import { validateBody, parseOrRespond } from "./utils/validation";
 
 const router = Router();
 
@@ -5028,7 +5028,8 @@ router.post("/api/payroll-notifications", requireAuth, requireRole("ADMIN", "MAN
       totalHours: z.string().optional().nullable(),
     });
 
-    const data = schema.parse(req.body);
+    const data = parseOrRespond(schema, req.body, res);
+    if (!data) return;
 
     if (!orgId) {
       return res.status(400).json({ error: "Organization context required" });
@@ -5217,7 +5218,8 @@ router.put("/api/payroll/settings", requireAuth, requireRole("ADMIN", "SUPER_ADM
       ).optional(),
     });
 
-    const data = updateSchema.parse(req.body);
+    const data = parseOrRespond(updateSchema, req.body, res);
+    if (!data) return;
 
     const [existingSettings] = await db
       .select()
@@ -5324,7 +5326,8 @@ router.post("/api/payroll/generate-weekly-report", requireAuth, requireRole("ADM
       sendNotification: z.boolean().optional().default(true),
     });
 
-    const data = generateSchema.parse(req.body);
+    const data = parseOrRespond(generateSchema, req.body, res);
+    if (!data) return;
 
     const [settings] = await db
       .select()

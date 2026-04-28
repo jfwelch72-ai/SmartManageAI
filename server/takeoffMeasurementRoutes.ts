@@ -10,6 +10,7 @@ import { verifySheetAccess, safeParsePoints, verifyGroupAccess, getActiveDraftVe
 import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import { logError } from "./utils/logger";
 import { recordJobMetrics } from "./utils/jobMetrics";
+import { parseOrRespond } from "./utils/validation";
 
 const router = Router();
 
@@ -306,11 +307,12 @@ router.post("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req
       points: Array.isArray(req.body.points) ? JSON.stringify(req.body.points) : req.body.points,
     };
 
-    const validated = insertTakeoffMeasurementSchema.parse({
+    const validated = parseOrRespond(insertTakeoffMeasurementSchema, {
       ...sanitizedBody,
       sheetId,
       takeoffVersionId: draftVersionId || undefined,
-    });
+    }, res);
+    if (!validated) return;
 
     const [sheet] = await db
       .select({ scalePxPerFoot: takeoffSheets.scalePxPerFoot })
@@ -409,7 +411,8 @@ router.patch("/api/takeoff/measurements/bulk", requireAuth, async (req: AuthRequ
         .max(500),
     });
 
-    const validated = bulkSchema.parse(req.body);
+    const validated = parseOrRespond(bulkSchema, req.body, res);
+    if (!validated) return;
     batchCount = validated.updates.length;
     const ids = validated.updates.map((u) => u.id);
 
@@ -753,10 +756,11 @@ router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, r
       return;
     }
 
-    const validated = insertTakeoffMeasurementSchema.parse({
+    const validated = parseOrRespond(insertTakeoffMeasurementSchema, {
       ...sanitizedBody,
       takeoffVersionId: draftVersionId || undefined,
-    });
+    }, res);
+    if (!validated) return;
 
     const [sheet] = await db
       .select({ scalePxPerFoot: takeoffSheets.scalePxPerFoot })

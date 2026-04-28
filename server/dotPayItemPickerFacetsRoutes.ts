@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { requireAuth, type AuthRequest } from "./auth";
+import { parseOrRespond } from "./utils/validation";
 import {
   getDotPayItemPickerFacets,
   upsertDotPayItemPickerFacets,
@@ -65,7 +66,8 @@ router.put(
       if (!specBookId) {
         return res.status(400).json({ error: "specBookId is required" });
       }
-      const parsed = putBodySchema.parse(req.body);
+      const parsed = parseOrRespond(putBodySchema, req.body, res);
+      if (!parsed) return;
       // De-duplicate while preserving first-seen order so the toggle UI
       // shows facets in the order the user picked them.
       const dedupe = (xs: string[]): string[] => {

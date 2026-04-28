@@ -28,6 +28,7 @@ import { logAudit } from "./auditLogger";
 import { logError } from "./utils/logger";
 import { recordJobMetrics } from "./utils/jobMetrics";
 import { z } from "zod";
+import { parseOrRespond } from "./utils/validation";
 import { renderPlanDocumentPdf, PlanPdfTooLargeError, MAX_PAGES } from "./planDocumentPdfExport";
 import { ObjectPermission } from "./objectAcl";
 import crypto from "crypto";
@@ -243,7 +244,8 @@ router.post(
         return;
       }
 
-      const body = createMarkupBody.parse(req.body);
+      const body = parseOrRespond(createMarkupBody, req.body, res);
+      if (!body) return;
 
       // Task #1662 — resolve which layer this markup belongs to. Either
       // the caller supplied an explicit layerId (which must belong to
@@ -266,7 +268,7 @@ router.post(
         layerId = def.id;
       }
 
-      const validated = insertPlanDocumentMarkupSchema.parse({
+      const validated = parseOrRespond(insertPlanDocumentMarkupSchema, {
         organizationId: user.organizationId,
         projectId: access.doc.projectId,
         planDocumentId: access.doc.id,
@@ -279,7 +281,8 @@ router.post(
         createdBy: user.id,
         layerId,
         groupId: null,
-      });
+      }, res);
+      if (!validated) return;
 
       const [created] = await db.insert(planDocumentMarkups).values(validated).returning();
 
@@ -410,7 +413,8 @@ router.patch(
   requireRole(...MARKUP_AUTHOR_ROLES),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const body = patchMarkupBody.parse(req.body || {});
+      const body = parseOrRespond(patchMarkupBody, req.body || {}, res);
+      if (!body) return;
       const [m] = await db
         .select()
         .from(planDocumentMarkups)
@@ -508,7 +512,8 @@ router.patch(
         res.status(access.status).json({ error: access.error });
         return;
       }
-      const body = bulkPatchPointsBody.parse(req.body || {});
+      const body = parseOrRespond(bulkPatchPointsBody, req.body || {}, res);
+      if (!body) return;
       const ids = body.updates.map((u) => u.id);
       // Task #1775 — soft-deleted rows are invisible to the move
       // endpoint, so a stale drag against a row that was just deleted
@@ -642,7 +647,8 @@ router.delete(
         res.status(access.status).json({ error: access.error });
         return;
       }
-      const body = bulkDeleteBody.parse(req.body || {});
+      const body = parseOrRespond(bulkDeleteBody, req.body || {}, res);
+      if (!body) return;
       // De-duplicate caller-supplied ids so a payload that lists the
       // same row twice doesn't trip the "rows.length !== ids.length"
       // not-found check below.
@@ -751,7 +757,8 @@ router.post(
         res.status(access.status).json({ error: access.error });
         return;
       }
-      const body = groupBody.parse(req.body || {});
+      const body = parseOrRespond(groupBody, req.body || {}, res);
+      if (!body) return;
       // Task #1775 — soft-deleted rows can never be members of a group;
       // filtering here makes a stale Group click against a deleted
       // member return 404 instead of silently grouping a deleted row.
@@ -825,7 +832,8 @@ router.post(
         res.status(access.status).json({ error: access.error });
         return;
       }
-      const body = ungroupBody.parse(req.body || {});
+      const body = parseOrRespond(ungroupBody, req.body || {}, res);
+      if (!body) return;
       // Task #1775 — soft-deleted rows are excluded from the ungroup
       // surface as well; only live rows have a groupId worth clearing.
       const targets = body.markupIds && body.markupIds.length > 0
@@ -920,7 +928,8 @@ router.post(
         res.status(access.status).json({ error: access.error });
         return;
       }
-      const body = restoreMarkupsBody.parse(req.body || {});
+      const body = parseOrRespond(restoreMarkupsBody, req.body || {}, res);
+      if (!body) return;
 
       // Only admins/managers (and SUPER_ADMIN) may preserve the
       // original creator's id when restoring; everyone else is forced
@@ -1311,7 +1320,8 @@ router.post(
         res.status(access.status).json({ error: access.error });
         return;
       }
-      const body = bulkRestoreBody.parse(req.body || {});
+      const body = parseOrRespond(bulkRestoreBody, req.body || {}, res);
+      if (!body) return;
 
       // Look up the rows including soft-deleted ones (the whole point of
       // this route is to restore them). Per-id auth/cross-doc checks
@@ -1439,7 +1449,8 @@ router.post(
         res.status(access.status).json({ error: access.error });
         return;
       }
-      const body = groupAssignmentsBody.parse(req.body || {});
+      const body = parseOrRespond(groupAssignmentsBody, req.body || {}, res);
+      if (!body) return;
       const ids = body.assignments.map((a) => a.id);
       // Task #1775 — soft-deleted rows cannot have their group
       // membership rewritten; the bulk restore endpoint must run first
@@ -1633,7 +1644,8 @@ router.post(
         res.status(403).json({ error: "No organization assigned" });
         return;
       }
-      const body = createLayerBody.parse(req.body || {});
+      const body = parseOrRespond(createLayerBody, req.body || {}, res);
+      if (!body) return;
       // Reserved name guard so users can't create a second "Default".
       if (body.name.toLowerCase() === DEFAULT_LAYER_NAME.toLowerCase()) {
         res.status(400).json({ error: `"${DEFAULT_LAYER_NAME}" is a reserved layer name` });
@@ -1692,7 +1704,8 @@ router.patch(
   requireRole(...MARKUP_AUTHOR_ROLES),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const body = patchLayerBody.parse(req.body || {});
+      const body = parseOrRespond(patchLayerBody, req.body || {}, res);
+      if (!body) return;
       const [layer] = await db
         .select()
         .from(planMarkupLayers)
@@ -1816,7 +1829,8 @@ router.put(
   requireAuth,
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const body = visibilityBody.parse(req.body || {});
+      const body = parseOrRespond(visibilityBody, req.body || {}, res);
+      if (!body) return;
       const [layer] = await db
         .select()
         .from(planMarkupLayers)
@@ -1871,7 +1885,8 @@ router.post(
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     const startedAt = Date.now();
     try {
-      const body = carryoverBody.parse(req.body || {});
+      const body = parseOrRespond(carryoverBody, req.body || {}, res);
+      if (!body) return;
 
       const targetAccess = await loadDocAndAssertOrg(req.params.docId, req);
       if (!targetAccess.ok) {
@@ -2173,7 +2188,8 @@ router.post(
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     const startedAt = Date.now();
     try {
-      const body = copyLayerBody.parse(req.body || {});
+      const body = parseOrRespond(copyLayerBody, req.body || {}, res);
+      if (!body) return;
       const user = req.user!;
 
       // Load source layer + assert org access.

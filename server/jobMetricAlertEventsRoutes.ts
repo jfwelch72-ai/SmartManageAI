@@ -9,6 +9,7 @@ import { Router, type Response, type NextFunction } from "express";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit } from "./auditLogger";
+import { parseOrRespond } from "./utils/validation";
 import * as jobMetricAlerts from "./utils/jobMetricAlerts";
 
 const router = Router();
@@ -53,7 +54,9 @@ router.post(
   requireRole("SUPER_ADMIN"),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const { hours } = snoozeSchema.parse(req.body);
+      const snoozeParsed = parseOrRespond(snoozeSchema, req.body, res);
+      if (!snoozeParsed) return;
+      const { hours } = snoozeParsed;
       const updated = await jobMetricAlerts.snoozeJobMetricAlertEvent(
         req.params.id,
         req.user!.id,
@@ -127,7 +130,9 @@ router.post(
   requireRole("SUPER_ADMIN"),
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const { job, counter, kind, hours } = snoozeByKeySchema.parse(req.body);
+      const snoozeKeyParsed = parseOrRespond(snoozeByKeySchema, req.body, res);
+      if (!snoozeKeyParsed) return;
+      const { job, counter, kind, hours } = snoozeKeyParsed;
       const updated = await jobMetricAlerts.snoozeJobMetricAlertByKey(
         req.user!.id,
         job,

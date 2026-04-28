@@ -65,6 +65,7 @@ import {
 } from "@shared/schema";
 import { requireAuth, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
+import { parseOrRespond } from "./utils/validation";
 
 const router = Router();
 
@@ -1156,7 +1157,8 @@ router.post("/api/me/work/views", requireAuth, async (req: AuthRequest, res: Res
       isShared: z.boolean().optional(),
       grouping: groupingSchema.optional(),
     });
-    const parsed = schema.parse(req.body);
+    const parsed = parseOrRespond(schema, req.body, res);
+    if (!parsed) return;
     const grouping = normalizeGrouping(parsed.grouping);
     const [created] = await db
       .insert(myWorkSavedViews)
@@ -1195,7 +1197,8 @@ router.patch("/api/me/work/views/:id", requireAuth, async (req: AuthRequest, res
       view: z.enum(MY_WORK_VIEW_VALUES).optional(),
       grouping: groupingSchema.optional(),
     });
-    const parsed = schema.parse(req.body);
+    const parsed = parseOrRespond(schema, req.body, res);
+    if (!parsed) return;
 
     const [existing] = await db
       .select()

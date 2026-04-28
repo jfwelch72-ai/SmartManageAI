@@ -185,7 +185,7 @@
  *       200: { description: Password set }
  */
 import {logError, logWarn } from "./utils/logger";
-import { validateBody } from "./utils/validation";
+import { validateBody, parseOrRespond } from "./utils/validation";
 import { Router, type Response, NextFunction } from "express";
 import { db } from "./db";
 import { userDashboardPermissions, userDashboardLayouts, users, type DashboardLayoutConfig, userColorPalettes, orgColorPalettes, type UserColorPalette, type OrgColorPalette, type PaletteValidationResult, type ColorContrastResult, insertUserSchema, projects, changeOrders, calendarEvents, projectDelays, bids, organizations, timeEntries, payRuns, subcontractorContracts, crmOrganisations, organizationDocuments, subcontractorPayments, subcontractorBillingSchedule, procurementItems, scheduleOfValues, sovLineItems, estimates, estimateLineItems, rfis, safetyTrainings, safetyTrainingAssignments, leaveRequests, permissionPresets, hustlerOrganizations } from "@shared/schema";
@@ -1471,12 +1471,8 @@ router.post('/api/dashboard/permission-presets', requireAuth, requireRole('ADMIN
       ),
     });
 
-    let data;
-    try {
-      data = schema.parse(req.body);
-    } catch (validationError) {
-      return res.status(400).json({ error: 'Invalid preset data', details: validationError instanceof z.ZodError ? validationError.errors : undefined });
-    }
+    const data = parseOrRespond(schema, req.body, res);
+    if (!data) return;
 
     const [created] = await db.insert(permissionPresets).values({
       name: data.name,

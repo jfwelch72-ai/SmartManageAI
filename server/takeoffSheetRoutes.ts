@@ -10,6 +10,7 @@ import { sanitizeShortText } from "./sanitization";
 import { verifyOrgAccess } from "./orgFilter";
 import { verifySheetAccess, isMeasurementLocked } from "./takeoffHelpers";
 import { getPdfPageCountFromGcs } from "./utils/pdfPageCount";
+import { parseOrRespond } from "./utils/validation";
 
 const router = Router();
 
@@ -1347,7 +1348,8 @@ router.post("/api/takeoff/sheets/:id/restore", requireAuth, requireRole("ADMIN",
       markups: z.array(markupSnapshotSchema).max(10000).default([]),
     });
 
-    const validated = bodySchema.parse(req.body);
+    const validated = parseOrRespond(bodySchema, req.body, res);
+    if (!validated) return;
 
     if (validated.sheet.id !== id) {
       res.status(400).json({ error: "Sheet id in body does not match the URL" });

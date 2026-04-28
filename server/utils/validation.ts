@@ -1,5 +1,34 @@
-import { type ZodSchema, type ZodError, z } from "zod";
+import { type ZodSchema, type ZodError, type ZodTypeAny, z } from "zod";
 import type { Response } from "express";
+
+/**
+ * Wraps a Zod schema parse so a malformed payload returns a clean JSON 400
+ * with the validation details instead of bubbling out of the async route
+ * handler as an unhandled promise rejection (which leaves the request hanging
+ * on the client until it times out).
+ *
+ * Returns the parsed value on success, or `null` after sending the 400
+ * response so the caller can early-exit. The shape of `details` matches
+ * `ZodError.flatten()` so consumers can surface per-field messages.
+ *
+ * Originally introduced in `server/libraryRoutes.ts` for Task #2165 and
+ * promoted here for Task #2179 so all route modules can share it.
+ */
+export function parseOrRespond<T extends ZodTypeAny>(
+  schema: T,
+  payload: unknown,
+  res: Response,
+): z.infer<T> | null {
+  const result = schema.safeParse(payload);
+  if (!result.success) {
+    res.status(400).json({
+      error: "Invalid request body",
+      details: result.error.flatten(),
+    });
+    return null;
+  }
+  return result.data;
+}
 
 export function formatZodError(error: ZodError): { error: string; details: Record<string, string[]> } {
   const fieldErrors = error.flatten().fieldErrors;

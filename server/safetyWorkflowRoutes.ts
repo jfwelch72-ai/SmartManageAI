@@ -12,6 +12,7 @@ import {
 } from "@shared/schema";
 import { eq, and, desc, sql, gte, lte, lt, inArray } from "drizzle-orm";
 import type { AuthRequest } from "./auth";
+import { parseOrRespond } from "./utils/validation";
 
 const router = Router();
 
@@ -70,11 +71,12 @@ router.get("/api/toolbox-talks/topics", requireAuth, async (req: AuthRequest, re
 router.post("/api/toolbox-talks/topics", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
-    const parsed = insertToolboxTalkTopicSchema.parse({
+    const parsed = parseOrRespond(insertToolboxTalkTopicSchema, {
       ...req.body,
       organizationId: req.user!.organizationId,
       createdBy: req.user!.id,
-    });
+    }, res);
+    if (!parsed) return;
     const [created] = await db.insert(toolboxTalkTopics).values(parsed).returning();
     res.status(201).json(created);
   } catch (err: unknown) {
@@ -165,11 +167,12 @@ router.post("/api/toolbox-talks/scheduled", requireAuth, async (req: AuthRequest
       if (projErr) return res.status(400).json({ error: projErr });
     }
 
-    const parsed = insertToolboxTalkScheduledSchema.parse({
+    const parsed = parseOrRespond(insertToolboxTalkScheduledSchema, {
       ...req.body,
       organizationId: orgId,
       createdBy: req.user!.id,
-    });
+    }, res);
+    if (!parsed) return;
     const [created] = await db.insert(toolboxTalkScheduled).values(parsed).returning();
     res.status(201).json(created);
   } catch (err: unknown) {
@@ -340,11 +343,12 @@ router.get("/api/safety-checklists/templates", requireAuth, async (req: AuthRequ
 router.post("/api/safety-checklists/templates", requireAuth, async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
     if (!isSafetyAdmin(req.user!.role)) return res.status(403).json({ error: "Insufficient permissions" });
-    const parsed = insertSafetyChecklistTemplateSchema.parse({
+    const parsed = parseOrRespond(insertSafetyChecklistTemplateSchema, {
       ...req.body,
       organizationId: req.user!.organizationId,
       createdBy: req.user!.id,
-    });
+    }, res);
+    if (!parsed) return;
     const [created] = await db.insert(safetyChecklistTemplates).values(parsed).returning();
     res.status(201).json(created);
   } catch (err: unknown) {
@@ -435,12 +439,13 @@ router.post("/api/safety-checklists/instances", requireAuth, async (req: AuthReq
     }
 
     const userName = `${req.user!.firstName || ""} ${req.user!.lastName || ""}`.trim();
-    const parsed = insertSafetyChecklistInstanceSchema.parse({
+    const parsed = parseOrRespond(insertSafetyChecklistInstanceSchema, {
       ...req.body,
       organizationId: orgId,
       completedBy: req.user!.id,
       completedByName: (req.body.completedByName as string) || userName,
-    });
+    }, res);
+    if (!parsed) return;
     const [created] = await db.insert(safetyChecklistInstances).values(parsed).returning();
     res.status(201).json(created);
   } catch (err: unknown) {
@@ -551,13 +556,14 @@ router.post("/api/osha-incidents", requireAuth, async (req: AuthRequest, res: Re
     const caseNumber = (req.body.caseNumber as string) || `OSHA-${new Date().getFullYear()}-${String((countResult?.count ?? 0) + 1).padStart(4, "0")}`;
 
     const userName = `${req.user!.firstName || ""} ${req.user!.lastName || ""}`.trim();
-    const parsed = insertOshaIncidentSchema.parse({
+    const parsed = parseOrRespond(insertOshaIncidentSchema, {
       ...req.body,
       caseNumber,
       organizationId: orgId,
       reportedBy: req.user!.id,
       reportedByName: (req.body.reportedByName as string) || userName,
-    });
+    }, res);
+    if (!parsed) return;
     const [created] = await db.insert(oshaIncidents).values(parsed).returning();
     res.status(201).json(created);
   } catch (err: unknown) {

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { peerRatings, users, crewMembers, crewProjectAssignments, organizations } from "@shared/schema";
 import { timeClockShifts } from "@shared/schema";
 import { logError } from "./utils/logger";
+import { parseOrRespond } from "./utils/validation";
 
 const currentPeriod = () => {
   const now = new Date();
@@ -133,7 +134,8 @@ export function registerPeerRatingRoutes(app: Express) {
         peerRatingAnonymityMode: z.enum(["fully_anonymous", "managers_can_see"]).optional(),
         peerRatingScopeMode: z.enum(["project_crew", "org_wide"]).optional(),
       });
-      const data = schema.parse(req.body);
+      const data = parseOrRespond(schema, req.body, res);
+      if (!data) return;
 
       const updates: Record<string, string> = {};
       if (data.peerRatingAnonymityMode) updates.peerRatingAnonymityMode = data.peerRatingAnonymityMode;
@@ -214,7 +216,8 @@ export function registerPeerRatingRoutes(app: Express) {
       if (!orgId) return;
       const userId = req.user!.id;
 
-      const data = submitPeerRatingSchema.parse(req.body);
+      const data = parseOrRespond(submitPeerRatingSchema, req.body, res);
+      if (!data) return;
 
       if (data.rateeId === userId) {
         return res.status(400).json({ error: "You cannot rate yourself" });

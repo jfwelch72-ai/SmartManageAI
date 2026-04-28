@@ -10,6 +10,7 @@ import { deliverNotifications, type NotificationRecord } from "./services/notifi
 import { sanitizeText, sanitizeShortText } from "./sanitization";
 import { generateDelayNotificationPDF } from "./pdf-service";
 import { getOrgIdForFilter } from "./orgFilter";
+import { parseOrRespond } from "./utils/validation";
 import crypto from "crypto";
 
 const router = Router();
@@ -1738,7 +1739,8 @@ router.post("/delay-claims/photo-custody", requireAuth, requireRole("ADMIN", "MA
       userAgent: req.headers["user-agent"],
     };
     
-    const validated = insertPhotoCustodyRecordSchema.parse(body);
+    const validated = parseOrRespond(insertPhotoCustodyRecordSchema, body, res);
+    if (!validated) return;
     
     const [record] = await db
       .insert(photoCustodyRecords)
@@ -1866,7 +1868,8 @@ router.post("/delay-claims", requireAuth, requireRole("ADMIN", "MANAGER", "SUPER
       description: sanitizeText(req.body.description),
     };
     
-    const validated = insertDelayClaimSchema.parse(body);
+    const validated = parseOrRespond(insertDelayClaimSchema, body, res);
+    if (!validated) return;
     
     // Generate claim number
     const [project] = await db

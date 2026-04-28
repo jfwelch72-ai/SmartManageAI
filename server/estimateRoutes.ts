@@ -294,6 +294,7 @@ function normalizeCategory(value: string | undefined | null): string {
 
 // Re-exported shared validator — kept here for callers that still import from this module.
 import { validateDotPayItemLink as _validateDotPayItemLink } from "./utils/dotPayItemValidation";
+import { parseOrRespond } from "./utils/validation";
 const validateDotPayItemLink = _validateDotPayItemLink;
 
 function normalizeLineItemData(data: any): any {
@@ -1832,7 +1833,8 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         }
       }
 
-      const validatedData = insertEstimateLineItemSchema.parse(parseInput);
+      const validatedData = parseOrRespond(insertEstimateLineItemSchema, parseInput, res);
+      if (!validatedData) return;
 
       if (process.env.DEBUG_LINE_ITEMS === "true") {
         const costFields = ['quantity', 'materialCost', 'laborCost', 'laborHours', 'equipmentCost', 'equipmentHours', 'consumablesCost', 'subcontractCost', 'overheadAllocation', 'profitAllocation', 'totalCost'];
@@ -2152,7 +2154,8 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         }
       }
 
-      const updateData = updateEstimateLineItemSchema.parse(normalizedUpdates);
+      const updateData = parseOrRespond(updateEstimateLineItemSchema, normalizedUpdates, res);
+      if (!updateData) return;
 
       // Update line item with recalculated total and material quantities
       let [updatedLineItem] = await db.update(estimateLineItems)
@@ -3991,7 +3994,8 @@ router.post("/api/historical-costs", requireAuth, requireRole("ADMIN", "HUSTLER"
     for (const f of decimalFields) {
       if (body[f] !== undefined && body[f] !== null) body[f] = String(body[f]);
     }
-    const data = insertHistoricalCostSchema.parse(body);
+    const data = parseOrRespond(insertHistoricalCostSchema, body, res);
+    if (!data) return;
     const [result] = await db.insert(historicalCosts).values(data).returning();
     res.json(result);
   } catch (error) {

@@ -23,6 +23,7 @@ import { getLibraryTradeIdsForLegacy } from "../shared/tradeTypeUtils";
 import { requireRole, type AuthRequest } from "./auth";
 import type { UserRole } from "@shared/schema";
 import { logAudit, logCreate, logDelete } from "./auditLogger";
+import { parseOrRespond } from "./utils/validation";
 
 const router = Router();
 
@@ -48,29 +49,6 @@ function checkEstimatorPlus(req: AuthRequest): boolean {
 function checkAdmin(req: AuthRequest): boolean {
   const role = (req.user as any)?.effectiveRole || req.user?.role;
   return !!role && PREBUILT_RESET_ROLES.includes(role as UserRole);
-}
-
-// Task #2165 — Wraps a Zod schema parse so a malformed payload returns a clean
-// JSON 400 with the validation details instead of bubbling out of the async
-// route handler as an unhandled promise rejection (which left the request
-// hanging on the client until it timed out). Returns the parsed value on
-// success, or `null` after sending the 400 response so the caller can early
-// exit. The shape of `details` matches `ZodError.flatten()` so consumers can
-// surface per-field messages.
-function parseOrRespond<T extends z.ZodTypeAny>(
-  schema: T,
-  payload: unknown,
-  res: Response,
-): z.infer<T> | null {
-  const result = schema.safeParse(payload);
-  if (!result.success) {
-    res.status(400).json({
-      error: "Invalid request body",
-      details: result.error.flatten(),
-    });
-    return null;
-  }
-  return result.data;
 }
 
 router.get("/api/custom-libraries", async (req: AuthRequest, res: Response, next: NextFunction) => {

@@ -248,6 +248,7 @@ import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit } from "./auditLogger";
 import { sanitizeText } from "./sanitization";
 import { z } from "zod";
+import { parseOrRespond } from "./utils/validation";
 import { 
   captureProductionRateFromShift, 
   checkAndNotifyWeeklyReport, 
@@ -890,7 +891,8 @@ router.patch("/api/time-clock/my-shift/cost-code", requireAuth, async (req: Auth
       costCode: z.string().nullable(),
     });
 
-    const data = schema.parse(req.body);
+    const data = parseOrRespond(schema, req.body, res);
+    if (!data) return;
 
     const [activeShift] = await db
       .select()
@@ -1242,7 +1244,8 @@ router.post("/api/time-clock/shifts/:id/approve", requireAuth, requireRole("ADMI
       createTimeEntry: z.boolean().optional(),
     });
 
-    const data = schema.parse(req.body);
+    const data = parseOrRespond(schema, req.body, res);
+    if (!data) return;
 
     const [shiftWithUser] = await db
       .select({ shift: timeClockShifts, userOrgId: users.organizationId })
@@ -1450,7 +1453,8 @@ router.post("/api/time-clock/location-ping", requireAuth, async (req: AuthReques
       accuracy: z.number().optional().nullable(),
     });
 
-    const data = schema.parse(req.body);
+    const data = parseOrRespond(schema, req.body, res);
+    if (!data) return;
 
     const [activeShift] = await db
       .select()
@@ -1571,7 +1575,8 @@ router.post("/api/projects/:projectId/geofence-zones", requireAuth, requireRole(
       polygon: z.array(z.object({ lat: z.number(), lng: z.number() })).optional().nullable(),
     });
 
-    const data = schema.parse(req.body);
+    const data = parseOrRespond(schema, req.body, res);
+    if (!data) return;
 
     const [zone] = await db.insert(projectGeofenceZones).values({
       projectId: req.params.projectId,
@@ -1948,7 +1953,8 @@ router.post("/api/time-clock/site-leave", requireAuth, async (req, res, next) =>
       longitude: z.number().optional(),
     });
 
-    const data = schema.parse(req.body);
+    const data = parseOrRespond(schema, req.body, res);
+    if (!data) return;
 
     const activeShift = await db.select().from(timeClockShifts)
       .where(and(eq(timeClockShifts.userId, user.id), isNull(timeClockShifts.clockOut)))
@@ -2025,7 +2031,8 @@ router.post("/api/time-clock/site-leave/:id/return", requireAuth, async (req, re
       longitude: z.number().optional(),
     });
 
-    const data = schema.parse(req.body);
+    const data = parseOrRespond(schema, req.body, res);
+    if (!data) return;
     const leaveId = req.params.id;
 
     const [leave] = await db.select().from(siteLeaves)

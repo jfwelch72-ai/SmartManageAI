@@ -9,6 +9,7 @@ import { TOTP, generateSecret as otpGenerateSecret, generateURI } from "otplib";
 import QRCode from "qrcode";
 import type { TimeEntry, UserCertification } from "@shared/schema";
 import { logError, logWarn } from "./utils/logger";
+import { parseOrRespond } from "./utils/validation";
 import { sendCrmContactBirthdayDigestForUser } from "./jobs/jobRunner";
 
 const router = Router();
@@ -71,7 +72,8 @@ router.patch("/api/user-settings", requireAuth, async (req: AuthRequest, res, ne
       birthdayDigestHour: z.number().int().min(0).max(23).optional(),
     });
 
-    const parsed = schema.parse(req.body);
+    const parsed = parseOrRespond(schema, req.body, res);
+    if (!parsed) return;
     const [existing] = await db.select().from(userSettings).where(eq(userSettings.userId, userId)).limit(1);
 
     if (existing) {

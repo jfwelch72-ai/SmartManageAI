@@ -4,6 +4,7 @@ import { userSavedViews, users } from "@shared/schema";
 import { and, eq, or } from "drizzle-orm";
 import { requireAuth, type AuthRequest } from "./auth";
 import { z } from "zod";
+import { parseOrRespond } from "./utils/validation";
 
 const router = Router();
 
@@ -72,7 +73,8 @@ router.post("/api/saved-views", requireAuth, async (req: AuthRequest, res, next)
       filters: z.record(z.any()).optional(),
       isShared: z.boolean().optional(),
     });
-    const parsed = schema.parse(req.body);
+    const parsed = parseOrRespond(schema, req.body, res);
+    if (!parsed) return;
     const [created] = await db
       .insert(userSavedViews)
       .values({
@@ -109,7 +111,8 @@ router.patch("/api/saved-views/:id", requireAuth, async (req: AuthRequest, res, 
       filters: z.record(z.any()).optional(),
       view: z.enum(VALID_VIEWS).optional(),
     });
-    const parsed = schema.parse(req.body);
+    const parsed = parseOrRespond(schema, req.body, res);
+    if (!parsed) return;
 
     const [existing] = await db
       .select()

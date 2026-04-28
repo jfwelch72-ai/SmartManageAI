@@ -10,6 +10,7 @@ import { logError, logInfo } from "./utils/logger";
 import { runProbeSweep } from "./statusProbeScheduler";
 import { getAlertOverview, sendTestAlert } from "./statusAlertService";
 import { collectWebhookSecretFindings } from "./webhookSecretsAudit";
+import { parseOrRespond } from "./utils/validation";
 
 const router = Router();
 
@@ -453,7 +454,8 @@ const componentSchema = z.object({
 
 router.post("/api/admin/status/components", ...adminGuard, async (req, res, next) => {
   try {
-    const data = componentSchema.parse(req.body);
+    const data = parseOrRespond(componentSchema, req.body, res);
+    if (!data) return;
     const r = await db.execute(sql`
       INSERT INTO "status_components" (key, name, description, probe_kind, probe_url, probe_expect_status, probe_timeout_ms, enabled, sort_order)
       VALUES (${data.key}, ${data.name}, ${data.description ?? null}, ${data.probeKind}, ${data.probeUrl ?? null}, ${data.probeExpectStatus}, ${data.probeTimeoutMs}, ${data.enabled}, ${data.sortOrder})
@@ -467,7 +469,8 @@ router.post("/api/admin/status/components", ...adminGuard, async (req, res, next
 
 router.patch("/api/admin/status/components/:id", ...adminGuard, async (req, res, next) => {
   try {
-    const data = componentSchema.partial().parse(req.body);
+    const data = parseOrRespond(componentSchema.partial(), req.body, res);
+    if (!data) return;
     const sets: any[] = [];
     if (data.name !== undefined) sets.push(sql`name = ${data.name}`);
     if (data.description !== undefined) sets.push(sql`description = ${data.description}`);
@@ -520,7 +523,8 @@ const alertTestSchema = z.object({
 
 router.post("/api/admin/status/alerts/test", ...adminGuard, async (req, res, next) => {
   try {
-    const data = alertTestSchema.parse(req.body || {});
+    const data = parseOrRespond(alertTestSchema, req.body || {}, res);
+    if (!data) return;
     const result = await sendTestAlert(data.componentKey);
     if (!result.ok) return res.status(400).json(result);
     res.json(result);
@@ -553,7 +557,8 @@ router.get("/api/admin/status/incidents", ...adminGuard, async (_req, res, next)
 
 router.post("/api/admin/status/incidents", ...adminGuard, async (req: any, res, next) => {
   try {
-    const data = incidentSchema.parse(req.body);
+    const data = parseOrRespond(incidentSchema, req.body, res);
+    if (!data) return;
     const ins = await db.execute(sql`
       INSERT INTO "status_incidents" (title, status, impact, postmortem_url, postmortem, created_by_user_id)
       VALUES (${data.title}, ${data.status}, ${data.impact}, ${data.postmortemUrl ?? null}, ${data.postmortem ?? null}, ${req.user?.id ?? null})
@@ -584,7 +589,8 @@ const incidentUpdateSchema = z.object({
 
 router.post("/api/admin/status/incidents/:id/updates", ...adminGuard, async (req: any, res, next) => {
   try {
-    const data = incidentUpdateSchema.parse(req.body);
+    const data = parseOrRespond(incidentUpdateSchema, req.body, res);
+    if (!data) return;
     const upd = await db.execute(sql`
       INSERT INTO "status_incident_updates" (incident_id, status, body, created_by_user_id)
       VALUES (${req.params.id}, ${data.status}, ${data.body}, ${req.user?.id ?? null})
@@ -607,15 +613,15 @@ router.post("/api/admin/status/incidents/:id/updates", ...adminGuard, async (req
 
 router.patch("/api/admin/status/incidents/:id", ...adminGuard, async (req, res, next) => {
   try {
-    const data = z
-      .object({
-        title: z.string().min(3).max(200).optional(),
-        impact: incidentImpactEnum.optional(),
-        affectedComponentIds: z.array(z.string().uuid()).optional(),
-        postmortemUrl: z.string().url().max(500).nullable().optional(),
-        postmortem: z.string().max(20000).nullable().optional(),
-      })
-      .parse(req.body);
+    const incidentPatchSchema = z.object({
+      title: z.string().min(3).max(200).optional(),
+      impact: incidentImpactEnum.optional(),
+      affectedComponentIds: z.array(z.string().uuid()).optional(),
+      postmortemUrl: z.string().url().max(500).nullable().optional(),
+      postmortem: z.string().max(20000).nullable().optional(),
+    });
+    const data = parseOrRespond(incidentPatchSchema, req.body, res);
+    if (!data) return;
     const sets: any[] = [sql`updated_at = NOW()`];
     if (data.title !== undefined) sets.push(sql`title = ${data.title}`);
     if (data.impact !== undefined) sets.push(sql`impact = ${data.impact}`);
@@ -691,7 +697,8 @@ const bulkDeleteSubscribersSchema = z
 
 router.post("/api/admin/status/subscribers/bulk-delete", ...adminGuard, async (req: any, res, next) => {
   try {
-    const data = bulkDeleteSubscribersSchema.parse(req.body);
+    const data = parseOrRespond(bulkDeleteSubscribersSchema, req.body, res);
+    if (!data) return;
     const ids = Array.from(new Set((data.ids ?? []).filter(Boolean)));
     const emails = Array.from(
       new Set((data.emails ?? []).map((e) => e.toLowerCase().trim()).filter(Boolean)),

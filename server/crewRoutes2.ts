@@ -99,6 +99,7 @@ import { requireAuth, requireRole, requireFeaturePermission, type AuthRequest } 
 import { eq, desc, sql, and, ne, inArray } from "drizzle-orm";
 import { logCreate, logUpdate, logDelete } from "./auditLogger";
 import { sanitizeShortText, sanitizeText } from "./sanitization";
+import { parseOrRespond } from "./utils/validation";
 
 const router = Router();
 
@@ -482,10 +483,11 @@ router.post("/api/crew-assignments", requireRole("ADMIN", "MANAGER", "SUPERINTEN
     const bodyWithoutFlag = { ...req.body };
     delete bodyWithoutFlag.allowOverlap;
 
-    const validated = insertCrewProjectAssignmentSchema.parse({
+    const validated = parseOrRespond(insertCrewProjectAssignmentSchema, {
       ...bodyWithoutFlag,
       assignedById: req.user!.id,
-    });
+    }, res);
+    if (!validated) return;
 
     const [existingAssignment] = await db
       .select()

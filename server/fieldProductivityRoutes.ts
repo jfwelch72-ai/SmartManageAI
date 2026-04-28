@@ -7,6 +7,7 @@ import { z } from "zod";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { governedAiCall } from "./services/aiGovernance";
 import { ObjectStorageService } from "./objectStorage";
+import { parseOrRespond } from "./utils/validation";
 
 const router = Router();
 
@@ -93,11 +94,12 @@ router.post("/voice-logs", requireAuth, requireInternalRole, async (req: Authent
     const organizationId = req.user!.organizationId;
     const userId = req.user!.id;
 
-    const data = insertVoiceLogSchema.parse({
+    const data = parseOrRespond(insertVoiceLogSchema, {
       ...req.body,
       organizationId,
       userId,
-    });
+    }, res);
+    if (!data) return;
 
     const [log] = await db.insert(voiceLogs).values(data).returning();
     res.status(201).json(log);
@@ -133,7 +135,8 @@ router.patch("/voice-logs/:id", requireAuth, requireInternalRole, async (req: Au
       return res.status(404).json({ error: "Voice log not found" });
     }
 
-    const validated = voiceLogUpdateSchema.parse(req.body);
+    const validated = parseOrRespond(voiceLogUpdateSchema, req.body, res);
+    if (!validated) return;
     const forceOverwrite = req.headers['x-force-overwrite'] === 'true';
 
     if (!forceOverwrite && req.body.lastKnownUpdatedAt) {
@@ -255,11 +258,12 @@ router.post("/issue-captures", requireAuth, requireInternalRole, async (req: Aut
     const organizationId = req.user!.organizationId;
     const createdById = req.user!.id;
 
-    const data = insertIssueCaptureSchema.parse({
+    const data = parseOrRespond(insertIssueCaptureSchema, {
       ...req.body,
       organizationId,
       createdById,
-    });
+    }, res);
+    if (!data) return;
 
     const [issue] = await db.insert(issueCaptures).values(data).returning();
     res.status(201).json(issue);
@@ -305,7 +309,8 @@ router.patch("/issue-captures/:id", requireAuth, requireInternalRole, async (req
       return res.status(404).json({ error: "Issue capture not found" });
     }
 
-    const validated = issueCaptureUpdateSchema.parse(req.body);
+    const validated = parseOrRespond(issueCaptureUpdateSchema, req.body, res);
+    if (!validated) return;
     const forceOverwrite = req.headers['x-force-overwrite'] === 'true';
 
     if (!forceOverwrite && req.body.lastKnownUpdatedAt) {
@@ -443,11 +448,12 @@ router.post("/offline-sync", requireAuth, async (req: AuthenticatedRequest, res:
     const organizationId = req.user!.organizationId;
     const userId = req.user!.id;
 
-    const data = insertOfflineSyncQueueSchema.parse({
+    const data = parseOrRespond(insertOfflineSyncQueueSchema, {
       ...req.body,
       organizationId,
       userId,
-    });
+    }, res);
+    if (!data) return;
 
     const [item] = await db.insert(offlineSyncQueue).values(data).returning();
     res.status(201).json(item);
@@ -512,7 +518,8 @@ router.patch("/offline-sync/:id", requireAuth, async (req: AuthenticatedRequest,
       return res.status(404).json({ error: "Sync item not found" });
     }
 
-    const validated = offlineSyncUpdateSchema.parse(req.body);
+    const validated = parseOrRespond(offlineSyncUpdateSchema, req.body, res);
+    if (!validated) return;
     const forceOverwrite = req.headers['x-force-overwrite'] === 'true';
 
     if (!forceOverwrite && req.body.lastKnownUpdatedAt) {
@@ -645,7 +652,9 @@ const voiceLogParseSchema = z.object({
 
 router.post("/voice-logs/parse", requireAuth, requireInternalRole, async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const { transcription, outputType } = voiceLogParseSchema.parse(req.body);
+    const voiceLogParsed = parseOrRespond(voiceLogParseSchema, req.body, res);
+    if (!voiceLogParsed) return;
+    const { transcription, outputType } = voiceLogParsed;
 
     const systemPrompt = outputType === "daily_report"
       ? `You are a construction field assistant. Parse the following voice dictation from a field worker into structured daily report data. Extract:

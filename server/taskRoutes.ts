@@ -8,6 +8,7 @@ import type { SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { requireAuth, type AuthRequest } from "./auth";
 import { z } from "zod";
+import { parseOrRespond } from "./utils/validation";
 import { getOrgIdForFilter } from "./orgFilter";
 import multer from "multer";
 import { sensitiveLimiter } from "./rateLimiter";
@@ -337,7 +338,8 @@ router.post("/api/tasks", requireAuth, async (req: AuthRequest, res: Response, n
       dueDate: z.string().optional().nullable().transform(val => val ? new Date(val) : undefined),
     });
 
-    const validated = schema.parse(req.body);
+    const validated = parseOrRespond(schema, req.body, res);
+    if (!validated) return;
 
     // Create task
     const [newTask] = await db
@@ -407,7 +409,8 @@ router.patch("/api/tasks/:taskId", requireAuth, async (req: AuthRequest, res: Re
       dismissReason: z.string().optional().nullable(),
     });
 
-    const validated = schema.parse(req.body);
+    const validated = parseOrRespond(schema, req.body, res);
+    if (!validated) return;
 
     // Handle status-specific updates
     const updates: any = { ...validated, updatedAt: new Date() };
@@ -513,7 +516,9 @@ router.post("/api/tasks/:taskId/subtasks", requireAuth, async (req: AuthRequest,
 
     const userId = req.user!.id;
     const schema = z.object({ title: z.string().min(1, "Title is required") });
-    const { title } = schema.parse(req.body);
+    const subtaskParsed = parseOrRespond(schema, req.body, res);
+    if (!subtaskParsed) return;
+    const { title } = subtaskParsed;
 
     const [subtask] = await db
       .insert(taskSubtasks)
@@ -538,7 +543,8 @@ router.patch("/api/tasks/:taskId/subtasks/:subtaskId", requireAuth, async (req: 
       title: z.string().min(1).optional(),
       completed: z.boolean().optional(),
     });
-    const validated = schema.parse(req.body);
+    const validated = parseOrRespond(schema, req.body, res);
+    if (!validated) return;
 
     const [updated] = await db
       .update(taskSubtasks)
@@ -613,7 +619,9 @@ router.post("/api/tasks/:taskId/comments", requireAuth, async (req: AuthRequest,
 
     const userId = req.user!.id;
     const schema = z.object({ content: z.string().min(1, "Content is required") });
-    const { content } = schema.parse(req.body);
+    const commentParsed = parseOrRespond(schema, req.body, res);
+    if (!commentParsed) return;
+    const { content } = commentParsed;
 
     const [comment] = await db
       .insert(taskComments)
@@ -692,7 +700,8 @@ router.post("/api/tasks/:taskId/attachments", requireAuth, async (req: AuthReque
       fileSize: z.number().optional(),
       mimeType: z.string().optional(),
     });
-    const validated = schema.parse(req.body);
+    const validated = parseOrRespond(schema, req.body, res);
+    if (!validated) return;
 
     const [attachment] = await db
       .insert(taskAttachments)
