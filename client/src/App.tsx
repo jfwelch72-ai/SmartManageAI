@@ -268,6 +268,7 @@ const MyDayPage = lazy(() => import("@/pages/my-day"));
 const NotificationsInboxPage = lazy(() => import("@/pages/notifications"));
 const MyWorkPage = lazy(() => import("@/pages/my-work"));
 const PlanPinsHarnessPage = lazy(() => import("@/pages/test/plan-pins-harness"));
+const DimInputBadgePreviewPage = lazy(() => import("@/pages/test/dim-input-badge-preview"));
 const TrustPage = lazy(() => import("@/pages/trust").then(m => ({ default: m.TrustPage })));
 const SubProcessorsPage = lazy(() => import("@/pages/trust").then(m => ({ default: m.SubProcessorsPage })));
 const StatusPage = lazy(() => import("@/pages/trust").then(m => ({ default: m.StatusPage })));
@@ -620,6 +621,9 @@ function Router() {
       
       {import.meta.env.DEV && (
         <Route path="/test/plan-pins-harness" component={PlanPinsHarnessPage} />
+      )}
+      {import.meta.env.DEV && (
+        <Route path="/preview/dim-input-badge" component={DimInputBadgePreviewPage} />
       )}
       <Route component={NotFound} />
     </Switch>
