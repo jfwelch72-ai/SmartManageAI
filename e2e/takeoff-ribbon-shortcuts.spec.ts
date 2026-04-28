@@ -206,6 +206,80 @@ test.describe("Takeoff Unified Ribbon + Shortcuts", () => {
     await expect(page.getByTestId("snap-hud")).toHaveCount(0);
   });
 
+  test("snap HUD digits 1-7 each toggle the matching snap mode (endpoint, midpoint, intersection, perpendicular, center, nearest, grid)", async ({
+    page,
+  }) => {
+    const suffix = Date.now();
+    await devLogin(page, "ADMIN");
+    const bid = await createBid(page, suffix);
+    await gotoTakeoff(page, bid.code);
+    await focusRibbon(page);
+
+    // SNAP_MODE_ORDER in client/src/components/takeoff/hosts/takeoff-shortcuts.ts
+    // declares the canonical 1→7 mapping. If a regression re-orders the array
+    // (e.g. swaps midpoint↔intersection) or drops the trailing "grid" entry,
+    // this test must fail.
+    const snapModes: Array<{ digit: string; mode: string; initialActive: boolean }> = [
+      { digit: "1", mode: "endpoint", initialActive: true },
+      { digit: "2", mode: "midpoint", initialActive: true },
+      { digit: "3", mode: "intersection", initialActive: true },
+      { digit: "4", mode: "perpendicular", initialActive: false },
+      { digit: "5", mode: "center", initialActive: false },
+      { digit: "6", mode: "nearest", initialActive: false },
+      { digit: "7", mode: "grid", initialActive: false },
+    ];
+
+    // Workspace seeds enabledSnapModes = ["endpoint","midpoint","intersection"]
+    // on a fresh browser context (no localStorage entry yet), so the snap
+    // ribbon buttons reflect that exact starting set.
+    for (const { mode, initialActive } of snapModes) {
+      await expect(page.getByTestId(`ribbon-tool-${mode}`)).toHaveAttribute(
+        "aria-pressed",
+        initialActive ? "true" : "false",
+      );
+    }
+
+    await page.keyboard.press("s");
+    await expect(page.getByTestId("snap-hud")).toBeVisible();
+
+    // Walk every digit and assert both the in-HUD chip (data-active) and the
+    // matching ribbon button (aria-pressed) flip away from their initial
+    // value. The HUD stays open across presses per the keyboard contract.
+    for (const { digit, mode, initialActive } of snapModes) {
+      const ribbonBtn = page.getByTestId(`ribbon-tool-${mode}`);
+      const hudChip = page.getByTestId(`snap-hud-mode-${mode}`);
+
+      await page.keyboard.press(digit);
+
+      const expectedAfter = !initialActive;
+      await expect(ribbonBtn).toHaveAttribute(
+        "aria-pressed",
+        expectedAfter ? "true" : "false",
+        { timeout: 2000 },
+      );
+      await expect(hudChip).toHaveAttribute(
+        "data-active",
+        expectedAfter ? "true" : "false",
+      );
+      await expect(page.getByTestId("snap-hud")).toBeVisible();
+    }
+
+    // Press each digit a second time to restore the original snap-mode set
+    // — keeps the per-user localStorage state clean for any later reruns
+    // that share the same browser profile.
+    for (const { digit, mode, initialActive } of snapModes) {
+      await page.keyboard.press(digit);
+      await expect(page.getByTestId(`ribbon-tool-${mode}`)).toHaveAttribute(
+        "aria-pressed",
+        initialActive ? "true" : "false",
+        { timeout: 2000 },
+      );
+    }
+
+    await page.keyboard.press("Escape");
+    await expect(page.getByTestId("snap-hud")).toHaveCount(0);
+  });
+
   test("Cmd/Ctrl+/ opens cheat-sheet grouped by ribbon group, Esc closes", async ({
     page,
     browserName,
