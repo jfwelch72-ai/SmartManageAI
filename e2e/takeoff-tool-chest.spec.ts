@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { installCsrf } from "./helpers/csrf";
+import { getDragTuning } from "./helpers/canvasDrag";
 import { dispatchHtml5Drop, dispatchHtml5Reorder } from "./helpers/htmlDrag";
 
 const BASE_URL =
@@ -46,8 +47,14 @@ async function gotoTakeoff(page: Page, bidCode: string) {
   await page.goto(`${BASE_URL}/takeoff/${bidCode}`, {
     waitUntil: "domcontentloaded",
   });
+  // Task #2287 — webkit's React hydration of the takeoff workspace
+  // routinely overshoots 15s in the Replit dev container (mirroring
+  // the gotoTakeoff change made in #2241 for the sheet-sets specs).
+  // Bumping to 30s keeps chromium snappy (it still resolves in <2s)
+  // while removing the false negative that would otherwise block
+  // the chest specs from running on webkit/firefox.
   await expect(page.getByTestId("unified-takeoff-ribbon")).toBeVisible({
-    timeout: 15_000,
+    timeout: 30_000,
   });
   // Sidebar overlays the View ribbon group on narrower viewports — same
   // collapse trick as in takeoff-ribbon-shortcuts.spec.ts.
@@ -85,8 +92,10 @@ test.describe("Takeoff Tool Chest (Task #2139)", () => {
 
     // Persist across reload (localStorage-driven).
     await page.reload({ waitUntil: "domcontentloaded" });
+    // Task #2287 — match the gotoTakeoff bump (15s → 30s) so webkit's
+    // post-reload hydration doesn't tip past the visibility timeout.
     await expect(page.getByTestId("unified-takeoff-ribbon")).toBeVisible({
-      timeout: 15_000,
+      timeout: 30_000,
     });
     await expect(page.getByTestId("panel-tool-chest")).toBeVisible();
 
@@ -204,6 +213,7 @@ test.describe("Takeoff Tool Chest (Task #2139)", () => {
 
   test("drag-to-reorder rows persists across reload (Task #2215)", async ({
     page,
+    browserName,
   }) => {
     const fixture = await seedTakeoffFixture(page);
     await gotoTakeoff(page, fixture.bid.code);
@@ -274,6 +284,15 @@ test.describe("Takeoff Tool Chest (Task #2139)", () => {
       flushAfter: "dragover",
       flushBetween: async () => {
         await expect(dstRow).toHaveClass(/ring-2/);
+        // Task #2287 — the ring-2 paint confirms React rendered with
+        // the new hoverIndex, but webkit/firefox occasionally still
+        // need an extra microtask flush before the next render's
+        // `handleDrop` closure observes the updated state. Pull the
+        // wait from `getDragTuning` so the timing stays consistent
+        // with every other engine-aware drag in the suite.
+        await page.waitForTimeout(
+          getDragTuning(browserName).syntheticDragReactFlushWait,
+        );
       },
     });
 
@@ -303,8 +322,10 @@ test.describe("Takeoff Tool Chest (Task #2139)", () => {
     // Reload — the chest panel re-opens (localStorage), and rows render
     // in the persisted order pulled fresh from the API.
     await page.reload({ waitUntil: "domcontentloaded" });
+    // Task #2287 — same hydration headroom as gotoTakeoff so webkit
+    // doesn't time out while React rebuilds the workspace.
     await expect(page.getByTestId("unified-takeoff-ribbon")).toBeVisible({
-      timeout: 15_000,
+      timeout: 30_000,
     });
     await expect(page.getByTestId("panel-tool-chest")).toBeVisible();
     const sectionAfter = page.getByTestId("chest-section-mine-tool");
@@ -326,8 +347,34 @@ test.describe("Takeoff Tool Chest (Task #2139)", () => {
 
   test("reorder rolls back the optimistic order when the server fails (Task #2215)", async ({
     page,
+    browserName,
   }) => {
     const fixture = await seedTakeoffFixture(page);
+
+    // Task #2287 — block the PWA service worker registration before
+    // navigating. The takeoff workspace's `/sw.js` would otherwise
+    // intercept the reorder POST on webkit (chromium and firefox
+    // route handlers see the request *after* the SW, but webkit lets
+    // SW-served fetches bypass `page.route` entirely), so the failure
+    // mock below never fires and the rollback never happens. Stubbing
+    // `/sw.js` keeps `navigator.serviceWorker.register` failed-but-
+    // benign and routes the reorder POST straight to the network
+    // layer where the failure mock can intercept it. Same outcome on
+    // chromium/firefox where the mock already worked.
+    await page.route("**/sw.js", (route) =>
+      route.fulfill({ status: 404, contentType: "text/plain", body: "" }),
+    );
+
+    // Force the reorder endpoint to error so the optimistic update is
+    // rolled back. PATCH/DELETE/etc keep their normal behaviour.
+    await page.route("**/api/takeoff/tool-chest/reorder", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "boom" }),
+      }),
+    );
+
     await gotoTakeoff(page, fixture.bid.code);
 
     const seedRow = async (itemId: string, sortOrder: number) => {
@@ -355,20 +402,11 @@ test.describe("Takeoff Tool Chest (Task #2139)", () => {
     const section = page.getByTestId("chest-section-mine-tool");
     await expect(section).toBeVisible();
 
-    // Force the reorder endpoint to error so the optimistic update is
-    // rolled back. PATCH/DELETE/etc keep their normal behaviour.
-    await page.route("**/api/takeoff/tool-chest/reorder", (route) =>
-      route.fulfill({
-        status: 500,
-        contentType: "application/json",
-        body: JSON.stringify({ error: "boom" }),
-      }),
-    );
-
     // Same shared helper as the happy-path reorder above (Task #2288):
     // split-phase HTML5 lifecycle gated by the drop-target ring class
     // so React's setHoverIndex commits before the synthesized drop
-    // dispatches.
+    // dispatches. The reorder failure mock is registered before
+    // gotoTakeoff above so the rollback path runs end-to-end.
     const srcRow = page.getByTestId(`chest-item-${a.id}`);
     const dstRow = page.getByTestId(`chest-item-${b.id}`);
     await dispatchHtml5Reorder({
@@ -377,6 +415,11 @@ test.describe("Takeoff Tool Chest (Task #2139)", () => {
       flushAfter: "dragover",
       flushBetween: async () => {
         await expect(dstRow).toHaveClass(/ring-2/);
+        // Task #2287 — engine-aware microtask flush before drop,
+        // mirroring the happy-path reorder test above.
+        await page.waitForTimeout(
+          getDragTuning(browserName).syntheticDragReactFlushWait,
+        );
       },
     });
 
@@ -513,6 +556,22 @@ test.describe("Takeoff Tool Chest (Task #2139)", () => {
     page,
   }) => {
     const fixture = await seedTakeoffFixture(page);
+
+    // Task #2287 — same SW bypass + failure mock pre-registration as
+    // the drag rollback test above, so webkit's PWA service worker
+    // doesn't swallow the reorder POST before `page.route` can serve
+    // the 500 the rollback assertion depends on.
+    await page.route("**/sw.js", (route) =>
+      route.fulfill({ status: 404, contentType: "text/plain", body: "" }),
+    );
+    await page.route("**/api/takeoff/tool-chest/reorder", (route) =>
+      route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "boom" }),
+      }),
+    );
+
     await gotoTakeoff(page, fixture.bid.code);
 
     const seedRow = async (itemId: string, sortOrder: number) => {
@@ -539,14 +598,6 @@ test.describe("Takeoff Tool Chest (Task #2139)", () => {
     await page.getByTestId("ribbon-tool-tool-chest").click();
     const section = page.getByTestId("chest-section-mine-tool");
     await expect(section).toBeVisible();
-
-    await page.route("**/api/takeoff/tool-chest/reorder", (route) =>
-      route.fulfill({
-        status: 500,
-        contentType: "application/json",
-        body: JSON.stringify({ error: "boom" }),
-      }),
-    );
 
     const rowA = page.getByTestId(`chest-item-${a.id}`);
     await rowA.focus();
