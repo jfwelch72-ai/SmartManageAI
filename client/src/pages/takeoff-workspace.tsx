@@ -62,6 +62,30 @@ export default function TakeoffWorkspacePage() {
     return sheet && sheet.length > 0 ? sheet : null;
   }, [location]);
 
+  // Task #2311 — `?openAi=1` deep link from the Plans-tab "AI Takeoff"
+  // call-out card auto-opens the AI panel on mount. Read once from the
+  // URL and forward as a prop; once consumed (after the first render),
+  // we strip the param from the URL so a refresh doesn't re-trigger
+  // the auto-open if the user has manually closed the panel.
+  const initialOpenAi = useMemo(() => {
+    const search = typeof window === "undefined"
+      ? ""
+      : window.location.search;
+    if (!search) return false;
+    return new URLSearchParams(search).get("openAi") === "1";
+  }, [location]);
+  useEffect(() => {
+    if (!initialOpenAi || typeof window === "undefined") return;
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.delete("openAi");
+      const cleaned = `${url.pathname}${url.search}${url.hash}`;
+      window.history.replaceState(window.history.state, "", cleaned);
+    } catch {
+      // URL/history may be unavailable (SSR); safe to ignore.
+    }
+  }, [initialOpenAi]);
+
   // Persist the deep-linked sheet into the same sessionStorage slot the
   // workspace uses internally so the takeoff component picks it up on mount
   // without needing a controlled prop wired through this page.
@@ -340,6 +364,7 @@ export default function TakeoffWorkspacePage() {
               fullscreenScaleModal
               unifiedRibbon
               onSelectSheet={handleSelectSheet}
+              autoOpenAiPanel={initialOpenAi}
             />
           </WidgetErrorBoundary>
         </div>
@@ -405,6 +430,7 @@ export default function TakeoffWorkspacePage() {
             fullscreenScaleModal
             unifiedRibbon
             onSelectSheet={handleSelectSheet}
+            autoOpenAiPanel={initialOpenAi}
           />
         </WidgetErrorBoundary>
       </div>

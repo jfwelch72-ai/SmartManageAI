@@ -156,9 +156,17 @@ interface TakeoffWorkspaceProps {
    *  shortcut hook, snap HUD, sheet `[`/`]` navigation, and the
    *  Cmd/Ctrl+/ cheat-sheet overlay. */
   unifiedRibbon?: boolean;
+  /** Task #2311 — When true, auto-opens the AI Takeoff side panel on
+   *  first mount. Wired from the `/takeoff/...?openAi=1` deep link the
+   *  Plans-tab "AI Takeoff" call-out card produces, so users land
+   *  inside the panel without an extra click. Re-applies when the
+   *  prop flips from false → true (e.g. an in-app navigation that
+   *  arrived with the param) but does not force the panel back open
+   *  if the user has manually closed it. */
+  autoOpenAiPanel?: boolean;
 }
 
-export default function TakeoffWorkspace({ projectId = "", projectCode = "", context, selectedSheetId: controlledSheetId, onSelectSheet, labeled = false, fullscreenScaleModal = false, unifiedRibbon = false }: TakeoffWorkspaceProps) {
+export default function TakeoffWorkspace({ projectId = "", projectCode = "", context, selectedSheetId: controlledSheetId, onSelectSheet, labeled = false, fullscreenScaleModal = false, unifiedRibbon = false, autoOpenAiPanel = false }: TakeoffWorkspaceProps) {
   const isMobile = useIsMobile();
   const [activeTool, setActiveTool] = useState<Tool>("select");
   const [currentDrawingTool, setCurrentDrawingTool] = useState<Tool | null>(null);
@@ -341,6 +349,22 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [renameValue, setRenameValue] = useState("");
   const [deleteSheetConfirmOpen, setDeleteSheetConfirmOpen] = useState(false);
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  // Task #2311 — Auto-open the AI panel when the workspace mounted
+  // with the `?openAi=1` deep link from the Plans-tab "AI Takeoff"
+  // call-out card. Triggered on the prop transitioning to true so an
+  // in-app navigation that arrives with the param while the workspace
+  // is already mounted still auto-opens; we deliberately do not force
+  // the panel back open if the user manually closes it.
+  const autoOpenAiAppliedRef = useRef(false);
+  useEffect(() => {
+    if (!autoOpenAiPanel) {
+      autoOpenAiAppliedRef.current = false;
+      return;
+    }
+    if (autoOpenAiAppliedRef.current) return;
+    autoOpenAiAppliedRef.current = true;
+    setAiPanelOpen(true);
+  }, [autoOpenAiPanel]);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem("takeoff-sidebar-collapsed") === "true"; } catch { return false; }
   });
@@ -926,6 +950,84 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       }
     }
   }, [sheetsLoading, sheets, selectedSheet]);
+
+  // Task #2311 — Inline AI Takeoff empty-state CTA. We surface a small
+  // dismissible card on top of the canvas when:
+  //   1. The user has a sheet selected (the card is sheet-scoped).
+  //   2. There are zero measurements on this sheet.
+  //   3. There are zero AI Takeoff runs to date for this sheet (so we
+  //      don't keep nagging users who tried AI and discarded the items).
+  //   4. The AI panel isn't already open (no point CTA-ing into the
+  //      panel while it's already on screen).
+  //   5. The user hasn't dismissed the CTA for this (user, sheet) pair.
+  //
+  // Dismissal is persisted in localStorage under
+  // `takeoff-ai-cta-dismissed:<userId>:<sheetId>` to match the existing
+  // one-off dismissal pattern (`takeoff-gesture-guide-dismissed`,
+  // `takeoff-hide-ai-measurements`). Per-(user, sheet) means clearing
+  // a sheet's measurements and re-opening the workspace doesn't
+  // resurrect a CTA the user already chose to hide for that sheet.
+  const aiCtaUserId = ribbonAuthUser?.id ?? "anon";
+  const aiCtaStorageKey = useMemo(
+    () => (selectedSheet ? `takeoff-ai-cta-dismissed:${aiCtaUserId}:${selectedSheet}` : null),
+    [aiCtaUserId, selectedSheet],
+  );
+  const [aiCtaDismissed, setAiCtaDismissed] = useState(false);
+  useEffect(() => {
+    if (!aiCtaStorageKey) {
+      setAiCtaDismissed(false);
+      return;
+    }
+    try {
+      setAiCtaDismissed(localStorage.getItem(aiCtaStorageKey) === "1");
+    } catch {
+      setAiCtaDismissed(false);
+    }
+  }, [aiCtaStorageKey]);
+  // Only fetch the AI history when the empty-state precondition holds
+  // (sheet selected + zero measurements + not already dismissed +
+  // panel not already open). Most workspace sessions therefore never
+  // hit this endpoint at all — it only loads on a fresh sheet.
+  const aiHistoryContextId =
+    context?.type === "project" ? context.projectId :
+    context?.type === "bid" ? context.bidId :
+    null;
+  const aiHistoryContextType = context?.type === "bid" ? "bid" : "project";
+  const aiCtaPreconditionMet =
+    !!selectedSheet &&
+    !measurementsLoading &&
+    measurements.length === 0 &&
+    !aiPanelOpen &&
+    !aiCtaDismissed &&
+    !!aiHistoryContextId;
+  interface AiCtaHistoryEntry {
+    id: string;
+    takeoffSheetId: string | null;
+  }
+  const { data: aiCtaHistory } = useQuery<{ analyses: AiCtaHistoryEntry[] }>({
+    queryKey: [
+      `/api/ai-features/takeoff/history/${aiHistoryContextId}?type=${aiHistoryContextType}`,
+    ],
+    enabled: aiCtaPreconditionMet,
+  });
+  const aiCtaSheetHasRuns = useMemo(() => {
+    if (!aiCtaHistory?.analyses || !selectedSheet) return false;
+    return aiCtaHistory.analyses.some((a) => a.takeoffSheetId === selectedSheet);
+  }, [aiCtaHistory, selectedSheet]);
+  const showAiCta = aiCtaPreconditionMet && !aiCtaSheetHasRuns;
+  const handleDismissAiCta = useCallback(() => {
+    setAiCtaDismissed(true);
+    if (!aiCtaStorageKey) return;
+    try {
+      localStorage.setItem(aiCtaStorageKey, "1");
+    } catch {
+      // localStorage may be unavailable (private mode); the in-memory
+      // setAiCtaDismissed above still hides the card for this session.
+    }
+  }, [aiCtaStorageKey]);
+  const handleOpenAiFromCta = useCallback(() => {
+    setAiPanelOpen(true);
+  }, []);
 
   // Task #1742 — Markup body moves now flow through the unified
   // `useTakeoffHistory` stack (see `onBodyDragEnd` below, which passes
@@ -3559,6 +3661,13 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       onFitToPage: () => zoomToFitRef.current(),
       canFitToPage:
         !!pageDims && !!pdfImage && pageDims.sheetId === currentSheet?.id,
+      // Task #2311 — Labelled AI Takeoff button on the sheet header
+      // bar. Wired to the same `aiPanelOpen` state the existing
+      // vertical-toolbar Sparkles button drives, so a click toggles
+      // the same panel and the button's pressed state mirrors the
+      // panel's actual visibility from either entry point.
+      aiPanelOpen,
+      onToggleAiPanel: () => setAiPanelOpen((v) => !v),
       // Task #2141 — Sheet Sets toggle, active-set badge, position chip.
       showSheetSetsToggle: !!sheetSetsCtxId,
       sheetSetsPanelOpen,
@@ -3623,6 +3732,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     // otherwise the Fit button stays disabled even after the PDF
     // resolves.
     pageDims, pdfImage,
+    // Task #2311 — `selectorBar.aiPanelOpen` mirrors the AI panel
+    // visibility, so the slice must rebuild whenever that state
+    // flips or the bar's pressed/active variant won't update when
+    // the user opens the panel from the vertical-toolbar Sparkles.
+    aiPanelOpen,
     measurementCountsPerSheet, pinnedSheetIdsForStrip, newerSheetIdsForStrip,
     canManageDrawingSetsOnCanvas, activeCanvasSetId,
     handleCanvasPinSheet, handleCanvasUnpinSheet, handleCanvasSwapRevision,
@@ -4259,6 +4373,15 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       onToggleMeasurementTable: () => setShowMeasurementTable(!showMeasurementTable),
       stageScale,
       currentSheet,
+      // Task #2311 — Inline AI Takeoff empty-state CTA card. Rendered
+      // by `<CanvasViewport>` inside the stage area only when the
+      // sheet has zero measurements + zero AI runs to date and the
+      // user hasn't dismissed it for this (user, sheet). Opens the
+      // existing AI panel when accepted; per-(user, sheet) dismissal
+      // persists in localStorage so it doesn't re-appear next session.
+      showAiCta,
+      onOpenAiFromCta: handleOpenAiFromCta,
+      onDismissAiCta: handleDismissAiCta,
     },
     measurementTable: {
       visible: showMeasurementTable && !!selectedSheet,

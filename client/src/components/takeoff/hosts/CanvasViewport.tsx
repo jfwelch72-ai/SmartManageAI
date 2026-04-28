@@ -124,6 +124,16 @@ export interface CanvasViewportProps {
 
   // stage slot
   stageSlot: ReactNode;
+
+  // Task #2311 — Inline AI Takeoff empty-state CTA. When `showAiCta`
+  // is true the viewport renders a dismissible card overlaying the
+  // canvas (centered, top, doesn't block the stage). Driven by
+  // workspace-level state so the same precondition (zero measurements
+  // + zero AI runs + not dismissed for this user/sheet) decides
+  // visibility once and the card stays in lockstep with the panel.
+  showAiCta?: boolean;
+  onOpenAiFromCta?: () => void;
+  onDismissAiCta?: () => void;
 }
 
 function CanvasViewportInner(props: CanvasViewportProps) {
@@ -145,6 +155,7 @@ function CanvasViewportInner(props: CanvasViewportProps) {
     categories, showCostPanel, onCloseCostPanel,
     showOverlaySlider, overlayOpacity, onOverlayOpacityChange, onCloseOverlaySlider,
     stageSlot,
+    showAiCta = false, onOpenAiFromCta, onDismissAiCta,
   } = props;
 
   return (
@@ -427,7 +438,67 @@ function CanvasViewportInner(props: CanvasViewportProps) {
         </div>
       )}
       {selectedSheet ? (
-        stageSlot
+        <>
+          {stageSlot}
+          {/* Task #2311 — Inline AI Takeoff empty-state CTA. Floats
+           *  centered near the top of the canvas so it doesn't cover
+           *  the calibration banner or the bottom status/drawing bars,
+           *  and `pointer-events-none` lets pan/zoom pass through the
+           *  surrounding gutter while the card itself stays clickable.
+           *  Visibility is decided in the workspace (zero measurements
+           *  + zero AI runs to date + not previously dismissed for
+           *  this user/sheet); the dismiss button writes that decision
+           *  back to localStorage so the card stays gone next session.
+           *  Wording deliberately avoids any model name. */}
+          {showAiCta && onOpenAiFromCta && onDismissAiCta && (
+            <div
+              className="absolute top-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none w-full max-w-md px-3"
+              data-testid="canvas-ai-takeoff-cta"
+            >
+              <div className="pointer-events-auto rounded-xl border bg-card/95 backdrop-blur-sm shadow-lg p-3 sm:p-4 flex items-start gap-3">
+                <div className="rounded-lg bg-violet-100 dark:bg-violet-900/30 p-2 shrink-0">
+                  <Sparkles className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold leading-tight">Try AI Takeoff on this sheet</p>
+                  <p className="text-xs text-muted-foreground mt-1 leading-snug">
+                    Auto-detect symbols and quantities from this drawing. Review every item before importing.
+                  </p>
+                  <div className="mt-2.5 flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      className="h-7 px-2.5 text-xs gap-1"
+                      onClick={onOpenAiFromCta}
+                      data-testid="button-canvas-ai-cta-start"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      Start AI Takeoff
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-7 px-2 text-xs text-muted-foreground"
+                      onClick={onDismissAiCta}
+                      data-testid="button-canvas-ai-cta-dismiss"
+                    >
+                      Not now
+                    </Button>
+                  </div>
+                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6 shrink-0 text-muted-foreground"
+                  onClick={onDismissAiCta}
+                  aria-label="Dismiss AI Takeoff suggestion"
+                  data-testid="button-canvas-ai-cta-close"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </>
       ) : (
         <div className="flex items-center justify-center h-full" data-testid="takeoff-empty-state">
           <div className="max-w-lg w-full mx-auto text-center px-8">

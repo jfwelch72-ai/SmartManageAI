@@ -3,7 +3,7 @@ import {
   AlertCircle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpCircle,
   CheckCircle2, Copy, GalleryHorizontal, GitCompare, History, Keyboard,
   Layers, Link2, List, Maximize, Maximize2, Minimize, MoreVertical, PanelRight, Pencil,
-  Pin, PinOff, Plus, Search, Trash2, Zap,
+  Pin, PinOff, Plus, Search, Sparkles, Trash2, Zap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -85,6 +85,14 @@ export interface SheetSelectorBarProps {
    *  the PDF dims have resolved (`canFitToPage`). */
   onFitToPage?: () => void;
   canFitToPage?: boolean;
+  /** Task #2311 — Labelled "AI Takeoff" button surfaced in the sheet
+   *  header (Sparkles + text) so AI is discoverable without scanning
+   *  the vertical toolbar. Toggles the same `aiPanelOpen` state the
+   *  vertical-toolbar Sparkles button uses, so the two entry points
+   *  stay in lockstep. Icon-only (label hidden) below sm where the
+   *  bar already wraps. */
+  aiPanelOpen?: boolean;
+  onToggleAiPanel?: () => void;
   /** Task #2141 — Sheet Sets panel toggle + active-set badge. The
    *  badge is shown next to the calibration-status badge so the user
    *  can see at a glance which set is steering navigation. */
@@ -155,6 +163,8 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
     onToggleFullscreen,
     onFitToPage,
     canFitToPage = false,
+    aiPanelOpen = false,
+    onToggleAiPanel,
     showSheetSetsToggle = false,
     sheetSetsPanelOpen = false,
     onToggleSheetSetsPanel,
@@ -438,6 +448,38 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
                 <span>Fit page to view</span>
                 <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">F</kbd>
               </div>
+            </TooltipContent>
+          </Tooltip>
+        )}
+        {/* Task #2311 — Labelled "AI Takeoff" entry point on the sheet
+         *  header bar. Sits next to Fit-to-page so it's visible in the
+         *  same row that estimators already scan when picking a sheet.
+         *  Toggles `aiPanelOpen` (the same state the existing vertical-
+         *  toolbar Sparkles button drives), so opening from either
+         *  surface shows the same panel and a second click closes it.
+         *  Requires a current sheet because the AI panel needs a
+         *  takeoff sheet to act on. The label collapses to icon-only
+         *  below sm to keep the wrapped header row compact on phones,
+         *  while the `aria-label` stays full so screen readers always
+         *  announce "AI Takeoff". */}
+        {currentSheet && onToggleAiPanel && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={aiPanelOpen ? "default" : "outline"}
+                size="sm"
+                onClick={onToggleAiPanel}
+                className="h-7 gap-1 px-2 text-xs shrink-0"
+                data-testid="button-ai-takeoff-bar"
+                aria-label="AI Takeoff"
+                aria-pressed={aiPanelOpen}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">AI Takeoff</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{aiPanelOpen ? "Close AI Takeoff panel" : "Open AI Takeoff panel"}</p>
             </TooltipContent>
           </Tooltip>
         )}
