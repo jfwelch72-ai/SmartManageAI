@@ -15,6 +15,12 @@ import { PlanScaleModal } from "../PlanScaleModal";
 import TakeoffCrossModulePanel from "../TakeoffCrossModulePanel";
 import { IssueDetailPanel } from "../IssueDetailPanel";
 import { TakeoffPropertiesPanel } from "../TakeoffPropertiesPanel";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 // NOTE: the Tool Chest (Task #2139) renders via its own `ToolChestHost`
 // mounted inside the canvas-area container — see ToolChestHost.tsx for
 // why it can't share PanelHost's outer-workspace mount point. The
@@ -101,7 +107,36 @@ function PanelHostInner() {
         </div>
       )}
       <MarkupStylingPanel {...ctx.markupStylingPanel} />
-      {ctx.propertiesPanel && <TakeoffPropertiesPanel {...ctx.propertiesPanel} />}
+      {/* Task #2312 — Inspector renders inline at lg:+ desktop and
+       *  inside a right-edge Sheet on tablet/phone (`<lg`). The
+       *  `drawer` field on the slice tells PanelHost which mode to
+       *  use. SheetContent overrides the default 75% phone width and
+       *  drops the default p-6 so the panel content fills the sheet
+       *  edge-to-edge — the panel's own header + scroll body provide
+       *  the internal rhythm. The visually-hidden SheetTitle is here
+       *  to satisfy Radix's a11y contract (every dialog needs a
+       *  title) without duplicating the panel's "Properties" header. */}
+      {ctx.propertiesPanel && (
+        ctx.propertiesPanel.drawer ? (
+          <Sheet
+            open={ctx.propertiesPanel.drawer.open}
+            onOpenChange={ctx.propertiesPanel.drawer.onOpenChange}
+          >
+            <SheetContent
+              side="right"
+              className="w-full sm:max-w-sm p-0 flex flex-col"
+              data-testid="properties-drawer"
+            >
+              <SheetHeader className="sr-only">
+                <SheetTitle>Measurement properties</SheetTitle>
+              </SheetHeader>
+              <TakeoffPropertiesPanel {...ctx.propertiesPanel.props} />
+            </SheetContent>
+          </Sheet>
+        ) : (
+          <TakeoffPropertiesPanel {...ctx.propertiesPanel.props} />
+        )
+      )}
     </>
   );
 }

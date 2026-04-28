@@ -168,7 +168,41 @@ interface TakeoffWorkspaceProps {
 
 export default function TakeoffWorkspace({ projectId = "", projectCode = "", context, selectedSheetId: controlledSheetId, onSelectSheet, labeled = false, fullscreenScaleModal = false, unifiedRibbon = false, autoOpenAiPanel = false }: TakeoffWorkspaceProps) {
   const isMobile = useIsMobile();
+  // Task #2312 — Below the Tailwind `lg` breakpoint (1024px) the
+  // pinned right-side inspector has no room without crushing the
+  // canvas, so the inspector switches to a right-edge Sheet drawer.
+  // Tracks `< 1024px` (covers iPad portrait at 768px down through
+  // phone widths). matchMedia drives a state flip rather than a
+  // re-render-per-resize so the slice memo stays stable.
+  const [isBelowLg, setIsBelowLg] = useState<boolean>(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+    return window.matchMedia("(max-width: 1023px)").matches;
+  });
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const mql = window.matchMedia("(max-width: 1023px)");
+    const handler = (e: MediaQueryListEvent) => setIsBelowLg(e.matches);
+    if (typeof mql.addEventListener === "function") {
+      mql.addEventListener("change", handler);
+      return () => mql.removeEventListener("change", handler);
+    }
+    mql.addListener(handler);
+    return () => mql.removeListener(handler);
+  }, []);
+  // Task #2312 — Drawer-mode visibility for the inspector on <lg
+  // viewports. Auto-opens when the user picks a measurement (so the
+  // tablet/phone equivalent of "select → see properties" matches
+  // desktop), but stays closed when the user dismisses the drawer
+  // (Esc, swipe, or tap outside) without forcing it back open until
+  // the user picks a different measurement.
+  const [inspectorDrawerOpen, setInspectorDrawerOpen] = useState(false);
   const [activeTool, setActiveTool] = useState<Tool>("select");
+  // Auto-open the inspector drawer when a measurement is freshly
+  // selected on a `<lg` viewport, and close it when the selection
+  // clears. The ref tracks the last id we reacted to so that
+  // dismissing the drawer (which does NOT change `selectedMeasurementId`)
+  // doesn't immediately re-open it on the next render.
+  const inspectorDrawerLastSelectionRef = useRef<string | null>(null);
   const [currentDrawingTool, setCurrentDrawingTool] = useState<Tool | null>(null);
   const [mobileMeasurementsOpen, setMobileMeasurementsOpen] = useState(false);
   const sheetStorageKey = context
@@ -317,6 +351,21 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [dropDistance, setDropDistance] = useState("");
   const [shortcutsDialogOpen, setShortcutsDialogOpen] = useState(false);
   const [selectedMeasurementId, setSelectedMeasurementId] = useState<string | null>(null);
+  // Task #2312 — Auto-open the inspector drawer when a measurement
+  // is freshly selected on a `<lg` viewport, and force it closed
+  // when the selection clears entirely. The ref guard ensures that
+  // dismissing the drawer (which leaves `selectedMeasurementId`
+  // unchanged) doesn't immediately re-open it on the next render.
+  useEffect(() => {
+    if (!isBelowLg) return;
+    const last = inspectorDrawerLastSelectionRef.current;
+    if (selectedMeasurementId && selectedMeasurementId !== last) {
+      setInspectorDrawerOpen(true);
+    } else if (!selectedMeasurementId && last) {
+      setInspectorDrawerOpen(false);
+    }
+    inspectorDrawerLastSelectionRef.current = selectedMeasurementId;
+  }, [selectedMeasurementId, isBelowLg]);
   const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number | null>(null);
   const [toolBeforeSpacebar, setToolBeforeSpacebar] = useState<Tool | null>(null);
   const [isSpacebarHeld, setIsSpacebarHeld] = useState(false);
@@ -4735,18 +4784,39 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       };
     })(),
     propertiesPanel: (() => {
-      // Task #2206 follow-up — the inline properties panel is 288 px
-      // wide and would consume most of an iPad-portrait viewport. Hide
-      // it on mobile so the canvas keeps the room it needs; the user
-      // can still inspect a measurement via the floating selection
-      // toolbar / context menu.
-      if (!propertiesPanelOpen || !selectedMeasurementId || isMobile) return null;
+      if (!selectedMeasurementId) return null;
       const selectedMeasurement = measurements.find(m => m.id === selectedMeasurementId);
       if (!selectedMeasurement) return null;
+      // Task #2312 — Below the `lg` breakpoint the inspector switches
+      // to a right-edge Sheet drawer (auto-opens on selection, can be
+      // dismissed without losing the selection). The previous
+      // mobile-only hide path (Task #2206 follow-up) is now obsolete:
+      // the drawer doesn't consume canvas width when closed and is
+      // touch-friendly when open, so iPad and phone users finally get
+      // an inspector. Desktop (lg:+) keeps the pinned panel gated by
+      // the explicit `propertiesPanelOpen` toggle in the toolbar.
+      if (isBelowLg) {
+        return {
+          props: {
+            measurement: selectedMeasurement,
+            selectedSheet,
+            onClose: () => setInspectorDrawerOpen(false),
+            variant: "drawer" as const,
+          },
+          drawer: {
+            open: inspectorDrawerOpen,
+            onOpenChange: setInspectorDrawerOpen,
+          },
+        };
+      }
+      if (!propertiesPanelOpen) return null;
       return {
-        measurement: selectedMeasurement,
-        selectedSheet,
-        onClose: () => setPropertiesPanelOpen(false),
+        props: {
+          measurement: selectedMeasurement,
+          selectedSheet,
+          onClose: () => setPropertiesPanelOpen(false),
+          variant: "inline" as const,
+        },
       };
     })(),
     toolChest: {

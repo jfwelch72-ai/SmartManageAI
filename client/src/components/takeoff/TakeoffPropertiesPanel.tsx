@@ -15,9 +15,15 @@ interface TakeoffPropertiesPanelProps {
   measurement: TakeoffMeasurement;
   selectedSheet: string | null;
   onClose: () => void;
+  /** Task #2312 — Layout variant. `inline` (default) renders the
+   *  pinned right-side panel used at lg:+ desktop. `drawer` strips
+   *  the fixed `w-72`/`border-l` so the panel content fills a
+   *  Sheet wrapper full-width on tablet/phone, and hides the
+   *  internal close-X (Sheet provides its own). */
+  variant?: "inline" | "drawer";
 }
 
-export function TakeoffPropertiesPanel({ measurement, selectedSheet, onClose }: TakeoffPropertiesPanelProps) {
+export function TakeoffPropertiesPanel({ measurement, selectedSheet, onClose, variant = "inline" }: TakeoffPropertiesPanelProps) {
   const { toast } = useToast();
   const [subcontractorId, setSubcontractorId] = useState(measurement.subcontractorId || "");
   const [supplierId, setSupplierId] = useState(measurement.supplierId || "");
@@ -87,13 +93,23 @@ export function TakeoffPropertiesPanel({ measurement, selectedSheet, onClose }: 
     return "—";
   };
 
+  const isDrawer = variant === "drawer";
   return (
-    <div className="border-l bg-background w-72 flex flex-col h-full overflow-hidden" data-testid="properties-panel">
+    <div
+      className={
+        isDrawer
+          ? "bg-background w-full flex flex-col h-full overflow-hidden"
+          : "border-l bg-background w-72 flex flex-col h-full overflow-hidden"
+      }
+      data-testid="properties-panel"
+    >
       <div className="flex items-center justify-between px-3 py-2 border-b">
         <h3 className="text-sm font-semibold">Properties</h3>
-        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={onClose} data-testid="button-close-properties">
-          <X className="w-4 h-4" />
-        </Button>
+        {!isDrawer && (
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={onClose} data-testid="button-close-properties">
+            <X className="w-4 h-4" />
+          </Button>
+        )}
       </div>
 
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-4">

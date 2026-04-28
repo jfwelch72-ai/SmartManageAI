@@ -169,8 +169,21 @@ export interface PanelContextSlice {
   /** Markup styling popover (color/thickness/text + delete + save). */
   markupStylingPanel: MarkupStylingPanelProps;
   /** Right-side measurement properties panel (null when no measurement
-   *  is selected or the panel is closed). */
-  propertiesPanel: ComponentProps<typeof TakeoffPropertiesPanel> | null;
+   *  is selected or the panel is closed).
+   *
+   *  Task #2312 — When `drawer` is present, `PanelHost` wraps the
+   *  panel content in a right-edge `<Sheet>` controlled by the
+   *  enclosed `open` / `onOpenChange` so tablet/phone users can
+   *  inspect a measurement without giving up canvas width. When
+   *  `drawer` is absent the panel renders inline (existing pinned
+   *  desktop layout). The wrapped `props` always includes `variant`
+   *  so the panel can adjust its own padding/border accordingly. */
+  propertiesPanel:
+    | {
+        props: ComponentProps<typeof TakeoffPropertiesPanel>;
+        drawer?: { open: boolean; onOpenChange: (open: boolean) => void };
+      }
+    | null;
   /** Tool Chest left-side panel (Task #2139). Always present so the
    *  panel can mount on demand; the component reads `open` to decide
    *  whether to render. */

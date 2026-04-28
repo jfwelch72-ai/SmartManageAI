@@ -62,6 +62,27 @@ function WorkspaceBottomBarInner(props: WorkspaceBottomBarProps) {
         </div>
       )}
       {selectedSheet && (
+        // Task #2312 — Phone-only compact status row. The full status
+        // bar below (`hidden sm:flex`) hides on `<sm` (640 px) because
+        // the row of toggle chips + LF/SF/CY totals overflows on a
+        // phone, so phone users were left with no read-out for zoom,
+        // calibration state, or measurement count. This compact row
+        // surfaces just those three signals — the toggles still live
+        // in the ribbon's "View" menu and the totals in the table —
+        // so phone users always know where they stand on the canvas.
+        <div className="flex sm:hidden h-7 bg-card/95 backdrop-blur-sm border-t px-3 items-center justify-between text-[11px] text-muted-foreground shrink-0 tabular-nums" data-testid="takeoff-status-bar-mobile">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="font-medium text-foreground/80 shrink-0">{measurements.length} m</span>
+            {currentSheet?.scalePxPerFoot ? (
+              <span className="text-green-600 dark:text-green-400 shrink-0" data-testid="status-calibration-mobile">Calibrated</span>
+            ) : (
+              <span className="text-amber-600 dark:text-amber-400 shrink-0" data-testid="status-calibration-mobile">Uncalibrated</span>
+            )}
+          </div>
+          <span className="shrink-0" data-testid="status-zoom-mobile">{Math.round(stageScale * 100)}%</span>
+        </div>
+      )}
+      {selectedSheet && (
         <div className="hidden sm:flex h-7 bg-card/95 backdrop-blur-sm border-t px-3 items-center justify-between text-[11px] text-muted-foreground shrink-0 tabular-nums" data-testid="takeoff-status-bar">
           <div className="flex items-center gap-4">
             {measurements.length > 0 && (
