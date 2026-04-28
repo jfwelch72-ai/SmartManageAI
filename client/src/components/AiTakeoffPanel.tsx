@@ -49,6 +49,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { AiTakeoffScaleStatusBanner } from "./AiTakeoffScaleStatusBanner";
 import { DraftFullTakeoffButton } from "@/components/takeoff/DraftFullTakeoffButton";
+import { AiEstimatorIntroCallout } from "@/components/AiEstimatorIntroCallout";
 
 export interface BoundingBox {
   x: number;
@@ -676,6 +677,7 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
             <span className="font-semibold">Beta Feature:</span> AI-detected quantities are estimates and should be verified manually before use in final estimates or bids.
           </div>
         </div>
+        <AiEstimatorIntroCallout surface="ai-takeoff" className="mb-4" />
         
         {!isAnalyzing && !isComplete && (
           <div className="space-y-3">

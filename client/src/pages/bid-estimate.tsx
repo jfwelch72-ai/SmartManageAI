@@ -25,6 +25,7 @@ import { MaterialJobTotals } from "@/components/MaterialCalculator";
 import { EstimatePdfExportButton } from "@/components/EstimatePdfExportButton";
 import { EstimateExcelExportButton } from "@/components/EstimateExcelExportButton";
 import AiEstimatorChatPanel from "@/components/AiEstimatorChatPanel";
+import { AiEstimatorIntroCallout } from "@/components/AiEstimatorIntroCallout";
 import { GenerateDraftEstimateButton } from "@/components/estimate/GenerateDraftEstimateButton";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -869,8 +870,11 @@ export default function BidEstimate() {
           isDeleting={deleteLineItemMutation.isPending}
         />
 
-        <div className="h-[420px]">
-          <AiEstimatorChatPanel bidId={bid.id} estimateId={estimate.id} enabled />
+        <div className="space-y-2">
+          <AiEstimatorIntroCallout surface="bid-estimate" />
+          <div className="h-[420px]">
+            <AiEstimatorChatPanel bidId={bid.id} estimateId={estimate.id} enabled />
+          </div>
         </div>
       </main>
 
