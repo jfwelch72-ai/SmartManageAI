@@ -1,0 +1,430 @@
+import { memo, type ReactNode, type RefObject } from "react";
+import {
+  AlertCircle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpCircle,
+  CheckCircle2, Copy, GalleryHorizontal, GitCompare, History, Keyboard,
+  Link2, List, Maximize, Minimize, MoreVertical, PanelRight, Pencil,
+  Pin, PinOff, Plus, Search, Trash2, Zap,
+} from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import type { TakeoffSheet } from "@shared/schema";
+
+export interface SheetSelectorBarPinControls {
+  isPinned: boolean;
+  setLabel: string;
+  hasPinnedItem: boolean;
+  hasLatestRevision: boolean;
+  onPin: () => void;
+  onUnpin: () => void;
+  onUseLatestRevision: () => void;
+  pinPending: boolean;
+  unpinPending: boolean;
+  swapPending: boolean;
+}
+
+export interface SheetSelectorBarProps {
+  workspaceRef: RefObject<HTMLDivElement>;
+  sheets: TakeoffSheet[];
+  selectedSheet: string | null;
+  onSelectSheet: (sheetId: string) => void;
+  currentSheet: TakeoffSheet | null | undefined;
+  linkCountsBySheet: Record<string, number>;
+  sheetLinksCount: number;
+
+  onOpenRename: () => void;
+  onDuplicateSheet: () => void;
+  duplicatePending: boolean;
+  hasRevisionHistory: boolean;
+  onOpenCompareDialog: () => void;
+  onMoveSheetUp: () => void;
+  onMoveSheetDown: () => void;
+  canMoveUp: boolean;
+  canMoveDown: boolean;
+  pinControls: SheetSelectorBarPinControls | null;
+  onDetectLinks: () => void;
+  detectLinksPending: boolean;
+  onCreateLink: () => void;
+  onDeleteSheet: () => void;
+
+  thumbnailStripOpen: boolean;
+  onToggleThumbnailStrip: () => void;
+  showThumbnailToggle: boolean;
+  hasLinkBack: boolean;
+  onLinkBack: () => void;
+
+  autoImportEnabled: boolean;
+  onToggleAutoImport: () => void;
+  onOpenVersionHistory: () => void;
+  showPropertiesPanelToggle: boolean;
+  propertiesPanelOpen: boolean;
+  onTogglePropertiesPanel: () => void;
+  collabSlot: ReactNode;
+  showHideResolvedToggle: boolean;
+  hideResolvedIssues: boolean;
+  onToggleHideResolvedIssues: (v: boolean) => void;
+  showAddScale: boolean;
+  onOpenScaleModal: () => void;
+  onShowShortcuts: () => void;
+  showCrossModuleToggle: boolean;
+  crossModulePanelOpen: boolean;
+  onToggleCrossModule: () => void;
+  isFullscreen: boolean;
+  onToggleFullscreen: () => void;
+}
+
+/** Sheet header toolbar — sheet selector, sheet-actions menu, thumbnail toggle,
+ *  link-back, calibration badge, sheet-lock (via collab slot), auto-import,
+ *  version history, properties panel, hide-resolved, scale, shortcuts,
+ *  cross-module toggle, fullscreen. The CollabHost mounts inside this bar
+ *  via the `collabSlot` prop so presence avatars / lock badges keep their
+ *  original layout position. */
+function SheetSelectorBarInner(props: SheetSelectorBarProps) {
+  const {
+    workspaceRef,
+    sheets,
+    selectedSheet,
+    onSelectSheet,
+    currentSheet,
+    linkCountsBySheet,
+    sheetLinksCount,
+    onOpenRename,
+    onDuplicateSheet,
+    duplicatePending,
+    hasRevisionHistory,
+    onOpenCompareDialog,
+    onMoveSheetUp,
+    onMoveSheetDown,
+    canMoveUp,
+    canMoveDown,
+    pinControls,
+    onDetectLinks,
+    detectLinksPending,
+    onCreateLink,
+    onDeleteSheet,
+    thumbnailStripOpen,
+    onToggleThumbnailStrip,
+    showThumbnailToggle,
+    hasLinkBack,
+    onLinkBack,
+    autoImportEnabled,
+    onToggleAutoImport,
+    onOpenVersionHistory,
+    showPropertiesPanelToggle,
+    propertiesPanelOpen,
+    onTogglePropertiesPanel,
+    collabSlot,
+    showHideResolvedToggle,
+    hideResolvedIssues,
+    onToggleHideResolvedIssues,
+    showAddScale,
+    onOpenScaleModal,
+    onShowShortcuts,
+    showCrossModuleToggle,
+    crossModulePanelOpen,
+    onToggleCrossModule,
+    isFullscreen,
+    onToggleFullscreen,
+  } = props;
+  return (
+    <div className="h-12 sm:h-14 bg-card border-b px-2 sm:px-4 flex items-center justify-between gap-2 sm:gap-4">
+      <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
+        <Label className="text-xs sm:text-sm font-medium shrink-0">Sheet:</Label>
+        <Select value={selectedSheet || ""} onValueChange={onSelectSheet}>
+          <SelectTrigger className="w-32 sm:w-64" data-testid="select-sheet">
+            <SelectValue placeholder="Select a sheet..." />
+          </SelectTrigger>
+          <SelectContent container={workspaceRef.current}>
+            {sheets.map((sheet: TakeoffSheet) => (
+              <SelectItem key={sheet.id} value={sheet.id}>
+                <span className="flex items-center gap-2">
+                  {sheet.scalePxPerFoot ? (
+                    <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" />
+                  )}
+                  {sheet.sheetName}
+                  {sheet.revisionLabel && (
+                    <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 shrink-0">{sheet.revisionLabel}</Badge>
+                  )}
+                  {sheet.isActive === false && (
+                    <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 shrink-0 opacity-60">Superseded</Badge>
+                  )}
+                  {linkCountsBySheet[sheet.id] > 0 && (
+                    <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 shrink-0 text-blue-600 border-blue-300" data-testid={`badge-links-count-${sheet.id}`}>
+                      <Link2 className="w-2.5 h-2.5 mr-0.5" />{linkCountsBySheet[sheet.id]}
+                    </Badge>
+                  )}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {selectedSheet && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="h-8 w-8" data-testid="button-sheet-actions">
+                <MoreVertical className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={onOpenRename} data-testid="menu-rename-sheet">
+                <Pencil className="h-4 w-4 mr-2" /> Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={onDuplicateSheet}
+                disabled={duplicatePending}
+                data-testid="menu-duplicate-sheet"
+              >
+                <Copy className="h-4 w-4 mr-2" /> Duplicate
+              </DropdownMenuItem>
+              {hasRevisionHistory && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={onOpenCompareDialog} data-testid="menu-compare-revisions">
+                    <GitCompare className="h-4 w-4 mr-2" /> Compare Revisions
+                  </DropdownMenuItem>
+                </>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={onMoveSheetUp}
+                disabled={!canMoveUp}
+                data-testid="menu-move-sheet-up"
+              >
+                <ArrowUp className="h-4 w-4 mr-2" /> Move Up
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={onMoveSheetDown}
+                disabled={!canMoveDown}
+                data-testid="menu-move-sheet-down"
+              >
+                <ArrowDown className="h-4 w-4 mr-2" /> Move Down
+              </DropdownMenuItem>
+              {/* Task #1682 — admin-gated Pin / Unpin / Use-latest revision controls */}
+              {pinControls && (
+                <>
+                  <DropdownMenuSeparator />
+                  {pinControls.isPinned ? (
+                    <DropdownMenuItem
+                      onClick={pinControls.onUnpin}
+                      disabled={pinControls.unpinPending || !pinControls.hasPinnedItem}
+                      data-testid="menu-unpin-sheet-from-set"
+                    >
+                      <PinOff className="h-4 w-4 mr-2" /> Unpin from {pinControls.setLabel}
+                    </DropdownMenuItem>
+                  ) : (
+                    <DropdownMenuItem
+                      onClick={pinControls.onPin}
+                      disabled={pinControls.pinPending}
+                      data-testid="menu-pin-sheet-to-set"
+                    >
+                      <Pin className="h-4 w-4 mr-2" /> Pin to {pinControls.setLabel}
+                    </DropdownMenuItem>
+                  )}
+                  {pinControls.isPinned && pinControls.hasLatestRevision && pinControls.hasPinnedItem && (
+                    <DropdownMenuItem
+                      onClick={pinControls.onUseLatestRevision}
+                      disabled={pinControls.swapPending}
+                      data-testid="menu-use-latest-revision"
+                    >
+                      <ArrowUpCircle className="h-4 w-4 mr-2" /> Use latest revision
+                    </DropdownMenuItem>
+                  )}
+                </>
+              )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={onDetectLinks}
+                disabled={detectLinksPending}
+                data-testid="menu-detect-links"
+              >
+                <Search className="h-4 w-4 mr-2" /> {detectLinksPending ? "Detecting..." : "Detect Links"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onCreateLink} data-testid="menu-create-link">
+                <Link2 className="h-4 w-4 mr-2" /> Create Link to Sheet
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className="text-destructive focus:text-destructive"
+                onClick={onDeleteSheet}
+                data-testid="menu-delete-sheet"
+              >
+                <Trash2 className="h-4 w-4 mr-2" /> Delete Sheet
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        {showThumbnailToggle && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={thumbnailStripOpen ? "secondary" : "ghost"}
+                size="icon"
+                className="h-8 w-8 shrink-0"
+                onClick={onToggleThumbnailStrip}
+                data-testid="button-toggle-thumbnails"
+              >
+                {thumbnailStripOpen ? <List className="h-4 w-4" /> : <GalleryHorizontal className="h-4 w-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{thumbnailStripOpen ? "Hide Thumbnails" : "Show Page Thumbnails"}</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
+        {hasLinkBack && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onLinkBack}
+            className="gap-1 h-7 px-2 text-xs"
+            data-testid="button-link-back"
+          >
+            <ArrowLeft className="h-3 w-3" />
+            <span className="hidden sm:inline">Back</span>
+          </Button>
+        )}
+        {currentSheet && (
+          <Badge variant="outline" data-testid="badge-calibration-status">
+            {currentSheet.scalePxPerFoot
+              ? `Calibrated (${currentSheet.units})`
+              : "Not Calibrated"}
+          </Badge>
+        )}
+        {sheetLinksCount > 0 && (
+          <Badge variant="outline" className="text-blue-600 border-blue-300" data-testid="badge-sheet-links">
+            <Link2 className="w-3 h-3 mr-1" />{sheetLinksCount} Links
+          </Badge>
+        )}
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant={autoImportEnabled ? "default" : "outline"}
+              size="sm"
+              className={`h-7 gap-1 px-2 text-xs ${autoImportEnabled ? "bg-green-600 hover:bg-green-700 text-white" : ""}`}
+              onClick={onToggleAutoImport}
+              data-testid="button-auto-import-toggle"
+            >
+              <Zap className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{autoImportEnabled ? "Auto-Import ON" : "Auto-Import"}</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{autoImportEnabled ? "New measurements are automatically added to the estimate" : "Enable to auto-add new measurements to estimate"}</p>
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 w-7 p-0"
+              onClick={onOpenVersionHistory}
+              data-testid="button-version-history"
+            >
+              <History className="w-3.5 h-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Version History</TooltipContent>
+        </Tooltip>
+        {showPropertiesPanelToggle && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={propertiesPanelOpen ? "default" : "outline"}
+                size="sm"
+                className="h-7 w-7 p-0"
+                onClick={onTogglePropertiesPanel}
+                data-testid="button-properties-panel"
+              >
+                <PanelRight className="w-3.5 h-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Properties Panel</TooltipContent>
+          </Tooltip>
+        )}
+        {collabSlot}
+        {showHideResolvedToggle && (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="hide-resolved-toggle">
+            <Switch
+              id="hide-resolved"
+              checked={hideResolvedIssues}
+              onCheckedChange={onToggleHideResolvedIssues}
+              className="h-4 w-7 data-[state=checked]:bg-green-500"
+            />
+            <label htmlFor="hide-resolved" className="cursor-pointer select-none hidden sm:block">Hide Resolved</label>
+          </div>
+        )}
+        {showAddScale && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onOpenScaleModal}
+            className="gap-1.5"
+            data-testid="button-add-scale"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">{currentSheet?.scalePxPerFoot ? "Set Scale" : "Add Scale"}</span>
+          </Button>
+        )}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onShowShortcuts}
+              data-testid="button-keyboard-shortcuts"
+            >
+              <Keyboard className="w-5 h-5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <div className="flex items-center gap-2">
+              <span>Keyboard Shortcuts</span>
+              <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">?</kbd>
+            </div>
+          </TooltipContent>
+        </Tooltip>
+        {showCrossModuleToggle && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={crossModulePanelOpen ? "secondary" : "ghost"}
+                size="icon"
+                onClick={onToggleCrossModule}
+                data-testid="button-toggle-cross-module"
+              >
+                <ArrowRight className="w-5 h-5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{crossModulePanelOpen ? "Hide Cross-Module Panel" : "Cross-Module Actions"}</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={onToggleFullscreen}
+          data-testid="button-toggle-fullscreen"
+          title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+        >
+          {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export const SheetSelectorBar = memo(SheetSelectorBarInner);
+SheetSelectorBar.displayName = "SheetSelectorBar";

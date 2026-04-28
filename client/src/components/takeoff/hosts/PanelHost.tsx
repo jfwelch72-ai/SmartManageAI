@@ -11,16 +11,28 @@ import { cn } from "@/lib/utils";
 import { TakeoffSidebar } from "../TakeoffSidebar";
 import { TakeoffDialogs } from "../TakeoffDialogs";
 import { TakeoffVersionHistory } from "../TakeoffVersionHistory";
-import { TakeoffSheetCompareDialog } from "../TakeoffSheetCompareDialog";
 import { PlanScaleModal } from "../PlanScaleModal";
 import TakeoffCrossModulePanel from "../TakeoffCrossModulePanel";
+import { IssueDetailPanel } from "../IssueDetailPanel";
+import { TakeoffPropertiesPanel } from "../TakeoffPropertiesPanel";
+import AiTakeoffPanel from "@/components/AiTakeoffPanel";
+import { MeasurementTablePanel } from "./MeasurementTablePanel";
+import { MarkupStylingPanel } from "./MarkupStylingPanel";
 import { usePanelContext } from "./TakeoffWorkspaceContext";
 
-/** Right-side panel host. Owns the version history dialog, the main
- *  sidebar, the cross-module overlay, the dialogs aggregator, the
- *  compare-revisions dialog, the scale modal, and the bid-package
- *  export dialog. Pure view layer — every wrapped component receives
- *  pre-built props from `PanelContextSlice`. */
+/** Right-side / bottom panel host. Owns the version history dialog,
+ *  the main sidebar, the cross-module overlay, the dialogs aggregator,
+ *  the bid-package export dialog, the bottom measurement table, the
+ *  issue detail panel, the AI takeoff panel container, the markup
+ *  styling popover, and the measurement properties panel. Pure view
+ *  layer — every wrapped component receives pre-built props from
+ *  `PanelContextSlice`. NOTE: the workspace bottom bar (batch action +
+ *  status) is rendered by the orchestrator itself, INSIDE the
+ *  canvas-area flex-col container, because it relies on flex-flow
+ *  height to size correctly below the flex-1 canvas surface — moving
+ *  it here would break the layout. The orchestrator still pulls the
+ *  bottom-bar props from `PanelContextSlice.bottomBar` so the contract
+ *  remains panel-owned. */
 function PanelHostInner() {
   const ctx = usePanelContext();
   return (
@@ -39,7 +51,6 @@ function PanelHostInner() {
         </div>
       )}
       <TakeoffDialogs {...ctx.dialogs} />
-      {ctx.compareDialog && <TakeoffSheetCompareDialog {...ctx.compareDialog} />}
       <PlanScaleModal {...ctx.scaleModal} />
       <Dialog open={ctx.bidPackage.open} onOpenChange={ctx.bidPackage.setOpen}>
         <DialogContent className="sm:max-w-md">
@@ -71,6 +82,21 @@ function PanelHostInner() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <MeasurementTablePanel {...ctx.measurementTable} />
+      {ctx.issueDetail && <IssueDetailPanel {...ctx.issueDetail} />}
+      {ctx.aiPanel?.visible && (
+        <div
+          className={cn(
+            "absolute top-0 right-0 h-full w-full sm:w-80 max-w-full border-l bg-card shadow-2xl z-40 flex flex-col transition-opacity",
+            ctx.aiPanel.isDrawing && !ctx.aiPanel.isMobile && "opacity-20 hover:opacity-100"
+          )}
+          data-testid="panel-ai-takeoff-overlay"
+        >
+          <AiTakeoffPanel {...ctx.aiPanel.props} />
+        </div>
+      )}
+      <MarkupStylingPanel {...ctx.markupStylingPanel} />
+      {ctx.propertiesPanel && <TakeoffPropertiesPanel {...ctx.propertiesPanel} />}
     </>
   );
 }

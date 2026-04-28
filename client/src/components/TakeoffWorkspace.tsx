@@ -56,6 +56,7 @@ import { SheetHost } from "./takeoff/hosts/SheetHost";
 import { CanvasHost } from "./takeoff/hosts/CanvasHost";
 import { PanelHost } from "./takeoff/hosts/PanelHost";
 import { CollabHost } from "./takeoff/hosts/CollabHost";
+import { WorkspaceBottomBar } from "./takeoff/hosts/WorkspaceBottomBar";
 import { TakeoffSidebar } from "./takeoff/TakeoffSidebar";
 import { MeasurementTable } from "./takeoff/MeasurementTable";
 import TakeoffCrossModulePanel from "./takeoff/TakeoffCrossModulePanel";
@@ -2152,6 +2153,42 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     }
   }, [selectedSheet, detectedScale, sheetsQueryKey, toast]);
 
+  const pinControlsForSelectorBar = useMemo(() => {
+    if (!canManageDrawingSetsOnCanvas || !activeCanvasSetId || !currentSheet) return null;
+    const pinnedItem = activeCanvasSetItemMap.get(currentSheet.id);
+    const isPinned = pinnedSheetIdsForStrip.has(currentSheet.id);
+    const latestId = getLatestRevisionForCanvasSheet(currentSheet.id);
+    return {
+      isPinned,
+      setLabel: activeCanvasSetName || "active set",
+      hasPinnedItem: !!pinnedItem,
+      hasLatestRevision: !!latestId,
+      onPin: () => {
+        canvasPinSheetMutation.mutate({ setId: activeCanvasSetId, sheetId: currentSheet.id });
+      },
+      onUnpin: () => {
+        if (!pinnedItem) return;
+        canvasUnpinSheetMutation.mutate({ setId: activeCanvasSetId, itemId: pinnedItem.id });
+      },
+      onUseLatestRevision: () => {
+        if (!pinnedItem || !latestId) return;
+        canvasSwapPinnedRevisionMutation.mutate({
+          setId: activeCanvasSetId,
+          oldItemId: pinnedItem.id,
+          newSheetId: latestId,
+        });
+      },
+      pinPending: canvasPinSheetMutation.isPending,
+      unpinPending: canvasUnpinSheetMutation.isPending,
+      swapPending: canvasSwapPinnedRevisionMutation.isPending,
+    };
+  }, [
+    canManageDrawingSetsOnCanvas, activeCanvasSetId, currentSheet,
+    activeCanvasSetItemMap, pinnedSheetIdsForStrip, activeCanvasSetName,
+    getLatestRevisionForCanvasSheet,
+    canvasPinSheetMutation, canvasUnpinSheetMutation, canvasSwapPinnedRevisionMutation,
+  ]);
+
   const sheetSlice: SheetContextSlice = useMemo(() => ({
     isViewingLockedVersion,
     onReturnToDraft: () => setSelectedVersionId(null),
@@ -2167,13 +2204,114 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     currentSheetIsSuperseded: !!currentSheetIsSuperseded,
     hasCompareNewSheet: !!compareNewSheet,
     onOpenCompareDialog: () => setCompareDialogOpen(true),
+    selectorBar: {
+      workspaceRef,
+      sheets,
+      selectedSheet,
+      onSelectSheet: setSelectedSheet,
+      currentSheet,
+      linkCountsBySheet,
+      sheetLinksCount: sheetLinks.length,
+      onOpenRename: () => { setRenameValue(currentSheet?.sheetName || ""); setRenameDialogOpen(true); },
+      onDuplicateSheet: () => { if (selectedSheet) duplicateSheetMutation.mutate(selectedSheet); },
+      duplicatePending: duplicateSheetMutation.isPending,
+      hasRevisionHistory,
+      onOpenCompareDialog: () => setCompareDialogOpen(true),
+      onMoveSheetUp: () => handleMoveSheet("up"),
+      onMoveSheetDown: () => handleMoveSheet("down"),
+      canMoveUp: sheets.findIndex(s => s.id === selectedSheet) > 0,
+      canMoveDown:
+        sheets.findIndex(s => s.id === selectedSheet) >= 0 &&
+        sheets.findIndex(s => s.id === selectedSheet) < sheets.length - 1,
+      pinControls: pinControlsForSelectorBar,
+      onDetectLinks: () => { if (selectedSheet) detectLinksMutation.mutate(selectedSheet); },
+      detectLinksPending: detectLinksMutation.isPending,
+      onCreateLink: () => setCreateLinkMode({ step: "select-area" }),
+      onDeleteSheet: () => setDeleteSheetConfirmOpen(true),
+      thumbnailStripOpen,
+      onToggleThumbnailStrip: () => setThumbnailStripOpen((v) => !v),
+      showThumbnailToggle: sheets.length > 1,
+      hasLinkBack: linkNavigationHistory.length > 0,
+      onLinkBack: handleLinkBack,
+      autoImportEnabled,
+      onToggleAutoImport: () => setAutoImportEnabled(!autoImportEnabled),
+      onOpenVersionHistory: () => setVersionHistoryOpen(true),
+      showPropertiesPanelToggle: !!selectedMeasurementId,
+      propertiesPanelOpen,
+      onTogglePropertiesPanel: () => setPropertiesPanelOpen(!propertiesPanelOpen),
+      collabSlot: null,
+      showHideResolvedToggle: !!selectedSheet && issues.length > 0,
+      hideResolvedIssues,
+      onToggleHideResolvedIssues: setHideResolvedIssues,
+      showAddScale: !!selectedSheet,
+      onOpenScaleModal: () => setScaleModalOpen(true),
+      onShowShortcuts: () => setShortcutsDialogOpen(true),
+      showCrossModuleToggle: context?.type !== "bid",
+      crossModulePanelOpen,
+      onToggleCrossModule: () => setCrossModulePanelOpen((v) => !v),
+      isFullscreen,
+      onToggleFullscreen: toggleFullscreen,
+    },
+    thumbnailStrip:
+      thumbnailStripOpen && sheets.length > 1
+        ? {
+            sheets,
+            selectedSheet,
+            onSelectSheet: setSelectedSheet,
+            layout: "horizontal" as const,
+            measurementCounts: measurementCountsPerSheet,
+            pinnedSheetIds: pinnedSheetIdsForStrip,
+            newerSheetIds: newerSheetIdsForStrip,
+            canManagePins: canManageDrawingSetsOnCanvas && !!activeCanvasSetId,
+            onPinSheet: handleCanvasPinSheet,
+            onUnpinSheet: handleCanvasUnpinSheet,
+            onSwapToLatestRevision: handleCanvasSwapRevision,
+            pinActionsDisabled: canvasPinMutationPending,
+            activeSetName: activeCanvasSetName,
+          }
+        : null,
+    compareDialog:
+      compareDialogOpen && currentSheet && compareNewSheet
+        ? {
+            open: compareDialogOpen,
+            onOpenChange: setCompareDialogOpen,
+            oldSheet: compareOldSheet as ComponentProps<typeof TakeoffSheetCompareDialog>["oldSheet"],
+            newSheet: compareNewSheet as ComponentProps<typeof TakeoffSheetCompareDialog>["newSheet"],
+            allSheets: sheets as ComponentProps<typeof TakeoffSheetCompareDialog>["allSheets"],
+          }
+        : null,
   }), [
-    isViewingLockedVersion, detectedScale, currentSheet?.scalePxPerFoot,
+    isViewingLockedVersion, detectedScale, currentSheet,
     handleAcceptDetectedScale, showStaleBanner, staleCanvasItemCount,
     repinStaleCanvasMutation.isPending, dismissStaleBanner,
     currentSheetIsSuperseded, compareNewSheet,
+    sheets, selectedSheet, linkCountsBySheet, sheetLinks.length,
+    duplicateSheetMutation, hasRevisionHistory, handleMoveSheet,
+    pinControlsForSelectorBar, detectLinksMutation,
+    thumbnailStripOpen, linkNavigationHistory.length, handleLinkBack,
+    autoImportEnabled, selectedMeasurementId, propertiesPanelOpen,
+    issues.length, hideResolvedIssues, context?.type, crossModulePanelOpen,
+    isFullscreen, toggleFullscreen,
+    measurementCountsPerSheet, pinnedSheetIdsForStrip, newerSheetIdsForStrip,
+    canManageDrawingSetsOnCanvas, activeCanvasSetId,
+    handleCanvasPinSheet, handleCanvasUnpinSheet, handleCanvasSwapRevision,
+    canvasPinMutationPending, activeCanvasSetName,
+    compareDialogOpen, compareOldSheet,
   ]);
-  const canvasSlice = useMemo<CanvasContextSlice>(() => ({
+  const canvasViewportCursor =
+    createLinkMode?.step === "select-area" ? "crosshair" :
+    activeTool === "pan" ? "grab" :
+    activeTool === "select" ? "default" :
+    "crosshair";
+  // NOTE: Intentionally NOT memoized. The slice references 100+ pieces of
+  // state and ~20 mutations/handlers; an exhaustive useMemo dependency
+  // array is impractical to keep correct, and a stale dep silently breaks
+  // UI updates (e.g. context menus, tool picker, link target select).
+  // Re-creating this object every orchestrator render is the same cost
+  // as the pre-migration inline JSX. CanvasHost / CanvasViewport stay
+  // wrapped in React.memo and re-render at the same cadence as before.
+  const canvasSlice: CanvasContextSlice = {
+    stage: {
     stageRef,
     containerRef,
     markupBodyDragRef,
@@ -2279,41 +2417,128 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     clearIssueDropTarget,
     toolToMarkupType,
     collab,
-  }), [
-    stageDimensions, stageScale, stagePosition,
-    selectedSheet, currentSheet, sheetRotation, pdfImage, isPdfLoading, pdfLoadProgress,
-    activeTool,
-    isDrawing, drawingPoints, cursorPosition,
-    showAiOverlays, hideAiMeasurements, hideResolvedIssues, showOverlaySlider, overlayOpacity,
-    preImportDetectedItems, highlightedAiItem,
-    addendaImages, addendaOverlays,
-    gridEnabled, showStructuralGridlines, structuralGridlines,
-    showMeasurementLabels, hiddenCategoryIds, labelHiddenCategories,
-    measurements, categories,
-    selectedMeasurementId, selectedSegmentIndex,
-    selectedMarkupId, selectedMarkupIds,
-    markupResizePreview, markupEditDraft,
-    markups, sheets, markupDrawing, markupDrawPoints,
-    sheetLinks, hoveredLinkId, failedMarkupIds,
-    flashMeasurementId, flashPulse,
-    calibrationPoints, verifyPoints,
-    currentSnap, runningMeasurement,
-    orthoLock, activeCondition,
-    issues, selectedIssueId,
-    createLinkMode,
-    isMobile,
-    markupColor, markupThickness,
-    bulkUpdateMarkupsMutation, updateMarkupMutation, updateMeasurementMutation,
-    createIssueMutation, moveIssueMutation,
-    takeoffHistory,
-    completePolygon, completeSegment,
-    handleStageMouseDown, handleStageMouseUp, handleStageMouseMove,
-    handleStageDragStart, handleStageDragMove, handleStageDragEnd,
-    handleTouchEnd, handleTouchMove, handleWheel,
-    handleMarkupMouseDown, handleMarkupMouseUp, handleMarkupMouseMove,
-    handleLinkNavigate,
-    collab,
-  ]);
+    },
+    viewport: {
+      containerRef,
+      cursor: canvasViewportCursor,
+      onContextMenu: (e) => {
+        if (!selectedSheet) return;
+        e.preventDefault();
+        const stage = stageRef.current;
+        if (stage) {
+          const rect = containerRef.current?.getBoundingClientRect();
+          if (rect) {
+            const stageX = (e.clientX - rect.left - stagePosition.x) / stageScale;
+            const stageY = (e.clientY - rect.top - stagePosition.y) / stageScale;
+            setContextMenuPos({ x: e.clientX - rect.left, y: e.clientY - rect.top, canvasX: stageX, canvasY: stageY });
+          }
+        }
+      },
+      onClick: () => {
+        if (contextMenuPos) setContextMenuPos(null);
+        if (measurementContextMenu) setMeasurementContextMenu(null);
+      },
+      selectedSheet,
+      calibrationMode,
+      isDrawing,
+      isMobile,
+      drawingPoints,
+      activeTool,
+      activeCondition,
+      showMobileGestureGuide,
+      onDismissGestureGuide: () => {
+        setShowMobileGestureGuide(false);
+        localStorage.setItem("takeoff-gesture-guide-dismissed", "1");
+      },
+      showMobileToolPicker,
+      onToggleMobileToolPicker: () => {
+        setShowMobileToolPicker(!showMobileToolPicker);
+        if (navigator.vibrate) navigator.vibrate(10);
+      },
+      onSelectMobileTool: (tool) => {
+        setActiveTool(tool);
+        setShowMobileToolPicker(false);
+        if (navigator.vibrate) navigator.vibrate(10);
+      },
+      openSheetIds,
+      sheets,
+      onSelectSheet: setSelectedSheet,
+      onCloseSheetTab: (sheetId, e) => handleCloseSheetTab(sheetId, e),
+      stageScale,
+      currentSheet,
+      snapEnabled,
+      orthoLock,
+      gridEnabled,
+      conditions,
+      onActivateCondition: handleActivateCondition,
+      onOpenUploadDialog: () => setUploadDialogOpen(true),
+      markupTextInput,
+      pdfImageWidth: pdfImage?.width || 0,
+      pdfImageHeight: pdfImage?.height || 0,
+      sheetRotation,
+      stagePosition,
+      workspaceRef,
+      onMarkupTextSubmit: handleMarkupTextSubmit,
+      onMarkupTextCancel: () => setMarkupTextInput(null),
+      createLinkMode,
+      createLinkTargetSheet,
+      onCreateLinkTargetChange: (val) => {
+        setCreateLinkTargetSheet(val);
+        if (val && selectedSheet && createLinkMode?.startPoint && createLinkMode.endPoint) {
+          const x = Math.min(createLinkMode.startPoint.x, createLinkMode.endPoint.x);
+          const y = Math.min(createLinkMode.startPoint.y, createLinkMode.endPoint.y);
+          const width = Math.abs(createLinkMode.endPoint.x - createLinkMode.startPoint.x);
+          const height = Math.abs(createLinkMode.endPoint.y - createLinkMode.startPoint.y);
+          const targetSheet = sheets.find((s: TakeoffSheet) => s.id === val);
+          createSheetLinkMutation.mutate({
+            sourceSheetId: selectedSheet,
+            targetSheetId: val,
+            x, y, width, height,
+            label: targetSheet?.sheetName || undefined,
+          }, {
+            onSuccess: () => {
+              queryClient.invalidateQueries({ queryKey: allSheetsLinksQueryKey });
+              setCreateLinkMode(null);
+              setCreateLinkTargetSheet(null);
+            },
+          });
+        }
+      },
+      onCancelCreateLink: () => setCreateLinkMode(null),
+      onCancelCreateLinkTarget: () => { setCreateLinkMode(null); setCreateLinkTargetSheet(null); },
+      contextMenuPos,
+      onContextMenuCreateLink: () => {
+        setCreateLinkMode({ step: "select-area" });
+        setContextMenuPos(null);
+      },
+      onContextMenuDetectLinks: () => {
+        if (selectedSheet) detectLinksMutation.mutate(selectedSheet);
+        setContextMenuPos(null);
+      },
+      measurementContextMenu,
+      measurements,
+      onMeasurementContextEdit: (m) => {
+        setSelectedMeasurementId(m.id);
+        setMeasurementContextMenu(null);
+      },
+      onMeasurementContextProperties: (m) => {
+        setSelectedMeasurementId(m.id);
+        setPropertiesPanelOpen(true);
+        setMeasurementContextMenu(null);
+      },
+      onMeasurementContextDelete: (m) => {
+        deleteMeasurementMutation.mutate(m);
+        setMeasurementContextMenu(null);
+      },
+      categories,
+      showCostPanel,
+      onCloseCostPanel: () => setShowCostPanel(false),
+      showOverlaySlider,
+      overlayOpacity,
+      onOverlayOpacityChange: (v) => setOverlayOpacity(v),
+      onCloseOverlaySlider: () => setShowOverlaySlider(false),
+    },
+  };
 
   const handleSaveTypical = (name: string, measurementIds: string[]) => {
     if (!selectedSheet) return;
@@ -2383,7 +2608,13 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     toast({ title: "Typical Stamped", description: `Placed ${sources.length} measurement(s) with offset` });
   };
 
-  const panelSlice: PanelContextSlice = useMemo(() => ({
+  // NOTE: Intentionally NOT memoized. Same rationale as canvasSlice above —
+  // panelSlice spans 12 sub-slots (sidebar, dialogs, bottomBar,
+  // measurementTable, issueDetail, aiPanel, markupStylingPanel,
+  // propertiesPanel, etc.) referencing 100+ pieces of state; an exhaustive
+  // useMemo dependency array is impractical to keep correct. The
+  // pre-migration inline JSX rebuilt every render, so this is no worse.
+  const panelSlice: PanelContextSlice = {
     versionHistory: {
       open: versionHistoryOpen,
       onOpenChange: setVersionHistoryOpen,
@@ -2590,16 +2821,6 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       },
       currentScalePxPerFoot: currentSheet?.scalePxPerFoot ?? null,
     },
-    compareDialog:
-      compareDialogOpen && currentSheet && compareNewSheet
-        ? {
-            open: compareDialogOpen,
-            onOpenChange: setCompareDialogOpen,
-            oldSheet: compareOldSheet as ComponentProps<typeof TakeoffSheetCompareDialog>["oldSheet"],
-            newSheet: compareNewSheet as ComponentProps<typeof TakeoffSheetCompareDialog>["newSheet"],
-            allSheets: sheets as ComponentProps<typeof TakeoffSheetCompareDialog>["allSheets"],
-          }
-        : null,
     crossModulePanel: {
       visible: crossModulePanelOpen && context?.type !== "bid",
       isDrawing,
@@ -2619,40 +2840,418 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       setTradeScope: setBidPackageTradeScope,
       onConfirm: handleConfirmBidPackage,
     },
-    // Deps are intentionally permissive — many of the captured values
-    // are stable React setters / mutations / refs. The slice is
-    // rebuilt whenever any of the orchestrator's renderable state
-    // changes; React + the per-slice context still prevents this from
-    // rerendering Ribbon/Canvas/Sheet/Collab consumers.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [
-    versionHistoryOpen, selectedSheet, projectId, context, currentSheet,
-    calibrationMode, calibrationPoints, calibrationDistance, units,
-    activeTool, categories, selectedCategoryId, hiddenCategoryIds,
-    pitchRatio, dropDistance, measurements, selectedMeasurementId,
-    selectedSegmentIndex, aggregatedMeasurements, projectAddenda,
-    addendaOverlays, verifyMode, verifyPoints, verifyExpectedDistance,
-    verifyResult, multiCalibMode, multiCalibPoints, aiPanelOpen,
-    sidebarCollapsed, hasRevisionHistory, sheets, markups, measurementGroups,
-    issues, allIssues, selectedIssueId, hideAiMeasurements, measurementLinks,
-    typicals, structuralGridlines, labelHiddenCategories, showMeasurementLabels,
-    conditions, activeCondition, mobileMeasurementsOpen, renameDialogOpen,
-    renameValue, deleteSheetConfirmOpen, noteDialogOpen, noteText, notePosition,
-    categoryDialogOpen, editingCategory, categoryName, categoryColor,
-    categoryLineStyle, categoryLineWidth, categoryWasteFactor, categoryUnitCost,
-    shortcutsDialogOpen, uploadDialogOpen, planDocuments, documentsLoading,
-    fullscreenScaleModal, scaleModalOpen, compareDialogOpen, compareOldSheet,
-    compareNewSheet, crossModulePanelOpen, isDrawing, isMobile,
-    bidPackageDialogOpen, bidPackageTradeScope,
+    bottomBar: {
+      selectedMeasurementCount: selectedMeasurementIds.size,
+      bulkDeletePending: bulkDeleteMeasurementsMutation.isPending,
+      onBulkDelete: () => {
+        // Task #1901 — Route through the bulk mutation so the user
+        // gets a single destructive "Deleted N measurements · Undo"
+        // toast and the deletion is coalesced into one
+        // MEASUREMENT_DELETE_BATCH history entry instead of N per-id
+        // `DELETE` entries from the previous per-id fan-out loop.
+        const toDelete = measurements.filter(m => selectedMeasurementIds.has(m.id));
+        if (toDelete.length === 0) return;
+        setSelectedMeasurementIds(new Set());
+        setSelectedMeasurementId(null);
+        bulkDeleteMeasurementsMutation.mutate(toDelete);
+      },
+      onClearSelection: () => setSelectedMeasurementIds(new Set()),
+      selectedSheet,
+      measurements,
+      showCostPanel,
+      onToggleCostPanel: () => setShowCostPanel(!showCostPanel),
+      showOverlaySlider,
+      onToggleOverlaySlider: () => setShowOverlaySlider(!showOverlaySlider),
+      showMeasurementTable,
+      onToggleMeasurementTable: () => setShowMeasurementTable(!showMeasurementTable),
+      stageScale,
+      currentSheet,
+    },
+    measurementTable: {
+      visible: showMeasurementTable && !!selectedSheet,
+      measurements,
+      categories,
+      selectedMeasurementId,
+      scalePxPerFoot: currentSheet?.scalePxPerFoot,
+      onClose: () => setShowMeasurementTable(false),
+      onSelect: (id: string) => setSelectedMeasurementId(id),
+      onDelete: (id: string) => {
+        const m = measurements.find((x: TakeoffMeasurement) => x.id === id);
+        if (m) deleteMeasurementMutation.mutate(m);
+      },
+      onUpdate: (id: string, data: Partial<TakeoffMeasurement>) => {
+        // Task #1843 — forward a `previous` snapshot so the inline
+        // rename in MeasurementTable produces one MEASUREMENT_UPDATE
+        // history entry (one Undo press).
+        const prev: TakeoffMeasurement | undefined = measurements.find(
+          (mm: TakeoffMeasurement) => mm.id === id,
+        );
+        const previous: Omit<MeasurementSnapshot, "id"> = {};
+        if (prev) {
+          if (data.label !== undefined) previous.label = prev.label ?? null;
+          if (data.costCodeId !== undefined) previous.costCodeId = prev.costCodeId ?? null;
+          if (data.unitCost !== undefined) previous.unitCost = prev.unitCost ?? null;
+          if (data.categoryId !== undefined) previous.categoryId = prev.categoryId ?? null;
+          if (data.groupId !== undefined) previous.groupId = prev.groupId ?? null;
+          if (data.lineStyle !== undefined) previous.lineStyle = prev.lineStyle ?? null;
+          if (data.lineWidth !== undefined) previous.lineWidth = prev.lineWidth ?? null;
+          if (data.metadata !== undefined) previous.metadata = prev.metadata ?? null;
+        }
+        updateMeasurementMutation.mutate({ id, ...data, previous } as Parameters<typeof updateMeasurementMutation.mutate>[0]);
+      },
+    },
+    issueDetail: selectedIssue ? {
+      issue: selectedIssue,
+      orgUsers,
+      currentUser,
+      sheetId: selectedSheet!,
+      onClose: () => setSelectedIssueId(null),
+      onDelete: () => {
+        setSelectedIssueId(null);
+        if (issuesQueryKey) queryClient.invalidateQueries({ queryKey: issuesQueryKey });
+        queryClient.invalidateQueries({ queryKey: allSheetsIssuesQueryKey });
+      },
+    } : null,
+    aiPanel: aiPanelOpen && selectedSheet ? {
+      visible: true,
+      isDrawing,
+      isMobile,
+      props: {
+        projectId: context?.type === "project" ? context.projectId : projectId || undefined,
+        bidId: context?.type === "bid" ? context.bidId : undefined,
+        sheetId: selectedSheet,
+        onClose: () => { setAiPanelOpen(false); setPreImportDetectedItems([]); },
+        onHighlightItem: (item: DetectedItem | null) => setHighlightedAiItem(item),
+        onDetectedItemsChanged: (items: DetectedItem[]) => setPreImportDetectedItems(items),
+        showOverlays: showAiOverlays,
+        onToggleOverlays: setShowAiOverlays,
+        onItemsImported: async (items: DetectedItem[]) => {
+          let succeeded = 0;
+          let failed = 0;
+          const failedItems: string[] = [];
+          const imgW = pdfImage?.width || 2000;
+          const existingAiCount = measurements.filter(m => m.source === "AI" && m.type === "COUNT").length;
+
+          const isBidContext = context?.type === "bid";
+          const ctxBidId = isBidContext ? context.bidId : undefined;
+
+          const categoryCache: Record<string, string> = {};
+          let existingCategories: { id: string; name: string }[] = [];
+          if (ctxBidId) {
+            try {
+              const catRes = await apiRequest("GET", `/api/bids/${ctxBidId}/takeoff/categories`);
+              existingCategories = await catRes.json();
+            } catch (catFetchErr) {
+              console.warn("Failed to fetch takeoff categories:", catFetchErr);
+            }
+          }
+
+          const getOrCreateCategory = async (itemType: string): Promise<string | undefined> => {
+            if (!ctxBidId) return undefined;
+            const categoryName = itemType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+            if (categoryCache[categoryName]) return categoryCache[categoryName];
+            const existing = existingCategories.find(c => c.name.toLowerCase() === categoryName.toLowerCase());
+            if (existing) {
+              categoryCache[categoryName] = existing.id;
+              return existing.id;
+            }
+            try {
+              const res = await apiRequest("POST", `/api/bids/${ctxBidId}/takeoff/categories`, { name: categoryName });
+              const created = await res.json();
+              if (created?.id) {
+                categoryCache[categoryName] = created.id;
+                existingCategories.push({ id: created.id, name: categoryName });
+                return created.id;
+              }
+            } catch (catCreateErr) {
+              console.warn(`Failed to create category '${categoryName}':`, catCreateErr);
+            }
+            return undefined;
+          };
+
+          const newMeasurementIds: string[] = [];
+          const imgH = pdfImage?.height || 1500;
+
+          const LINEAR_UNITS = new Set(["lf", "lm", "ft", "m", "in", "linear feet", "linear meters", "feet", "meters", "inches"]);
+          const AREA_UNITS = new Set(["sf", "sm", "sq ft", "sq m", "sqft", "sqm", "square feet", "square meters", "sq", "squares", "sy", "square yards"]);
+          const VOLUME_UNITS = new Set(["cy", "cm", "cubic yards", "cubic meters", "cu yd", "cu ft", "cf", "cubic feet", "ton", "tons"]);
+          const LINEAR_TYPES = new Set(["wire_run", "ridge", "drip_edge", "pipe_run", "conduit", "framing", "rebar", "gutter", "fascia", "soffit_linear", "trim"]);
+          const AREA_TYPES = new Set(["roof_plane", "slab", "floor", "ceiling", "wall", "formwork", "insulation", "drywall", "sheathing", "membrane", "shingles", "roofing"]);
+          const VOLUME_TYPES = new Set(["footing", "foundation", "concrete", "fill", "excavation", "backfill", "grading"]);
+
+          const deriveMeasurementType = (item: DetectedItem): string => {
+            const unitLower = (item.unit || "").toLowerCase();
+            const typeLower = (item.itemType || "").toLowerCase();
+            if (LINEAR_UNITS.has(unitLower) || LINEAR_TYPES.has(typeLower)) return "LINEAR";
+            if (AREA_UNITS.has(unitLower) || AREA_TYPES.has(typeLower)) return "AREA";
+            if (VOLUME_UNITS.has(unitLower) || VOLUME_TYPES.has(typeLower)) return "AREA";
+            if (item.boundingBox && unitLower !== "ea" && unitLower !== "each") return "AREA";
+            return "COUNT";
+          };
+
+          let fallbackCounter = 0;
+          const derivePoints = (item: DetectedItem, measType: string, imgW: number, imgH: number): Array<{ x: number; y: number }> => {
+            if (!item.boundingBox) {
+              return [computeAiPosition(existingAiCount + fallbackCounter++, imgW)];
+            }
+            const bbox = item.boundingBox;
+            const x1 = (bbox.x / 100) * imgW;
+            const y1 = (bbox.y / 100) * imgH;
+            const x2 = x1 + (bbox.w / 100) * imgW;
+            const y2 = y1 + (bbox.h / 100) * imgH;
+            if (measType === "AREA") {
+              return [
+                { x: x1, y: y1 },
+                { x: x2, y: y1 },
+                { x: x2, y: y2 },
+                { x: x1, y: y2 },
+              ];
+            }
+            if (measType === "LINEAR") {
+              const isWide = (x2 - x1) >= (y2 - y1);
+              if (isWide) {
+                const midY = (y1 + y2) / 2;
+                return [{ x: x1, y: midY }, { x: x2, y: midY }];
+              }
+              const midX = (x1 + x2) / 2;
+              return [{ x: midX, y: y1 }, { x: midX, y: y2 }];
+            }
+            if (item.boundingBox) {
+              return [
+                { x: x1, y: y1 },
+                { x: x2, y: y1 },
+                { x: x2, y: y2 },
+                { x: x1, y: y2 },
+              ];
+            }
+            return [{ x: (x1 + x2) / 2, y: (y1 + y2) / 2 }];
+          };
+
+          for (let idx = 0; idx < items.length; idx++) {
+            const item = items[idx];
+            let measType = deriveMeasurementType(item);
+            const points = derivePoints(item, measType, imgW, imgH);
+            if (points.length >= 4 && measType === "COUNT") {
+              measType = "AREA";
+            }
+            try {
+              const categoryId = item.itemType ? await getOrCreateCategory(item.itemType) : undefined;
+              const res = await apiRequest("POST", "/api/takeoff/measurements", {
+                sheetId: selectedSheet,
+                type: measType,
+                points,
+                label: item.description,
+                count: measType === "COUNT" ? item.quantity : undefined,
+                source: "AI",
+                categoryId: categoryId || undefined,
+                costCodeId: item.suggestedSowItem?.code || undefined,
+                metadata: JSON.stringify({
+                  source: "ai_takeoff",
+                  aiItemId: item.id,
+                  unit: item.unit,
+                  itemType: item.itemType,
+                  confidence: item.confidence,
+                  boundingBox: item.boundingBox || null,
+                  suggestedSowItem: item.suggestedSowItem || null,
+                  costCodeId: item.suggestedSowItem?.code || null,
+                  derivedMeasurementType: measType,
+                }),
+              });
+              const created = await res.json();
+              if (created?.id) newMeasurementIds.push(created.id);
+              succeeded++;
+            } catch (err) {
+              console.error(`Failed to import AI item: ${item.description}`, err);
+              failed++;
+              failedItems.push(item.description);
+            }
+          }
+          if (succeeded > 0) {
+            await queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
+            if (ctxBidId) {
+              await queryClient.invalidateQueries({ queryKey: ["/api/bids", ctxBidId, "takeoff", "categories"] });
+            }
+            if (newMeasurementIds.length > 0) {
+              const flashSequence = async () => {
+                for (const mId of newMeasurementIds) {
+                  setFlashMeasurementId(mId);
+                  setFlashPulse(1);
+                  await new Promise(resolve => setTimeout(resolve, 600));
+                }
+              };
+              flashSequence();
+            }
+          }
+          return { succeeded, failed, failedItems };
+        },
+      },
+    } : null,
+    markupStylingPanel: (() => {
+      if (selectedMarkupIds.size < 1 || !markupEditDraft || !markupEditInitial) {
+        return {
+          visible: false,
+          isMulti: false,
+          selectedCount: 0,
+          showTextInput: false,
+          showThicknessInput: false,
+          isHighlight: false,
+          draft: { text: "", color: "#000000", thickness: 1 },
+          onChangeDraft: () => {},
+          onClose: () => {},
+          onDeleteSingle: () => {},
+          onDeleteBulk: () => {},
+          bulkDeletePending: false,
+          saveButtonSlot: null,
+        };
+      }
+      const selectedMarkups = markups.filter(m => selectedMarkupIds.has(m.id));
+      if (selectedMarkups.length === 0) {
+        return {
+          visible: false,
+          isMulti: false,
+          selectedCount: 0,
+          showTextInput: false,
+          showThicknessInput: false,
+          isHighlight: false,
+          draft: { text: "", color: "#000000", thickness: 1 },
+          onChangeDraft: () => {},
+          onClose: () => {},
+          onDeleteSingle: () => {},
+          onDeleteBulk: () => {},
+          bulkDeletePending: false,
+          saveButtonSlot: null,
+        };
+      }
+      // Anchor: when only one is selected we use it directly; when
+      // multiple are selected we still pick the first as a header
+      // hint, but bulk save fans out across every selectedMarkup.
+      const anchor = selectedMarkups.find(m => m.id === selectedMarkupId) ?? selectedMarkups[0];
+      const isMulti = selectedMarkups.length > 1;
+      const allText = selectedMarkups.every(m => (m.tool as string) === "TEXT");
+      const allHighlight = selectedMarkups.every(m => (m.tool as string) === "HIGHLIGHT");
+      // Task #1758 — Text input shows for a single TEXT markup OR for
+      // a multi-selection that is exclusively TEXT markups (so a user
+      // can rename a group of labels to the same string in one shot).
+      // Mixed selections still hide it because bulk-renaming non-TEXT
+      // shapes has no meaning. The bulk save routes the text change
+      // through the same MARKUP_UPDATE_BATCH path as color/thickness
+      // so one Undo press reverts every renamed label.
+      const showTextInput = allText;
+      const showThicknessInput = !allText;
+      const isHighlight = allHighlight;
+      const close = () => {
+        setSelectedMarkupIds(new Set());
+        setMarkupEditDraft(null);
+        setMarkupEditInitial(null);
+      };
+      // Task #1758 / #1765 — Real save logic lives in the exported
+      // `saveMarkupStylingPopover` helper at the bottom of this file
+      // so it can be exercised directly from tests (Task #1772)
+      // without mounting the entire workspace. Single-select still
+      // routes through `updateMarkupMutation` (one MARKUP_UPDATE
+      // entry); multi-select fans out into ONE bulk PATCH and ONE
+      // MARKUP_UPDATE_BATCH history entry pushed only after the PATCH
+      // resolves.
+      const save = () =>
+        saveMarkupStylingPopover({
+          draft: markupEditDraft,
+          initial: markupEditInitial,
+          showTextInput,
+          isMulti,
+          anchor,
+          selectedMarkups,
+          selectedSheet,
+          updateMarkupMutation,
+          bulkUpdateMarkupsMutation,
+          takeoffHistory,
+          toast,
+          close,
+        });
+      return {
+        visible: true,
+        isMulti,
+        selectedCount: selectedMarkups.length,
+        showTextInput,
+        showThicknessInput,
+        isHighlight,
+        draft: markupEditDraft,
+        onChangeDraft: setMarkupEditDraft,
+        onClose: close,
+        onDeleteSingle: async () => {
+          try {
+            await deleteMarkupMutation.mutateAsync(anchor.id);
+            close();
+          } catch (err) {
+            console.warn("[Takeoff] Failed to delete markup:", err);
+          }
+        },
+        onDeleteBulk: async () => {
+          // Task #1832 — Multi-select delete now collapses N parallel
+          // per-id `deleteMarkupMutation` calls into one bulk DELETE
+          // round-trip. The server runs the removal in a transaction
+          // so a mid-flight failure rolls back atomically (no
+          // half-deleted group). Disabled while the bulk request is
+          // in flight to keep accidental double-clicks from racing
+          // against the optimistic cache strip.
+          try {
+            await bulkDeleteMarkupsMutation.mutateAsync(
+              selectedMarkups.map((m) => m.id),
+            );
+            close();
+          } catch (err) {
+            console.warn("[Takeoff] Failed to bulk-delete markups:", err);
+          }
+        },
+        bulkDeletePending: bulkDeleteMarkupsMutation.isPending,
+        saveButtonSlot: (
+          <MarkupStylingPopoverSaveButton
+            onSave={save}
+            updatePending={updateMarkupMutation.isPending}
+            bulkPending={bulkUpdateMarkupsMutation.isPending}
+          />
+        ),
+      };
+    })(),
+    propertiesPanel: (() => {
+      if (!propertiesPanelOpen || !selectedMeasurementId) return null;
+      const selectedMeasurement = measurements.find(m => m.id === selectedMeasurementId);
+      if (!selectedMeasurement) return null;
+      return {
+        measurement: selectedMeasurement,
+        selectedSheet,
+        onClose: () => setPropertiesPanelOpen(false),
+      };
+    })(),
+  };
+  const collabSlice: CollabContextSlice = useMemo(() => {
+    const sheetLockOwnedByMe =
+      !!selectedSheet &&
+      collab.sheetLocks.has(selectedSheet) &&
+      collab.sheetLocks.get(selectedSheet)?.userId === currentUser?.id;
+    return {
+      collaborators: collab.collaborators,
+      currentSheetLock: collab.currentSheetLock,
+      connected: collab.connected,
+      hasRoom: !!collabRoomId,
+      sheetNameById: (sheetId: string) =>
+        sheets.find((s: TakeoffSheet) => s.id === sheetId)?.sheetName ?? null,
+      sheetLockToggle: {
+        visible: !!selectedSheet && collab.collaborators.length > 0,
+        ownedByMe: sheetLockOwnedByMe,
+        onToggle: () => {
+          if (!selectedSheet) return;
+          const myLock = collab.sheetLocks.get(selectedSheet);
+          if (myLock && myLock.userId === currentUser?.id) {
+            collab.unlockSheet(selectedSheet);
+          } else {
+            collab.lockSheet(selectedSheet);
+          }
+        },
+      },
+    };
+  }, [
+    collab, collabRoomId, sheets, selectedSheet, currentUser?.id,
   ]);
-  const collabSlice: CollabContextSlice = useMemo(() => ({
-    collaborators: collab.collaborators,
-    currentSheetLock: collab.currentSheetLock,
-    connected: collab.connected,
-    hasRoom: !!collabRoomId,
-    sheetNameById: (sheetId: string) =>
-      sheets.find((s: TakeoffSheet) => s.id === sheetId)?.sheetName ?? null,
-  }), [collab.collaborators, collab.currentSheetLock, collab.connected, collabRoomId, sheets]);
   const ctxValue: TakeoffWorkspaceContextValue = {
     ribbon: ribbonSlice,
     sheet: sheetSlice,
@@ -2668,1421 +3267,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
       <div className="flex-1 flex flex-col bg-muted/30 min-h-0 relative">
         <SheetHost />
-        
-        <div className="h-12 sm:h-14 bg-card border-b px-2 sm:px-4 flex items-center justify-between gap-2 sm:gap-4">
-          <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
-            <Label className="text-xs sm:text-sm font-medium shrink-0">Sheet:</Label>
-            <Select value={selectedSheet || ""} onValueChange={setSelectedSheet}>
-              <SelectTrigger className="w-32 sm:w-64" data-testid="select-sheet">
-                <SelectValue placeholder="Select a sheet..." />
-              </SelectTrigger>
-              <SelectContent container={workspaceRef.current}>
-                {sheets.map((sheet: any) => (
-                  <SelectItem key={sheet.id} value={sheet.id}>
-                    <span className="flex items-center gap-2">
-                      {sheet.scalePxPerFoot ? (
-                        <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0" />
-                      ) : (
-                        <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" />
-                      )}
-                      {sheet.sheetName}
-                      {sheet.revisionLabel && (
-                        <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 shrink-0">{sheet.revisionLabel}</Badge>
-                      )}
-                      {sheet.isActive === false && (
-                        <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 shrink-0 opacity-60">Superseded</Badge>
-                      )}
-                      {linkCountsBySheet[sheet.id] > 0 && (
-                        <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 shrink-0 text-blue-600 border-blue-300" data-testid={`badge-links-count-${sheet.id}`}>
-                          <Link2 className="w-2.5 h-2.5 mr-0.5" />{linkCountsBySheet[sheet.id]}
-                        </Badge>
-                      )}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {selectedSheet && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" data-testid="button-sheet-actions">
-                    <MoreVertical className="h-4 w-4" />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="start">
-                  <DropdownMenuItem
-                    onClick={() => { setRenameValue(currentSheet?.sheetName || ""); setRenameDialogOpen(true); }}
-                    data-testid="menu-rename-sheet"
-                  >
-                    <Pencil className="h-4 w-4 mr-2" /> Rename
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => duplicateSheetMutation.mutate(selectedSheet)}
-                    disabled={duplicateSheetMutation.isPending}
-                    data-testid="menu-duplicate-sheet"
-                  >
-                    <Copy className="h-4 w-4 mr-2" /> Duplicate
-                  </DropdownMenuItem>
-                  {hasRevisionHistory && (
-                    <>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onClick={() => setCompareDialogOpen(true)}
-                        data-testid="menu-compare-revisions"
-                      >
-                        <GitCompare className="h-4 w-4 mr-2" /> Compare Revisions
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => handleMoveSheet("up")}
-                    disabled={sheets.findIndex(s => s.id === selectedSheet) <= 0}
-                    data-testid="menu-move-sheet-up"
-                  >
-                    <ArrowUp className="h-4 w-4 mr-2" /> Move Up
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => handleMoveSheet("down")}
-                    disabled={sheets.findIndex(s => s.id === selectedSheet) >= sheets.length - 1}
-                    data-testid="menu-move-sheet-down"
-                  >
-                    <ArrowDown className="h-4 w-4 mr-2" /> Move Down
-                  </DropdownMenuItem>
-                  {/* Task #1682 — admin-gated Pin / Unpin / Use-latest
-                      revision controls for the currently-selected sheet
-                      so users don't have to leave the takeoff canvas to
-                      change active-set membership. Wired to the same
-                      mutations + cache-invalidations as PlansTab. */}
-                  {canManageDrawingSetsOnCanvas && activeCanvasSetId && currentSheet && (() => {
-                    const pinnedItem = activeCanvasSetItemMap.get(currentSheet.id);
-                    const isPinned = pinnedSheetIdsForStrip.has(currentSheet.id);
-                    const latestId = getLatestRevisionForCanvasSheet(currentSheet.id);
-                    const setLabel = activeCanvasSetName || "active set";
-                    return (
-                      <>
-                        <DropdownMenuSeparator />
-                        {isPinned ? (
-                          <DropdownMenuItem
-                            onClick={() => {
-                              if (!pinnedItem) return;
-                              canvasUnpinSheetMutation.mutate({
-                                setId: activeCanvasSetId,
-                                itemId: pinnedItem.id,
-                              });
-                            }}
-                            disabled={canvasUnpinSheetMutation.isPending || !pinnedItem}
-                            data-testid="menu-unpin-sheet-from-set"
-                          >
-                            <PinOff className="h-4 w-4 mr-2" /> Unpin from {setLabel}
-                          </DropdownMenuItem>
-                        ) : (
-                          <DropdownMenuItem
-                            onClick={() => {
-                              canvasPinSheetMutation.mutate({
-                                setId: activeCanvasSetId,
-                                sheetId: currentSheet.id,
-                              });
-                            }}
-                            disabled={canvasPinSheetMutation.isPending}
-                            data-testid="menu-pin-sheet-to-set"
-                          >
-                            <Pin className="h-4 w-4 mr-2" /> Pin to {setLabel}
-                          </DropdownMenuItem>
-                        )}
-                        {isPinned && latestId && pinnedItem && (
-                          <DropdownMenuItem
-                            onClick={() => {
-                              canvasSwapPinnedRevisionMutation.mutate({
-                                setId: activeCanvasSetId,
-                                oldItemId: pinnedItem.id,
-                                newSheetId: latestId,
-                              });
-                            }}
-                            disabled={canvasSwapPinnedRevisionMutation.isPending}
-                            data-testid="menu-use-latest-revision"
-                          >
-                            <ArrowUpCircle className="h-4 w-4 mr-2" /> Use latest revision
-                          </DropdownMenuItem>
-                        )}
-                      </>
-                    );
-                  })()}
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    onClick={() => selectedSheet && detectLinksMutation.mutate(selectedSheet)}
-                    disabled={detectLinksMutation.isPending}
-                    data-testid="menu-detect-links"
-                  >
-                    <Search className="h-4 w-4 mr-2" /> {detectLinksMutation.isPending ? "Detecting..." : "Detect Links"}
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    onClick={() => setCreateLinkMode({ step: "select-area" })}
-                    data-testid="menu-create-link"
-                  >
-                    <Link2 className="h-4 w-4 mr-2" /> Create Link to Sheet
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem
-                    className="text-destructive focus:text-destructive"
-                    onClick={() => setDeleteSheetConfirmOpen(true)}
-                    data-testid="menu-delete-sheet"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" /> Delete Sheet
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-            {sheets.length > 1 && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant={thumbnailStripOpen ? "secondary" : "ghost"}
-                    size="icon"
-                    className="h-8 w-8 shrink-0"
-                    onClick={() => setThumbnailStripOpen((v) => !v)}
-                    data-testid="button-toggle-thumbnails"
-                  >
-                    {thumbnailStripOpen ? <List className="h-4 w-4" /> : <GalleryHorizontal className="h-4 w-4" />}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{thumbnailStripOpen ? "Hide Thumbnails" : "Show Page Thumbnails"}</p>
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {linkNavigationHistory.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleLinkBack}
-                className="gap-1 h-7 px-2 text-xs"
-                data-testid="button-link-back"
-              >
-                <ArrowLeft className="h-3 w-3" />
-                <span className="hidden sm:inline">Back</span>
-              </Button>
-            )}
-            {currentSheet && (
-              <Badge variant="outline" data-testid="badge-calibration-status">
-                {currentSheet.scalePxPerFoot
-                  ? `Calibrated (${currentSheet.units})`
-                  : "Not Calibrated"}
-              </Badge>
-            )}
-            {selectedSheet && collab.collaborators.length > 0 && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant={collab.sheetLocks.has(selectedSheet) && collab.sheetLocks.get(selectedSheet)?.userId === currentUser?.id ? "secondary" : "ghost"}
-                    size="sm"
-                    className="gap-1 h-7 px-2"
-                    onClick={() => {
-                      if (!selectedSheet) return;
-                      const myLock = collab.sheetLocks.get(selectedSheet);
-                      if (myLock && myLock.userId === currentUser?.id) {
-                        collab.unlockSheet(selectedSheet);
-                      } else {
-                        collab.lockSheet(selectedSheet);
-                      }
-                    }}
-                    data-testid="button-sheet-lock-toggle"
-                  >
-                    <Lock className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline text-xs">
-                      {collab.sheetLocks.has(selectedSheet) && collab.sheetLocks.get(selectedSheet)?.userId === currentUser?.id ? "Unlock" : "Lock"}
-                    </span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>
-                    {collab.sheetLocks.has(selectedSheet) && collab.sheetLocks.get(selectedSheet)?.userId === currentUser?.id
-                      ? "Release \"I'm working here\" lock"
-                      : "Set \"I'm working here\" soft lock"}
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {sheetLinks.length > 0 && (
-              <Badge variant="outline" className="text-blue-600 border-blue-300" data-testid="badge-sheet-links">
-                <Link2 className="w-3 h-3 mr-1" />{sheetLinks.length} Links
-              </Badge>
-            )}
-          </div>
-          <div className="flex items-center gap-1.5 shrink-0">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={autoImportEnabled ? "default" : "outline"}
-                  size="sm"
-                  className={`h-7 gap-1 px-2 text-xs ${autoImportEnabled ? "bg-green-600 hover:bg-green-700 text-white" : ""}`}
-                  onClick={() => setAutoImportEnabled(!autoImportEnabled)}
-                  data-testid="button-auto-import-toggle"
-                >
-                  <Zap className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">{autoImportEnabled ? "Auto-Import ON" : "Auto-Import"}</span>
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{autoImportEnabled ? "New measurements are automatically added to the estimate" : "Enable to auto-add new measurements to estimate"}</p>
-              </TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 w-7 p-0"
-                  onClick={() => setVersionHistoryOpen(true)}
-                  data-testid="button-version-history"
-                >
-                  <History className="w-3.5 h-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Version History</TooltipContent>
-            </Tooltip>
-            {selectedMeasurementId && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant={propertiesPanelOpen ? "default" : "outline"}
-                    size="sm"
-                    className="h-7 w-7 p-0"
-                    onClick={() => setPropertiesPanelOpen(!propertiesPanelOpen)}
-                    data-testid="button-properties-panel"
-                  >
-                    <PanelRight className="w-3.5 h-3.5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Properties Panel</TooltipContent>
-              </Tooltip>
-            )}
-            <CollabHost />
-            {selectedSheet && issues.length > 0 && (
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground" data-testid="hide-resolved-toggle">
-                <Switch
-                  id="hide-resolved"
-                  checked={hideResolvedIssues}
-                  onCheckedChange={setHideResolvedIssues}
-                  className="h-4 w-7 data-[state=checked]:bg-green-500"
-                />
-                <label htmlFor="hide-resolved" className="cursor-pointer select-none hidden sm:block">Hide Resolved</label>
-              </div>
-            )}
-            {selectedSheet && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setScaleModalOpen(true)}
-                className="gap-1.5"
-                data-testid="button-add-scale"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">{currentSheet?.scalePxPerFoot ? "Set Scale" : "Add Scale"}</span>
-              </Button>
-            )}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShortcutsDialogOpen(true)}
-                  data-testid="button-keyboard-shortcuts"
-                >
-                  <Keyboard className="w-5 h-5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <div className="flex items-center gap-2">
-                  <span>Keyboard Shortcuts</span>
-                  <kbd className="px-1.5 py-0.5 text-xs font-mono bg-muted rounded border">?</kbd>
-                </div>
-              </TooltipContent>
-            </Tooltip>
-            {context?.type !== "bid" && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant={crossModulePanelOpen ? "secondary" : "ghost"}
-                    size="icon"
-                    onClick={() => setCrossModulePanelOpen((v) => !v)}
-                    data-testid="button-toggle-cross-module"
-                  >
-                    <ArrowRight className="w-5 h-5" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{crossModulePanelOpen ? "Hide Cross-Module Panel" : "Cross-Module Actions"}</p>
-                </TooltipContent>
-              </Tooltip>
-            )}
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={toggleFullscreen}
-              data-testid="button-toggle-fullscreen"
-              title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
-            >
-              {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
-            </Button>
-          </div>
-        </div>
 
-        {thumbnailStripOpen && sheets.length > 1 && (
-          <div className="bg-card border-b shrink-0" data-testid="panel-thumbnail-strip">
-            <PageThumbnailStrip
-              sheets={sheets}
-              selectedSheet={selectedSheet}
-              onSelectSheet={setSelectedSheet}
-              layout="horizontal"
-              measurementCounts={measurementCountsPerSheet}
-              pinnedSheetIds={pinnedSheetIdsForStrip}
-              newerSheetIds={newerSheetIdsForStrip}
-              canManagePins={canManageDrawingSetsOnCanvas && !!activeCanvasSetId}
-              onPinSheet={handleCanvasPinSheet}
-              onUnpinSheet={handleCanvasUnpinSheet}
-              onSwapToLatestRevision={handleCanvasSwapRevision}
-              pinActionsDisabled={canvasPinMutationPending}
-              activeSetName={activeCanvasSetName}
-            />
-          </div>
-        )}
-
-        <div
-          ref={containerRef}
-          className="flex-1 overflow-hidden relative"
-          style={{
-            cursor: createLinkMode?.step === "select-area" ? "crosshair" :
-                   activeTool === "pan" ? "grab" :
-                   activeTool === "select" ? "default" :
-                   "crosshair"
-          }}
-          onContextMenu={(e) => {
-            if (!selectedSheet) return;
-            e.preventDefault();
-            const stage = stageRef.current;
-            if (stage) {
-              const rect = containerRef.current?.getBoundingClientRect();
-              if (rect) {
-                const stageX = (e.clientX - rect.left - stagePosition.x) / stageScale;
-                const stageY = (e.clientY - rect.top - stagePosition.y) / stageScale;
-                setContextMenuPos({ x: e.clientX - rect.left, y: e.clientY - rect.top, canvasX: stageX, canvasY: stageY });
-              }
-            }
-          }}
-          onClick={() => { if (contextMenuPos) setContextMenuPos(null); if (measurementContextMenu) setMeasurementContextMenu(null); }}
-        >
-          {calibrationMode !== "idle" && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-primary text-primary-foreground px-4 py-2 rounded-full shadow-lg text-sm font-medium flex items-center gap-2 pointer-events-none" data-testid="calibration-mode-banner">
-              <span className="inline-block w-2 h-2 rounded-full bg-primary-foreground animate-pulse" />
-              {calibrationMode === "first-point" ? "Click first point on a known distance" : "Click second point to complete"}
-            </div>
-          )}
-          {isDrawing && isMobile && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-2 bg-card/95 backdrop-blur-sm rounded-xl shadow-lg border px-3 py-2" data-testid="mobile-drawing-bar">
-              <div className="flex items-center gap-1.5 pr-2 border-r">
-                <div className="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse" />
-                <span className="text-xs font-medium">{drawingPoints.length} pts</span>
-              </div>
-              {drawingPoints.length > 0 && (
-                <button
-                  onClick={() => {
-                    const event = new KeyboardEvent("keydown", { key: "Backspace" });
-                    window.dispatchEvent(event);
-                  }}
-                  className="px-3 py-1.5 bg-amber-500/20 text-amber-700 dark:text-amber-300 rounded-lg text-xs font-medium active:scale-95 transition-transform"
-                  data-testid="mobile-undo-point"
-                >
-                  Undo
-                </button>
-              )}
-              {(activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area" || activeTool === "segment") && drawingPoints.length >= (activeTool === "segment" ? 2 : 3) && (
-                <button
-                  onClick={() => {
-                    const event = new KeyboardEvent("keydown", { key: "Enter" });
-                    window.dispatchEvent(event);
-                  }}
-                  className="px-3 py-1.5 bg-green-500/20 text-green-700 dark:text-green-300 rounded-lg text-xs font-medium active:scale-95 transition-transform"
-                  data-testid="mobile-close-polygon"
-                >
-                  Close
-                </button>
-              )}
-              <button
-                onClick={() => {
-                  const event = new KeyboardEvent("keydown", { key: "Escape" });
-                  window.dispatchEvent(event);
-                }}
-                className="px-3 py-1.5 bg-red-500/20 text-red-700 dark:text-red-300 rounded-lg text-xs font-medium active:scale-95 transition-transform"
-                data-testid="mobile-cancel-draw"
-              >
-                Cancel
-              </button>
-              {activeCondition && (
-                <div className="flex items-center gap-1 pl-2 border-l">
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: activeCondition.color || "#2563eb" }} />
-                  <span className="text-[10px] text-muted-foreground truncate max-w-[60px]">{activeCondition.name}</span>
-                </div>
-              )}
-            </div>
-          )}
-          {isMobile && showMobileGestureGuide && selectedSheet && !isDrawing && (
-            <div className="absolute inset-0 z-50 bg-black/60 flex items-center justify-center" data-testid="mobile-gesture-guide">
-              <div className="bg-card rounded-xl shadow-2xl p-5 mx-4 max-w-sm space-y-4">
-                <h3 className="text-sm font-bold text-center">Touch Gestures</h3>
-                <div className="space-y-3 text-xs text-muted-foreground">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center shrink-0">
-                      <span className="text-lg">👆</span>
-                    </div>
-                    <div><span className="font-medium text-foreground">Tap</span> — Place measurement points or select items</div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-green-500/20 flex items-center justify-center shrink-0">
-                      <span className="text-lg">🤏</span>
-                    </div>
-                    <div><span className="font-medium text-foreground">Pinch</span> — Zoom in/out on the plan</div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-purple-500/20 flex items-center justify-center shrink-0">
-                      <span className="text-lg">👆👆</span>
-                    </div>
-                    <div><span className="font-medium text-foreground">Double-tap</span> — Complete polygon or close shape</div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center shrink-0">
-                      <span className="text-lg">☝️</span>
-                    </div>
-                    <div><span className="font-medium text-foreground">One-finger drag</span> — Pan the drawing</div>
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    setShowMobileGestureGuide(false);
-                    localStorage.setItem("takeoff-gesture-guide-dismissed", "1");
-                  }}
-                  className="w-full py-2 bg-primary text-primary-foreground rounded-lg text-sm font-medium active:scale-95 transition-transform"
-                  data-testid="dismiss-gesture-guide"
-                >
-                  Got it
-                </button>
-              </div>
-            </div>
-          )}
-          {isMobile && !isDrawing && selectedSheet && (
-            <div className="absolute bottom-4 right-4 z-40" data-testid="mobile-fab-tools">
-              {showMobileToolPicker && (
-                <div className="absolute bottom-14 right-0 bg-card/95 backdrop-blur-sm rounded-xl shadow-lg border p-2 grid grid-cols-3 gap-1.5 min-w-[180px] animate-in fade-in slide-in-from-bottom-2 duration-200">
-                  {[
-                    { id: "linear" as const, label: "Line", icon: "📏" },
-                    { id: "area" as const, label: "Area", icon: "⬜" },
-                    { id: "volume" as const, label: "Vol", icon: "📦" },
-                    { id: "count" as const, label: "Count", icon: "🔢" },
-                    { id: "segment" as const, label: "Seg", icon: "📐" },
-                    { id: "arc" as const, label: "Arc", icon: "⌒" },
-                  ].map(tool => (
-                    <button
-                      key={tool.id}
-                      onClick={() => {
-                        setActiveTool(tool.id);
-                        setShowMobileToolPicker(false);
-                        if (navigator.vibrate) navigator.vibrate(10);
-                      }}
-                      className={cn(
-                        "flex flex-col items-center gap-0.5 p-2 rounded-lg text-[10px] active:scale-95 transition-all",
-                        activeTool === tool.id ? "bg-primary/20 text-primary font-bold" : "hover:bg-accent"
-                      )}
-                      data-testid={`mobile-tool-${tool.id}`}
-                    >
-                      <span className="text-base">{tool.icon}</span>
-                      <span>{tool.label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <button
-                onClick={() => {
-                  setShowMobileToolPicker(!showMobileToolPicker);
-                  if (navigator.vibrate) navigator.vibrate(10);
-                }}
-                className="w-12 h-12 rounded-full bg-primary text-primary-foreground shadow-lg flex items-center justify-center active:scale-90 transition-transform"
-                data-testid="mobile-fab-button"
-              >
-                <span className="text-xl">{activeTool === "linear" ? "📏" : activeTool === "area" ? "⬜" : activeTool === "count" ? "🔢" : "✏️"}</span>
-              </button>
-            </div>
-          )}
-          {openSheetIds.length > 0 && (
-            <div className="absolute top-2 left-2 right-2 z-20 flex items-center gap-0.5 bg-card/95 backdrop-blur-sm rounded-md shadow-sm border px-1 py-0.5 overflow-x-auto no-scrollbar" data-testid="sheet-tabs-bar">
-              {openSheetIds
-                .map((id) => sheets.find((s: TakeoffSheet) => s.id === id))
-                .filter(Boolean)
-                .map((s: any, idx: number) => {
-                  const isActive = selectedSheet === s.id;
-                  return (
-                    <div
-                      key={s.id}
-                      onClick={() => setSelectedSheet(s.id)}
-                      className={cn(
-                        "group flex items-center gap-1 pl-2 pr-1 py-1 rounded text-[11px] font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors border",
-                        isActive
-                          ? "bg-background text-foreground border-border shadow-sm"
-                          : "bg-transparent text-muted-foreground border-transparent hover:text-foreground hover:bg-accent/50"
-                      )}
-                      title={s.name || `Sheet ${idx + 1}`}
-                      data-testid={`tab-sheet-${s.id}`}
-                    >
-                      <span className="truncate inline-block max-w-[140px] align-middle">{s.name || `Sheet ${idx + 1}`}</span>
-                      <button
-                        type="button"
-                        onClick={(e) => handleCloseSheetTab(s.id, e)}
-                        className={cn(
-                          "flex items-center justify-center w-4 h-4 rounded-sm shrink-0 transition-opacity hover:bg-muted-foreground/20",
-                          isActive ? "opacity-60 hover:opacity-100" : "opacity-0 group-hover:opacity-60 hover:!opacity-100"
-                        )}
-                        data-testid={`button-close-tab-${s.id}`}
-                        title="Close tab"
-                        aria-label={`Close ${s.name || `Sheet ${idx + 1}`}`}
-                      >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  );
-                })}
-            </div>
-          )}
-
-          {selectedSheet && (
-            <div className="absolute bottom-2 left-2 z-10 flex items-center gap-2 bg-card/90 backdrop-blur-sm rounded-md shadow-sm border px-2 py-1 text-[10px] text-muted-foreground" data-testid="takeoff-status-bar">
-              <span className="font-mono tabular-nums" data-testid="status-zoom">{Math.round(stageScale * 100)}%</span>
-              <span className="opacity-40">·</span>
-              <span data-testid="status-tool">{TOOL_CONFIG.find(t => t.id === activeTool)?.label || "Select"}</span>
-              {currentSheet?.scalePxPerFoot ? (
-                <>
-                  <span className="opacity-40">·</span>
-                  <span className="text-emerald-600 dark:text-emerald-400 font-medium" data-testid="status-scale-ok">Calibrated</span>
-                </>
-              ) : (
-                <>
-                  <span className="opacity-40">·</span>
-                  <span className="text-amber-600 dark:text-amber-400 font-medium" data-testid="status-scale-missing">No scale</span>
-                </>
-              )}
-              {snapEnabled && (<><span className="opacity-40">·</span><span data-testid="status-snap">Snap</span></>)}
-              {orthoLock && (<><span className="opacity-40">·</span><span data-testid="status-ortho">Ortho</span></>)}
-              {gridEnabled && (<><span className="opacity-40">·</span><span data-testid="status-grid">Grid</span></>)}
-            </div>
-          )}
-
-          {isDrawing && !isMobile && (
-            <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 bg-card/95 backdrop-blur-sm rounded-lg shadow-lg border px-3 py-1.5" data-testid="drawing-guide-bar">
-              <div className="flex items-center gap-1.5">
-                <div className={cn("w-2 h-2 rounded-full animate-pulse", isDrawing ? "bg-green-500" : "bg-muted-foreground")} />
-                <span className="text-[11px] font-medium">
-                  {activeTool === "linear" || activeTool === "linear_with_drop" || activeTool === "pitched_linear"
-                    ? drawingPoints.length === 0 ? "Click start point" : "Click end point · Esc cancel"
-                    : activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area"
-                    ? drawingPoints.length < 3 ? `Click point ${drawingPoints.length + 1}` : `${drawingPoints.length} pts · Enter to close · Backspace undo`
-                    : activeTool === "segment"
-                    ? `${drawingPoints.length} pts · Enter to finish · Backspace undo`
-                    : activeTool === "count"
-                    ? "Click to place count"
-                    : "Drawing..."}
-                </span>
-              </div>
-              {drawingPoints.length > 0 && (
-                <span className="text-[10px] text-muted-foreground border-l pl-2">
-                  {drawingPoints.length} point{drawingPoints.length !== 1 ? "s" : ""}
-                </span>
-              )}
-              {activeCondition && (
-                <span className="text-[10px] text-muted-foreground border-l pl-2 flex items-center gap-1">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: activeCondition.color || "#2563eb" }} />
-                  {activeCondition.name}
-                </span>
-              )}
-            </div>
-          )}
-          {isDrawing && conditions.length > 0 && (
-            <div className="absolute top-2 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 bg-card/95 backdrop-blur-sm rounded-lg shadow-lg border px-2 py-1.5 max-w-[80%] overflow-x-auto" data-testid="condition-quick-bar">
-              {activeCondition && (
-                <div className="flex items-center gap-1.5 pr-2 border-r mr-1 shrink-0">
-                  <div className="w-3 h-3 rounded-full border border-white/30 shrink-0" style={{ backgroundColor: activeCondition.color || "#2563eb" }} />
-                  <span className="text-[11px] font-semibold truncate max-w-[120px]">{activeCondition.name}</span>
-                </div>
-              )}
-              {conditions
-                .filter(c => c.id !== activeCondition?.id)
-                .sort((a, b) => {
-                  const bKey = b.lastUsedAt ? new Date(b.lastUsedAt).toISOString() : "";
-                  const aKey = a.lastUsedAt ? new Date(a.lastUsedAt).toISOString() : "";
-                  return bKey.localeCompare(aKey);
-                })
-                .slice(0, 8)
-                .map(c => (
-                  <button
-                    key={c.id}
-                    onClick={() => handleActivateCondition(c)}
-                    className="flex items-center gap-1 px-1.5 py-1 rounded text-[10px] hover:bg-accent/80 transition-colors shrink-0"
-                    data-testid={`quick-condition-${c.id}`}
-                    title={`${c.name} (${c.measurementType})`}
-                  >
-                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: c.color || "#2563eb" }} />
-                    <span className="truncate max-w-[80px] text-muted-foreground">{c.name}</span>
-                  </button>
-                ))}
-            </div>
-          )}
-          {selectedSheet ? (
-            <CanvasHost />
-          ) : (
-            <div className="flex items-center justify-center h-full" data-testid="takeoff-empty-state">
-              <div className="max-w-lg w-full mx-auto text-center px-8">
-                <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 flex items-center justify-center">
-                  <Upload className="w-10 h-10 text-primary/60" />
-                </div>
-                <h3 className="text-xl font-semibold text-foreground mb-2">Start Your Takeoff</h3>
-                <p className="text-muted-foreground mb-6">Upload construction plans to begin measuring quantities. Supports multi-page PDFs with auto-scale detection.</p>
-                <Button
-                  size="lg"
-                  onClick={() => setUploadDialogOpen(true)}
-                  className="gap-2 mb-8"
-                  data-testid="button-empty-upload-area"
-                >
-                  <Upload className="w-4 h-4" />
-                  Import Plan Sheets
-                </Button>
-                <div className="grid grid-cols-3 gap-4 text-left">
-                  <div className="p-3 rounded-lg bg-card border" data-testid="info-feature-measure">
-                    <div className="w-8 h-8 rounded-md bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mb-2">
-                      <Ruler className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                    </div>
-                    <p className="text-sm font-medium">Precise Measurement</p>
-                    <p className="text-xs text-muted-foreground mt-1">Linear, area, volume, count, and pitched measurements</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-card border" data-testid="info-feature-ai">
-                    <div className="w-8 h-8 rounded-md bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center mb-2">
-                      <Sparkles className="w-4 h-4 text-violet-600 dark:text-violet-400" />
-                    </div>
-                    <p className="text-sm font-medium">AI Auto-Takeoff</p>
-                    <p className="text-xs text-muted-foreground mt-1">Auto-detect symbols and quantities from blueprints</p>
-                  </div>
-                  <div className="p-3 rounded-lg bg-card border" data-testid="info-feature-collab">
-                    <div className="w-8 h-8 rounded-md bg-green-100 dark:bg-green-900/30 flex items-center justify-center mb-2">
-                      <Users className="w-4 h-4 text-green-600 dark:text-green-400" />
-                    </div>
-                    <p className="text-sm font-medium">Live Collaboration</p>
-                    <p className="text-xs text-muted-foreground mt-1">Work together in real-time with your team</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {markupTextInput && (() => {
-            const w = pdfImage?.width || 0;
-            const h = pdfImage?.height || 0;
-            let rx = markupTextInput.x;
-            let ry = markupTextInput.y;
-            switch (sheetRotation) {
-              case 90: rx = markupTextInput.y; ry = w - markupTextInput.x; break;
-              case 180: rx = w - markupTextInput.x; ry = h - markupTextInput.y; break;
-              case 270: rx = h - markupTextInput.y; ry = markupTextInput.x; break;
-            }
-            const left = Math.max(4, Math.min((rx * stageScale + stagePosition.x), (workspaceRef.current?.clientWidth || 9999) - 260));
-            const top = Math.max(48, Math.min((ry * stageScale + stagePosition.y), (workspaceRef.current?.clientHeight || 9999) - 80));
-            return (
-              <MarkupTextInput
-                key={`${markupTextInput.x},${markupTextInput.y}`}
-                left={left}
-                top={top}
-                initialValue={markupTextInput.value}
-                onSubmit={handleMarkupTextSubmit}
-                onCancel={() => setMarkupTextInput(null)}
-              />
-            );
-          })()}
-
-          {createLinkMode && (
-            <div className="absolute top-2 left-1/2 -translate-x-1/2 z-50 bg-card border rounded-lg shadow-lg px-4 py-3 flex items-center gap-3" data-testid="create-link-panel">
-              {createLinkMode.step === "select-area" && (
-                <>
-                  <Link2 className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm font-medium">Draw rectangle on the area to create a link hotspot</span>
-                  <Button variant="ghost" size="sm" onClick={() => setCreateLinkMode(null)} data-testid="button-cancel-create-link">
-                    <X className="w-4 h-4" />
-                  </Button>
-                </>
-              )}
-              {createLinkMode.step === "select-target" && (
-                <div className="flex items-center gap-2">
-                  <Link2 className="w-4 h-4 text-blue-600" />
-                  <span className="text-sm font-medium">Select target sheet:</span>
-                  <Select
-                    value={createLinkTargetSheet || ""}
-                    onValueChange={(val) => {
-                      setCreateLinkTargetSheet(val);
-                      if (val && selectedSheet && createLinkMode.startPoint && createLinkMode.endPoint) {
-                        const x = Math.min(createLinkMode.startPoint.x, createLinkMode.endPoint.x);
-                        const y = Math.min(createLinkMode.startPoint.y, createLinkMode.endPoint.y);
-                        const width = Math.abs(createLinkMode.endPoint.x - createLinkMode.startPoint.x);
-                        const height = Math.abs(createLinkMode.endPoint.y - createLinkMode.startPoint.y);
-                        const targetSheet = sheets.find((s: TakeoffSheet) => s.id === val);
-                        createSheetLinkMutation.mutate({
-                          sourceSheetId: selectedSheet,
-                          targetSheetId: val,
-                          x, y, width, height,
-                          label: targetSheet?.sheetName || undefined,
-                        }, {
-                          onSuccess: () => {
-                            queryClient.invalidateQueries({ queryKey: allSheetsLinksQueryKey });
-                            setCreateLinkMode(null);
-                            setCreateLinkTargetSheet(null);
-                          },
-                        });
-                      }
-                    }}
-                  >
-                    <SelectTrigger className="w-48" data-testid="select-link-target">
-                      <SelectValue placeholder="Choose sheet..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {sheets.filter((s: any) => s.id !== selectedSheet).map((s: any) => (
-                        <SelectItem key={s.id} value={s.id}>{s.sheetName}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button variant="ghost" size="sm" onClick={() => { setCreateLinkMode(null); setCreateLinkTargetSheet(null); }} data-testid="button-cancel-link-target">
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
-              )}
-            </div>
-          )}
-
-          {contextMenuPos && (
-            <div
-              className="absolute z-50 bg-card border rounded-md shadow-lg py-1 min-w-44"
-              style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
-              data-testid="canvas-context-menu"
-            >
-              <button
-                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent flex items-center gap-2"
-                onClick={() => {
-                  setCreateLinkMode({ step: "select-area" });
-                  setContextMenuPos(null);
-                }}
-                data-testid="context-menu-create-link"
-              >
-                <Link2 className="w-3.5 h-3.5" /> Create Link to Sheet
-              </button>
-              <button
-                className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent flex items-center gap-2"
-                onClick={() => {
-                  if (selectedSheet) detectLinksMutation.mutate(selectedSheet);
-                  setContextMenuPos(null);
-                }}
-                data-testid="context-menu-detect-links"
-              >
-                <Search className="w-3.5 h-3.5" /> Detect Links
-              </button>
-            </div>
-          )}
-
-          {measurementContextMenu && (() => {
-            const ctxMeasurement = measurements.find(m => m.id === measurementContextMenu.measurementId);
-            if (!ctxMeasurement) return null;
-            return (
-              <div
-                className="absolute z-50 bg-card border rounded-md shadow-lg py-1 min-w-48"
-                style={{ left: measurementContextMenu.x, top: measurementContextMenu.y }}
-                data-testid="measurement-context-menu"
-              >
-                <div className="px-3 py-1.5 text-xs text-muted-foreground border-b mb-1 truncate max-w-56">
-                  {ctxMeasurement.label || "Measurement"}
-                </div>
-                <button
-                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent flex items-center gap-2"
-                  onClick={() => {
-                    setSelectedMeasurementId(ctxMeasurement.id);
-                    setMeasurementContextMenu(null);
-                  }}
-                  data-testid="context-menu-select-measurement"
-                >
-                  <Pencil className="w-3.5 h-3.5" /> Edit Details
-                </button>
-                <button
-                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent flex items-center gap-2"
-                  onClick={() => {
-                    setSelectedMeasurementId(ctxMeasurement.id);
-                    setPropertiesPanelOpen(true);
-                    setMeasurementContextMenu(null);
-                  }}
-                  data-testid="context-menu-properties"
-                >
-                  <Tag className="w-3.5 h-3.5" /> Properties
-                </button>
-                <button
-                  className="w-full text-left px-3 py-1.5 text-sm hover:bg-accent text-destructive flex items-center gap-2"
-                  onClick={() => {
-                    deleteMeasurementMutation.mutate(ctxMeasurement);
-                    setMeasurementContextMenu(null);
-                  }}
-                  data-testid="context-menu-delete-measurement"
-                >
-                  <Trash2 className="w-3.5 h-3.5" /> Delete
-                </button>
-              </div>
-            );
-          })()}
-
-          <LiveCostPanel
-            measurements={measurements}
-            categories={categories}
-            visible={showCostPanel}
-            onClose={() => setShowCostPanel(false)}
-          />
-
-          {showOverlaySlider && (
-            <div className="absolute top-3 right-3 z-30 bg-card/95 backdrop-blur-sm border rounded-lg shadow-lg px-3 py-2 flex items-center gap-3 w-[220px]" data-testid="overlay-opacity-slider">
-              <Layers className="w-4 h-4 text-muted-foreground shrink-0" />
-              <input
-                type="range"
-                min="0"
-                max="100"
-                value={overlayOpacity}
-                onChange={(e) => setOverlayOpacity(Number(e.target.value))}
-                className="flex-1 accent-primary h-1.5"
-                data-testid="input-overlay-opacity"
-              />
-              <span className="text-[10px] tabular-nums text-muted-foreground w-8 text-right">{overlayOpacity}%</span>
-              <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0" onClick={() => setShowOverlaySlider(false)} data-testid="button-close-overlay-slider">
-                <X className="w-3 h-3" />
-              </Button>
-            </div>
-          )}
-        </div>
-        {selectedMeasurementIds.size > 1 && (
-          <div className="flex h-9 bg-primary/10 border-t border-primary/20 px-3 items-center justify-between text-xs shrink-0" data-testid="batch-action-bar">
-            <span className="font-medium text-primary">{selectedMeasurementIds.size} measurements selected</span>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 text-xs px-2"
-                disabled={bulkDeleteMeasurementsMutation.isPending}
-                data-testid="button-batch-delete"
-                onClick={async () => {
-                  // Task #1901 — Route through the bulk mutation so the
-                  // user gets a single destructive "Deleted N
-                  // measurements · Undo" toast (mirroring #1882 for
-                  // markups) and the deletion is coalesced into one
-                  // MEASUREMENT_DELETE_BATCH history entry instead of
-                  // N per-id `DELETE` entries from the previous
-                  // per-id fan-out loop.
-                  const toDelete = measurements.filter(m => selectedMeasurementIds.has(m.id));
-                  if (toDelete.length === 0) return;
-                  setSelectedMeasurementIds(new Set());
-                  setSelectedMeasurementId(null);
-                  bulkDeleteMeasurementsMutation.mutate(toDelete);
-                }}
-              >
-                <Trash2 className="w-3 h-3 mr-1" />
-                Delete All
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 text-xs px-2"
-                data-testid="button-batch-clear"
-                onClick={() => {
-                  setSelectedMeasurementIds(new Set());
-                }}
-              >
-                Clear
-              </Button>
-            </div>
-          </div>
-        )}
-        {selectedSheet && (
-          <div className="hidden sm:flex h-7 bg-card/95 backdrop-blur-sm border-t px-3 items-center justify-between text-[11px] text-muted-foreground shrink-0 tabular-nums" data-testid="takeoff-status-bar">
-            <div className="flex items-center gap-4">
-              {measurements.length > 0 && (
-                <>
-                  <span className="font-medium text-foreground/80">{measurements.length} measurement{measurements.length !== 1 ? "s" : ""}</span>
-                  {(() => {
-                    const totals = { lf: 0, sf: 0, cy: 0, count: 0 };
-                    measurements.forEach(m => {
-                      if (m.computedLengthFt) totals.lf += Number(m.computedLengthFt);
-                      if (m.computedAreaFt2) totals.sf += Number(m.computedAreaFt2);
-                      if (m.computedVolumeCy) totals.cy += Number(m.computedVolumeCy);
-                      if (m.type === "COUNT" && m.count) totals.count += Number(m.count);
-                    });
-                    return (
-                      <>
-                        {totals.lf > 0 && <span>LF: <strong className="text-foreground/80">{totals.lf.toLocaleString(undefined, { maximumFractionDigits: 1 })}</strong></span>}
-                        {totals.sf > 0 && <span>SF: <strong className="text-foreground/80">{totals.sf.toLocaleString(undefined, { maximumFractionDigits: 1 })}</strong></span>}
-                        {totals.cy > 0 && <span>CY: <strong className="text-foreground/80">{totals.cy.toLocaleString(undefined, { maximumFractionDigits: 2 })}</strong></span>}
-                        {totals.count > 0 && <span>Count: <strong className="text-foreground/80">{totals.count.toLocaleString()}</strong></span>}
-                      </>
-                    );
-                  })()}
-                </>
-              )}
-            </div>
-            <div className="flex items-center gap-3">
-              <button
-                className={cn("flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted/70 transition-colors", showCostPanel && "bg-primary/10 text-primary")}
-                onClick={() => setShowCostPanel(!showCostPanel)}
-                data-testid="button-toggle-cost-panel"
-              >
-                <DollarSign className="w-3 h-3" />
-                <span>Costs</span>
-              </button>
-              <button
-                className={cn("flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted/70 transition-colors", showOverlaySlider && "bg-primary/10 text-primary")}
-                onClick={() => setShowOverlaySlider(!showOverlaySlider)}
-                data-testid="button-toggle-overlay-slider"
-              >
-                <Layers className="w-3 h-3" />
-                <span>Overlay</span>
-              </button>
-              <button
-                className={cn("flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted/70 transition-colors", showMeasurementTable && "bg-primary/10 text-primary")}
-                onClick={() => setShowMeasurementTable(!showMeasurementTable)}
-                data-testid="button-toggle-measurement-table"
-              >
-                <TableProperties className="w-3 h-3" />
-                <span>Table</span>
-              </button>
-              <span>Zoom: {Math.round(stageScale * 100)}%</span>
-              {currentSheet?.scalePxPerFoot ? (
-                <span className="text-green-600 dark:text-green-400">Scale: {currentSheet.units || "ft"}</span>
-              ) : (
-                <span className="text-amber-600 dark:text-amber-400">Not Calibrated</span>
-              )}
-            </div>
-          </div>
-        )}
+        <CanvasHost />
+        <WorkspaceBottomBar {...panelSlice.bottomBar} />
       </div>
-
-      {showMeasurementTable && selectedSheet && (
-        <div className="fixed bottom-0 left-[65px] right-0 z-30 bg-card border-t shadow-lg" style={{ height: "35vh" }} data-testid="measurement-table-panel">
-          <div className="flex items-center justify-between px-3 py-1 border-b bg-muted/30">
-            <span className="text-xs font-semibold flex items-center gap-1.5">
-              <TableProperties className="w-3.5 h-3.5" />
-              Measurements ({measurements.length})
-            </span>
-            <button onClick={() => setShowMeasurementTable(false)} className="text-muted-foreground hover:text-foreground p-0.5" data-testid="close-measurement-table">
-              <X className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <div style={{ height: "calc(35vh - 30px)" }}>
-            <MeasurementTable
-              measurements={measurements}
-              categories={categories}
-              selectedMeasurementId={selectedMeasurementId}
-              onSelect={(id) => setSelectedMeasurementId(id)}
-              onDelete={(id) => {
-                const m = measurements.find((m: any) => m.id === id);
-                if (m) deleteMeasurementMutation.mutate(m);
-              }}
-              onUpdate={(id, data) => {
-                // Task #1843 — forward a `previous` snapshot so the
-                // inline rename in MeasurementTable produces one
-                // MEASUREMENT_UPDATE history entry (one Undo press).
-                const prev: TakeoffMeasurement | undefined = measurements.find(
-                  (mm: TakeoffMeasurement) => mm.id === id,
-                );
-                const previous: Omit<MeasurementSnapshot, "id"> = {};
-                if (prev) {
-                  if (data.label !== undefined) previous.label = prev.label ?? null;
-                  if (data.costCodeId !== undefined) previous.costCodeId = prev.costCodeId ?? null;
-                  if (data.unitCost !== undefined) previous.unitCost = prev.unitCost ?? null;
-                  if (data.categoryId !== undefined) previous.categoryId = prev.categoryId ?? null;
-                  if (data.groupId !== undefined) previous.groupId = prev.groupId ?? null;
-                  if (data.lineStyle !== undefined) previous.lineStyle = prev.lineStyle ?? null;
-                  if (data.lineWidth !== undefined) previous.lineWidth = prev.lineWidth ?? null;
-                  if (data.metadata !== undefined) previous.metadata = prev.metadata ?? null;
-                }
-                updateMeasurementMutation.mutate({ id, ...data, previous });
-              }}
-              scalePxPerFoot={currentSheet?.scalePxPerFoot}
-            />
-          </div>
-        </div>
-      )}
-
-      {selectedIssue && (
-        <IssueDetailPanel
-          issue={selectedIssue}
-          orgUsers={orgUsers}
-          currentUser={currentUser}
-          sheetId={selectedSheet!}
-          onClose={() => setSelectedIssueId(null)}
-          onDelete={() => {
-            setSelectedIssueId(null);
-            if (issuesQueryKey) queryClient.invalidateQueries({ queryKey: issuesQueryKey });
-            queryClient.invalidateQueries({ queryKey: allSheetsIssuesQueryKey });
-          }}
-        />
-      )}
-
-      {aiPanelOpen && selectedSheet && (
-        <div className={cn("absolute top-0 right-0 h-full w-full sm:w-80 max-w-full border-l bg-card shadow-2xl z-40 flex flex-col transition-opacity", isDrawing && !isMobile && "opacity-20 hover:opacity-100")} data-testid="panel-ai-takeoff-overlay">
-          <AiTakeoffPanel
-            projectId={context?.type === "project" ? context.projectId : projectId || undefined}
-            bidId={context?.type === "bid" ? context.bidId : undefined}
-            sheetId={selectedSheet}
-            onClose={() => { setAiPanelOpen(false); setPreImportDetectedItems([]); }}
-            onHighlightItem={(item) => setHighlightedAiItem(item)}
-            onDetectedItemsChanged={(items) => setPreImportDetectedItems(items)}
-            showOverlays={showAiOverlays}
-            onToggleOverlays={setShowAiOverlays}
-            onItemsImported={async (items: DetectedItem[]) => {
-              let succeeded = 0;
-              let failed = 0;
-              const failedItems: string[] = [];
-              const imgW = pdfImage?.width || 2000;
-              const existingAiCount = measurements.filter(m => m.source === "AI" && m.type === "COUNT").length;
-
-              const isBidContext = context?.type === "bid";
-              const ctxBidId = isBidContext ? context.bidId : undefined;
-
-              const categoryCache: Record<string, string> = {};
-              let existingCategories: { id: string; name: string }[] = [];
-              if (ctxBidId) {
-                try {
-                  const catRes = await apiRequest("GET", `/api/bids/${ctxBidId}/takeoff/categories`);
-                  existingCategories = await catRes.json();
-                } catch (catFetchErr) {
-                  console.warn("Failed to fetch takeoff categories:", catFetchErr);
-                }
-              }
-
-              const getOrCreateCategory = async (itemType: string): Promise<string | undefined> => {
-                if (!ctxBidId) return undefined;
-                const categoryName = itemType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-                if (categoryCache[categoryName]) return categoryCache[categoryName];
-                const existing = existingCategories.find(c => c.name.toLowerCase() === categoryName.toLowerCase());
-                if (existing) {
-                  categoryCache[categoryName] = existing.id;
-                  return existing.id;
-                }
-                try {
-                  const res = await apiRequest("POST", `/api/bids/${ctxBidId}/takeoff/categories`, { name: categoryName });
-                  const created = await res.json();
-                  if (created?.id) {
-                    categoryCache[categoryName] = created.id;
-                    existingCategories.push({ id: created.id, name: categoryName });
-                    return created.id;
-                  }
-                } catch (catCreateErr) {
-                  console.warn(`Failed to create category '${categoryName}':`, catCreateErr);
-                }
-                return undefined;
-              };
-
-              const newMeasurementIds: string[] = [];
-              const imgH = pdfImage?.height || 1500;
-
-              const LINEAR_UNITS = new Set(["lf", "lm", "ft", "m", "in", "linear feet", "linear meters", "feet", "meters", "inches"]);
-              const AREA_UNITS = new Set(["sf", "sm", "sq ft", "sq m", "sqft", "sqm", "square feet", "square meters", "sq", "squares", "sy", "square yards"]);
-              const VOLUME_UNITS = new Set(["cy", "cm", "cubic yards", "cubic meters", "cu yd", "cu ft", "cf", "cubic feet", "ton", "tons"]);
-              const LINEAR_TYPES = new Set(["wire_run", "ridge", "drip_edge", "pipe_run", "conduit", "framing", "rebar", "gutter", "fascia", "soffit_linear", "trim"]);
-              const AREA_TYPES = new Set(["roof_plane", "slab", "floor", "ceiling", "wall", "formwork", "insulation", "drywall", "sheathing", "membrane", "shingles", "roofing"]);
-              const VOLUME_TYPES = new Set(["footing", "foundation", "concrete", "fill", "excavation", "backfill", "grading"]);
-
-              const deriveMeasurementType = (item: DetectedItem): string => {
-                const unitLower = (item.unit || "").toLowerCase();
-                const typeLower = (item.itemType || "").toLowerCase();
-                if (LINEAR_UNITS.has(unitLower) || LINEAR_TYPES.has(typeLower)) return "LINEAR";
-                if (AREA_UNITS.has(unitLower) || AREA_TYPES.has(typeLower)) return "AREA";
-                if (VOLUME_UNITS.has(unitLower) || VOLUME_TYPES.has(typeLower)) return "AREA";
-                if (item.boundingBox && unitLower !== "ea" && unitLower !== "each") return "AREA";
-                return "COUNT";
-              };
-
-              let fallbackCounter = 0;
-              const derivePoints = (item: DetectedItem, measType: string, imgW: number, imgH: number): Array<{ x: number; y: number }> => {
-                if (!item.boundingBox) {
-                  return [computeAiPosition(existingAiCount + fallbackCounter++, imgW)];
-                }
-                const bbox = item.boundingBox;
-                const x1 = (bbox.x / 100) * imgW;
-                const y1 = (bbox.y / 100) * imgH;
-                const x2 = x1 + (bbox.w / 100) * imgW;
-                const y2 = y1 + (bbox.h / 100) * imgH;
-
-                if (measType === "AREA") {
-                  return [
-                    { x: x1, y: y1 },
-                    { x: x2, y: y1 },
-                    { x: x2, y: y2 },
-                    { x: x1, y: y2 },
-                  ];
-                }
-                if (measType === "LINEAR") {
-                  const isWide = (x2 - x1) >= (y2 - y1);
-                  if (isWide) {
-                    const midY = (y1 + y2) / 2;
-                    return [{ x: x1, y: midY }, { x: x2, y: midY }];
-                  }
-                  const midX = (x1 + x2) / 2;
-                  return [{ x: midX, y: y1 }, { x: midX, y: y2 }];
-                }
-                if (item.boundingBox) {
-                  return [
-                    { x: x1, y: y1 },
-                    { x: x2, y: y1 },
-                    { x: x2, y: y2 },
-                    { x: x1, y: y2 },
-                  ];
-                }
-                return [{ x: (x1 + x2) / 2, y: (y1 + y2) / 2 }];
-              };
-
-              for (let idx = 0; idx < items.length; idx++) {
-                const item = items[idx];
-                let measType = deriveMeasurementType(item);
-                const points = derivePoints(item, measType, imgW, imgH);
-                if (points.length >= 4 && measType === "COUNT") {
-                  measType = "AREA";
-                }
-
-                try {
-                  const categoryId = item.itemType ? await getOrCreateCategory(item.itemType) : undefined;
-                  const res = await apiRequest("POST", "/api/takeoff/measurements", {
-                    sheetId: selectedSheet,
-                    type: measType,
-                    points,
-                    label: item.description,
-                    count: measType === "COUNT" ? item.quantity : undefined,
-                    source: "AI",
-                    categoryId: categoryId || undefined,
-                    costCodeId: item.suggestedSowItem?.code || undefined,
-                    metadata: JSON.stringify({
-                      source: "ai_takeoff",
-                      aiItemId: item.id,
-                      unit: item.unit,
-                      itemType: item.itemType,
-                      confidence: item.confidence,
-                      boundingBox: item.boundingBox || null,
-                      suggestedSowItem: item.suggestedSowItem || null,
-                      costCodeId: item.suggestedSowItem?.code || null,
-                      derivedMeasurementType: measType,
-                    }),
-                  });
-                  const created = await res.json();
-                  if (created?.id) newMeasurementIds.push(created.id);
-                  succeeded++;
-                } catch (err) {
-                  console.error(`Failed to import AI item: ${item.description}`, err);
-                  failed++;
-                  failedItems.push(item.description);
-                }
-              }
-              if (succeeded > 0) {
-                await queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets", selectedSheet, "measurements"] });
-                if (ctxBidId) {
-                  await queryClient.invalidateQueries({ queryKey: ["/api/bids", ctxBidId, "takeoff", "categories"] });
-                }
-                if (newMeasurementIds.length > 0) {
-                  const flashSequence = async () => {
-                    for (const mId of newMeasurementIds) {
-                      setFlashMeasurementId(mId);
-                      setFlashPulse(1);
-                      await new Promise(resolve => setTimeout(resolve, 600));
-                    }
-                  };
-                  flashSequence();
-                }
-              }
-              return { succeeded, failed, failedItems };
-            }}
-          />
-        </div>
-      )}
-
-      {selectedMarkupIds.size >= 1 && markupEditDraft && markupEditInitial && (() => {
-        const selectedMarkups = markups.filter(m => selectedMarkupIds.has(m.id));
-        if (selectedMarkups.length === 0) return null;
-        // Anchor: when only one is selected we use it directly; when
-        // multiple are selected we still pick the first as a header
-        // hint, but bulk save fans out across every selectedMarkup.
-        const anchor = selectedMarkups.find(m => m.id === selectedMarkupId) ?? selectedMarkups[0];
-        const isMulti = selectedMarkups.length > 1;
-        const allText = selectedMarkups.every(m => (m.tool as string) === "TEXT");
-        const allHighlight = selectedMarkups.every(m => (m.tool as string) === "HIGHLIGHT");
-        // Task #1758 — Text input shows for a single TEXT markup OR
-        // for a multi-selection that is exclusively TEXT markups (so a
-        // user can rename a group of labels to the same string in one
-        // shot). Mixed selections still hide it because bulk-renaming
-        // non-TEXT shapes has no meaning. The bulk save routes the
-        // text change through the same MARKUP_UPDATE_BATCH path as
-        // color/thickness so one Undo press reverts every renamed
-        // label.
-        const showTextInput = allText;
-        // Thickness applies to every non-text tool. If the selection
-        // is exclusively TEXT markups, hide the thickness control
-        // (matches existing single-select behavior).
-        const showThicknessInput = !allText;
-        const isHighlight = allHighlight;
-        const close = () => {
-          setSelectedMarkupIds(new Set());
-          setMarkupEditDraft(null);
-          setMarkupEditInitial(null);
-        };
-        // Task #1758 / #1765 — Real save logic lives in the exported
-        // `saveMarkupStylingPopover` helper at the bottom of this file
-        // so it can be exercised directly from tests (Task #1772)
-        // without mounting the entire workspace. Single-select still
-        // routes through `updateMarkupMutation` (one MARKUP_UPDATE
-        // entry); multi-select fans out into ONE bulk PATCH and ONE
-        // MARKUP_UPDATE_BATCH history entry pushed only after the
-        // PATCH resolves.
-        const save = () =>
-          saveMarkupStylingPopover({
-            draft: markupEditDraft,
-            initial: markupEditInitial,
-            showTextInput,
-            isMulti,
-            anchor,
-            selectedMarkups,
-            selectedSheet,
-            updateMarkupMutation,
-            bulkUpdateMarkupsMutation,
-            takeoffHistory,
-            toast,
-            close,
-          });
-        return (
-          <div
-            className="absolute top-16 right-3 z-50 bg-card border rounded-lg shadow-lg p-3 w-64 space-y-3"
-            data-testid="panel-markup-properties"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-semibold" data-testid="text-markup-edit-header">
-                {isMulti ? `Edit ${selectedMarkups.length} markups` : "Edit markup"}
-              </span>
-              <Button variant="ghost" size="icon" className="h-6 w-6" onClick={close} data-testid="button-close-markup-properties">
-                <X className="w-4 h-4" />
-              </Button>
-            </div>
-            {showTextInput && (
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">Label</label>
-                <Input
-                  value={markupEditDraft.text}
-                  onChange={(e) => setMarkupEditDraft({ ...markupEditDraft, text: e.target.value })}
-                  data-testid="input-markup-text"
-                />
-              </div>
-            )}
-            <div className="space-y-1">
-              <label className="text-xs text-muted-foreground">Color</label>
-              <div className="flex items-center gap-2">
-                <input
-                  type="color"
-                  value={markupEditDraft.color}
-                  onChange={(e) => setMarkupEditDraft({ ...markupEditDraft, color: e.target.value })}
-                  className="h-8 w-12 cursor-pointer rounded border"
-                  data-testid="input-markup-color"
-                />
-                <span className="text-xs font-mono">{markupEditDraft.color}</span>
-              </div>
-            </div>
-            {showThicknessInput && (
-              <div className="space-y-1">
-                <label className="text-xs text-muted-foreground">{isHighlight ? "Border thickness" : "Thickness"}: {markupEditDraft.thickness}px</label>
-                <div className="flex items-center gap-1" data-testid="input-markup-thickness">
-                  {MARKUP_TOOLBAR_THICKNESSES.map((t) => (
-                    <Button
-                      key={t}
-                      type="button"
-                      size="sm"
-                      variant={markupEditDraft.thickness === t ? "default" : "ghost"}
-                      className="h-7 w-7 p-0"
-                      onClick={() => setMarkupEditDraft({ ...markupEditDraft, thickness: t })}
-                      aria-label={`Thickness ${t}`}
-                      aria-pressed={markupEditDraft.thickness === t}
-                      data-testid={`button-markup-thickness-${t}`}
-                    >
-                      <span style={{ fontSize: 10 }}>{t}px</span>
-                    </Button>
-                  ))}
-                </div>
-              </div>
-            )}
-            <div className="flex items-center justify-between gap-2 pt-1">
-              {!isMulti ? (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={async () => {
-                    try {
-                      await deleteMarkupMutation.mutateAsync(anchor.id);
-                      close();
-                    } catch (err) {
-                      console.warn("[Takeoff] Failed to delete markup:", err);
-                    }
-                  }}
-                  data-testid="button-delete-markup"
-                >
-                  Delete
-                </Button>
-              ) : (
-                // Task #1832 — Multi-select delete now collapses N parallel
-                // per-id `deleteMarkupMutation` calls into one bulk DELETE
-                // round-trip. The server runs the removal in a transaction
-                // so a mid-flight failure rolls back atomically (no
-                // half-deleted group). Disabled while the bulk request is
-                // in flight to keep accidental double-clicks from racing
-                // against the optimistic cache strip.
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  disabled={bulkDeleteMarkupsMutation.isPending}
-                  onClick={async () => {
-                    try {
-                      await bulkDeleteMarkupsMutation.mutateAsync(
-                        selectedMarkups.map((m) => m.id),
-                      );
-                      close();
-                    } catch (err) {
-                      console.warn("[Takeoff] Failed to bulk-delete markups:", err);
-                    }
-                  }}
-                  data-testid="button-delete-markups-bulk"
-                >
-                  {bulkDeleteMarkupsMutation.isPending
-                    ? "Deleting..."
-                    : `Delete ${selectedMarkups.length} markups`}
-                </Button>
-              )}
-              <div className="flex items-center gap-2">
-                <Button variant="outline" size="sm" onClick={close} data-testid="button-cancel-markup-edit">Cancel</Button>
-                <MarkupStylingPopoverSaveButton
-                  onSave={save}
-                  updatePending={updateMarkupMutation.isPending}
-                  bulkPending={bulkUpdateMarkupsMutation.isPending}
-                />
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {propertiesPanelOpen && selectedMeasurementId && (() => {
-        const selectedMeasurement = measurements.find(m => m.id === selectedMeasurementId);
-        return selectedMeasurement ? (
-          <TakeoffPropertiesPanel
-            measurement={selectedMeasurement}
-            selectedSheet={selectedSheet}
-            onClose={() => setPropertiesPanelOpen(false)}
-          />
-        ) : null;
-      })()}
 
 
       <PanelHost />

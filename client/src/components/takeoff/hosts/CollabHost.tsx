@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { Lock, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useCollabContext } from "./TakeoffWorkspaceContext";
 
@@ -72,6 +73,31 @@ function CollabHostInner() {
         <Badge variant="outline" className="text-xs text-amber-600 border-amber-300" data-testid="badge-offline">
           Offline
         </Badge>
+      )}
+      {ctx.sheetLockToggle.visible && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant={ctx.sheetLockToggle.ownedByMe ? "secondary" : "ghost"}
+              size="sm"
+              className="gap-1 h-7 px-2"
+              onClick={ctx.sheetLockToggle.onToggle}
+              data-testid="button-sheet-lock-toggle"
+            >
+              <Lock className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline text-xs">
+                {ctx.sheetLockToggle.ownedByMe ? "Unlock" : "Lock"}
+              </span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>
+              {ctx.sheetLockToggle.ownedByMe
+                ? "Release \"I'm working here\" lock"
+                : "Set \"I'm working here\" soft lock"}
+            </p>
+          </TooltipContent>
+        </Tooltip>
       )}
     </>
   );

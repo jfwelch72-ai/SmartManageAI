@@ -1,6 +1,10 @@
 import { memo } from "react";
 import { AlertTriangle, Check, GitCompare, Loader2, Lock, Ruler, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PageThumbnailStrip } from "../PageThumbnailStrip";
+import { TakeoffSheetCompareDialog } from "../TakeoffSheetCompareDialog";
+import { CollabHost } from "./CollabHost";
+import { SheetSelectorBar } from "./SheetSelectorBar";
 import { useSheetContext } from "./TakeoffWorkspaceContext";
 
 /** Sheet/version status banners stacked above the canvas. Pure
@@ -116,6 +120,13 @@ function SheetHostInner() {
           )}
         </div>
       )}
+      <SheetSelectorBar {...ctx.selectorBar} collabSlot={<CollabHost />} />
+      {ctx.thumbnailStrip && (
+        <div className="bg-card border-b shrink-0" data-testid="panel-thumbnail-strip">
+          <PageThumbnailStrip {...ctx.thumbnailStrip} />
+        </div>
+      )}
+      {ctx.compareDialog && <TakeoffSheetCompareDialog {...ctx.compareDialog} />}
     </>
   );
 }
