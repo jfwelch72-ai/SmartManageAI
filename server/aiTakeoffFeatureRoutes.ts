@@ -427,6 +427,13 @@ async function persistSuggestionsAndApplyCalibration(
   });
 
   // Insert suggestion rows in a single batch.
+  // Task #2343 — `ON CONFLICT (analysis_id, item_key) DO NOTHING` against the
+  // `ai_takeoff_sug_analysis_item_key_uq` unique index makes this insert
+  // crash-safe and idempotent under retries (e.g. a partial failure or a
+  // manual re-run of `processAiTakeoff`), and also no-ops when a payload
+  // happens to repeat positional `item-1` ids within itself or when the
+  // boot-time backfill / standalone backfill script already populated the
+  // row for this analysis.
   try {
     await db.insert(aiTakeoffSuggestions).values(
       adjusted.map((item) => ({
@@ -445,7 +452,9 @@ async function persistSuggestionsAndApplyCalibration(
         boundingBoxJson: item.boundingBox ? JSON.stringify(item.boundingBox) : null,
         status: "PENDING" as const,
       })),
-    );
+    ).onConflictDoNothing({
+      target: [aiTakeoffSuggestions.analysisId, aiTakeoffSuggestions.itemKey],
+    });
   } catch (err) {
     logError(
       "Failed to persist ai_takeoff_suggestions rows:",
