@@ -21,9 +21,14 @@ import {
   findSnapTargets,
   findNearestSnap,
   applyOrthoLock,
+  applyAngleConstraint,
   type SnapResult,
+  type SnapMode,
+  type SnapModeConfig,
 } from "@/utils/snapping";
 import type { useTakeoffHistory } from "@/hooks/use-takeoff-history";
+import type { ConstraintMode } from "@/components/takeoff/hosts/takeoff-shortcuts";
+import { ORTHO_PRESETS } from "@/components/takeoff/hosts/takeoff-shortcuts";
 
 interface UseTakeoffInteractionsParams {
   projectId: string;
@@ -104,6 +109,26 @@ interface UseTakeoffInteractionsParams {
    *  Space-momentary-pan stay registered because they read canvas
    *  internals the ribbon doesn't see. */
   disableLegacyShortcuts?: boolean;
+  /** Task #2192 — Granular snap-mode set owned by the unified ribbon.
+   *  When provided, this is authoritative: only the listed modes
+   *  contribute snap targets, and an empty array disables snapping
+   *  entirely (without needing the legacy `snapEnabled` boolean).
+   *  When undefined, the legacy `snapEnabled` toggle continues to
+   *  drive on/off across all modes (backward compatible for callers
+   *  that haven't adopted the unified ribbon yet). */
+  enabledSnapModes?: SnapMode[];
+  /** Task #2192 — Constraint group selection from the unified ribbon.
+   *  `none` defers to the legacy `orthoLock` boolean (so the existing
+   *  90° axis lock keeps working). `ortho` forces the 90° axis lock.
+   *  `ortho-angle` engages the angular preset selected via
+   *  `orthoPresetIndex` (15/30/45/90 → applyAngleConstraint). `polar`
+   *  is reserved (placeholder in the ribbon — falls through to
+   *  legacy ortho). */
+  constraintMode?: ConstraintMode;
+  /** Task #2192 — Index into `ORTHO_PRESETS`. Used only when
+   *  `constraintMode === 'ortho-angle'`; a `null` preset (the
+   *  trailing entry) means "off" and skips angular constraint. */
+  orthoPresetIndex?: number;
 }
 
 function inverseRotatePoint(
@@ -173,6 +198,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     sheetRotation, imageWidth, imageHeight,
     onRotateCW, onRotateCCW,
     disableLegacyShortcuts,
+    enabledSnapModes, constraintMode, orthoPresetIndex,
   } = params;
 
   const handleToolSelect = useCallback((tool: Tool) => {
@@ -191,22 +217,105 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     }
   }, [isSpacebarHeld, setActiveTool, setToolBeforeSpacebar, setIsSpacebarHeld, setCalibrationMode, setCalibrationPoints, toast]);
 
+  /* Task #2192 — Translate the unified ribbon's per-mode snap selection
+   * into the granular flags that `findSnapTargets` understands. When
+   * the ribbon's `enabledSnapModes` prop is undefined, fall back to
+   * legacy behaviour (the boolean `snapEnabled` toggles all modes at
+   * once). When defined, the array is authoritative — including the
+   * empty-array case, which collapses to "snapping disabled". The
+   * `nearest` and `perpendicular` modes are surfaced in the ribbon but
+   * resolved through different code paths (not via `findSnapTargets`),
+   * so they're tracked here only to preserve the contract that
+   * removing every mode kills snapping.
+   */
+  const snapModeConfig: SnapModeConfig | null = useMemo(() => {
+    if (!enabledSnapModes) return null;
+    return {
+      endpoint: enabledSnapModes.includes("endpoint"),
+      midpoint: enabledSnapModes.includes("midpoint"),
+      intersection: enabledSnapModes.includes("intersection"),
+      perpendicular: enabledSnapModes.includes("perpendicular"),
+      center: enabledSnapModes.includes("center"),
+      nearest: enabledSnapModes.includes("nearest"),
+      grid: enabledSnapModes.includes("grid"),
+    };
+  }, [enabledSnapModes]);
+
+  /* When the ribbon owns snap state, treat snapping as enabled iff at
+   * least one mode is selected. Otherwise defer to the legacy toggle.
+   * This is what closes the loop with the task's "removing all snap
+   * modes disables snapping entirely" requirement. */
+  const effectiveSnapEnabled = enabledSnapModes
+    ? enabledSnapModes.length > 0
+    : snapEnabled;
+
   const snapTargets = useMemo(
-    () => (snapEnabled ? findSnapTargets(measurements) : []),
-    [measurements, snapEnabled]
+    () =>
+      effectiveSnapEnabled
+        ? findSnapTargets(measurements, snapModeConfig ?? undefined)
+        : [],
+    [measurements, effectiveSnapEnabled, snapModeConfig]
   );
+
+  /* Task #2192 — Constraint mode resolution. The ribbon's radio-style
+   * constraint group selects one of {none, ortho, ortho-angle, polar}
+   * and pairs `ortho-angle` with `orthoPresetIndex` (15° / 30° / 45° /
+   * 90° / null). We resolve to a single optional `angleStep` (degrees)
+   * here so `resolvePoint` is straight-line. `angleStep === 90` means
+   * use the dominant-axis lock (`applyOrthoLock`); any other positive
+   * step uses the radial `applyAngleConstraint`. `null` means no
+   * constraint. Polar is reserved/coming-soon, so for now it falls
+   * through to the legacy axis lock if `orthoLock` is also engaged. */
+  const angleStep: number | null = useMemo(() => {
+    // When the ribbon owns constraint state, it's authoritative — the
+    // legacy `orthoLock` boolean (which may be stale in localStorage
+    // from a previous session) must NOT override an explicit ribbon
+    // selection. Only fall back to `orthoLock` when `constraintMode`
+    // is undefined (no ribbon mounted, pure legacy callers).
+    if (constraintMode === undefined) {
+      return orthoLock ? 90 : null;
+    }
+    if (constraintMode === "ortho-angle" && orthoPresetIndex != null) {
+      const preset = ORTHO_PRESETS[orthoPresetIndex];
+      return preset ?? null;
+    }
+    if (constraintMode === "ortho") return 90;
+    if (constraintMode === "none") return null;
+    // `polar` is a placeholder in the ribbon today — treat as no
+    // constraint until the polar tracking implementation lands.
+    return null;
+  }, [constraintMode, orthoPresetIndex, orthoLock]);
 
   const resolvePoint = useCallback(
     (rawPoint: Point): Point => {
       let pt = rawPoint;
-      if (orthoLock && drawingPoints.length > 0) {
-        pt = applyOrthoLock(pt, drawingPoints[drawingPoints.length - 1]);
+      if (angleStep != null && drawingPoints.length > 0) {
+        const anchor = drawingPoints[drawingPoints.length - 1];
+        // 90° preserves the historical axis-aligned ortho lock; any
+        // other angle is a true polar/angular constraint that
+        // preserves cursor distance from the anchor.
+        pt = angleStep === 90
+          ? applyOrthoLock(pt, anchor)
+          : applyAngleConstraint(pt, anchor, angleStep);
       }
-      if (snapEnabled && snapTargets.length > 0) {
+      if (effectiveSnapEnabled && snapTargets.length > 0) {
         const snap = findNearestSnap(pt, snapTargets, 12, stageScale);
         if (snap.isSnapped) return snap.snappedPoint;
       }
-      if (params.showStructuralGridlines && params.structuralGridlines) {
+      // Structural gridline snap is gated on the `grid` snap mode when
+      // the ribbon owns snap state (so unchecking Grid in the ribbon
+      // turns it off without touching the structural-gridlines toggle
+      // that drives rendering). When the ribbon isn't wired,
+      // `snapModeConfig` is null and the legacy gridline-on behaviour
+      // is preserved.
+      const gridSnapAllowed = snapModeConfig
+        ? snapModeConfig.grid !== false
+        : true;
+      if (
+        gridSnapAllowed &&
+        params.showStructuralGridlines &&
+        params.structuralGridlines
+      ) {
         const threshold = (params.gridlineSnapThreshold ?? 10) / stageScale;
         let snappedX = pt.x;
         let snappedY = pt.y;
@@ -228,7 +337,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       }
       return pt;
     },
-    [orthoLock, snapEnabled, snapTargets, drawingPoints, stageScale, params.showStructuralGridlines, params.structuralGridlines, params.gridlineSnapThreshold]
+    [angleStep, effectiveSnapEnabled, snapTargets, snapModeConfig, drawingPoints, stageScale, params.showStructuralGridlines, params.structuralGridlines, params.gridlineSnapThreshold]
   );
 
   const completePolygon = useCallback(() => {
@@ -644,11 +753,17 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     if (!pointer) return;
     const transform = stage.getAbsoluteTransform().copy().invert();
     let pt: Point = inverseRotatePoint(transform.point(pointer), sheetRotation, imageWidth, imageHeight);
-    if (orthoLock && drawingPoints.length > 0) {
-      pt = applyOrthoLock(pt, drawingPoints[drawingPoints.length - 1]);
+    // Mirror `resolvePoint`'s constraint resolution so the live cursor
+    // preview, current-snap HUD, and running-measurement readout are
+    // driven by the same unified-ribbon state as the committed point.
+    if (angleStep != null && drawingPoints.length > 0) {
+      const anchor = drawingPoints[drawingPoints.length - 1];
+      pt = angleStep === 90
+        ? applyOrthoLock(pt, anchor)
+        : applyAngleConstraint(pt, anchor, angleStep);
     }
     setCursorPosition(pt);
-    if (snapEnabled && snapTargets.length > 0) {
+    if (effectiveSnapEnabled && snapTargets.length > 0) {
       const snap = findNearestSnap(pt, snapTargets, 12, stageScale);
       setCurrentSnap(snap.isSnapped ? snap : null);
     } else {
@@ -680,7 +795,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     } else if (!isDrawing && runningMeasurement) {
       setRunningMeasurement(null);
     }
-  }, [snapEnabled, snapTargets, stageScale, orthoLock, drawingPoints, sheetRotation, imageWidth, imageHeight, isDrawing, currentSheet, activeTool, runningMeasurement]);
+  }, [effectiveSnapEnabled, snapTargets, stageScale, angleStep, drawingPoints, sheetRotation, imageWidth, imageHeight, isDrawing, currentSheet, activeTool, runningMeasurement]);
 
   const handleWheel = useCallback((e: any) => {
     e.evt.preventDefault();

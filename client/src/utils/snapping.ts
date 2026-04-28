@@ -15,4 +15,5 @@ export {
   findNearestSnapOnLine,
   findNearestSnap,
   applyOrthoLock,
+  applyAngleConstraint,
 } from "@shared/utils/geometry";

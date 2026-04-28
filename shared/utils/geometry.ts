@@ -1075,3 +1075,40 @@ export function applyOrthoLock(point: Point, anchor: Point | null): Point {
   }
   return { x: anchor.x, y: point.y };
 }
+
+/**
+ * Polar/angle constraint (Task #2192).
+ *
+ * Rotates the cursor around `anchor` so the segment `anchor → point`
+ * lies on the nearest multiple of `stepDeg` degrees, while preserving
+ * the radial distance. `stepDeg = 90` reproduces the axis-aligned
+ * ortho cardinal directions but **without** snapping the off-axis
+ * coordinate to the anchor — it preserves the cursor's reach so the
+ * line follows the mouse's distance, just along a constrained bearing.
+ *
+ * Used by the unified-ribbon `ortho-angle` constraint mode, which
+ * cycles through 15° / 30° / 45° / 90° presets via `Shift+O`.
+ *
+ * Returns the input unchanged when `anchor` is null, when the cursor
+ * sits on top of the anchor (no defined bearing), or when `stepDeg`
+ * is not a positive finite number.
+ */
+export function applyAngleConstraint(
+  point: Point,
+  anchor: Point | null,
+  stepDeg: number,
+): Point {
+  if (!anchor) return point;
+  if (!Number.isFinite(stepDeg) || stepDeg <= 0) return point;
+  const dx = point.x - anchor.x;
+  const dy = point.y - anchor.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist < 1e-10) return point;
+  const stepRad = (stepDeg * Math.PI) / 180;
+  const theta = Math.atan2(dy, dx);
+  const snapped = Math.round(theta / stepRad) * stepRad;
+  return {
+    x: anchor.x + Math.cos(snapped) * dist,
+    y: anchor.y + Math.sin(snapped) * dist,
+  };
+}

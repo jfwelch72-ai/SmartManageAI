@@ -1257,6 +1257,16 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     structuralGridlines,
     showStructuralGridlines,
     disableLegacyShortcuts: unifiedRibbon,
+    // Task #2192 — When the unified ribbon is mounted, hand the
+    // canvas drawing engine the granular snap-mode set, the
+    // constraint group selection and the active ortho preset so
+    // toggling individual snap modes / non-90° presets actually
+    // changes how points resolve. When the ribbon isn't mounted we
+    // pass `undefined` and the hook falls back to legacy
+    // `snapEnabled` / `orthoLock` booleans.
+    enabledSnapModes: unifiedRibbon ? enabledSnapModes : undefined,
+    constraintMode: unifiedRibbon ? constraintMode : undefined,
+    orthoPresetIndex: unifiedRibbon ? orthoPresetIndex : undefined,
   });
 
   const {
