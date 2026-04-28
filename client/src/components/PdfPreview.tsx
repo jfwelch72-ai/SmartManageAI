@@ -1,6 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import * as pdfjsLib from "pdfjs-dist";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -13,11 +12,17 @@ import {
   ExternalLink,
   RotateCw,
 } from "lucide-react";
+import {
+  getSharedScheduler,
+  WorkerPdfError,
+  type CancellablePageRender,
+} from "@/lib/takeoff/tileScheduler";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url
-).toString();
+// Task #2188 — PdfPreview previously instantiated `pdfjs-dist` on the
+// main thread. After this task every render goes through the shared
+// `pdfTileWorker` pool the takeoff workspace already uses (Task
+// #2138), so a 300+ sheet planset opened in Plan Markup or any of the
+// lightweight viewers never blocks the main thread for >100 ms.
 
 interface PdfPreviewProps {
   url: string;
@@ -54,9 +59,46 @@ interface PdfPreviewProps {
 
 const ZOOM_LEVELS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3];
 
+// Friendly error text for HTTP-style status codes. Hoisted out of
+// render so it's only constructed once.
+function friendlyForStatus(status: number): string {
+  if (status === 401) return "You must be signed in to view this PDF.";
+  if (status === 403) return "You don't have permission to view this PDF.";
+  if (status === 404)
+    return "This PDF was not found on the server. It may have been moved or deleted.";
+  if (status >= 500) return "The server failed to deliver this PDF.";
+  return `Could not load PDF (HTTP ${status}).`;
+}
+
+// Task #2188 — Map a worker error onto the same friendly text the
+// main-thread implementation used to show. We inspect the
+// `WorkerPdfError` metadata (forwarded from the worker) so users still
+// see "missing on the server" instead of a raw pdfjs message.
+function friendlyForWorkerError(err: unknown): string {
+  if (err instanceof WorkerPdfError) {
+    if (typeof err.status === "number" && err.status > 0) {
+      return friendlyForStatus(err.status);
+    }
+    if (err.errorName === "MissingPDFException") {
+      return "This PDF is missing on the server.";
+    }
+    if (err.errorName === "InvalidPDFException") {
+      return "This file is not a valid PDF.";
+    }
+    if (err.errorName === "UnexpectedResponseException") {
+      return "Could not reach the server to load this PDF. Check your connection and try again.";
+    }
+  }
+  return err instanceof Error ? err.message : "Failed to load PDF";
+}
+
 export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPageChange, overlay, pageBadges, pageBadgesClosed, pageBadgeMode = "open", spacePanActive }: PdfPreviewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [pdfDoc, setPdfDoc] = useState<pdfjsLib.PDFDocumentProxy | null>(null);
+  // Task #2188 — `pdfReady` replaces the old `pdfDoc` reference. The
+  // pdfjs document lives in the worker now; the main thread only
+  // needs to know "we have loaded the document at this URL" so it can
+  // start dispatching page renders.
+  const [pdfReady, setPdfReady] = useState(false);
   const [pageNum, setPageNum] = useState(1);
   const [numPages, setNumPages] = useState(0);
   const [zoomIdx, setZoomIdx] = useState(2);
@@ -69,8 +111,11 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
   useEffect(() => {
     onPageChange?.(pageNum);
   }, [pageNum, onPageChange]);
-  const renderTaskRef = useRef<pdfjsLib.RenderTask | null>(null);
-  const loadingTaskRef = useRef<pdfjsLib.PDFDocumentLoadingTask | null>(null);
+  // Task #2188 — Track the in-flight page render so we can cancel the
+  // worker-side pdfjs `RenderTask` when the user changes page or zoom
+  // mid-render. Without this the worker would keep rasterising a page
+  // we no longer plan to display.
+  const pageRenderRef = useRef<CancellablePageRender | null>(null);
 
   // Task #1670 — Pending zoom-at-point request. When set, the layout
   // effect below applies a scroll delta after the next canvas render so
@@ -132,115 +177,109 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
     let cancelled = false;
     setLoading(true);
     setError(null);
-    setPdfDoc((prev) => {
-      if (prev) prev.destroy();
-      return null;
-    });
+    setPdfReady(false);
+    setNumPages(0);
     setPageNum(1);
     setZoomIdx(2);
 
-    if (renderTaskRef.current) {
-      renderTaskRef.current.cancel();
-      renderTaskRef.current = null;
+    if (pageRenderRef.current) {
+      pageRenderRef.current.cancel();
+      pageRenderRef.current = null;
     }
 
-    const isSameOrigin = url.startsWith("/") || url.startsWith(window.location.origin);
+    const scheduler = getSharedScheduler();
+    if (!scheduler) {
+      // Task #2188 — The worker pool requires `Worker` +
+      // `OffscreenCanvas` (Safari 16-, jsdom, very old browsers don't
+      // expose them). Per the takeoff workspace's parity stance, we
+      // surface a friendly error rather than silently regressing back
+      // to a main-thread pdfjs path.
+      setError("PDF preview requires a modern browser with worker support.");
+      setLoading(false);
+      return () => {
+        cancelled = true;
+      };
+    }
 
-    const friendlyForStatus = (status: number): string => {
-      if (status === 401) return "You must be signed in to view this PDF.";
-      if (status === 403) return "You don't have permission to view this PDF.";
-      if (status === 404)
-        return "This PDF was not found on the server. It may have been moved or deleted.";
-      if (status >= 500) return "The server failed to deliver this PDF.";
-      return `Could not load PDF (HTTP ${status}).`;
-    };
-
-    const loadPdf = async () => {
+    (async () => {
       try {
-        const loadingTask = pdfjsLib.getDocument(
-          isSameOrigin ? { url, withCredentials: true } : { url }
-        );
-        loadingTaskRef.current = loadingTask;
-        const pdf = await loadingTask.promise;
-        if (cancelled) {
-          pdf.destroy();
-          return;
-        }
-        setPdfDoc(pdf);
-        setNumPages(pdf.numPages);
-      } catch (err: unknown) {
+        const info = await scheduler.getDocumentInfo(url);
         if (cancelled) return;
+        setNumPages(info.numPages);
+        setPdfReady(true);
+      } catch (err) {
+        if (cancelled) return;
+        // eslint-disable-next-line no-console
         console.error("PDF load error:", err);
-        // PDF.js throws typed exceptions whose `name` and (sometimes) `status`
-        // tell us what actually went wrong. Surface a useful message to the
-        // user instead of the generic "Unable to render PDF preview".
-        let message = err instanceof Error ? err.message : "Failed to load PDF";
-        if (err && typeof err === "object") {
-          const e = err as { name?: string; status?: number; message?: string };
-          if (typeof e.status === "number" && e.status > 0) {
-            message = friendlyForStatus(e.status);
-          } else if (e.name === "MissingPDFException") {
-            message = "This PDF is missing on the server.";
-          } else if (e.name === "InvalidPDFException") {
-            message = "This file is not a valid PDF.";
-          } else if (e.name === "UnexpectedResponseException") {
-            message =
-              "Could not reach the server to load this PDF. Check your connection and try again.";
-          }
-        }
-        setError(message);
+        setError(friendlyForWorkerError(err));
       } finally {
         if (!cancelled) setLoading(false);
       }
-    };
-    loadPdf();
+    })();
 
     return () => {
       cancelled = true;
-      if (loadingTaskRef.current) {
-        loadingTaskRef.current.destroy();
-        loadingTaskRef.current = null;
-      }
     };
   }, [url, retryNonce]);
 
   const renderPage = useCallback(async () => {
-    if (!pdfDoc || !canvasRef.current) return;
-    if (renderTaskRef.current) {
-      renderTaskRef.current.cancel();
-      renderTaskRef.current = null;
+    if (!pdfReady || !canvasRef.current) return;
+    const scheduler = getSharedScheduler();
+    if (!scheduler) return;
+    if (pageRenderRef.current) {
+      pageRenderRef.current.cancel();
+      pageRenderRef.current = null;
     }
 
     setRendering(true);
+    const scale = ZOOM_LEVELS[zoomIdx];
+    const handle = scheduler.renderPage(url, pageNum - 1, scale);
+    pageRenderRef.current = handle;
     try {
-      const page = await pdfDoc.getPage(pageNum);
-      const scale = ZOOM_LEVELS[zoomIdx];
-      const viewport = page.getViewport({ scale });
+      const result = await handle.promise;
+      if (pageRenderRef.current !== handle) {
+        // A newer render has already started — discard this bitmap so
+        // the canvas isn't briefly painted with a stale page.
+        try { result.bitmap.close(); } catch { /* noop */ }
+        return;
+      }
       const canvas = canvasRef.current;
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      setCanvasSize({ w: viewport.width, h: viewport.height });
-      const ctx = canvas.getContext("2d")!;
-      const task = page.render({ canvas, canvasContext: ctx, viewport });
-      renderTaskRef.current = task;
-      await task.promise;
+      if (!canvas) {
+        try { result.bitmap.close(); } catch { /* noop */ }
+        return;
+      }
+      canvas.width = result.width;
+      canvas.height = result.height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        try { result.bitmap.close(); } catch { /* noop */ }
+        return;
+      }
+      ctx.drawImage(result.bitmap, 0, 0);
+      try { result.bitmap.close(); } catch { /* noop */ }
+      setCanvasSize({ w: result.width, h: result.height });
     } catch (err: unknown) {
-      const isCancel = err instanceof Error && err.name === "RenderingCancelledException";
+      const isCancel =
+        err instanceof Error && (err.message === "cancelled" || err.name === "RenderingCancelledException");
       if (!isCancel) {
+        // eslint-disable-next-line no-console
         console.error("PDF render error:", err);
-        setError(err instanceof Error ? err.message : "Failed to render PDF page");
+        setError(friendlyForWorkerError(err));
       }
     } finally {
+      if (pageRenderRef.current === handle) {
+        pageRenderRef.current = null;
+      }
       setRendering(false);
     }
-  }, [pdfDoc, pageNum, zoomIdx]);
+  }, [pdfReady, url, pageNum, zoomIdx]);
 
   useEffect(() => {
     renderPage();
     return () => {
-      if (renderTaskRef.current) {
-        renderTaskRef.current.cancel();
-        renderTaskRef.current = null;
+      if (pageRenderRef.current) {
+        pageRenderRef.current.cancel();
+        pageRenderRef.current = null;
       }
     };
   }, [renderPage]);
@@ -351,9 +390,9 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
 
   return (
     <div className="flex flex-col h-full" data-testid="pdf-preview">
-      {pdfDoc && numPages > 1 && (
+      {pdfReady && numPages > 1 && (
         <PageThumbStrip
-          pdfDoc={pdfDoc}
+          url={url}
           numPages={numPages}
           currentPage={pageNum}
           onSelect={(n) => setPageNum(n)}
@@ -518,13 +557,16 @@ export default function PdfPreview({ url, onOpenFile, pinMode, onPinDrop, onPage
 }
 
 interface PageThumbStripProps {
-  pdfDoc: pdfjsLib.PDFDocumentProxy;
+  // Task #2188 — pdfjs lives in the worker now, so the strip just
+  // needs the document URL; per-page renders dispatch through the
+  // shared scheduler the same way the takeoff thumbnail strip does.
+  url: string;
   numPages: number;
   currentPage: number;
   onSelect: (n: number) => void;
 }
 
-function PageThumbStrip({ pdfDoc, numPages, currentPage, onSelect }: PageThumbStripProps) {
+function PageThumbStrip({ url, numPages, currentPage, onSelect }: PageThumbStripProps) {
   const activeRef = useRef<HTMLButtonElement | null>(null);
   const parentRef = useRef<HTMLDivElement | null>(null);
 
@@ -570,7 +612,7 @@ function PageThumbStrip({ pdfDoc, numPages, currentPage, onSelect }: PageThumbSt
               }}
             >
               <PageThumb
-                pdfDoc={pdfDoc}
+                url={url}
                 pageNumber={n}
                 active={n === currentPage}
                 onSelect={onSelect}
@@ -585,14 +627,14 @@ function PageThumbStrip({ pdfDoc, numPages, currentPage, onSelect }: PageThumbSt
 }
 
 interface PageThumbProps {
-  pdfDoc: pdfjsLib.PDFDocumentProxy;
+  url: string;
   pageNumber: number;
   active: boolean;
   onSelect: (n: number) => void;
   buttonRef?: React.MutableRefObject<HTMLButtonElement | null>;
 }
 
-function PageThumb({ pdfDoc, pageNumber, active, onSelect, buttonRef }: PageThumbProps) {
+function PageThumb({ url, pageNumber, active, onSelect, buttonRef }: PageThumbProps) {
   const localRef = useRef<HTMLButtonElement | null>(null);
   const [thumb, setThumb] = useState<string | null>(null);
   const [visible, setVisible] = useState(false);
@@ -614,22 +656,33 @@ function PageThumb({ pdfDoc, pageNumber, active, onSelect, buttonRef }: PageThum
     if (!visible || thumb) return;
     let cancelled = false;
     (async () => {
+      const scheduler = getSharedScheduler();
+      if (!scheduler) return;
       try {
-        const page = await pdfDoc.getPage(pageNumber);
-        const v = page.getViewport({ scale: 1 });
-        const targetW = 72;
-        const scale = targetW / v.width;
-        const sv = page.getViewport({ scale });
+        // Task #2188 — Off-thread thumbnail render. The worker returns
+        // an `ImageBitmap` that we copy into a one-shot canvas to
+        // produce the JPEG data URL the existing `<img>` tag expects.
+        const res = await scheduler.renderThumbnail(url, pageNumber - 1, 72, 72);
+        if (cancelled) {
+          try { res.bitmap.close(); } catch { /* noop */ }
+          return;
+        }
         const canvas = document.createElement("canvas");
-        canvas.width = sv.width;
-        canvas.height = sv.height;
+        canvas.width = res.bitmap.width;
+        canvas.height = res.bitmap.height;
         const ctx = canvas.getContext("2d");
-        if (!ctx) return;
-        await page.render({ canvasContext: ctx, viewport: sv, canvas }).promise;
-        if (cancelled) return;
-        setThumb(canvas.toDataURL("image/jpeg", 0.7));
+        if (!ctx) {
+          try { res.bitmap.close(); } catch { /* noop */ }
+          canvas.width = 0;
+          canvas.height = 0;
+          return;
+        }
+        ctx.drawImage(res.bitmap, 0, 0);
+        try { res.bitmap.close(); } catch { /* noop */ }
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
         canvas.width = 0;
         canvas.height = 0;
+        if (!cancelled) setThumb(dataUrl);
       } catch {
         // Ignore render failures; tile remains as numbered placeholder
       }
@@ -637,7 +690,7 @@ function PageThumb({ pdfDoc, pageNumber, active, onSelect, buttonRef }: PageThum
     return () => {
       cancelled = true;
     };
-  }, [visible, thumb, pdfDoc, pageNumber]);
+  }, [visible, thumb, url, pageNumber]);
 
   return (
     <button

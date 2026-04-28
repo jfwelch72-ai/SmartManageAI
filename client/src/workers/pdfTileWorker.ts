@@ -36,6 +36,16 @@ type Req =
       pageIndex: number;
     }
   | {
+      // Task #2188 — Fetch document-level metadata (currently just
+      // `numPages`) without rendering anything. Used by the Plan Markup
+      // viewer and the print page so they can drive their page strip
+      // and per-page render loops without ever touching pdfjs on the
+      // main thread.
+      type: "getDocumentInfo";
+      requestId: number;
+      sheetUrl: string;
+    }
+  | {
       type: "renderTile";
       requestId: number;
       sheetUrl: string;
@@ -50,6 +60,19 @@ type Req =
       sheetUrl: string;
       pageIndex: number;
       zoomBucket: ZoomBucket;
+    }
+  | {
+      // Task #2188 — Render a full page at an arbitrary `scale`. The
+      // tile renderer's existing `renderPlaceholder` is locked to the
+      // discrete `ZoomBucket` ladder used by the takeoff workspace; the
+      // Plan Markup viewer and the print page need finer-grained zoom
+      // levels (1.0, 1.5, 2.5x, etc.) so this message accepts a raw
+      // scale and returns a single bitmap covering the whole page.
+      type: "renderPage";
+      requestId: number;
+      sheetUrl: string;
+      pageIndex: number;
+      scale: number;
     }
   | {
       type: "renderThumbnail";
@@ -74,6 +97,15 @@ type Req =
       type: "cancelTile";
       requestId: number;
       targetRequestId: number;
+    }
+  | {
+      // Task #2188 — Same idea as `cancelTile` but for `renderPage`
+      // requests. Fired when the Plan Markup viewer changes page or
+      // zoom mid-render so we don't burn CPU rasterising a page the
+      // user no longer cares about.
+      type: "cancelPage";
+      requestId: number;
+      targetRequestId: number;
     };
 
 type Resp =
@@ -85,6 +117,12 @@ type Resp =
       height: number;
     }
   | {
+      type: "getDocumentInfo";
+      requestId: number;
+      ok: true;
+      numPages: number;
+    }
+  | {
       type: "renderTile";
       requestId: number;
       ok: true;
@@ -93,6 +131,14 @@ type Resp =
     }
   | {
       type: "renderPlaceholder";
+      requestId: number;
+      ok: true;
+      bitmap: ImageBitmap;
+      width: number;
+      height: number;
+    }
+  | {
+      type: "renderPage";
       requestId: number;
       ok: true;
       bitmap: ImageBitmap;
@@ -113,12 +159,30 @@ type Resp =
     }
   | { type: "evictSheet"; requestId: number; ok: true }
   | { type: "cancelTile"; requestId: number; ok: true }
-  | { type: string; requestId: number; ok: false; error: string };
+  | { type: "cancelPage"; requestId: number; ok: true }
+  | {
+      type: string;
+      requestId: number;
+      ok: false;
+      error: string;
+      // Task #2188 — Surface the original pdfjs error name (e.g.
+      // "MissingPDFException", "InvalidPDFException") and HTTP status
+      // (e.g. 401/403/404) so the Plan Markup preview can render the
+      // same friendly error states it used to render when it ran pdfjs
+      // on the main thread.
+      errorName?: string;
+      errorStatus?: number;
+    };
 
 interface CancellableTask {
   cancel: () => void;
 }
 const inflightRenderTasks = new Map<number, CancellableTask>();
+// Task #2188 — Mirror of `inflightRenderTasks` for full-page renders
+// dispatched via `renderPage`. Kept separate so a `cancelPage` for one
+// surface can never abort a `renderTile` started for the takeoff
+// workspace (and vice-versa).
+const inflightPageTasks = new Map<number, CancellableTask>();
 
 const docCache = new Map<string, Promise<PDFDocumentProxy>>();
 const pageCache = new Map<string, Promise<PDFPageProxy>>();
@@ -219,6 +283,58 @@ async function handle(req: Req): Promise<{ resp: Resp; transfer: Transferable[] 
           width: v.width,
           height: v.height,
         },
+        transfer: [],
+      };
+    }
+    case "getDocumentInfo": {
+      const doc = await loadDoc(req.sheetUrl);
+      return {
+        resp: {
+          type: "getDocumentInfo",
+          requestId: req.requestId,
+          ok: true,
+          numPages: doc.numPages,
+        },
+        transfer: [],
+      };
+    }
+    case "renderPage": {
+      const page = await loadPage(req.sheetUrl, req.pageIndex);
+      const scale = req.scale > 0 ? req.scale : 1;
+      const v = page.getViewport({ scale });
+      const w = Math.max(1, Math.round(v.width));
+      const h = Math.max(1, Math.round(v.height));
+      try {
+        const bm = await renderToBitmap(page, scale, null, w, h, (task) => {
+          inflightPageTasks.set(req.requestId, task);
+        });
+        return {
+          resp: {
+            type: "renderPage",
+            requestId: req.requestId,
+            ok: true,
+            bitmap: bm,
+            width: w,
+            height: h,
+          },
+          transfer: [bm],
+        };
+      } finally {
+        inflightPageTasks.delete(req.requestId);
+      }
+    }
+    case "cancelPage": {
+      const task = inflightPageTasks.get(req.targetRequestId);
+      if (task) {
+        try {
+          task.cancel();
+        } catch {
+          /* RenderTask.cancel() can throw if already done; harmless */
+        }
+        inflightPageTasks.delete(req.targetRequestId);
+      }
+      return {
+        resp: { type: "cancelPage", requestId: req.requestId, ok: true },
         transfer: [],
       };
     }
@@ -373,11 +489,18 @@ self.addEventListener("message", (event: MessageEvent<Req>) => {
     })
     .catch((err) => {
       const msg = err instanceof Error ? err.message : String(err);
+      // Task #2188 — pdfjs raises typed exceptions whose `name` (and
+      // sometimes `status`) tell us what actually went wrong. Pass
+      // them through so the main thread can render the same friendly
+      // "MissingPDFException" / 401 / 403 messages it used to.
+      const e = err as { name?: string; status?: number };
       const errResp: Resp = {
         type: req.type,
         requestId: req.requestId,
         ok: false,
         error: msg,
+        errorName: typeof e?.name === "string" ? e.name : undefined,
+        errorStatus: typeof e?.status === "number" ? e.status : undefined,
       };
       (self as unknown as Worker).postMessage(errResp);
     });

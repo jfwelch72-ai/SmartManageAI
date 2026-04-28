@@ -81,12 +81,48 @@ type WorkerResponse = {
   requestId: number;
   ok: boolean;
   error?: string;
+  // Task #2188 — pdfjs error metadata (name + HTTP status) forwarded
+  // from the worker so the Plan Markup preview can show its existing
+  // friendly error text (e.g. "missing on the server") instead of the
+  // raw pdfjs message.
+  errorName?: string;
+  errorStatus?: number;
   bitmap?: ImageBitmap;
   width?: number;
   height?: number;
   empty?: boolean;
   items?: string[];
+  numPages?: number;
 };
+
+/**
+ * Task #2188 — Subclass of Error that preserves the pdfjs exception
+ * `name` (e.g. "MissingPDFException") and the HTTP `status` from
+ * `UnexpectedResponseException`. Callers (PdfPreview) inspect these
+ * fields to map the error onto a friendly user-facing message.
+ */
+export class WorkerPdfError extends Error {
+  readonly errorName: string | undefined;
+  readonly status: number | undefined;
+  constructor(message: string, errorName?: string, status?: number) {
+    super(message);
+    this.name = errorName || "WorkerPdfError";
+    this.errorName = errorName;
+    this.status = status;
+  }
+}
+
+/**
+ * Task #2188 — Handle returned from `renderPage`. Lets callers cancel
+ * an in-flight full-page render (e.g. when the user changes page or
+ * zoom mid-render in the Plan Markup viewer) so the worker can stop
+ * the underlying pdfjs render task instead of burning CPU on a result
+ * the consumer is going to discard.
+ */
+export interface CancellablePageRender {
+  promise: Promise<{ bitmap: ImageBitmap; width: number; height: number }>;
+  cancel: () => void;
+}
 
 export class TileScheduler {
   private pool: PoolWorker[] = [];
@@ -308,6 +344,86 @@ export class TileScheduler {
     });
   }
 
+  /**
+   * Task #2188 — Document-level metadata fetch (currently just
+   * `numPages`). Used by the Plan Markup preview and the print page so
+   * they can drive their page strip / per-page render loop without
+   * importing pdfjs on the main thread.
+   */
+  getDocumentInfo(sheetUrl: string): Promise<{ numPages: number }> {
+    return this.dispatchOnce<{ numPages: number }>({
+      type: "getDocumentInfo",
+      sheetUrl,
+    });
+  }
+
+  /**
+   * Task #2188 — Render a full PDF page at an arbitrary `scale`.
+   * Returns a cancellable handle so the Plan Markup viewer can abort
+   * an in-flight render when the user changes page or zoom mid-render.
+   */
+  renderPage(
+    sheetUrl: string,
+    pageIndex: number,
+    scale: number,
+  ): CancellablePageRender {
+    if (this.destroyed) {
+      return {
+        promise: Promise.reject(new Error("destroyed")),
+        cancel: () => undefined,
+      };
+    }
+    const pw = this.pickLeastBusy();
+    const requestId = nextRequestId++;
+    let cancelled = false;
+    const promise = new Promise<{
+      bitmap: ImageBitmap;
+      width: number;
+      height: number;
+    }>((resolve, reject) => {
+      pw.pending.set(requestId, {
+        resolve: (value) => {
+          if (cancelled) {
+            const v = value as { bitmap?: ImageBitmap };
+            try { v.bitmap?.close(); } catch { /* noop */ }
+            reject(new Error("cancelled"));
+            return;
+          }
+          const v = value as {
+            bitmap: ImageBitmap;
+            width: number;
+            height: number;
+          };
+          resolve({ bitmap: v.bitmap, width: v.width, height: v.height });
+        },
+        reject,
+        cancelled: false,
+      });
+      pw.inflight++;
+      pw.worker.postMessage({
+        type: "renderPage",
+        requestId,
+        sheetUrl,
+        pageIndex,
+        scale,
+      });
+    });
+    const cancel = () => {
+      if (cancelled) return;
+      cancelled = true;
+      try {
+        pw.worker.postMessage({
+          type: "cancelPage",
+          requestId: nextRequestId++,
+          targetRequestId: requestId,
+        });
+      } catch {
+        /* worker may already be terminated; harmless */
+      }
+    };
+    return { promise, cancel };
+  }
+
   renderPlaceholder(
     sheetUrl: string,
     pageIndex: number,
@@ -442,7 +558,16 @@ export class TileScheduler {
       });
     }
     if (data.ok === false) {
-      p.reject(new Error(data.error || "render failed"));
+      // Task #2188 — surface pdfjs error metadata (name + status) so
+      // callers can render the same friendly error states they did
+      // when they called pdfjs directly on the main thread.
+      p.reject(
+        new WorkerPdfError(
+          data.error || "render failed",
+          data.errorName,
+          data.errorStatus,
+        ),
+      );
     } else {
       p.resolve(data);
     }

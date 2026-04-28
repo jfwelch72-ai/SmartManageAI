@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearch } from "wouter";
-import * as pdfjsLib from "pdfjs-dist";
 import { renderMarkupToCanvas, type MarkupForRender } from "@/components/markups/markupCanvasRenderer";
+import { getSharedScheduler } from "@/lib/takeoff/tileScheduler";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url,
-).toString();
+// Task #2188 — The print page used to instantiate `pdfjs-dist` on
+// the main thread, which froze the headless capture for several
+// seconds on a 300+ sheet planset. After this task every render is
+// dispatched through the shared `pdfTileWorker` pool the takeoff
+// workspace already uses (Task #2138), keeping the main thread free
+// for layout, RAFs, and the overlay/legend DOM nodes that the
+// headless capture inspects.
 
 declare global {
   interface Window {
@@ -402,20 +405,31 @@ function PrintRenderer({
     let cancelled = false;
     (async () => {
       try {
-        const loadingTask = pdfjsLib.getDocument(pdfUrl);
-        const pdf = await loadingTask.promise;
-        if (cancelled) {
-          pdf.destroy();
+        // Task #2188 — All pdfjs work happens in the shared worker
+        // pool. The worker pool needs `Worker` + `OffscreenCanvas`; if
+        // either is missing (jsdom unit tests, very old browsers) we
+        // surface an explicit error rather than silently regressing
+        // back to a main-thread pdfjs path.
+        const scheduler = getSharedScheduler();
+        if (!scheduler) {
+          const msg = "Browser does not support off-thread PDF rendering.";
+          window.__PLAN_PDF_ERROR = msg;
+          window.__PLAN_PDF_READY = true;
+          setStatus("error");
+          onError(msg);
           return;
         }
-        window.__PLAN_PDF_PAGE_COUNT = pdf.numPages;
+
+        const info = await scheduler.getDocumentInfo(pdfUrl);
+        if (cancelled) return;
+        const numPages = info.numPages;
+        window.__PLAN_PDF_PAGE_COUNT = numPages;
         // Task #1609 — bail out *before* rasterizing pages if the PDF
         // exceeds the server-supplied cap. Without this early exit the
         // 500-page guard in the server only kicks in after every page
         // has already rendered (defeating the purpose of the limit).
-        if (pdf.numPages > maxPages) {
-          pdf.destroy();
-          const msg = `Plan document has ${pdf.numPages} pages; export is capped at ${maxPages}.`;
+        if (numPages > maxPages) {
+          const msg = `Plan document has ${numPages} pages; export is capped at ${maxPages}.`;
           window.__PLAN_PDF_ERROR = msg;
           window.__PLAN_PDF_READY = true;
           setStatus("error");
@@ -426,13 +440,24 @@ function PrintRenderer({
         if (!container) return;
         container.innerHTML = "";
 
-        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-          const page = await pdf.getPage(pageNum);
-          const viewport = page.getViewport({ scale: RENDER_SCALE });
-          const canvas = doc_create_canvas(viewport.width, viewport.height);
+        for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+          // Task #2188 — pdfjs renders happen in the worker; the
+          // main thread only blits the returned `ImageBitmap` into a
+          // visible canvas (a sub-millisecond `drawImage`).
+          const handle = scheduler.renderPage(pdfUrl, pageNum - 1, RENDER_SCALE);
+          const result = await handle.promise;
+          if (cancelled) {
+            try { result.bitmap.close(); } catch { /* noop */ }
+            return;
+          }
+          const canvas = doc_create_canvas(result.width, result.height);
           const ctx = canvas.getContext("2d");
-          if (!ctx) continue;
-          await page.render({ canvasContext: ctx, viewport }).promise;
+          if (!ctx) {
+            try { result.bitmap.close(); } catch { /* noop */ }
+            continue;
+          }
+          ctx.drawImage(result.bitmap, 0, 0);
+          try { result.bitmap.close(); } catch { /* noop */ }
 
           // Burn markups for this page.
           const pageMarkups = markupsByPage.get(pageNum) || [];
@@ -451,13 +476,13 @@ function PrintRenderer({
               thickness: m.thickness || 2,
               text: m.text || undefined,
               layer: layer ? { name: layer.name, color: layer.color } : null,
-            } as MarkupForRender, viewport.width, viewport.height);
+            } as MarkupForRender, result.width, result.height);
           }
 
           // Burn pins.
           const pagePins = pinsByPage.get(pageNum) || [];
           for (const p of pagePins) {
-            drawPin(ctx, p, viewport.width, viewport.height);
+            drawPin(ctx, p, result.width, result.height);
           }
 
           const pageWrap = document.createElement("div");
@@ -476,7 +501,7 @@ function PrintRenderer({
               filterActive: filterIsActive,
               totalLayerCount: layers.length,
               pageNumber: pageNum,
-              totalPages: pdf.numPages,
+              totalPages: numPages,
             });
             pageWrap.appendChild(footer);
           }
