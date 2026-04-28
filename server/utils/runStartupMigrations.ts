@@ -141,6 +141,7 @@ import { ensureCrmTranscriptBackfillAlertResendCooldownsTable } from "./ensureCr
 import { runCertifiedPayrollBackfillOnce } from "./runCertifiedPayrollBackfillOnce";
 import { runExhaustedSyncRetryAlertsBackfillOnce } from "./runExhaustedSyncRetryAlertsBackfillOnce";
 import { runRestoreAuditBackfillOnce } from "./runRestoreAuditBackfillOnce";
+import { runScaleCalibrationBackfillOnce } from "./runScaleCalibrationBackfillOnce";
 import { ensureSovStatusEnumValues } from "./ensureSovStatusEnumValues";
 import { ensureAuditActionEnumValues } from "./ensureAuditActionEnumValues";
 import { ensureCalendarEventTypeEnumValues } from "./ensureCalendarEventTypeEnumValues";
@@ -461,6 +462,17 @@ const migrations: MigrationStep[] = [
   // insert succeeds. Idempotent: a `one_shot_jobs` ledger row
   // makes subsequent startups a single SELECT.
   { name: "restore_style_audit_rows_backfill_once", category: "ALTER_TABLE", fn: runRestoreAuditBackfillOnce },
+  // Task #2350 — one-shot backfill that emits synthetic structured
+  // `scale_calibration` audit_log rows for every takeoff sheet that was
+  // calibrated before the structured Scale History writer (Task #2325)
+  // shipped. Without this, the new Scale History panel shows only the
+  // "Current" section for pre-#2325 sheets and an empty timeline below it.
+  // Order: must run AFTER `one_shot_job_runs` (the coverage row insert
+  // requires the table). Idempotent on two layers — a `one_shot_jobs`
+  // ledger row gates subsequent startups, and the underlying SQL uses
+  // NOT EXISTS so even ledger-less re-runs never duplicate timeline
+  // entries.
+  { name: "scale_calibration_backfill_once", category: "ALTER_TABLE", fn: runScaleCalibrationBackfillOnce },
   // Task #1119 — audit log for trade-preset applications shown on the
   // Feature Flags tab (Last applied: <preset> on <date> by <user>).
   { name: "feature_flag_preset_applications_table", category: "CREATE_TABLE", fn: ensureFeatureFlagPresetApplicationsTable },
