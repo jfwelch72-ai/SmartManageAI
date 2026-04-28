@@ -27,6 +27,7 @@ import { purgePlanDocumentMarkupTrash } from "./planDocumentMarkupSoftDeletePurg
 import { processFailedWageDecisionRetries, processStaleWageDecisions } from "../integrations/providers/dol_davis_bacon/sync";
 import { processDotPayItemsRefresh } from "./dotPayItemsRefresh";
 import { pruneOrphanedTakeoffRecents } from "../takeoffRecentsCleanup";
+import { processAiEstimatorScheduledIngestion } from "../services/aiEstimator/scheduledIngestion";
 import { processMissingWageDecisionReminders } from "../services/davisBaconAdminNotifications";
 import { processIntegrationSyncRetries, recordSyncFailure, recordSyncSuccess } from "../integrations/syncRetry";
 import { pruneSuppressionResets } from "../integrations/audit";
@@ -125,6 +126,15 @@ let takeoffRecentsOrphanPruneTask: ReturnType<typeof cron.schedule> | null = nul
 // admins get a proactive nudge instead of having to remember to open
 // the failures dashboard. See `processProjectLogEmailFailuresDigest`.
 let projectLogEmailFailuresDigestTask: ReturnType<typeof cron.schedule> | null = null;
+// Task #2339: nightly per-org refresh of the AI Estimator learned-rates
+// pipeline. The handler walks every active org with the AI_ESTIMATOR
+// feature flag enabled, skips those whose last successful run is inside
+// the cooldown window, and otherwise calls
+// `runIngestion(orgId, null, "SCHEDULED")` so the same code path admins
+// trigger by hand also drives the schedule. Failures are logged into
+// `ai_estimator_ingest_runs` by the underlying ingestion runner.
+let aiEstimatorIngestionTask: ReturnType<typeof cron.schedule> | null = null;
+let aiEstimatorIngestionTickRunning = false;
 
 /**
  * Task #1491 — Publish a per-tick succeeded/failed sample for a cron
@@ -1064,6 +1074,42 @@ export function startJobRunner() {
     }
   });
 
+  // Task #2339: nightly AI Estimator learning ingestion. Runs at 02:45 UTC
+  // — after the retention sweep (02:00) and the portfolio KPI snapshot
+  // (02:15) but before the AI takeoff calibration (03:30) and the
+  // takeoff-recents orphan prune (04:45) so the ingestion has a clear
+  // window. The handler iterates every active AI_ESTIMATOR-enabled org
+  // and fans out to `runIngestion(...)`; per-org cooldown / in-flight
+  // checks live inside `processAiEstimatorScheduledIngestion`. The
+  // ingestion runner records its own per-org row in
+  // `ai_estimator_ingest_runs` (including FAILED rows with the error
+  // message) so the admin page surfaces failures without grepping logs.
+  aiEstimatorIngestionTask = cron.schedule("45 2 * * *", async () => {
+    if (aiEstimatorIngestionTickRunning) {
+      logWarn("AI Estimator scheduled ingestion skipped: previous tick still running");
+      recordJobSkipped("ai_estimator_ingestion");
+      return;
+    }
+    aiEstimatorIngestionTickRunning = true;
+    try {
+      const out = await processAiEstimatorScheduledIngestion();
+      recordJobMetrics("ai_estimator_ingestion", {
+        succeeded: out.orgsSucceeded,
+        failed: out.orgsFailed,
+        triggered: out.orgsTriggered,
+        skippedRecent: out.orgsSkippedRecent,
+        skippedInFlight: out.orgsSkippedInFlight,
+        skippedNotEnabled: out.orgsSkippedNotEnabled,
+        durationMs: out.durationMs,
+      });
+    } catch (err) {
+      recordJobOutcome("ai_estimator_ingestion", false);
+      logJobErrorWithKind("ai_estimator_ingestion", "AI Estimator scheduled ingestion failed", err);
+    } finally {
+      aiEstimatorIngestionTickRunning = false;
+    }
+  });
+
   logInfo("Background job runner started (with retention, sync, social post, token expiry, compliance, profitability monitor, idle opportunity, orphan upload, bid due date, IMAP email sync, provider email sync, provider push-back drain, periodic report, DB health check, scheduled campaign, project geocoding, weekly CRM birthday digest, and daily CRM birthday email schedulers)");
 }
 
@@ -1252,6 +1298,10 @@ export function stopJobRunner() {
     takeoffRecentsOrphanPruneTask.stop();
     takeoffRecentsOrphanPruneTask = null;
   }
+  if (aiEstimatorIngestionTask) {
+    aiEstimatorIngestionTask.stop();
+    aiEstimatorIngestionTask = null;
+  }
   logInfo("Background job runner stopped");
 }
 
@@ -1346,6 +1396,15 @@ export const jobRegistry: Record<string, { fn: () => Promise<void>; description:
   // orphans even if the per-delete hooks are bypassed (raw-SQL
   // migration, admin script, partial mid-delete failure).
   takeoff_recents_orphan_prune: { fn: async () => { await pruneOrphanedTakeoffRecents(); }, description: "Delete takeoff_recents rows whose (kind, entityId) no longer maps to a live bid (kind='bid') or project (kind='project'); defense-in-depth for the per-delete hooks added in Task #2105", schedule: "45 4 * * *" },
+  // Task #2339: nightly per-org refresh of the AI Estimator learning
+  // pipeline. Iterates every active AI_ESTIMATOR-enabled org, skips
+  // those whose last successful run is inside the cooldown window
+  // (default 20h, override via AI_ESTIMATOR_INGEST_MIN_HOURS_BETWEEN_RUNS),
+  // and otherwise calls the same `runIngestion(...)` code path admins
+  // trigger by hand from the AI Estimator admin page. Failures are
+  // logged into `ai_estimator_ingest_runs` so they surface on the admin
+  // page without grepping logs.
+  ai_estimator_ingestion: { fn: async () => { await processAiEstimatorScheduledIngestion(); }, description: "Refresh the AI Estimator learning pipeline (knowledge index + learned rates) for every AI_ESTIMATOR-enabled org; skips orgs with a successful run inside the cooldown window", schedule: "45 2 * * *" },
 };
 
 async function processOutbox() {
