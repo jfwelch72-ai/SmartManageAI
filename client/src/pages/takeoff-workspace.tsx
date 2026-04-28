@@ -288,12 +288,12 @@ export default function TakeoffWorkspacePage() {
   if (isProjectRoute && project) {
     return (
       <div className="flex flex-col h-[calc(100vh-3.5rem)] min-h-0" data-testid="takeoff-workspace-page">
-        <div className="flex items-center gap-3 px-4 py-2 border-b bg-muted/20 shrink-0">
+        <div className="flex items-center gap-2 sm:gap-3 px-2 sm:px-4 py-2 border-b bg-muted/20 shrink-0">
           <Button
             asChild
             size="sm"
             variant="ghost"
-            className="h-8 gap-1"
+            className="h-8 gap-1 px-2 shrink-0"
             data-testid="button-back-to-project"
           >
             <Link href={`/projects/${project.code}`}>
@@ -301,32 +301,34 @@ export default function TakeoffWorkspacePage() {
               Project
             </Link>
           </Button>
-          <div className="h-5 w-px bg-border" />
-          <div className="flex items-center gap-2 min-w-0">
-            <Folder className="w-4 h-4 text-muted-foreground shrink-0" />
-            <span className="font-semibold text-sm truncate" data-testid="text-takeoff-project-title">
+          <div className="h-5 w-px bg-border shrink-0" />
+          {/* Task #2298 — see bid-context twin below: title group needs
+           *  flex-1 + min-w-0 so the project name truncates instead of
+           *  overflowing into the ribbon area on narrow viewports. */}
+          <div className="flex items-center gap-2 min-w-0 flex-1">
+            <Folder className="w-4 h-4 text-muted-foreground shrink-0 hidden sm:inline-flex" />
+            <span className="font-semibold text-sm truncate min-w-0" data-testid="text-takeoff-project-title">
               {project.name || project.code}
             </span>
             <Badge variant="outline" className="text-[10px] uppercase tracking-wide font-mono shrink-0" data-testid="badge-takeoff-project-code">
               {project.code}
             </Badge>
             {project.status && (
-              <Badge variant="secondary" className="text-[10px] shrink-0" data-testid="badge-takeoff-project-status">
+              <Badge variant="secondary" className="text-[10px] shrink-0 hidden sm:inline-flex" data-testid="badge-takeoff-project-status">
                 {project.status}
               </Badge>
             )}
           </div>
-          <div className="flex-1" />
           <Button
             asChild
             size="sm"
             variant="outline"
-            className="h-8 gap-1"
+            className="h-8 gap-1 px-2 sm:px-3 shrink-0"
             data-testid="button-open-project-detail"
           >
             <Link href={`/projects/${project.code}`}>
               <ExternalLink className="w-3.5 h-3.5" />
-              Open Project Detail
+              <span className="hidden sm:inline">Open Project Detail</span>
             </Link>
           </Button>
         </div>
@@ -348,12 +350,12 @@ export default function TakeoffWorkspacePage() {
   // Bid context (default).
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)] min-h-0" data-testid="takeoff-workspace-page">
-      <div className="flex items-center gap-3 px-4 py-2 border-b bg-muted/20 shrink-0">
+      <div className="flex items-center gap-2 sm:gap-3 px-2 sm:px-4 py-2 border-b bg-muted/20 shrink-0">
         <Button
           asChild
           size="sm"
           variant="ghost"
-          className="h-8 gap-1"
+          className="h-8 gap-1 px-2 shrink-0"
           data-testid="button-back-to-bid"
         >
           <Link href={`/bids/${bidCode}`}>
@@ -361,32 +363,37 @@ export default function TakeoffWorkspacePage() {
             Bid
           </Link>
         </Button>
-        <div className="h-5 w-px bg-border" />
-        <div className="flex items-center gap-2 min-w-0">
-          <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
-          <span className="font-semibold text-sm truncate" data-testid="text-takeoff-bid-title">
+        <div className="h-5 w-px bg-border shrink-0" />
+        {/* Task #2298 — title group must be flex-1 + min-w-0 so the bid
+         *  name actually truncates on narrow viewports. Without flex-1
+         *  the inner span keeps its natural width (truncate is nowrap-
+         *  only) and pushes the badges + Open-Bid-Detail button off the
+         *  row, leaving long names rendered as a vertical column behind
+         *  the ribbon below. */}
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <FileText className="w-4 h-4 text-muted-foreground shrink-0 hidden sm:inline-flex" />
+          <span className="font-semibold text-sm truncate min-w-0" data-testid="text-takeoff-bid-title">
             {bid!.name || bid!.code}
           </span>
           <Badge variant="outline" className="text-[10px] uppercase tracking-wide font-mono shrink-0" data-testid="badge-takeoff-bid-code">
             {bid!.code}
           </Badge>
           {bid!.status && (
-            <Badge variant="secondary" className="text-[10px] shrink-0" data-testid="badge-takeoff-bid-status">
+            <Badge variant="secondary" className="text-[10px] shrink-0 hidden sm:inline-flex" data-testid="badge-takeoff-bid-status">
               {bid!.status}
             </Badge>
           )}
         </div>
-        <div className="flex-1" />
         <Button
           asChild
           size="sm"
           variant="outline"
-          className="h-8 gap-1"
+          className="h-8 gap-1 px-2 sm:px-3 shrink-0"
           data-testid="button-open-bid-detail"
         >
           <Link href={`/bids/${bidCode}`}>
             <ExternalLink className="w-3.5 h-3.5" />
-            Open Bid Detail
+            <span className="hidden sm:inline">Open Bid Detail</span>
           </Link>
         </Button>
       </div>

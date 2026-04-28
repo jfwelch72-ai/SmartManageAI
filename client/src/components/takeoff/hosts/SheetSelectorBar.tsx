@@ -154,8 +154,16 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
     currentSheetIndexInSet = null,
   } = props;
   return (
-    <div className="h-12 sm:h-14 bg-card border-b px-2 sm:px-4 flex items-center justify-between gap-2 sm:gap-4">
-      <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
+    /* Task #2298 — on narrow viewports the sheet header packs ~10
+     *  controls (selector, actions, thumbnails, calibration badge,
+     *  active-set badge, auto-import, version-history, properties,
+     *  collab avatar, hide-resolved, scale, shortcuts, sheet-sets,
+     *  cross-module, fullscreen). At < sm we let the row wrap onto a
+     *  second line and grow vertically so neighboring controls stop
+     *  overlapping the calibration badge. The fixed h-12 cap is only
+     *  applied at sm+ where the row genuinely fits on one line. */
+    <div className="min-h-12 sm:h-14 bg-card border-b px-2 sm:px-4 flex items-center justify-between gap-x-2 sm:gap-x-4 gap-y-1 flex-wrap py-1 sm:py-0">
+      <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1 flex-wrap gap-y-1">
         {/* Task #2206 — hide the redundant "Sheet:" label below sm so the
          *  selector itself has room to breathe on iPad portrait / Surface
          *  split-screen. The dropdown UI is obvious without the label. */}
@@ -319,10 +327,37 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
           </Button>
         )}
         {currentSheet && (
-          <Badge variant="outline" data-testid="badge-calibration-status">
-            {currentSheet.scalePxPerFoot
-              ? `Calibrated (${currentSheet.units})`
-              : "Not Calibrated"}
+          /* Task #2298 — compact calibration badge on narrow viewports
+           *  so the long "Calibrated (ft)" text stops overlapping the
+           *  collab avatars and right-side buttons. Full text returns
+           *  at sm+ where there's room. The full label is set as
+           *  `aria-label` on the badge so screen readers always read
+           *  "Calibrated (ft)" / "Not Calibrated" regardless of which
+           *  visual variant is active (the per-variant spans are hidden
+           *  from a11y via aria-hidden so they don't double-read). */
+          <Badge
+            variant="outline"
+            className="shrink-0 whitespace-nowrap"
+            data-testid="badge-calibration-status"
+            aria-label={
+              currentSheet.scalePxPerFoot
+                ? `Calibrated (${currentSheet.units})`
+                : "Not Calibrated"
+            }
+          >
+            {currentSheet.scalePxPerFoot ? (
+              <>
+                <CheckCircle2 className="w-3 h-3 mr-1 text-green-500 sm:hidden" aria-hidden="true" />
+                <span className="hidden sm:inline" aria-hidden="true">Calibrated </span>
+                <span aria-hidden="true">({currentSheet.units})</span>
+              </>
+            ) : (
+              <>
+                <AlertCircle className="w-3 h-3 mr-1 text-amber-500 sm:hidden" aria-hidden="true" />
+                <span className="hidden sm:inline" aria-hidden="true">Not Calibrated</span>
+                <span className="sm:hidden" aria-hidden="true">No scale</span>
+              </>
+            )}
           </Badge>
         )}
         {activeSheetSetName && (
