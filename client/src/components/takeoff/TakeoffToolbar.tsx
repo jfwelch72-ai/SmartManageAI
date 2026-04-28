@@ -219,7 +219,7 @@ export function TakeoffToolbar({
           {zoomPercent}%
         </button>
         {onFitToPage && (
-          <TinyBtn icon={Maximize2} label="Fit to Page" onClick={onFitToPage} testId="button-fit-to-page" />
+          <TinyBtn icon={Maximize2} label="Fit to Page" onClick={onFitToPage} testId="button-fit-to-page-toolbar" />
         )}
 
         <Separator className="my-px w-8" />

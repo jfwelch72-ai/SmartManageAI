@@ -3618,6 +3618,11 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     issues.length, hideResolvedIssues, context?.type, crossModulePanelOpen,
     isFullscreen, toggleFullscreen,
     sheetSetsCtxId, sheetSetsPanelOpen, activeSheetSetId, activeSheetSetDetail,
+    // Task #2310 — `selectorBar.canFitToPage` reads `pageDims` /
+    // `pdfImage` so we must re-build the slice when those change,
+    // otherwise the Fit button stays disabled even after the PDF
+    // resolves.
+    pageDims, pdfImage,
     measurementCountsPerSheet, pinnedSheetIdsForStrip, newerSheetIdsForStrip,
     canManageDrawingSetsOnCanvas, activeCanvasSetId,
     handleCanvasPinSheet, handleCanvasUnpinSheet, handleCanvasSwapRevision,

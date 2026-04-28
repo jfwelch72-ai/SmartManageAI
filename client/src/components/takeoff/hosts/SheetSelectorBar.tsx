@@ -426,11 +426,11 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
                 onClick={onFitToPage}
                 disabled={!canFitToPage}
                 className="h-7 gap-1 px-2 text-xs shrink-0"
-                data-testid="button-fit-to-page-bar"
-                aria-label="Fit page to view"
+                data-testid="button-fit-to-page"
+                aria-label="Fit to page"
               >
                 <Maximize2 className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Fit</span>
+                <span>Fit to page</span>
               </Button>
             </TooltipTrigger>
             <TooltipContent>
