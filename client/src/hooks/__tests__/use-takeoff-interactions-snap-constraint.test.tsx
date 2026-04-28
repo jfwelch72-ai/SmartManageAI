@@ -59,6 +59,10 @@ interface OverrideOpts {
   orthoPresetIndex?: number;
   drawingPoints?: Array<{ x: number; y: number }>;
   measurements?: TakeoffMeasurement[];
+  // Task #2204 — polar-lock + typed-length draw flow knobs.
+  polarAngleStep?: number;
+  pendingDimLengthFt?: number | null;
+  scalePxPerFoot?: number;
 }
 
 function buildParams(
@@ -68,7 +72,7 @@ function buildParams(
   return {
     projectId: "p1",
     selectedSheet: "s1",
-    currentSheet: { id: "s1", scalePxPerFoot: 12 } as any,
+    currentSheet: { id: "s1", scalePxPerFoot: opts.scalePxPerFoot ?? 12 } as any,
     measurements: opts.measurements ?? [],
     categories: [],
     activeTool: "linear",
@@ -133,6 +137,8 @@ function buildParams(
     enabledSnapModes: opts.enabledSnapModes,
     constraintMode: opts.constraintMode,
     orthoPresetIndex: opts.orthoPresetIndex,
+    polarAngleStep: opts.polarAngleStep,
+    pendingDimLengthFt: opts.pendingDimLengthFt,
   };
 }
 
@@ -647,5 +653,291 @@ describe("Task #2199 — polarGuideStep gates polar tracking guides", () => {
       ),
     );
     expect(result.current.polarGuideStep).toBeNull();
+  });
+});
+
+/**
+ * Task #2204 — Polar-locked draw and typed-length draw end-to-end
+ * through `useTakeoffInteractions`.
+ *
+ * The two new ribbon flows being exercised:
+ *   1. `constraintMode === "polar"` with the default 15° step. With an
+ *      anchor in `drawingPoints`, a cursor at an arbitrary bearing must
+ *      resolve to the nearest 15° multiple while keeping the cursor's
+ *      reach (radial distance) — this is the same code path the canvas
+ *      hits during a polar-locked LINEAR/POLYLINE draw.
+ *   2. `pendingDimLengthFt > 0` (the dim-input HUD has a typed value).
+ *      With an anchor and a sheet scale in place, the resolved point
+ *      must be projected onto the cursor's bearing at exactly
+ *      `pendingDimLengthFt * scalePxPerFoot` pixels from the anchor.
+ *
+ * Both also check the live HUD path (`handleStageMouseMove`) so the
+ * preview line, length badge, and click-commit code use the same
+ * resolved coordinates — i.e. the HUD never lies about where a click
+ * would land.
+ */
+describe("Task #2204 — polar-locked and typed-length draw end-to-end", () => {
+  it("polar mode: cursor at ~22° from horizontal snaps to the nearest 15° bearing while preserving distance", () => {
+    const anchor = { x: 0, y: 0 };
+    const dist = 80;
+    const rad = (22 * Math.PI) / 180;
+    const cursor = { x: Math.cos(rad) * dist, y: Math.sin(rad) * dist };
+
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: [],            // snap off so it can't mask the constraint
+          constraintMode: "polar",         // polar lock active
+          orthoPresetIndex: 4,             // null preset; polar uses polarAngleStep
+          polarAngleStep: 15,              // explicit default, makes intent obvious
+          drawingPoints: [anchor],
+        }),
+      ),
+    );
+
+    let resolved!: { x: number; y: number };
+    act(() => {
+      resolved = result.current.resolvePoint(cursor);
+    });
+
+    // Nearest 15° to 22° is 15°.
+    const expectedRad = (15 * Math.PI) / 180;
+    expect(resolved.x).toBeCloseTo(Math.cos(expectedRad) * dist, 3);
+    expect(resolved.y).toBeCloseTo(Math.sin(expectedRad) * dist, 3);
+    // Distance preservation is what makes a polar lock useful — it
+    // tracks the user's reach instead of collapsing to an axis.
+    expect(Math.hypot(resolved.x, resolved.y)).toBeCloseTo(dist, 3);
+  });
+
+  it("polar mode: a custom polarAngleStep (e.g. 30°) overrides the 15° default", () => {
+    // Cursor at 22° bearing — with a 30° step the nearest multiple is
+    // 30°, not 15°. Proves the polarAngleStep prop actually drives the
+    // angular constraint (not a hard-coded 15°).
+    const anchor = { x: 0, y: 0 };
+    const dist = 80;
+    const rad = (22 * Math.PI) / 180;
+    const cursor = { x: Math.cos(rad) * dist, y: Math.sin(rad) * dist };
+
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: [],
+          constraintMode: "polar",
+          orthoPresetIndex: 4,
+          polarAngleStep: 30,
+          drawingPoints: [anchor],
+        }),
+      ),
+    );
+
+    let resolved!: { x: number; y: number };
+    act(() => {
+      resolved = result.current.resolvePoint(cursor);
+    });
+
+    const expectedRad = (30 * Math.PI) / 180;
+    expect(resolved.x).toBeCloseTo(Math.cos(expectedRad) * dist, 3);
+    expect(resolved.y).toBeCloseTo(Math.sin(expectedRad) * dist, 3);
+  });
+
+  it("polar mode: HUD pointer move resolves to the same locked point as resolvePoint", () => {
+    // Drives the same `handleStageMouseMove` path the live preview uses
+    // — so the badge / preview line stays in sync with the click-commit
+    // coordinates produced by the polar lock.
+    const anchor = { x: 0, y: 0 };
+    const dist = 50;
+    const rad = (22 * Math.PI) / 180;
+    const cursor = { x: Math.cos(rad) * dist, y: Math.sin(rad) * dist };
+
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: [],
+          constraintMode: "polar",
+          orthoPresetIndex: 4,
+          polarAngleStep: 15,
+          drawingPoints: [anchor],
+        }),
+      ),
+    );
+
+    const fakeStage = {
+      getPointerPosition: () => cursor,
+      getAbsoluteTransform: () => ({
+        copy: () => ({
+          invert: () => ({
+            point: (p: { x: number; y: number }) => p,
+          }),
+        }),
+      }),
+    };
+    const fakeEvent = { target: { getStage: () => fakeStage }, evt: {} };
+    act(() => {
+      result.current.handleStageMouseMove(fakeEvent as any);
+    });
+
+    const expectedRad = (15 * Math.PI) / 180;
+    expect(result.current.cursorPosition).not.toBeNull();
+    expect(result.current.cursorPosition!.x).toBeCloseTo(
+      Math.cos(expectedRad) * dist, 3,
+    );
+    expect(result.current.cursorPosition!.y).toBeCloseTo(
+      Math.sin(expectedRad) * dist, 3,
+    );
+  });
+
+  it("typed-length lock: pendingDimLengthFt clamps the resolved point to length × scale, bearing preserved", () => {
+    // Sheet scale 12 px/ft; user typed 5 ft → 60 px lock.
+    const anchor = { x: 0, y: 0 };
+    // Cursor 100px out at 30° bearing → must shrink to 60px at 30°.
+    const rad = (30 * Math.PI) / 180;
+    const cursor = { x: Math.cos(rad) * 100, y: Math.sin(rad) * 100 };
+
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: [],
+          constraintMode: "none",
+          orthoPresetIndex: 4,
+          drawingPoints: [anchor],
+          scalePxPerFoot: 12,
+          pendingDimLengthFt: 5,
+        }),
+      ),
+    );
+
+    let resolved!: { x: number; y: number };
+    act(() => {
+      resolved = result.current.resolvePoint(cursor);
+    });
+
+    expect(Math.hypot(resolved.x, resolved.y)).toBeCloseTo(60, 6);
+    expect(Math.atan2(resolved.y, resolved.x)).toBeCloseTo(rad, 6);
+  });
+
+  it("typed-length lock combines with polar lock: bearing snapped to 15° AND length clamped", () => {
+    // Typed 5 ft @ 12 px/ft → 60 px. Cursor at 22° → bearing snaps to
+    // 15°, then length clamps to 60 px. Order matters: polar runs
+    // first to fix the bearing, then applyFixedLength projects.
+    const anchor = { x: 0, y: 0 };
+    const rad = (22 * Math.PI) / 180;
+    const cursor = { x: Math.cos(rad) * 200, y: Math.sin(rad) * 200 };
+
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: [],
+          constraintMode: "polar",
+          orthoPresetIndex: 4,
+          polarAngleStep: 15,
+          drawingPoints: [anchor],
+          scalePxPerFoot: 12,
+          pendingDimLengthFt: 5,
+        }),
+      ),
+    );
+
+    let resolved!: { x: number; y: number };
+    act(() => {
+      resolved = result.current.resolvePoint(cursor);
+    });
+
+    const expectedRad = (15 * Math.PI) / 180;
+    expect(Math.hypot(resolved.x, resolved.y)).toBeCloseTo(60, 4);
+    expect(Math.atan2(resolved.y, resolved.x)).toBeCloseTo(expectedRad, 4);
+  });
+
+  it("typed-length lock no-ops when there is no anchor yet (first click)", () => {
+    // Before the user has placed the first vertex, there's nothing for
+    // the typed length to project against — must pass through.
+    const cursor = { x: 42, y: 17 };
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: [],
+          constraintMode: "none",
+          orthoPresetIndex: 4,
+          drawingPoints: [], // no anchor
+          scalePxPerFoot: 12,
+          pendingDimLengthFt: 5,
+        }),
+      ),
+    );
+    let resolved!: { x: number; y: number };
+    act(() => {
+      resolved = result.current.resolvePoint(cursor);
+    });
+    expect(resolved).toEqual(cursor);
+  });
+
+  it("typed-length lock no-ops when pendingDimLengthFt is null (HUD empty / consumed)", () => {
+    const anchor = { x: 0, y: 0 };
+    const cursor = { x: 30, y: 40 };
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: [],
+          constraintMode: "none",
+          orthoPresetIndex: 4,
+          drawingPoints: [anchor],
+          scalePxPerFoot: 12,
+          pendingDimLengthFt: null,
+        }),
+      ),
+    );
+    let resolved!: { x: number; y: number };
+    act(() => {
+      resolved = result.current.resolvePoint(cursor);
+    });
+    expect(resolved).toEqual(cursor);
+  });
+
+  it("typed-length lock: HUD pointer move uses the locked length too (preview parity)", () => {
+    const anchor = { x: 0, y: 0 };
+    const rad = (45 * Math.PI) / 180;
+    // Cursor 200px out at 45° → typed 10 ft @ 12 px/ft = 120 px lock.
+    const cursor = { x: Math.cos(rad) * 200, y: Math.sin(rad) * 200 };
+
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: [],
+          constraintMode: "none",
+          orthoPresetIndex: 4,
+          drawingPoints: [anchor],
+          scalePxPerFoot: 12,
+          pendingDimLengthFt: 10,
+        }),
+      ),
+    );
+
+    const fakeStage = {
+      getPointerPosition: () => cursor,
+      getAbsoluteTransform: () => ({
+        copy: () => ({
+          invert: () => ({
+            point: (p: { x: number; y: number }) => p,
+          }),
+        }),
+      }),
+    };
+    const fakeEvent = { target: { getStage: () => fakeStage }, evt: {} };
+    act(() => {
+      result.current.handleStageMouseMove(fakeEvent as any);
+    });
+
+    expect(result.current.cursorPosition).not.toBeNull();
+    expect(
+      Math.hypot(
+        result.current.cursorPosition!.x,
+        result.current.cursorPosition!.y,
+      ),
+    ).toBeCloseTo(120, 4);
+    expect(
+      Math.atan2(
+        result.current.cursorPosition!.y,
+        result.current.cursorPosition!.x,
+      ),
+    ).toBeCloseTo(rad, 6);
   });
 });
