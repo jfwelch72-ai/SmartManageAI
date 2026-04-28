@@ -2,7 +2,7 @@ import { memo, type ReactNode, type RefObject } from "react";
 import {
   AlertCircle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpCircle,
   CheckCircle2, Copy, GalleryHorizontal, GitCompare, History, Keyboard,
-  Link2, List, Maximize, Minimize, MoreVertical, PanelRight, Pencil,
+  Layers, Link2, List, Maximize, Minimize, MoreVertical, PanelRight, Pencil,
   Pin, PinOff, Plus, Search, Trash2, Zap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -78,6 +78,20 @@ export interface SheetSelectorBarProps {
   onToggleCrossModule: () => void;
   isFullscreen: boolean;
   onToggleFullscreen: () => void;
+  /** Task #2141 — Sheet Sets panel toggle + active-set badge. The
+   *  badge is shown next to the calibration-status badge so the user
+   *  can see at a glance which set is steering navigation. */
+  showSheetSetsToggle?: boolean;
+  sheetSetsPanelOpen?: boolean;
+  onToggleSheetSetsPanel?: () => void;
+  activeSheetSetName?: string | null;
+  /** Number of sheets in the active set membership the current sheet
+   *  belongs to. Surfaced inline in the badge so the user knows the
+   *  scope of "next/prev sheet" without opening the panel. */
+  activeSheetSetMemberCount?: number;
+  /** Whether the current sheet is part of the active set. Drives the
+   *  small "1/N" position chip rendered alongside the badge. */
+  currentSheetIndexInSet?: number | null;
 }
 
 /** Sheet header toolbar — sheet selector, sheet-actions menu, thumbnail toggle,
@@ -132,6 +146,12 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
     onToggleCrossModule,
     isFullscreen,
     onToggleFullscreen,
+    showSheetSetsToggle = false,
+    sheetSetsPanelOpen = false,
+    onToggleSheetSetsPanel,
+    activeSheetSetName = null,
+    activeSheetSetMemberCount = 0,
+    currentSheetIndexInSet = null,
   } = props;
   return (
     <div className="h-12 sm:h-14 bg-card border-b px-2 sm:px-4 flex items-center justify-between gap-2 sm:gap-4">
@@ -299,6 +319,21 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
               : "Not Calibrated"}
           </Badge>
         )}
+        {activeSheetSetName && (
+          <Badge
+            variant="default"
+            className="gap-1 text-[10px] px-1.5 py-0.5 h-5"
+            data-testid="badge-active-sheet-set"
+          >
+            <Layers className="w-2.5 h-2.5" />
+            <span className="truncate max-w-[120px]">{activeSheetSetName}</span>
+            {currentSheetIndexInSet !== null && activeSheetSetMemberCount > 0 && (
+              <span className="opacity-80 font-mono">
+                {currentSheetIndexInSet + 1}/{activeSheetSetMemberCount}
+              </span>
+            )}
+          </Badge>
+        )}
         {sheetLinksCount > 0 && (
           <Badge variant="outline" className="text-blue-600 border-blue-300" data-testid="badge-sheet-links">
             <Link2 className="w-3 h-3 mr-1" />{sheetLinksCount} Links
@@ -395,6 +430,23 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
             </div>
           </TooltipContent>
         </Tooltip>
+        {showSheetSetsToggle && onToggleSheetSetsPanel && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={sheetSetsPanelOpen ? "secondary" : "ghost"}
+                size="icon"
+                onClick={onToggleSheetSetsPanel}
+                data-testid="button-toggle-sheet-sets"
+              >
+                <Layers className="w-5 h-5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{sheetSetsPanelOpen ? "Hide Sheet Sets" : "Sheet Sets"}</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
         {showCrossModuleToggle && (
           <Tooltip>
             <TooltipTrigger asChild>

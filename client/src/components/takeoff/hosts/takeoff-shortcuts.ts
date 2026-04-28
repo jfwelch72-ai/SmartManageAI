@@ -121,6 +121,8 @@ export type ShortcutIntent =
   | { kind: "cycle-ortho-preset" }
   | { kind: "prev-sheet" }
   | { kind: "next-sheet" }
+  | { kind: "extend-prev-sheet" }
+  | { kind: "extend-next-sheet" }
   | { kind: "prev-version" }
   | { kind: "next-version" }
   | { kind: "undo" }
@@ -366,6 +368,30 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Next sheet",
     groupId: "view",
     intent: { kind: "next-sheet" },
+  },
+  // Task #2141 — Shift+[ / Shift+] extend the multi-sheet selection
+  // when a Sheet Set is active. On US keyboards Shift+[ produces
+  // the literal `{` (and Shift+] produces `}`), so we match against
+  // those shifted glyphs directly rather than `matchKey: "["` plus
+  // `modifiers: { shift: true }` (which would never fire because
+  // event.key reports `{`, not `[`).
+  {
+    id: "nav.extend-prev-sheet",
+    keys: "Shift+[",
+    matchKey: "{",
+    modifiers: { shift: true },
+    label: "Extend selection to previous sheet",
+    groupId: "view",
+    intent: { kind: "extend-prev-sheet" },
+  },
+  {
+    id: "nav.extend-next-sheet",
+    keys: "Shift+]",
+    matchKey: "}",
+    modifiers: { shift: true },
+    label: "Extend selection to next sheet",
+    groupId: "view",
+    intent: { kind: "extend-next-sheet" },
   },
   {
     id: "nav.prev-version",

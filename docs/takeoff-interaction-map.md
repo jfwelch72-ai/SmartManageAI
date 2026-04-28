@@ -68,7 +68,7 @@ Single-letter activates a tool. Hold `Shift` to add it to the active set
 | `Esc` | Cancel current draw / clear focus   |                                                        |
 | `Enter` | Commit current draw               | Auto-closes polygons.                                  |
 | `Backspace` | Drop last vertex              |                                                        |
-| `[` / `]` | Previous / next sheet           | `Shift` adds to selection (Sheet Sets).                |
+| `[` / `]` | Previous / next sheet           | When a Sheet Set is **active**, navigation is set-scoped (skips non-members). `Shift+[` / `Shift+]` extends the multi-sheet selection within the active set (Sheet Sets, Step 12). |
 | `,` / `.` | Previous / next version         | When version overlay is on.                            |
 | `Cmd/Ctrl+Z` / `Cmd/Ctrl+Shift+Z` | Undo / redo |                                                        |
 | `Cmd/Ctrl+D` | Duplicate selected markups     |                                                        |
@@ -167,9 +167,14 @@ Tab vs. Enter semantics:
 - A `Use Standard Scale` link opens the existing `PlanScaleModal`
   for users who'd rather pick a known ratio (e.g. `1/4" = 1'-0"`)
   instead of drawing a calibration line.
-- Optional checkbox: **Apply to entire Sheet Set**. **Disabled** in
-  this task with a "Coming soon" badge — the Sheet Sets task
-  (Step 12) will flip the feature flag and wire the propagation.
+- Optional checkbox: **Apply to entire Sheet Set** — **Implemented**
+  (Task #2141). Enabled when the user has an active Sheet Set selected.
+  Saving with the box checked propagates the new scale to every member
+  of the active set in one transactional call (`POST
+  /api/takeoff/sheet-sets/:id/apply-scale`), snapshots prior per-sheet
+  scales server-side, and surfaces a single toast with an **Undo**
+  action that calls the matching `restore-scales` endpoint to restore
+  the previous values.
 
 ---
 

@@ -85,10 +85,26 @@ export interface InlineCalibrationDrawerProps {
       label?: string;
     }>,
   ) => void;
+  /** Task #2141 — Active Sheet Set context. When non-null, the
+   *  "Apply to entire Sheet Set" checkbox enables and clicking Save
+   *  routes the calibrated scale through `onApplyToSheetSet` (which
+   *  calls the apply-scale endpoint and toasts an Undo affordance)
+   *  instead of the normal per-sheet save path. */
+  activeSheetSet?: { id: string; name: string; memberCount: number } | null;
+  onApplyToSheetSet?: (input: {
+    setId: string;
+    scalePxPerFoot: number;
+  }) => void | Promise<void>;
+  /** Task #2141 — Pre-checks "Apply to entire Sheet Set" when the
+   *  drawer was opened from a per-set scale chip in the Sheet Sets
+   *  panel. The user can still uncheck before saving. */
+  defaultApplyToSheetSet?: boolean;
 }
 
-const APPLY_TO_SHEET_SET_TOOLTIP =
-  "Sheet Sets API ships in a follow-up task. The checkbox will be enabled once a sheet is part of a sheet set.";
+const APPLY_TO_SHEET_SET_TOOLTIP_DISABLED =
+  "Activate a Sheet Set in the Sheet Sets panel to apply this calibration to every member sheet at once.";
+const APPLY_TO_SHEET_SET_TOOLTIP_ENABLED =
+  "Saves the calibrated scale to every sheet in the active Sheet Set in one go. Undo is offered in the toast.";
 
 const M_TO_FT = 3.28083989501312;
 
@@ -119,6 +135,9 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
     multiCalibMode,
     multiCalibPoints,
     setMultiCalibPoints,
+    activeSheetSet,
+    onApplyToSheetSet,
+    defaultApplyToSheetSet,
   } = props;
   // `setMultiCalibMode` is part of the props contract for parity
   // with the existing TakeoffSidebar wiring, but the drawer itself
@@ -131,10 +150,28 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
   // mid-keystroke.
   const [draftDistance, setDraftDistance] = useState(calibrationDistance);
   const [draftRegionLabel, setDraftRegionLabel] = useState("");
-  // "Apply to entire Sheet Set" — feature-flagged off until the
-  // Sheet Sets task lands.
-  const [applyToSheetSet, setApplyToSheetSet] = useState(false);
-  const sheetSetFlagOn = false;
+  // Task #2141 — "Apply to entire Sheet Set". The checkbox enables
+  // when an active Sheet Set is propagated through `activeSheetSet`
+  // and the parent provides a `onApplyToSheetSet` callback. The
+  // legacy hard-coded `sheetSetFlagOn = false` is gone; the feature
+  // gate is now "is there an active set?".
+  const [applyToSheetSet, setApplyToSheetSet] = useState(
+    !!defaultApplyToSheetSet,
+  );
+  const sheetSetFlagOn = !!activeSheetSet && !!onApplyToSheetSet;
+  // Re-sync when the parent flips the default on (e.g. user clicked
+  // a per-set scale chip while the drawer was already open).
+  useEffect(() => {
+    if (defaultApplyToSheetSet && sheetSetFlagOn) {
+      setApplyToSheetSet(true);
+    }
+  }, [defaultApplyToSheetSet, sheetSetFlagOn]);
+  // Auto-uncheck when the active set goes away (e.g. user
+  // deactivates the set in the panel mid-flow) so we never silently
+  // submit an obsolete propagation request.
+  useEffect(() => {
+    if (!sheetSetFlagOn && applyToSheetSet) setApplyToSheetSet(false);
+  }, [sheetSetFlagOn, applyToSheetSet]);
 
   useEffect(() => {
     setDraftDistance(calibrationDistance);
@@ -185,7 +222,26 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
         ? (draftLengthFt / M_TO_FT).toString()
         : draftLengthFt.toString();
     setCalibrationDistance(display);
+    // Task #2141 — Save the per-sheet calibration first (so the
+    // currently-open sheet's own scalePxPerFoot still reflects the
+    // exact two-point pickup geometry), then fan the resolved scale
+    // out to the rest of the active Sheet Set if the user opted in.
     await onSaveCalibration(draftLengthFt);
+    if (
+      applyToSheetSet &&
+      sheetSetFlagOn &&
+      activeSheetSet &&
+      onApplyToSheetSet &&
+      calibrationPoints.length === 2
+    ) {
+      const px = pixelDistance(calibrationPoints[0], calibrationPoints[1]);
+      if (px > 0) {
+        await onApplyToSheetSet({
+          setId: activeSheetSet.id,
+          scalePxPerFoot: px / draftLengthFt,
+        });
+      }
+    }
   };
 
   const handleResetPoints = () => {
@@ -427,13 +483,21 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
                   )}
                 >
                   Apply to entire Sheet Set
-                  <Badge variant="outline" className="ml-2 text-[9px]">
-                    Coming soon
-                  </Badge>
+                  {sheetSetFlagOn && activeSheetSet ? (
+                    <Badge variant="outline" className="ml-2 text-[9px]">
+                      {activeSheetSet.name} · {activeSheetSet.memberCount}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="ml-2 text-[9px]">
+                      No active set
+                    </Badge>
+                  )}
                 </Label>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-[260px] text-xs">
-                {APPLY_TO_SHEET_SET_TOOLTIP}
+                {sheetSetFlagOn
+                  ? APPLY_TO_SHEET_SET_TOOLTIP_ENABLED
+                  : APPLY_TO_SHEET_SET_TOOLTIP_DISABLED}
               </TooltipContent>
             </Tooltip>
           </div>

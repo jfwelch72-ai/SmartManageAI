@@ -37,6 +37,11 @@ export interface UseTakeoffShortcutsParams {
   /** Sheet/version navigation. */
   onPrevSheet: () => void;
   onNextSheet: () => void;
+  /** Task #2141 — Shift+[ / Shift+] extend the multi-sheet selection
+   *  by one step within the active Sheet Set's ordered members.
+   *  Optional because non-Sheet-Sets contexts have nothing to extend. */
+  onExtendPrevSheet?: () => void;
+  onExtendNextSheet?: () => void;
   onPrevVersion?: () => void;
   onNextVersion?: () => void;
   /** Calibrate (`T`) opens the inline scale drawer. */
@@ -112,6 +117,8 @@ export function useTakeoffShortcuts(params: UseTakeoffShortcutsParams) {
     setGridEnabled,
     onPrevSheet,
     onNextSheet,
+    onExtendPrevSheet,
+    onExtendNextSheet,
     onPrevVersion,
     onNextVersion,
     onOpenCalibrate,
@@ -215,6 +222,15 @@ export function useTakeoffShortcuts(params: UseTakeoffShortcutsParams) {
         case "next-sheet":
           onNextSheet();
           return;
+        case "extend-prev-sheet":
+          // No-op when nothing's wired (no active set in this
+          // workspace) — the keypress is still consumed above so the
+          // browser doesn't fall through to its own `{` binding.
+          onExtendPrevSheet?.();
+          return;
+        case "extend-next-sheet":
+          onExtendNextSheet?.();
+          return;
         case "prev-version":
           onPrevVersion?.();
           return;
@@ -271,6 +287,8 @@ export function useTakeoffShortcuts(params: UseTakeoffShortcutsParams) {
     setGridEnabled,
     onPrevSheet,
     onNextSheet,
+    onExtendPrevSheet,
+    onExtendNextSheet,
     onPrevVersion,
     onNextVersion,
     onOpenCalibrate,

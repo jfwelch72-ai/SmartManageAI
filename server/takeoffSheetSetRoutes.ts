@@ -53,6 +53,25 @@ const applyScaleBodySchema = z.object({
   saveAsDefault: z.boolean().optional(),
 });
 
+// Task #2141 — Undo affordance for "Apply to entire Sheet Set". The
+// apply-scale endpoint now returns each member sheet's prior
+// scalePxPerFoot / scaleLabel; the client snapshots that array and,
+// on Undo, posts it back here so we can restore the per-sheet values
+// in a single batch. Bodies that reference a sheet outside the org
+// are filtered out by the verifySheetAccess pass below.
+const restoreScalesBodySchema = z.object({
+  sheets: z
+    .array(
+      z.object({
+        sheetId: z.string().min(1),
+        scalePxPerFoot: z.number().positive().nullable(),
+        scaleLabel: z.string().max(64).nullable(),
+      }),
+    )
+    .min(1)
+    .max(500),
+});
+
 router.get("/api/takeoff/sheet-sets", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const ctx = getOrgContext(req);
@@ -429,6 +448,18 @@ router.post(
         return;
       }
       const sheetIds = members.map((m) => m.sheetId);
+      // Task #2141 — Snapshot each member's existing scale BEFORE the
+      // bulk UPDATE runs so the client can hold the prior values for
+      // an Undo round-trip via /restore-scales. Without this snapshot
+      // an apply-scale across N sheets is irreversible from the UI.
+      const priorScales = await db
+        .select({
+          id: takeoffSheets.id,
+          scalePxPerFoot: takeoffSheets.scalePxPerFoot,
+          scaleLabel: takeoffSheets.scaleLabel,
+        })
+        .from(takeoffSheets)
+        .where(inArray(takeoffSheets.id, sheetIds));
       const updates: Partial<typeof takeoffSheets.$inferInsert> = {
         scalePxPerFoot: parsed.data.scalePxPerFoot,
         updatedAt: new Date(),
@@ -469,7 +500,93 @@ router.post(
         req,
       );
 
-      res.json({ updatedSheets: updated.length, savedAsDefault });
+      res.json({
+        updatedSheets: updated.length,
+        savedAsDefault,
+        // Task #2141 — Per-sheet scale snapshot for client-side Undo.
+        // Returned in member order so the toast can echo "5 sheets
+        // updated" without an extra round-trip.
+        priorScales: priorScales.map((s) => ({
+          sheetId: s.id,
+          scalePxPerFoot: s.scalePxPerFoot ?? null,
+          scaleLabel: s.scaleLabel ?? null,
+        })),
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+// Task #2141 — Restore per-sheet scales captured by the apply-scale
+// snapshot. Used by the "Undo" toast affordance after an
+// "Apply to entire Sheet Set" calibration. Each item is updated
+// individually so per-sheet prior values are preserved (the bulk
+// UPDATE pattern in apply-scale collapses everything to one value
+// and isn't reusable here).
+router.post(
+  "/api/takeoff/sheet-sets/:id/restore-scales",
+  requireAuth,
+  requireRole("ADMIN", "MANAGER", "ESTIMATOR"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const ctx = getOrgContext(req);
+      if (!ctx) {
+        res.status(403).json({ error: "Organization required" });
+        return;
+      }
+      const { id } = req.params;
+      const parsed = restoreScalesBodySchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid request body", details: parsed.error.flatten() });
+        return;
+      }
+      const [set] = await db
+        .select()
+        .from(takeoffSheetSets)
+        .where(
+          and(
+            eq(takeoffSheetSets.id, id),
+            eq(takeoffSheetSets.organizationId, ctx.orgId),
+          ),
+        )
+        .limit(1);
+      if (!set) {
+        res.status(404).json({ error: "Sheet set not found" });
+        return;
+      }
+      // Refuse the whole batch if any sheet escapes the caller's
+      // org; mirrors the pattern used by the members endpoint.
+      for (const item of parsed.data.sheets) {
+        const access = await verifySheetAccess(item.sheetId, req.user!);
+        if (!access.allowed) {
+          res.status(403).json({ error: `No access to sheet ${item.sheetId}` });
+          return;
+        }
+      }
+      let restored = 0;
+      await db.transaction(async (tx) => {
+        for (const item of parsed.data.sheets) {
+          await tx
+            .update(takeoffSheets)
+            .set({
+              scalePxPerFoot: item.scalePxPerFoot,
+              scaleLabel: item.scaleLabel,
+              updatedAt: new Date(),
+            })
+            .where(eq(takeoffSheets.id, item.sheetId));
+          restored += 1;
+        }
+      });
+      await logUpdate(
+        ctx.userId,
+        "takeoff_sheet_sets",
+        id,
+        { event: "restore-scales-before" },
+        { event: "restore-scales-after", restored },
+        req,
+      );
+      res.json({ restored });
     } catch (error) {
       next(error);
     }

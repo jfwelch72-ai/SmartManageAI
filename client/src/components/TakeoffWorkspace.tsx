@@ -87,6 +87,8 @@ import { PageThumbnailStrip } from "./takeoff/PageThumbnailStrip";
 import { TakeoffDialogs } from "./takeoff/TakeoffDialogs";
 import { PlanScaleModal } from "./takeoff/PlanScaleModal";
 import { InlineCalibrationDrawer } from "./takeoff/InlineCalibrationDrawer";
+import { SheetSetsPanel } from "./takeoff/SheetSetsPanel";
+import { ToastAction } from "@/components/ui/toast";
 import type { ParsedDimension } from "@/lib/takeoffTypedInput";
 import { TakeoffSheetCompareDialog } from "./takeoff/TakeoffSheetCompareDialog";
 import { TakeoffPropertiesPanel } from "./takeoff/TakeoffPropertiesPanel";
@@ -467,6 +469,55 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     try { return localStorage.getItem("takeoff-grid-enabled") === "true"; } catch (err) { console.warn("[Takeoff] Failed to read grid setting:", err); return false; }
   });
   const [crossModulePanelOpen, setCrossModulePanelOpen] = useState(false);
+  // Task #2141 — Sheet Sets workspace state. The active set steers
+  // `[` / `]` navigation (member order), unlocks the inline
+  // calibration drawer's "Apply to entire Sheet Set" checkbox, and
+  // surfaces the sheet-header badge. Persisted per-context so the
+  // panel sticks across reloads, mirroring `takeoff-sheet-${ctxId}`.
+  const sheetSetsCtxId = context
+    ? context.type === "bid"
+      ? `bid:${context.bidId}`
+      : `project:${context.projectId}`
+    : projectId
+      ? `project:${projectId}`
+      : null;
+  const sheetSetsStorageKey = sheetSetsCtxId
+    ? `takeoff-active-sheet-set-${sheetSetsCtxId}`
+    : null;
+  const [sheetSetsPanelOpen, setSheetSetsPanelOpen] = useState(false);
+  const [activeSheetSetId, setActiveSheetSetIdState] = useState<string | null>(() => {
+    if (!sheetSetsStorageKey) return null;
+    try {
+      return sessionStorage.getItem(sheetSetsStorageKey);
+    } catch {
+      return null;
+    }
+  });
+  const setActiveSheetSetId = useCallback(
+    (next: string | null) => {
+      setActiveSheetSetIdState(next);
+      if (sheetSetsStorageKey) {
+        try {
+          if (next) sessionStorage.setItem(sheetSetsStorageKey, next);
+          else sessionStorage.removeItem(sheetSetsStorageKey);
+        } catch {
+          // storage failures are non-fatal for navigation state
+        }
+      }
+    },
+    [sheetSetsStorageKey],
+  );
+  // Task #2141 — Multi-sheet selection (Shift+[ / Shift+]). Tracked
+  // as a Set; clears whenever the user navigates without Shift,
+  // changes the active set, or clicks "Clear" in the panel.
+  const [multiSheetSelection, setMultiSheetSelection] = useState<Set<string>>(
+    () => new Set(),
+  );
+  // Task #2141 — Drawer-only state propagated from a "Calibrate set"
+  // click in the SheetSetsPanel. Pre-checks the "Apply to entire
+  // Sheet Set" checkbox when the inline calibration drawer opens.
+  const [calibrationDefaultApplyToSet, setCalibrationDefaultApplyToSet] =
+    useState(false);
   const [showMeasurementLabels, setShowMeasurementLabels] = useState(() => {
     try { return localStorage.getItem("takeoff-show-labels") !== "false"; } catch (err) { console.warn("[Takeoff] Failed to read label visibility setting:", err); return true; }
   });
@@ -1427,20 +1478,106 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     toggleMeasurementSelection,
   } = interactions;
 
-  // Task #2137 — Sheet navigation helpers for `[` / `]`. Cycles through
-  // the loaded sheet list; no-op when the list is empty.
+  // Task #2141 — When a Sheet Set is active, fetch its members so
+  // navigation can be re-scoped to the set's ordered list. Disabled
+  // when no set is active to avoid wasted round-trips. Detail key
+  // matches `SheetSetsPanel`'s `buildDetailQueryKey` so a member
+  // change there invalidates this query for free.
+  const { data: activeSheetSetDetail } = useQuery<{
+    id: string;
+    name: string;
+    members: Array<{ sheetId: string; sortOrder: number }>;
+  }>({
+    queryKey: ["/api/takeoff/sheet-sets", activeSheetSetId],
+    enabled: !!activeSheetSetId,
+    queryFn: async () => {
+      const res = await fetch(`/api/takeoff/sheet-sets/${activeSheetSetId}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        if (res.status === 404) {
+          // Set was deleted elsewhere — clear our active reference so
+          // the badge / navigation reverts gracefully.
+          setActiveSheetSetId(null);
+          return { id: "", name: "", members: [] };
+        }
+        throw new Error(`Failed to load sheet set (${res.status})`);
+      }
+      return await res.json();
+    },
+    staleTime: 5_000,
+  });
+  // Set-aware navigation list: members in sortOrder when active and
+  // non-empty, otherwise the workspace's natural sheet list. We
+  // dedupe against `sheets` so members that have been deleted at the
+  // sheet level (but still exist as a stale row) don't navigate to
+  // a missing target.
+  const navSheetList = useMemo<TakeoffSheet[]>(() => {
+    if (!activeSheetSetId || !activeSheetSetDetail?.members?.length) return sheets;
+    const sheetIndex = new Map(sheets.map((s) => [s.id, s] as const));
+    const ordered = [...activeSheetSetDetail.members]
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((m) => sheetIndex.get(m.sheetId))
+      .filter((s): s is TakeoffSheet => !!s);
+    return ordered.length > 0 ? ordered : sheets;
+  }, [activeSheetSetId, activeSheetSetDetail, sheets]);
+
+  // Task #2137 / Task #2141 — Sheet navigation helpers for `[` / `]`.
+  // Cycles through the active Sheet Set's ordered members when one
+  // is active, otherwise falls back to the loaded sheet list.
+  // Plain navigation also clears any in-flight multi-sheet
+  // selection so the next bulk action only touches the new target.
   const handlePrevSheet = useCallback(() => {
-    if (!sheets.length) return;
-    const curIdx = selectedSheet ? sheets.findIndex((s: TakeoffSheet) => s.id === selectedSheet) : -1;
-    const nextIdx = curIdx <= 0 ? sheets.length - 1 : curIdx - 1;
-    setSelectedSheet(sheets[nextIdx].id);
-  }, [sheets, selectedSheet, setSelectedSheet]);
+    if (!navSheetList.length) return;
+    const curIdx = selectedSheet ? navSheetList.findIndex((s) => s.id === selectedSheet) : -1;
+    const nextIdx = curIdx <= 0 ? navSheetList.length - 1 : curIdx - 1;
+    setSelectedSheet(navSheetList[nextIdx].id);
+    setMultiSheetSelection(new Set());
+  }, [navSheetList, selectedSheet, setSelectedSheet]);
   const handleNextSheet = useCallback(() => {
-    if (!sheets.length) return;
-    const curIdx = selectedSheet ? sheets.findIndex((s: TakeoffSheet) => s.id === selectedSheet) : -1;
-    const nextIdx = curIdx < 0 || curIdx >= sheets.length - 1 ? 0 : curIdx + 1;
-    setSelectedSheet(sheets[nextIdx].id);
-  }, [sheets, selectedSheet, setSelectedSheet]);
+    if (!navSheetList.length) return;
+    const curIdx = selectedSheet ? navSheetList.findIndex((s) => s.id === selectedSheet) : -1;
+    const nextIdx = curIdx < 0 || curIdx >= navSheetList.length - 1 ? 0 : curIdx + 1;
+    setSelectedSheet(navSheetList[nextIdx].id);
+    setMultiSheetSelection(new Set());
+  }, [navSheetList, selectedSheet, setSelectedSheet]);
+  // Task #2141 — Shift+[ / Shift+] (`{` / `}`) extend a contiguous
+  // multi-sheet selection through the active set's ordered list.
+  // Without an active set the selection still extends through the
+  // natural sheet list — handy for cross-set bulk operations on
+  // smaller projects. We seed the selection with the current sheet
+  // when empty so the first Shift-arrow already grabs two sheets.
+  const handleExtendSheetSelection = useCallback(
+    (delta: -1 | 1) => {
+      if (!navSheetList.length || !selectedSheet) return;
+      const curIdx = navSheetList.findIndex((s) => s.id === selectedSheet);
+      if (curIdx === -1) return;
+      const nextIdx = Math.max(0, Math.min(navSheetList.length - 1, curIdx + delta));
+      if (nextIdx === curIdx && multiSheetSelection.size > 0) return;
+      const nextSheetId = navSheetList[nextIdx].id;
+      setSelectedSheet(nextSheetId);
+      setMultiSheetSelection((cur) => {
+        const next = new Set(cur);
+        next.add(selectedSheet);
+        next.add(nextSheetId);
+        return next;
+      });
+    },
+    [navSheetList, selectedSheet, setSelectedSheet, multiSheetSelection.size],
+  );
+  const handleExtendPrevSheet = useCallback(
+    () => handleExtendSheetSelection(-1),
+    [handleExtendSheetSelection],
+  );
+  const handleExtendNextSheet = useCallback(
+    () => handleExtendSheetSelection(1),
+    [handleExtendSheetSelection],
+  );
+  // Drop the selection if the active set changes (member list shifts
+  // and the previous selection is no longer meaningful).
+  useEffect(() => {
+    setMultiSheetSelection(new Set());
+  }, [activeSheetSetId]);
 
   // Task #2137 — `,` / `.` shortcuts cycle through takeoff versions for the
   // current sheet (Section 2 of docs/takeoff-interaction-map.md). We pull
@@ -1537,6 +1674,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     setGridEnabled: handleToggleGrid,
     onPrevSheet: handlePrevSheet,
     onNextSheet: handleNextSheet,
+    onExtendPrevSheet: handleExtendPrevSheet,
+    onExtendNextSheet: handleExtendNextSheet,
     onPrevVersion: handlePrevVersion,
     onNextVersion: handleNextVersion,
     onOpenCalibrate: () => openCalibrationDrawer(),
@@ -1904,12 +2043,105 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     setCalibrationPoints([]);
     setCalibrationDistance("");
     setActiveTool(calibrationPrevToolRef.current);
+    // Reset the per-open "default Apply to Sheet Set" hint so a
+    // subsequent T-press starts unchecked again.
+    setCalibrationDefaultApplyToSet(false);
   }, [
     setCalibrationMode,
     setCalibrationPoints,
     setCalibrationDistance,
     setActiveTool,
   ]);
+
+  // Task #2141 — Calibrate-set entry point: triggered when the user
+  // clicks the per-set scale chip in the SheetSetsPanel. Mark the
+  // set as active (so the drawer's checkbox enables and the badge
+  // appears) and pre-check the "Apply to entire Sheet Set" checkbox.
+  const handleCalibrateSet = useCallback(
+    (setId: string) => {
+      setActiveSheetSetId(setId);
+      setCalibrationDefaultApplyToSet(true);
+      openCalibrationDrawer();
+    },
+    [setActiveSheetSetId, openCalibrationDrawer],
+  );
+
+  // Task #2141 — Push the calibrated scale to every member of the
+  // active set, then surface an Undo toast that POSTs to
+  // /restore-scales with the priorScales snapshot the apply-scale
+  // endpoint returned. The toast is the only place per-sheet prior
+  // values exist post-PATCH, so we pass them in by closure rather
+  // than re-fetching.
+  const handleApplyScaleToSheetSet = useCallback(
+    async (input: { setId: string; scalePxPerFoot: number }) => {
+      try {
+        const res = await apiRequest(
+          "POST",
+          `/api/takeoff/sheet-sets/${input.setId}/apply-scale`,
+          { scalePxPerFoot: input.scalePxPerFoot },
+        );
+        const data = (await res.json()) as {
+          updatedSheets: number;
+          priorScales: Array<{
+            sheetId: string;
+            scalePxPerFoot: number | null;
+            scaleLabel: string | null;
+          }>;
+        };
+        // Refresh sheets so the sheet selector / badges pick up the
+        // new scales without a hard reload.
+        queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets"] });
+        queryClient.invalidateQueries({
+          queryKey: ["/api/takeoff/sheet-sets", input.setId],
+        });
+        toast({
+          title: `Scale applied to ${data.updatedSheets} sheet${data.updatedSheets === 1 ? "" : "s"}`,
+          description: "All members of the Sheet Set now share this calibration.",
+          action: data.priorScales.length > 0 ? (
+            <ToastAction
+              altText="Undo apply scale"
+              data-testid="button-undo-apply-sheet-set-scale"
+              onClick={async () => {
+                try {
+                  await apiRequest(
+                    "POST",
+                    `/api/takeoff/sheet-sets/${input.setId}/restore-scales`,
+                    // Server schema names the field `sheets` — keep
+                    // the wire shape in lockstep so the Undo round-
+                    // trip doesn't 400 against a renamed key.
+                    { sheets: data.priorScales },
+                  );
+                  queryClient.invalidateQueries({ queryKey: ["/api/takeoff/sheets"] });
+                  queryClient.invalidateQueries({
+                    queryKey: ["/api/takeoff/sheet-sets", input.setId],
+                  });
+                  toast({
+                    title: "Apply-scale reverted",
+                    description: "Per-sheet calibrations restored.",
+                  });
+                } catch (err) {
+                  toast({
+                    title: "Could not undo apply-scale",
+                    description: err instanceof Error ? err.message : String(err),
+                    variant: "destructive",
+                  });
+                }
+              }}
+            >
+              Undo
+            </ToastAction>
+          ) : undefined,
+        });
+      } catch (err) {
+        toast({
+          title: "Could not apply scale to sheet set",
+          description: err instanceof Error ? err.message : String(err),
+          variant: "destructive",
+        });
+      }
+    },
+    [toast],
+  );
 
   useEffect(() => {
     setSelectedMarkupIds(new Set());
@@ -3087,6 +3319,23 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       onToggleCrossModule: () => setCrossModulePanelOpen((v) => !v),
       isFullscreen,
       onToggleFullscreen: toggleFullscreen,
+      // Task #2141 — Sheet Sets toggle, active-set badge, position chip.
+      showSheetSetsToggle: !!sheetSetsCtxId,
+      sheetSetsPanelOpen,
+      onToggleSheetSetsPanel: () => setSheetSetsPanelOpen((v) => !v),
+      activeSheetSetName: activeSheetSetId ? activeSheetSetDetail?.name ?? null : null,
+      activeSheetSetMemberCount: activeSheetSetId
+        ? activeSheetSetDetail?.members?.length ?? 0
+        : 0,
+      currentSheetIndexInSet:
+        activeSheetSetId && activeSheetSetDetail?.members?.length && selectedSheet
+          ? (() => {
+              const idx = [...activeSheetSetDetail.members]
+                .sort((a, b) => a.sortOrder - b.sortOrder)
+                .findIndex((m) => m.sheetId === selectedSheet);
+              return idx === -1 ? null : idx;
+            })()
+          : null,
     },
     thumbnailStrip:
       thumbnailStripOpen && sheets.length > 1
@@ -3128,6 +3377,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     autoImportEnabled, selectedMeasurementId, propertiesPanelOpen,
     issues.length, hideResolvedIssues, context?.type, crossModulePanelOpen,
     isFullscreen, toggleFullscreen,
+    sheetSetsCtxId, sheetSetsPanelOpen, activeSheetSetId, activeSheetSetDetail,
     measurementCountsPerSheet, pinnedSheetIdsForStrip, newerSheetIdsForStrip,
     canManageDrawingSetsOnCanvas, activeCanvasSetId,
     handleCanvasPinSheet, handleCanvasUnpinSheet, handleCanvasSwapRevision,
@@ -4304,6 +4554,17 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         setMultiCalibMode={setMultiCalibMode}
         multiCalibPoints={multiCalibPoints}
         setMultiCalibPoints={setMultiCalibPoints}
+        activeSheetSet={
+          activeSheetSetId && activeSheetSetDetail
+            ? {
+                id: activeSheetSetDetail.id,
+                name: activeSheetSetDetail.name,
+                memberCount: activeSheetSetDetail.members?.length ?? 0,
+              }
+            : null
+        }
+        onApplyToSheetSet={handleApplyScaleToSheetSet}
+        defaultApplyToSheetSet={calibrationDefaultApplyToSet}
       />
 
       <Dialog open={dimInputOpen} onOpenChange={setDimInputOpen}>
@@ -4428,6 +4689,24 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
 
       <PanelHost />
+      {sheetSetsCtxId && (
+        <SheetSetsPanel
+          open={sheetSetsPanelOpen}
+          onClose={() => setSheetSetsPanelOpen(false)}
+          projectId={
+            context?.type === "bid" ? null : context?.projectId ?? projectId ?? null
+          }
+          bidId={context?.type === "bid" ? context.bidId : null}
+          sheets={sheets}
+          selectedSheet={selectedSheet}
+          onSelectSheet={setSelectedSheet}
+          activeSetId={activeSheetSetId}
+          onSetActive={setActiveSheetSetId}
+          onCalibrateSet={handleCalibrateSet}
+          multiSelection={multiSheetSelection}
+          onClearMultiSelection={() => setMultiSheetSelection(new Set())}
+        />
+      )}
     </div>
     </TakeoffWorkspaceProvider>
   );

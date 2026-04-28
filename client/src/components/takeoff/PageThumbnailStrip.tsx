@@ -8,6 +8,7 @@ import { usePdfThumbnails } from "@/hooks/use-pdf-thumbnails";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { PLAN_MARKUP_LAYER_DRAG_MIME } from "@/components/markups/MarkupLayersPanel";
+import { TAKEOFF_SHEET_DRAG_MIME } from "@/components/takeoff/SheetSetsPanel";
 import { useDuplicateLayerCopyConfirm } from "@/components/markups/DuplicateLayerCopyDialog";
 import type { TakeoffSheet } from "@shared/schema";
 
@@ -264,6 +265,21 @@ export function PageThumbnailStrip({
               thumbRef(sheet.id)(el);
             }}
             onClick={() => onSelectSheet(sheet.id)}
+            draggable
+            onDragStart={(e) => {
+              // Task #2141 — Allow the thumbnail to be dragged into a
+              // Sheet Set row. We serialize as JSON so a future change
+              // can attach metadata (drag source, multi-sheet payload)
+              // without breaking the contract. text/plain is set as a
+              // fallback so generic drop targets still see something
+              // sensible if they only listen on the standard MIME.
+              e.dataTransfer.effectAllowed = "copy";
+              e.dataTransfer.setData(
+                TAKEOFF_SHEET_DRAG_MIME,
+                JSON.stringify({ sheetId: sheet.id }),
+              );
+              e.dataTransfer.setData("text/plain", sheet.sheetName || sheet.id);
+            }}
             onDragOver={(e) => {
               if (!isLayerDropTarget) return;
               if (!dragHasLayerMime(e)) return;
