@@ -478,13 +478,18 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     <Rect x={20} y={20} width={Math.max(4, pdfLoadProgress * 2)} height={6} fill="#f97316" cornerRadius={3} />
                     <Text text={`Loading plan... ${pdfLoadProgress}%`} x={20} y={32} fontSize={12} fill="#888" />
                   </>
-                ) : pdfImage && pageDims ? (
+                ) : pdfImage && pageDims && (pdfImage as { width?: number }).width ? (
                   <>
                     {/* Task #2138: low-res placeholder is stretched to world
                         dimensions so markup math (which has always operated in
                         world coords) keeps lining up perfectly. Detail tiles
                         composited on top by `<TileLayer>` replace the blurry
-                        placeholder pixel-for-pixel as they stream in. */}
+                        placeholder pixel-for-pixel as they stream in.
+                        Defensive: a closed/transferred ImageBitmap reports
+                        `width === 0`. Guarding here on top of
+                        `deferredCloseBitmap` so a detached placeholder
+                        never reaches Konva's drawImage and surfaces as a
+                        "image source is detached" vite dev overlay. */}
                     <KonvaImage
                       image={pdfImage as unknown as HTMLImageElement}
                       width={pageDims.width}

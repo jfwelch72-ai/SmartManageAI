@@ -24,6 +24,17 @@ export function TileLayer({ tiles }: TileLayerProps) {
   return (
     <>
       {tiles.map(({ coord, bitmap }) => {
+        // Defensive: skip detached bitmaps. A closed/transferred
+        // ImageBitmap reports `width === 0` and `height === 0`. If
+        // such a bitmap reaches Konva's `drawImage`, it throws
+        // "Failed to execute 'drawImage' on 'CanvasRenderingContext2D':
+        //  The image source is detached" and surfaces as a vite dev
+        // overlay. Filtering here is belt-and-suspenders on top of
+        // `deferredCloseBitmap` — even if an unknown code path
+        // detaches a cached bitmap, the user never sees the overlay.
+        if (!bitmap || bitmap.width === 0 || bitmap.height === 0) {
+          return null;
+        }
         const tileWorld = TILE_SIZE_PX / coord.zoomBucket;
         return (
           <KonvaImage
