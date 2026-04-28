@@ -532,6 +532,21 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
                   </Button>
                 </div>
               )}
+              {/* Task #2322 — Surface scale-mismatch warnings emitted by the
+                  server when the model's inferred scale disagrees with the
+                  user's calibrated scale by >5%. Quantities are not changed —
+                  the user re-verifies before accepting. */}
+              {analysisResults.metadata.scaleMismatchWarning && (
+                <div
+                  className="flex items-start gap-1.5 px-3 py-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 w-full"
+                  data-testid="banner-scale-mismatch"
+                >
+                  <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <span className="text-xs text-amber-700 dark:text-amber-400 flex-1">
+                    {analysisResults.metadata.scaleMismatchWarning}
+                  </span>
+                </div>
+              )}
             </div>
           )}
 

@@ -14,6 +14,17 @@ import {
   isValidDbTradeType as isValidTradeType,
   type DbTradeType as TradeType,
 } from "./ai/tradeTypeValidation";
+import { buildScaleMismatchWarning } from "@shared/scalePresets";
+import {
+  MAX_RASTER_PIXELS,
+  computeRasterScale,
+  buildScaleGroundingClause,
+  type SheetCalibration,
+} from "./aiTakeoffHelpers";
+
+// Re-export for callers that historically reached for these via the routes
+// module (kept stable for tests and any future consumers).
+export { MAX_RASTER_PIXELS, computeRasterScale, buildScaleGroundingClause };
 
 const router = Router();
 
@@ -173,7 +184,11 @@ async function classifyTradeType(imageUrl: string, orgId: string, userId: string
       inputRefs: {},
       fn: async () => {
         const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT4O,
+          // Task #2322 — Trade classifier was running on gpt-4o while every
+          // downstream prompt runs on gpt-5.2; a wrong classification cascades
+          // into the wrong per-trade prompt and the wrong items, so put the
+          // gate on the same model as the heavy passes.
+          model: AI_MODEL_GPT5,
           messages: [
             {
               role: "system",
@@ -217,7 +232,11 @@ Return JSON: { "trade": "TRADE_TYPE", "confidence": number (0-100), "reasoning":
               ]
             }
           ],
-          max_completion_tokens: 256,
+          // Task #2322 — Bumped from 256 alongside the gpt-5.2 switch; the
+          // classifier prompt asks for `{ trade, confidence, reasoning }` and
+          // 256 occasionally truncated the JSON when the model walked through
+          // a longer reasoning string before emitting the closing brace.
+          max_completion_tokens: 512,
           response_format: { type: "json_object" },
         });
         return { result: completion.choices[0]?.message?.content, completion };
@@ -275,7 +294,12 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
 
     let imageUrl: string | null = null;
     let sheetIndex = 0;
-    
+    // Task #2322 — Capture the user's verified calibration so the model can be
+    // grounded in it instead of re-inferring scale from the title block on
+    // every analysis. `db.select()` already pulls every column on the row, so
+    // we just hold a reference to the loaded record.
+    let sheetCalibration: SheetCalibration | null = null;
+
     // Try to get image from takeoff sheet if provided
     if (analysis?.takeoffSheetId) {
       const [sheet] = await db.select()
@@ -286,6 +310,11 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
       }
       if (sheet) {
         sheetIndex = sheet.sheetIndex || 0;
+        sheetCalibration = {
+          scalePxPerFoot: sheet.scalePxPerFoot,
+          scaleLabel: sheet.scaleLabel,
+          units: sheet.units,
+        };
       }
     }
 
@@ -352,7 +381,11 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
                 const pageNum = Math.min(sheetIndex + 1, opened.numPages);
                 const page = await opened.pdfDoc.getPage(pageNum);
 
-                const scale = 2.0;
+                // Task #2322 — Adaptive rasterization. Use the source page
+                // size to pick a higher raster scale on large civil sheets so
+                // fine symbols survive, capped by `MAX_RASTER_PIXELS`.
+                const baseViewport = page.getViewport({ scale: 1 });
+                const scale = computeRasterScale(baseViewport.width, baseViewport.height);
                 const viewport = page.getViewport({ scale });
 
                 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -441,7 +474,11 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
       try {
         const tradePrompt = TRADE_DETECTION_PROMPTS[tradeType] || TRADE_DETECTION_PROMPTS.GENERAL_CONTRACTOR;
         const focusAreaPrompt = focusAreas?.length ? `Focus especially on: ${focusAreas.join(", ")}. ` : "";
-        
+        // Task #2322 — Ground the model in the user's verified scale. When the
+        // sheet is uncalibrated, the clause tells the model to flag low
+        // confidence on dimension-derived units (LF, SF, CY).
+        const scaleGroundingClause = buildScaleGroundingClause(sheetCalibration);
+
         const govResult = await governedAiCall({
           orgId: analysis.organizationId,
           userId: analysis.createdByUserId,
@@ -456,6 +493,7 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
                   content: `You are a construction takeoff specialist analyzing blueprints and construction drawings.
 ${tradePrompt}
 ${focusAreaPrompt}
+${scaleGroundingClause}
 Analyze the image and extract all measurable quantities for a construction estimate.
 
 IMPORTANT: For each detected item, provide a bounding box indicating where on the drawing it was found.
@@ -502,7 +540,11 @@ Return your analysis as JSON with this exact structure:
                     },
                     {
                       type: "text",
-                      text: `Analyze page ${sheetIndex + 1} of this construction document for ${tradeType} trade takeoff. Extract all measurable quantities with their locations on the drawing. Provide bounding box coordinates (as percentage of image dimensions) for each detected item.`
+                      // Task #2322 — Repeat the scale-grounding clause in the
+                      // per-call user message so it can't be lost behind the
+                      // long system prompt; this is what actually anchors the
+                      // model's quantity arithmetic.
+                      text: `Analyze page ${sheetIndex + 1} of this construction document for ${tradeType} trade takeoff. ${scaleGroundingClause} Extract all measurable quantities with their locations on the drawing. Provide bounding box coordinates (as percentage of image dimensions) for each detected item.`
                     }
                   ]
                 }
@@ -549,6 +591,15 @@ Return your analysis as JSON with this exact structure:
             } : undefined,
             suggestedSowItem: item.suggestedSowItem,
           }));
+          // Task #2322 — When the model still volunteers a `drawingScale`
+          // (despite the grounding clause) and it disagrees with the user's
+          // calibrated scale by >5%, surface a warning to the UI. We only
+          // warn — quantities are not modified.
+          const scaleMismatchWarning = buildScaleMismatchWarning(
+            parsed.metadata?.drawingScale,
+            sheetCalibration?.scalePxPerFoot ?? null,
+            sheetCalibration?.scaleLabel ?? null,
+          );
           metadata = {
             drawingScale: parsed.metadata?.drawingScale,
             pageSize: parsed.metadata?.pageSize,
@@ -559,6 +610,7 @@ Return your analysis as JSON with this exact structure:
             tradeDetectionConfidence: tradeAutoDetected ? tradeDetectionConfidence : undefined,
             analysisMethod: analysisMode === "DETAILED" ? "OpenAI Vision (Multi-Pass)" : "OpenAI Vision",
             analysisSource: "openai_vision",
+            ...(scaleMismatchWarning ? { scaleMismatchWarning } : {}),
           };
 
           if (analysisMode === "DETAILED" && detectedItems.length > 0) {
@@ -578,6 +630,8 @@ Return your analysis as JSON with this exact structure:
 2. Identify any MISSED items that should have been detected
 3. Flag any DUPLICATE detections (overlapping items counted twice)
 4. Adjust confidence scores based on your review
+
+${scaleGroundingClause}
 
 Return JSON with:
 {
