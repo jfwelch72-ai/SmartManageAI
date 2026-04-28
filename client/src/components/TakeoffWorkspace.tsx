@@ -2372,6 +2372,20 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     });
   };
 
+  // Task #2231 — bulk show/hide for the Layers ribbon popover. When
+  // hiding everything, clear any selected measurement that would
+  // otherwise be hidden so the canvas selection state doesn't get out
+  // of sync with the visible set (mirrors the per-category handler
+  // above).
+  const handleSetAllCategoriesVisibility = (visible: boolean) => {
+    if (visible) {
+      setHiddenCategoryIds(new Set());
+    } else {
+      setHiddenCategoryIds(new Set(categories.map((c) => c.id)));
+      setSelectedMeasurementId(null);
+    }
+  };
+
   const parseMeasurementPoints = (m: any): { x: number; y: number }[] => {
     try {
       const pts = typeof m.points === "string" ? JSON.parse(m.points) : m.points;
@@ -4495,6 +4509,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           layersCategories={categories}
           hiddenCategoryIds={hiddenCategoryIds}
           onToggleCategoryVisibility={handleToggleCategoryVisibility}
+          onSetAllCategoriesVisibility={handleSetAllCategoriesVisibility}
           onToggleOverlay={() => setShowOverlaySlider((v) => !v)}
           overlayActive={showOverlaySlider}
           onShowVersions={() => setVersionHistoryOpen(true)}

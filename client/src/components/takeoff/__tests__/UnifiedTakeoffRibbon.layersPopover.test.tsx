@@ -197,6 +197,82 @@ describe("UnifiedTakeoffRibbon — Layers popover (Task #2202)", () => {
     expect(screen.queryByTestId("text-layers-popover-count")?.textContent).toContain("0/0");
   });
 
+  // Task #2231 — bulk show/hide actions inside the popover header.
+  describe("bulk show/hide all (Task #2231)", () => {
+    it("Show all calls onSetAllCategoriesVisibility(true)", () => {
+      const onSetAll = vi.fn();
+      renderRibbon({
+        layersPopoverOpen: true,
+        layersCategories: categories,
+        // Start with one hidden so "Show all" is enabled.
+        hiddenCategoryIds: new Set(["cat-curb"]),
+        onToggleCategoryVisibility: vi.fn(),
+        onSetAllCategoriesVisibility: onSetAll,
+      });
+      const showAll = screen.getByTestId("button-layers-popover-show-all");
+      expect(showAll.hasAttribute("disabled")).toBe(false);
+      fireEvent.click(showAll);
+      expect(onSetAll).toHaveBeenCalledTimes(1);
+      expect(onSetAll).toHaveBeenCalledWith(true);
+    });
+
+    it("Hide all calls onSetAllCategoriesVisibility(false)", () => {
+      const onSetAll = vi.fn();
+      renderRibbon({
+        layersPopoverOpen: true,
+        layersCategories: categories,
+        // Start with everything visible so "Hide all" is enabled.
+        hiddenCategoryIds: new Set(),
+        onToggleCategoryVisibility: vi.fn(),
+        onSetAllCategoriesVisibility: onSetAll,
+      });
+      const hideAll = screen.getByTestId("button-layers-popover-hide-all");
+      expect(hideAll.hasAttribute("disabled")).toBe(false);
+      fireEvent.click(hideAll);
+      expect(onSetAll).toHaveBeenCalledTimes(1);
+      expect(onSetAll).toHaveBeenCalledWith(false);
+    });
+
+    it("disables Show all when every category is already visible", () => {
+      renderRibbon({
+        layersPopoverOpen: true,
+        layersCategories: categories,
+        hiddenCategoryIds: new Set(),
+        onToggleCategoryVisibility: vi.fn(),
+        onSetAllCategoriesVisibility: vi.fn(),
+      });
+      const showAll = screen.getByTestId("button-layers-popover-show-all");
+      const hideAll = screen.getByTestId("button-layers-popover-hide-all");
+      expect(showAll.hasAttribute("disabled")).toBe(true);
+      expect(hideAll.hasAttribute("disabled")).toBe(false);
+    });
+
+    it("disables Hide all when every category is already hidden", () => {
+      renderRibbon({
+        layersPopoverOpen: true,
+        layersCategories: categories,
+        hiddenCategoryIds: new Set(categories.map((c) => c.id)),
+        onToggleCategoryVisibility: vi.fn(),
+        onSetAllCategoriesVisibility: vi.fn(),
+      });
+      const showAll = screen.getByTestId("button-layers-popover-show-all");
+      const hideAll = screen.getByTestId("button-layers-popover-hide-all");
+      expect(showAll.hasAttribute("disabled")).toBe(false);
+      expect(hideAll.hasAttribute("disabled")).toBe(true);
+    });
+
+    it("does not render the bulk actions row when there are no categories", () => {
+      renderRibbon({
+        layersPopoverOpen: true,
+        layersCategories: [],
+        hiddenCategoryIds: new Set(),
+        onToggleCategoryVisibility: vi.fn(),
+        onSetAllCategoriesVisibility: vi.fn(),
+      });
+      expect(screen.queryByTestId("row-layers-popover-bulk-actions")).toBeNull();
+    });
+  });
+
   it("clicking the Layers ribbon button still routes through onShowLayers (parent-owned toggle)", () => {
     const onShowLayers = vi.fn();
     renderRibbon({

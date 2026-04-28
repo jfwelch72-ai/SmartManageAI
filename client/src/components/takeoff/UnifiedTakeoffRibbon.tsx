@@ -76,6 +76,10 @@ export interface UnifiedTakeoffRibbonProps {
   layersCategories?: ReadonlyArray<{ id: string; name: string; color: string }>;
   hiddenCategoryIds?: ReadonlySet<string>;
   onToggleCategoryVisibility?: (id: string) => void;
+  /** Task #2231 — bulk show/hide for every category in one click,
+   *  rendered as a "Show all" / "Hide all" header inside the Layers
+   *  popover. */
+  onSetAllCategoriesVisibility?: (visible: boolean) => void;
   /** View > Overlay — toggle the addenda overlay opacity panel. */
   onToggleOverlay: () => void;
   /** View > Versions — open the version history panel. */
@@ -197,6 +201,7 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
     layersCategories,
     hiddenCategoryIds,
     onToggleCategoryVisibility,
+    onSetAllCategoriesVisibility,
     onToggleOverlay,
     onShowVersions,
     overlayActive,
@@ -658,6 +663,7 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
                               categories={layersCategories ?? []}
                               hiddenCategoryIds={hiddenCategoryIds ?? new Set<string>()}
                               onToggleCategoryVisibility={onToggleCategoryVisibility}
+                              onSetAllCategoriesVisibility={onSetAllCategoriesVisibility}
                             />
                           </PopoverContent>
                         </Popover>
@@ -828,6 +834,7 @@ interface LayersPopoverPanelProps {
   categories: ReadonlyArray<{ id: string; name: string; color: string }>;
   hiddenCategoryIds: ReadonlySet<string>;
   onToggleCategoryVisibility?: (id: string) => void;
+  onSetAllCategoriesVisibility?: (visible: boolean) => void;
 }
 
 /**
@@ -836,13 +843,23 @@ interface LayersPopoverPanelProps {
  * entry in `hiddenCategoryIds`: checked = visible, unchecked = hidden.
  * The full layer-management UI (rename / delete / label toggles) still
  * lives in the sidebar; this is the quick on/off complement.
+ *
+ * Task #2231 — adds a "Show all" / "Hide all" action row beneath the
+ * header so estimators can wipe or restore the canvas in one click on
+ * plans with many categories. The actions delegate to the parent via
+ * `onSetAllCategoriesVisibility(visible)` so the existing visibility
+ * wiring (selection clear, layers-active chip, etc.) stays the source
+ * of truth.
  */
 function LayersPopoverPanel({
   categories,
   hiddenCategoryIds,
   onToggleCategoryVisibility,
+  onSetAllCategoriesVisibility,
 }: LayersPopoverPanelProps) {
   const visibleCount = categories.length - categories.filter((c) => hiddenCategoryIds.has(c.id)).length;
+  const allVisible = categories.length > 0 && visibleCount === categories.length;
+  const allHidden = categories.length > 0 && visibleCount === 0;
   return (
     <div className="flex flex-col" data-testid="layers-popover-panel">
       <div className="flex items-center justify-between px-3 py-2 border-b">
@@ -859,6 +876,37 @@ function LayersPopoverPanel({
           {visibleCount}/{categories.length} visible
         </span>
       </div>
+      {categories.length > 0 && onSetAllCategoriesVisibility && (
+        <div
+          className="flex items-center gap-1 px-2 py-1 border-b"
+          data-testid="row-layers-popover-bulk-actions"
+        >
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 flex-1 text-xs gap-1"
+            disabled={allVisible}
+            onClick={() => onSetAllCategoriesVisibility(true)}
+            data-testid="button-layers-popover-show-all"
+          >
+            <Eye className="w-3.5 h-3.5" />
+            Show all
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 flex-1 text-xs gap-1"
+            disabled={allHidden}
+            onClick={() => onSetAllCategoriesVisibility(false)}
+            data-testid="button-layers-popover-hide-all"
+          >
+            <EyeOff className="w-3.5 h-3.5" />
+            Hide all
+          </Button>
+        </div>
+      )}
       {categories.length === 0 ? (
         <p
           className="text-xs text-muted-foreground text-center px-3 py-6"
