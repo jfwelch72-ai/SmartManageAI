@@ -13,6 +13,12 @@
  * copy) via the second `postMessage` argument.
  */
 
+// MUST be the first import: installs the `window` / `matchMedia`
+// shim in the worker global so pdfjs-dist v5's ColorManager doesn't
+// blow up with "window is not defined" the first time we render.
+// See `pdfWorkerPolyfill.ts` for the full rationale.
+import "./pdfWorkerPolyfill";
+
 import * as pdfjsLib from "pdfjs-dist";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import {

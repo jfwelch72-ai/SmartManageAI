@@ -18,3 +18,9 @@ id = "Dzjt6z2tap0frMkW-yQ_Q"
 uri = "file://.local/role-simplification-proposal.md"
 type = "text"
 title = "8-Role Permission System — 73 Feature Flags with Full RBAC Alignment"
+
+[[outputs]]
+id = "9Wcap-3NawQOpkGJ_EHYH"
+uri = "file://test-results/takeoff-tile-renderer-rend-8ce48-et-1-the-same-way-every-run-chromium/test-failed-1.png"
+type = "image"
+title = "Bucket 1 failure capture"
