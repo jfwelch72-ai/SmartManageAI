@@ -184,7 +184,36 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
             className="flex-1 min-w-[10rem] sm:flex-none sm:w-64"
             data-testid="select-sheet"
           >
-            <SelectValue placeholder="Select a sheet..." />
+            {/* Task #2298 follow-up — when we let the trigger grow
+             *  via flex-1, the default Radix SelectValue rendered the
+             *  selected SelectItem's children verbatim — including the
+             *  inner `<span className="flex items-center gap-2">` whose
+             *  RAW TEXT child wraps as soon as the natural width
+             *  exceeds the trigger (because text inside a flex item
+             *  shrinks to min-content). On a phone that turned the
+             *  trigger into a 3-line block ("The Reserve @" / "Chatford"
+             *  / "4_8_25") with the chevron mid-content, blowing up the
+             *  bar's vertical footprint and pushing the PDF canvas
+             *  off-screen.
+             *
+             *  Override SelectValue's children so the trigger renders a
+             *  single-line, truncating label (icon + name only) — the
+             *  dropdown items below still get the full set of badges
+             *  for picking. */}
+            <SelectValue placeholder="Select a sheet...">
+              {currentSheet && (
+                <span className="flex items-center gap-2 min-w-0 w-full">
+                  {currentSheet.scalePxPerFoot ? (
+                    <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" />
+                  )}
+                  <span className="truncate min-w-0 flex-1 text-left">
+                    {currentSheet.sheetName}
+                  </span>
+                </span>
+              )}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent container={workspaceRef.current}>
             {sheets.map((sheet: TakeoffSheet) => (
