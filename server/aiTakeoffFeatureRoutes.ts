@@ -21,7 +21,7 @@ import {
   isValidDbTradeType as isValidTradeType,
   type DbTradeType as TradeType,
 } from "./ai/tradeTypeValidation";
-import { evaluateScaleMismatch } from "@shared/scalePresets";
+import { evaluateScaleMismatch, parseDrawingScaleString } from "@shared/scalePresets";
 import {
   MAX_RASTER_PIXELS,
   computeRasterScale,
@@ -802,6 +802,15 @@ Return your analysis as JSON with this exact structure:
             sheetCalibration?.scalePxPerFoot ?? null,
             sheetCalibration?.scaleLabel ?? null,
           );
+          // Task #2355 — When the title block explicitly disclaims a
+          // paper-space scale ("NTS" / "AS SHOWN"), the mismatch warning
+          // above is intentionally suppressed (no numeric scale to compare).
+          // Surface that fact to the estimator instead so they can see the
+          // AI noticed the NTS callout and is trusting their calibration.
+          const parsedDrawingScale = parseDrawingScaleString(parsed.metadata?.drawingScale);
+          const scaleNotToScale = parsedDrawingScale?.source === "not-to-scale"
+            ? { label: parsedDrawingScale.label }
+            : null;
           metadata = {
             drawingScale: parsed.metadata?.drawingScale,
             pageSize: parsed.metadata?.pageSize,
@@ -817,6 +826,13 @@ Return your analysis as JSON with this exact structure:
             // string and the persisted dashboard columns; it replaces the
             // earlier ad-hoc `scaleMismatchWarning` local.
             ...(scaleMismatchEval?.message ? { scaleMismatchWarning: scaleMismatchEval.message } : {}),
+            // Task #2355 — When the title block explicitly disclaims a
+            // paper-space scale ("NTS" / "AS SHOWN"), `evaluateScaleMismatch`
+            // returns null (no numeric scale to compare). Surface that fact
+            // to the estimator instead so they see the AI noticed and is
+            // trusting their calibration. Mutually exclusive with the
+            // mismatch warning above.
+            ...(scaleNotToScale && !scaleMismatchEval?.message ? { scaleNotToScale } : {}),
             // Task #2336 — Surface the resolved raster scale + cap flag so
             // the panel can show "Rendered at 2.14×, capped at 30 MP" and
             // hint that splitting the sheet would let the AI see more detail.
