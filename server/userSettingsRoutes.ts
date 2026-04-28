@@ -14,6 +14,7 @@ import { sendCrmContactBirthdayDigestForUser } from "./jobs/jobRunner";
 import {
   DEFAULT_ALLOW_TWO_FINGER_ROTATE,
   DEFAULT_PALM_REJECTION_BAND_PX,
+  DEFAULT_SKIP_BULK_SCALE_PROPAGATION_CONFIRM,
   DEFAULT_STYLUS_LONG_PRESS_MS,
   PALM_REJECTION_BAND_MAX_PX,
   PALM_REJECTION_BAND_MIN_PX,
@@ -61,6 +62,7 @@ router.get("/api/user-settings", requireAuth, async (req: AuthRequest, res, next
         allowTwoFingerRotate: DEFAULT_ALLOW_TWO_FINGER_ROTATE,
         palmRejectionBandPx: DEFAULT_PALM_REJECTION_BAND_PX,
         stylusLongPressMs: DEFAULT_STYLUS_LONG_PRESS_MS,
+        skipBulkScalePropagationConfirm: DEFAULT_SKIP_BULK_SCALE_PROPAGATION_CONFIRM,
       });
     }
     return res.json(settings);
@@ -86,6 +88,9 @@ router.patch("/api/user-settings", requireAuth, async (req: AuthRequest, res, ne
       allowTwoFingerRotate: z.boolean().optional(),
       palmRejectionBandPx: z.number().int().min(PALM_REJECTION_BAND_MIN_PX).max(PALM_REJECTION_BAND_MAX_PX).optional(),
       stylusLongPressMs: z.number().int().min(STYLUS_LONG_PRESS_MIN_MS).max(STYLUS_LONG_PRESS_MAX_MS).optional(),
+      // Task #2228 — "Don't ask again" remembered choice for the
+      // bulk-scale propagation confirmation dialog.
+      skipBulkScalePropagationConfirm: z.boolean().optional(),
     });
 
     const parsed = parseOrRespond(schema, req.body, res);

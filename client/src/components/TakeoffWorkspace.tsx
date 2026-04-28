@@ -2066,6 +2066,46 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     [setActiveSheetSetId, openCalibrationDrawer],
   );
 
+  // Task #2228 — Pull the user's "Don't ask me again" preference for
+  // the bulk-scale propagation confirmation dialog out of
+  // /api/user-settings. The drawer reads this through props so the
+  // dialog can be skipped on subsequent saves once the user opts out.
+  // We piggy-back on the same query other consumers use so the cache
+  // stays consistent and there's no extra round-trip.
+  const { data: userSettingsForBulkScale } = useQuery<{
+    skipBulkScalePropagationConfirm?: boolean | null;
+  }>({
+    queryKey: ["/api/user-settings"],
+    staleTime: 60_000,
+  });
+  const skipBulkScalePropagationConfirm =
+    userSettingsForBulkScale?.skipBulkScalePropagationConfirm === true;
+  const handleSkipBulkScalePropagationConfirmChange = useCallback(
+    async (skip: boolean) => {
+      try {
+        await apiRequest("PATCH", "/api/user-settings", {
+          skipBulkScalePropagationConfirm: skip,
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/user-settings"] });
+      } catch (err) {
+        // Non-fatal: the propagation itself still goes through. Surface
+        // a toast so the user knows their preference didn't persist
+        // and can re-toggle next time.
+        toast({
+          title: "Couldn't save your preference",
+          description:
+            "We applied the scale but couldn't remember your “Don't ask me again” choice.",
+          variant: "destructive",
+        });
+        console.warn(
+          "[Takeoff] Failed to PATCH skipBulkScalePropagationConfirm:",
+          err,
+        );
+      }
+    },
+    [toast],
+  );
+
   // Task #2141 — Push the calibrated scale to every member of the
   // active set, then surface an Undo toast that POSTs to
   // /restore-scales with the priorScales snapshot the apply-scale
@@ -4580,6 +4620,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         }
         onApplyToSheetSet={handleApplyScaleToSheetSet}
         defaultApplyToSheetSet={calibrationDefaultApplyToSet}
+        skipBulkScalePropagationConfirm={skipBulkScalePropagationConfirm}
+        onSkipBulkScalePropagationConfirmChange={
+          handleSkipBulkScalePropagationConfirmChange
+        }
       />
 
       <Dialog open={dimInputOpen} onOpenChange={setDimInputOpen}>

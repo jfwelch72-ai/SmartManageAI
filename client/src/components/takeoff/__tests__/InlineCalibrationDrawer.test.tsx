@@ -308,3 +308,169 @@ describe("InlineCalibrationDrawer (Task #2140) — save contract", () => {
     expect(checkbox.disabled).toBe(true);
   });
 });
+
+describe("InlineCalibrationDrawer (Task #2228) — bulk-scale confirm", () => {
+  function renderForBulkScale(opts: {
+    memberCount: number;
+    skip?: boolean;
+    onApplyToSheetSet?: (input: {
+      setId: string;
+      scalePxPerFoot: number;
+    }) => void | Promise<void>;
+    onSaveCalibration?: (distanceFt?: number) => void | Promise<void>;
+    onSkipChange?: (skip: boolean) => void | Promise<void>;
+    defaultApply?: boolean;
+  }) {
+    const onApplyToSheetSet = opts.onApplyToSheetSet ?? vi.fn();
+    const onSaveCalibration = opts.onSaveCalibration ?? vi.fn();
+    const onSkipChange = opts.onSkipChange ?? vi.fn();
+    const utils = render(
+      <TooltipProvider>
+        <InlineCalibrationDrawer
+          open
+          onOpenChange={vi.fn()}
+          calibrationMode="idle"
+          setCalibrationMode={vi.fn()}
+          calibrationPoints={[
+            { x: 0, y: 0 },
+            { x: 100, y: 0 },
+          ]}
+          setCalibrationPoints={vi.fn()}
+          calibrationDistance=""
+          setCalibrationDistance={vi.fn()}
+          units="ft"
+          setUnits={vi.fn()}
+          currentScalePxPerFoot={4}
+          onSaveCalibration={onSaveCalibration}
+          onUseStandardScale={vi.fn()}
+          multiCalibMode={false}
+          setMultiCalibMode={vi.fn()}
+          multiCalibPoints={[]}
+          setMultiCalibPoints={vi.fn()}
+          activeSheetSet={{
+            id: "set-1",
+            name: "Civil bid #42",
+            memberCount: opts.memberCount,
+          }}
+          onApplyToSheetSet={onApplyToSheetSet}
+          defaultApplyToSheetSet={opts.defaultApply ?? true}
+          skipBulkScalePropagationConfirm={opts.skip ?? false}
+          onSkipBulkScalePropagationConfirmChange={onSkipChange}
+        />
+      </TooltipProvider>,
+    );
+    fireEvent.change(
+      screen.getByTestId("input-inline-calibration-distance"),
+      { target: { value: "12.5" } },
+    );
+    return { ...utils, onApplyToSheetSet, onSaveCalibration, onSkipChange };
+  }
+
+  it("opens the AlertDialog before propagating when the active set has more than 5 members", async () => {
+    const { onApplyToSheetSet, onSaveCalibration } = renderForBulkScale({
+      memberCount: 12,
+    });
+    fireEvent.click(screen.getByTestId("button-inline-calibration-save"));
+    // Save is intercepted: neither the per-sheet save nor the
+    // propagation should have run yet.
+    expect(onSaveCalibration).not.toHaveBeenCalled();
+    expect(onApplyToSheetSet).not.toHaveBeenCalled();
+    // Dialog renders with the from→to scale and member count.
+    expect(screen.getByTestId("dialog-bulk-scale-confirm")).toBeTruthy();
+    expect(
+      screen.getByTestId("text-bulk-scale-set-name").textContent,
+    ).toMatch(/Civil bid/);
+    expect(
+      screen.getByTestId("text-bulk-scale-from").textContent,
+    ).toMatch(/4\.00 px\/ft/);
+    expect(
+      screen.getByTestId("text-bulk-scale-to").textContent,
+    ).toMatch(/8\.00 px\/ft/);
+    expect(
+      screen.getByTestId("text-bulk-scale-member-count").textContent,
+    ).toBe("12");
+  });
+
+  it("Cancel leaves the calibration unsaved and does not persist any preference", async () => {
+    const { onApplyToSheetSet, onSaveCalibration, onSkipChange } =
+      renderForBulkScale({ memberCount: 8 });
+    fireEvent.click(screen.getByTestId("button-inline-calibration-save"));
+    fireEvent.click(screen.getByTestId("button-bulk-scale-cancel"));
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId("dialog-bulk-scale-confirm"),
+      ).toBeNull();
+    });
+    expect(onSaveCalibration).not.toHaveBeenCalled();
+    expect(onApplyToSheetSet).not.toHaveBeenCalled();
+    expect(onSkipChange).not.toHaveBeenCalled();
+  });
+
+  it("Confirm runs the per-sheet save AND the propagation exactly once", async () => {
+    const { onApplyToSheetSet, onSaveCalibration } = renderForBulkScale({
+      memberCount: 20,
+    });
+    fireEvent.click(screen.getByTestId("button-inline-calibration-save"));
+    fireEvent.click(screen.getByTestId("button-bulk-scale-confirm"));
+    await waitFor(() => {
+      expect(onSaveCalibration).toHaveBeenCalledTimes(1);
+      expect(onApplyToSheetSet).toHaveBeenCalledTimes(1);
+    });
+    expect(onApplyToSheetSet).toHaveBeenCalledWith({
+      setId: "set-1",
+      scalePxPerFoot: 8,
+    });
+  });
+
+  it("toggling 'Don't ask me again' before Confirm persists the user setting", async () => {
+    const { onSkipChange, onApplyToSheetSet } = renderForBulkScale({
+      memberCount: 30,
+    });
+    fireEvent.click(screen.getByTestId("button-inline-calibration-save"));
+    fireEvent.click(screen.getByTestId("checkbox-bulk-scale-dont-ask"));
+    fireEvent.click(screen.getByTestId("button-bulk-scale-confirm"));
+    await waitFor(() => {
+      expect(onSkipChange).toHaveBeenCalledTimes(1);
+      expect(onApplyToSheetSet).toHaveBeenCalledTimes(1);
+    });
+    expect(onSkipChange).toHaveBeenCalledWith(true);
+  });
+
+  it("skips the dialog when skipBulkScalePropagationConfirm is true", async () => {
+    const { onApplyToSheetSet, onSaveCalibration } = renderForBulkScale({
+      memberCount: 50,
+      skip: true,
+    });
+    fireEvent.click(screen.getByTestId("button-inline-calibration-save"));
+    await waitFor(() => {
+      expect(onSaveCalibration).toHaveBeenCalledTimes(1);
+      expect(onApplyToSheetSet).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByTestId("dialog-bulk-scale-confirm")).toBeNull();
+  });
+
+  it("skips the dialog for small sets (<= 5 members) so the common path stays one-click", async () => {
+    const { onApplyToSheetSet, onSaveCalibration } = renderForBulkScale({
+      memberCount: 5,
+    });
+    fireEvent.click(screen.getByTestId("button-inline-calibration-save"));
+    await waitFor(() => {
+      expect(onSaveCalibration).toHaveBeenCalledTimes(1);
+      expect(onApplyToSheetSet).toHaveBeenCalledTimes(1);
+    });
+    expect(screen.queryByTestId("dialog-bulk-scale-confirm")).toBeNull();
+  });
+
+  it("skips the dialog when the Apply-to-Sheet-Set checkbox is unchecked", async () => {
+    const { onApplyToSheetSet, onSaveCalibration } = renderForBulkScale({
+      memberCount: 50,
+      defaultApply: false,
+    });
+    fireEvent.click(screen.getByTestId("button-inline-calibration-save"));
+    await waitFor(() => {
+      expect(onSaveCalibration).toHaveBeenCalledTimes(1);
+    });
+    expect(onApplyToSheetSet).not.toHaveBeenCalled();
+    expect(screen.queryByTestId("dialog-bulk-scale-confirm")).toBeNull();
+  });
+});

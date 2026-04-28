@@ -9580,6 +9580,13 @@ export const userSettings = pgTable("user_settings", {
   allowTwoFingerRotate: boolean("allow_two_finger_rotate").notNull().default(false),
   palmRejectionBandPx: integer("palm_rejection_band_px").notNull().default(24),
   stylusLongPressMs: integer("stylus_long_press_ms").notNull().default(500),
+  // Task #2228 — "Don't ask again" toggle inside the bulk-scale
+  // propagation confirmation dialog. When true, hitting Save with
+  // the Apply-to-Sheet-Set checkbox checked on a >5-member set
+  // skips the AlertDialog and propagates immediately (the toast
+  // Undo affordance is still the safety net). Default is false so
+  // every user sees the dialog at least once.
+  skipBulkScalePropagationConfirm: boolean("skip_bulk_scale_propagation_confirm").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -9601,6 +9608,16 @@ export const PALM_REJECTION_BAND_MAX_PX = 96;
 export const DEFAULT_STYLUS_LONG_PRESS_MS = 500;
 export const STYLUS_LONG_PRESS_MIN_MS = 250;
 export const STYLUS_LONG_PRESS_MAX_MS = 1500;
+
+// Task #2228 — Member-count threshold above which the bulk scale
+// propagation confirmation AlertDialog appears. Single-member /
+// small sets (<= threshold) keep the one-click path; only sets
+// large enough to make an accidental propagation expensive get the
+// extra confirmation step. Lives in the shared schema so both the
+// drawer and any future server-side guard can reference the same
+// number.
+export const BULK_SCALE_PROPAGATION_CONFIRM_MIN_MEMBERS = 5;
+export const DEFAULT_SKIP_BULK_SCALE_PROPAGATION_CONFIRM = false;
 
 export const insertUserSettingsSchema = createInsertSchema(userSettings).omit({ id: true, createdAt: true, updatedAt: true });
 export type InsertUserSettings = z.infer<typeof insertUserSettingsSchema>;

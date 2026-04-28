@@ -6,15 +6,26 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Ruler, MousePointer, Plus, X, ExternalLink } from "lucide-react";
+import { Ruler, MousePointer, Plus, X, ExternalLink, AlertTriangle } from "lucide-react";
 import {
   parseTypedDimension,
   type DefaultUnits,
 } from "@/lib/takeoffTypedInput";
+import { BULK_SCALE_PROPAGATION_CONFIRM_MIN_MEMBERS } from "@shared/schema";
 import { cn } from "@/lib/utils";
 
 /**
@@ -99,6 +110,19 @@ export interface InlineCalibrationDrawerProps {
    *  drawer was opened from a per-set scale chip in the Sheet Sets
    *  panel. The user can still uncheck before saving. */
   defaultApplyToSheetSet?: boolean;
+  /** Task #2228 — Bulk-scale propagation confirmation. When the
+   *  Apply-to-Sheet-Set checkbox is on AND the active set has more
+   *  than `BULK_SCALE_PROPAGATION_CONFIRM_MIN_MEMBERS` members, hitting
+   *  Save first opens an AlertDialog spelling out how many sheets are
+   *  about to be re-scaled and the from→to scale values. The user
+   *  can opt out of seeing the dialog again with the embedded
+   *  "Don't ask me again" toggle, which is persisted via
+   *  `onSkipBulkScalePropagationConfirmChange` (PATCHes user
+   *  settings). When `skipBulkScalePropagationConfirm` is true, the
+   *  Save button skips the dialog and propagates immediately — the
+   *  toast Undo affordance is still the safety net. */
+  skipBulkScalePropagationConfirm?: boolean;
+  onSkipBulkScalePropagationConfirmChange?: (skip: boolean) => void | Promise<void>;
 }
 
 const APPLY_TO_SHEET_SET_TOOLTIP_DISABLED =
@@ -138,6 +162,8 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
     activeSheetSet,
     onApplyToSheetSet,
     defaultApplyToSheetSet,
+    skipBulkScalePropagationConfirm,
+    onSkipBulkScalePropagationConfirmChange,
   } = props;
   // `setMultiCalibMode` is part of the props contract for parity
   // with the existing TakeoffSidebar wiring, but the drawer itself
@@ -209,7 +235,29 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
     return px / draftLengthFt;
   })();
 
-  const handleSave = async () => {
+  // Task #2228 — Bulk-scale propagation confirmation. Only intercept
+  // Save when ALL the safety conditions hold: the user opted into
+  // applying to the Sheet Set, an active set is wired up, the set
+  // is large enough that a wrong propagation would be expensive, and
+  // the user hasn't already opted out via "Don't ask me again".
+  // Single-member or unchecked saves keep the original one-click
+  // path so the common workflow stays fast.
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
+  const [bulkConfirmDontAsk, setBulkConfirmDontAsk] = useState(false);
+  // Note: `sheetSetFlagOn` already implies `!!onApplyToSheetSet`, so
+  // TypeScript's control-flow analysis treats a subsequent
+  // `onApplyToSheetSet &&` as redundant (TS2774). The runtime gate
+  // here only needs `sheetSetFlagOn` + `activeSheetSet` to be safe.
+  const requiresBulkScaleConfirmation = !!(
+    applyToSheetSet &&
+    sheetSetFlagOn &&
+    activeSheetSet &&
+    calibrationPoints.length === 2 &&
+    activeSheetSet.memberCount > BULK_SCALE_PROPAGATION_CONFIRM_MIN_MEMBERS &&
+    !skipBulkScalePropagationConfirm
+  );
+
+  const performSave = async () => {
     if (!parsed.ok || draftLengthFt === null) return;
     // Mirror the typed value into the upstream display state so
     // legacy widgets that still read `calibrationDistance` show the
@@ -242,6 +290,39 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
         });
       }
     }
+  };
+
+  const handleSave = async () => {
+    if (!parsed.ok || draftLengthFt === null) return;
+    if (requiresBulkScaleConfirmation) {
+      // Reset the "don't ask again" toggle each time we open so a
+      // previous Cancel can't leave it pre-checked on the next open.
+      setBulkConfirmDontAsk(false);
+      setBulkConfirmOpen(true);
+      return;
+    }
+    await performSave();
+  };
+
+  const handleConfirmBulkScale = async () => {
+    // Persist the remembered choice BEFORE we close the dialog so
+    // the PATCH fires off whether or not the parent re-renders the
+    // drawer in response to the save.
+    if (bulkConfirmDontAsk && onSkipBulkScalePropagationConfirmChange) {
+      try {
+        await onSkipBulkScalePropagationConfirmChange(true);
+      } catch (err) {
+        // Persisting the user setting is a nice-to-have; the
+        // actual save must still go through even if the PATCH
+        // fails. The settings flow surfaces its own error toast.
+        console.warn(
+          "[InlineCalibrationDrawer] Failed to persist skipBulkScalePropagationConfirm:",
+          err,
+        );
+      }
+    }
+    setBulkConfirmOpen(false);
+    await performSave();
   };
 
   const handleResetPoints = () => {
@@ -543,6 +624,106 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
           </div>
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
+
+      {/*
+        Task #2228 — Bulk-scale propagation confirmation dialog.
+        Rendered alongside (not nested inside) the drawer's
+        DialogPrimitive.Content so the AlertDialog's modal overlay
+        sits above everything, not just inside the drawer panel.
+        We deliberately keep the drawer open underneath: if the user
+        cancels, they're back at the same Save state without losing
+        their picked points or typed distance.
+      */}
+      <AlertDialog open={bulkConfirmOpen} onOpenChange={setBulkConfirmOpen}>
+        <AlertDialogContent
+          data-testid="dialog-bulk-scale-confirm"
+          className="sm:max-w-md"
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-amber-500" />
+              {activeSheetSet
+                ? `Apply this scale to ${activeSheetSet.memberCount} sheets?`
+                : "Apply this scale to every sheet?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Every measurement on every sheet in{" "}
+              <strong data-testid="text-bulk-scale-set-name">
+                {activeSheetSet?.name ?? "this Sheet Set"}
+              </strong>{" "}
+              will shift to match the new calibration. This cannot be
+              fully reversed without the Undo toast — once that
+              dismisses, individual sheets must be re-calibrated by
+              hand.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          <div className="rounded border bg-muted/40 p-3 text-xs space-y-1.5">
+            <div
+              className="flex items-center justify-between"
+              data-testid="text-bulk-scale-from"
+            >
+              <span className="text-muted-foreground">Current scale</span>
+              <span className="font-mono">
+                {currentScalePxPerFoot
+                  ? `${currentScalePxPerFoot.toFixed(2)} px/ft`
+                  : "Not calibrated"}
+              </span>
+            </div>
+            <div
+              className="flex items-center justify-between"
+              data-testid="text-bulk-scale-to"
+            >
+              <span className="text-muted-foreground">New scale</span>
+              <span className="font-mono">
+                {previewScale !== null
+                  ? `${previewScale.toFixed(2)} px/ft`
+                  : "—"}
+              </span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Sheets affected</span>
+              <span
+                className="font-mono"
+                data-testid="text-bulk-scale-member-count"
+              >
+                {activeSheetSet?.memberCount ?? 0}
+              </span>
+            </div>
+          </div>
+
+          {onSkipBulkScalePropagationConfirmChange && (
+            <div className="flex items-center gap-2 pt-1">
+              <Checkbox
+                id="bulk-scale-confirm-dont-ask"
+                data-testid="checkbox-bulk-scale-dont-ask"
+                checked={bulkConfirmDontAsk}
+                onCheckedChange={(v) => setBulkConfirmDontAsk(v === true)}
+              />
+              <Label
+                htmlFor="bulk-scale-confirm-dont-ask"
+                className="text-xs cursor-pointer select-none"
+              >
+                Don't ask me again
+              </Label>
+            </div>
+          )}
+
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-bulk-scale-cancel">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmBulkScale}
+              data-testid="button-bulk-scale-confirm"
+            >
+              {activeSheetSet
+                ? `Apply to ${activeSheetSet.memberCount} sheets`
+                : "Apply"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </DialogPrimitive.Root>
   );
 }

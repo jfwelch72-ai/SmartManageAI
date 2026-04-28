@@ -1,0 +1,22 @@
+-- Task #2228 — Persist a per-user "Don't ask me again" preference for
+-- the bulk-scale propagation confirmation dialog in
+-- InlineCalibrationDrawer.
+--
+-- Background: Calibrating with an active Sheet Set and the
+-- "Apply to entire Sheet Set" box checked silently re-scales every
+-- member sheet on Save. For larger sets (>5 members) the drawer now
+-- intercepts Save with an AlertDialog confirming the propagation,
+-- listing the member count and the from→to scale values. The dialog
+-- has an embedded "Don't ask me again" toggle; when checked, the
+-- preference is PATCHed into user settings and the dialog is skipped
+-- for that user from then on (the toast Undo affordance is still the
+-- safety net).
+--
+-- The column defaults to FALSE so existing users keep the safer
+-- confirm-by-default behaviour. NOT NULL because the consumer
+-- (InlineCalibrationDrawer / TakeoffWorkspace) treats this as a
+-- boolean preference. Idempotent ADD COLUMN IF NOT EXISTS so
+-- environments where the column was added out-of-band still apply
+-- cleanly.
+ALTER TABLE "user_settings"
+  ADD COLUMN IF NOT EXISTS "skip_bulk_scale_propagation_confirm" boolean NOT NULL DEFAULT false;
