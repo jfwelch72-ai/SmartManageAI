@@ -230,6 +230,17 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
   // a draft starts fresh (drawingPoints empties) so an aborted draft
   // doesn't poison the next measurement's provenance.
   const snapLogRef = useRef<Array<{ mode: string | null }>>([]);
+  // Task #2331 — Live snap-quality stats mirrored from `snapLogRef`
+  // into React state so the in-progress draft HUD ("Snap 4/5" + most
+  // used mode) re-renders as each vertex is placed. Reset alongside
+  // `snapLogRef` on draft start (drawingPoints empties) and on commit
+  // (`consumeSnapProvenance`) so the HUD never carries provenance
+  // across measurements.
+  const [snapStats, setSnapStats] = useState<{
+    vertices: number;
+    hits: number;
+    modeCounts: Record<string, number>;
+  }>({ vertices: 0, hits: 0, modeCounts: {} });
   const [cursorPosition, setCursorPosition] = useState<Point | null>(null);
   const [runningMeasurement, setRunningMeasurement] = useState<{ value: number; unit: string; segments?: number } | null>(null);
   const [selectedMeasurementIds, setSelectedMeasurementIds] = useState<Set<string>>(new Set());
@@ -403,6 +414,13 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
   useEffect(() => {
     if (drawingPoints.length === 0) {
       snapLogRef.current = [];
+      // Task #2331 — match the ref reset so the live HUD also clears
+      // when a draft is escaped, the tool changes, or the previous
+      // commit drained `drawingPoints`. Without this the HUD would
+      // briefly show stale "Snap 3/5" values from the prior draft.
+      setSnapStats((prev) =>
+        prev.vertices === 0 && prev.hits === 0 ? prev : { vertices: 0, hits: 0, modeCounts: {} }
+      );
     }
   }, [drawingPoints.length]);
 
@@ -416,6 +434,13 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
   const consumeSnapProvenance = useCallback((): { snapHitRatio?: number; snapModesUsed?: string[] } => {
     const log = snapLogRef.current;
     snapLogRef.current = [];
+    // Task #2331 — clear the live HUD on commit. Done criteria says the
+    // HUD "resets when a draft is committed or canceled"; the
+    // drawingPoints-empty effect handles cancel + post-commit cleanup,
+    // but we also clear here so the HUD blanks the same frame the
+    // measurement is sent rather than waiting for the parent to drop
+    // drawingPoints.
+    setSnapStats({ vertices: 0, hits: 0, modeCounts: {} });
     if (log.length === 0) return {};
     const hits = log.filter((e) => e.mode != null).length;
     const modes = Array.from(new Set(log.map((e) => e.mode).filter((m): m is string => m != null)));
@@ -464,6 +489,26 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       // one snap-log entry" easy to maintain.
       const recordAndReturn = (mode: string | null, value: Point): Point => {
         snapLogRef.current.push({ mode });
+        // Task #2331 — Mirror the per-vertex log into React state so
+        // the live capture-quality HUD ("Snap 4/5" + most-used mode)
+        // re-renders as soon as the click commits a vertex. Keep
+        // `snapLogRef` as the source of truth — `consumeSnapProvenance`
+        // still computes provenance fields from the ref so server
+        // payloads are unaffected by this state mirror.
+        setSnapStats((prev) => {
+          const next = {
+            vertices: prev.vertices + 1,
+            hits: prev.hits + (mode != null ? 1 : 0),
+            modeCounts: prev.modeCounts,
+          };
+          if (mode != null) {
+            next.modeCounts = {
+              ...prev.modeCounts,
+              [mode]: (prev.modeCounts[mode] ?? 0) + 1,
+            };
+          }
+          return next;
+        });
         return value;
       };
       if (effectiveSnapEnabled) {
@@ -1613,6 +1658,9 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     polarGuideStep,
     snapTargets,
     runningMeasurement,
+    // Task #2331 — Live snap-quality stats for the in-progress draft
+    // HUD (rendered near the cursor by `CaptureQualityHUD`).
+    snapStats,
     selectedMeasurementIds,
     setSelectedMeasurementIds,
     toggleMeasurementSelection: useCallback((id: string, addToSelection: boolean) => {

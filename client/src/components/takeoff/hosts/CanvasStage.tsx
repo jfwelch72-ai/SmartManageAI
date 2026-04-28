@@ -13,6 +13,7 @@ import {
 import { commitMarkupBodyDrag, commitMarkupResize } from "../../markups/markup-drag-commit";
 import { TileLayer } from "../TileLayer";
 import { DimInputCursorBadge } from "./DimInputCursorBadge";
+import { CaptureQualityHUD } from "../CaptureQualityHUD";
 import {
   type Tool,
   type MeasurementType,
@@ -150,6 +151,19 @@ export interface CanvasStageProps {
 
   currentSnap: any;
   runningMeasurement: { value: number; unit: string; segments?: number } | null;
+  /**
+   * Task #2331 — Live capture-quality stats for the in-progress draft.
+   * Sourced from `useTakeoffInteractions.snapStats` and consumed by
+   * the on-canvas `CaptureQualityHUD` so estimators can self-correct
+   * mid-draft (vs. only learning after the row's needs-review flag).
+   * Optional so legacy hosts that haven't been wired up yet render no
+   * HUD instead of crashing.
+   */
+  snapStats?: {
+    vertices: number;
+    hits: number;
+    modeCounts: Record<string, number>;
+  };
 
   orthoLock: boolean;
   /**
@@ -292,6 +306,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
     verifyPoints,
     currentSnap,
     runningMeasurement,
+    snapStats,
     orthoLock,
     polarGuideStep,
     constraintMode,
@@ -1750,6 +1765,23 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     strokeWidth={1 / stageScale}
                     dash={[6 / stageScale, 4 / stageScale]}
                     opacity={0.6}
+                  />
+                )}
+
+                {/* Task #2331 — Live capture-quality HUD. Stacks one
+                    row above the runningMeasurement pill so the user
+                    sees Snap-hit ratio + most-used mode without
+                    looking away from the cursor. Hidden until the
+                    draft has 2+ vertices (no value on first click);
+                    resets when the draft commits or is cancelled
+                    (state lives in `useTakeoffInteractions`). */}
+                {snapStats && (
+                  <CaptureQualityHUD
+                    isDrawing={isDrawing}
+                    cursorPosition={cursorPosition}
+                    drawingPointsCount={drawingPoints.length}
+                    snapStats={snapStats}
+                    stageScale={stageScale}
                   />
                 )}
 
