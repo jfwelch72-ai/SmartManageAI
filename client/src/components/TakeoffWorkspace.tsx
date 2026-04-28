@@ -643,6 +643,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   });
   const [showCostPanel, setShowCostPanel] = useState(false);
   const [showMeasurementTable, setShowMeasurementTable] = useState(false);
+  // Task #2330 — Right-edge review-queue panel state. The count badge
+  // on the bottom bar reads from `reviewQueueCountQuery` even when
+  // the panel is closed, so reviewers always see the workload.
+  const [reviewQueueOpen, setReviewQueueOpen] = useState(false);
   const [showMobileGestureGuide, setShowMobileGestureGuide] = useState(() => {
     if (typeof window === "undefined") return false;
     return !localStorage.getItem("takeoff-gesture-guide-dismissed");
@@ -1083,6 +1087,39 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const handleOpenAiFromCta = useCallback(() => {
     setAiPanelOpen(true);
   }, []);
+
+  // Task #2330 — Workspace-wide count of measurements still flagged
+  // with `needs_review = true`. Drives the "Review" pill + badge in
+  // the bottom bar so reviewers always see the workload, even with
+  // no sheet selected and the panel closed. The same endpoint backs
+  // the panel itself, so React Query dedupes the request when the
+  // panel is open. Refetches on window focus (TanStack default) so
+  // the badge stays fresh as teammates flag/clear rows.
+  const reviewQueueContextId =
+    context?.type === "bid" ? context.bidId :
+    context?.type === "project" ? context.projectId :
+    projectId || null;
+  const reviewQueueContextType: "bid" | "project" =
+    context?.type === "bid" ? "bid" : "project";
+  const reviewQueueUrl = reviewQueueContextId
+    ? reviewQueueContextType === "bid"
+      ? `/api/bids/${reviewQueueContextId}/takeoff/review-queue`
+      : `/api/projects/${reviewQueueContextId}/takeoff/review-queue`
+    : null;
+  const reviewQueueKey = reviewQueueContextId
+    ? reviewQueueContextType === "bid"
+      ? (["/api/bids", reviewQueueContextId, "takeoff/review-queue"] as const)
+      : (["/api/projects", reviewQueueContextId, "takeoff/review-queue"] as const)
+    : null;
+  const { data: reviewQueueData } = useQuery<{ measurements: unknown[]; count: number }>({
+    queryKey: reviewQueueKey ?? ["review-queue-disabled"],
+    queryFn: async () => {
+      const res = await apiRequest("GET", reviewQueueUrl!);
+      return res.json();
+    },
+    enabled: !!reviewQueueUrl,
+  });
+  const reviewQueueCount = reviewQueueData?.count ?? null;
 
   // Task #1742 — Markup body moves now flow through the unified
   // `useTakeoffHistory` stack (see `onBodyDragEnd` below, which passes
@@ -4590,6 +4627,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       onToggleOverlaySlider: () => handleSetShowOverlaySlider(!showOverlaySlider),
       showMeasurementTable,
       onToggleMeasurementTable: () => setShowMeasurementTable(!showMeasurementTable),
+      showReviewQueue: reviewQueueOpen,
+      onToggleReviewQueue: () => setReviewQueueOpen(v => !v),
+      reviewQueueCount,
       stageScale,
       currentSheet,
     },
@@ -5008,6 +5048,28 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         handleActivateCondition(cond);
       },
     },
+    reviewQueuePanel: reviewQueueOpen && reviewQueueContextId
+      ? {
+          visible: true,
+          isDrawing,
+          isMobile,
+          props: {
+            context: reviewQueueContextType === "bid"
+              ? { type: "bid", bidId: reviewQueueContextId }
+              : { type: "project", projectId: reviewQueueContextId },
+            selectedSheet,
+            onClose: () => setReviewQueueOpen(false),
+            onJumpToSheet: (sheetId: string, measurementId: string) => {
+              // Switch sheets and pre-select the measurement so the
+              // canvas highlights it on arrival. The measurement
+              // properties panel reads `selectedMeasurementId` and
+              // opens itself when populated.
+              setSelectedSheet(sheetId);
+              setSelectedMeasurementId(measurementId);
+            },
+          },
+        }
+      : null,
   };
   const collabSlice: CollabContextSlice = useMemo(() => {
     const sheetLockOwnedByMe =

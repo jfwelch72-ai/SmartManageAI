@@ -1102,6 +1102,196 @@ router.post("/api/takeoff/measurements/:id/auto-import", requireAuth, async (req
   }
 });
 
+// Task #2330 — Review queue endpoints. Returns every measurement
+// flagged with `needs_review = true` for the given bid/project,
+// joined with the parent sheet (sheetIndex, sheetName, isActive,
+// revisionLabel) and — when present — the reviewer's display name so
+// the UI can group rows by sheet and credit the last reviewer
+// without a follow-up fetch. Mirrors the visibility rules used by
+// `/takeoff/all-measurements`: project-scoped sheets respect crew
+// assignments for non-management roles; bid-scoped sheets gate on
+// org membership of the bid (super-admin bypasses both). Measurements
+// reviewed earlier have already cleared `needs_review`, so the
+// partial index `takeoff_measurements_needs_review_idx` (Task #2319)
+// makes this a B-tree probe across the bid/project's sheets.
+async function selectFlaggedMeasurements(sheetIds: string[]) {
+  if (sheetIds.length === 0) return [] as Array<Record<string, unknown>>;
+  const { takeoffMeasurements: tm, takeoffSheets: ts, users } = await import("@shared/schema");
+  const rows = await db
+    .select({
+      id: tm.id,
+      sheetId: tm.sheetId,
+      label: tm.label,
+      type: tm.type,
+      categoryId: tm.categoryId,
+      groupId: tm.groupId,
+      computedLengthFt: tm.computedLengthFt,
+      computedAreaFt2: tm.computedAreaFt2,
+      computedVolumeCy: tm.computedVolumeCy,
+      computedSurfaceAreaFt2: tm.computedSurfaceAreaFt2,
+      count: tm.count,
+      unitCost: tm.unitCost,
+      calibrationSource: tm.calibrationSource,
+      snapHitRatio: tm.snapHitRatio,
+      scaleAtCaptureLabel: tm.scaleAtCaptureLabel,
+      scaleAtCapturePxPerFoot: tm.scaleAtCapturePxPerFoot,
+      needsReview: tm.needsReview,
+      reviewedById: tm.reviewedById,
+      reviewedAt: tm.reviewedAt,
+      reviewNote: tm.reviewNote,
+      createdAt: tm.createdAt,
+      updatedAt: tm.updatedAt,
+      sheetIndex: ts.sheetIndex,
+      sheetName: ts.sheetName,
+      sheetIsActive: ts.isActive,
+      sheetRevisionLabel: ts.revisionLabel,
+      reviewerFirstName: users.firstName,
+      reviewerLastName: users.lastName,
+    })
+    .from(tm)
+    .innerJoin(ts, eq(tm.sheetId, ts.id))
+    .leftJoin(users, eq(tm.reviewedById, users.id))
+    .where(and(
+      inArray(tm.sheetId, sheetIds),
+      eq(tm.needsReview, true),
+    ))
+    .orderBy(ts.sheetIndex, tm.createdAt);
+  return rows;
+}
+
+router.get("/api/projects/:projectId/takeoff/review-queue", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { projectId } = req.params;
+    const user = req.user!;
+    const isSuperAdmin = user.role === "SUPER_ADMIN";
+    if (!isSuperAdmin && !user.organizationId) { res.status(403).json({ error: "Access denied" }); return; }
+    const projectConditions = isSuperAdmin
+      ? [eq(projects.id, projectId)]
+      : [eq(projects.id, projectId), eq(projects.gcOrganizationId, user.organizationId as string)];
+    const [project] = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(and(...projectConditions))
+      .limit(1);
+    if (!project) { res.status(404).json({ error: "Project not found" }); return; }
+
+    if (user.role !== "ADMIN" && user.role !== "MANAGER" && user.role !== "SUPER_ADMIN" && user.role !== "ESTIMATOR") {
+      const { crewProjectAssignments, crewMembers } = await import("@shared/schema");
+      const [assignment] = await db
+        .select({ id: crewProjectAssignments.id })
+        .from(crewProjectAssignments)
+        .innerJoin(crewMembers, eq(crewProjectAssignments.crewId, crewMembers.crewId))
+        .where(and(eq(crewProjectAssignments.projectId, projectId), eq(crewMembers.userId, user.id)))
+        .limit(1);
+      if (!assignment) { res.status(403).json({ error: "Access denied" }); return; }
+    }
+
+    const sheets = await db
+      .select({ id: takeoffSheets.id })
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.projectId, projectId));
+    const flagged = await selectFlaggedMeasurements(sheets.map(s => s.id));
+    res.json({ measurements: flagged, count: flagged.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/api/bids/:bidId/takeoff/review-queue", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { bidId } = req.params;
+    const user = req.user!;
+    const isSuperAdmin = user.role === "SUPER_ADMIN";
+    if (!isSuperAdmin && !user.organizationId) { res.status(403).json({ error: "Access denied" }); return; }
+    const bidConditions = isSuperAdmin
+      ? [eq(bids.id, bidId)]
+      : [eq(bids.id, bidId), eq(bids.gcOrganizationId, user.organizationId as string)];
+    const [bid] = await db
+      .select({ id: bids.id })
+      .from(bids)
+      .where(and(...bidConditions))
+      .limit(1);
+    if (!bid) { res.status(404).json({ error: "Bid not found" }); return; }
+
+    const sheets = await db
+      .select({ id: takeoffSheets.id })
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.bidId, bidId));
+    const flagged = await selectFlaggedMeasurements(sheets.map(s => s.id));
+    res.json({ measurements: flagged, count: flagged.length });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Task #2330 — Review action. Stamps the reviewer audit columns and
+// clears `needs_review` so the partial index drops the row out of the
+// queue and the MeasurementTable flag glyph hides on the next refetch.
+// Body is `{ reviewNote?: string }`. The columns are intentionally
+// closed off from the per-id PATCH (Task #2319 strip list), so this
+// endpoint is the only legitimate way to flip them. Audit-logged.
+const reviewMeasurementSchema = z.object({
+  reviewNote: z.string().max(2000).optional(),
+});
+
+router.post("/api/takeoff/measurements/:id/review", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const { id } = req.params;
+    const { takeoffMeasurements } = await import("@shared/schema");
+
+    const validated = parseOrRespond(reviewMeasurementSchema, req.body ?? {}, res);
+    if (!validated) return;
+
+    const [existing] = await db
+      .select({
+        sheetId: takeoffMeasurements.sheetId,
+        needsReview: takeoffMeasurements.needsReview,
+        type: takeoffMeasurements.type,
+        label: takeoffMeasurements.label,
+        reviewedById: takeoffMeasurements.reviewedById,
+        reviewedAt: takeoffMeasurements.reviewedAt,
+        reviewNote: takeoffMeasurements.reviewNote,
+      })
+      .from(takeoffMeasurements)
+      .where(eq(takeoffMeasurements.id, id))
+      .limit(1);
+    if (!existing) { res.status(404).json({ error: "Measurement not found", reason: "not_found", failedMeasurementIds: [id] }); return; }
+
+    const access = await verifySheetAccess(existing.sheetId, req.user!);
+    if (!access.allowed) { res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Access denied" }); return; }
+
+    const note = validated.reviewNote
+      ? (sanitizeShortText(validated.reviewNote, 2000) ?? null)
+      : null;
+    const reviewedAt = new Date();
+
+    const [updated] = await db
+      .update(takeoffMeasurements)
+      .set({
+        needsReview: false,
+        reviewedById: req.user!.id,
+        reviewedAt,
+        reviewNote: note,
+        updatedAt: reviewedAt,
+      })
+      .where(eq(takeoffMeasurements.id, id))
+      .returning();
+
+    await logUpdate(
+      req.user!.id,
+      "takeoff_measurement",
+      id,
+      { needsReview: existing.needsReview, reviewedById: existing.reviewedById, reviewedAt: existing.reviewedAt, reviewNote: existing.reviewNote },
+      { needsReview: false, reviewedById: req.user!.id, reviewedAt: reviewedAt.toISOString(), reviewNote: note, action: "review_cleared" },
+      req,
+    );
+
+    res.json(updated);
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.delete("/api/takeoff/measurements/:id", requireAuth, async (req: AuthRequest, res, next) => {
   try {
     const { id } = req.params;

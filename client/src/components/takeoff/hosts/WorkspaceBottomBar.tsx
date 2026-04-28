@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { DollarSign, Layers, TableProperties, Trash2 } from "lucide-react";
+import { DollarSign, Flag, Layers, TableProperties, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { TakeoffMeasurement, TakeoffSheet } from "@shared/schema";
@@ -20,6 +20,13 @@ export interface WorkspaceBottomBarProps {
   onToggleOverlaySlider: () => void;
   showMeasurementTable: boolean;
   onToggleMeasurementTable: () => void;
+  // Task #2330 — Review-queue toggle. The count is workspace-wide
+  // (every flagged measurement across every sheet for the current
+  // bid/project), so we can show it on the status bar even when no
+  // sheet is selected. `null` means the count is still loading.
+  showReviewQueue: boolean;
+  onToggleReviewQueue: () => void;
+  reviewQueueCount: number | null;
   stageScale: number;
   currentSheet: TakeoffSheet | null | undefined;
 }
@@ -68,6 +75,7 @@ function WorkspaceBottomBarInner(props: WorkspaceBottomBarProps) {
     selectedMeasurementCount, bulkDeletePending, onBulkDelete, onClearSelection,
     selectedSheet, measurements, showCostPanel, onToggleCostPanel,
     showOverlaySlider, onToggleOverlaySlider, showMeasurementTable, onToggleMeasurementTable,
+    showReviewQueue, onToggleReviewQueue, reviewQueueCount,
     stageScale, currentSheet,
   } = props;
 
@@ -196,6 +204,33 @@ function WorkspaceBottomBarInner(props: WorkspaceBottomBarProps) {
             >
               <TableProperties className="w-3 h-3" />
               <span>Table</span>
+            </button>
+            <button
+              className={cn(
+                "flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-muted/70 transition-colors",
+                showReviewQueue && "bg-primary/10 text-primary",
+                !showReviewQueue && reviewQueueCount && reviewQueueCount > 0 && "text-amber-700 dark:text-amber-400",
+              )}
+              onClick={onToggleReviewQueue}
+              data-testid="button-toggle-review-queue"
+              title={
+                reviewQueueCount === null
+                  ? "Review queue"
+                  : reviewQueueCount === 0
+                    ? "No measurements need review"
+                    : `${reviewQueueCount} measurement${reviewQueueCount === 1 ? "" : "s"} need${reviewQueueCount === 1 ? "s" : ""} review`
+              }
+            >
+              <Flag className="w-3 h-3" />
+              <span>Review</span>
+              {reviewQueueCount !== null && reviewQueueCount > 0 && (
+                <span
+                  className="ml-0.5 inline-flex items-center justify-center rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-300 px-1 text-[10px] font-semibold tabular-nums"
+                  data-testid="badge-review-queue-count"
+                >
+                  {reviewQueueCount > 99 ? "99+" : reviewQueueCount}
+                </span>
+              )}
             </button>
             <span>Zoom: {Math.round(stageScale * 100)}%</span>
             <span

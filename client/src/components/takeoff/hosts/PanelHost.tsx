@@ -27,6 +27,7 @@ import {
 // chest's props still flow through `PanelContextSlice.toolChest`, so
 // the panel-slice contract is unchanged.
 import AiTakeoffPanel from "@/components/AiTakeoffPanel";
+import { ReviewQueuePanel } from "../ReviewQueuePanel";
 import { MeasurementTablePanel } from "./MeasurementTablePanel";
 import { MarkupStylingPanel } from "./MarkupStylingPanel";
 import { usePanelContext } from "./TakeoffWorkspaceContext";
@@ -104,6 +105,17 @@ function PanelHostInner() {
           data-testid="panel-ai-takeoff-overlay"
         >
           <AiTakeoffPanel {...ctx.aiPanel.props} />
+        </div>
+      )}
+      {ctx.reviewQueuePanel?.visible && (
+        <div
+          className={cn(
+            "absolute top-0 right-0 h-full w-full sm:w-[380px] max-w-full border-l bg-card shadow-2xl z-30 flex flex-col transition-opacity",
+            ctx.reviewQueuePanel.isDrawing && !ctx.reviewQueuePanel.isMobile && "opacity-20 hover:opacity-100"
+          )}
+          data-testid="panel-review-queue-overlay"
+        >
+          <ReviewQueuePanel {...ctx.reviewQueuePanel.props} />
         </div>
       )}
       <MarkupStylingPanel {...ctx.markupStylingPanel} />

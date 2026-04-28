@@ -19,6 +19,7 @@ import type { IssueDetailPanel } from "../IssueDetailPanel";
 import type { TakeoffPropertiesPanel } from "../TakeoffPropertiesPanel";
 import type AiTakeoffPanel from "@/components/AiTakeoffPanel";
 import type { ToolChestPanel } from "../ToolChestPanel";
+import type { ReviewQueuePanel } from "../ReviewQueuePanel";
 import type { CanvasStageProps } from "./CanvasStage";
 import type { SheetSelectorBarProps } from "./SheetSelectorBar";
 import type { CanvasViewportProps } from "./CanvasViewport";
@@ -200,6 +201,16 @@ export interface PanelContextSlice {
    *  panel can mount on demand; the component reads `open` to decide
    *  whether to render. */
   toolChest: ComponentProps<typeof ToolChestPanel>;
+  /** Task #2330 — Right-edge review-queue overlay listing every
+   *  flagged measurement for the current bid/project. `visible`
+   *  controls the outer container; the panel reads its own data
+   *  via TanStack Query so the slice stays small. */
+  reviewQueuePanel: {
+    visible: boolean;
+    isDrawing: boolean;
+    isMobile: boolean;
+    props: ComponentProps<typeof ReviewQueuePanel>;
+  } | null;
 }
 
 export interface CollabCollaborator {
