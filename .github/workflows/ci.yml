@@ -100,13 +100,65 @@ jobs:
         run: npm ci
 
       - name: Install Playwright browsers
+        # Task #2233 — The `chromium-touch` Playwright project (added in
+        # Task #2222) reuses the bundled Chromium binary installed here
+        # (only `hasTouch: true` differs from the desktop `chromium`
+        # project), so no separate `playwright install` invocation is
+        # required for it. Keep `chromium firefox webkit` listed so
+        # adding a new engine to `playwright.config.ts` requires an
+        # explicit edit here — same pattern the touch-project gate
+        # below uses.
         run: npx playwright install --with-deps chromium firefox webkit
 
       - name: Push database schema
         run: npm run db:push -- --force
 
-      - name: Run E2E tests
-        run: npm run test:e2e
+      # Task #2233 — Fail fast (before booting the dev server and
+      # provisioning postgres state) if the `chromium-touch` Playwright
+      # project ever gets removed, renamed, or its `testMatch` glob
+      # stops matching `takeoff-touch-gestures.spec.ts`. `playwright
+      # test --list --project=chromium-touch <spec>` prints the
+      # discovered tests for the touch project; if the project is
+      # missing Playwright exits non-zero with `Project(s) "chromium-
+      # touch" not found`, and if the spec stops matching the listed
+      # output is empty, which we then assert on. Without this guard a
+      # well-meaning refactor of `playwright.config.ts` could silently
+      # drop the palm-rejection / stylus-long-press / two-finger-rotate
+      # coverage and only the spec-author would notice.
+      - name: Verify chromium-touch project is registered
+        run: |
+          set -euo pipefail
+          listing="$(npx playwright test \
+            --project=chromium-touch \
+            --list \
+            e2e/takeoff-touch-gestures.spec.ts)"
+          echo "$listing"
+          if ! echo "$listing" | grep -q "takeoff-touch-gestures.spec.ts"; then
+            echo "::error::chromium-touch project did not list any tests in e2e/takeoff-touch-gestures.spec.ts — check playwright.config.ts" >&2
+            exit 1
+          fi
+
+      # Task #2233 — Run every Playwright project explicitly so the CI
+      # gate documents — at the call site — exactly which engines block
+      # merge: desktop Chromium / Firefox / WebKit *and* the touch-
+      # emulated `chromium-touch` project (added in Task #2222) which
+      # owns the only end-to-end coverage of palm rejection, stylus
+      # long-press → snap HUD, and two-finger rotate. The previous
+      # `npm run test:e2e` ran the same set implicitly (Playwright
+      # defaults to "all projects" when no `--project` is passed), but
+      # made it dangerously easy for a future change to silently drop
+      # the touch project by adding a single `--project chromium`
+      # flag — there would be no `chromium-touch` mention left in the
+      # CI file to grep for. Adding a new engine to
+      # `playwright.config.ts` now requires a matching edit here, which
+      # is the trade-off we want.
+      - name: Run E2E tests (chromium, firefox, webkit, chromium-touch)
+        run: |
+          npx playwright test \
+            --project=chromium \
+            --project=firefox \
+            --project=webkit \
+            --project=chromium-touch
 
       - name: Upload Playwright report
         if: always()
