@@ -37,6 +37,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { getSharedScheduler } from "@/lib/takeoff/tileScheduler";
+import { deferredCloseBitmap } from "@/lib/takeoff/tileCache";
 import { isTileRendererEnabled } from "@/lib/takeoff/tileRendererFlag";
 import { usePdfTileRenderer } from "@/hooks/use-pdf-tile-renderer";
 import { rotateViewportToPageNative, viewportToWorldRect } from "@/lib/takeoff/tileCoords";
@@ -3324,7 +3325,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       if (firstKey) {
         const stale = placeholderCacheRef.current.get(firstKey);
         placeholderCacheRef.current.delete(firstKey);
-        try { stale?.close(); } catch { /* noop */ }
+        // Defer past two RAFs — Konva may still hold this bitmap as
+        // the active `pdfImage` reference for one more frame after
+        // the LRU mutation. Sync close → "image source is detached".
+        deferredCloseBitmap(stale);
       }
     }
     return { bitmap: res.bitmap, width: res.width, height: res.height };

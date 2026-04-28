@@ -39,7 +39,7 @@ export const MAX_TILE_CACHE_BYTES_DEFAULT = 600 * 1024 * 1024;
  * Konva to draw at least one frame from the new state, after which
  * no live reference to the evicted bitmap remains.
  */
-function deferredCloseBitmap(bm: ImageBitmap | null | undefined): void {
+export function deferredCloseBitmap(bm: ImageBitmap | null | undefined): void {
   if (!bm) return;
   const close = () => {
     try {
