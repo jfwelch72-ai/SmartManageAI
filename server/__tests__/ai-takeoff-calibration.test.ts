@@ -144,6 +144,7 @@ async function seedSuggestion(opts: {
   confidence: number;
   reviewedAt?: Date | null;
   rejectReason?: string;
+  reviewedByUserId?: string;
 }): Promise<string> {
   seedCounter += 1;
   const [row] = await db
@@ -160,7 +161,8 @@ async function seedSuggestion(opts: {
       confidence: opts.confidence,
       status: opts.status,
       reviewedAt: opts.reviewedAt ?? (opts.status === "PENDING" ? null : new Date()),
-      reviewedByUserId: opts.status === "PENDING" ? null : userId,
+      reviewedByUserId:
+        opts.status === "PENDING" ? null : opts.reviewedByUserId ?? userId,
       rejectReason: (opts.rejectReason as any) ?? null,
     })
     .returning();
@@ -336,5 +338,165 @@ describe("Task #2323 — POST /api/ai-features/takeoff/suggestions/bulk-accept",
     expect(Number(editedRow.editedQuantity)).toBe(14);
     expect(editedRow.editedUnit).toBe("EA");
     expect(editedRow.editedItemType).toBe("junction_box");
+  }, 30_000);
+});
+
+// Task #2366 — Per-user accuracy endpoint regression coverage.
+//
+// The org-wide /accuracy endpoint already has tests above, but the per-user
+// variant /accuracy/me must never leak another estimator's reviews into a
+// caller's stats. These tests pin:
+//   1. Scoping: only the calling user's reviewed suggestions are counted,
+//      even when a teammate in the same org reviewed others.
+//   2. PENDING exclusion: rows with no reviewer are not personally
+//      attributed (totals.PENDING stays 0).
+//   3. Auth gating: requireAuth only — any signed-in user gets 200,
+//      anonymous gets 401 (no admin/manager role check).
+describe("Task #2366 — GET /api/ai-features/takeoff/accuracy/me", () => {
+  let userBId: string;
+  let tokenB: string;
+  let nonReviewerToken: string;
+
+  beforeAll(async () => {
+    const passwordHash = await bcrypt.hash("TestPass123!", 10);
+    const [userB] = await db
+      .insert(users)
+      .values({
+        email: `${PREFIX}user-b-${Date.now()}@test.local`,
+        passwordHash,
+        firstName: "Other",
+        lastName: "Estimator",
+        role: "ESTIMATOR",
+        organizationId: orgId,
+        isActive: true,
+      })
+      .returning();
+    userBId = userB.id;
+    tokenB = generateToken(userB.id, userB.tokenVersion ?? 0);
+
+    // A third user who has never reviewed anything — used to prove the
+    // endpoint is open to any signed-in user, not just admins/managers.
+    const [userC] = await db
+      .insert(users)
+      .values({
+        email: `${PREFIX}user-c-${Date.now()}@test.local`,
+        passwordHash,
+        firstName: "Bystander",
+        lastName: "Estimator",
+        role: "ESTIMATOR",
+        organizationId: orgId,
+        isActive: true,
+      })
+      .returning();
+    nonReviewerToken = generateToken(userC.id, userC.tokenVersion ?? 0);
+  });
+
+  it("only counts suggestions reviewed by the calling user (no cross-user leakage)", async () => {
+    const analysisId = await seedAnalysis();
+
+    // User A (the seed `userId`) reviews 3 ACCEPTED + 1 EDITED + 1 REJECTED.
+    const seeds: Promise<string>[] = [];
+    for (let i = 0; i < 3; i++) {
+      seeds.push(seedSuggestion({ analysisId, status: "ACCEPTED", confidence: 95 }));
+    }
+    seeds.push(seedSuggestion({ analysisId, status: "EDITED", confidence: 88 }));
+    seeds.push(
+      seedSuggestion({
+        analysisId,
+        status: "REJECTED",
+        confidence: 72,
+        rejectReason: "DUPLICATE",
+      }),
+    );
+
+    // User B reviews their own batch — must NOT show up in A's /me response.
+    for (let i = 0; i < 4; i++) {
+      seeds.push(
+        seedSuggestion({
+          analysisId,
+          status: "ACCEPTED",
+          confidence: 95,
+          reviewedByUserId: userBId,
+        }),
+      );
+    }
+    seeds.push(
+      seedSuggestion({
+        analysisId,
+        status: "REJECTED",
+        confidence: 65,
+        rejectReason: "WRONG_TRADE",
+        reviewedByUserId: userBId,
+      }),
+    );
+
+    // PENDING rows — no reviewer at all, must be excluded from /me totals.
+    seeds.push(seedSuggestion({ analysisId, status: "PENDING", confidence: 95 }));
+    seeds.push(seedSuggestion({ analysisId, status: "PENDING", confidence: 80 }));
+
+    await Promise.all(seeds);
+
+    const res = await request(app)
+      .get("/api/ai-features/takeoff/accuracy/me?days=90")
+      .set("Cookie", [`auth_token=${token}`])
+      .expect(200);
+
+    // Only User A's reviews — User B's 4 ACCEPTED + 1 REJECTED are excluded.
+    expect(res.body.totals.ACCEPTED).toBe(3);
+    expect(res.body.totals.EDITED).toBe(1);
+    expect(res.body.totals.REJECTED).toBe(1);
+    // PENDING rows have no reviewer so they don't get personally attributed.
+    expect(res.body.totals.PENDING).toBe(0);
+    expect(res.body.reviewed).toBe(5);
+    // (3 + 1) / 5 = 0.8
+    expect(res.body.accuracy).toBeCloseTo(4 / 5, 2);
+
+    // Reject reasons should only contain A's reason ("DUPLICATE"), not B's
+    // ("WRONG_TRADE"). This is the most direct cross-user leakage check.
+    const reasons = res.body.rejectReasons.map((r: { reason: string }) => r.reason);
+    expect(reasons).toContain("DUPLICATE");
+    expect(reasons).not.toContain("WRONG_TRADE");
+
+    // Per-trade aggregation must also be scoped: ELECTRICAL row reflects
+    // only A's 3+1+1 reviews, not the 4+1 from B.
+    const electrical = res.body.accuracyByTrade.find(
+      (r: { tradeType: string }) => r.tradeType === "ELECTRICAL",
+    );
+    expect(electrical).toBeTruthy();
+    expect(electrical.accepted).toBe(3);
+    expect(electrical.edited).toBe(1);
+    expect(electrical.rejected).toBe(1);
+
+    // Sanity check: B sees their own batch when they call /me.
+    const resB = await request(app)
+      .get("/api/ai-features/takeoff/accuracy/me?days=90")
+      .set("Cookie", [`auth_token=${tokenB}`])
+      .expect(200);
+    expect(resB.body.totals.ACCEPTED).toBe(4);
+    expect(resB.body.totals.REJECTED).toBe(1);
+    expect(resB.body.totals.EDITED).toBe(0);
+    expect(resB.body.totals.PENDING).toBe(0);
+    expect(resB.body.reviewed).toBe(5);
+  }, 30_000);
+
+  it("returns 401 for anonymous callers and 200 for any signed-in user (no role gate)", async () => {
+    // Anonymous — no auth_token cookie at all.
+    await request(app)
+      .get("/api/ai-features/takeoff/accuracy/me?days=30")
+      .expect(401);
+
+    // Signed-in but non-admin user with zero reviews still gets 200 with
+    // empty/zeroed totals. Proves the endpoint is gated by requireAuth only,
+    // not by requireRole("ADMIN", "MANAGER") like the org-wide endpoint.
+    const res = await request(app)
+      .get("/api/ai-features/takeoff/accuracy/me?days=30")
+      .set("Cookie", [`auth_token=${nonReviewerToken}`])
+      .expect(200);
+    expect(res.body.totals.ACCEPTED).toBe(0);
+    expect(res.body.totals.EDITED).toBe(0);
+    expect(res.body.totals.REJECTED).toBe(0);
+    expect(res.body.totals.PENDING).toBe(0);
+    expect(res.body.reviewed).toBe(0);
+    expect(res.body.accuracy).toBe(0);
   }, 30_000);
 });
