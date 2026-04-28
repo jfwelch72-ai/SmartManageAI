@@ -4101,16 +4101,72 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   // Tile mode owns the placeholder bitmap inside the hook. Forward it
   // into `pdfImage` so all the existing render paths (CanvasStage,
   // PdfPreview, etc.) see the same source of truth.
+  //
+  // We also have to react to the hook's `placeholderError`. Without
+  // that arm, a worker-side render failure (corrupt page, OOM in
+  // OffscreenCanvas on a giant civil sheet, 401/404 on the PDF
+  // response, etc.) used to leave the canvas wedged on
+  // "Loading plan… 80%" with no toast: `loadPDF` flipped
+  // `isPdfLoading=true` after `getPageDims` succeeded and waited for
+  // the placeholder to arrive — which the hook silently swallowed.
+  // Now we surface the failure so the user sees an actionable toast
+  // and the loading skeleton clears.
+  const lastPlaceholderErrorSheetRef = useRef<string | null>(null);
+  const lastErrSheetIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (!tileRendererEnabled) return;
+    // When the user navigates to a different sheet, drop the de-dupe
+    // memo so a retry on a previously-failed sheet (or a new failure on
+    // the new sheet that happens to share name/status) can toast again
+    // instead of being silently swallowed.
+    if (lastErrSheetIdRef.current !== (currentSheet?.id ?? null)) {
+      lastPlaceholderErrorSheetRef.current = null;
+      lastErrSheetIdRef.current = currentSheet?.id ?? null;
+    }
     if (tileRenderer.placeholder) {
+      lastPlaceholderErrorSheetRef.current = null;
       setPdfImage(tileRenderer.placeholder);
       setPdfLoadProgress(100);
       setIsPdfLoading(false);
+    } else if (tileRenderer.placeholderError && currentSheet?.id) {
+      // De-dupe: only fire one toast per (sheetId × error) so a
+      // re-render doesn't spam the user. Includes message so two
+      // distinct failures sharing the same name/status (e.g. two
+      // different "InvalidPDFException" messages) still both surface.
+      // The ref is reset on every sheet change above and on every
+      // successful placeholder arrival, so retries can re-toast.
+      const errKey = `${currentSheet.id}|${tileRenderer.placeholderError.name ?? ""}|${tileRenderer.placeholderError.status ?? ""}|${tileRenderer.placeholderError.message ?? ""}`;
+      if (lastPlaceholderErrorSheetRef.current !== errKey) {
+        lastPlaceholderErrorSheetRef.current = errKey;
+        const sheetName = currentSheet.sheetName || "this sheet";
+        const status = tileRenderer.placeholderError.status;
+        const detail =
+          status === 401 || status === 403
+            ? "You don't have access to this sheet's PDF. Try signing back in."
+            : status === 404
+              ? "The PDF file is missing. Re-import the document and try again."
+              : tileRenderer.placeholderError.message ||
+                "The file may not be a valid PDF document.";
+        toast({
+          title: `Couldn't load "${sheetName}"`,
+          description: detail,
+          variant: "destructive",
+        });
+      }
+      setPdfImage(null);
+      setIsPdfLoading(false);
+      setPdfLoadProgress(0);
     } else {
       setPdfImage(null);
     }
-  }, [tileRendererEnabled, tileRenderer.placeholder]);
+  }, [
+    tileRendererEnabled,
+    tileRenderer.placeholder,
+    tileRenderer.placeholderError,
+    currentSheet?.id,
+    currentSheet?.sheetName,
+    toast,
+  ]);
 
   // NOTE: Intentionally NOT memoized. The slice references 100+ pieces of
   // state and ~20 mutations/handlers; an exhaustive useMemo dependency

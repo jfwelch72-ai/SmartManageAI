@@ -34,12 +34,37 @@ import {
 } from "@/lib/takeoff/tileCoords";
 import {
   getSharedScheduler,
+  WorkerPdfError,
   type TileScheduler,
 } from "@/lib/takeoff/tileScheduler";
+
+/**
+ * Error surface for a failed placeholder render. We deliberately keep
+ * this independent of `Error` so consumers can render it via React
+ * without worrying about prototype-chain quirks across the
+ * worker/main-thread boundary; the hook normalizes whatever the
+ * scheduler rejects with into this shape.
+ */
+export interface PdfPlaceholderError {
+  /** Human-readable message — preferred fallback for toast bodies. */
+  message: string;
+  /** pdfjs exception name (e.g. "MissingPDFException") when known. */
+  name?: string;
+  /** HTTP status from `UnexpectedResponseException` when known. */
+  status?: number;
+}
 
 export interface PdfTileRendererState {
   pageDims: PageDims | null;
   placeholder: ImageBitmap | null;
+  /**
+   * Set when the worker fails to render the low-res placeholder for
+   * the currently selected sheet. Cleared automatically on the next
+   * sheet switch (or when the hook is disabled). Without this, a
+   * silently-rejected `renderPlaceholder` left the workspace stuck on
+   * "Loading plan… 80%" forever — see TakeoffWorkspace mirror effect.
+   */
+  placeholderError: PdfPlaceholderError | null;
   visibleTiles: Array<{ coord: TileCoord; bitmap: ImageBitmap }>;
   isLoadingPlaceholder: boolean;
   isAnyTileLoading: boolean;
@@ -73,6 +98,8 @@ export function usePdfTileRenderer(
   const enabled = args.enabled && scheduler !== null;
   const [pageDims, setPageDims] = useState<PageDims | null>(null);
   const [placeholder, setPlaceholder] = useState<ImageBitmap | null>(null);
+  const [placeholderError, setPlaceholderError] =
+    useState<PdfPlaceholderError | null>(null);
   const [, setTick] = useState(0);
   const [loadingPlaceholder, setLoadingPlaceholder] = useState(false);
   const [loadingTileCount, setLoadingTileCount] = useState(0);
@@ -104,14 +131,51 @@ export function usePdfTileRenderer(
   useEffect(() => {
     if (!enabled || !scheduler || !args.sheetUrl || !args.sheetId) {
       setPageDims(null);
-      setPlaceholder(null);
+      // Close the prior bitmap before nulling so toggling the tile
+      // renderer off (or clearing sheetId) doesn't leak the GPU-backed
+      // ImageBitmap until the next GC cycle.
+      setPlaceholder((prev) => {
+        if (prev) {
+          try {
+            prev.close();
+          } catch {
+            /* noop */
+          }
+        }
+        return null;
+      });
+      setPlaceholderError(null);
+      // Reset so a subsequent re-enable / sheet-set is treated as a
+      // fresh load (not a "same sheet" no-op that skips the cancel +
+      // cleanup branch above).
+      lastSheetRef.current = null;
       return;
     }
     const prevSheet = lastSheetRef.current;
     if (prevSheet && prevSheet !== args.sheetId) {
       scheduler.cancelAllForSheet(prevSheet);
+      // Clear the prior sheet's placeholder + pageDims so the consumer's
+      // mirror effect cannot keep showing sheet A's bitmap (and treat
+      // the load as "succeeded") while sheet B is still loading or has
+      // failed. Without this reset the placeholderError arm below is
+      // unreachable on a sheet switch, because `placeholder` would
+      // still be truthy and win the success branch first.
+      setPlaceholder((prev) => {
+        if (prev) {
+          try {
+            prev.close();
+          } catch {
+            /* noop */
+          }
+        }
+        return null;
+      });
+      setPageDims(null);
     }
     lastSheetRef.current = args.sheetId;
+    // Reset error state on every (re)load attempt so a transient
+    // failure on sheet A doesn't leak into sheet B's UI.
+    setPlaceholderError(null);
     let cancelled = false;
     setLoadingPlaceholder(true);
     scheduler
@@ -137,8 +201,28 @@ export function usePdfTileRenderer(
           return res.bitmap;
         });
       })
-      .catch(() => {
-        /* surfaced via console in worker; UI keeps showing skeleton */
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        // Surface the error so the consumer can clear its loading
+        // skeleton and show a toast. Previously this catch was a
+        // silent no-op, which left the takeoff workspace stuck on
+        // "Loading plan… 80%" forever whenever the worker rejected
+        // (corrupt page, 401/404 PDF response, OOM in OffscreenCanvas
+        // on giant civil sheets, etc.). The console.error preserves
+        // the stack for production diagnosis.
+        console.error(
+          "[Takeoff] Placeholder render failed for sheet",
+          args.sheetId,
+          err,
+        );
+        const msg =
+          err instanceof Error ? err.message : String(err ?? "render failed");
+        const wpe = err instanceof WorkerPdfError ? err : null;
+        setPlaceholderError({
+          message: msg,
+          name: wpe?.errorName ?? (err instanceof Error ? err.name : undefined),
+          status: wpe?.status,
+        });
       })
       .finally(() => {
         if (!cancelled) setLoadingPlaceholder(false);
@@ -262,6 +346,7 @@ export function usePdfTileRenderer(
   return {
     pageDims,
     placeholder,
+    placeholderError,
     visibleTiles,
     isLoadingPlaceholder: loadingPlaceholder,
     isAnyTileLoading: loadingTileCount > 0,
