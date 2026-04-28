@@ -53,63 +53,6 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Drawings & Markup at Scale**: Includes plan-document markups with various tools, carryover-on-revision functionality, burned-in PDF export, searchable sheet navigation, and virtualization for efficient rendering.
 *   **Submittals & RFI Production Field Workflow**: Automated escalations, external document email service, PDF log endpoints, and scheduled log emails. Mobile app supports field stamping and updates.
 
-## Development Workflow
-
-### Type-checking
-
-Run the project's TypeScript type-check via the registered `typecheck` validation step (it executes `NODE_OPTIONS='--max-old-space-size=8192' npx tsc -p tsconfig.json`). The compiler runs with `incremental: true` and persists its build cache at `node_modules/.cache/typecheck/tsbuildinfo`, so warm runs reuse cached output.
-
-- Cold run (no cache): ~3 minutes for the full ~1,500-file project.
-- Warm run (cache present): ~10 seconds.
-
-Always invoke type-checking through the validation step rather than calling `tsc` ad-hoc — the validation harness streams full output, summarizes failures, and avoids re-running a 2+ minute cold compile every time. The cache lives under `node_modules`, so it survives between agent steps but is rebuilt after a fresh `npm install`. If you need to force a clean rebuild, delete `node_modules/.cache/typecheck/tsbuildinfo`.
-
-The codebase currently has pre-existing type errors (tracked separately) — the validation step's job is to surface *new* regressions added by a change, not to be at zero today.
-
-## Domain Conventions
-
-### Takeoff Measurement Units
-Volume measurements are reported in **cubic yards (CY)** everywhere — the Measurement Summary Report, all report exports (`server/reportRoutes.ts`), the takeoff measurement table, and the schema (`takeoffMeasurements.computedVolumeCy`). This was confirmed with estimating users in April 2026 (task #1924, follow-up to #1876). CY is the standard estimating unit for earthwork, concrete, and aggregate volumes in heavy-civil and building work, and matches AASHTOWare/DOT conventions.
-
-If a future export ever needs cubic feet (CF), the conversion (×27) must be applied in a single shared quantity helper rather than scattered per-call-site, and the unit label must be changed in the same place. Do not introduce ad-hoc CF conversions in individual components or routes.
-
-### Upload limits
-Every multi-file uploader in the app shares the same per-batch file count cap, defined as `MAX_BATCH_UPLOAD_FILES = 50` in `client/src/lib/uploadLimits.ts` (alongside `MAX_STORAGE_FILE_SIZE`). All `<ObjectUploader>` call sites that accept more than one file at a time must import and pass this constant — do not hard-code per-call-site numbers like `5`, `10`, or `20`. Single-file pickers (avatar, company logo, single LiDAR scan, single receipt, single project media item, equipment maintenance photo, asset handover doc, individual heavy-civil DOT cert slot) are deliberately exempt and stay at `maxNumberOfFiles={1}` — they fill one form field and must not silently turn into multi-uploaders. The 50-file batch cap is the per-batch limit only; there is no cap on total files per bid/project, so users can run a second batch right after.
-
-### Bid document read authorization
-`GET /api/bids/:code/documents` (the list endpoint) gates only on org membership of the bid (`verifyOrgAccess(req, res, bid.gcOrganizationId)`). Therefore `GET /api/bids/:code/documents/:docId/preview-url` and `.../stream` (resolved via the shared `resolveBidDocumentForRead` helper in `server/bidRoutes2.ts`) **must use the same gate** — otherwise users see a file in the list and get a 403 trying to open it. Tenancy is enforced as defense-in-depth by checking that the normalized storage key `/objects/<orgId>/uploads/<uuid>` carries the bid's `gcOrganizationId` as its first segment (uploads always go through `getObjectEntityUploadURL`, which builds paths in that exact form). SUPER_ADMIN bypasses the prefix check for support flows.
-
-Do **not** call `canAccessObjectEntity` / `canAccessObject` on the bid document path: those gates require ADMIN/MANAGER, the file owner, an explicit `filePermissions` row, or the ESTIMATOR-assigned-bid carve-out (which itself requires `bids.estimatorId === userId`). For a teammate ESTIMATOR who can see the bid but is not the assigned estimator, every one of those branches denies, and the read 403s. This was the bug fixed in April 2026 — keep the read endpoints aligned with the list endpoint.
-
-### Self-serve "Request access" flow
-When a user hits a 403 on a feature gated by role (e.g. estimate PDF export's `hasManagementAccess` check), the friendlier 403 toast offers a "Request access" action that opens `client/src/components/RequestAccessDialog.tsx`. The dialog POSTs to `/api/access-requests` (server: `server/accessRequestRoutes.ts`), which inserts an `access_requests` row and fans out an in-app + email `ACCESS_REQUEST_NEW` notification to org admins via `notifyUsers`. Admins triage the queue from `/company-settings` under the new "Access requests" tab (`client/src/components/AccessRequestsAdminPanel.tsx`); approving bumps the user's role and/or flips an allow-listed set of `userDashboardPermissions` flags atomically and notifies the requester (`ACCESS_REQUEST_APPROVED`). Denying records an optional admin note and notifies the requester (`ACCESS_REQUEST_DENIED`). The permission allow-list lives at the top of `accessRequestRoutes.ts` — keep it tight; the full Feature Permissions tab still covers anything outside it.
-
-### AI Takeoff closed-loop feedback (Task #2323)
-The AI takeoff workflow persists a per-suggestion review trail used to retrain confidence presentation:
-
-- `ai_takeoff_suggestions` mirrors each `detected_items_json` entry as its own row (status `PENDING/ACCEPTED/EDITED/REJECTED`, optional edited qty/unit/itemType, reject reason). `processAiTakeoff` inserts these rows alongside the analysis; backfill helper covers historical analyses.
-- `ai_takeoff_confidence_calibration` is rebuilt nightly by `runAiTakeoffCalibrationJob` (cron `30 3 * * *` in `server/jobs/jobRunner.ts`) over the trailing 90 days. Buckets are 60/70/80/90 lower bounds; only buckets with `sample_count >= 30` are upserted. Acceptance counts `ACCEPTED + EDITED`.
-- At analysis time, `processAiTakeoff` reads the per-(org, trade, bucket) acceptance rate and overrides the displayed confidence; recent `EDITED` rows are also injected as few-shot corrections in the next prompt.
-- API endpoints live under `/api/ai-features/takeoff/`: per-suggestion `accept`, `reject`, `edit-and-accept`; `suggestions/bulk-accept` (used by `TakeoffWorkspace` import path), `suggestions-by-analysis/:id`, and `accuracy?days=N` (KPIs + trade/bucket/trend/reject-reason aggregation, ADMIN/MANAGER only).
-- `AiTakeoffPanel.tsx` exposes per-row Reject (6 reasons) + Edit-and-accept dialogs; `/admin/ai-takeoff-accuracy` (ADMIN/SUPER_ADMIN/MANAGER) renders Recharts dashboards from the accuracy endpoint.
-
-### CLI scripts imported by the server bundle
-Any TS file under `scripts/` that the server transitively imports (e.g. `scripts/fetch-dot-pay-items.ts`, imported by `server/jobs/dotPayItemsRefresh.ts` for `runFetcher`) gets folded into `dist/index.js` by `esbuild --bundle`. The classic ESM "is this the entrypoint?" guard
-
-```ts
-const isMain = import.meta.url === `file://${process.argv[1]}`;
-```
-
-is **not safe in that case** — after bundling, both sides resolve to the bundle path (`/dist/index.js`), so `isMain` becomes `true` in production and the CLI's `main()` runs unconditionally on server boot. That blocked the port from opening and caused a publish failure (April 2026). When a `scripts/*.ts` file both exports helpers AND has a CLI `main()`, also require the entry filename to actually be the script:
-
-```ts
-const isMain =
-  import.meta.url === `file://${process.argv[1]}` &&
-  /(?:^|[\\/])my-script-name\.(?:ts|mts|cts|js|mjs|cjs)$/.test(process.argv[1]);
-```
-
-Or, equivalently, split the file so the bundled code path imports a pure-export module and the CLI lives in a separate `*-cli.ts` wrapper.
-
 ## External Dependencies
 *   PostgreSQL (Neon)
 *   Replit Object Storage (Google Cloud Storage backend)
