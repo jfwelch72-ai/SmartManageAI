@@ -41,7 +41,7 @@ import { isTileRendererEnabled } from "@/lib/takeoff/tileRendererFlag";
 import { usePdfTileRenderer } from "@/hooks/use-pdf-tile-renderer";
 import { rotateViewportToPageNative, viewportToWorldRect } from "@/lib/takeoff/tileCoords";
 import { useTakeoffStylusPrefs } from "@/hooks/use-takeoff-stylus-prefs";
-import { createLongPressDetector } from "@/lib/pointerInput";
+import { useStylusLongPress } from "@/hooks/use-stylus-long-press";
 import * as pdfjsLib from 'pdfjs-dist';
 import {
   createArcSegment,
@@ -569,39 +569,18 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const containerRef = useRef<HTMLDivElement>(null);
   const workspaceRef = useRef<HTMLDivElement>(null);
 
-  // Task #2142 — Stylus long-press → snap HUD. Watches pointer events
-  // on the canvas container; when the user holds the pen tip still for
-  // `stylusLongPressMs` (within an 8 px movement budget), the snap HUD
-  // pops open at the same place it appears for the keyboard shortcut.
-  // Touch pointers are explicitly excluded (penOnly = true) so taps
-  // and drags don't fire the menu.
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const detector = createLongPressDetector({
-      holdMs: stylusPrefs.stylusLongPressMs,
-      penOnly: true,
-      onLongPress: () => {
-        setSnapHudOpen(true);
-      },
-    });
-    const onDown = (e: PointerEvent) => detector.start(e);
-    const onMove = (e: PointerEvent) => detector.move(e);
-    const onUp = (e: PointerEvent) => detector.end(e);
-    el.addEventListener("pointerdown", onDown);
-    el.addEventListener("pointermove", onMove);
-    el.addEventListener("pointerup", onUp);
-    el.addEventListener("pointercancel", onUp);
-    el.addEventListener("pointerleave", onUp);
-    return () => {
-      detector.cancel();
-      el.removeEventListener("pointerdown", onDown);
-      el.removeEventListener("pointermove", onMove);
-      el.removeEventListener("pointerup", onUp);
-      el.removeEventListener("pointercancel", onUp);
-      el.removeEventListener("pointerleave", onUp);
-    };
-  }, [stylusPrefs.stylusLongPressMs]);
+  // Task #2142 — Stylus long-press → snap HUD. When the user holds the
+  // pen tip still for `stylusLongPressMs` (within an 8 px movement
+  // budget), the snap HUD pops open at the same place it appears for
+  // the keyboard shortcut. Touch pointers are explicitly excluded
+  // (penOnly = true, the hook's default) so taps and drags don't fire
+  // the menu. Wiring lives in `useStylusLongPress` so the integration
+  // test for this surface can exercise the actual production hook
+  // instead of mirroring the listener bookkeeping.
+  useStylusLongPress(containerRef, {
+    holdMs: stylusPrefs.stylusLongPressMs,
+    onLongPress: () => setSnapHudOpen(true),
+  });
 
   const isMarkupTool = (tool: string) => tool.startsWith("markup_");
 
