@@ -125,6 +125,17 @@ jobs:
       # well-meaning refactor of `playwright.config.ts` could silently
       # drop the palm-rejection / stylus-long-press / two-finger-rotate
       # coverage and only the spec-author would notice.
+      #
+      # Task #2235 — This step is now paired with the generic "Verify
+      # every Playwright project discovers at least one test" guard
+      # below, which catches the same silent-skip risk for the desktop
+      # `chromium`, `firefox`, and `webkit` projects (and any future
+      # project added to `playwright.config.ts`). Both gates are kept:
+      # this one additionally asserts the touch project is matching
+      # the *specific* `takeoff-touch-gestures.spec.ts` file (the
+      # generic gate would still pass if `testMatch` were retargeted
+      # at a different spec, since the project would still report
+      # >= 1 test).
       - name: Verify chromium-touch project is registered
         run: |
           set -euo pipefail
@@ -137,6 +148,22 @@ jobs:
             echo "::error::chromium-touch project did not list any tests in e2e/takeoff-touch-gestures.spec.ts — check playwright.config.ts" >&2
             exit 1
           fi
+
+      # Task #2235 — Generic version of the chromium-touch gate above:
+      # run `npx playwright test --list --reporter=json` once and assert
+      # that *every* project declared in `playwright.config.ts`
+      # (currently `chromium`, `firefox`, `webkit`, `chromium-touch`)
+      # discovers at least one test. Without this, a future edit that
+      # left e.g. `chromium` with an empty `testMatch`/`testIgnore`
+      # overlap (or moved every spec into a tag the project excludes)
+      # would let CI stay green while silently shipping zero desktop
+      # Chromium coverage. The script also writes a per-project
+      # test-count table to `$GITHUB_STEP_SUMMARY` so reviewers can see
+      # at a glance how the load is split across engines/projects on
+      # every `e2e` run. Read `scripts/verify-playwright-projects-non-empty.mjs`
+      # for the full rationale.
+      - name: Verify every Playwright project discovers at least one test
+        run: node scripts/verify-playwright-projects-non-empty.mjs
 
       # Task #2233 — Run every Playwright project explicitly so the CI
       # gate documents — at the call site — exactly which engines block
