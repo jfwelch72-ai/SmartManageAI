@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { installCsrf } from "./helpers/csrf";
-import { dispatchHtml5Drop } from "./helpers/htmlDrag";
+import { dispatchHtml5Drop, dispatchHtml5Reorder } from "./helpers/htmlDrag";
 
 const BASE_URL =
   process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
@@ -40,73 +40,6 @@ async function clearChest(page: Page) {
   for (const item of items) {
     await page.request.delete(`${BASE_URL}/api/takeoff/tool-chest/${item.id}`);
   }
-}
-
-// Drag-lifecycle helpers used by the Task #2215 reorder tests.
-//
-// `ChestSection.handleDrop` reads the React `hoverIndex` state from
-// the closure that was active when its `onDragOver` ran. When all
-// drag events are dispatched in one synchronous tick (single
-// page.evaluate call) React never flushes between dragover and drop,
-// so the drop handler sees a stale hoverIndex of null and bails.
-// Splitting the dragover and drop phases into separate page.evaluate
-// calls lets us await a deterministic UI signal (the `ring-2` drop
-// target class) between them — which is exactly what real-browser
-// drag events do naturally (one task per event).
-async function dispatchDragoverPhase(
-  page: Page,
-  srcSelector: string,
-  dstSelector: string,
-) {
-  await page.evaluate(
-    ({ srcSelector, dstSelector }) => {
-      const src = document.querySelector(srcSelector) as HTMLElement | null;
-      const dst = document.querySelector(dstSelector) as HTMLElement | null;
-      if (!src || !dst) throw new Error("reorder targets not found");
-      const dt = new DataTransfer();
-      (window as unknown as { __chestDt: DataTransfer }).__chestDt = dt;
-      src.dispatchEvent(
-        new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }),
-      );
-      dst.dispatchEvent(
-        new DragEvent("dragenter", { bubbles: true, dataTransfer: dt }),
-      );
-      dst.dispatchEvent(
-        new DragEvent("dragover", {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer: dt,
-        }),
-      );
-    },
-    { srcSelector, dstSelector },
-  );
-}
-
-async function dispatchDropPhase(
-  page: Page,
-  srcSelector: string,
-  dstSelector: string,
-) {
-  await page.evaluate(
-    ({ srcSelector, dstSelector }) => {
-      const src = document.querySelector(srcSelector) as HTMLElement | null;
-      const dst = document.querySelector(dstSelector) as HTMLElement | null;
-      if (!src || !dst) throw new Error("reorder targets not found");
-      const dt = (window as unknown as { __chestDt: DataTransfer }).__chestDt;
-      dst.dispatchEvent(
-        new DragEvent("drop", {
-          bubbles: true,
-          cancelable: true,
-          dataTransfer: dt,
-        }),
-      );
-      src.dispatchEvent(
-        new DragEvent("dragend", { bubbles: true, dataTransfer: dt }),
-      );
-    },
-    { srcSelector, dstSelector },
-  );
 }
 
 async function gotoTakeoff(page: Page, bidCode: string) {
@@ -321,25 +254,28 @@ test.describe("Takeoff Tool Chest (Task #2139)", () => {
     // Drag the first row (linear) onto the third (count) — the section's
     // splice-then-insert reorder yields [b, c, a]. Playwright's dragTo
     // doesn't replay React's onDragStart/onDragOver chain reliably, so
-    // drive the lifecycle events manually with a shared DataTransfer.
+    // drive the lifecycle events through the shared HTML5 helper.
     //
     // The reorder handler reads `hoverIndex` from React state inside
     // onDrop — that means dragover and drop must arrive in *separate*
     // tasks so React can flush the setState in between. Real-browser
-    // drag events naturally satisfy this, but synthetic dispatches
-    // inside one page.evaluate would all run in the same task. Split
-    // the dispatches across page.evaluate calls and stash a single
-    // DataTransfer on the window so each call sees the same payload.
-    const srcSelector = `[data-testid='chest-item-${a.id}']`;
-    const dstSelector = `[data-testid='chest-item-${c.id}']`;
-    await dispatchDragoverPhase(page, srcSelector, dstSelector);
-    // Wait deterministically for the drop-target ring class — that's
-    // the ChestSection's `isDropTarget` styling, which only paints
-    // after React commits the dragover-driven setHoverIndex. Once it's
-    // visible we know the next render's `handleDrop` closure will see
+    // drag events naturally satisfy this; the shared helper splits
+    // the lifecycle across two page.evaluate calls (Task #2288) and
+    // we hand it a `flushBetween` callback that waits for the
+    // ChestSection's `isDropTarget` ring class — that's the
+    // deterministic UI signal the dragover-driven setHoverIndex
+    // committed, so the next render's `handleDrop` closure will see
     // the up-to-date hoverIndex.
-    await expect(page.locator(`${dstSelector}.ring-2`)).toBeVisible();
-    await dispatchDropPhase(page, srcSelector, dstSelector);
+    const srcRow = page.getByTestId(`chest-item-${a.id}`);
+    const dstRow = page.getByTestId(`chest-item-${c.id}`);
+    await dispatchHtml5Reorder({
+      source: srcRow,
+      target: dstRow,
+      flushAfter: "dragover",
+      flushBetween: async () => {
+        await expect(dstRow).toHaveClass(/ring-2/);
+      },
+    });
 
     // Optimistic local order updates immediately.
     await expect
@@ -429,11 +365,20 @@ test.describe("Takeoff Tool Chest (Task #2139)", () => {
       }),
     );
 
-    const srcSel = `[data-testid='chest-item-${a.id}']`;
-    const dstSel = `[data-testid='chest-item-${b.id}']`;
-    await dispatchDragoverPhase(page, srcSel, dstSel);
-    await expect(page.locator(`${dstSel}.ring-2`)).toBeVisible();
-    await dispatchDropPhase(page, srcSel, dstSel);
+    // Same shared helper as the happy-path reorder above (Task #2288):
+    // split-phase HTML5 lifecycle gated by the drop-target ring class
+    // so React's setHoverIndex commits before the synthesized drop
+    // dispatches.
+    const srcRow = page.getByTestId(`chest-item-${a.id}`);
+    const dstRow = page.getByTestId(`chest-item-${b.id}`);
+    await dispatchHtml5Reorder({
+      source: srcRow,
+      target: dstRow,
+      flushAfter: "dragover",
+      flushBetween: async () => {
+        await expect(dstRow).toHaveClass(/ring-2/);
+      },
+    });
 
     // After the failed save the rows revert to the pre-drag order and
     // the user sees a destructive toast explaining the rollback.

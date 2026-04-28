@@ -9,27 +9,36 @@
  * handled by `canvasDrag.ts`: there's no Konva stage in the loop,
  * just plain React event handlers reading `e.dataTransfer.getData`.
  *
- * Before this helper, three specs had each grown their own copy of
- * the same `page.evaluate(() => { const dt = new DataTransfer(); ...
- * srcEl.dispatchEvent(new DragEvent("dragstart", ...)); ... })`
- * pattern:
+ * Before this helper (and the follow-up Task #2288 migration that
+ * moved the last stragglers in), several specs had each grown their
+ * own copy of the same `page.evaluate(() => { const dt = new
+ * DataTransfer(); ... srcEl.dispatchEvent(new DragEvent("dragstart",
+ * ...)); ... })` pattern:
  *
  *   - `takeoff-tool-chest.spec.ts` — chest item onto canvas (single
  *     synthesized tick: the canvas drop handler reads only the
  *     custom MIME payload).
- *   - `takeoff-sheet-sets.spec.ts` — `dispatchSheetThumbnailDrop`
+ *   - `takeoff-tool-chest.spec.ts` — chest row reorder (two
+ *     synthesized ticks gated by the `ring-2` drop-target class:
+ *     ChestSection's `onDrop` reads `hoverIndex` from React state
+ *     set by `onDragOver`).
+ *   - `takeoff-sheet-sets.spec.ts` — sheet thumbnail onto set row
  *     (single synthesized tick: same shape, just a different MIME).
  *   - `takeoff-sheet-sets.spec.ts` — the SheetSetsPanel member
  *     reorder (two synthesized ticks: dragstart sets a React state
  *     `draggingSheetId` and the target's onDrop closure won't see
  *     it until React commits the setState).
+ *   - `takeoff-sheet-sets.spec.ts` — cross-set move + self-drop
+ *     no-op (single synthesized tick with three discrete MIMEs and
+ *     `effectAllowed = "move"`).
  *
  * Every copy re-derived the MIME contract, the `text/plain`
  * fallback, the dragenter/dragover/drop ordering, and — for the
- * reorder case — the React-flush split. This module collapses all
- * of that into two API entry points so the next spec author isn't
- * faced with reinventing it (or worse, missing the React-flush
- * split entirely and getting a flake on slow CI runs).
+ * reorder cases — the React-flush split (timed wait *or* a
+ * deterministic UI-signal gate). This module collapses all of that
+ * into two API entry points so the next spec author isn't faced
+ * with reinventing it (or worse, missing the React-flush split
+ * entirely and getting a flake on slow CI runs).
  *
  * # Picking the right variant
  *
@@ -70,33 +79,72 @@
  * failure mid-flight doesn't leak handles to the next test.
  */
 import type { Locator } from "@playwright/test";
+import { getDragTuning } from "./canvasDrag";
 
 /**
- * Optional payload to load onto the synthesized DataTransfer. The
- * helper writes the payload under both `mime` and `text/plain` —
- * every production drop handler in the codebase that consumes a
- * custom MIME also writes a `text/plain` mirror in its `onDragStart`
- * (see `PageThumbnailStrip.tsx` and `SheetSetsPanel.tsx`), so the
- * mirror keeps the synthesized DataTransfer faithful to what a real
- * browser drag would carry. Handlers that read only the custom MIME
- * are unaffected.
+ * Optional payload to load onto the synthesized DataTransfer. When
+ * passed via the singular `payload` option, the helper writes the
+ * value under both `mime` and `text/plain` — every production drop
+ * handler in the codebase that consumes a custom MIME also writes a
+ * `text/plain` mirror in its `onDragStart` (see
+ * `PageThumbnailStrip.tsx` and `SheetSetsPanel.tsx`), so the mirror
+ * keeps the synthesized DataTransfer faithful to what a real browser
+ * drag would carry. Handlers that read only the custom MIME are
+ * unaffected.
+ *
+ * Specs that need multiple discrete MIMEs (e.g. the sheet-sets
+ * cross-set move dispatches a JSON payload, a different `text/plain`
+ * value, and a marker MIME like
+ * `application/x-takeoff-sheet-source-${id}`) should use the
+ * `payloads` option instead — the helper writes each entry verbatim
+ * with no auto-mirroring.
  */
 export interface Html5DragPayload {
   /** Custom MIME, e.g. `application/x-takeoff-chest-item+json`. */
   mime: string;
-  /** Stringified payload (typically JSON). Also written under `text/plain`. */
+  /** Stringified payload (typically JSON). */
   data: string;
 }
+
+/** Subset of DataTransfer.effectAllowed accepted by the helpers. */
+export type Html5DragEffectAllowed =
+  | "none"
+  | "copy"
+  | "copyLink"
+  | "copyMove"
+  | "link"
+  | "linkMove"
+  | "move"
+  | "all"
+  | "uninitialized";
 
 export interface Html5DropOptions {
   source: Locator;
   target: Locator;
   /**
-   * Optional DataTransfer payload. Omit when the target's onDrop
+   * Optional DataTransfer payload. Writes both `payload.mime` and a
+   * mirrored `text/plain` entry. Omit when the target's onDrop
    * doesn't read from DataTransfer (e.g. it gates entirely on React
    * state — that's the `dispatchHtml5Reorder` shape).
+   *
+   * Mutually exclusive with `payloads`.
    */
   payload?: Html5DragPayload;
+  /**
+   * Optional list of DataTransfer entries written verbatim (no
+   * auto-mirror to `text/plain`). Use when the spec needs multiple
+   * discrete MIMEs — the sheet-sets cross-set move test loads three:
+   * a custom JSON MIME, a separate `text/plain` value, and a marker
+   * MIME whose name embeds the source set id.
+   *
+   * Mutually exclusive with `payload`.
+   */
+  payloads?: Html5DragPayload[];
+  /**
+   * Optional `DataTransfer.effectAllowed` setter, e.g. `"move"` for
+   * handlers that branch on the drag effect.
+   */
+  effectAllowed?: Html5DragEffectAllowed;
 }
 
 export interface Html5ReorderOptions {
@@ -108,8 +156,21 @@ export interface Html5ReorderOptions {
    * code occasionally still writes a `text/plain` marker in
    * `onDragStart` for the OS-level drag image — pass it through if
    * the spec wants the synthesized DataTransfer to match.
+   *
+   * Mutually exclusive with `payloads`.
    */
   payload?: Html5DragPayload;
+  /**
+   * Optional list of DataTransfer entries written verbatim (no
+   * auto-mirror). See `Html5DropOptions.payloads`.
+   *
+   * Mutually exclusive with `payload`.
+   */
+  payloads?: Html5DragPayload[];
+  /**
+   * Optional `DataTransfer.effectAllowed` setter.
+   */
+  effectAllowed?: Html5DragEffectAllowed;
   /**
    * Where to insert the React-flush wait. `"dragstart"` (the
    * default) splits the lifecycle so dragstart fires alone, then
@@ -122,12 +183,36 @@ export interface Html5ReorderOptions {
   flushAfter?: "dragstart" | "dragover";
   /**
    * Milliseconds to wait between the two phases for React to flush.
-   * 50ms matches what the original `takeoff-sheet-sets.spec.ts`
-   * member-reorder migration used and is enough on every engine the
-   * suite runs on. Bump it if a future spec finds a flake that this
-   * cures.
+   *
+   * If omitted, the wait is derived from `browserName` via
+   * `getDragTuning(browserName).syntheticDragReactFlushWait` —
+   * webkit/firefox flush React's microtask queue noticeably slower
+   * than chromium after a synthetic dragstart, so the engine-aware
+   * value avoids races on those engines. When neither `browserName`
+   * nor `flushWaitMs` is supplied, the helper falls back to 50ms
+   * (the original chromium-only value).
+   *
+   * Ignored when `flushBetween` is supplied — the deterministic
+   * UI-signal callback supersedes the timed wait.
    */
   flushWaitMs?: number;
+  /**
+   * Browser name (`"chromium"`, `"firefox"`, `"webkit"`) used to
+   * derive a default `flushWaitMs` from `getDragTuning(...)
+   * .syntheticDragReactFlushWait`. Pass the `browserName` fixture
+   * straight through from the test signature so cross-engine timing
+   * lives in one place.
+   */
+  browserName?: string;
+  /**
+   * Optional async callback awaited *between* the two phases instead
+   * of the timed `flushWaitMs`. Use when the spec can pin a
+   * deterministic UI signal that the React commit landed (e.g. a
+   * drop-target ring class fades in once the target's
+   * `setHoverIndex` commits). When supplied, the timed wait is
+   * skipped — the callback is the React-flush gate.
+   */
+  flushBetween?: () => Promise<void>;
 }
 
 /**
@@ -140,12 +225,44 @@ export interface Html5ReorderOptions {
  */
 type DragPhase = "start" | "enter" | "over" | "drop" | "end";
 
+/**
+ * Resolve the `payload`/`payloads` option pair into the verbatim
+ * MIME/data list that gets written onto the synthesized
+ * DataTransfer. Singular `payload` keeps its historical behavior
+ * (writes both `payload.mime` and a mirrored `text/plain` entry);
+ * `payloads` is passed through unchanged so callers can specify
+ * multiple discrete MIMEs without auto-mirroring.
+ */
+function resolvePayloads(
+  payload: Html5DragPayload | undefined,
+  payloads: Html5DragPayload[] | undefined,
+): Html5DragPayload[] | null {
+  if (payload && payloads) {
+    throw new Error(
+      "htmlDrag: pass either `payload` or `payloads`, not both",
+    );
+  }
+  if (payloads) return payloads;
+  if (payload) {
+    return [
+      { mime: payload.mime, data: payload.data },
+      // Mirror under text/plain so handlers that fall back to the
+      // universal plain-text channel see the same payload —
+      // production onDragStart code in the takeoff specs writes
+      // both, so this keeps the synthesized DataTransfer honest.
+      { mime: "text/plain", data: payload.data },
+    ];
+  }
+  return null;
+}
+
 async function fireDragEvents(
   source: Locator,
   sourceHandle: Awaited<ReturnType<Locator["elementHandle"]>>,
   targetHandle: Awaited<ReturnType<Locator["elementHandle"]>>,
   phases: DragPhase[],
-  payload: Html5DragPayload | null,
+  payloads: Html5DragPayload[] | null,
+  effectAllowed: Html5DragEffectAllowed | null,
   /**
    * When supplied, the helper stashes the synthesized DataTransfer
    * on `window` under this key so a follow-up call can reuse it
@@ -159,20 +276,20 @@ async function fireDragEvents(
     throw new Error("htmlDrag: source or target element not found");
   }
   await source.page().evaluate(
-    ({ src, dst, phaseList, payloadIn, dtKey }) => {
+    ({ src, dst, phaseList, payloadsIn, effectIn, dtKey }) => {
       const srcEl = src as HTMLElement;
       const dstEl = dst as HTMLElement;
       const win = window as unknown as Record<string, DataTransfer | undefined>;
       let dt = win[dtKey];
       if (!dt) {
         dt = new DataTransfer();
-        if (payloadIn) {
-          dt.setData(payloadIn.mime, payloadIn.data);
-          // Mirror under text/plain so handlers that fall back to
-          // the universal plain-text channel see the same payload —
-          // production onDragStart code in the takeoff specs writes
-          // both, so this keeps the synthesized DataTransfer honest.
-          dt.setData("text/plain", payloadIn.data);
+        if (effectIn) {
+          dt.effectAllowed = effectIn as DataTransfer["effectAllowed"];
+        }
+        if (payloadsIn) {
+          for (const entry of payloadsIn) {
+            dt.setData(entry.mime, entry.data);
+          }
         }
         win[dtKey] = dt;
       }
@@ -220,7 +337,8 @@ async function fireDragEvents(
       src: sourceHandle,
       dst: targetHandle,
       phaseList: phases,
-      payloadIn: payload,
+      payloadsIn: payloads,
+      effectIn: effectAllowed,
       dtKey: dtWindowKey,
     },
   );
@@ -240,7 +358,8 @@ async function fireDragEvents(
 export async function dispatchHtml5Drop(
   options: Html5DropOptions,
 ): Promise<void> {
-  const { source, target, payload } = options;
+  const { source, target, payload, payloads, effectAllowed } = options;
+  const resolvedPayloads = resolvePayloads(payload, payloads);
   const sourceHandle = await source.elementHandle();
   const targetHandle = await target.elementHandle();
   // Unique key per call so two specs running in parallel can't
@@ -254,7 +373,8 @@ export async function dispatchHtml5Drop(
       sourceHandle,
       targetHandle,
       ["start", "enter", "over", "drop", "end"],
-      payload ?? null,
+      resolvedPayloads,
+      effectAllowed ?? null,
       dtKey,
     );
   } finally {
@@ -284,7 +404,20 @@ export async function dispatchHtml5Drop(
  * the React-flush requirement because each event is its own task;
  * synthetic dispatches inside one `page.evaluate` would all run in
  * the same task, so we split across two evaluate calls with a
- * `flushWaitMs` (default 50ms) between them.
+ * React-flush gate between them.
+ *
+ * Pick the gate that fits the spec:
+ *
+ *  - **`flushBetween`** — a deterministic UI-signal callback (e.g.
+ *    `await expect(target).toHaveClass(/ring-2/)`). Use when the
+ *    spec can pin a render side-effect that proves the first-phase
+ *    setState committed.
+ *  - **`browserName`** — derives `flushWaitMs` from
+ *    `getDragTuning(...).syntheticDragReactFlushWait` so
+ *    webkit/firefox get the longer wait their slower microtask
+ *    flushing needs (Task #2241). Use this for fire-and-forget
+ *    reorders that have no convenient UI signal.
+ *  - **`flushWaitMs`** — bare millisecond override. Last resort.
  */
 export async function dispatchHtml5Reorder(
   options: Html5ReorderOptions,
@@ -293,9 +426,25 @@ export async function dispatchHtml5Reorder(
     source,
     target,
     payload,
+    payloads,
+    effectAllowed,
     flushAfter = "dragstart",
-    flushWaitMs = 50,
+    flushWaitMs,
+    browserName,
+    flushBetween,
   } = options;
+  const resolvedPayloads = resolvePayloads(payload, payloads);
+  // Pick the React-flush wait. Caller-supplied `flushWaitMs` wins;
+  // otherwise derive from `browserName` so webkit/firefox get the
+  // longer wait their slower microtask flushing needs (Task #2241);
+  // fall back to the original chromium-friendly 50ms when neither is
+  // supplied. Ignored when `flushBetween` is given — the callback
+  // becomes the deterministic React-flush gate.
+  const resolvedFlushWaitMs =
+    flushWaitMs ??
+    (browserName
+      ? getDragTuning(browserName).syntheticDragReactFlushWait
+      : 50);
   const sourceHandle = await source.elementHandle();
   const targetHandle = await target.elementHandle();
   const dtKey = `__htmlDragDt_${Math.random().toString(36).slice(2)}`;
@@ -309,19 +458,27 @@ export async function dispatchHtml5Reorder(
       sourceHandle,
       targetHandle,
       phaseSplit.first,
-      payload ?? null,
+      resolvedPayloads,
+      effectAllowed ?? null,
       dtKey,
     );
     // Yield to React so the setState committed by the first-phase
     // handler(s) commits before the second phase reads the closed-
-    // over state.
-    await source.page().waitForTimeout(flushWaitMs);
+    // over state. Prefer the deterministic UI-signal callback when
+    // the spec can pin one (e.g. a drop-target ring class); fall
+    // back to the timed wait otherwise.
+    if (flushBetween) {
+      await flushBetween();
+    } else {
+      await source.page().waitForTimeout(resolvedFlushWaitMs);
+    }
     await fireDragEvents(
       source,
       sourceHandle,
       targetHandle,
       phaseSplit.second,
-      payload ?? null,
+      resolvedPayloads,
+      effectAllowed ?? null,
       dtKey,
     );
   } finally {

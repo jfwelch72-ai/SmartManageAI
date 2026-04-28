@@ -8,7 +8,6 @@
 
 import { test, expect, type Page } from "@playwright/test";
 import { authedRequest, installCsrf } from "./helpers/csrf";
-import { getDragTuning } from "./helpers/canvasDrag";
 import { dispatchHtml5Drop, dispatchHtml5Reorder } from "./helpers/htmlDrag";
 
 const BASE_URL =
@@ -476,11 +475,11 @@ test.describe("Task #2141 — Sheet Sets UI", () => {
     // `text/plain` for the OS-level drag image — pass it through
     // so the synthesized DataTransfer matches.
     // Task #2241 — webkit/firefox flush React's microtask queue
-    // noticeably slower than chromium after a synthetic dragstart, so
-    // we override the helper's default 50ms flush wait with the
-    // engine-aware value from `getDragTuning`. Leaving the default
-    // would race on the other engines and the reorder mutation would
-    // never fire there.
+    // noticeably slower than chromium after a synthetic dragstart.
+    // Passing `browserName` to the helper lets it derive the
+    // engine-aware `syntheticDragReactFlushWait` from `getDragTuning`
+    // automatically, so this spec doesn't have to thread the
+    // constant through itself (Task #2288).
     await dispatchHtml5Reorder({
       source: memberA,
       target: memberB,
@@ -488,7 +487,7 @@ test.describe("Task #2141 — Sheet Sets UI", () => {
         mime: "text/plain",
         data: `set-member-${set.id}-${a}`,
       },
-      flushWaitMs: getDragTuning(browserName).syntheticDragReactFlushWait,
+      browserName,
     });
 
     // The reorder mutation POSTs to /reorder and the server walks the
@@ -552,42 +551,31 @@ test.describe("Task #2141 — Sheet Sets UI", () => {
     // dispatching native drag events with a hand-built DataTransfer.
     // (Playwright's docs recommend exactly this for synthetic drag
     // contracts.) The `sourceSetId` field is what flips the parent
-    // set's onDrop from "add" into the new atomic move endpoint.
-    await page.evaluate(
-      ({ memberId, targetId, sheetId, sourceSetId }) => {
-        const member = document.querySelector(`[data-testid="${memberId}"]`)!;
-        const target = document.querySelector(`[data-testid="${targetId}"]`)!;
-        const dt = new DataTransfer();
-        dt.effectAllowed = "move";
-        dt.setData("text/plain", sheetId);
-        dt.setData(
-          "application/x-takeoff-sheet",
-          JSON.stringify({ sheetId, sourceSetId }),
-        );
-        dt.setData(`application/x-takeoff-sheet-source-${sourceSetId}`, "1");
-        member.dispatchEvent(
-          new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }),
-        );
-        target.dispatchEvent(
-          new DragEvent("dragenter", { bubbles: true, dataTransfer: dt }),
-        );
-        target.dispatchEvent(
-          new DragEvent("dragover", { bubbles: true, dataTransfer: dt }),
-        );
-        target.dispatchEvent(
-          new DragEvent("drop", { bubbles: true, dataTransfer: dt }),
-        );
-        member.dispatchEvent(
-          new DragEvent("dragend", { bubbles: true, dataTransfer: dt }),
-        );
-      },
-      {
-        memberId: `set-member-${setA.id}-${fixture.sheetIds[0]}`,
-        targetId: `row-sheet-set-${setB.id}`,
-        sheetId: fixture.sheetIds[0],
-        sourceSetId: setA.id,
-      },
-    );
+    // set's onDrop from "add" into the new atomic move endpoint, and
+    // the `application/x-takeoff-sheet-source-${sourceSetId}` marker
+    // MIME is what the panel reads to short-circuit "drop on own
+    // set" hover styling. Task #2288 uses the shared helper's
+    // `payloads`/`effectAllowed` knobs so the lifecycle stays in
+    // `htmlDrag.ts` instead of being re-derived per spec.
+    await dispatchHtml5Drop({
+      source: memberA0,
+      target: setBRow,
+      effectAllowed: "move",
+      payloads: [
+        { mime: "text/plain", data: fixture.sheetIds[0] },
+        {
+          mime: "application/x-takeoff-sheet",
+          data: JSON.stringify({
+            sheetId: fixture.sheetIds[0],
+            sourceSetId: setA.id,
+          }),
+        },
+        {
+          mime: `application/x-takeoff-sheet-source-${setA.id}`,
+          data: "1",
+        },
+      ],
+    });
 
     // The mutation invalidates set A's detail cache — the moved sheet
     // is gone from A's expanded member list.
@@ -655,38 +643,31 @@ test.describe("Task #2141 — Sheet Sets UI", () => {
       .sort((a, b) => a.sortOrder - b.sortOrder)
       .map((m) => m.sheetId);
 
-    await page.evaluate(
-      ({ memberId, targetId, sheetId, sourceSetId }) => {
-        const member = document.querySelector(`[data-testid="${memberId}"]`)!;
-        const target = document.querySelector(`[data-testid="${targetId}"]`)!;
-        const dt = new DataTransfer();
-        dt.effectAllowed = "move";
-        dt.setData("text/plain", sheetId);
-        dt.setData(
-          "application/x-takeoff-sheet",
-          JSON.stringify({ sheetId, sourceSetId }),
-        );
-        dt.setData(`application/x-takeoff-sheet-source-${sourceSetId}`, "1");
-        member.dispatchEvent(
-          new DragEvent("dragstart", { bubbles: true, dataTransfer: dt }),
-        );
-        target.dispatchEvent(
-          new DragEvent("dragover", { bubbles: true, dataTransfer: dt }),
-        );
-        target.dispatchEvent(
-          new DragEvent("drop", { bubbles: true, dataTransfer: dt }),
-        );
-        member.dispatchEvent(
-          new DragEvent("dragend", { bubbles: true, dataTransfer: dt }),
-        );
-      },
-      {
-        memberId: `set-member-${set.id}-${fixture.sheetIds[0]}`,
-        targetId: `row-sheet-set-${set.id}`,
-        sheetId: fixture.sheetIds[0],
-        sourceSetId: set.id,
-      },
-    );
+    // Same custom-MIME synthesis the cross-set move uses, but the
+    // source set IS the drop target — the SheetSetsPanel onDrop is
+    // expected to short-circuit via the
+    // `application/x-takeoff-sheet-source-${id}` marker MIME (no
+    // mutation, no toast). Funnels through the shared helper so the
+    // lifecycle/payload contract lives in `htmlDrag.ts` (Task #2288).
+    await dispatchHtml5Drop({
+      source: page.getByTestId(`set-member-${set.id}-${fixture.sheetIds[0]}`),
+      target: page.getByTestId(`row-sheet-set-${set.id}`),
+      effectAllowed: "move",
+      payloads: [
+        { mime: "text/plain", data: fixture.sheetIds[0] },
+        {
+          mime: "application/x-takeoff-sheet",
+          data: JSON.stringify({
+            sheetId: fixture.sheetIds[0],
+            sourceSetId: set.id,
+          }),
+        },
+        {
+          mime: `application/x-takeoff-sheet-source-${set.id}`,
+          data: "1",
+        },
+      ],
+    });
 
     // No-op: the membership and order are exactly what they were.
     const after = await page.request.get(
