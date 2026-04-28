@@ -134,6 +134,15 @@ interface TakeoffSidebarProps {
   onDeleteCategory: (id: string) => void;
   hiddenCategoryIds: Set<string>;
   onToggleCategoryVisibility: (id: string) => void;
+  /**
+   * Task #2239 — Bulk show/hide for the sidebar Layers panel. Mirrors the
+   * Layers ribbon popover (Task #2231) so estimators get the same one-click
+   * convenience inside the sidebar (which keeps rename/delete/labels
+   * alongside visibility). Optional so older test mounts continue to
+   * compile without wiring the bulk handler; when omitted, the
+   * "Show all" / "Hide all" row is simply not rendered.
+   */
+  onSetAllCategoriesVisibility?: (visible: boolean) => void;
   pitchRatio: string;
   setPitchRatio: (v: string) => void;
   dropDistance: string;
@@ -266,7 +275,7 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
     units, setUnits, onSaveCalibration,
     activeTool, categories, selectedCategoryId, setSelectedCategoryId,
     setCategoryDialogOpen, setEditingCategory, onDeleteCategory,
-    hiddenCategoryIds, onToggleCategoryVisibility,
+    hiddenCategoryIds, onToggleCategoryVisibility, onSetAllCategoriesVisibility,
     pitchRatio, setPitchRatio, dropDistance, setDropDistance,
     measurements, selectedMeasurementId, setSelectedMeasurementId,
     selectedSegmentIndex, setSelectedSegmentIndex,
@@ -1171,39 +1180,87 @@ export function TakeoffSidebar(props: TakeoffSidebarProps) {
                 {categories.length === 0 ? (
                   <p className="text-xs text-muted-foreground text-center py-2">No categories yet. Create one to organize measurements.</p>
                 ) : (
-                  <ScrollArea className="max-h-[300px]">
-                    <div className="space-y-2 pr-4">
-                      {categories.map((category) => {
-                        const isHidden = hiddenCategoryIds.has(category.id);
-                        const categoryCount = (aggregatedMeasurements.byCategory[category.id] || []).length;
-                        return (
-                          <div key={category.id} className={cn("flex items-center justify-between p-2 rounded border hover-elevate", isHidden && "opacity-60")} style={{ borderLeft: `4px solid ${category.color}` }}>
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <div className="w-4 h-4 rounded flex-shrink-0" style={{ backgroundColor: isHidden ? "#9ca3af" : category.color }} />
-                              <span className={cn("text-sm truncate", isHidden && "line-through text-muted-foreground")}>{category.name}</span>
-                              {categoryCount > 0 && <Badge variant="secondary" className="text-xs shrink-0" data-testid={`badge-category-count-${category.id}`}>{categoryCount}</Badge>}
-                            </div>
-                            <div className="flex gap-1 flex-shrink-0">
-                              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onToggleCategoryVisibility(category.id)} data-testid={`button-toggle-visibility-category-${category.id}`} title={isHidden ? "Show layer" : "Hide layer"}>
-                                {isHidden ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
-                              </Button>
-                              {showMeasurementLabels && onToggleLabelCategory && (
-                                <Button size="icon" variant="ghost" className={cn("h-6 w-6", labelHiddenCategories.has(category.id) && "opacity-40")} onClick={() => onToggleLabelCategory(category.id)} data-testid={`button-toggle-label-category-${category.id}`} title={labelHiddenCategories.has(category.id) ? "Show labels for this category" : "Hide labels for this category"}>
-                                  <Tag className="w-3 h-3" />
+                  <>
+                    {/*
+                      Task #2239 — Bulk show/hide all for the sidebar Layers
+                      panel, mirroring the Layers ribbon popover added in
+                      Task #2231. Both buttons delegate to the workspace's
+                      `handleSetAllCategoriesVisibility` so visibility,
+                      selection-clear and the "layers active" chip stay in
+                      sync no matter which entry-point estimators use. The
+                      enabled/disabled rules match the popover: Show all is
+                      disabled when nothing is hidden; Hide all is disabled
+                      when everything is already hidden.
+                    */}
+                    {onSetAllCategoriesVisibility && (() => {
+                      const hiddenCount = categories.filter((c) => hiddenCategoryIds.has(c.id)).length;
+                      const allVisible = hiddenCount === 0;
+                      const allHidden = hiddenCount === categories.length;
+                      return (
+                        <div className="flex items-center gap-1" data-testid="row-sidebar-layers-bulk-actions">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 flex-1 text-xs gap-1"
+                            disabled={allVisible}
+                            onClick={() => onSetAllCategoriesVisibility(true)}
+                            data-testid="button-sidebar-layers-show-all"
+                            title="Show all layers"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            Show all
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 flex-1 text-xs gap-1"
+                            disabled={allHidden}
+                            onClick={() => onSetAllCategoriesVisibility(false)}
+                            data-testid="button-sidebar-layers-hide-all"
+                            title="Hide all layers"
+                          >
+                            <EyeOff className="w-3.5 h-3.5" />
+                            Hide all
+                          </Button>
+                        </div>
+                      );
+                    })()}
+                    <ScrollArea className="max-h-[300px]">
+                      <div className="space-y-2 pr-4">
+                        {categories.map((category) => {
+                          const isHidden = hiddenCategoryIds.has(category.id);
+                          const categoryCount = (aggregatedMeasurements.byCategory[category.id] || []).length;
+                          return (
+                            <div key={category.id} className={cn("flex items-center justify-between p-2 rounded border hover-elevate", isHidden && "opacity-60")} style={{ borderLeft: `4px solid ${category.color}` }}>
+                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                                <div className="w-4 h-4 rounded flex-shrink-0" style={{ backgroundColor: isHidden ? "#9ca3af" : category.color }} />
+                                <span className={cn("text-sm truncate", isHidden && "line-through text-muted-foreground")}>{category.name}</span>
+                                {categoryCount > 0 && <Badge variant="secondary" className="text-xs shrink-0" data-testid={`badge-category-count-${category.id}`}>{categoryCount}</Badge>}
+                              </div>
+                              <div className="flex gap-1 flex-shrink-0">
+                                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onToggleCategoryVisibility(category.id)} data-testid={`button-toggle-visibility-category-${category.id}`} title={isHidden ? "Show layer" : "Hide layer"}>
+                                  {isHidden ? <EyeOff className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                                 </Button>
-                              )}
-                              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingCategory(category); setCategoryDialogOpen(true); }} data-testid={`button-edit-category-${category.id}`}>
-                                <Pencil className="w-3 h-3" />
-                              </Button>
-                              <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onDeleteCategory(category.id)} data-testid={`button-delete-category-${category.id}`}>
-                                <Trash2 className="w-3 h-3" />
-                              </Button>
+                                {showMeasurementLabels && onToggleLabelCategory && (
+                                  <Button size="icon" variant="ghost" className={cn("h-6 w-6", labelHiddenCategories.has(category.id) && "opacity-40")} onClick={() => onToggleLabelCategory(category.id)} data-testid={`button-toggle-label-category-${category.id}`} title={labelHiddenCategories.has(category.id) ? "Show labels for this category" : "Hide labels for this category"}>
+                                    <Tag className="w-3 h-3" />
+                                  </Button>
+                                )}
+                                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => { setEditingCategory(category); setCategoryDialogOpen(true); }} data-testid={`button-edit-category-${category.id}`}>
+                                  <Pencil className="w-3 h-3" />
+                                </Button>
+                                <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => onDeleteCategory(category.id)} data-testid={`button-delete-category-${category.id}`}>
+                                  <Trash2 className="w-3 h-3" />
+                                </Button>
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </ScrollArea>
+                          );
+                        })}
+                      </div>
+                    </ScrollArea>
+                  </>
                 )}
               </CardContent>
             </Card>

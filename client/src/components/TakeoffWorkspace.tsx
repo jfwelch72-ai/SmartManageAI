@@ -3905,6 +3905,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       onDeleteCategory: handleDeleteCategory,
       hiddenCategoryIds,
       onToggleCategoryVisibility: handleToggleCategoryVisibility,
+      // Task #2239 — sidebar Layers panel gets the same bulk show/hide
+      // controls as the ribbon popover (Task #2231) so estimators don't
+      // have to bounce between the two surfaces.
+      onSetAllCategoriesVisibility: handleSetAllCategoriesVisibility,
       pitchRatio,
       setPitchRatio,
       dropDistance,
