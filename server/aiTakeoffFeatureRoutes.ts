@@ -7,6 +7,10 @@ import {
   aiTakeoffConfidenceCalibration,
   organizations,
   takeoffSheets,
+  AI_TAKEOFF_SUPPRESSION_FLOOR_DEFAULT,
+  AI_TAKEOFF_SUPPRESSION_FLOOR_MIN,
+  AI_TAKEOFF_SUPPRESSION_FLOOR_MAX,
+  AI_TAKEOFF_SUPPRESSION_MIN_SAMPLES,
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, sql, inArray, isNotNull } from "drizzle-orm";
 import { z } from "zod";
@@ -1572,6 +1576,10 @@ router.get(
 // GET /api/ai-features/takeoff/suggestions/by-analysis/:analysisId
 // Lightweight helper used by the takeoff panel + import flow to map
 // detected-item keys to suggestion ids without re-running the analysis.
+//
+// Task #2342 — also pre-joins the org's confidence calibration map for the
+// analysis's trade type and returns the per-org suppression floor so the
+// panel can hide low-acceptance buckets without running its own queries.
 router.get(
   "/ai-features/takeoff/suggestions/by-analysis/:analysisId",
   requireAuth,
@@ -1580,7 +1588,10 @@ router.get(
       const organizationId = req.user?.organizationId;
       if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
 
-      const [analysis] = await db.select({ id: aiTakeoffAnalyses.id })
+      const [analysis] = await db.select({
+        id: aiTakeoffAnalyses.id,
+        tradeType: aiTakeoffAnalyses.tradeType,
+      })
         .from(aiTakeoffAnalyses)
         .where(and(
           eq(aiTakeoffAnalyses.id, req.params.analysisId),
@@ -1588,10 +1599,136 @@ router.get(
         ));
       if (!analysis) return res.status(404).json({ error: "Analysis not found" });
 
-      const rows = await db.select()
-        .from(aiTakeoffSuggestions)
-        .where(eq(aiTakeoffSuggestions.analysisId, req.params.analysisId));
-      res.json({ suggestions: rows });
+      const [rows, calibrationRows, [orgRow]] = await Promise.all([
+        db.select().from(aiTakeoffSuggestions)
+          .where(eq(aiTakeoffSuggestions.analysisId, req.params.analysisId)),
+        db.select({
+          bucket: aiTakeoffConfidenceCalibration.modelConfidenceBucket,
+          rate: aiTakeoffConfidenceCalibration.empiricalAcceptanceRate,
+          samples: aiTakeoffConfidenceCalibration.sampleCount,
+        }).from(aiTakeoffConfidenceCalibration)
+          .where(and(
+            eq(aiTakeoffConfidenceCalibration.organizationId, organizationId),
+            eq(aiTakeoffConfidenceCalibration.tradeType, analysis.tradeType as TradeType),
+          )),
+        db.select({ floor: organizations.aiTakeoffSuppressionFloor })
+          .from(organizations)
+          .where(eq(organizations.id, organizationId))
+          .limit(1),
+      ]);
+
+      const calibration = calibrationRows.map((c) => ({
+        bucket: c.bucket,
+        empiricalAcceptanceRate: Number(c.rate),
+        sampleCount: c.samples,
+      }));
+      const floorRaw = orgRow?.floor;
+      const suppressionFloor =
+        floorRaw == null || floorRaw === "" ? null : Number(floorRaw);
+
+      res.json({
+        suggestions: rows,
+        calibration,
+        suppressionFloor,
+        suppressionMinSamples: AI_TAKEOFF_SUPPRESSION_MIN_SAMPLES,
+      });
+    } catch (error) { next(error); }
+  },
+);
+
+// ===========================================================================
+// Task #2342 — per-org AI takeoff settings (currently just the suppression
+// floor, but a natural home for any future org-level AI takeoff knobs that
+// don't belong on the global `ai_settings` row).
+// ===========================================================================
+
+const aiTakeoffOrgSettingsUpsertSchema = z.object({
+  // Decimal 0..0.5 — null means "feature off, show every suggestion".
+  suppressionFloor: z
+    .number()
+    .min(AI_TAKEOFF_SUPPRESSION_FLOOR_MIN)
+    .max(AI_TAKEOFF_SUPPRESSION_FLOOR_MAX)
+    .nullable(),
+});
+
+router.get(
+  "/ai-features/takeoff/org-settings",
+  requireAuth,
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
+
+      const [row] = await db
+        .select({ floor: organizations.aiTakeoffSuppressionFloor })
+        .from(organizations)
+        .where(eq(organizations.id, organizationId))
+        .limit(1);
+      if (!row) return res.status(404).json({ error: "Organization not found" });
+
+      const raw = row.floor;
+      const suppressionFloor =
+        raw == null || raw === "" ? null : Number(raw);
+
+      res.json({
+        suppressionFloor,
+        defaults: {
+          recommended: AI_TAKEOFF_SUPPRESSION_FLOOR_DEFAULT,
+          minSamples: AI_TAKEOFF_SUPPRESSION_MIN_SAMPLES,
+        },
+        bounds: {
+          min: AI_TAKEOFF_SUPPRESSION_FLOOR_MIN,
+          max: AI_TAKEOFF_SUPPRESSION_FLOOR_MAX,
+        },
+      });
+    } catch (error) { next(error); }
+  },
+);
+
+router.put(
+  "/ai-features/takeoff/org-settings",
+  requireAuth,
+  requireRole("ADMIN"),
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
+
+      const parsed = aiTakeoffOrgSettingsUpsertSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({
+          error: "Invalid request",
+          details: parsed.error.flatten(),
+        });
+      }
+
+      // Decimal columns are stored as strings; persist `null` literally so
+      // "feature off" round-trips cleanly through `db:push` and the GET
+      // handler above.
+      const persistValue =
+        parsed.data.suppressionFloor == null
+          ? null
+          : String(parsed.data.suppressionFloor);
+
+      await db
+        .update(organizations)
+        .set({
+          aiTakeoffSuppressionFloor: persistValue as any,
+          updatedAt: new Date(),
+        })
+        .where(eq(organizations.id, organizationId));
+
+      res.json({
+        suppressionFloor: parsed.data.suppressionFloor,
+        defaults: {
+          recommended: AI_TAKEOFF_SUPPRESSION_FLOOR_DEFAULT,
+          minSamples: AI_TAKEOFF_SUPPRESSION_MIN_SAMPLES,
+        },
+        bounds: {
+          min: AI_TAKEOFF_SUPPRESSION_FLOOR_MIN,
+          max: AI_TAKEOFF_SUPPRESSION_FLOOR_MAX,
+        },
+      });
     } catch (error) { next(error); }
   },
 );

@@ -130,6 +130,37 @@ const REJECT_REASONS: Array<{ value: string; label: string }> = [
 interface SuggestionLite {
   id: string;
   itemKey: string;
+  // Raw model confidence stored on the suggestion row (0..1). Used to
+  // bucket the suggestion against the org calibration map for the
+  // suppression check (Task #2342).
+  confidence?: number | string | null;
+}
+
+// Task #2342 — org-level calibration response shape returned alongside
+// the suggestion id map. `suppressionFloor` is null when the org admin
+// has not opted in; in that case suppression is bypassed and every
+// suggestion is shown.
+interface CalibrationBucket {
+  bucket: number;
+  empiricalAcceptanceRate: number;
+  sampleCount: number;
+}
+interface SuggestionsByAnalysisResponse {
+  suggestions: Array<SuggestionLite & Record<string, unknown>>;
+  calibration?: CalibrationBucket[];
+  suppressionFloor?: number | null;
+  suppressionMinSamples?: number;
+}
+
+// Mirrors `confidenceBucket()` on the server (60/70/80/90 buckets).
+// Input is a 0..100 confidence (matches the suggestion row + the
+// detected item shape). Suggestions below 70 land in the 60 bucket so
+// they share fate with the lowest reviewed slice.
+function confidenceBucket(confidence: number): number {
+  if (confidence >= 90) return 90;
+  if (confidence >= 80) return 80;
+  if (confidence >= 70) return 70;
+  return 60;
 }
 
 const ITEM_TYPE_ICONS: Record<string, any> = {
@@ -251,7 +282,10 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
   // Task #2323 — suggestion id lookup for the active analysis. Refetched
   // whenever the analysis is COMPLETE so accept/reject actions can call
   // the per-suggestion endpoints without round-tripping per row.
-  const { data: suggestionsData } = useQuery<{ suggestions: Array<SuggestionLite & Record<string, unknown>> }>({
+  // Task #2342 — same response now also carries the org's calibration
+  // map and suppression floor so we can hide low-acceptance suggestions
+  // without a second round-trip.
+  const { data: suggestionsData } = useQuery<SuggestionsByAnalysisResponse>({
     queryKey: ["/api/ai-features/takeoff/suggestions/by-analysis", analysisId],
     enabled: !!analysisId && analysisResults?.status === "COMPLETE",
   });
@@ -262,6 +296,32 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
     }
     return map;
   }, [suggestionsData]);
+  const suggestionConfidenceByItemKey = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const s of suggestionsData?.suggestions ?? []) {
+      const raw = s.confidence;
+      if (raw == null || raw === "") continue;
+      const num = typeof raw === "number" ? raw : Number(raw);
+      if (Number.isFinite(num)) map.set(s.itemKey, num);
+    }
+    return map;
+  }, [suggestionsData]);
+
+  // Task #2342 — bucket -> calibration row, used for the suppression
+  // check and the disclosure tooltip (so users can see why a row was
+  // hidden).
+  const calibrationByBucket = useMemo(() => {
+    const map = new Map<number, CalibrationBucket>();
+    for (const c of suggestionsData?.calibration ?? []) {
+      map.set(c.bucket, c);
+    }
+    return map;
+  }, [suggestionsData]);
+  const suppressionFloor = suggestionsData?.suppressionFloor ?? null;
+  const suppressionMinSamples = suggestionsData?.suppressionMinSamples ?? 30;
+  // User can opt back in for a single session via the disclosure
+  // toggle below — purely a UI preference, never persisted.
+  const [showSuppressed, setShowSuppressed] = useState(false);
 
   const rejectMutation = useMutation({
     mutationFn: async (input: { suggestionId: string; reason: string; note?: string }) => {
@@ -515,11 +575,57 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
   const isPending = analysisResults?.status === "PENDING" || analysisResults?.status === "PROCESSING";
   const detectedItems = analysisResults?.detectedItems || [];
 
-  const filteredItems = useMemo(() => {
+  const baseFilteredItems = useMemo(() => {
     return detectedItems
       .filter((item: DetectedItem) => item.confidence >= confidenceThreshold)
       .sort((a: DetectedItem, b: DetectedItem) => b.confidence - a.confidence);
   }, [detectedItems, confidenceThreshold]);
+
+  // Task #2342 — bucket each detected item against the calibration map
+  // and set it aside if the bucket has enough samples and an empirical
+  // acceptance rate below the org floor. The suggestion row stays in
+  // the database (the calibration job depends on it); we only hide it
+  // visually until the user clicks "Show N suppressed".
+  const { visibleItems, suppressedItems } = useMemo(() => {
+    if (suppressionFloor == null || suppressionFloor <= 0) {
+      return { visibleItems: baseFilteredItems, suppressedItems: [] as DetectedItem[] };
+    }
+    const visible: DetectedItem[] = [];
+    const suppressed: DetectedItem[] = [];
+    for (const item of baseFilteredItems) {
+      // Prefer the suggestion row's stored raw confidence so the
+      // bucketing matches what the calibration job actually keyed on
+      // (the displayed item.confidence may have been overridden by an
+      // earlier calibration pass). Both inputs are 0..100.
+      const stored = suggestionConfidenceByItemKey.get(item.id);
+      const raw = stored != null ? stored : item.confidence;
+      const bucket = confidenceBucket(raw);
+      const cal = calibrationByBucket.get(bucket);
+      if (
+        cal &&
+        cal.sampleCount >= suppressionMinSamples &&
+        cal.empiricalAcceptanceRate < suppressionFloor
+      ) {
+        suppressed.push(item);
+      } else {
+        visible.push(item);
+      }
+    }
+    return { visibleItems: visible, suppressedItems: suppressed };
+  }, [
+    baseFilteredItems,
+    suppressionFloor,
+    suppressionMinSamples,
+    calibrationByBucket,
+    suggestionConfidenceByItemKey,
+  ]);
+
+  const filteredItems =
+    showSuppressed && suppressedItems.length > 0
+      ? [...visibleItems, ...suppressedItems].sort(
+          (a, b) => b.confidence - a.confidence,
+        )
+      : visibleItems;
 
   const groupedItems = groupItemsByType(filteredItems);
 
@@ -801,6 +907,29 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
                   data-testid="switch-ai-overlays"
                 />
               </div>
+            )}
+            {suppressedItems.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowSuppressed((s) => !s)}
+                className="w-full flex items-center justify-between gap-2 pt-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                data-testid="button-toggle-suppressed"
+                title={
+                  suppressionFloor != null
+                    ? `Buckets below ${(suppressionFloor * 100).toFixed(0)}% empirical acceptance (with ≥${suppressionMinSamples} samples) are hidden`
+                    : undefined
+                }
+              >
+                <span className="flex items-center gap-1.5">
+                  <AlertTriangle className="w-3 h-3 text-amber-500" />
+                  <span data-testid="text-suppressed-count">
+                    {showSuppressed ? "Hide" : "Show"} {suppressedItems.length} suppressed
+                  </span>
+                </span>
+                <span className="text-[10px]">
+                  {showSuppressed ? "▾" : "▸"}
+                </span>
+              </button>
             )}
           </div>
 

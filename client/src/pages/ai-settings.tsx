@@ -8,9 +8,17 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Settings, Save } from "lucide-react";
+import { Settings, Save, Filter } from "lucide-react";
 import { useState, useEffect } from "react";
 import type { AISettings } from "@shared/schema";
+
+// Task #2342 — server response shape for the per-org takeoff settings
+// endpoint. `suppressionFloor` is a 0..1 decimal; `null` means "off".
+interface TakeoffOrgSettingsResponse {
+  suppressionFloor: number | null;
+  defaults: { recommended: number; minSamples: number };
+  bounds: { min: number; max: number };
+}
 
 export default function AISettingsPage() {
   const { user } = useAuth();
@@ -19,6 +27,54 @@ export default function AISettingsPage() {
   const { data: settings, isLoading } = useQuery<AISettings>({
     queryKey: ["/api/ai-settings"],
     enabled: !!user && user.role === 'ADMIN',
+  });
+
+  // Task #2342 — per-org takeoff suppression floor lives on the
+  // organizations row (the global ai_settings row is shared across
+  // every org); fetch it here so the admin tab is the single
+  // settings surface.
+  const { data: takeoffOrgSettings } = useQuery<TakeoffOrgSettingsResponse>({
+    queryKey: ["/api/ai-features/takeoff/org-settings"],
+    enabled: !!user && user.role === 'ADMIN',
+  });
+
+  // Empty string = "off" / not set, otherwise a percentage 0..50.
+  const [suppressionFloorPct, setSuppressionFloorPct] = useState<string>("");
+  useEffect(() => {
+    if (takeoffOrgSettings) {
+      setSuppressionFloorPct(
+        takeoffOrgSettings.suppressionFloor == null
+          ? ""
+          : (takeoffOrgSettings.suppressionFloor * 100).toFixed(0),
+      );
+    }
+  }, [takeoffOrgSettings]);
+
+  const takeoffSettingsMutation = useMutation({
+    mutationFn: async (input: { suppressionFloor: number | null }) => {
+      const res = await apiRequest(
+        "PUT",
+        "/api/ai-features/takeoff/org-settings",
+        input,
+      );
+      return (await res.json()) as TakeoffOrgSettingsResponse;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/ai-features/takeoff/org-settings"],
+      });
+      toast({
+        title: "Takeoff settings saved",
+        description: "AI takeoff suppression floor updated.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Save failed",
+        description: error.message || "Failed to update takeoff settings",
+      });
+    },
   });
 
   const [formData, setFormData] = useState({
@@ -279,6 +335,131 @@ export default function AISettingsPage() {
                 <p className="text-sm text-muted-foreground">
                   Recommended: gpt-5 (latest) or gpt-4o
                 </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Task #2342 — per-org AI takeoff suppression floor. */}
+          <Card data-testid="card-takeoff-suppression">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Filter className="h-5 w-5 text-primary" />
+                AI Takeoff — Auto-Suppress Low-Acceptance Buckets
+              </CardTitle>
+              <CardDescription>
+                Hide AI takeoff suggestions whose confidence-bucket
+                acceptance rate is below the floor. Suggestions stay in
+                the database (so the calibration job remains accurate)
+                — they're just hidden behind a "Show N suppressed"
+                disclosure in the takeoff panel. Only buckets with at
+                least{" "}
+                {takeoffOrgSettings?.defaults.minSamples ?? 30} reviewed
+                samples are eligible for suppression.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="suppression-floor">
+                  Suppression floor (% empirical acceptance)
+                </Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="suppression-floor"
+                    type="number"
+                    min={(takeoffOrgSettings?.bounds.min ?? 0) * 100}
+                    max={(takeoffOrgSettings?.bounds.max ?? 0.5) * 100}
+                    step={1}
+                    value={suppressionFloorPct}
+                    onChange={(e) => setSuppressionFloorPct(e.target.value)}
+                    placeholder="Off"
+                    className="w-32"
+                    data-testid="input-suppression-floor"
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    %
+                  </span>
+                  {takeoffOrgSettings && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setSuppressionFloorPct(
+                          (
+                            takeoffOrgSettings.defaults.recommended * 100
+                          ).toFixed(0),
+                        )
+                      }
+                      data-testid="button-suppression-recommended"
+                    >
+                      Use recommended (
+                      {(
+                        takeoffOrgSettings.defaults.recommended * 100
+                      ).toFixed(0)}
+                      %)
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSuppressionFloorPct("")}
+                    data-testid="button-suppression-off"
+                  >
+                    Turn off
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Leave blank to disable. Max{" "}
+                  {((takeoffOrgSettings?.bounds.max ?? 0.5) * 100).toFixed(
+                    0,
+                  )}
+                  %.
+                </p>
+              </div>
+              <div>
+                <Button
+                  type="button"
+                  onClick={() => {
+                    const trimmed = suppressionFloorPct.trim();
+                    if (trimmed === "") {
+                      takeoffSettingsMutation.mutate({
+                        suppressionFloor: null,
+                      });
+                      return;
+                    }
+                    const pct = Number(trimmed);
+                    if (!Number.isFinite(pct)) {
+                      toast({
+                        variant: "destructive",
+                        title: "Invalid value",
+                        description: "Enter a number between 0 and 50.",
+                      });
+                      return;
+                    }
+                    const min = (takeoffOrgSettings?.bounds.min ?? 0) * 100;
+                    const max =
+                      (takeoffOrgSettings?.bounds.max ?? 0.5) * 100;
+                    if (pct < min || pct > max) {
+                      toast({
+                        variant: "destructive",
+                        title: "Out of range",
+                        description: `Floor must be between ${min}% and ${max}%.`,
+                      });
+                      return;
+                    }
+                    takeoffSettingsMutation.mutate({
+                      suppressionFloor: pct / 100,
+                    });
+                  }}
+                  disabled={takeoffSettingsMutation.isPending}
+                  data-testid="button-save-suppression"
+                >
+                  <Save className="h-4 w-4 mr-2" />
+                  {takeoffSettingsMutation.isPending
+                    ? "Saving..."
+                    : "Save Takeoff Settings"}
+                </Button>
               </div>
             </CardContent>
           </Card>

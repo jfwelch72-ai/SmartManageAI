@@ -110,9 +110,35 @@ export const organizations = pgTable("organizations", {
   // admins can pick e.g. 95.0 without integer rounding the next
   // time the review-summary recomputes.
   takeoffReviewBidLockThresholdPct: decimal("takeoff_review_bid_lock_threshold_pct", { precision: 5, scale: 2 }),
+  // Task #2342 — per-org floor for auto-suppressing AI takeoff suggestions
+  // whose org-empirical acceptance rate (from
+  // `ai_takeoff_confidence_calibration`) is below this value. Stored as a
+  // 0..1 decimal so an admin can dial it up to 0.30 (hide buckets where
+  // <30% of suggestions get accepted) or down to 0 (suppression off). NULL
+  // means "feature off, show every suggestion" so existing orgs are not
+  // surprised — admins opt in by setting a value on the AI settings tab.
+  // Suppression is purely presentational; the suggestion rows still exist
+  // in `ai_takeoff_suggestions` so the calibration job stays accurate.
+  aiTakeoffSuppressionFloor: decimal("ai_takeoff_suppression_floor", { precision: 5, scale: 4 }),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
+
+// Task #2342 — bounds + recommended default for the AI takeoff
+// suppression floor. The floor is stored as a 0..1 decimal but admins
+// pick a whole percentage (0..50) in the UI; ratios above ~0.5 would
+// effectively hide everything since few buckets ever beat a 50%
+// acceptance rate, so the cap is intentionally aggressive. The
+// recommended default mirrors the value called out in the task spec
+// (15%) — the UI surfaces it as the "apply recommended" affordance.
+export const AI_TAKEOFF_SUPPRESSION_FLOOR_DEFAULT = 0.15;
+export const AI_TAKEOFF_SUPPRESSION_FLOOR_MIN = 0;
+export const AI_TAKEOFF_SUPPRESSION_FLOOR_MAX = 0.5;
+// Suppression only fires when the bucket's calibration row has at
+// least this many reviewed samples. Kept in lock-step with the
+// 30-sample threshold the calibration job uses (see
+// `CALIBRATION_MIN_SAMPLES` in server/aiTakeoffFeatureRoutes.ts).
+export const AI_TAKEOFF_SUPPRESSION_MIN_SAMPLES = 30;
 
 // Task #1955 — quota constants. Kept alongside the column definition so
 // the same fallback is used by the runtime enforcement helper, the
