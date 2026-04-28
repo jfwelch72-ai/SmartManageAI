@@ -758,16 +758,28 @@ export default function AiTakeoffPanel({ projectId, bidId, sheetId, onItemsImpor
               {/* Task #2322 — Surface scale-mismatch warnings emitted by the
                   server when the model's inferred scale disagrees with the
                   user's calibrated scale by >5%. Quantities are not changed —
-                  the user re-verifies before accepting. */}
+                  the user re-verifies before accepting.
+                  Task #2335 — Link out to the AI takeoff dashboard so a
+                  lead running 30 sheets can see the org-wide rollup
+                  rather than eyeballing one banner at a time. */}
               {analysisResults.metadata.scaleMismatchWarning && (
                 <div
                   className="flex items-start gap-1.5 px-3 py-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 w-full"
                   data-testid="banner-scale-mismatch"
                 >
                   <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <span className="text-xs text-amber-700 dark:text-amber-400 flex-1">
-                    {analysisResults.metadata.scaleMismatchWarning}
-                  </span>
+                  <div className="flex-1 min-w-0 flex flex-col gap-1">
+                    <span className="text-xs text-amber-700 dark:text-amber-400">
+                      {analysisResults.metadata.scaleMismatchWarning}
+                    </span>
+                    <a
+                      href="/takeoff/ai-dashboard"
+                      className="text-[11px] font-medium text-amber-700 dark:text-amber-400 underline self-start"
+                      data-testid="link-scale-mismatch-dashboard"
+                    >
+                      View dashboard
+                    </a>
+                  </div>
                 </div>
               )}
             </div>

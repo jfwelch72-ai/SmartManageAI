@@ -197,6 +197,62 @@ export function parseDrawingScaleString(
   return null;
 }
 
+// Structured result of comparing an AI-detected scale against the user's
+// calibrated scale. Task #2335 — emitted alongside the legacy warning string
+// so the persistence layer can record sheet/detected/calibrated/delta info
+// for later dashboard rollups, instead of only handing the user a banner.
+export interface ScaleMismatchEvaluation {
+  /** True when the detected and calibrated scales disagree by > tolerance. */
+  mismatch: boolean;
+  /** AI-detected scale label, snapped to the nearest preset when possible. */
+  detectedLabel: string;
+  /** AI-detected scale in px/ft (snapped if a preset was within tolerance). */
+  detectedPxPerFoot: number;
+  /** User's calibrated scale label (preset / explicit / px-per-ft fallback). */
+  calibratedLabel: string;
+  /** User's calibrated scale in px/ft. */
+  calibratedPxPerFoot: number;
+  /** Absolute relative delta as a fraction (0.12 = 12% off). */
+  deltaPercent: number;
+  /** Banner message when `mismatch` is true; null otherwise. */
+  message: string | null;
+}
+
+// Compares an AI-detected scale (parsed from `metadata.drawingScale`) against
+// the user's calibrated scale. Returns the structured result when both sides
+// can be parsed; the legacy `buildScaleMismatchWarning` helper below is kept
+// for callers that only care about the banner string.
+export function evaluateScaleMismatch(
+  detectedScaleString: string | null | undefined,
+  calibratedPxPerFoot: number | null | undefined,
+  calibratedLabel: string | null | undefined,
+  tolerance = 0.05,
+): ScaleMismatchEvaluation | null {
+  if (!calibratedPxPerFoot || calibratedPxPerFoot <= 0) return null;
+  const detected = parseDrawingScaleString(detectedScaleString);
+  if (!detected || detected.source === "not-to-scale") return null;
+  const snapped = findMatchingPreset(detected.pxPerFoot) ?? {
+    label: detected.label,
+    pxPerFoot: detected.pxPerFoot,
+  };
+  const calibratedSnapped = findMatchingPreset(calibratedPxPerFoot);
+  const calibratedDisplay =
+    calibratedLabel || calibratedSnapped?.label || `${calibratedPxPerFoot.toFixed(2)} px/ft`;
+  const delta = Math.abs(snapped.pxPerFoot - calibratedPxPerFoot) / calibratedPxPerFoot;
+  const mismatch = delta > tolerance;
+  return {
+    mismatch,
+    detectedLabel: snapped.label,
+    detectedPxPerFoot: snapped.pxPerFoot,
+    calibratedLabel: calibratedDisplay,
+    calibratedPxPerFoot,
+    deltaPercent: delta,
+    message: mismatch
+      ? `AI inferred scale ${snapped.label}, but this sheet is calibrated to ${calibratedDisplay}. Re-verify before accepting items.`
+      : null,
+  };
+}
+
 // Compares an AI-detected scale (parsed from `metadata.drawingScale`) against
 // the user's calibrated scale. Returns a mismatch warning string when the two
 // disagree by more than `tolerance` (default 5%).
@@ -206,21 +262,12 @@ export function buildScaleMismatchWarning(
   calibratedLabel: string | null | undefined,
   tolerance = 0.05,
 ): string | null {
-  if (!calibratedPxPerFoot || calibratedPxPerFoot <= 0) return null;
-  const detected = parseDrawingScaleString(detectedScaleString);
-  if (!detected) return null;
-  // Documented rationale: when the title block explicitly disclaims a
-  // paper-space scale ("NTS", "AS SHOWN", "NOT TO SCALE") there is no
-  // numeric scale to compare against, so a mismatch warning would be a
-  // false alarm. Stay silent and let the user trust their calibration.
-  if (detected.source === "not-to-scale" || detected.pxPerFoot == null) return null;
-  const snapped = findMatchingPreset(detected.pxPerFoot) ?? {
-    label: detected.label,
-    pxPerFoot: detected.pxPerFoot,
-  };
-  const calibratedSnapped = findMatchingPreset(calibratedPxPerFoot);
-  const calibratedDisplay = calibratedLabel || calibratedSnapped?.label || `${calibratedPxPerFoot.toFixed(2)} px/ft`;
-  const delta = Math.abs(snapped.pxPerFoot - calibratedPxPerFoot) / calibratedPxPerFoot;
-  if (delta <= tolerance) return null;
-  return `AI inferred scale ${snapped.label}, but this sheet is calibrated to ${calibratedDisplay}. Re-verify before accepting items.`;
+  const evaluation = evaluateScaleMismatch(
+    detectedScaleString,
+    calibratedPxPerFoot,
+    calibratedLabel,
+    tolerance,
+  );
+  return evaluation?.message ?? null;
 }
+

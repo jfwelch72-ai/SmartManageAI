@@ -21,7 +21,7 @@ import {
   isValidDbTradeType as isValidTradeType,
   type DbTradeType as TradeType,
 } from "./ai/tradeTypeValidation";
-import { buildScaleMismatchWarning } from "@shared/scalePresets";
+import { evaluateScaleMismatch } from "@shared/scalePresets";
 import {
   MAX_RASTER_PIXELS,
   computeRasterScale,
@@ -640,6 +640,12 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
     let aiNotes: string;
     let tradeAutoDetected = false;
     let tradeDetectionConfidence = 0;
+    // Task #2335 — Set inside the OpenAI branch when both calibration and a
+    // model-emitted drawingScale are present. Drives the new persisted
+    // columns on `ai_takeoff_analyses`; demo / mock branches leave it null
+    // so those rows record as "not applicable" rather than false-positive
+    // mismatches in the dashboard.
+    let scaleMismatchEval: ReturnType<typeof evaluateScaleMismatch> = null;
 
     if (needsAutoDetection && imageUrl) {
       const classification = await classifyTradeType(imageUrl, analysis.organizationId, userId);
@@ -788,7 +794,10 @@ Return your analysis as JSON with this exact structure:
           // (despite the grounding clause) and it disagrees with the user's
           // calibrated scale by >5%, surface a warning to the UI. We only
           // warn — quantities are not modified.
-          const scaleMismatchWarning = buildScaleMismatchWarning(
+          // Task #2335 — Capture the structured evaluation (detected /
+          // calibrated / delta) so it can also be persisted to columns on
+          // `ai_takeoff_analyses` for the dashboard rollup.
+          scaleMismatchEval = evaluateScaleMismatch(
             parsed.metadata?.drawingScale,
             sheetCalibration?.scalePxPerFoot ?? null,
             sheetCalibration?.scaleLabel ?? null,
@@ -803,7 +812,11 @@ Return your analysis as JSON with this exact structure:
             tradeDetectionConfidence: tradeAutoDetected ? tradeDetectionConfidence : undefined,
             analysisMethod: analysisMode === "DETAILED" ? "OpenAI Vision (Multi-Pass)" : "OpenAI Vision",
             analysisSource: "openai_vision",
-            ...(scaleMismatchWarning ? { scaleMismatchWarning } : {}),
+            // Task #2335 — `scaleMismatchEval.message` is the structured
+            // evaluation built once and reused for both the legacy banner
+            // string and the persisted dashboard columns; it replaces the
+            // earlier ad-hoc `scaleMismatchWarning` local.
+            ...(scaleMismatchEval?.message ? { scaleMismatchWarning: scaleMismatchEval.message } : {}),
             // Task #2336 — Surface the resolved raster scale + cap flag so
             // the panel can show "Rendered at 2.14×, capped at 30 MP" and
             // hint that splitting the sheet would let the AI see more detail.
@@ -966,6 +979,13 @@ Return JSON with:
         metadataJson: JSON.stringify(metadata),
         aiNotes,
         processingTimeMs: Date.now() - startTime,
+        // Task #2335 — Mirror the in-memory mismatch evaluation onto the
+        // queryable columns so the AI takeoff dashboard / report can
+        // aggregate without re-parsing `metadata_json` for every row.
+        scaleMismatchDetected: scaleMismatchEval?.mismatch ?? false,
+        detectedScaleLabel: scaleMismatchEval?.detectedLabel ?? null,
+        calibratedScaleLabel: scaleMismatchEval?.calibratedLabel ?? null,
+        scaleDeltaPercent: scaleMismatchEval?.deltaPercent ?? null,
         updatedAt: new Date(),
       })
       .where(eq(aiTakeoffAnalyses.id, analysisId));
@@ -1624,5 +1644,105 @@ export async function runAiTakeoffCalibrationJob(): Promise<{ rowsUpserted: numb
   );
   return { rowsUpserted };
 }
+
+// GET /api/ai-features/takeoff/scale-mismatches — Task #2335
+//
+// Dashboard rollup: counts the number of analyses with persisted scale
+// mismatches in a window and returns the offending sheets so leads can
+// triage which sheets to recalibrate. The "rate" is mismatch_count /
+// total_count over the same window so an org running 30 sheets a week
+// can see calibration drift as a percentage, not just a raw count.
+//
+// Query params:
+//   sinceDays — lookback window in days (default 7, max 90).
+//   projectId / bidId — optional scoping filter.
+//
+// Org isolation is enforced by the WHERE clause (every condition
+// pins on `req.user.organizationId`); the route uses `requireAuth`
+// because the data is informational, not destructive.
+router.get(
+  "/ai-features/takeoff/scale-mismatches",
+  requireAuth,
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      if (!organizationId) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+
+      const sinceDaysRaw = parseInt(String(req.query.sinceDays ?? "7"), 10);
+      const sinceDays = Number.isFinite(sinceDaysRaw)
+        ? Math.max(1, Math.min(90, sinceDaysRaw))
+        : 7;
+      const sinceDate = new Date(Date.now() - sinceDays * 24 * 60 * 60 * 1000);
+
+      const projectId = typeof req.query.projectId === "string" ? req.query.projectId : null;
+      const bidId = typeof req.query.bidId === "string" ? req.query.bidId : null;
+
+      const baseConditions = [
+        eq(aiTakeoffAnalyses.organizationId, organizationId),
+        gte(aiTakeoffAnalyses.createdAt, sinceDate),
+      ];
+      if (projectId) baseConditions.push(eq(aiTakeoffAnalyses.projectId, projectId));
+      if (bidId) baseConditions.push(eq(aiTakeoffAnalyses.bidId, bidId));
+
+      // Aggregate counts in a single round-trip. We count COMPLETE
+      // analyses only — PENDING/PROCESSING rows haven't run the scale
+      // check yet, and FAILED rows skipped it, so including them would
+      // dilute the rate downward.
+      const [agg] = await db
+        .select({
+          totalAnalyses: sql<number>`count(*)::int`,
+          mismatchCount: sql<number>`count(*) FILTER (WHERE ${aiTakeoffAnalyses.scaleMismatchDetected} = true)::int`,
+        })
+        .from(aiTakeoffAnalyses)
+        .where(and(
+          ...baseConditions,
+          eq(aiTakeoffAnalyses.status, "COMPLETE"),
+        ));
+
+      const totalAnalyses = Number(agg?.totalAnalyses ?? 0);
+      const mismatchCount = Number(agg?.mismatchCount ?? 0);
+      const mismatchRate = totalAnalyses > 0 ? mismatchCount / totalAnalyses : 0;
+
+      // Pull the affected sheets for the dashboard table (capped so the
+      // payload stays small on busy orgs — the count tile already shows
+      // the global figure, the table is just the riskiest few).
+      const sheets = await db
+        .select({
+          id: aiTakeoffAnalyses.id,
+          takeoffSheetId: aiTakeoffAnalyses.takeoffSheetId,
+          fileName: aiTakeoffAnalyses.fileName,
+          tradeType: aiTakeoffAnalyses.tradeType,
+          projectId: aiTakeoffAnalyses.projectId,
+          bidId: aiTakeoffAnalyses.bidId,
+          detectedScaleLabel: aiTakeoffAnalyses.detectedScaleLabel,
+          calibratedScaleLabel: aiTakeoffAnalyses.calibratedScaleLabel,
+          scaleDeltaPercent: aiTakeoffAnalyses.scaleDeltaPercent,
+          createdAt: aiTakeoffAnalyses.createdAt,
+        })
+        .from(aiTakeoffAnalyses)
+        .where(and(
+          ...baseConditions,
+          eq(aiTakeoffAnalyses.scaleMismatchDetected, true),
+        ))
+        // Ordering by absolute delta desc puts the most-misaligned
+        // sheets first; ties broken by recency so a fresh, smaller
+        // mismatch still appears before a stale one of the same delta.
+        .orderBy(desc(aiTakeoffAnalyses.scaleDeltaPercent), desc(aiTakeoffAnalyses.createdAt))
+        .limit(50);
+
+      res.json({
+        sinceDays,
+        totalAnalyses,
+        mismatchCount,
+        mismatchRate,
+        sheets,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 export default router;

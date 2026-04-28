@@ -20,6 +20,7 @@ import {
 } from "../aiTakeoffHelpers";
 import {
   buildScaleMismatchWarning,
+  evaluateScaleMismatch,
   findMatchingPreset,
   parseDrawingScaleString,
 } from "@shared/scalePresets";
@@ -317,5 +318,91 @@ describe("Task #2337 — broader scale-string variants", () => {
     // Big mismatch should still warn:
     const warn = buildScaleMismatchWarning("1:100 (mm)", 24, '1/4" = 1\'-0"');
     expect(warn).not.toBeNull();
+  });
+});
+
+describe("Task #2335 — persisted scale-mismatch evaluation", () => {
+  // The dashboard rollup needs structured numbers (delta percent,
+  // detected vs calibrated labels), not just a banner string. The new
+  // `evaluateScaleMismatch` helper drives both the persisted columns
+  // and the legacy banner so the two stay in lockstep.
+
+  it("returns the structured evaluation with mismatch=true when delta exceeds tolerance", () => {
+    const result = evaluateScaleMismatch('1/8" = 1\'-0"', 24, '1/4" = 1\'-0"');
+    expect(result).not.toBeNull();
+    expect(result!.mismatch).toBe(true);
+    expect(result!.detectedLabel).toBe('1/8" = 1\'-0"');
+    expect(result!.detectedPxPerFoot).toBe(12);
+    expect(result!.calibratedLabel).toBe('1/4" = 1\'-0"');
+    expect(result!.calibratedPxPerFoot).toBe(24);
+    // 1/8" = 12 px/ft vs calibrated 24 px/ft -> 50% off.
+    expect(result!.deltaPercent).toBeCloseTo(0.5, 5);
+    expect(result!.message).toMatch(/Re-verify/);
+  });
+
+  it("returns mismatch=false (with delta) when within tolerance so dashboards can still chart drift", () => {
+    // 24.5 vs calibrated 24 -> ~2% off.
+    const result = evaluateScaleMismatch('1/4" = 1\'-0"', 24.5, '1/4" = 1\'-0"');
+    expect(result).not.toBeNull();
+    expect(result!.mismatch).toBe(false);
+    expect(result!.message).toBeNull();
+    expect(result!.deltaPercent).toBeLessThan(0.05);
+  });
+
+  it("returns null (skipped, not a false-positive) when calibration or detected string is missing", () => {
+    expect(evaluateScaleMismatch(null, 24, '1/4" = 1\'-0"')).toBeNull();
+    expect(evaluateScaleMismatch('1/4" = 1\'-0"', null, null)).toBeNull();
+    expect(evaluateScaleMismatch('1/4" = 1\'-0"', 0, null)).toBeNull();
+    expect(evaluateScaleMismatch("garbage", 24, '1/4" = 1\'-0"')).toBeNull();
+  });
+
+  it("falls back to a px-per-ft calibrated label when no preset / explicit label is supplied", () => {
+    // 9.6 px/ft maps to a civil preset, so the snapped label wins.
+    const civil = evaluateScaleMismatch('1/4" = 1\'-0"', 9.6, null);
+    expect(civil!.calibratedLabel).toContain('1" = 10');
+
+    // 17.4 px/ft is between presets — the helper should fall back to a
+    // formatted px/ft string so the dashboard never shows a blank scale.
+    const offPreset = evaluateScaleMismatch('1/4" = 1\'-0"', 17.4, null);
+    expect(offPreset!.calibratedLabel).toContain("17.40");
+    expect(offPreset!.calibratedLabel).toContain("px/ft");
+  });
+
+  it("the legacy banner helper stays in lockstep with evaluateScaleMismatch", () => {
+    const a = buildScaleMismatchWarning('1/8" = 1\'-0"', 24, '1/4" = 1\'-0"');
+    const b = evaluateScaleMismatch('1/8" = 1\'-0"', 24, '1/4" = 1\'-0"')!.message;
+    expect(a).toBe(b);
+  });
+});
+
+describe("Task #2335 — analysis pipeline persists scale-mismatch columns", () => {
+  // Pinning the wiring at the source level so the ROUTE keeps writing
+  // the new columns even if a future refactor moves the helper around.
+  // We only check structural facts (the column names appear in the
+  // route's update set, the helper is imported), not runtime — that's
+  // covered by the unit-tests above and the e2e suite.
+  it("calls evaluateScaleMismatch and writes the four mismatch columns on the COMPLETE update", () => {
+    const source = readFileSync(ROUTES_PATH, "utf8");
+    expect(source).toContain('import { evaluateScaleMismatch } from "@shared/scalePresets"');
+    expect(source).toContain("evaluateScaleMismatch(");
+
+    // Find the `status: "COMPLETE"` set() block.
+    const idx = source.indexOf('status: "COMPLETE"');
+    expect(idx).toBeGreaterThan(-1);
+    const slice = source.slice(idx, idx + 2000);
+    expect(slice).toContain("scaleMismatchDetected");
+    expect(slice).toContain("detectedScaleLabel");
+    expect(slice).toContain("calibratedScaleLabel");
+    expect(slice).toContain("scaleDeltaPercent");
+  });
+
+  it("exposes the GET /ai-features/takeoff/scale-mismatches dashboard endpoint", () => {
+    const source = readFileSync(ROUTES_PATH, "utf8");
+    expect(source).toContain('"/ai-features/takeoff/scale-mismatches"');
+    // Endpoint must report the rollup figures the dashboard tile / rate
+    // chart spec calls for.
+    expect(source).toContain("totalAnalyses");
+    expect(source).toContain("mismatchCount");
+    expect(source).toContain("mismatchRate");
   });
 });

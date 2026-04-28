@@ -4023,12 +4023,32 @@ export const aiTakeoffAnalyses = pgTable("ai_takeoff_analyses", {
   aiNotes: text("ai_notes"),
   errorMessage: text("error_message"),
   processingTimeMs: integer("processing_time_ms"),
+  // Task #2335 — Persist scale-mismatch evaluation alongside the analysis so
+  // the AI takeoff dashboard can roll up calibration drift across sheets and
+  // organizations. Null on rows where calibration or detection couldn't be
+  // compared (e.g. uncalibrated sheet, model didn't emit a drawingScale);
+  // `scaleMismatchDetected = true` means the detected vs. calibrated px/ft
+  // disagree by more than the 5% tolerance applied at write time.
+  scaleMismatchDetected: boolean("scale_mismatch_detected").notNull().default(false),
+  detectedScaleLabel: text("detected_scale_label"),
+  calibratedScaleLabel: text("calibrated_scale_label"),
+  scaleDeltaPercent: doublePrecision("scale_delta_percent"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
   createdByUserId: varchar("created_by_user_id").references(() => users.id),
 }, (table) => ({
   projectIdx: index("ai_takeoff_project_idx").on(table.projectId),
   orgIdx: index("ai_takeoff_org_idx").on(table.organizationId),
+  // Task #2335 — Partial-style index used by the dashboard rollup query
+  // ("how many of my org's analyses had a mismatch this week?"). Drizzle
+  // doesn't expose partial-index syntax cleanly, so the index is on
+  // (orgId, scaleMismatchDetected, createdAt) and the query filters on
+  // `scale_mismatch_detected = true`.
+  scaleMismatchIdx: index("ai_takeoff_scale_mismatch_idx").on(
+    table.organizationId,
+    table.scaleMismatchDetected,
+    table.createdAt,
+  ),
 }));
 
 export const insertAiTakeoffAnalysisSchema = createInsertSchema(aiTakeoffAnalyses).omit({ id: true, createdAt: true, updatedAt: true });

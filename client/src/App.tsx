@@ -134,6 +134,9 @@ const TakeoffWorkspacePage = lazy(() => import("@/pages/takeoff-workspace"));
 const TakeoffIndexPage = lazy(() => import("@/pages/takeoff-index"));
 // Task #2321 — Second-eye review queue page.
 const TakeoffReviewQueuePage = lazy(() => import("@/pages/takeoff-review-queue"));
+// Task #2335 — AI takeoff dashboard surfaces persisted scale-mismatch
+// rollups so estimators can spot calibration drift across sheets.
+const AiTakeoffDashboardPage = lazy(() => import("@/pages/ai-takeoff-dashboard"));
 const HistoricalCostsPage = lazy(() => import("@/pages/historical-costs"));
 const ProjectsPage = lazy(() => import("@/pages/projects"));
 const ProjectTemplatesPage = lazy(() => import("@/pages/project-templates"));
@@ -476,6 +479,9 @@ function Router() {
           /takeoff/:bidCode workspace route, otherwise wouter would
           treat "review-queue" as a bid code and 404. */}
       <Route path="/takeoff/review-queue" component={() => <ProtectedRoute component={TakeoffReviewQueuePage} permission={RoutePermissions.TAKEOFF} />} />
+      {/* Task #2335 — AI takeoff dashboard surfaces persisted scale-mismatch
+          rollups so estimators can spot calibration drift across sheets. */}
+      <Route path="/takeoff/ai-dashboard" component={() => <ProtectedRoute component={AiTakeoffDashboardPage} permission={RoutePermissions.TAKEOFF} />} />
       <Route path="/takeoff/:bidCode" component={() => <ProtectedRoute component={TakeoffWorkspacePage} permission={RoutePermissions.TAKEOFF} />} />
       <Route path="/takeoff" component={() => <ProtectedRoute component={TakeoffIndexPage} permission={RoutePermissions.TAKEOFF} />} />
       <Route path="/time-entry" component={() => <ProtectedRoute component={TimeEntryPage} permission={RoutePermissions.TIME_ENTRY} featurePerm="canManageScheduling" />} />
