@@ -343,6 +343,8 @@ export function PageThumbnailStrip({
               : {})}
             {...(isLayerDropActive ? { "data-layer-drop-active": "true" } : {})}
             data-testid={`thumbnail-sheet-${sheet.id}`}
+            data-active={isActive ? "true" : "false"}
+            aria-current={isActive ? "page" : undefined}
           >
             <div className="relative w-full aspect-[4/3] overflow-hidden rounded-t flex items-center justify-center bg-muted">
               {thumb ? (

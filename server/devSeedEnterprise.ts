@@ -23,6 +23,14 @@ import {
   jobMetricAlertEvents,
   notifications,
   userDashboardLayouts,
+  bids,
+  takeoffSheets,
+  takeoffVersions,
+  takeoffMeasurements,
+  type InsertBid,
+  type InsertTakeoffSheet,
+  type InsertTakeoffVersion,
+  type InsertTakeoffMeasurement,
 } from "@shared/schema";
 import { eq, and, like, sql } from "drizzle-orm";
 import { logInfo } from "./utils/logger";
@@ -827,5 +835,130 @@ router.post("/clear-my-work-bulk", requireDevSeed, requireAuth, async (req, res,
     next(err);
   }
 });
+
+/**
+ * Task #2137 — dev-only seed for the standalone Takeoff workspace.
+ * Inserts N sheets (default 2) and M measurements (default 1) under a
+ * brand-new bid so e2e tests can press [/]/,/./Cmd+Z/Cmd+D and assert
+ * real workspace state transitions (sheet selection / version selection
+ * / measurement created via mutation) without uploading a PDF.
+ */
+router.post(
+  "/seed-takeoff-fixture",
+  requireDevSeed,
+  requireAuth,
+  async (req, res, next) => {
+    try {
+      const user = (req as any).user;
+      const { sheetCount = 2, versionCount = 2, measurementCount = 1 } =
+        (req.body ?? {}) as {
+          sheetCount?: number;
+          versionCount?: number;
+          measurementCount?: number;
+        };
+
+      if (!user?.organizationId) {
+        return res.status(400).json({ error: "missing organization" });
+      }
+
+      const code = `PWFIX-${Date.now().toString(36).toUpperCase()}`;
+      const bidValues: InsertBid = {
+        name: `PW Takeoff Fixture ${code}`,
+        code,
+        status: "DRAFT",
+        // The bid loader (GET /api/bids/:code) gates by gcOrganizationId,
+        // so we must set it to the current user's org or the e2e bid
+        // route will return 403 and TakeoffWorkspace will never mount.
+        gcOrganizationId: user.organizationId,
+        estimatorId: user.id,
+        clientName: "PW Fixture",
+      };
+      const [bid] = await db.insert(bids).values(bidValues).returning();
+
+      const sheetIds: string[] = [];
+      for (let i = 0; i < sheetCount; i += 1) {
+        const sheetValues: InsertTakeoffSheet = {
+          bidId: bid.id,
+          imageUrl: `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABh6FO1AAAAABJRU5ErkJggg==`,
+          sheetIndex: i,
+          sheetName: `Sheet ${i + 1}`,
+          scalePxPerFoot: 10,
+        };
+        const [sheet] = await db
+          .insert(takeoffSheets)
+          .values(sheetValues)
+          .returning();
+        sheetIds.push(sheet.id);
+      }
+
+      // The first version is always DRAFT — getDefaultVersionId() picks
+      // the DRAFT version when filtering measurements, so the seeded
+      // measurement (bound to this version) is reliably visible. Any
+      // subsequent versions are LOCKED so cycling into them with `,` / `.`
+      // surfaces the SheetHost "viewing historical version" banner that
+      // e2e tests assert on.
+      const versionIds: string[] = [];
+      const primarySheetId = sheetIds[0];
+      for (let v = 0; v < versionCount; v += 1) {
+        const versionValues: InsertTakeoffVersion = {
+          bidId: bid.id,
+          sheetId: primarySheetId,
+          versionNumber: v + 1,
+          status: v === 0 ? "DRAFT" : "LOCKED",
+          createdById: user.id,
+          label: `v${v + 1}`,
+        };
+        const [version] = await db
+          .insert(takeoffVersions)
+          .values(versionValues)
+          .returning();
+        versionIds.push(version.id);
+      }
+
+      // Attach the seeded measurements to the FIRST seeded version of
+      // the primary sheet — otherwise GET /api/takeoff/sheets/:id/measurements
+      // (which scopes to the default DRAFT version via getDefaultVersionId)
+      // returns an empty array and the workspace's measurement table is
+      // blank, breaking any e2e that selects a row.
+      const primaryVersionId = versionIds[0] ?? null;
+      const measurementIds: string[] = [];
+      for (let m = 0; m < measurementCount; m += 1) {
+        const measValues: InsertTakeoffMeasurement = {
+          sheetId: primarySheetId,
+          takeoffVersionId: primaryVersionId,
+          type: "LINEAR",
+          label: `Fixture line ${m + 1}`,
+          points: JSON.stringify([
+            { x: 10, y: 10 },
+            { x: 100, y: 100 },
+          ]),
+          color: "#3b82f6",
+        };
+        const [meas] = await db
+          .insert(takeoffMeasurements)
+          .values(measValues)
+          .returning();
+        measurementIds.push(meas.id);
+      }
+
+      logInfo("[dev-seed] takeoff fixture created", {
+        bidId: bid.id,
+        bidCode: bid.code,
+        sheets: sheetIds.length,
+        versions: versionIds.length,
+        measurements: measurementIds.length,
+      });
+
+      res.json({
+        bid,
+        sheetIds,
+        versionIds,
+        measurementIds,
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 export default router;

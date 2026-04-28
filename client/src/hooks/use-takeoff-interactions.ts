@@ -94,6 +94,16 @@ interface UseTakeoffInteractionsParams {
   };
   showStructuralGridlines?: boolean;
   gridlineSnapThreshold?: number;
+  /** Task #2137 — When the standalone workspace mounts the unified
+   *  ribbon, the new `useTakeoffShortcuts` hook becomes the single
+   *  source of truth for tool / snap / constrain / navigation
+   *  bindings. Set this to true so the legacy block below skips its
+   *  window listener and the two handlers don't fight (e.g. `D` would
+   *  otherwise still pick `linear_with_drop` from the old map). The
+   *  drawing-time keys (Backspace/Enter while drawing) and
+   *  Space-momentary-pan stay registered because they read canvas
+   *  internals the ribbon doesn't see. */
+  disableLegacyShortcuts?: boolean;
 }
 
 function inverseRotatePoint(
@@ -162,6 +172,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     deleteMeasurementMutation, onZoomToFit,
     sheetRotation, imageWidth, imageHeight,
     onRotateCW, onRotateCCW,
+    disableLegacyShortcuts,
   } = params;
 
   const handleToolSelect = useCallback((tool: Tool) => {
@@ -906,6 +917,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
   }, [activeTool, isSpacebarHeld, toolBeforeSpacebar, isDrawing, currentDrawingTool, setActiveTool, setToolBeforeSpacebar, setIsSpacebarHeld]);
 
   useEffect(() => {
+    if (disableLegacyShortcuts) return;
     const handleShortcut = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement;
       if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT" || target.isContentEditable) return;
@@ -1006,7 +1018,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     };
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, [isDrawing, currentDrawingTool, toggleFullscreen, calibrationMode, takeoffHistory, setActiveTool, setIsDrawing, setCurrentDrawingTool, setDrawingPoints, setStageScale, setShortcutsDialogOpen, toast, orthoLock, setOrthoLock, snapEnabled, setSnapEnabled, selectedMeasurementId, setSelectedMeasurementId, measurements, deleteMeasurementMutation, onZoomToFit, onRotateCW, onRotateCCW, createMeasurementMutation]);
+  }, [disableLegacyShortcuts, isDrawing, currentDrawingTool, toggleFullscreen, calibrationMode, takeoffHistory, setActiveTool, setIsDrawing, setCurrentDrawingTool, setDrawingPoints, setStageScale, setShortcutsDialogOpen, toast, orthoLock, setOrthoLock, snapEnabled, setSnapEnabled, selectedMeasurementId, setSelectedMeasurementId, measurements, deleteMeasurementMutation, onZoomToFit, onRotateCW, onRotateCCW, createMeasurementMutation]);
 
   return {
     handleToolSelect,

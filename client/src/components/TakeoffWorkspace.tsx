@@ -84,6 +84,16 @@ import type { LibraryEvent } from "@/lib/libraryEvents";
 import { useTakeoffCollaboration } from "@/hooks/use-takeoff-collaboration";
 import { useOfflineQueue } from "@/hooks/use-offline-queue";
 import { detectScaleBatch } from "@/lib/scaleDetection";
+import { UnifiedTakeoffRibbon } from "./takeoff/UnifiedTakeoffRibbon";
+import { TakeoffShortcutCheatSheet } from "./takeoff/TakeoffShortcutCheatSheet";
+import { useTakeoffShortcuts } from "./takeoff/hosts/useTakeoffShortcuts";
+import {
+  ORTHO_PRESETS,
+  constraintModeStorageKey,
+  snapModesStorageKey,
+  type ConstraintMode,
+  type SnapMode,
+} from "./takeoff/hosts/takeoff-shortcuts";
 import { Users, Lock, Sparkles, DollarSign, Layers, Zap, TableProperties, Printer } from "lucide-react";
 
 type TakeoffContext =
@@ -108,9 +118,19 @@ interface TakeoffWorkspaceProps {
    *  room. Embedded callers (bid Plans tab split-view) keep the compact
    *  modal by leaving this off. */
   fullscreenScaleModal?: boolean;
+  /** Task #2137 — When true, the workspace mounts the new horizontal
+   *  Unified Ribbon (groups: Select / Measure / Annotate / Snap /
+   *  Constrain / Verify / View) at the top instead of the legacy
+   *  vertical `<TakeoffToolbar>` sidebar. The standalone
+   *  `/takeoff/:bidCode` and `/takeoff/project/:projectCode` pages set
+   *  this to true; embedded callers (bid Plans tab split-view) keep
+   *  the legacy toolbar by leaving this off. Wires up the single-key
+   *  shortcut hook, snap HUD, sheet `[`/`]` navigation, and the
+   *  Cmd/Ctrl+/ cheat-sheet overlay. */
+  unifiedRibbon?: boolean;
 }
 
-export default function TakeoffWorkspace({ projectId = "", projectCode = "", context, selectedSheetId: controlledSheetId, onSelectSheet, labeled = false, fullscreenScaleModal = false }: TakeoffWorkspaceProps) {
+export default function TakeoffWorkspace({ projectId = "", projectCode = "", context, selectedSheetId: controlledSheetId, onSelectSheet, labeled = false, fullscreenScaleModal = false, unifiedRibbon = false }: TakeoffWorkspaceProps) {
   const isMobile = useIsMobile();
   const [activeTool, setActiveTool] = useState<Tool>("select");
   const [currentDrawingTool, setCurrentDrawingTool] = useState<Tool | null>(null);
@@ -436,7 +456,64 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [activeCondition, setActiveCondition] = useState<TakeoffCondition | null>(null);
   const [bidPackageDialogOpen, setBidPackageDialogOpen] = useState(false);
   const [bidPackageTradeScope, setBidPackageTradeScope] = useState("");
-  const { isOffline, queueLength } = useOfflineQueue();
+  const { isOffline, queueLength, isSyncing } = useOfflineQueue();
+  // Task #2137 — Hoisted up from below so the unified-ribbon state
+  // initializers can hydrate from per-user localStorage on first render.
+  // The role check (canManageDrawingSetsOnCanvas) still derives from
+  // this same authUser further down.
+  const { user: ribbonAuthUser } = useAuth();
+  const ribbonUserId = ribbonAuthUser?.id ?? null;
+
+  // Task #2137 — Unified ribbon state. Snap is multi-select, constrain
+  // is radio, ortho preset cycles via Shift+O. Persisted per-user so
+  // muscle memory survives reloads; null userId (anonymous / pre-auth)
+  // falls back to in-memory only.
+  const [cheatSheetOpen, setCheatSheetOpen] = useState(false);
+  const [snapHudOpen, setSnapHudOpen] = useState(false);
+  const [orthoPresetIndex, setOrthoPresetIndex] = useState(() => ORTHO_PRESETS.length - 1);
+  const [enabledSnapModes, setEnabledSnapModesState] = useState<SnapMode[]>(() => {
+    const key = snapModesStorageKey(ribbonUserId);
+    if (key && typeof window !== "undefined") {
+      try {
+        const raw = window.localStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) return parsed as SnapMode[];
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return ["endpoint", "midpoint", "intersection"];
+  });
+  const setEnabledSnapModes = useCallback((modes: SnapMode[]) => {
+    setEnabledSnapModesState(modes);
+    const key = snapModesStorageKey(ribbonUserId);
+    if (key) {
+      try { window.localStorage.setItem(key, JSON.stringify(modes)); } catch { /* ignore */ }
+    }
+  }, [ribbonUserId]);
+  const [constraintMode, setConstraintModeState] = useState<ConstraintMode>(() => {
+    const key = constraintModeStorageKey(ribbonUserId);
+    if (key && typeof window !== "undefined") {
+      try {
+        const raw = window.localStorage.getItem(key) as ConstraintMode | null;
+        if (raw === "none" || raw === "ortho" || raw === "ortho-angle" || raw === "polar") {
+          return raw;
+        }
+      } catch {
+        // ignore
+      }
+    }
+    return "none";
+  });
+  const setConstraintMode = useCallback((mode: ConstraintMode) => {
+    setConstraintModeState(mode);
+    const key = constraintModeStorageKey(ribbonUserId);
+    if (key) {
+      try { window.localStorage.setItem(key, mode); } catch { /* ignore */ }
+    }
+  }, [ribbonUserId]);
 
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
@@ -705,7 +782,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   // drawing-set item ids (for DELETE) so we additionally fetch the
   // active set's items here. Mirrors PlansTab's `activeSetItems` query
   // and the resulting `activeSetItemMap`.
-  const { user: authUser } = useAuth();
+  // Task #2137 — `authUser` is the same useAuth() hoisted above as
+  // `ribbonAuthUser`; we keep the local alias so the rest of this file
+  // continues to read `authUser` unchanged.
+  const authUser = ribbonAuthUser;
   const canManageDrawingSetsOnCanvas = ["ADMIN", "MANAGER", "SUPER_ADMIN"].includes(authUser?.role || "");
   const { data: activeCanvasSetItems = [] } = useQuery<Array<{ id: string; drawingSetId: string; sheetId: string; revisionId: string | null; pinnedAt: string }>>({
     queryKey: ["/api/projects", "drawing-sets", activeCanvasSetId, "items"],
@@ -1171,6 +1251,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     onRotateCCW: () => handleRotate(-90),
     structuralGridlines,
     showStructuralGridlines,
+    disableLegacyShortcuts: unifiedRibbon,
   });
 
   const {
@@ -1201,6 +1282,126 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     setSelectedMeasurementIds,
     toggleMeasurementSelection,
   } = interactions;
+
+  // Task #2137 — Sheet navigation helpers for `[` / `]`. Cycles through
+  // the loaded sheet list; no-op when the list is empty.
+  const handlePrevSheet = useCallback(() => {
+    if (!sheets.length) return;
+    const curIdx = selectedSheet ? sheets.findIndex((s: TakeoffSheet) => s.id === selectedSheet) : -1;
+    const nextIdx = curIdx <= 0 ? sheets.length - 1 : curIdx - 1;
+    setSelectedSheet(sheets[nextIdx].id);
+  }, [sheets, selectedSheet, setSelectedSheet]);
+  const handleNextSheet = useCallback(() => {
+    if (!sheets.length) return;
+    const curIdx = selectedSheet ? sheets.findIndex((s: TakeoffSheet) => s.id === selectedSheet) : -1;
+    const nextIdx = curIdx < 0 || curIdx >= sheets.length - 1 ? 0 : curIdx + 1;
+    setSelectedSheet(sheets[nextIdx].id);
+  }, [sheets, selectedSheet, setSelectedSheet]);
+
+  // Task #2137 — `,` / `.` shortcuts cycle through takeoff versions for the
+  // current sheet (Section 2 of docs/takeoff-interaction-map.md). We pull
+  // the version list lazily, keyed on the active sheet, and treat the
+  // implicit "DRAFT" working version as `null` so it sits at the head of
+  // the cycle. Cycling wraps around in both directions; no-op when the
+  // sheet has zero or one versions.
+  const versionsQueryKey = selectedSheet
+    ? ["/api/takeoff/versions", { sheetId: selectedSheet }]
+    : ["__no_versions__"];
+  const { data: sheetVersionsData = [] } = useQuery<Array<{ id: string }>>({
+    queryKey: versionsQueryKey,
+    enabled: !!selectedSheet,
+    queryFn: async () => {
+      const res = await fetch(
+        `/api/takeoff/versions?sheetId=${encodeURIComponent(selectedSheet!)}`,
+        { credentials: "include" },
+      );
+      if (!res.ok) return [];
+      return (await res.json()) as Array<{ id: string }>;
+    },
+    staleTime: 30_000,
+  });
+  const cycleVersion = useCallback(
+    (delta: 1 | -1) => {
+      const list = sheetVersionsData ?? [];
+      if (list.length === 0) return;
+      const cycle: Array<string | null> = [null, ...list.map((v) => v.id)];
+      if (cycle.length <= 1) return;
+      const curIdx = cycle.indexOf(selectedVersionId);
+      const safeIdx = curIdx < 0 ? 0 : curIdx;
+      const nextIdx = (safeIdx + delta + cycle.length) % cycle.length;
+      setSelectedVersionId(cycle[nextIdx]);
+    },
+    [sheetVersionsData, selectedVersionId, setSelectedVersionId],
+  );
+  const handlePrevVersion = useCallback(() => cycleVersion(-1), [cycleVersion]);
+  const handleNextVersion = useCallback(() => cycleVersion(1), [cycleVersion]);
+
+  // Task #2137 — Cmd/Ctrl+D duplicates the selected measurement.
+  // Builds a typed payload that matches `createMeasurementMutation`'s
+  // expected input rather than using `any`. The mutation handles the
+  // discriminated-union narrowing internally; we just pass through the
+  // optional numeric/string fields when present on the source row.
+  type DuplicatePayload = Parameters<typeof createMeasurementMutation.mutate>[0];
+  const handleDuplicateSelection = useCallback(() => {
+    if (!selectedMeasurementId) return;
+    const srcM = measurements.find((mm: TakeoffMeasurement) => mm.id === selectedMeasurementId);
+    if (!srcM) return;
+    const pts: Array<{ x: number; y: number }> =
+      typeof srcM.points === "string"
+        ? JSON.parse(srcM.points as string)
+        : (srcM.points as Array<{ x: number; y: number }>);
+    const offset = 20;
+    const shiftedPts = pts.map((p) => ({ x: p.x + offset, y: p.y + offset }));
+    const optional: Record<string, unknown> = {};
+    if (srcM.depthFeet !== null && srcM.depthFeet !== undefined) optional.depthFeet = srcM.depthFeet;
+    if (srcM.pitchRatio !== null && srcM.pitchRatio !== undefined) optional.pitchRatio = srcM.pitchRatio;
+    if (srcM.count !== null && srcM.count !== undefined) optional.count = srcM.count;
+    if (srcM.color) optional.color = srcM.color;
+    if (srcM.costCodeId) optional.costCodeId = srcM.costCodeId;
+    if (srcM.unitCost !== null && srcM.unitCost !== undefined) optional.unitCost = srcM.unitCost;
+    const dupData = {
+      sheetId: srcM.sheetId,
+      type: srcM.type,
+      points: shiftedPts,
+      label: `${srcM.label || "Measurement"} (copy)`,
+      categoryId: srcM.categoryId || undefined,
+      ...optional,
+    } as unknown as DuplicatePayload;
+    createMeasurementMutation.mutate(dupData);
+    toast({ title: "Duplicated", description: "Measurement copied with offset" });
+  }, [selectedMeasurementId, measurements, createMeasurementMutation, toast]);
+
+  // Task #2137 — Mount the unified-ribbon keyboard handler. Only active
+  // when the standalone workspace passes `unifiedRibbon`; legacy block
+  // in `useTakeoffInteractions` is gated off via `disableLegacyShortcuts`
+  // so the two listeners can never fight for the same key.
+  useTakeoffShortcuts({
+    enabled: unifiedRibbon,
+    setActiveTool,
+    setConstraintMode,
+    constraintMode,
+    enabledSnapModes,
+    setEnabledSnapModes,
+    orthoPresetIndex,
+    setOrthoPresetIndex,
+    orthoLock,
+    setOrthoLock,
+    snapHudOpen,
+    setSnapHudOpen,
+    setCheatSheetOpen,
+    gridEnabled,
+    setGridEnabled: handleToggleGrid,
+    onPrevSheet: handlePrevSheet,
+    onNextSheet: handleNextSheet,
+    onPrevVersion: handlePrevVersion,
+    onNextVersion: handleNextVersion,
+    onOpenCalibrate: () => setScaleModalOpen(true),
+    onUndo: () => takeoffHistory.undo(),
+    onRedo: () => takeoffHistory.redo(),
+    onDuplicateSelection: handleDuplicateSelection,
+    isDrawing,
+    calibrationActive: calibrationMode !== "idle",
+  });
 
   useEffect(() => {
     if (activeTool !== "select" && selectedMarkupIds.size > 0) {
@@ -3262,8 +3463,43 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
   return (
     <TakeoffWorkspaceProvider value={ctxValue}>
-    <div ref={workspaceRef} className="flex flex-col sm:flex-row h-full relative overflow-hidden">
-      <RibbonHost />
+    <div
+      ref={workspaceRef}
+      className={cn(
+        "h-full relative overflow-hidden",
+        unifiedRibbon ? "flex flex-col" : "flex flex-col sm:flex-row",
+      )}
+      data-unified-ribbon={unifiedRibbon ? "true" : "false"}
+    >
+      {unifiedRibbon ? (
+        <UnifiedTakeoffRibbon
+          userId={ribbonUserId}
+          activeTool={activeTool}
+          onToolSelect={handleToolSelect}
+          enabledSnapModes={enabledSnapModes}
+          setEnabledSnapModes={setEnabledSnapModes}
+          snapHudOpen={snapHudOpen}
+          setSnapHudOpen={setSnapHudOpen}
+          constraintMode={constraintMode}
+          setConstraintMode={setConstraintMode}
+          orthoPresetIndex={orthoPresetIndex}
+          setOrthoPresetIndex={setOrthoPresetIndex}
+          orthoLock={orthoLock}
+          setOrthoLock={setOrthoLock}
+          gridEnabled={gridEnabled}
+          setGridEnabled={handleToggleGrid}
+          onOpenCalibrate={() => setScaleModalOpen(true)}
+          isCalibrated={isCalibrated}
+          onOpenCheatSheet={() => setCheatSheetOpen(true)}
+          isOffline={isOffline}
+          pendingOutboxCount={queueLength}
+          isSyncing={isSyncing}
+          labeled={labeled}
+        />
+      ) : (
+        <RibbonHost />
+      )}
+      <TakeoffShortcutCheatSheet open={cheatSheetOpen} onOpenChange={setCheatSheetOpen} />
 
       <div className="flex-1 flex flex-col bg-muted/30 min-h-0 relative">
         <SheetHost />

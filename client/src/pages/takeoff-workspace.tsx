@@ -336,6 +336,7 @@ export default function TakeoffWorkspacePage() {
               context={{ type: "project", projectId: project.id, projectCode: project.code }}
               labeled={labeled}
               fullscreenScaleModal
+              unifiedRibbon
               onSelectSheet={handleSelectSheet}
             />
           </WidgetErrorBoundary>
@@ -395,6 +396,7 @@ export default function TakeoffWorkspacePage() {
             context={{ type: "bid", bidId: bid!.id, bidCode: bid!.code }}
             labeled={labeled}
             fullscreenScaleModal
+            unifiedRibbon
             onSelectSheet={handleSelectSheet}
           />
         </WidgetErrorBoundary>

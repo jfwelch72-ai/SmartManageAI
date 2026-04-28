@@ -12,6 +12,11 @@ Tool Chest, and the canvas controller all consume it; none of them owns it.
 
 ## 1. Ribbon contract
 
+> **Status:** Implemented (Task #2137) for the standalone Takeoff workspace at
+> `/takeoff/:bidCode` and `/takeoff/project/:projectCode`. The legacy
+> `TakeoffToolbar` / `RibbonHost` path remains in place for the embedded
+> bid-detail and project-detail tabs until those routes migrate.
+
 The unified ribbon replaces the legacy floating toolbar + secondary tool bar.
 It exposes one logical group per workflow:
 
@@ -35,6 +40,10 @@ Rules:
 ---
 
 ## 2. Single-key shortcuts
+
+> **Status:** Implemented (Task #2137). `D` (Dimension callout) is currently
+> a no-op stub — the keypress is consumed so `D` never falls through to
+> browser shortcuts, but the dimension tool itself ships in Step 5.
 
 Single-letter activates a tool. Hold `Shift` to add it to the active set
 (snap modes are multi-select; constraints are radio).
@@ -71,6 +80,13 @@ shortcuts.
 ---
 
 ## 3. Snap modes (Step 4)
+
+> **Status:** Implemented (Task #2137) for the snap *contract* — the seven
+> mode IDs, their canonical order, the multi-select semantics, the per-user
+> persistence, the `S` HUD entry point with `1`–`7` toggles, and the ribbon
+> Snap group all ship in this task. The actual target-generator engine (the
+> mathematics that turns "endpoint enabled" into a screen-space candidate)
+> is Step 4 and tracked separately.
 
 A snap mode is a *target generator*. The canvas controller asks the snap
 engine for all enabled targets, then chooses the nearest one within the snap
@@ -160,6 +176,13 @@ A user-pinned shelf of frequently-used tools / conditions / assemblies.
 ---
 
 ## 8. Versioning, performance, autosave
+
+> **Status:** Implemented (Task #2137) for the *autosave indicator* and the
+> `,` / `.` keybindings — the unified ribbon now surfaces an
+> offline / syncing / pending-count chip driven by the IndexedDB outbox, and
+> the version cycle keys are reserved and routed (no-op when the version
+> overlay is off). The tile renderer (Step 8) and the version overlay
+> itself (Step 9) remain owned by their respective tasks.
 
 - **Version overlay** (Step 9): `,` / `.` cycle versions; the canvas
   controller always merges the active version's transform with the live
