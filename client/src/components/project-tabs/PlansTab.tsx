@@ -30,6 +30,7 @@ import {
   ExternalLink, X, FolderPlus, Printer, RotateCw, EyeOff, RefreshCw, Box, BookOpen, Columns2, Link2,
   Building2, Layers, Pin, PinOff, ArrowUpCircle, Sparkles
 } from "lucide-react";
+import { AiTakeoffSheetPicker } from "@/components/takeoff/AiTakeoffSheetPicker";
 const BimViewer = lazy(() => import("@/components/bid/BimViewer"));
 import BimQuantityDialog from "@/components/bim/BimQuantityDialog";
 import type { BimExtractionResult } from "@/utils/ifc-quantity-parser";
@@ -2540,41 +2541,19 @@ export default function PlansTab({ projectCode, project }: PlansTabProps) {
                   {sheets.length > 0 && (
                     <>
                       <Separator className="my-2" />
-                      {/* Task #2311 — AI Takeoff call-out card. Mirrors
-                       *  the bid-side CTA so users in the project Plans
-                       *  tab see one obvious entry point into AI
-                       *  Takeoff. Jumps to the standalone takeoff
-                       *  workspace at the first sheet with `?openAi=1`
-                       *  appended; the workspace strips the param after
-                       *  auto-opening the AI panel. Wording avoids any
-                       *  model name. */}
-                      <div className="px-2 mb-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const targetSheetId = sheets[0]?.id;
-                            if (!targetSheetId) return;
-                            const params = new URLSearchParams();
-                            params.set("sheet", targetSheetId);
-                            params.set("openAi", "1");
-                            navigate(`/takeoff/project/${projectCode}?${params.toString()}`);
-                          }}
-                          className="w-full text-left rounded-lg border border-violet-200 dark:border-violet-900/50 bg-violet-50/60 dark:bg-violet-950/20 hover:bg-violet-50 dark:hover:bg-violet-950/40 transition-colors p-2.5 flex items-start gap-2.5"
-                          data-testid="button-project-plans-ai-takeoff-cta"
-                        >
-                          <div className="rounded-md bg-violet-100 dark:bg-violet-900/40 p-1.5 shrink-0">
-                            <Sparkles className="w-3.5 h-3.5 text-violet-600 dark:text-violet-400" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-xs font-semibold text-violet-900 dark:text-violet-100 leading-tight">
-                              AI Takeoff
-                            </div>
-                            <div className="text-[11px] text-violet-700/80 dark:text-violet-300/80 mt-0.5 leading-snug">
-                              Pick a sheet and let AI suggest counts and quantities to review.
-                            </div>
-                          </div>
-                        </button>
-                      </div>
+                      {/* Task #2311 — AI Takeoff call-out + sheet
+                       *  picker. Mirrors the bid-side entry point so
+                       *  users in the project Plans tab see one obvious
+                       *  way into AI Takeoff and can pick which sheet
+                       *  to analyze before being routed into the
+                       *  standalone workspace with the AI panel
+                       *  auto-opened. */}
+                      <AiTakeoffSheetPicker
+                        sheets={sheets as Array<{ id: string; sheetName?: string | null; pageNumber?: number | null }>}
+                        navigate={navigate}
+                        buildHref={(sheetId) => `/takeoff/project/${projectCode}?sheet=${encodeURIComponent(sheetId)}&openAi=1`}
+                        testId="button-project-plans-ai-takeoff-cta"
+                      />
                       <div className="px-2 py-1.5">
                         <span className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
                           Takeoff Sheets ({sheets.length})

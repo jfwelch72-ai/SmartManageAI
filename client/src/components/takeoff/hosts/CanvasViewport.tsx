@@ -460,35 +460,38 @@ function CanvasViewportInner(props: CanvasViewportProps) {
                   <Sparkles className="w-4 h-4 text-violet-600 dark:text-violet-400" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold leading-tight">Try AI Takeoff on this sheet</p>
+                  <p className="text-sm font-semibold leading-tight">Want me to detect items on this sheet?</p>
                   <p className="text-xs text-muted-foreground mt-1 leading-snug">
-                    Auto-detect symbols and quantities from this drawing. Review every item before importing.
+                    AI can suggest counts and quantities from this drawing. You review every item before importing.
                   </p>
-                  <div className="mt-2.5 flex items-center gap-2">
+                  {/* Mobile-first sizing: 44px tap targets on phones,
+                   *  collapses to 32px on sm+ where pointer precision
+                   *  makes the dense rhythm OK. */}
+                  <div className="mt-2.5 flex flex-wrap items-center gap-2">
                     <Button
                       size="sm"
-                      className="h-7 px-2.5 text-xs gap-1"
+                      className="h-11 sm:h-8 px-3 text-xs gap-1"
                       onClick={onOpenAiFromCta}
                       data-testid="button-canvas-ai-cta-start"
                     >
                       <Sparkles className="w-3.5 h-3.5" />
-                      Start AI Takeoff
+                      Run AI takeoff
                     </Button>
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-7 px-2 text-xs text-muted-foreground"
+                      className="h-11 sm:h-8 px-3 text-xs text-muted-foreground"
                       onClick={onDismissAiCta}
                       data-testid="button-canvas-ai-cta-dismiss"
                     >
-                      Not now
+                      Dismiss
                     </Button>
                   </div>
                 </div>
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="h-6 w-6 shrink-0 text-muted-foreground"
+                  className="h-11 w-11 sm:h-8 sm:w-8 shrink-0 text-muted-foreground"
                   onClick={onDismissAiCta}
                   aria-label="Dismiss AI Takeoff suggestion"
                   data-testid="button-canvas-ai-cta-close"

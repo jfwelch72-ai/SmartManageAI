@@ -469,7 +469,12 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
                 variant={aiPanelOpen ? "default" : "outline"}
                 size="sm"
                 onClick={onToggleAiPanel}
-                className="h-7 gap-1 px-2 text-xs shrink-0"
+                // Mobile: 44x44 minimum tap target (Apple HIG / WCAG
+                // 2.5.5). Desktop/tablet (sm+) collapses back to the
+                // dense 28px rhythm used by the rest of this header
+                // bar so we don't blow up its layout for pointer
+                // users. `min-w` matches the icon-only size on phones.
+                className="h-11 min-w-11 px-3 sm:h-7 sm:min-w-0 sm:px-2 gap-1 text-xs shrink-0"
                 data-testid="button-ai-takeoff-bar"
                 aria-label="AI Takeoff"
                 aria-pressed={aiPanelOpen}
