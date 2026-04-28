@@ -322,17 +322,27 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
 
   /* Task #2199 — Polar tracking guide rays. The canvas renders thin
    * dashed rays from the active anchor at every multiple of the
-   * `ortho-angle` preset so users can see which angle they're locked
-   * onto before clicking. We only emit a step here when the ribbon's
-   * angular constraint is engaged with a non-null preset; legacy
-   * `ortho` (axis lock) and the bare `orthoLock` boolean keep their
-   * existing single-line preview and do NOT produce polar guides. */
+   * active angular step so users can see which angle they're locked
+   * onto before clicking. We emit a step for both the `ortho-angle`
+   * preset family AND the dedicated `polar` mode (Task #2225 — without
+   * this, enabling Polar lock from the ribbon snapped the cursor but
+   * never painted the guides, leaving the lock invisible until commit).
+   * Legacy `ortho` (axis lock) and the bare `orthoLock` boolean keep
+   * their existing single-line preview and do NOT produce polar guides. */
   const polarGuideStep: number | null = useMemo(() => {
-    if (constraintMode !== "ortho-angle") return null;
-    if (orthoPresetIndex == null) return null;
-    const preset = ORTHO_PRESETS[orthoPresetIndex];
-    return preset ?? null;
-  }, [constraintMode, orthoPresetIndex]);
+    if (constraintMode === "ortho-angle") {
+      if (orthoPresetIndex == null) return null;
+      const preset = ORTHO_PRESETS[orthoPresetIndex];
+      return preset ?? null;
+    }
+    if (constraintMode === "polar") {
+      // Mirror `angleStep`'s polar fallback so the guides render at the
+      // same step the snap actually uses. Default 15° matches the
+      // ribbon's polar-step default.
+      return polarAngleStep ?? 15;
+    }
+    return null;
+  }, [constraintMode, orthoPresetIndex, polarAngleStep]);
 
   const resolvePoint = useCallback(
     (rawPoint: Point): Point => {

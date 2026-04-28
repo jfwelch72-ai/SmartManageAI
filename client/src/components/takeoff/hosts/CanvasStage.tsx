@@ -150,11 +150,12 @@ export interface CanvasStageProps {
 
   orthoLock: boolean;
   /**
-   * Task #2199 — When the ribbon's `ortho-angle` constraint is engaged
-   * with a non-null preset (15° / 30° / 45° / 90°), this is the step in
-   * degrees and the canvas paints CAD-style polar tracking guide rays
-   * from the active anchor. Null in every other constraint state
-   * (none / ortho / polar / null preset).
+   * Task #2199 / #2225 — Step in degrees the canvas uses to paint
+   * CAD-style polar tracking guide rays from the active anchor. Set
+   * when the ribbon's `ortho-angle` constraint is engaged with a
+   * non-null preset (15° / 30° / 45° / 90°) OR when the dedicated
+   * `polar` constraint is on (defaults to `polarAngleStep` ?? 15°).
+   * Null in every other constraint state (none / ortho / null preset).
    */
   polarGuideStep: number | null;
   activeCondition: TakeoffCondition | null;

@@ -637,6 +637,42 @@ describe("Task #2199 — polarGuideStep gates polar tracking guides", () => {
     expect(result.current.polarGuideStep).toBeNull();
   });
 
+  /**
+   * Task #2225 — Polar lock must paint guide rays too. Previously
+   * `polarGuideStep` only emitted for `ortho-angle`, so engaging Polar
+   * lock from the ribbon snapped silently with no visible fan. The
+   * polar-mode branch must mirror `angleStep`'s default 15° fallback
+   * and honor any custom `polarAngleStep` the ribbon hands down.
+   */
+  it("Task #2225 — returns the default 15° step when constraintMode='polar' with no explicit step", () => {
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: [],
+          constraintMode: "polar",
+          drawingPoints: [{ x: 0, y: 0 }],
+        }),
+      ),
+    );
+    expect(result.current.polarGuideStep).toBe(15);
+  });
+
+  it("Task #2225 — honors a custom polarAngleStep when constraintMode='polar'", () => {
+    for (const step of [5, 10, 22.5, 30]) {
+      const { result } = renderHook(() =>
+        useTakeoffInteractions(
+          buildParams({
+            enabledSnapModes: [],
+            constraintMode: "polar",
+            polarAngleStep: step,
+            drawingPoints: [{ x: 0, y: 0 }],
+          }),
+        ),
+      );
+      expect(result.current.polarGuideStep).toBe(step);
+    }
+  });
+
   it("is null when constraintMode is undefined (legacy callers without ribbon)", () => {
     // Even with the legacy `takeoff-ortho-lock=true` flag persisted,
     // pure-legacy callers must not get polar guides — they never had
