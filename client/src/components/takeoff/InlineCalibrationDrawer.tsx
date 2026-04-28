@@ -20,7 +20,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Ruler, MousePointer, Plus, X, ExternalLink, AlertTriangle, Lock, RefreshCcw } from "lucide-react";
+import { Ruler, MousePointer, Plus, X, ExternalLink, AlertTriangle, History, Lock, RefreshCcw } from "lucide-react";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   parseTypedDimension,
@@ -87,6 +87,9 @@ export interface InlineCalibrationDrawerProps {
   /** Open the existing PlanScaleModal so the user can pick a known
    *  ratio (e.g. 1/4" = 1'-0") instead of drawing a calibration. */
   onUseStandardScale: () => void;
+  /** Task #2325 — Open the Scale History side panel. When omitted the
+   *  affordance is hidden (e.g. unit tests that don't mount the panel). */
+  onShowScaleHistory?: () => void;
   /** Multi-region calib state piped through so existing usage
    *  (TakeoffSidebar) stays in sync. */
   multiCalibMode: boolean;
@@ -182,6 +185,7 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
     currentScalePxPerFoot,
     onSaveCalibration,
     onUseStandardScale,
+    onShowScaleHistory,
     multiCalibMode,
     multiCalibPoints,
     setMultiCalibPoints,
@@ -821,14 +825,26 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
                 ? `Current scale: ${currentScalePxPerFoot.toFixed(2)} px/ft`
                 : "Not calibrated"}
             </span>
-            <button
-              type="button"
-              className="text-primary hover:underline flex items-center gap-1"
-              onClick={onUseStandardScale}
-              data-testid="button-inline-calibration-use-standard"
-            >
-              Use Standard Scale <ExternalLink className="w-3 h-3" />
-            </button>
+            <div className="flex items-center gap-3">
+              {onShowScaleHistory && (
+                <button
+                  type="button"
+                  className="text-primary hover:underline flex items-center gap-1"
+                  onClick={onShowScaleHistory}
+                  data-testid="button-inline-calibration-show-scale-history"
+                >
+                  <History className="w-3 h-3" /> Scale history
+                </button>
+              )}
+              <button
+                type="button"
+                className="text-primary hover:underline flex items-center gap-1"
+                onClick={onUseStandardScale}
+                data-testid="button-inline-calibration-use-standard"
+              >
+                Use Standard Scale <ExternalLink className="w-3 h-3" />
+              </button>
+            </div>
           </div>
 
           <div className="mt-auto flex items-center justify-end gap-2">

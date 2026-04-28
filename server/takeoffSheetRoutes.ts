@@ -1,8 +1,8 @@
 import { Router, NextFunction } from "express";
 import { logError } from "./utils/logger";
 import { db } from "./db";
-import { bids, bidDocuments, takeoffSheets, quantityCategories, bimStoreyAssociations, projects } from "@shared/schema";
-import { eq, and, max } from "drizzle-orm";
+import { bids, bidDocuments, takeoffSheets, quantityCategories, bimStoreyAssociations, projects, auditLog, users } from "@shared/schema";
+import { eq, and, max, desc } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { logAudit, logCreate } from "./auditLogger";
@@ -593,6 +593,45 @@ router.post("/api/takeoff/sheets/:sheetId/supersede", requireAuth, requireRole("
       newValue: `Sheet superseded by ${newSheetId}`,
     }, req);
 
+    // Task #2325 — also record a structured scale-history entry on the
+    // *new* sheet so its Scale History panel shows where the inherited
+    // scale came from. Uses the same JSON shape as calibration writes
+    // so the GET /scale-history endpoint can fold it into the timeline.
+    if (newSheet) {
+      await logAudit({
+        userId: req.user!.id,
+        entityType: "takeoff_sheet",
+        entityId: newSheetId,
+        action: "UPDATE",
+        oldValue: JSON.stringify({
+          kind: "scale_calibration",
+          scalePxPerFoot: revisionBefore?.scalePxPerFoot ?? null,
+          scaleLabel: revisionBefore?.scaleLabel ?? null,
+          units: revisionBefore?.units ?? null,
+          scaleSource: revisionBefore?.scaleSource ?? null,
+          scaleConfidence: revisionBefore?.scaleConfidence ?? null,
+          scaleCalibratedById: revisionBefore?.scaleCalibratedById ?? null,
+          scaleCalibratedAt: revisionBefore?.scaleCalibratedAt
+            ? new Date(revisionBefore.scaleCalibratedAt as Date | string).toISOString()
+            : null,
+        }),
+        newValue: JSON.stringify({
+          kind: "scale_calibration",
+          scalePxPerFoot: newSheet.scalePxPerFoot,
+          scaleLabel: newSheet.scaleLabel,
+          units: newSheet.units,
+          scaleSource: newSheet.scaleSource,
+          scaleConfidence: newSheet.scaleConfidence,
+          scaleCalibratedById: newSheet.scaleCalibratedById,
+          scaleCalibratedAt: newSheet.scaleCalibratedAt
+            ? new Date(newSheet.scaleCalibratedAt as Date | string).toISOString()
+            : null,
+          source: "supersede",
+          supersedesSheetId: sheetId,
+        }),
+      }, req);
+    }
+
     if (oldSheet?.projectId) {
       try {
         const { eventBus } = await import("./events");
@@ -622,6 +661,204 @@ router.post("/api/takeoff/sheets/:sheetId/supersede", requireAuth, requireRole("
   next(error);
   }
 });
+
+// Task #2325 — Scale History endpoint. Returns the structured calibration
+// audit trail for a single takeoff sheet (BULK_PROPAGATED applies, manual
+// recalibrations, supersede inherits, and Undo restores). Anything written
+// by the helpers above with `kind === "scale_calibration"` shows up here;
+// older free-form audit rows (e.g. the legacy "Sheet superseded by …"
+// string) are returned as a separate `notes` array so the UI can still
+// surface them as plain text below the structured timeline.
+router.get(
+  "/api/takeoff/sheets/:sheetId/scale-history",
+  requireAuth,
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { sheetId } = req.params;
+      const access = await verifySheetAccess(sheetId, req.user!);
+      if (!access.allowed) {
+        res
+          .status(access.sheet ? 403 : 404)
+          .json({ error: access.reason || "Sheet not found" });
+        return;
+      }
+
+      const [sheet] = await db
+        .select({
+          id: takeoffSheets.id,
+          scalePxPerFoot: takeoffSheets.scalePxPerFoot,
+          scaleLabel: takeoffSheets.scaleLabel,
+          units: takeoffSheets.units,
+          scaleSource: takeoffSheets.scaleSource,
+          scaleConfidence: takeoffSheets.scaleConfidence,
+          scaleCalibratedById: takeoffSheets.scaleCalibratedById,
+          scaleCalibratedAt: takeoffSheets.scaleCalibratedAt,
+        })
+        .from(takeoffSheets)
+        .where(eq(takeoffSheets.id, sheetId))
+        .limit(1);
+
+      const rows = await db
+        .select({
+          id: auditLog.id,
+          createdAt: auditLog.createdAt,
+          action: auditLog.action,
+          oldValue: auditLog.oldValue,
+          newValue: auditLog.newValue,
+          userId: auditLog.userId,
+          userFirstName: users.firstName,
+          userLastName: users.lastName,
+          userEmail: users.email,
+          userAvatarUrl: users.avatarUrl,
+        })
+        .from(auditLog)
+        .leftJoin(users, eq(auditLog.userId, users.id))
+        .where(
+          and(
+            eq(auditLog.entityType, "takeoff_sheet"),
+            eq(auditLog.entityId, sheetId),
+          ),
+        )
+        .orderBy(desc(auditLog.createdAt));
+
+      type ScalePayload = {
+        kind?: string;
+        scalePxPerFoot?: number | null;
+        scaleLabel?: string | null;
+        units?: string | null;
+        scaleSource?: string | null;
+        scaleConfidence?: string | null;
+        scaleCalibratedById?: string | null;
+        scaleCalibratedAt?: string | null;
+        source?: string | null;
+        sheetSetId?: string | null;
+        supersedesSheetId?: string | null;
+      };
+
+      const tryParse = (raw: string | null | undefined): ScalePayload | null => {
+        if (!raw || typeof raw !== "string") return null;
+        const trimmed = raw.trim();
+        if (!trimmed.startsWith("{")) return null;
+        try {
+          const parsed = JSON.parse(trimmed) as ScalePayload;
+          if (parsed && parsed.kind === "scale_calibration") return parsed;
+          return null;
+        } catch {
+          return null;
+        }
+      };
+
+      const entries = rows
+        .map((row) => {
+          const newPayload = tryParse(row.newValue);
+          if (!newPayload) return null;
+          const oldPayload = tryParse(row.oldValue);
+          return {
+            id: row.id,
+            createdAt: row.createdAt instanceof Date
+              ? row.createdAt.toISOString()
+              : new Date(row.createdAt as string).toISOString(),
+            action: row.action,
+            scalePxPerFoot: newPayload.scalePxPerFoot ?? null,
+            scaleLabel: newPayload.scaleLabel ?? null,
+            units: newPayload.units ?? null,
+            scaleSource: newPayload.scaleSource ?? null,
+            scaleConfidence: newPayload.scaleConfidence ?? null,
+            source: newPayload.source ?? null,
+            sheetSetId: newPayload.sheetSetId ?? null,
+            supersedesSheetId: newPayload.supersedesSheetId ?? null,
+            previousScalePxPerFoot: oldPayload?.scalePxPerFoot ?? null,
+            previousScaleLabel: oldPayload?.scaleLabel ?? null,
+            previousScaleSource: oldPayload?.scaleSource ?? null,
+            previousScaleConfidence: oldPayload?.scaleConfidence ?? null,
+            user: row.userId
+              ? {
+                  id: row.userId,
+                  firstName: row.userFirstName,
+                  lastName: row.userLastName,
+                  email: row.userEmail,
+                  avatarUrl: row.userAvatarUrl,
+                }
+              : null,
+          };
+        })
+        .filter((e): e is NonNullable<typeof e> => e !== null);
+
+      // Free-form audit rows (e.g. legacy "Sheet superseded by …") — surfaced
+      // separately so they don't pretend to be calibration entries.
+      const notes = rows
+        .filter((row) => {
+          const newPayload = tryParse(row.newValue);
+          if (newPayload) return false;
+          return typeof row.newValue === "string" && row.newValue.length > 0;
+        })
+        .map((row) => ({
+          id: row.id,
+          createdAt: row.createdAt instanceof Date
+            ? row.createdAt.toISOString()
+            : new Date(row.createdAt as string).toISOString(),
+          action: row.action,
+          message: row.newValue,
+          user: row.userId
+            ? {
+                id: row.userId,
+                firstName: row.userFirstName,
+                lastName: row.userLastName,
+                email: row.userEmail,
+                avatarUrl: row.userAvatarUrl,
+              }
+            : null,
+        }));
+
+      // Resolve the current calibrating user (the sheet row itself doesn't
+      // join to users) so the panel can show "Currently calibrated by …"
+      // even when the audit trail is empty (e.g. sheets that were calibrated
+      // before Task #2325 added structured audit writes).
+      let currentCalibrator: {
+        id: string;
+        firstName: string | null;
+        lastName: string | null;
+        email: string | null;
+        avatarUrl: string | null;
+      } | null = null;
+      if (sheet?.scaleCalibratedById) {
+        const [calibrator] = await db
+          .select({
+            id: users.id,
+            firstName: users.firstName,
+            lastName: users.lastName,
+            email: users.email,
+            avatarUrl: users.avatarUrl,
+          })
+          .from(users)
+          .where(eq(users.id, sheet.scaleCalibratedById))
+          .limit(1);
+        if (calibrator) currentCalibrator = calibrator;
+      }
+
+      res.json({
+        sheetId,
+        current: sheet
+          ? {
+              scalePxPerFoot: sheet.scalePxPerFoot,
+              scaleLabel: sheet.scaleLabel,
+              units: sheet.units,
+              scaleSource: sheet.scaleSource,
+              scaleConfidence: sheet.scaleConfidence,
+              scaleCalibratedAt: sheet.scaleCalibratedAt
+                ? new Date(sheet.scaleCalibratedAt as Date | string).toISOString()
+                : null,
+              calibratedBy: currentCalibrator,
+            }
+          : null,
+        entries,
+        notes,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 // Stream PDF directly for a takeoff sheet (with authorization)
 router.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequest, res, next) => {

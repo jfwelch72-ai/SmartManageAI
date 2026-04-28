@@ -17,7 +17,7 @@ import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { sanitizeShortText } from "./sanitization";
 import { createArcSegment, computeDistanceInFeet, computePolygonAreaInFt2, computePolygonPerimeterInFt, computeVolumeInCY, computePitchedAreaFt2 } from "@shared/utils/geometry";
 import { verifySheetAccess, safeParsePoints, verifyGroupAccess, getActiveDraftVersionId, getDefaultVersionId, getDefaultVersionIdsBatch, hasAnyVersions, isMeasurementLocked } from "./takeoffHelpers";
-import { logCreate, logUpdate, logDelete } from "./auditLogger";
+import { logAudit, logCreate, logUpdate, logDelete } from "./auditLogger";
 import { logError } from "./utils/logger";
 import { recordJobMetrics } from "./utils/jobMetrics";
 import { parseOrRespond } from "./utils/validation";
@@ -1789,18 +1789,44 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
       resolvedConfidence = scaleConfidence;
     }
 
-    // Task #2326 — Read the previous scalePxPerFoot up front so that
-    // when handlingMode === "lock" we have the exact px/ft value to
-    // snapshot onto every existing measurement before we overwrite
-    // the sheet's scale below. Race-safety isn't a concern here: the
-    // calibration PATCH is single-tenant per sheet and we issue the
-    // sheet update + measurement updates within the same request.
-    const [previousSheet] = await db
-      .select({ scalePxPerFoot: takeoffSheets.scalePxPerFoot })
+    // Tasks #2325 + #2326 — Read the prior scale state up front. We
+    // need it for two purposes:
+    //   • #2326 lock mode: the exact previous px/ft value gets
+    //     snapshotted onto every still-unlocked measurement before
+    //     we overwrite the sheet's scale.
+    //   • #2325 Scale History panel: the full prior row (label /
+    //     source / confidence / calibrating user / timestamp) gets
+    //     serialized into the audit log's `oldValue` so the panel
+    //     can render a real before→after timeline for each write.
+    // Race-safety isn't a concern here: the calibration PATCH is
+    // single-tenant per sheet and we issue the sheet update +
+    // measurement updates within the same request.
+    const [priorRow] = await db
+      .select({
+        scalePxPerFoot: takeoffSheets.scalePxPerFoot,
+        scaleLabel: takeoffSheets.scaleLabel,
+        units: takeoffSheets.units,
+        scaleSource: takeoffSheets.scaleSource,
+        scaleConfidence: takeoffSheets.scaleConfidence,
+        scaleCalibratedById: takeoffSheets.scaleCalibratedById,
+        scaleCalibratedAt: takeoffSheets.scaleCalibratedAt,
+      })
       .from(takeoffSheets)
       .where(eq(takeoffSheets.id, id))
       .limit(1);
-    const previousScalePxPerFoot = previousSheet?.scalePxPerFoot ?? null;
+    const previousScalePxPerFoot = priorRow?.scalePxPerFoot ?? null;
+    const previousScale = {
+      kind: "scale_calibration" as const,
+      scalePxPerFoot: priorRow?.scalePxPerFoot ?? null,
+      scaleLabel: priorRow?.scaleLabel ?? null,
+      units: priorRow?.units ?? null,
+      scaleSource: priorRow?.scaleSource ?? null,
+      scaleConfidence: priorRow?.scaleConfidence ?? null,
+      scaleCalibratedById: priorRow?.scaleCalibratedById ?? null,
+      scaleCalibratedAt: priorRow?.scaleCalibratedAt
+        ? new Date(priorRow.scaleCalibratedAt as Date | string).toISOString()
+        : null,
+    };
 
     const [updated] = await db
       .update(takeoffSheets)
@@ -1821,6 +1847,33 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
       })
       .where(eq(takeoffSheets.id, id))
       .returning();
+
+    // Task #2325 — write a structured audit row for the Scale History
+    // panel. Both branches below (lock + rescale) read the new sheet
+    // state, so we log here once before the geometry pass to keep the
+    // before/after pairing tight even if a downstream recompute throws.
+    if (updated) {
+      await logAudit({
+        userId: req.user!.id,
+        entityType: "takeoff_sheet",
+        entityId: id,
+        action: "UPDATE",
+        oldValue: JSON.stringify(previousScale),
+        newValue: JSON.stringify({
+          kind: "scale_calibration",
+          scalePxPerFoot: updated.scalePxPerFoot,
+          scaleLabel: updated.scaleLabel,
+          units: updated.units,
+          scaleSource: updated.scaleSource,
+          scaleConfidence: updated.scaleConfidence,
+          scaleCalibratedById: updated.scaleCalibratedById,
+          scaleCalibratedAt: updated.scaleCalibratedAt
+            ? new Date(updated.scaleCalibratedAt as Date | string).toISOString()
+            : null,
+          source: "calibration",
+        }),
+      }, req);
+    }
 
     // Task #2319 — re-calibration recomputes legacy rows only. Rows
     // that already carry an immutable `scale_at_capture_px_per_foot`
@@ -1947,13 +2000,24 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
 
     await db.transaction(async (tx) => {
       for (const sheetId of allowedSheetIds) {
+        // Task #2325 — read prior state up-front so we can write a structured
+        // audit row covering the per-sheet skip/update outcome.
+        const [priorRow] = await tx
+          .select({
+            scalePxPerFoot: takeoffSheets.scalePxPerFoot,
+            scaleLabel: takeoffSheets.scaleLabel,
+            units: takeoffSheets.units,
+            scaleSource: takeoffSheets.scaleSource,
+            scaleConfidence: takeoffSheets.scaleConfidence,
+            scaleCalibratedById: takeoffSheets.scaleCalibratedById,
+            scaleCalibratedAt: takeoffSheets.scaleCalibratedAt,
+          })
+          .from(takeoffSheets)
+          .where(eq(takeoffSheets.id, sheetId))
+          .limit(1);
+
         if (skipCalibrated) {
-          const [existing] = await tx
-            .select({ scalePxPerFoot: takeoffSheets.scalePxPerFoot })
-            .from(takeoffSheets)
-            .where(eq(takeoffSheets.id, sheetId))
-            .limit(1);
-          if (existing?.scalePxPerFoot) {
+          if (priorRow?.scalePxPerFoot) {
             skippedCount++;
             continue;
           }
@@ -1976,6 +2040,41 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
         if (updated) {
           updatedCount++;
           results.push(updated);
+
+          // Task #2325 — per-sheet structured audit row, written
+          // inside the same transaction as the sheet update so a
+          // rollback of the sheet write rolls the audit row back too.
+          await logAudit({
+            userId: req.user!.id,
+            entityType: "takeoff_sheet",
+            entityId: sheetId,
+            action: "UPDATE",
+            oldValue: JSON.stringify({
+              kind: "scale_calibration",
+              scalePxPerFoot: priorRow?.scalePxPerFoot ?? null,
+              scaleLabel: priorRow?.scaleLabel ?? null,
+              units: priorRow?.units ?? null,
+              scaleSource: priorRow?.scaleSource ?? null,
+              scaleConfidence: priorRow?.scaleConfidence ?? null,
+              scaleCalibratedById: priorRow?.scaleCalibratedById ?? null,
+              scaleCalibratedAt: priorRow?.scaleCalibratedAt
+                ? new Date(priorRow.scaleCalibratedAt as Date | string).toISOString()
+                : null,
+            }),
+            newValue: JSON.stringify({
+              kind: "scale_calibration",
+              scalePxPerFoot: updated.scalePxPerFoot,
+              scaleLabel: updated.scaleLabel,
+              units: updated.units,
+              scaleSource: updated.scaleSource,
+              scaleConfidence: updated.scaleConfidence,
+              scaleCalibratedById: updated.scaleCalibratedById,
+              scaleCalibratedAt: updated.scaleCalibratedAt
+                ? new Date(updated.scaleCalibratedAt as Date | string).toISOString()
+                : null,
+              source: "batch_calibration",
+            }),
+          }, req, tx);
 
           // Task #2319 — same carve-out as the per-sheet calibration
           // route: rows with an immutable scaleAtCapturePxPerFoot

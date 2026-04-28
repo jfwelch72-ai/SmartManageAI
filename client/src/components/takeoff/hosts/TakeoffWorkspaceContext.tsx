@@ -110,6 +110,11 @@ export interface SheetContextSlice {
     scaleLabel: string | null;
     onVerify: () => void;
     onRecalibrate: () => void;
+    /** Task #2325 — opens the Scale History side panel for the
+     *  currently active sheet so the estimator can audit who set
+     *  the inherited scale (and how confident it was) before
+     *  deciding to verify or recalibrate. */
+    onShowHistory: () => void;
   };
   /** Sheet header toolbar (selector, sheet-actions menu, calibration badge,
    *  auto-import / version / properties / scale / shortcuts / cross-module

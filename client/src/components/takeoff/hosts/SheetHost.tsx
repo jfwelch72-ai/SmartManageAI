@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { AlertTriangle, Check, GitCompare, Loader2, Lock, Ruler, X } from "lucide-react";
+import { AlertTriangle, Check, GitCompare, History, Loader2, Lock, Ruler, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PageThumbnailStrip } from "../PageThumbnailStrip";
 import { TakeoffSheetCompareDialog } from "../TakeoffSheetCompareDialog";
@@ -140,6 +140,18 @@ function SheetHostInner() {
               data-testid="button-banner-recalibrate"
             >
               <Ruler className="w-3.5 h-3.5 mr-1" /> Re-calibrate
+            </Button>
+            {/* Task #2325 — audit trail entry. Ghost button so it
+                visually defers to the primary "Verify dimension" CTA
+                while still being one click from the warning context. */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-3 text-xs text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/30"
+              onClick={ctx.scaleDrift.onShowHistory}
+              data-testid="button-banner-scale-history"
+            >
+              <History className="w-3.5 h-3.5 mr-1" /> History
             </Button>
           </div>
         </div>

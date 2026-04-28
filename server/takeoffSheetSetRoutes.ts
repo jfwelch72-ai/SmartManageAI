@@ -10,7 +10,7 @@ import {
 import { and, eq, asc, inArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
-import { logCreate, logUpdate, logDelete } from "./auditLogger";
+import { logAudit, logCreate, logUpdate, logDelete } from "./auditLogger";
 import { verifySheetAccess } from "./takeoffHelpers";
 
 const router = Router();
@@ -585,6 +585,11 @@ router.post(
           id: takeoffSheets.id,
           scalePxPerFoot: takeoffSheets.scalePxPerFoot,
           scaleLabel: takeoffSheets.scaleLabel,
+          units: takeoffSheets.units,
+          scaleSource: takeoffSheets.scaleSource,
+          scaleConfidence: takeoffSheets.scaleConfidence,
+          scaleCalibratedById: takeoffSheets.scaleCalibratedById,
+          scaleCalibratedAt: takeoffSheets.scaleCalibratedAt,
         })
         .from(takeoffSheets)
         .where(inArray(takeoffSheets.id, sheetIds));
@@ -611,6 +616,48 @@ router.post(
         .set(updates)
         .where(inArray(takeoffSheets.id, sheetIds))
         .returning({ id: takeoffSheets.id });
+
+      // Task #2325 — write a per-sheet audit row for every member so the
+      // Scale History panel for each sheet shows the BULK_PROPAGATED entry
+      // (the existing logUpdate below records the set-level event only).
+      const newScaleCalibratedAtIso = (updates.scaleCalibratedAt as Date).toISOString();
+      const priorByIdForAudit = new Map(priorScales.map((s) => [s.id, s] as const));
+      for (const memberId of updated.map((u) => u.id)) {
+        const prior = priorByIdForAudit.get(memberId);
+        await logAudit({
+          userId: ctx.userId,
+          entityType: "takeoff_sheet",
+          entityId: memberId,
+          action: "UPDATE",
+          oldValue: JSON.stringify({
+            kind: "scale_calibration",
+            scalePxPerFoot: prior?.scalePxPerFoot ?? null,
+            scaleLabel: prior?.scaleLabel ?? null,
+            units: prior?.units ?? null,
+            scaleSource: prior?.scaleSource ?? null,
+            scaleConfidence: prior?.scaleConfidence ?? null,
+            scaleCalibratedById: prior?.scaleCalibratedById ?? null,
+            scaleCalibratedAt: prior?.scaleCalibratedAt
+              ? new Date(prior.scaleCalibratedAt as Date | string).toISOString()
+              : null,
+          }),
+          newValue: JSON.stringify({
+            kind: "scale_calibration",
+            scalePxPerFoot: parsed.data.scalePxPerFoot,
+            scaleLabel:
+              parsed.data.scaleLabel !== undefined
+                ? parsed.data.scaleLabel
+                : (prior?.scaleLabel ?? null),
+            units: prior?.units ?? null,
+            scaleSource: "BULK_PROPAGATED",
+            scaleConfidence: propagatedConfidence,
+            scaleCalibratedById: ctx.userId,
+            scaleCalibratedAt: newScaleCalibratedAtIso,
+            source: "sheet_set_apply",
+            sheetSetId: id,
+          }),
+        }, req);
+      }
 
       let savedAsDefault = false;
       if (parsed.data.saveAsDefault) {
@@ -706,14 +753,65 @@ router.post(
       let restored = 0;
       await db.transaction(async (tx) => {
         for (const item of parsed.data.sheets) {
-          await tx
+          // Task #2325 — capture the BULK_PROPAGATED state we're about to
+          // overwrite so the Scale History panel renders the Undo as its own
+          // entry instead of silently rolling back to the prior value.
+          const [beforeRestore] = await tx
+            .select({
+              scalePxPerFoot: takeoffSheets.scalePxPerFoot,
+              scaleLabel: takeoffSheets.scaleLabel,
+              units: takeoffSheets.units,
+              scaleSource: takeoffSheets.scaleSource,
+              scaleConfidence: takeoffSheets.scaleConfidence,
+              scaleCalibratedById: takeoffSheets.scaleCalibratedById,
+              scaleCalibratedAt: takeoffSheets.scaleCalibratedAt,
+            })
+            .from(takeoffSheets)
+            .where(eq(takeoffSheets.id, item.sheetId))
+            .limit(1);
+          const [afterRestore] = await tx
             .update(takeoffSheets)
             .set({
               scalePxPerFoot: item.scalePxPerFoot,
               scaleLabel: item.scaleLabel,
               updatedAt: new Date(),
             })
-            .where(eq(takeoffSheets.id, item.sheetId));
+            .where(eq(takeoffSheets.id, item.sheetId))
+            .returning();
+          if (afterRestore) {
+            await logAudit({
+              userId: ctx.userId,
+              entityType: "takeoff_sheet",
+              entityId: item.sheetId,
+              action: "UPDATE",
+              oldValue: JSON.stringify({
+                kind: "scale_calibration",
+                scalePxPerFoot: beforeRestore?.scalePxPerFoot ?? null,
+                scaleLabel: beforeRestore?.scaleLabel ?? null,
+                units: beforeRestore?.units ?? null,
+                scaleSource: beforeRestore?.scaleSource ?? null,
+                scaleConfidence: beforeRestore?.scaleConfidence ?? null,
+                scaleCalibratedById: beforeRestore?.scaleCalibratedById ?? null,
+                scaleCalibratedAt: beforeRestore?.scaleCalibratedAt
+                  ? new Date(beforeRestore.scaleCalibratedAt as Date | string).toISOString()
+                  : null,
+              }),
+              newValue: JSON.stringify({
+                kind: "scale_calibration",
+                scalePxPerFoot: afterRestore.scalePxPerFoot,
+                scaleLabel: afterRestore.scaleLabel,
+                units: afterRestore.units,
+                scaleSource: afterRestore.scaleSource,
+                scaleConfidence: afterRestore.scaleConfidence,
+                scaleCalibratedById: afterRestore.scaleCalibratedById,
+                scaleCalibratedAt: afterRestore.scaleCalibratedAt
+                  ? new Date(afterRestore.scaleCalibratedAt as Date | string).toISOString()
+                  : null,
+                source: "sheet_set_restore",
+                sheetSetId: id,
+              }),
+            }, req, tx);
+          }
           restored += 1;
         }
       });

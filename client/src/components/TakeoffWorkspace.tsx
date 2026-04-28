@@ -89,6 +89,7 @@ import { TakeoffDialogs } from "./takeoff/TakeoffDialogs";
 import { PlanScaleModal } from "./takeoff/PlanScaleModal";
 import { InlineCalibrationDrawer } from "./takeoff/InlineCalibrationDrawer";
 import { computeSheetCalibrationConfidence } from "./takeoff/sheetCalibrationConfidence";
+import { ScaleHistoryPanel } from "./takeoff/ScaleHistoryPanel";
 import { SheetSetsPanel } from "./takeoff/SheetSetsPanel";
 import { ToastAction } from "@/components/ui/toast";
 import type { ParsedDimension } from "@/lib/takeoffTypedInput";
@@ -459,6 +460,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   // interaction map). `T` opens this side-anchored Sheet so the
   // canvas stays clickable for the two-point pick.
   const [calibrationDrawerOpen, setCalibrationDrawerOpen] = useState(false);
+  // Task #2325 — Scale History side panel. Holds the sheet ID it was
+  // opened for so callers (drift banner, calibration drawer) can target a
+  // specific sheet that may differ from the currently selected one.
+  const [scaleHistorySheetId, setScaleHistorySheetId] = useState<string | null>(null);
   // Tool to restore when the calibration drawer closes — captured at
   // open time so the canvas returns to whatever the user was doing.
   const calibrationPrevToolRef = useRef<Tool>("select");
@@ -3787,6 +3792,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       scaleLabel: currentSheet?.scaleLabel ?? null,
       onVerify: openCalibrationDrawer,
       onRecalibrate: openCalibrationDrawer,
+      // Task #2325 — drift banner needs an audit trail entry point.
+      // No-ops if the sheet has been deselected mid-render so the
+      // banner click never accidentally opens the panel for `null`.
+      onShowHistory: () => {
+        if (selectedSheet) setScaleHistorySheetId(selectedSheet);
+      },
     },
     selectorBar: {
       workspaceRef,
@@ -5270,6 +5281,17 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           closeCalibrationDrawer();
           setScaleModalOpen(true);
         }}
+        onShowScaleHistory={() => {
+          // Task #2325 — Open the Scale History panel for the
+          // currently selected sheet. We don't close the drawer
+          // since the panel is anchored to the opposite side and
+          // both can co-exist (the user often wants to see the
+          // historical context while re-calibrating). The button
+          // is always rendered (so the affordance is visible the
+          // moment the drawer opens), but it no-ops if no sheet
+          // is selected to avoid opening the panel against `null`.
+          if (selectedSheet) setScaleHistorySheetId(selectedSheet);
+        }}
         multiCalibMode={multiCalibMode}
         setMultiCalibMode={setMultiCalibMode}
         multiCalibPoints={multiCalibPoints}
@@ -5309,6 +5331,23 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         // sheet has a prior `scalePxPerFoot`, so brand-new sheets
         // skip the prompt entirely.
         existingMeasurementCount={measurements.length}
+      />
+
+      {/* Task #2325 — Scale History side panel. Mounted alongside the
+          calibration drawer so opening one doesn't close the other.
+          Sheet name is read off the live `sheets` query so the title
+          stays in sync if the user renames the sheet mid-session. */}
+      <ScaleHistoryPanel
+        open={!!scaleHistorySheetId}
+        onOpenChange={(next) => {
+          if (!next) setScaleHistorySheetId(null);
+        }}
+        sheetId={scaleHistorySheetId}
+        sheetName={
+          scaleHistorySheetId
+            ? sheets.find((s) => s.id === scaleHistorySheetId)?.sheetName ?? null
+            : null
+        }
       />
 
       <Dialog open={dimInputOpen} onOpenChange={setDimInputOpen}>
