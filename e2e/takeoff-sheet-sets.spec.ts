@@ -8,6 +8,7 @@
 
 import { test, expect, type Page } from "@playwright/test";
 import { authedRequest, installCsrf } from "./helpers/csrf";
+import { getDragTuning } from "./helpers/canvasDrag";
 import { dispatchHtml5Drop, dispatchHtml5Reorder } from "./helpers/htmlDrag";
 
 const BASE_URL =
@@ -48,8 +49,15 @@ async function gotoTakeoff(page: Page, bidCode: string): Promise<void> {
   await page.goto(`${BASE_URL}/takeoff/${bidCode}`, {
     waitUntil: "domcontentloaded",
   });
+  // Task #2241 — webkit's React hydration of the takeoff workspace
+  // routinely overshoots 15s in the Replit dev container (the panel
+  // CRUD test runs to 32s end-to-end on webkit, with ~half of that
+  // before the ribbon attaches). Bumping the wait to 30s here keeps
+  // chromium snappy (it still resolves in <2s) while removing the
+  // false negative that was blocking the engine from running the
+  // sheet-sets specs at all.
   await expect(page.getByTestId("unified-takeoff-ribbon")).toBeVisible({
-    timeout: 15_000,
+    timeout: 30_000,
   });
   // The right TakeoffSidebar is an absolute-positioned overlay that
   // covers the rightmost ribbon controls — including the Sheet Sets
@@ -351,7 +359,10 @@ test.describe("Task #2141 — Sheet Sets UI", () => {
   test("drag a thumbnail from the strip onto a set row appends it as a member", async ({
     page,
   }) => {
-    test.setTimeout(60_000);
+    // Task #2241 — webkit's hydration of the takeoff workspace alone
+    // eats ~30s in the Replit dev container, so the prior 60s budget
+    // left no headroom for the seed/createSet/drop poll that follows.
+    test.setTimeout(90_000);
     await devLogin(page, "ADMIN");
     const fixture = await seedTakeoffFixture(page, 3);
     await gotoTakeoff(page, fixture.bid.code);
@@ -421,8 +432,12 @@ test.describe("Task #2141 — Sheet Sets UI", () => {
 
   test("drag-reorder two members within a set updates sortOrder on the server", async ({
     page,
+    browserName,
   }) => {
-    test.setTimeout(90_000);
+    // Task #2241 — see the matching note on the thumbnail-drop test
+    // above. Webkit's takeoff hydration leaves the prior 90s budget
+    // tight after seedTakeoffFixture, so bump to 120s.
+    test.setTimeout(120_000);
     await devLogin(page, "ADMIN");
     const fixture = await seedTakeoffFixture(page, 3);
     await gotoTakeoff(page, fixture.bid.code);
@@ -460,6 +475,12 @@ test.describe("Task #2141 — Sheet Sets UI", () => {
     // production `onDragStart` writes the source's testid under
     // `text/plain` for the OS-level drag image — pass it through
     // so the synthesized DataTransfer matches.
+    // Task #2241 — webkit/firefox flush React's microtask queue
+    // noticeably slower than chromium after a synthetic dragstart, so
+    // we override the helper's default 50ms flush wait with the
+    // engine-aware value from `getDragTuning`. Leaving the default
+    // would race on the other engines and the reorder mutation would
+    // never fire there.
     await dispatchHtml5Reorder({
       source: memberA,
       target: memberB,
@@ -467,6 +488,7 @@ test.describe("Task #2141 — Sheet Sets UI", () => {
         mime: "text/plain",
         data: `set-member-${set.id}-${a}`,
       },
+      flushWaitMs: getDragTuning(browserName).syntheticDragReactFlushWait,
     });
 
     // The reorder mutation POSTs to /reorder and the server walks the

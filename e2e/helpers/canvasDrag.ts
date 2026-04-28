@@ -100,6 +100,33 @@ export interface DragTuning {
   postUpWait: number;
   /** `waitForTimeout` between `mouse.down()` and `mouse.up()` for clicks, ms. */
   clickHoldWait: number;
+  /**
+   * Task #2241 — `waitForTimeout` to insert *between* a synthetic
+   * `dragstart` `page.evaluate(...)` and the follow-up
+   * `dragover`/`drop` `page.evaluate(...)`, ms.
+   *
+   * The HTML5 drag specs in `e2e/takeoff-sheet-sets.spec.ts` synthesize
+   * a `DragEvent` lifecycle directly via `page.evaluate` because
+   * Playwright's mouse-based `dragTo` won't ship the custom
+   * `application/x-takeoff-sheet` MIME the React drop handlers read.
+   * The reorder flow gates the target's `onDrop` on a local React
+   * state (`draggingSheetId`) that's only set inside the source's
+   * `onDragStart` — so the spec has to give React a tick to flush
+   * that setState commit before the next evaluate dispatches
+   * `dragover`/`drop`. Chromium typically flushes within ~30–50ms;
+   * webkit and firefox are slower at scheduling the React work loop
+   * after a synthetic event, so the same 50ms wait the chromium-only
+   * spec used originally races on those engines and the drop closure
+   * reads `draggingSheetId === null`.
+   *
+   * Bumping the wait on webkit/firefox is enough — there's no native
+   * animation frame to coordinate with, just React's microtask queue.
+   * Centralizing the constant here so any future spec that needs to
+   * synthesize a multi-evaluate HTML5 drag (the panel's drop-onto-row
+   * flow, future palette-into-canvas drops, etc.) can share the same
+   * tuning instead of re-deriving it.
+   */
+  syntheticDragReactFlushWait: number;
 }
 
 /**
@@ -118,6 +145,11 @@ export function getDragTuning(browserName: string): DragTuning {
     edgeWait: isChromium ? 60 : 120,
     postUpWait: isChromium ? 120 : 200,
     clickHoldWait: isChromium ? 30 : 60,
+    // Task #2241 — webkit/firefox need more headroom for React to
+    // commit a setState scheduled inside a synthetic dragstart before
+    // the next evaluate dispatches dragover/drop. See the JSDoc on
+    // `DragTuning.syntheticDragReactFlushWait` for the full story.
+    syntheticDragReactFlushWait: isChromium ? 60 : 150,
   };
 }
 
