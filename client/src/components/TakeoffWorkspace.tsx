@@ -3567,6 +3567,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     runningMeasurement,
     orthoLock,
     polarGuideStep,
+    constraintMode: unifiedRibbon ? constraintMode : undefined,
     activeCondition,
     issues,
     selectedIssueId,

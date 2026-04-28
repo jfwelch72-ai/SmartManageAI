@@ -23,6 +23,7 @@ import type { TakeoffCondition, TakeoffMeasurement, TakeoffSheet } from "@shared
 import type { DetectedItem } from "@/components/AiTakeoffPanel";
 import type { useMutation } from "@tanstack/react-query";
 import type { useTakeoffHistory } from "@/hooks/use-takeoff-history";
+import type { ConstraintMode } from "./takeoff-shortcuts";
 
 type Mutation = ReturnType<typeof useMutation<any, any, any, any>>;
 type HistoryRet = ReturnType<typeof useTakeoffHistory>;
@@ -158,6 +159,15 @@ export interface CanvasStageProps {
    * Null in every other constraint state (none / ortho / null preset).
    */
   polarGuideStep: number | null;
+  /**
+   * Task #2210 — Active constraint group from the unified ribbon. The
+   * canvas paints the live cursor angle/distance badge only when this
+   * is `'ortho-angle'` (the dedicated guided-angle mode); the polar /
+   * ortho / none modes keep their existing previews. Optional so the
+   * legacy ribbon path (which doesn't manage constraintMode) is a
+   * no-op for the badge.
+   */
+  constraintMode?: ConstraintMode;
   activeCondition: TakeoffCondition | null;
 
   issues: any[];
@@ -282,6 +292,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
     runningMeasurement,
     orthoLock,
     polarGuideStep,
+    constraintMode,
     activeCondition,
     issues,
     selectedIssueId,
@@ -1425,6 +1436,84 @@ function CanvasStageImpl(props: CanvasStageProps) {
                         </Group>
                       ));
                     })()}
+
+                    {/* Task #2210 — Live angle/distance readout that
+                        follows the cursor while drawing with the
+                        ortho-angle constraint engaged. Mirrors CAD
+                        polar-tracking tooltips ("045° / 12.34 ft") so
+                        users can confirm both the bearing and length
+                        before clicking. Hidden when constraint is none
+                        (covered by the prop check) or when the cursor
+                        sits exactly on the active anchor. Only paints
+                        when the sheet is calibrated so the distance is
+                        meaningful. Style mirrors the per-segment label
+                        above to keep the canvas visually quiet. */}
+                    {constraintMode === "ortho-angle" &&
+                      cursorPosition &&
+                      currentSheet?.scalePxPerFoot &&
+                      (() => {
+                        const anchor = drawingPoints[drawingPoints.length - 1];
+                        const dx = cursorPosition.x - anchor.x;
+                        const dy = cursorPosition.y - anchor.y;
+                        const distPx = Math.sqrt(dx * dx + dy * dy);
+                        // Hide while the cursor is still on the anchor —
+                        // a 0-distance / undefined-angle badge would just
+                        // flicker. ~2px in stage units is small enough
+                        // to never dead-zone meaningful drags.
+                        if (distPx < 2 / stageScale) return null;
+                        const scale = currentSheet.scalePxPerFoot;
+                        const unitLabel =
+                          currentSheet.units === "m" ? "m" : "ft";
+                        const distVal =
+                          currentSheet.units === "m"
+                            ? (distPx / scale) * 0.3048
+                            : distPx / scale;
+                        // Convert canvas atan2 (y grows downward) into a
+                        // CAD-style bearing where 0° points right and
+                        // angle grows counter-clockwise, normalised to
+                        // [0, 360). Three-digit zero-padded matches the
+                        // "045°" example in the task brief.
+                        let bearing = -Math.atan2(dy, dx) * (180 / Math.PI);
+                        bearing = ((bearing % 360) + 360) % 360;
+                        // Round THEN re-modulo so a bearing of 359.6
+                        // displays as "000°" instead of "360°" — keeps
+                        // the wraparound clean at the +x axis.
+                        const bearingDeg = Math.round(bearing) % 360;
+                        const text = `${String(bearingDeg).padStart(3, "0")}° / ${distVal.toFixed(2)} ${unitLabel}`;
+                        // Offset down-right of the cursor so the badge
+                        // never sits under the pointer; matches the
+                        // per-segment label's character-width math so
+                        // the box hugs the text on both sides.
+                        const padX = 14 / stageScale;
+                        const padY = 14 / stageScale;
+                        const charW = 7 / stageScale;
+                        const boxW = text.length * charW;
+                        const boxH = 13 / stageScale;
+                        return (
+                          <Group
+                            listening={false}
+                            data-testid="badge-ortho-angle-readout"
+                          >
+                            <Rect
+                              x={cursorPosition.x + padX}
+                              y={cursorPosition.y + padY}
+                              width={boxW}
+                              height={boxH}
+                              fill="rgba(0,0,0,0.75)"
+                              cornerRadius={2 / stageScale}
+                            />
+                            <Text
+                              x={cursorPosition.x + padX + (3 / stageScale)}
+                              y={cursorPosition.y + padY + (2 / stageScale)}
+                              text={text}
+                              fontSize={10 / stageScale}
+                              fill="#fbbf24"
+                              fontFamily="monospace"
+                              fontStyle="bold"
+                            />
+                          </Group>
+                        );
+                      })()}
 
                     {drawingPoints.map((point, i) => (
                       <Group key={`temp-${i}`}>
