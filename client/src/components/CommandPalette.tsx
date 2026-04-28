@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { VisuallyHidden } from "@radix-ui/react-visually-hidden";
 import { useAuth } from "@/hooks/use-auth";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useDashboardCustomizationSafe } from "@/hooks/use-dashboard-customization";
 import {
   Building2,
   Briefcase,
@@ -34,6 +35,7 @@ import {
   ArrowRight,
   Clock,
   Phone,
+  Sparkles,
   Search as SearchIcon,
 } from "lucide-react";
 import {
@@ -42,6 +44,8 @@ import {
   hasCrmAccess,
   canAccessBids,
   hasEquipmentAccess,
+  RoutePermissions,
+  type FeaturePerms,
 } from "@/lib/rbac";
 
 export type SearchResultType =
@@ -127,7 +131,7 @@ interface CatalogItem {
   label: string;
   url: string;
   icon: React.ReactNode;
-  visible: (role: string | undefined) => boolean;
+  visible: (role: string | undefined, perms?: FeaturePerms) => boolean;
   keywords?: string;
 }
 
@@ -144,6 +148,14 @@ const PAGES: CatalogItem[] = [
   { id: "tasks", label: "Tasks", url: "/tasks", icon: <ClipboardList className="h-4 w-4" />, visible: allowAll(hasContractorAccess), keywords: "todo punchlist" },
   { id: "messages", label: "Messages", url: "/messages", icon: <MessageSquare className="h-4 w-4" />, visible: allowAll(hasContractorAccess), keywords: "chat inbox" },
   { id: "equipment", label: "Equipment", url: "/equipment", icon: <Wrench className="h-4 w-4" />, visible: allowAll(hasEquipmentAccess), keywords: "tools fleet" },
+  {
+    id: "ai-estimator-admin",
+    label: "AI Estimator",
+    url: "/ai-estimator/admin",
+    icon: <Sparkles className="h-4 w-4" />,
+    visible: (role, perms) => RoutePermissions.AI_ESTIMATOR_ADMIN(role, perms),
+    keywords: "ai estimator admin learned rates ingest feedback",
+  },
   { id: "settings", label: "Settings", url: "/settings", icon: <Settings className="h-4 w-4" />, visible: () => true, keywords: "profile preferences" },
 ];
 
@@ -195,6 +207,7 @@ interface CommandPaletteProps {
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const { user } = useAuth();
   const isMobile = useIsMobile();
+  const { permissions: featurePerms } = useDashboardCustomizationSafe();
   const [, setLocation] = useLocation();
   const [rawQuery, setRawQuery] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -244,8 +257,8 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   }, [data]);
 
   const role = user?.role;
-  const visiblePages = useMemo(() => PAGES.filter((p) => p.visible(role)), [role]);
-  const visibleActions = useMemo(() => QUICK_ACTIONS.filter((a) => a.visible(role)), [role]);
+  const visiblePages = useMemo(() => PAGES.filter((p) => p.visible(role, featurePerms)), [role, featurePerms]);
+  const visibleActions = useMemo(() => QUICK_ACTIONS.filter((a) => a.visible(role, featurePerms)), [role, featurePerms]);
 
   // While typing, also include matching Pages and Quick Actions
   const matchingPages = useMemo(() => {
