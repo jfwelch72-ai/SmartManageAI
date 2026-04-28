@@ -258,7 +258,33 @@ async function loadPage(
   if (p) return p;
   p = (async () => {
     const doc = await loadDoc(sheetUrl);
-    return await doc.getPage(pageIndex + 1);
+    // Guard against the sheet record's stored `sheetIndex` being out
+    // of range for the underlying PDF — e.g. a sheet that was
+    // originally page 5 of a multi-page document but whose PDF was
+    // later replaced with a single-page pricing PDF (the case the
+    // user hit with "TFR Construction 2025 Pricing"). Without this
+    // clamp, pdfjs throws "Invalid page request" and the workspace
+    // shows a destructive toast with a black canvas instead of the
+    // (one) page the file actually contains.
+    //
+    // Negative indices are clamped to 0; indices beyond the last
+    // page fall back to the last page. The clamped value is logged
+    // so the data drift is visible in DevTools without surfacing a
+    // user-facing error.
+    const numPages = doc.numPages;
+    let safePageIndex = pageIndex;
+    if (!Number.isFinite(safePageIndex) || safePageIndex < 0) {
+      console.warn(
+        `[pdfTileWorker] Negative/invalid pageIndex ${pageIndex} for ${sheetUrl}; falling back to page 0`,
+      );
+      safePageIndex = 0;
+    } else if (safePageIndex >= numPages) {
+      console.warn(
+        `[pdfTileWorker] pageIndex ${pageIndex} out of range for ${sheetUrl} (numPages=${numPages}); falling back to page ${numPages - 1}`,
+      );
+      safePageIndex = numPages - 1;
+    }
+    return await doc.getPage(safePageIndex + 1);
   })();
   pageCache.set(k, p);
   return p;
