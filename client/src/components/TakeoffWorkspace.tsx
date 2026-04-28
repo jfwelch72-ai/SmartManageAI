@@ -994,12 +994,38 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     deleteGroupMutation, toggleGroupVisibilityMutation,
     conditions, createConditionMutation, updateConditionMutation, deleteConditionMutation,
     measurementCountsPerSheet,
+    // Task #2344 — Per-sheet projection of just the calibration-snapshot
+    // columns we feed into `computeSheetCalibrationConfidence` below
+    // so the bottom-bar chip and the sheet-selector dropdown rows can
+    // each render their own four-level confidence dot.
+    measurementsBySheet,
     // Task #1768 — Set of markup ids whose most-recent move PATCH was
     // rejected by the server. Used below to render a temporary red
     // glow on each rejected markup so a 50-markup batch failure
     // points the user at exactly which siblings to fix.
     failedMarkupIds,
   } = data;
+
+  // Task #2344 — Pre-compute every sheet's calibration confidence
+  // exactly once so both the sheet-selector dropdown rows and the
+  // bottom-bar chip read from the same map. Keying by sheet id (a
+  // stable Map) keeps each consumer's identity stable across renders
+  // that don't actually change a sheet's confidence — important
+  // because both the SheetSelectorBar and WorkspaceBottomBar are
+  // memoised components.
+  const sheetCalibrationConfidences = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof computeSheetCalibrationConfidence>>();
+    sheets.forEach((sheet: TakeoffSheet) => {
+      map.set(
+        sheet.id,
+        computeSheetCalibrationConfidence(
+          sheet,
+          measurementsBySheet.get(sheet.id) ?? [],
+        ),
+      );
+    });
+    return map;
+  }, [sheets, measurementsBySheet]);
 
   useEffect(() => {
     if (!sheetsLoading && sheets.length > 0 && selectedSheet) {
@@ -3940,10 +3966,23 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       // sheet's current label. `openCalibrationDrawer` is the same
       // entry point the bottom-bar chip and the `T` shortcut use, so
       // a click from the header lands in the identical drawer flow.
-      calibrationConfidence: computeSheetCalibrationConfidence(
-        currentSheet ?? null,
-        measurements,
-      ),
+      //
+      // Task #2344 — The header chip computes confidence directly
+      // against the loaded `measurements` for the active sheet (not
+      // the workspace-wide projection) so a brand-new measurement
+      // that just demoted the sheet's drift shows up in the chip on
+      // the very next render — well before the workspace-wide
+      // `allMeasurementsRaw` query has refetched. The dropdown
+      // rows below get their per-sheet dots from the cached
+      // `sheetCalibrationConfidences` map instead.
+      calibrationConfidence:
+        currentSheet
+          ? computeSheetCalibrationConfidence(currentSheet, measurements)
+          : null,
+      // Task #2344 — Per-sheet confidence map so each dropdown row
+      // can render its own four-level dot + tooltip instead of the
+      // old binary CheckCircle2/AlertCircle.
+      sheetConfidences: sheetCalibrationConfidences,
       onOpenCalibration: openCalibrationDrawer,
     },
     thumbnailStrip:
@@ -4000,6 +4039,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     // (insert, edit, delete) — otherwise the chip would stay stale
     // until something else in the slice happened to update.
     measurements,
+    // Task #2344 — `selectorBar.sheetConfidences` is the per-sheet
+    // confidence map; rebuild the slice when its identity changes
+    // (any sheet's calibration provenance or its scale-snapshot
+    // population shifted) so dropdown dots and the bottom-bar chip
+    // refresh together.
+    sheetCalibrationConfidences,
     // Task #2310 — `selectorBar.canFitToPage` reads `pageDims` /
     // `pdfImage` so we must re-build the slice when those change,
     // otherwise the Fit button stays disabled even after the PDF
@@ -4718,6 +4763,21 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       reviewQueueCount,
       stageScale,
       currentSheet,
+      // Task #2344 — Bottom-bar calibration chip now uses the same
+      // four-level helper (`computeSheetCalibrationConfidence`) as
+      // the sheet-header chip and the sheet-selector dropdown rows.
+      // We compute against the active sheet's freshly-loaded
+      // `measurements` (not the workspace-wide projection) so a
+      // brand-new measurement that just demoted the sheet's drift
+      // shows up in the bottom-bar chip on the very next render.
+      calibrationConfidence: currentSheet
+        ? computeSheetCalibrationConfidence(currentSheet, measurements)
+        : null,
+      // Task #2344 — Wire the same calibration drawer the sheet-
+      // header chip uses so a click on the bottom-bar chip jumps
+      // straight to recalibration. Estimators triaging from the
+      // status row no longer have to scroll back up to the header.
+      onOpenCalibration: openCalibrationDrawer,
     },
     measurementTable: {
       visible: showMeasurementTable && !!selectedSheet,

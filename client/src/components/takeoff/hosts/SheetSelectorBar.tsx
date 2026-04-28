@@ -117,10 +117,71 @@ export interface SheetSelectorBarProps {
    *  captured scale labels. Optional so older callers / tests that
    *  don't compute it still render a sensible UNVERIFIED chip. */
   calibrationConfidence?: SheetCalibrationConfidence | null;
+  /** Task #2344 — Per-sheet confidence map keyed by sheet id. The
+   *  workspace pre-computes one entry per sheet using cached
+   *  measurement counts so each row in the sheet-selector dropdown
+   *  can render its own four-level confidence dot instead of a
+   *  shared CheckCircle2/AlertCircle. The current sheet still uses
+   *  `calibrationConfidence` above for its header chip; this map
+   *  exists so estimators can triage which other sheets need
+   *  recalibration without opening each one. Optional so legacy
+   *  callers without the map fall back to the binary indicator. */
+  sheetConfidences?: Map<string, SheetCalibrationConfidence>;
   /** Task #2332 — Click target for the confidence chip; opens the
    *  same calibration drawer the `T` shortcut and bottom-bar chip
    *  use. When omitted the chip stays read-only. */
   onOpenCalibration?: () => void;
+}
+
+/**
+ * Task #2344 — Per-sheet confidence dot used inside the sheet
+ * selector dropdown rows (and the trigger label) so each sheet can
+ * advertise its own four-level (HIGH / MEDIUM / LOW / UNVERIFIED)
+ * calibration confidence instead of the binary CheckCircle2 /
+ * AlertCircle pair we showed before. Hue + tooltip come from the
+ * pre-computed `SheetCalibrationConfidence` the workspace passes in;
+ * when the map hasn't materialised yet (first paint, sheet just
+ * appeared) we fall back to either an UNVERIFIED red dot (no scale)
+ * or a generic green "calibrated" dot. We keep the old
+ * `title=` tooltip rather than wrapping in a Tooltip wrapper because
+ * Radix `<SelectItem>` already manages its own pointer / keyboard
+ * focus and stacking a Tooltip inside it stole keyboard
+ * `ArrowUp/Down` events.
+ */
+function SheetConfidenceDot({
+  confidence,
+  hasScale,
+  testId,
+}: {
+  confidence: SheetCalibrationConfidence | undefined;
+  hasScale: boolean;
+  testId?: string;
+}) {
+  const dotClass = confidence
+    ? confidence.dotClass
+    : hasScale
+      ? "bg-green-500 dark:bg-green-400"
+      : "bg-red-500 dark:bg-red-400";
+  const tooltip = confidence
+    ? confidence.tooltip
+    : hasScale
+      ? "Sheet has a calibrated scale."
+      : "This sheet isn't calibrated yet.";
+  return (
+    <span
+      className={cn("inline-block w-2.5 h-2.5 rounded-full shrink-0", dotClass)}
+      title={tooltip}
+      aria-label={
+        confidence
+          ? `Scale confidence: ${confidence.label}`
+          : hasScale
+            ? "Calibrated"
+            : "Not calibrated"
+      }
+      data-confidence={confidence?.confidence ?? (hasScale ? "HIGH" : "UNVERIFIED")}
+      data-testid={testId}
+    />
+  );
 }
 
 /** Sheet header toolbar — sheet selector, sheet-actions menu, thumbnail toggle,
@@ -186,6 +247,7 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
     activeSheetSetMemberCount = 0,
     currentSheetIndexInSet = null,
     calibrationConfidence = null,
+    sheetConfidences = null,
     onOpenCalibration,
   } = props;
   return (
@@ -238,7 +300,20 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
             <SelectValue placeholder="Select a sheet...">
               {currentSheet && (
                 <span className="flex items-center gap-2 min-w-0 w-full">
-                  {currentSheet.scalePxPerFoot ? (
+                  {/* Task #2344 — Trigger label uses the same per-sheet
+                    *  four-level confidence dot as the dropdown rows so
+                    *  the user can see the active sheet's calibration
+                    *  state from the collapsed selector. Falls back to
+                    *  the legacy CheckCircle2/AlertCircle when no map
+                    *  is available (older callers / first paint before
+                    *  the workspace-wide all-measurements query has
+                    *  resolved). */}
+                  {sheetConfidences ? (
+                    <SheetConfidenceDot
+                      confidence={sheetConfidences.get(currentSheet.id)}
+                      hasScale={!!currentSheet.scalePxPerFoot}
+                    />
+                  ) : currentSheet.scalePxPerFoot ? (
                     <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0" />
                   ) : (
                     <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" />
@@ -251,29 +326,58 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
             </SelectValue>
           </SelectTrigger>
           <SelectContent container={workspaceRef.current}>
-            {sheets.map((sheet: TakeoffSheet) => (
-              <SelectItem key={sheet.id} value={sheet.id}>
-                <span className="flex items-center gap-2">
-                  {sheet.scalePxPerFoot ? (
-                    <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0" />
-                  ) : (
-                    <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" />
-                  )}
-                  {sheet.sheetName}
-                  {sheet.revisionLabel && (
-                    <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 shrink-0">{sheet.revisionLabel}</Badge>
-                  )}
-                  {sheet.isActive === false && (
-                    <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 shrink-0 opacity-60">Superseded</Badge>
-                  )}
-                  {linkCountsBySheet[sheet.id] > 0 && (
-                    <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 shrink-0 text-blue-600 border-blue-300" data-testid={`badge-links-count-${sheet.id}`}>
-                      <Link2 className="w-2.5 h-2.5 mr-0.5" />{linkCountsBySheet[sheet.id]}
-                    </Badge>
-                  )}
-                </span>
-              </SelectItem>
-            ))}
+            {sheets.map((sheet: TakeoffSheet) => {
+              // Task #2344 — Per-sheet confidence dot. Each row now
+              // surfaces its own four-level (HIGH/MEDIUM/LOW/
+              // UNVERIFIED) chip so estimators can triage which
+              // sheets need recalibration without having to open
+              // each one. The dot hue + tooltip come from the
+              // pre-computed `sheetConfidences` map; when the map
+              // isn't supplied we fall back to the legacy binary
+              // CheckCircle2/AlertCircle so older callers still
+              // render.
+              const sheetConfidence = sheetConfidences?.get(sheet.id);
+              return (
+                <SelectItem key={sheet.id} value={sheet.id}>
+                  <span className="flex items-center gap-2">
+                    {sheetConfidences ? (
+                      <SheetConfidenceDot
+                        confidence={sheetConfidence}
+                        hasScale={!!sheet.scalePxPerFoot}
+                        testId={`dot-sheet-confidence-${sheet.id}`}
+                      />
+                    ) : sheet.scalePxPerFoot ? (
+                      <CheckCircle2 className="w-3 h-3 text-green-500 shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-3 h-3 text-amber-500 shrink-0" />
+                    )}
+                    {sheet.sheetName}
+                    {sheet.revisionLabel && (
+                      <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 shrink-0">{sheet.revisionLabel}</Badge>
+                    )}
+                    {sheet.isActive === false && (
+                      <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4 shrink-0 opacity-60">Superseded</Badge>
+                    )}
+                    {sheetConfidence && sheetConfidence.hasDrift && (
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] px-1 py-0 h-4 shrink-0 border-amber-500/50 text-amber-700 dark:text-amber-300 gap-0.5"
+                        data-testid={`badge-sheet-drift-${sheet.id}`}
+                        title="Captured scale labels disagree with this sheet's current label."
+                      >
+                        <AlertCircle className="w-2.5 h-2.5" />
+                        Drift
+                      </Badge>
+                    )}
+                    {linkCountsBySheet[sheet.id] > 0 && (
+                      <Badge variant="outline" className="text-[10px] px-1 py-0 h-4 shrink-0 text-blue-600 border-blue-300" data-testid={`badge-links-count-${sheet.id}`}>
+                        <Link2 className="w-2.5 h-2.5 mr-0.5" />{linkCountsBySheet[sheet.id]}
+                      </Badge>
+                    )}
+                  </span>
+                </SelectItem>
+              );
+            })}
           </SelectContent>
         </Select>
         {selectedSheet && (

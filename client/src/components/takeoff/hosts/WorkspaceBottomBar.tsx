@@ -1,8 +1,9 @@
 import { memo } from "react";
-import { DollarSign, Flag, Layers, TableProperties, Trash2 } from "lucide-react";
+import { AlertCircle, DollarSign, Flag, Layers, TableProperties, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { TakeoffMeasurement, TakeoffSheet } from "@shared/schema";
+import type { SheetCalibrationConfidence } from "../sheetCalibrationConfidence";
 
 export interface WorkspaceBottomBarProps {
   // batch action bar
@@ -29,46 +30,40 @@ export interface WorkspaceBottomBarProps {
   reviewQueueCount: number | null;
   stageScale: number;
   currentSheet: TakeoffSheet | null | undefined;
+  // Task #2344 — Pre-computed four-level (HIGH / MEDIUM / LOW /
+  // UNVERIFIED) calibration confidence for the active sheet.
+  // Replaces the bottom-bar's old binary derive-from-`scaleSource`/
+  // `scaleConfidence` helper so the chip factors in measurement
+  // count and captured-label drift the same way the sheet-header
+  // chip already does. Optional so older callers / tests that
+  // don't compute it still render an UNVERIFIED chip.
+  calibrationConfidence?: SheetCalibrationConfidence | null;
+  // Task #2344 — Click target for the bottom-bar calibration chip.
+  // Mirrors the sheet-header chip's `onOpenCalibration` so an
+  // estimator who notices a LOW / UNVERIFIED bottom-bar chip can
+  // jump straight to the calibration drawer without hunting for the
+  // header chip. When omitted the chip stays read-only (legacy
+  // callers / tests that only need the visual indicator).
+  onOpenCalibration?: () => void;
 }
 
-// Task #2320 — central confidence-dot helper. The bottom-bar chip is
-// the only on-canvas surface that always shows the calibration's
-// provenance, so we keep the colour mapping here rather than letting
-// each call site reinvent it. UNVERIFIED is intentionally red so a
-// freshly-superseded revision (which copies the parent scale but is
-// not yet trusted) jumps out before the user starts measuring.
-function confidenceDotClass(confidence: string | null | undefined): string {
-  switch (confidence) {
-    case "HIGH":
-      return "bg-green-500 dark:bg-green-400";
-    case "MEDIUM":
-    case "LOW":
-      return "bg-amber-500 dark:bg-amber-400";
-    case "UNVERIFIED":
-    default:
-      return "bg-red-500 dark:bg-red-400";
-  }
-}
-
-function confidenceTooltip(
-  source: string | null | undefined,
-  confidence: string | null | undefined,
-): string {
-  const sourceText = (() => {
-    switch (source) {
-      case "USER_TWO_POINT": return "Calibrated by you (two-point ruler)";
-      case "STANDARD_SCALE": return "Standard scale applied";
-      case "AI_DETECTED": return "Auto-detected from sheet";
-      case "BULK_PROPAGATED": return "Applied to entire Sheet Set";
-      case "INHERITED_FROM_PARENT": return "Inherited from previous revision";
-      case "UNVERIFIED":
-      default:
-        return "Scale not yet verified";
-    }
-  })();
-  const confText = confidence ? ` · ${confidence.toLowerCase()} confidence` : "";
-  return `${sourceText}${confText}`;
-}
+// Task #2344 — Default UNVERIFIED chip used when a caller hasn't
+// supplied a pre-computed confidence (e.g. the first paint before the
+// workspace's all-measurements query has resolved). Mirrors the
+// fallback `SheetSelectorBar` renders so both chips agree on the
+// "scale not yet verified" framing.
+const UNVERIFIED_FALLBACK: SheetCalibrationConfidence = {
+  confidence: "UNVERIFIED",
+  label: "Unverified",
+  dotClass: "bg-red-500 dark:bg-red-400",
+  chipClass: "border-red-500/50 text-red-700 dark:text-red-300 hover:bg-red-500/10",
+  sourceText: "Scale not yet verified",
+  tooltip:
+    "This sheet isn't calibrated yet — measurements taken against it will be unreliable.",
+  measurementCount: 0,
+  hasDrift: false,
+  driftLabels: [],
+};
 
 function WorkspaceBottomBarInner(props: WorkspaceBottomBarProps) {
   const {
@@ -76,25 +71,27 @@ function WorkspaceBottomBarInner(props: WorkspaceBottomBarProps) {
     selectedSheet, measurements, showCostPanel, onToggleCostPanel,
     showOverlaySlider, onToggleOverlaySlider, showMeasurementTable, onToggleMeasurementTable,
     showReviewQueue, onToggleReviewQueue, reviewQueueCount,
-    stageScale, currentSheet,
+    stageScale, currentSheet, calibrationConfidence, onOpenCalibration,
   } = props;
 
-  // Read the scale-provenance fields the server now writes on every
-  // calibration. They're typed as optional on `TakeoffSheet` so the
-  // existing /api/takeoff/sheets/{id} response (which currently does
-  // not project these columns) still type-checks; when missing we
-  // fall back to UNVERIFIED so the chip renders red.
-  const sheetWithProvenance = currentSheet as
-    | (TakeoffSheet & {
-        scaleSource?: string | null;
-        scaleConfidence?: string | null;
-      })
-    | null
-    | undefined;
-  const scaleSource = sheetWithProvenance?.scaleSource ?? "UNVERIFIED";
-  const scaleConfidence = sheetWithProvenance?.scaleConfidence ?? "UNVERIFIED";
-  const dotClass = confidenceDotClass(scaleConfidence);
-  const chipTitle = confidenceTooltip(scaleSource, scaleConfidence);
+  // Task #2344 — Use the same four-level confidence helper output as
+  // the sheet-header chip. The bottom-bar previously derived a
+  // 2-state colour from `scaleSource` / `scaleConfidence` only,
+  // which left UNVERIFIED sheets with hundreds of drifted
+  // measurements visually indistinguishable from a freshly-
+  // calibrated sheet that hadn't yet captured a single measurement.
+  const confidence = calibrationConfidence ?? UNVERIFIED_FALLBACK;
+  const dotClass = confidence.dotClass;
+  // The status-bar chip was a plain `title=` tooltip before, so we
+  // keep it as one (no Tooltip wrapper) but feed it the helper's
+  // verbose multi-sentence rationale (source + measurement count +
+  // drift) so estimators get the full story on hover.
+  const chipTitle = confidence.tooltip;
+  const ariaConfidenceLabel = `Scale confidence: ${confidence.label}. ${confidence.sourceText}.${
+    confidence.hasDrift
+      ? " Captured scale labels disagree with the sheet's current label."
+      : ""
+  }`;
   const scaleLabelText = currentSheet?.scaleLabel
     ? currentSheet.scaleLabel
     : currentSheet?.scalePxPerFoot
@@ -142,14 +139,51 @@ function WorkspaceBottomBarInner(props: WorkspaceBottomBarProps) {
         <div className="flex sm:hidden h-7 bg-card/95 backdrop-blur-sm border-t px-3 items-center justify-between text-[11px] text-muted-foreground shrink-0 tabular-nums" data-testid="takeoff-status-bar-mobile">
           <div className="flex items-center gap-3 min-w-0">
             <span className="font-medium text-foreground/80 shrink-0">{measurements.length} m</span>
-            <span
-              className="flex items-center gap-1 shrink-0"
-              title={chipTitle}
-              data-testid="status-calibration-mobile"
-            >
-              <span className={cn("inline-block w-1.5 h-1.5 rounded-full", dotClass)} aria-hidden="true" />
-              <span className="truncate max-w-[8rem] text-foreground/80">{scaleLabelText}</span>
-            </span>
+            {/* Task #2344 — When `onOpenCalibration` is wired, the
+              *  mobile chip behaves as a tap target that opens the
+              *  same calibration drawer the sheet-header chip and the
+              *  `T` shortcut use. Falls back to a static `<span>` so
+              *  legacy callers / tests that only rendered the visual
+              *  indicator keep working. */}
+            {onOpenCalibration ? (
+              <button
+                type="button"
+                onClick={onOpenCalibration}
+                className="flex items-center gap-1 shrink-0 rounded px-1 -mx-1 hover:bg-muted/70 active:bg-muted transition-colors"
+                title={chipTitle}
+                data-testid="status-calibration-mobile"
+                data-confidence={confidence.confidence}
+                aria-label={ariaConfidenceLabel}
+              >
+                <span className={cn("inline-block w-1.5 h-1.5 rounded-full", dotClass)} aria-hidden="true" />
+                <span className="truncate max-w-[8rem] text-foreground/80">{scaleLabelText}</span>
+                {confidence.hasDrift && (
+                  <AlertCircle
+                    className="w-2.5 h-2.5 text-amber-500 shrink-0"
+                    data-testid="status-calibration-mobile-drift"
+                    aria-hidden="true"
+                  />
+                )}
+              </button>
+            ) : (
+              <span
+                className="flex items-center gap-1 shrink-0"
+                title={chipTitle}
+                data-testid="status-calibration-mobile"
+                data-confidence={confidence.confidence}
+                aria-label={ariaConfidenceLabel}
+              >
+                <span className={cn("inline-block w-1.5 h-1.5 rounded-full", dotClass)} aria-hidden="true" />
+                <span className="truncate max-w-[8rem] text-foreground/80">{scaleLabelText}</span>
+                {confidence.hasDrift && (
+                  <AlertCircle
+                    className="w-2.5 h-2.5 text-amber-500 shrink-0"
+                    data-testid="status-calibration-mobile-drift"
+                    aria-hidden="true"
+                  />
+                )}
+              </span>
+            )}
           </div>
           <span className="shrink-0" data-testid="status-zoom-mobile">{Math.round(stageScale * 100)}%</span>
         </div>
@@ -233,14 +267,63 @@ function WorkspaceBottomBarInner(props: WorkspaceBottomBarProps) {
               )}
             </button>
             <span>Zoom: {Math.round(stageScale * 100)}%</span>
-            <span
-              className="flex items-center gap-1.5"
-              title={chipTitle}
-              data-testid="status-calibration-chip"
-            >
-              <span className={cn("inline-block w-2 h-2 rounded-full", dotClass)} aria-hidden="true" />
-              <span className="text-foreground/80" data-testid="text-scale-label">{scaleLabelText}</span>
-            </span>
+            {/* Task #2344 — When `onOpenCalibration` is wired the
+              *  desktop chip becomes a button so a click opens the
+              *  same calibration drawer the sheet-header chip uses.
+              *  The original `data-testid="status-calibration-chip"`
+              *  is preserved on the outer element either way so
+              *  existing e2e tests keep working. */}
+            {onOpenCalibration ? (
+              <button
+                type="button"
+                onClick={onOpenCalibration}
+                className="flex items-center gap-1.5 rounded px-1 -mx-1 hover:bg-muted/70 active:bg-muted transition-colors"
+                title={chipTitle}
+                data-testid="status-calibration-chip"
+                data-confidence={confidence.confidence}
+                aria-label={ariaConfidenceLabel}
+              >
+                <span className={cn("inline-block w-2 h-2 rounded-full", dotClass)} aria-hidden="true" />
+                <span className="text-foreground/80" data-testid="text-scale-label">{scaleLabelText}</span>
+                <span
+                  className="text-foreground/70 hidden md:inline"
+                  data-testid="text-scale-confidence"
+                >
+                  · {confidence.label}
+                </span>
+                {confidence.hasDrift && (
+                  <AlertCircle
+                    className="w-3 h-3 text-amber-500 shrink-0"
+                    data-testid="status-calibration-chip-drift"
+                    aria-hidden="true"
+                  />
+                )}
+              </button>
+            ) : (
+              <span
+                className="flex items-center gap-1.5"
+                title={chipTitle}
+                data-testid="status-calibration-chip"
+                data-confidence={confidence.confidence}
+                aria-label={ariaConfidenceLabel}
+              >
+                <span className={cn("inline-block w-2 h-2 rounded-full", dotClass)} aria-hidden="true" />
+                <span className="text-foreground/80" data-testid="text-scale-label">{scaleLabelText}</span>
+                <span
+                  className="text-foreground/70 hidden md:inline"
+                  data-testid="text-scale-confidence"
+                >
+                  · {confidence.label}
+                </span>
+                {confidence.hasDrift && (
+                  <AlertCircle
+                    className="w-3 h-3 text-amber-500 shrink-0"
+                    data-testid="status-calibration-chip-drift"
+                    aria-hidden="true"
+                  />
+                )}
+              </span>
+            )}
           </div>
         </div>
       )}

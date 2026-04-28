@@ -405,6 +405,36 @@ export function useTakeoffData({
     return map;
   }, [allMeasurementsRaw]);
 
+  // Task #2344 — Per-sheet projection of just the calibration-snapshot
+  // columns (`scaleAtCaptureLabel`, `scaleAtCapturePxPerFoot`). The
+  // workspace feeds these into `computeSheetCalibrationConfidence` so
+  // every sheet — not just the active one — can render its own
+  // four-level confidence dot in the bottom bar and the sheet
+  // selector dropdown without re-fetching its measurements. We
+  // project only the two fields the helper reads so the map stays
+  // cheap to memo against (a 5,000-measurement project would
+  // otherwise force every chip-consuming memo to compare full
+  // measurement rows).
+  const measurementsBySheet = useMemo(() => {
+    const map = new Map<string, { scaleAtCaptureLabel: string | null; scaleAtCapturePxPerFoot: number | null }[]>();
+    allMeasurementsRaw.forEach((m) => {
+      const entry = {
+        scaleAtCaptureLabel: (m as { scaleAtCaptureLabel?: string | null }).scaleAtCaptureLabel ?? null,
+        scaleAtCapturePxPerFoot:
+          (m as { scaleAtCapturePxPerFoot?: number | string | null }).scaleAtCapturePxPerFoot != null
+            ? Number((m as { scaleAtCapturePxPerFoot?: number | string | null }).scaleAtCapturePxPerFoot)
+            : null,
+      };
+      const existing = map.get(m.sheetId);
+      if (existing) {
+        existing.push(entry);
+      } else {
+        map.set(m.sheetId, [entry]);
+      }
+    });
+    return map;
+  }, [allMeasurementsRaw]);
+
   const { data: markups = [] } = useQuery<TakeoffMarkupWithAuthor[]>({
     queryKey: ["/api/takeoff/sheets", selectedSheet, "markups"],
     enabled: !!selectedSheet,
@@ -1816,6 +1846,11 @@ export function useTakeoffData({
     deleteGroupMutation,
     toggleGroupVisibilityMutation,
     measurementCountsPerSheet,
+    // Task #2344 — Per-sheet calibration-snapshot projection consumed
+    // by the bottom-bar / sheet-selector confidence chips so each
+    // sheet can render its own dot without spinning up a per-sheet
+    // measurements query.
+    measurementsBySheet,
     // Task #1768 — Set of markup ids whose most-recent move PATCH was
     // rejected. The workspace renders a temporary red glow on every id
     // in this set so the user can see exactly which siblings to fix.
