@@ -22,6 +22,39 @@ import {
 
 export const MAX_TILE_CACHE_BYTES_DEFAULT = 600 * 1024 * 1024;
 
+/**
+ * Defer an `ImageBitmap.close()` past the current React commit + the
+ * next Konva animation frame.
+ *
+ * The cache hands bitmaps to consumers via `get()` and they may already
+ * be embedded in the current render tree (Konva tile layer). If we
+ * close synchronously when evicting/replacing/clearing, Konva's
+ * already-scheduled RAF tick can still call
+ * `drawImage(detachedBitmap)` and throw
+ * "Failed to execute 'drawImage' on 'CanvasRenderingContext2D':
+ *  The image source is detached".
+ *
+ * Two RAF ticks (or a setTimeout fallback for non-DOM environments)
+ * is enough for React to commit the cache-driven re-render AND for
+ * Konva to draw at least one frame from the new state, after which
+ * no live reference to the evicted bitmap remains.
+ */
+function deferredCloseBitmap(bm: ImageBitmap | null | undefined): void {
+  if (!bm) return;
+  const close = () => {
+    try {
+      bm.close();
+    } catch {
+      /* noop — best-effort, older browsers may noop entirely */
+    }
+  };
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => requestAnimationFrame(close));
+  } else {
+    setTimeout(close, 32);
+  }
+}
+
 export interface CachedTile {
   coord: TileCoord;
   bitmap: ImageBitmap;
@@ -96,11 +129,10 @@ export class TileCache {
     if (existing) {
       this.map.delete(k);
       this.bytes -= existing.bytes;
-      try {
-        existing.bitmap.close();
-      } catch {
-        // ImageBitmap.close is best-effort; older browsers may noop.
-      }
+      // Defer past the current Konva RAF so an in-flight drawImage
+      // on the previous bitmap doesn't see a detached source. See
+      // `deferredCloseBitmap` for full rationale.
+      deferredCloseBitmap(existing.bitmap);
     }
     const bytes = estimateTileBytes();
     this.map.set(k, { coord, bitmap, bytes, touch: ++this.touchCounter });
@@ -122,21 +154,13 @@ export class TileCache {
       const e = this.map.get(k)!;
       this.map.delete(k);
       this.bytes -= e.bytes;
-      try {
-        e.bitmap.close();
-      } catch {
-        /* noop */
-      }
+      deferredCloseBitmap(e.bitmap);
     }
   }
 
   clear(): void {
     this.map.forEach((e) => {
-      try {
-        e.bitmap.close();
-      } catch {
-        /* noop */
-      }
+      deferredCloseBitmap(e.bitmap);
     });
     this.map.clear();
     this.bytes = 0;
@@ -171,11 +195,11 @@ export class TileCache {
       this.map.delete(victimKey);
       this.bytes -= e.bytes;
       this.evictions++;
-      try {
-        e.bitmap.close();
-      } catch {
-        /* noop */
-      }
+      // Defer past the next two RAFs — see `deferredCloseBitmap`.
+      // Konva may still hold a reference to this bitmap from the
+      // current render and would otherwise throw "image source is
+      // detached" the next time it ticks.
+      deferredCloseBitmap(e.bitmap);
     }
   }
 
