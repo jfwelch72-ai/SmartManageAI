@@ -31,6 +31,21 @@ const READY_TIMEOUT_MS = 180_000;
 
 export const MAX_PAGES = 500;
 
+// Task #2212 — number of `pdfjs.renderPage` calls the print page
+// keeps in flight against the shared worker pool. Defaults to 3
+// (leaves one of the pool's 4 workers free for overlay/legend draws)
+// and is clamped client-side to [1, 8] so a runaway env value can't
+// OOM Chromium. Override via `PRINT_PAGE_CONCURRENCY=N`.
+const DEFAULT_PRINT_PAGE_CONCURRENCY = 3;
+
+function resolvePrintPageConcurrency(): number {
+  const raw = parseInt(process.env.PRINT_PAGE_CONCURRENCY || "", 10);
+  if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_PRINT_PAGE_CONCURRENCY;
+  // Match the client-side clamp so the print page sees identical
+  // bounds whether the value came from this env var or a direct URL.
+  return Math.max(1, Math.min(8, raw));
+}
+
 export class PlanPdfTooLargeError extends Error {
   constructor(public readonly pageCount: number) {
     super(`Plan document has ${pageCount} pages; export is capped at ${MAX_PAGES}`);
@@ -191,6 +206,12 @@ export async function renderPlanDocumentPdf(opts: PlanPdfRenderOptions): Promise
       if (opts.layerIds && opts.layerIds.length > 0) {
         url.searchParams.set("layerIds", opts.layerIds.join(","));
       }
+      // Task #2212 — forward the bounded page-render concurrency knob
+      // so the print page dispatches multiple `renderPage` calls in
+      // parallel against the shared worker pool. The print page
+      // re-clamps the value, but we resolve + forward here so ops
+      // can tune it without a code push.
+      url.searchParams.set("concurrency", String(resolvePrintPageConcurrency()));
 
       await page.goto(url.toString(), { waitUntil: "domcontentloaded", timeout: NAV_TIMEOUT_MS });
 

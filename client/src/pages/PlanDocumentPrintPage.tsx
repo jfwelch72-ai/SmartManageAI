@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, useSearch } from "wouter";
 import { renderMarkupToCanvas, type MarkupForRender } from "@/components/markups/markupCanvasRenderer";
-import { getSharedScheduler } from "@/lib/takeoff/tileScheduler";
+import {
+  getSharedScheduler,
+  type CancellablePageRender,
+} from "@/lib/takeoff/tileScheduler";
 
 // Task #2188 — The print page used to instantiate `pdfjs-dist` on
 // the main thread, which froze the headless capture for several
@@ -65,6 +68,16 @@ const DEFAULT_LAYER_SENTINEL = "__default__";
 
 const RENDER_SCALE = 1.5; // print resolution multiplier — keeps file sizes sane
 
+// Task #2212 — default number of `renderPage` calls kept in flight
+// against the shared worker pool. The pool itself caps at 4 workers
+// (see `tileScheduler.defaultPoolSize`), so values >4 are wasted; the
+// default of 3 leaves one worker free for overlay/legend draws and
+// avoids OOMing Chromium on very tall pages where each page bitmap is
+// already ~50–100 MB. Override per-call via the `concurrency` URL
+// param (the server-side renderer forwards `PRINT_PAGE_CONCURRENCY`).
+const DEFAULT_PRINT_PAGE_CONCURRENCY = 3;
+const MAX_PRINT_PAGE_CONCURRENCY = 8;
+
 export default function PlanDocumentPrintPage() {
   const params = useParams<{ id: string }>();
   const docId = params?.id || "";
@@ -91,6 +104,16 @@ export default function PlanDocumentPrintPage() {
   const maxPages = (() => {
     const n = parseInt(qp.get("maxPages") || "0", 10);
     return Number.isFinite(n) && n > 0 ? n : Number.POSITIVE_INFINITY;
+  })();
+  // Task #2212 — bounded concurrency knob. Read from the URL so the
+  // server-side renderer can forward `PRINT_PAGE_CONCURRENCY` without
+  // a code change. Clamped to [1, MAX] so a runaway value can't OOM
+  // Chromium by keeping dozens of huge ImageBitmap pages alive at
+  // once.
+  const printConcurrency = (() => {
+    const raw = parseInt(qp.get("concurrency") || "0", 10);
+    if (!Number.isFinite(raw) || raw <= 0) return DEFAULT_PRINT_PAGE_CONCURRENCY;
+    return Math.max(1, Math.min(MAX_PRINT_PAGE_CONCURRENCY, raw));
   })();
 
   const [doc, setDoc] = useState<PlanDoc | null>(null);
@@ -263,6 +286,7 @@ export default function PlanDocumentPrintPage() {
       layers={includeMarkups ? layers : []}
       layerIdFilter={layerIdFilter}
       maxPages={maxPages}
+      concurrency={printConcurrency}
       onError={setError}
     />
   );
@@ -275,6 +299,7 @@ function PrintRenderer({
   layers,
   layerIdFilter,
   maxPages,
+  concurrency,
   onError,
 }: {
   pdfUrl: string;
@@ -293,6 +318,9 @@ function PrintRenderer({
   // headless print page never reached __PLAN_PDF_READY = true. They
   // are now passed in explicitly.
   maxPages: number;
+  // Task #2212 — number of `renderPage` calls to keep in flight at
+  // once. Pre-clamped by the parent to [1, MAX_PRINT_PAGE_CONCURRENCY].
+  concurrency: number;
   onError: (msg: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -403,6 +431,12 @@ function PrintRenderer({
 
   useEffect(() => {
     let cancelled = false;
+    // Task #2212 — track every in-flight `renderPage` handle so the
+    // effect cleanup can actively `cancel()` them on unmount or prop
+    // change. With parallel dispatch (up to `concurrency` in flight)
+    // an unguarded teardown would let several pdfjs RenderTasks burn
+    // CPU + memory after the consumer is gone.
+    const activeHandles = new Set<CancellablePageRender>();
     (async () => {
       try {
         // Task #2188 — All pdfjs work happens in the shared worker
@@ -440,12 +474,43 @@ function PrintRenderer({
         if (!container) return;
         container.innerHTML = "";
 
+        // Task #2212 — pre-create a wrapper for every page in document
+        // order *before* dispatching any renders, then fill each
+        // wrapper as its bitmap arrives. This is what preserves the
+        // printed page order: the DOM is locked in before any of the
+        // parallel `renderPage` calls can race to completion.
+        // (page.pdf() walks the DOM in document order, so as long as
+        // the wrappers are appended in order the canvases inside them
+        // can land out-of-order without affecting the printed output.)
+        const pageWrappers: HTMLDivElement[] = new Array(numPages);
         for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+          const pageWrap = document.createElement("div");
+          pageWrap.className = "plan-pdf-page";
+          pageWrap.style.cssText = `display:block;break-after:page;page-break-after:always;`;
+          container.appendChild(pageWrap);
+          pageWrappers[pageNum - 1] = pageWrap;
+        }
+
+        // Render a single page end-to-end (worker rasterise + on-main
+        // overlay draws + DOM attach). Hoisted out of the dispatch
+        // loop so each "lane" of the sliding window invokes the same
+        // body and DOM ordering stays driven by `pageWrappers`.
+        const renderPageInto = async (pageNum: number): Promise<void> => {
           // Task #2188 — pdfjs renders happen in the worker; the
           // main thread only blits the returned `ImageBitmap` into a
           // visible canvas (a sub-millisecond `drawImage`).
-          const handle = scheduler.renderPage(pdfUrl, pageNum - 1, RENDER_SCALE);
-          const result = await handle.promise;
+          const handle = scheduler.renderPage(
+            pdfUrl,
+            pageNum - 1,
+            RENDER_SCALE,
+          );
+          activeHandles.add(handle);
+          let result;
+          try {
+            result = await handle.promise;
+          } finally {
+            activeHandles.delete(handle);
+          }
           if (cancelled) {
             try { result.bitmap.close(); } catch { /* noop */ }
             return;
@@ -454,7 +519,7 @@ function PrintRenderer({
           const ctx = canvas.getContext("2d");
           if (!ctx) {
             try { result.bitmap.close(); } catch { /* noop */ }
-            continue;
+            return;
           }
           ctx.drawImage(result.bitmap, 0, 0);
           try { result.bitmap.close(); } catch { /* noop */ }
@@ -485,9 +550,7 @@ function PrintRenderer({
             drawPin(ctx, p, result.width, result.height);
           }
 
-          const pageWrap = document.createElement("div");
-          pageWrap.className = "plan-pdf-page";
-          pageWrap.style.cssText = `display:block;break-after:page;page-break-after:always;`;
+          const pageWrap = pageWrappers[pageNum - 1];
           pageWrap.appendChild(canvas);
 
           // Task #1677 — render a per-page footer legend so a recipient
@@ -505,9 +568,39 @@ function PrintRenderer({
             });
             pageWrap.appendChild(footer);
           }
+        };
 
-          container.appendChild(pageWrap);
+        // Task #2212 — sliding-window dispatcher. We spawn `lanes`
+        // async loops; each loop pulls the next page index off the
+        // shared `nextPage` cursor and renders it. This bounds in-
+        // flight renders to `lanes` regardless of how fast individual
+        // pages complete, which is the property that protects
+        // Chromium from holding N huge ImageBitmaps at once.
+        let nextPage = 1;
+        let workerError: unknown = null;
+        const workerLoop = async (): Promise<void> => {
+          while (!cancelled && workerError === null) {
+            const pageNum = nextPage++;
+            if (pageNum > numPages) return;
+            try {
+              await renderPageInto(pageNum);
+            } catch (err) {
+              // Capture the first error so the other lanes can drain
+              // (cleanly cancelling their in-flight handles via the
+              // `workerError !== null` short-circuit) without burying
+              // the original failure under a later "cancelled" reject.
+              if (workerError === null) workerError = err;
+              return;
+            }
+          }
+        };
+        const lanes = Math.max(1, Math.min(concurrency, numPages));
+        const workers: Promise<void>[] = [];
+        for (let i = 0; i < lanes; i++) {
+          workers.push(workerLoop());
         }
+        await Promise.all(workers);
+        if (workerError) throw workerError;
 
         if (cancelled) return;
         setStatus("ready");
@@ -530,6 +623,14 @@ function PrintRenderer({
     })();
     return () => {
       cancelled = true;
+      // Task #2212 — actively cancel any pdfjs RenderTasks that are
+      // still in flight in the worker pool. Without this, a quick
+      // unmount/prop-change would leave several full-page renders
+      // burning CPU + memory until they completed naturally.
+      activeHandles.forEach((h) => {
+        try { h.cancel(); } catch { /* noop */ }
+      });
+      activeHandles.clear();
     };
     // Task #1677 — `layers`/`includedLayers`/`layerIdFilter`/`layersById`/
     // `defaultLayer`/`filterIsActive` are read inside the render loop
@@ -547,6 +648,7 @@ function PrintRenderer({
     layersById,
     defaultLayer,
     filterIsActive,
+    concurrency,
   ]);
 
   return (
