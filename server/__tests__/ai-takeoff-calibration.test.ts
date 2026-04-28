@@ -227,6 +227,145 @@ describe("Task #2323 — runAiTakeoffCalibrationJob", () => {
     expect(rows[0].sampleCount).toBe(40);
     expect(Number(rows[0].empiricalAcceptanceRate)).toBeCloseTo(0.75, 2);
   }, 60_000);
+
+  // Task #2361 — `--also-recalibrate` on the backfill script must be able to
+  // restrict the recompute to just the orgs the backfill touched, and
+  // surface a per-org bucket summary so the operator can verify the
+  // calibration table reflects the new rows the same day.
+  it("scopes the recompute to the requested orgs and returns a per-org bucket summary", async () => {
+    const analysisId = await seedAnalysis();
+    const seeds: Promise<string>[] = [];
+    for (let i = 0; i < 24; i++) {
+      seeds.push(seedSuggestion({ analysisId, status: "ACCEPTED", confidence: 95 }));
+    }
+    for (let i = 0; i < 6; i++) {
+      seeds.push(seedSuggestion({ analysisId, status: "EDITED", confidence: 92 }));
+    }
+    for (let i = 0; i < 10; i++) {
+      seeds.push(
+        seedSuggestion({
+          analysisId,
+          status: "REJECTED",
+          confidence: 91,
+          rejectReason: "WRONG_TRADE",
+        }),
+      );
+    }
+    // Below-threshold bucket so the per-org summary surfaces the
+    // "skipped because too few samples" branch too.
+    for (let i = 0; i < 3; i++) {
+      seeds.push(seedSuggestion({ analysisId, status: "ACCEPTED", confidence: 65 }));
+    }
+    for (let i = 0; i < 2; i++) {
+      seeds.push(
+        seedSuggestion({
+          analysisId,
+          status: "REJECTED",
+          confidence: 60,
+          rejectReason: "NOT_PRESENT",
+        }),
+      );
+    }
+    await Promise.all(seeds);
+
+    // Seed a *second* org with reviewed suggestions so we can prove the
+    // org filter actually filters: the unrelated org must not show up in
+    // the per-org map nor have its calibration row written.
+    const otherSlug = `${PREFIX}other-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const [otherOrg] = await db
+      .insert(organizations)
+      .values({
+        name: "Other Org",
+        slug: otherSlug,
+        tradeType: "ELECTRICAL",
+        onboardingStatus: "COMPLETED",
+        isActive: true,
+      })
+      .returning();
+    const [otherAnalysis] = await db
+      .insert(aiTakeoffAnalyses)
+      .values({
+        organizationId: otherOrg.id,
+        tradeType: "ELECTRICAL",
+        status: "COMPLETE",
+        analysisMode: "QUICK",
+        createdByUserId: userId,
+      })
+      .returning();
+    const otherSeeds: Promise<unknown>[] = [];
+    for (let i = 0; i < 30; i++) {
+      otherSeeds.push(
+        db.insert(aiTakeoffSuggestions).values({
+          analysisId: otherAnalysis.id,
+          organizationId: otherOrg.id,
+          tradeType: "ELECTRICAL",
+          itemKey: `other-item-${i}`,
+          itemType: "outlet",
+          description: "Outlet",
+          quantity: 1,
+          unit: "EA",
+          confidence: 95,
+          status: "ACCEPTED",
+          reviewedAt: new Date(),
+          reviewedByUserId: userId,
+        }),
+      );
+    }
+    await Promise.all(otherSeeds);
+
+    const result = await runAiTakeoffCalibrationJob({
+      organizationIds: [orgId],
+    });
+
+    expect(result.rowsUpserted).toBe(1);
+    expect(result.perOrg.has(orgId)).toBe(true);
+    expect(result.perOrg.has(otherOrg.id)).toBe(false);
+
+    const summary = result.perOrg.get(orgId)!;
+    expect(summary.bucketsUpserted).toBe(1);
+    expect(summary.bucketsBelowThreshold).toBe(1);
+    const bucket90 = summary.buckets.find((b) => b.bucket === 90);
+    const bucket60 = summary.buckets.find((b) => b.bucket === 60);
+    expect(bucket90).toBeTruthy();
+    expect(bucket90!.upserted).toBe(true);
+    expect(bucket90!.samples).toBe(40);
+    expect(bucket90!.acceptanceRate).toBeCloseTo(0.75, 2);
+    expect(bucket60).toBeTruthy();
+    expect(bucket60!.upserted).toBe(false);
+    expect(bucket60!.samples).toBe(5);
+
+    // The unrelated org must not have a calibration row written.
+    const otherRows = await db
+      .select()
+      .from(aiTakeoffConfidenceCalibration)
+      .where(eq(aiTakeoffConfidenceCalibration.organizationId, otherOrg.id));
+    expect(otherRows).toHaveLength(0);
+  }, 60_000);
+
+  // Task #2361 — defensive short-circuit: passing an explicitly empty list
+  // (because the backfill touched zero orgs) must NOT fall through to the
+  // global recompute. The risk this guards against is that a bug in the
+  // backfill summary would silently re-run the nightly job in the middle
+  // of the day and double-log every org.
+  it("short-circuits when given an empty org filter (no global fallback)", async () => {
+    const analysisId = await seedAnalysis();
+    const seeds: Promise<string>[] = [];
+    for (let i = 0; i < 30; i++) {
+      seeds.push(seedSuggestion({ analysisId, status: "ACCEPTED", confidence: 95 }));
+    }
+    await Promise.all(seeds);
+
+    const result = await runAiTakeoffCalibrationJob({ organizationIds: [] });
+
+    expect(result.rowsUpserted).toBe(0);
+    expect(result.perOrg.size).toBe(0);
+
+    const rows = await db
+      .select()
+      .from(aiTakeoffConfidenceCalibration)
+      .where(eq(aiTakeoffConfidenceCalibration.organizationId, orgId));
+    expect(rows).toHaveLength(0);
+  }, 30_000);
 });
 
 describe("Task #2323 — GET /api/ai-features/takeoff/accuracy", () => {

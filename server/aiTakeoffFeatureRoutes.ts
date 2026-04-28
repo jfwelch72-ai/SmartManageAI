@@ -1748,17 +1748,69 @@ router.put(
 
 const CALIBRATION_MIN_SAMPLES = 30;
 
+export interface AiTakeoffCalibrationBucketSummary {
+  tradeType: string;
+  bucket: number;
+  samples: number;
+  acceptanceRate: number;
+  upserted: boolean;
+}
+
+export interface AiTakeoffCalibrationOrgSummary {
+  organizationId: string;
+  bucketsUpserted: number;
+  bucketsBelowThreshold: number;
+  buckets: AiTakeoffCalibrationBucketSummary[];
+}
+
+export interface AiTakeoffCalibrationResult {
+  rowsUpserted: number;
+  perOrg: Map<string, AiTakeoffCalibrationOrgSummary>;
+}
+
+export interface RunAiTakeoffCalibrationJobOptions {
+  /**
+   * When supplied, restrict the recompute to these organizations only.
+   * Used by the post-backfill recalibration helper so the operator can see
+   * the value of `scripts/backfill-ai-takeoff-suggestions.ts` the same day,
+   * instead of waiting for the 03:30 UTC nightly tick. When omitted, the
+   * job runs across every org with reviewed suggestions in the last 90
+   * days (the nightly cron behavior).
+   */
+  organizationIds?: readonly string[];
+}
+
 /**
  * Recomputes the per-(organization, trade, bucket) empirical acceptance rate
  * from the last 90 days of reviewed suggestions and upserts it into
- * `ai_takeoff_confidence_calibration`. Intended to run nightly via node-cron.
+ * `ai_takeoff_confidence_calibration`. Intended to run nightly via node-cron;
+ * also reusable from `scripts/backfill-ai-takeoff-suggestions.ts` (with
+ * `--also-recalibrate`) so backfilled orgs can refresh their calibration
+ * immediately rather than waiting for the next nightly tick.
  *
  * Definition: acceptance_rate = (ACCEPTED + EDITED) / (ACCEPTED + EDITED + REJECTED).
  * Edits count toward acceptance because the model's identification was
  * directionally correct — only the quantity/unit/type was tweaked.
+ *
+ * Buckets below the `CALIBRATION_MIN_SAMPLES` threshold are intentionally
+ * skipped (not deleted) so an existing calibrated value isn't silently
+ * blown away by a temporary dip in review volume.
  */
-export async function runAiTakeoffCalibrationJob(): Promise<{ rowsUpserted: number }> {
+export async function runAiTakeoffCalibrationJob(
+  opts: RunAiTakeoffCalibrationJobOptions = {},
+): Promise<AiTakeoffCalibrationResult> {
   const since = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+  const orgFilter = opts.organizationIds
+    ? Array.from(new Set(opts.organizationIds.filter((id) => typeof id === "string" && id.length > 0)))
+    : null;
+
+  // When the caller passed an explicit-but-empty set of orgs (e.g. the
+  // backfill touched zero orgs), short-circuit so we don't accidentally
+  // recompute the whole world.
+  if (orgFilter !== null && orgFilter.length === 0) {
+    return { rowsUpserted: 0, perOrg: new Map() };
+  }
+
   const rows = await db.execute(sql`
     SELECT organization_id,
            trade_type,
@@ -1773,8 +1825,36 @@ export async function runAiTakeoffCalibrationJob(): Promise<{ rowsUpserted: numb
       FROM ai_takeoff_suggestions
      WHERE reviewed_at IS NOT NULL
        AND reviewed_at >= ${since}
+       ${orgFilter
+         ? sql`AND organization_id = ANY(ARRAY[${sql.join(
+             orgFilter.map((id) => sql`${id}`),
+             sql`, `,
+           )}]::varchar[])`
+         : sql``}
      GROUP BY organization_id, trade_type, bucket
   `);
+
+  const perOrg = new Map<string, AiTakeoffCalibrationOrgSummary>();
+  const ensureOrg = (orgId: string): AiTakeoffCalibrationOrgSummary => {
+    let cur = perOrg.get(orgId);
+    if (!cur) {
+      cur = {
+        organizationId: orgId,
+        bucketsUpserted: 0,
+        bucketsBelowThreshold: 0,
+        buckets: [],
+      };
+      perOrg.set(orgId, cur);
+    }
+    return cur;
+  };
+
+  // Seed an entry for every org the caller asked about so the per-org log
+  // lines surface "no qualifying buckets" instead of silently dropping the
+  // org from the report.
+  if (orgFilter) {
+    for (const id of orgFilter) ensureOrg(id);
+  }
 
   let rowsUpserted = 0;
   for (const r of (rows.rows as Array<{
@@ -1785,8 +1865,19 @@ export async function runAiTakeoffCalibrationJob(): Promise<{ rowsUpserted: numb
     rejected: number;
   }>)) {
     const samples = Number(r.accepted) + Number(r.rejected);
-    if (samples < CALIBRATION_MIN_SAMPLES) continue;
-    const rate = Number(r.accepted) / samples;
+    const rate = samples > 0 ? Number(r.accepted) / samples : 0;
+    const orgSummary = ensureOrg(r.organization_id);
+    if (samples < CALIBRATION_MIN_SAMPLES) {
+      orgSummary.bucketsBelowThreshold += 1;
+      orgSummary.buckets.push({
+        tradeType: r.trade_type,
+        bucket: Number(r.bucket),
+        samples,
+        acceptanceRate: rate,
+        upserted: false,
+      });
+      continue;
+    }
     await db.execute(sql`
       INSERT INTO ai_takeoff_confidence_calibration
         (organization_id, trade_type, model_confidence_bucket,
@@ -1800,11 +1891,23 @@ export async function runAiTakeoffCalibrationJob(): Promise<{ rowsUpserted: numb
                     updated_at = EXCLUDED.updated_at
     `);
     rowsUpserted++;
+    orgSummary.bucketsUpserted += 1;
+    orgSummary.buckets.push({
+      tradeType: r.trade_type,
+      bucket: Number(r.bucket),
+      samples,
+      acceptanceRate: rate,
+      upserted: true,
+    });
   }
+
+  const scope = orgFilter
+    ? `org-scoped (${orgFilter.length} org${orgFilter.length === 1 ? "" : "s"})`
+    : "global";
   logInfo(
-    `[ai-takeoff-calibration] upserted ${rowsUpserted} rows from suggestions reviewed since ${since.toISOString()}`,
+    `[ai-takeoff-calibration] upserted ${rowsUpserted} rows from ${scope} suggestions reviewed since ${since.toISOString()}`,
   );
-  return { rowsUpserted };
+  return { rowsUpserted, perOrg };
 }
 
 // GET /api/ai-features/takeoff/scale-mismatches — Task #2335

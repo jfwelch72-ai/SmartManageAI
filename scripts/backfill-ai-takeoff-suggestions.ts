@@ -46,9 +46,19 @@
  * has already reviewed (ACCEPTED/EDITED/REJECTED).
  *
  * Usage:
- *   npx tsx scripts/backfill-ai-takeoff-suggestions.ts                   # apply
- *   npx tsx scripts/backfill-ai-takeoff-suggestions.ts --dry-run         # preview
- *   npx tsx scripts/backfill-ai-takeoff-suggestions.ts --batch-size=500  # paginate
+ *   npx tsx scripts/backfill-ai-takeoff-suggestions.ts                       # apply
+ *   npx tsx scripts/backfill-ai-takeoff-suggestions.ts --dry-run             # preview
+ *   npx tsx scripts/backfill-ai-takeoff-suggestions.ts --batch-size=500      # paginate
+ *   npx tsx scripts/backfill-ai-takeoff-suggestions.ts --also-recalibrate    # Task #2361
+ *
+ * Task #2361 — `--also-recalibrate` re-runs the per-org confidence
+ * calibration immediately after the backfill finishes, but only for the
+ * organizations whose suggestion table actually changed. The nightly
+ * calibration cron only runs once a day at 03:30 UTC, so without this
+ * flag the dashboard and calibrated-confidence overlay won't reflect the
+ * new sample counts (often a large block of ACCEPTED rows) until the
+ * next tick. Skipped automatically in `--dry-run` so the preview never
+ * mutates `ai_takeoff_confidence_calibration`.
  */
 
 import { and, asc, eq, gt, isNotNull, sql } from "drizzle-orm";
@@ -63,6 +73,7 @@ import {
 interface BackfillOptions {
   dryRun: boolean;
   batchSize: number;
+  alsoRecalibrate: boolean;
 }
 
 interface OrgTotals {
@@ -115,13 +126,14 @@ interface MeasurementCandidate {
 
 function parseArgs(argv: string[]): BackfillOptions {
   const dryRun = argv.includes("--dry-run");
+  const alsoRecalibrate = argv.includes("--also-recalibrate");
   const batchArg = argv.find((a) => a.startsWith("--batch-size="));
   let batchSize = 200;
   if (batchArg) {
     const n = parseInt(batchArg.split("=")[1] ?? "", 10);
     if (Number.isFinite(n) && n > 0) batchSize = Math.min(n, 1000);
   }
-  return { dryRun, batchSize };
+  return { dryRun, batchSize, alsoRecalibrate };
 }
 
 function normalizeItem(raw: RawDetectedItem, idx: number): NormalizedItem {
@@ -462,10 +474,89 @@ function printPerOrgTotals(result: BackfillResult): void {
   }
 }
 
+/**
+ * Task #2361 — re-runs the per-org confidence calibration immediately after
+ * the backfill, scoped to the orgs whose suggestion table actually changed
+ * (insert + upgrade-to-ACCEPTED counts > 0). Touched orgs whose changes
+ * were all PENDING (insert with `accepted=0`) still feed the calibration —
+ * a brand-new wave of PENDING rows doesn't shift the empirical numbers
+ * (the SQL filters on `reviewed_at IS NOT NULL`), but the upserted row
+ * count surfacing zero is itself a useful "nothing crossed the threshold"
+ * signal for the operator.
+ */
+async function recalibrateTouchedOrgs(result: BackfillResult): Promise<void> {
+  const touched = Array.from(result.perOrg.values())
+    .filter((o) => o.inserted > 0 || o.accepted > 0)
+    .map((o) => o.organizationId);
+
+  if (touched.length === 0) {
+    console.log(
+      "[backfill-ai-takeoff-suggestions] --also-recalibrate: no touched orgs, skipping calibration recompute.",
+    );
+    return;
+  }
+
+  console.log(
+    `[backfill-ai-takeoff-suggestions] --also-recalibrate: recomputing ai_takeoff_confidence_calibration for ${touched.length} org${touched.length === 1 ? "" : "s"}…`,
+  );
+
+  // Lazy-imported so the script doesn't pull the whole Express router
+  // graph on a `--dry-run` (recalibrate is a no-op in dry-run anyway).
+  const { runAiTakeoffCalibrationJob } = await import(
+    "../server/aiTakeoffFeatureRoutes"
+  );
+  const t0 = Date.now();
+  const calibResult = await runAiTakeoffCalibrationJob({
+    organizationIds: touched,
+  });
+  const ms = Date.now() - t0;
+
+  console.log(
+    `[backfill-ai-takeoff-suggestions] --also-recalibrate: done in ${ms}ms — totalRowsUpserted=${calibResult.rowsUpserted}`,
+  );
+
+  // Stable ordering: orgs with the most upserts first, then most below-
+  // threshold buckets, then by id. Mirrors the per-org backfill totals
+  // ordering so the two reports line up visually.
+  const orgs = Array.from(calibResult.perOrg.values()).sort((a, b) => {
+    if (b.bucketsUpserted !== a.bucketsUpserted) {
+      return b.bucketsUpserted - a.bucketsUpserted;
+    }
+    if (b.bucketsBelowThreshold !== a.bucketsBelowThreshold) {
+      return b.bucketsBelowThreshold - a.bucketsBelowThreshold;
+    }
+    return a.organizationId.localeCompare(b.organizationId);
+  });
+
+  for (const org of orgs) {
+    if (org.buckets.length === 0) {
+      console.log(
+        `  ${org.organizationId} — no reviewed suggestions in the last 90 days (no buckets to compute)`,
+      );
+      continue;
+    }
+    const bucketParts = org.buckets
+      .slice()
+      .sort((a, b) => {
+        if (a.tradeType !== b.tradeType) return a.tradeType.localeCompare(b.tradeType);
+        return a.bucket - b.bucket;
+      })
+      .map((b) => {
+        const rate = (b.acceptanceRate * 100).toFixed(1);
+        const tag = b.upserted ? "upserted" : "below-threshold";
+        return `${b.tradeType}/${b.bucket}=${b.samples}@${rate}%(${tag})`;
+      })
+      .join(" ");
+    console.log(
+      `  ${org.organizationId} — upserted=${org.bucketsUpserted} belowThreshold=${org.bucketsBelowThreshold} | ${bucketParts}`,
+    );
+  }
+}
+
 async function main(): Promise<void> {
   const opts = parseArgs(process.argv.slice(2));
   console.log(
-    `[backfill-ai-takeoff-suggestions] Starting${opts.dryRun ? " (dry-run)" : ""} batchSize=${opts.batchSize}…`,
+    `[backfill-ai-takeoff-suggestions] Starting${opts.dryRun ? " (dry-run)" : ""} batchSize=${opts.batchSize}${opts.alsoRecalibrate ? " also-recalibrate" : ""}…`,
   );
   const t0 = Date.now();
   const result = await backfillAiTakeoffSuggestions(opts);
@@ -474,6 +565,16 @@ async function main(): Promise<void> {
     `[backfill-ai-takeoff-suggestions] Done in ${ms}ms — scanned=${result.scannedAnalyses} processed=${result.processedAnalyses} inserted=${result.insertedSuggestions} acceptedTotal=${result.acceptedSuggestions} upgraded=${result.upgradedToAccepted} ambiguous=${result.ambiguousMatches} skippedExisting=${result.skippedExisting}`,
   );
   printPerOrgTotals(result);
+
+  if (opts.alsoRecalibrate) {
+    if (opts.dryRun) {
+      console.log(
+        "[backfill-ai-takeoff-suggestions] --also-recalibrate ignored under --dry-run (would mutate ai_takeoff_confidence_calibration).",
+      );
+    } else {
+      await recalibrateTouchedOrgs(result);
+    }
+  }
 }
 
 main()
