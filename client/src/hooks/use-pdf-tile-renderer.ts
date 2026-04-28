@@ -182,16 +182,19 @@ export function usePdfTileRenderer(
           return;
         }
         setPageDims({ width: res.width, height: res.height });
-        setPlaceholder((prev) => {
-          if (prev) {
-            try {
-              prev.close();
-            } catch {
-              /* noop */
-            }
-          }
-          return res.bitmap;
-        });
+        // IMPORTANT: do NOT call .close() on the previous placeholder
+        // bitmap here. The consumer (TakeoffWorkspace) mirrors our
+        // `placeholder` into its own `pdfImage` state via an effect,
+        // so its bitmap ref doesn't update in lockstep with ours —
+        // there is at least one Konva RAF tick during which `pdfImage`
+        // still points at the OLD bitmap. Closing synchronously
+        // inside `.then` therefore re-introduced the same
+        // "Failed to execute 'drawImage' on 'CanvasRenderingContext2D':
+        // The image source is detached" crash that the sheet-switch /
+        // disable paths above already guard against. Drop the ref and
+        // let GC reclaim the prior bitmap once the consumer's mirror
+        // effect has switched over.
+        setPlaceholder(res.bitmap);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
