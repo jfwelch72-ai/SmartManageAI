@@ -51,6 +51,10 @@ export interface UseTakeoffShortcutsParams {
   onRedo: () => void;
   /** Duplicate selected markup — Cmd/Ctrl+D. */
   onDuplicateSelection: () => void;
+  /** Bulk show/hide for the Layers popover (Shift+L hides, Shift+Alt+L
+   *  shows). Wired to the same helper the popover's bulk actions call
+   *  so the visible-count chip and canvas update immediately. */
+  onSetAllCategoriesVisibility: (visible: boolean) => void;
   /** True while a draw is mid-flight; tool keys must not switch tools. */
   isDrawing: boolean;
   /** True while inline calibration is active; tool keys are gated off. */
@@ -125,6 +129,7 @@ export function useTakeoffShortcuts(params: UseTakeoffShortcutsParams) {
     onUndo,
     onRedo,
     onDuplicateSelection,
+    onSetAllCategoriesVisibility,
     isDrawing,
     calibrationActive,
   } = params;
@@ -249,6 +254,9 @@ export function useTakeoffShortcuts(params: UseTakeoffShortcutsParams) {
         case "open-cheat-sheet":
           setCheatSheetOpen(true);
           return;
+        case "set-all-layers-visibility":
+          onSetAllCategoriesVisibility(intent.visible);
+          return;
         case "drawing-commit":
         case "drawing-cancel":
         case "drawing-back":
@@ -295,6 +303,7 @@ export function useTakeoffShortcuts(params: UseTakeoffShortcutsParams) {
     onUndo,
     onRedo,
     onDuplicateSelection,
+    onSetAllCategoriesVisibility,
     isDrawing,
     calibrationActive,
   ]);

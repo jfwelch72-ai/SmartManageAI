@@ -1710,6 +1710,26 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     toast({ title: "Duplicated", description: "Measurement copied with offset" });
   }, [selectedMeasurementId, measurements, createMeasurementMutation, toast]);
 
+  // Task #2231 — bulk show/hide for the Layers ribbon popover. When
+  // hiding everything, clear any selected measurement that would
+  // otherwise be hidden so the canvas selection state doesn't get out
+  // of sync with the visible set (mirrors the per-category handler
+  // below). Declared up here (rather than next to its sibling) so the
+  // takeoff shortcut hook on the next line can reference it without
+  // tripping a temporal-dead-zone error. Task #2240 also wires this
+  // helper to Shift+L / Shift+Alt+L for keyboard-driven bulk toggling.
+  const handleSetAllCategoriesVisibility = useCallback(
+    (visible: boolean) => {
+      if (visible) {
+        setHiddenCategoryIds(new Set());
+      } else {
+        setHiddenCategoryIds(new Set(categories.map((c) => c.id)));
+        setSelectedMeasurementId(null);
+      }
+    },
+    [categories],
+  );
+
   // Task #2137 — Mount the unified-ribbon keyboard handler. Only active
   // when the standalone workspace passes `unifiedRibbon`; legacy block
   // in `useTakeoffInteractions` is gated off via `disableLegacyShortcuts`
@@ -1740,6 +1760,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     onUndo: () => takeoffHistory.undo(),
     onRedo: () => takeoffHistory.redo(),
     onDuplicateSelection: handleDuplicateSelection,
+    onSetAllCategoriesVisibility: handleSetAllCategoriesVisibility,
     isDrawing,
     calibrationActive: calibrationMode !== "idle",
   });
@@ -2470,19 +2491,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     });
   };
 
-  // Task #2231 — bulk show/hide for the Layers ribbon popover. When
-  // hiding everything, clear any selected measurement that would
-  // otherwise be hidden so the canvas selection state doesn't get out
-  // of sync with the visible set (mirrors the per-category handler
-  // above).
-  const handleSetAllCategoriesVisibility = (visible: boolean) => {
-    if (visible) {
-      setHiddenCategoryIds(new Set());
-    } else {
-      setHiddenCategoryIds(new Set(categories.map((c) => c.id)));
-      setSelectedMeasurementId(null);
-    }
-  };
+  // Note: `handleSetAllCategoriesVisibility` (the bulk show/hide helper
+  // for the Layers popover and the Shift+L / Shift+Alt+L keyboard
+  // shortcuts) lives near the takeoff shortcut hook above so it can
+  // be passed to that hook without a temporal-dead-zone error.
 
   const parseMeasurementPoints = (m: any): { x: number; y: number }[] => {
     try {

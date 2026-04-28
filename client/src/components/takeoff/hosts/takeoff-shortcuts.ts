@@ -132,7 +132,8 @@ export type ShortcutIntent =
   | { kind: "close-modal" } // Esc closes snap HUD / cheat sheet
   | { kind: "drawing-commit" }
   | { kind: "drawing-cancel" }
-  | { kind: "drawing-back" };
+  | { kind: "drawing-back" }
+  | { kind: "set-all-layers-visibility"; visible: boolean };
 
 /** Modifier state required for a shortcut to match. */
 export interface ShortcutModifiers {
@@ -156,6 +157,11 @@ export interface Shortcut {
    *  "/", "escape", "enter", "backspace"). Digit modes are matched by
    *  parseInt when context = "snap-hud". */
   matchKey: string;
+  /** Optional `event.code` fallback. macOS Option (Alt) rewrites
+   *  `event.key` to a special glyph (e.g. Alt+L → "¬"), so any binding
+   *  that requires Alt should also declare a `matchCode` like
+   *  "KeyL" so the layout-independent code can match. */
+  matchCode?: string;
   modifiers?: ShortcutModifiers;
   /** Short, action-oriented label used in tooltips and cheat sheet. */
   label: string;
@@ -340,6 +346,32 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Toggle grid snap",
     groupId: "view",
     intent: { kind: "toggle-grid" },
+  },
+  // Task #2240 — bulk show/hide for the Layers popover. `Shift+L` hides
+  // every category at once, `Shift+Alt+L` restores them. Both routes
+  // call the same `handleSetAllCategoriesVisibility` helper the popover
+  // uses, so the visible-count chip and canvas update immediately.
+  {
+    id: "view.layers-hide-all",
+    keys: "Shift+L",
+    matchKey: "l",
+    matchCode: "KeyL",
+    modifiers: { shift: true },
+    label: "Hide all takeoff layers",
+    description: "Hide every measurement category in one keystroke",
+    groupId: "view",
+    intent: { kind: "set-all-layers-visibility", visible: false },
+  },
+  {
+    id: "view.layers-show-all",
+    keys: "Shift+Alt+L",
+    matchKey: "l",
+    matchCode: "KeyL",
+    modifiers: { shift: true, alt: true },
+    label: "Show all takeoff layers",
+    description: "Restore visibility for every measurement category",
+    groupId: "view",
+    intent: { kind: "set-all-layers-visibility", visible: true },
   },
 
   // ── Verify ──────────────────────────────────────────────────────
@@ -738,7 +770,10 @@ export const RESERVED_KEYS = new Set([
  *  + modifiers + context all line up. The hook filters by context
  *  before calling this. */
 export function matchesShortcut(event: KeyboardEvent, s: Shortcut): boolean {
-  if (event.key.toLowerCase() !== s.matchKey && event.key !== s.matchKey) {
+  const keyMatches =
+    event.key.toLowerCase() === s.matchKey || event.key === s.matchKey;
+  const codeMatches = s.matchCode !== undefined && event.code === s.matchCode;
+  if (!keyMatches && !codeMatches) {
     return false;
   }
   const meta = event.ctrlKey || event.metaKey;
