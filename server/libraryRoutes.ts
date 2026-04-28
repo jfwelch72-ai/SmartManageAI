@@ -1,5 +1,6 @@
 import { logError } from "./utils/logger";
 import { Router, Response, NextFunction } from "express";
+import { z } from "zod";
 import { db } from "./db";
 import { eq, and, ilike, inArray, sql, desc } from "drizzle-orm";
 import {
@@ -49,6 +50,29 @@ function checkAdmin(req: AuthRequest): boolean {
   return !!role && PREBUILT_RESET_ROLES.includes(role as UserRole);
 }
 
+// Task #2165 — Wraps a Zod schema parse so a malformed payload returns a clean
+// JSON 400 with the validation details instead of bubbling out of the async
+// route handler as an unhandled promise rejection (which left the request
+// hanging on the client until it timed out). Returns the parsed value on
+// success, or `null` after sending the 400 response so the caller can early
+// exit. The shape of `details` matches `ZodError.flatten()` so consumers can
+// surface per-field messages.
+function parseOrRespond<T extends z.ZodTypeAny>(
+  schema: T,
+  payload: unknown,
+  res: Response,
+): z.infer<T> | null {
+  const result = schema.safeParse(payload);
+  if (!result.success) {
+    res.status(400).json({
+      error: "Invalid request body",
+      details: result.error.flatten(),
+    });
+    return null;
+  }
+  return result.data;
+}
+
 router.get("/api/custom-libraries", async (req: AuthRequest, res: Response, next: NextFunction) => {
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -60,7 +84,8 @@ router.post("/api/custom-libraries", async (req: AuthRequest, res: Response, nex
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
-  const data = insertCustomLibrarySchema.parse({ ...req.body, organizationId: orgId });
+  const data = parseOrRespond(insertCustomLibrarySchema, { ...req.body, organizationId: orgId }, res);
+  if (!data) return;
   const [result] = await db.insert(customLibraries).values(data).returning();
   res.json(result);
 });
@@ -140,7 +165,8 @@ router.post("/api/library-categories", async (req: AuthRequest, res: Response, n
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
-  const data = insertLibraryCategorySchema.parse({ ...req.body, organizationId: orgId });
+  const data = parseOrRespond(insertLibraryCategorySchema, { ...req.body, organizationId: orgId }, res);
+  if (!data) return;
   const [result] = await db.insert(libraryCategories).values(data).returning();
   res.json(result);
 });
@@ -176,7 +202,8 @@ router.post("/api/library-items", async (req: AuthRequest, res: Response, next: 
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
-  const data = insertLibraryItemSchema.parse({ ...req.body, organizationId: orgId });
+  const data = parseOrRespond(insertLibraryItemSchema, { ...req.body, organizationId: orgId }, res);
+  if (!data) return;
   const [result] = await db.insert(libraryItems).values(data).returning();
   res.json(result);
 });
@@ -430,9 +457,21 @@ router.post("/api/library-items/import", async (req: AuthRequest, res: Response,
   if (!Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: "Items array is required" });
   }
-  const parsed = items.map((item: any) =>
-    insertLibraryItemSchema.parse({ ...item, organizationId: orgId })
-  );
+  // Task #2165 — Validate each item with safeParse and surface the failing
+  // index so a bad row in a 1000-item import is easy to locate, instead of
+  // letting a synchronous Zod throw bubble out as an unhandled rejection.
+  const parsed: z.infer<typeof insertLibraryItemSchema>[] = [];
+  for (let i = 0; i < items.length; i++) {
+    const result = insertLibraryItemSchema.safeParse({ ...items[i], organizationId: orgId });
+    if (!result.success) {
+      return res.status(400).json({
+        error: `Invalid item at index ${i}`,
+        index: i,
+        details: result.error.flatten(),
+      });
+    }
+    parsed.push(result.data);
+  }
   const results = await db.insert(libraryItems).values(parsed).returning();
   res.json({ imported: results.length, items: results });
 });
@@ -500,8 +539,9 @@ router.post("/api/library-assemblies", async (req: AuthRequest, res: Response, n
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
-  const { items: assemblyItems, groups: assemblyGroups, ...assemblyData } = req.body;
-  const data = insertLibraryAssemblySchema.parse({ ...assemblyData, organizationId: orgId });
+  const { items: assemblyItems, groups: assemblyGroups, ...assemblyData } = req.body ?? {};
+  const data = parseOrRespond(insertLibraryAssemblySchema, { ...assemblyData, organizationId: orgId }, res);
+  if (!data) return;
   const [assembly] = await db.insert(libraryAssemblies).values(data).returning();
 
   if (assemblyItems?.length) {
@@ -728,7 +768,8 @@ router.post("/api/saved-takeoffs", async (req: AuthRequest, res: Response, next:
   const orgId = getOrgId(req);
   if (!orgId) return res.status(401).json({ error: "Unauthorized" });
   if (!checkEstimatorPlus(req)) return res.status(403).json({ error: "Insufficient permissions" });
-  const data = insertSavedTakeoffSchema.parse({ ...req.body, organizationId: orgId });
+  const data = parseOrRespond(insertSavedTakeoffSchema, { ...req.body, organizationId: orgId }, res);
+  if (!data) return;
   const [result] = await db.insert(savedTakeoffs).values(data).returning();
   res.json(result);
 });
