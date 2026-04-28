@@ -8955,6 +8955,15 @@ export const passkeyCredentials = pgTable("passkey_credentials", {
   counter: integer("counter").notNull().default(0),
   transports: text("transports").array(),
   deviceName: text("device_name"),
+  // Task #2190 — domain (RP ID) the credential was registered under.
+  // WebAuthn permanently binds a credential to its registration rpID, so we
+  // persist it here and (a) verify against the credential's own rpID rather
+  // than a global one, and (b) surface it in the settings list so users can
+  // identify stale passkeys created on a now-defunct dev URL. NULL on rows
+  // created before this column existed — those legacy rows are surfaced in
+  // settings as "unknown domain" and refuse to authenticate, forcing the
+  // user to re-register.
+  rpId: text("rp_id"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   userIdx: index("passkey_credentials_user_idx").on(table.userId),

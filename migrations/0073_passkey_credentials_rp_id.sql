@@ -1,0 +1,23 @@
+-- Task #2190 — Persist the WebAuthn RP ID a passkey was registered under.
+--
+-- Background: the server previously hard-coded `rpID` from
+-- `process.env.REPLIT_DEV_DOMAIN` at startup. When the runtime hostname
+-- changes (a new Replit dev URL, the deployed `*.replit.app` domain, or a
+-- custom domain), WebAuthn rejects the assertion with
+-- "The RP ID '<old-domain>' is invalid for this domain." and login is
+-- broken. Worse, a passkey is permanently bound to the rpID it was created
+-- under, so once the dev URL changes, old credentials silently become
+-- unusable.
+--
+-- This migration adds an `rp_id` column to `passkey_credentials` so we can:
+--   * record the rpID per credential at registration time, and
+--   * use the credential's own `rp_id` (not a global one) as
+--     `expectedRPID` during authentication verification.
+--
+-- The column is nullable: rows created before this migration ran predate
+-- per-credential rpID tracking and are surfaced in the user's settings
+-- list as "unknown domain". Authentication explicitly refuses to match a
+-- legacy NULL row, forcing the user to re-register a fresh passkey on the
+-- current domain.
+ALTER TABLE "passkey_credentials"
+  ADD COLUMN IF NOT EXISTS "rp_id" text;

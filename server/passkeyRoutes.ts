@@ -1,5 +1,5 @@
 import { logError } from "./utils/logger";
-import { Router, type Response, NextFunction } from "express";
+import { Router, type Request, type Response, NextFunction } from "express";
 import {
   generateRegistrationOptions,
   verifyRegistrationResponse,
@@ -40,36 +40,125 @@ setInterval(() => {
   }
 }, 60 * 1000);
 
-function getRpConfig() {
-  if (process.env.REPLIT_DEV_DOMAIN) {
-    return {
-      rpName: "SmartManageAI",
-      rpID: process.env.REPLIT_DEV_DOMAIN,
-      origin: `https://${process.env.REPLIT_DEV_DOMAIN}`,
-    };
-  }
+const RP_NAME = "SmartManageAI";
 
-  if (process.env.WEBAUTHN_RP_ID && process.env.WEBAUTHN_ORIGIN) {
-    return {
-      rpName: "SmartManageAI",
-      rpID: process.env.WEBAUTHN_RP_ID,
-      origin: process.env.WEBAUTHN_ORIGIN,
-    };
+/**
+ * Task #2190 — Per-request WebAuthn relying-party config.
+ *
+ * The browser permanently binds a passkey to the rpID it was registered
+ * under. Hard-coding rpID from a single env var at boot breaks login any
+ * time the runtime hostname doesn't match (new Replit dev URL, deployed
+ * `*.replit.app` domain, custom domain). We therefore derive rpID + origin
+ * from the inbound request and validate the host against an allowlist
+ * built from the env vars we trust.
+ */
+function buildAllowedHosts(): Set<string> {
+  const hosts = new Set<string>();
+  const add = (host: string | null | undefined) => {
+    if (!host) return;
+    const trimmed = host.trim().toLowerCase();
+    if (trimmed) hosts.add(trimmed);
+  };
+
+  add(process.env.REPLIT_DEV_DOMAIN);
+  add(process.env.WEBAUTHN_RP_ID);
+
+  if (process.env.WEBAUTHN_ORIGIN) {
+    try {
+      add(new URL(process.env.WEBAUTHN_ORIGIN).hostname);
+    } catch {
+      // ignore malformed override
+    }
   }
 
   if (process.env.REPLIT_DOMAINS) {
-    const primaryDomain = process.env.REPLIT_DOMAINS.split(",")[0].trim();
+    for (const d of process.env.REPLIT_DOMAINS.split(",")) {
+      add(d);
+    }
+  }
+
+  // Local development convenience. We never accept localhost in production
+  // because it can't reach a deployed app and shouldn't satisfy the
+  // allowlist there even by accident.
+  if (process.env.NODE_ENV !== "production") {
+    add("localhost");
+    add("127.0.0.1");
+  }
+
+  return hosts;
+}
+
+interface RpConfig {
+  rpName: string;
+  rpID: string;
+  origin: string;
+}
+
+/**
+ * Derive the RP ID + expected origin from the incoming request. Prefer the
+ * `Origin` header (set by the browser on fetch/XHR with credentials) and
+ * fall back to `X-Forwarded-Host` and finally `Host`. Validates the
+ * derived host against `buildAllowedHosts()` and returns `null` (with a
+ * reason) when the host isn't on the allowlist — callers respond 400.
+ */
+function getRpConfigForRequest(req: Request): RpConfig | { error: string; host: string } {
+  const allowedHosts = buildAllowedHosts();
+
+  const originHeader = req.get("origin");
+  let host: string | null = null;
+  let scheme = "https";
+
+  if (originHeader) {
+    try {
+      const parsed = new URL(originHeader);
+      host = parsed.hostname.toLowerCase();
+      // Honour the scheme the browser actually used so localhost dev
+      // (http) works without us forcing https.
+      scheme = parsed.protocol.replace(":", "");
+    } catch {
+      // fall through
+    }
+  }
+
+  if (!host) {
+    const fwd = req.get("x-forwarded-host");
+    const rawHost = (fwd ? fwd.split(",")[0] : req.get("host")) || "";
+    host = rawHost.split(":")[0].trim().toLowerCase() || null;
+    const fwdProto = req.get("x-forwarded-proto");
+    if (fwdProto) {
+      scheme = fwdProto.split(",")[0].trim().toLowerCase();
+    } else if (host === "localhost" || host === "127.0.0.1") {
+      scheme = "http";
+    }
+  }
+
+  if (!host) {
+    return { error: "Could not determine request host", host: "" };
+  }
+
+  if (!allowedHosts.has(host)) {
     return {
-      rpName: "SmartManageAI",
-      rpID: primaryDomain,
-      origin: `https://${primaryDomain}`,
+      error: `Host '${host}' is not on the WebAuthn allowlist. Add it to REPLIT_DOMAINS or WEBAUTHN_RP_ID/WEBAUTHN_ORIGIN.`,
+      host,
     };
   }
 
+  // For localhost dev the port matters in `origin` (browser sends e.g.
+  // http://localhost:5000), but the RP ID is always just the hostname.
+  let originPort = "";
+  if (originHeader) {
+    try {
+      const parsed = new URL(originHeader);
+      if (parsed.port) originPort = `:${parsed.port}`;
+    } catch {
+      // ignore
+    }
+  }
+
   return {
-    rpName: "SmartManageAI",
-    rpID: "localhost",
-    origin: "http://localhost:5000",
+    rpName: RP_NAME,
+    rpID: host,
+    origin: `${scheme}://${host}${originPort}`,
   };
 }
 
@@ -79,21 +168,31 @@ router.post(
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const user = req.user!;
-      const { rpName, rpID } = getRpConfig();
+      const rp = getRpConfigForRequest(req);
+      if ("error" in rp) {
+        res.status(400).json({ error: rp.error });
+        return;
+      }
 
+      // Only exclude credentials registered for THIS rpID — credentials
+      // registered on another domain wouldn't be offered by the browser
+      // anyway, and the unique credential_id constraint still prevents
+      // re-registering the exact same authenticator twice.
       const existingCreds = await db
         .select()
         .from(passkeyCredentials)
         .where(eq(passkeyCredentials.userId, user.id));
 
+      const sameDomainCreds = existingCreds.filter((c) => c.rpId === rp.rpID);
+
       const options = await generateRegistrationOptions({
-        rpName,
-        rpID,
+        rpName: rp.rpName,
+        rpID: rp.rpID,
         userName: user.email,
         userDisplayName: `${user.firstName} ${user.lastName}`,
         userID: new TextEncoder().encode(user.id),
         attestationType: "none",
-        excludeCredentials: existingCreds.map((c) => ({
+        excludeCredentials: sameDomainCreds.map((c) => ({
           id: c.credentialId,
           type: "public-key" as const,
           transports: (c.transports as AuthenticatorTransportFuture[]) || [],
@@ -121,7 +220,11 @@ router.post(
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
       const user = req.user!;
-      const { rpID, origin } = getRpConfig();
+      const rp = getRpConfigForRequest(req);
+      if ("error" in rp) {
+        res.status(400).json({ error: rp.error });
+        return;
+      }
       const { response, deviceName, regSessionId } = req.body || {};
 
       if (!response || !response.id || !response.response || !regSessionId) {
@@ -138,8 +241,8 @@ router.post(
       const verification = await verifyRegistrationResponse({
         response,
         expectedChallenge,
-        expectedOrigin: origin,
-        expectedRPID: rpID,
+        expectedOrigin: rp.origin,
+        expectedRPID: rp.rpID,
       });
 
       if (!verification.verified || !verification.registrationInfo) {
@@ -169,6 +272,7 @@ router.post(
         counter: credential.counter,
         transports: (credential.transports as string[]) || [],
         deviceName: typeof deviceName === "string" ? deviceName.slice(0, 100) : "Passkey",
+        rpId: rp.rpID,
       });
 
       res.json({ verified: true });
@@ -182,10 +286,14 @@ router.post(
   "/api/auth/passkey/auth-options",
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const { rpID } = getRpConfig();
+      const rp = getRpConfigForRequest(req);
+      if ("error" in rp) {
+        res.status(400).json({ error: rp.error });
+        return;
+      }
 
       const options = await generateAuthenticationOptions({
-        rpID,
+        rpID: rp.rpID,
         userVerification: "preferred",
       });
 
@@ -203,7 +311,11 @@ router.post(
   "/api/auth/passkey/auth-verify",
   async (req: AuthRequest, res: Response, next: NextFunction) => {
     try {
-      const { rpID, origin } = getRpConfig();
+      const rp = getRpConfigForRequest(req);
+      if ("error" in rp) {
+        res.status(400).json({ error: rp.error });
+        return;
+      }
       const { response, sessionId } = req.body || {};
 
       if (!response || !response.id || !sessionId) {
@@ -225,24 +337,61 @@ router.post(
         .limit(1);
 
       if (!cred) {
-        res.status(400).json({ error: "Passkey not recognized. Please register a passkey first." });
+        res.status(400).json({
+          error: "No passkey is registered for this domain — please sign in another way and register a new passkey.",
+          code: "NO_PASSKEY_FOR_DOMAIN",
+        });
+        return;
+      }
+
+      // Task #2190 — refuse to verify a credential against a different
+      // rpID than the one it was registered with. WebAuthn would reject
+      // the assertion anyway, but failing fast with a specific code lets
+      // the login form show a clear "register a new passkey" message
+      // instead of a generic "authentication failed". Legacy rows with
+      // NULL rpId predate per-credential tracking and are forced into
+      // re-registration too.
+      if (!cred.rpId || cred.rpId !== rp.rpID) {
+        res.status(400).json({
+          error: "No passkey is registered for this domain — please sign in another way and register a new passkey.",
+          code: "RPID_MISMATCH",
+          registeredOn: cred.rpId ?? null,
+        });
         return;
       }
 
       const publicKeyBytes = Buffer.from(cred.publicKey, "base64");
 
-      const verification = await verifyAuthenticationResponse({
-        response,
-        expectedChallenge,
-        expectedOrigin: origin,
-        expectedRPID: rpID,
-        credential: {
-          id: cred.credentialId,
-          publicKey: new Uint8Array(publicKeyBytes),
-          counter: cred.counter,
-          transports: (cred.transports as AuthenticatorTransportFuture[]) || [],
-        },
-      });
+      let verification;
+      try {
+        verification = await verifyAuthenticationResponse({
+          response,
+          expectedChallenge,
+          expectedOrigin: rp.origin,
+          expectedRPID: cred.rpId,
+          credential: {
+            id: cred.credentialId,
+            publicKey: new Uint8Array(publicKeyBytes),
+            counter: cred.counter,
+            transports: (cred.transports as AuthenticatorTransportFuture[]) || [],
+          },
+        });
+      } catch (verifyErr: any) {
+        // Task #2190 — simplewebauthn throws when the assertion's RP ID
+        // hash or origin doesn't match what we expect. Map those to the
+        // explicit RPID_MISMATCH code so the client can show the
+        // domain-specific message instead of a generic 500.
+        const msg = String(verifyErr?.message || "");
+        if (/RP ID|rpId|origin|RPIDHash/i.test(msg)) {
+          res.status(400).json({
+            error: "No passkey is registered for this domain — please sign in another way and register a new passkey.",
+            code: "RPID_MISMATCH",
+            registeredOn: cred.rpId ?? null,
+          });
+          return;
+        }
+        throw verifyErr;
+      }
 
       if (!verification.verified) {
         res.status(400).json({ error: "Passkey authentication failed" });
@@ -312,12 +461,25 @@ router.get(
         .select({
           id: passkeyCredentials.id,
           deviceName: passkeyCredentials.deviceName,
+          rpId: passkeyCredentials.rpId,
           createdAt: passkeyCredentials.createdAt,
         })
         .from(passkeyCredentials)
         .where(eq(passkeyCredentials.userId, user.id));
 
-      res.json(creds);
+      // Surface the rpID this request is being served on so the settings
+      // panel can call out which credentials are usable on the current
+      // domain vs. stale ones from an old dev URL.
+      const rp = getRpConfigForRequest(req);
+      const currentRpId = "error" in rp ? null : rp.rpID;
+
+      res.json({
+        credentials: creds.map((c) => ({
+          ...c,
+          isCurrentDomain: c.rpId !== null && c.rpId === currentRpId,
+        })),
+        currentRpId,
+      });
     } catch (error) {
       next(error);
     }

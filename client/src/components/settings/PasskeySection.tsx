@@ -4,18 +4,35 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Fingerprint, Plus, Trash2, Loader2 } from "lucide-react";
+import { Fingerprint, Plus, Trash2, Loader2, AlertTriangle } from "lucide-react";
 import { startRegistration } from "@simplewebauthn/browser";
+
+interface PasskeyCredentialView {
+  id: string;
+  deviceName: string | null;
+  rpId: string | null;
+  createdAt: string;
+  isCurrentDomain: boolean;
+}
+
+interface PasskeyListResponse {
+  credentials: PasskeyCredentialView[];
+  currentRpId: string | null;
+}
 
 export default function PasskeySection() {
   const { toast } = useToast();
   const [registerLoading, setRegisterLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const { data: passkeys = [], isLoading: loadingPasskeys } = useQuery<{ id: string; deviceName: string | null; createdAt: string }[]>({
+  const { data, isLoading: loadingPasskeys } = useQuery<PasskeyListResponse>({
     queryKey: ["/api/auth/passkey/credentials"],
   });
+
+  const passkeys = data?.credentials ?? [];
+  const currentRpId = data?.currentRpId ?? null;
 
   const handleRegisterPasskey = async () => {
     if (!window.PublicKeyCredential) {
@@ -90,36 +107,77 @@ export default function PasskeySection() {
           </div>
         ) : (
           <div className="space-y-3 max-w-lg">
+            <p className="text-xs text-muted-foreground" data-testid="text-passkey-domain-note">
+              Passkeys are tied to the domain they were created on. A passkey
+              registered on one Replit dev URL won't work on a different one or
+              on your published app — you'll need to register a new passkey on
+              each domain you sign in from.
+              {currentRpId && (
+                <> Current domain: <span className="font-medium text-foreground">{currentRpId}</span>.</>
+              )}
+            </p>
+
             {passkeys.length > 0 && (
               <div className="space-y-2">
-                {passkeys.map((pk) => (
-                  <div key={pk.id} className="flex items-center justify-between p-3 border rounded-md" data-testid={`passkey-item-${pk.id}`}>
-                    <div className="flex items-center gap-3">
-                      <Fingerprint className="h-4 w-4 text-muted-foreground" />
-                      <div>
-                        <p className="text-sm font-medium" data-testid={`text-passkey-name-${pk.id}`}>
-                          {pk.deviceName || "Passkey"}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Added {new Date(pk.createdAt).toLocaleDateString()}
-                        </p>
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => handleDeletePasskey(pk.id)}
-                      disabled={deletingId === pk.id}
-                      data-testid={`button-delete-passkey-${pk.id}`}
+                {passkeys.map((pk) => {
+                  const isStale = !pk.isCurrentDomain;
+                  const domainLabel = pk.rpId
+                    ? `Registered on ${pk.rpId}`
+                    : "Registered on unknown domain";
+                  return (
+                    <div
+                      key={pk.id}
+                      className="flex items-center justify-between p-3 border rounded-md"
+                      data-testid={`passkey-item-${pk.id}`}
                     >
-                      {deletingId === pk.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Trash2 className="h-4 w-4 text-destructive" />
-                      )}
-                    </Button>
-                  </div>
-                ))}
+                      <div className="flex items-center gap-3">
+                        <Fingerprint className="h-4 w-4 text-muted-foreground" />
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <p
+                              className="text-sm font-medium"
+                              data-testid={`text-passkey-name-${pk.id}`}
+                            >
+                              {pk.deviceName || "Passkey"}
+                            </p>
+                            {isStale && (
+                              <Badge
+                                variant="outline"
+                                className="text-amber-700 dark:text-amber-400 border-amber-300 dark:border-amber-700 gap-1"
+                                data-testid={`badge-passkey-stale-${pk.id}`}
+                              >
+                                <AlertTriangle className="h-3 w-3" />
+                                Not usable here
+                              </Badge>
+                            )}
+                          </div>
+                          <p
+                            className="text-xs text-muted-foreground"
+                            data-testid={`text-passkey-domain-${pk.id}`}
+                          >
+                            {domainLabel}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            Added {new Date(pk.createdAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleDeletePasskey(pk.id)}
+                        disabled={deletingId === pk.id}
+                        data-testid={`button-delete-passkey-${pk.id}`}
+                      >
+                        {deletingId === pk.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        )}
+                      </Button>
+                    </div>
+                  );
+                })}
               </div>
             )}
 

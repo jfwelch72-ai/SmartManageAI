@@ -370,4 +370,14 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
     helper: "ensureAuditActionEnumValues",
     note: "Task #2153 — BULK_DELETE/BULK_DUPLICATE added to ensureAuditActionEnumValues alongside ARCHIVE/UNARCHIVE/RESTORE/RESET",
   },
+  // Task #2190 — adds `rp_id` to passkey_credentials so each WebAuthn
+  // credential records the registration domain. Without it, login breaks
+  // whenever the runtime hostname differs from the boot-time
+  // REPLIT_DEV_DOMAIN. The startup helper keeps long-lived dev DBs in sync
+  // even though `reconcileSchemaDrift` would also auto-add the nullable
+  // column on a fresh DB.
+  "0073_passkey_credentials_rp_id.sql": {
+    helper: "ensurePasskeyRpIdColumn",
+    note: "Task #2190 — adds nullable rp_id column so passkey verification can use the credential's own RP ID rather than a global one.",
+  },
 };

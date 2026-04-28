@@ -141,6 +141,7 @@ import { runRestoreAuditBackfillOnce } from "./runRestoreAuditBackfillOnce";
 import { ensureSovStatusEnumValues } from "./ensureSovStatusEnumValues";
 import { ensureAuditActionEnumValues } from "./ensureAuditActionEnumValues";
 import { ensureCalendarEventTypeEnumValues } from "./ensureCalendarEventTypeEnumValues";
+import { ensurePasskeyRpIdColumn } from "./ensurePasskeyRpIdColumn";
 
 type MigrationCategory = "CREATE_TABLE" | "ADD_COLUMN" | "ADD_ENUM" | "ALTER_TABLE";
 
@@ -212,6 +213,12 @@ const migrations: MigrationStep[] = [
   // payroll archive admin endpoints in `server/payrollRoutes.ts`.
   { name: "audit_action_enum_values", category: "ADD_ENUM", fn: ensureAuditActionEnumValues },
   { name: "calendar_event_type_enum_values", category: "ADD_ENUM", fn: ensureCalendarEventTypeEnumValues },
+  // Task #2190 — adds `rp_id` to `passkey_credentials` so each WebAuthn
+  // credential records the domain (RP ID) it was registered under, rather
+  // than relying on a global rpID derived from REPLIT_DEV_DOMAIN at boot.
+  // Required to fix passkey login on dev URLs that change and on the
+  // deployed *.replit.app domain.
+  { name: "passkey_credentials_rp_id", category: "ADD_COLUMN", fn: ensurePasskeyRpIdColumn },
   { name: "takeoff_enhancements", category: "ADD_COLUMN", fn: ensureTakeoffEnhancements },
   // Task #2068 — three-tier trade catalog (Trade > Category > Item).
   { name: "library_category_tier", category: "CREATE_TABLE", fn: ensureLibraryCategoryTier },

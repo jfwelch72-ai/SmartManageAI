@@ -61,17 +61,29 @@ export default function LoginForm({ onLogin }: LoginFormProps) {
       if (verifyRes.ok && verifyData.verified) {
         window.location.href = verifyData.redirectTo || "/dashboard";
       } else {
+        // Task #2190 — When the credential isn't valid for this domain
+        // (either no row matches the credential id, or the row's rpId
+        // doesn't match the current host), surface a domain-specific
+        // message instead of a generic "authentication failed".
+        const isDomainMismatch = verifyData.code === "RPID_MISMATCH"
+          || verifyData.code === "NO_PASSKEY_FOR_DOMAIN";
         toast({
-          title: "Passkey Login Failed",
+          title: isDomainMismatch
+            ? "Passkey not registered on this domain"
+            : "Passkey Login Failed",
           description: verifyData.error || "Authentication failed. Please try again.",
           variant: "destructive",
         });
       }
     } catch (error: any) {
+      // NotAllowedError can mean either: the user dismissed the OS prompt,
+      // OR the browser found no usable credential for this site (a likely
+      // sign of the Task #2190 domain-binding issue). We can't always
+      // distinguish, so use a neutral title and explain both possibilities.
       if (error.name === "NotAllowedError") {
         toast({
-          title: "Passkey Login Cancelled",
-          description: "The passkey request was cancelled or no passkey is available for this site. Please register a passkey from your profile first.",
+          title: "Passkey sign-in cancelled or unavailable",
+          description: "Either the prompt was dismissed, or no passkey is registered for this domain. Passkeys are tied to the domain they were created on — sign in another way and register a new one from your profile if needed.",
           variant: "destructive",
         });
         return;
