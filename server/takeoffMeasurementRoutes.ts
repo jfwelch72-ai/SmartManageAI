@@ -1100,7 +1100,12 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
   try {
     const { id } = req.params;
     const { scalePxPerFoot, units } = req.body;
-    const { takeoffSheets, takeoffMeasurements } = await import("@shared/schema");
+    const {
+      takeoffSheets,
+      takeoffMeasurements,
+      TAKEOFF_SCALE_SOURCES,
+      TAKEOFF_SCALE_CONFIDENCES,
+    } = await import("@shared/schema");
 
     if (!scalePxPerFoot || !Number.isFinite(scalePxPerFoot) || scalePxPerFoot <= 0) {
       res.status(400).json({ error: "Valid scale is required" });
@@ -1113,14 +1118,39 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
       return;
     }
 
-    const { scaleLabel } = req.body;
+    const { scaleLabel, scaleSource, scaleConfidence } = req.body;
+
+    // Task #2320 — every calibration write must record provenance.
+    // Default to USER_TWO_POINT/HIGH for backwards-compatible callers
+    // (the calibration drawer is the single largest source of writes).
+    let resolvedSource: string = "USER_TWO_POINT";
+    if (typeof scaleSource === "string") {
+      if (!(TAKEOFF_SCALE_SOURCES as readonly string[]).includes(scaleSource)) {
+        res.status(400).json({ error: "Invalid scaleSource" });
+        return;
+      }
+      resolvedSource = scaleSource;
+    }
+    let resolvedConfidence: string = "HIGH";
+    if (typeof scaleConfidence === "string") {
+      if (!(TAKEOFF_SCALE_CONFIDENCES as readonly string[]).includes(scaleConfidence)) {
+        res.status(400).json({ error: "Invalid scaleConfidence" });
+        return;
+      }
+      resolvedConfidence = scaleConfidence;
+    }
+
     const [updated] = await db
       .update(takeoffSheets)
-      .set({ 
-        scalePxPerFoot, 
+      .set({
+        scalePxPerFoot,
         units: units || "ft",
         scaleLabel: scaleLabel || null,
-        updatedAt: new Date() 
+        scaleSource: resolvedSource,
+        scaleConfidence: resolvedConfidence,
+        scaleCalibratedById: req.user!.id,
+        scaleCalibratedAt: new Date(),
+        updatedAt: new Date(),
       })
       .where(eq(takeoffSheets.id, id))
       .returning();
@@ -1226,8 +1256,13 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
 
 router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: AuthRequest, res, next) => {
   try {
-    const { sheetIds, scalePxPerFoot, units } = req.body;
-    const { takeoffSheets, takeoffMeasurements } = await import("@shared/schema");
+    const { sheetIds, scalePxPerFoot, units, scaleSource, scaleConfidence } = req.body;
+    const {
+      takeoffSheets,
+      takeoffMeasurements,
+      TAKEOFF_SCALE_SOURCES,
+      TAKEOFF_SCALE_CONFIDENCES,
+    } = await import("@shared/schema");
 
     if (!Array.isArray(sheetIds) || sheetIds.length === 0) {
       res.status(400).json({ error: "sheetIds array is required" });
@@ -1236,6 +1271,26 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
     if (!scalePxPerFoot || !Number.isFinite(scalePxPerFoot) || scalePxPerFoot <= 0) {
       res.status(400).json({ error: "Valid scale is required" });
       return;
+    }
+
+    // Task #2320 — batch calibration writes also record provenance.
+    // Default to USER_TWO_POINT/HIGH so the legacy "Apply to N selected
+    // sheets" affordance keeps working while routing through this path.
+    let resolvedSource: string = "USER_TWO_POINT";
+    if (typeof scaleSource === "string") {
+      if (!(TAKEOFF_SCALE_SOURCES as readonly string[]).includes(scaleSource)) {
+        res.status(400).json({ error: "Invalid scaleSource" });
+        return;
+      }
+      resolvedSource = scaleSource;
+    }
+    let resolvedConfidence: string = "HIGH";
+    if (typeof scaleConfidence === "string") {
+      if (!(TAKEOFF_SCALE_CONFIDENCES as readonly string[]).includes(scaleConfidence)) {
+        res.status(400).json({ error: "Invalid scaleConfidence" });
+        return;
+      }
+      resolvedConfidence = scaleConfidence;
     }
 
     const skipCalibrated = req.body.skipCalibrated !== false;
@@ -1269,6 +1324,10 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
           .set({
             scalePxPerFoot,
             units: units || "ft",
+            scaleSource: resolvedSource,
+            scaleConfidence: resolvedConfidence,
+            scaleCalibratedById: req.user!.id,
+            scaleCalibratedAt: new Date(),
             updatedAt: new Date(),
           })
           .where(eq(takeoffSheets.id, sheetId))

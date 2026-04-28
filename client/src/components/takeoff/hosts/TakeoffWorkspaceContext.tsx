@@ -98,6 +98,18 @@ export interface SheetContextSlice {
   currentSheetIsSuperseded: boolean;
   hasCompareNewSheet: boolean;
   onOpenCompareDialog: () => void;
+  /** Task #2320 — when a new revision supersedes a calibrated parent
+   *  the active sheet ends up with `scaleSource = INHERITED_FROM_PARENT`
+   *  and `scaleConfidence = UNVERIFIED`. The drift banner shown above
+   *  the canvas asks the estimator to verify or re-calibrate before
+   *  measurements based on a stale ratio creep into the takeoff. The
+   *  host stays a pure view layer; both CTAs are callbacks. */
+  scaleDrift: {
+    visible: boolean;
+    scaleLabel: string | null;
+    onVerify: () => void;
+    onRecalibrate: () => void;
+  };
   /** Sheet header toolbar (selector, sheet-actions menu, calibration badge,
    *  auto-import / version / properties / scale / shortcuts / cross-module
    *  / fullscreen). Always present; SheetHost mounts CollabHost inside it

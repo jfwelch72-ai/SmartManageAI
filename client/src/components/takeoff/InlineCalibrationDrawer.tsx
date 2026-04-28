@@ -123,6 +123,13 @@ export interface InlineCalibrationDrawerProps {
    *  toast Undo affordance is still the safety net. */
   skipBulkScalePropagationConfirm?: boolean;
   onSkipBulkScalePropagationConfirmChange?: (skip: boolean) => void | Promise<void>;
+  /** Task #2320 — current AI-detected scale for this sheet, if the
+   *  detector has produced one. The drawer compares this against the
+   *  user's typed-distance preview and surfaces an inline warning
+   *  when they disagree by more than 5%, with one-click "Use detected"
+   *  to swap the typed distance for the detector's value. Optional;
+   *  when null/undefined the warning never renders. */
+  aiDetectedScale?: { label: string; pxPerFoot: number } | null;
 }
 
 const APPLY_TO_SHEET_SET_TOOLTIP_DISABLED =
@@ -164,6 +171,7 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
     defaultApplyToSheetSet,
     skipBulkScalePropagationConfirm,
     onSkipBulkScalePropagationConfirmChange,
+    aiDetectedScale,
   } = props;
   // `setMultiCalibMode` is part of the props contract for parity
   // with the existing TakeoffSidebar wiring, but the drawer itself
@@ -244,6 +252,12 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
   // path so the common workflow stays fast.
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [bulkConfirmDontAsk, setBulkConfirmDontAsk] = useState(false);
+  const [aiDeltaOverridden, setAiDeltaOverridden] = useState(false);
+
+  useEffect(() => {
+    setAiDeltaOverridden(false);
+  }, [aiDetectedScale?.pxPerFoot, aiDetectedScale?.label, calibrationDistance]);
+
   // Note: `sheetSetFlagOn` already implies `!!onApplyToSheetSet`, so
   // TypeScript's control-flow analysis treats a subsequent
   // `onApplyToSheetSet &&` as redundant (TS2774). The runtime gate
@@ -473,6 +487,99 @@ export function InlineCalibrationDrawer(props: InlineCalibrationDrawerProps) {
               )}
             </div>
           </div>
+
+          {/*
+            Task #2320 — Typed-vs-AI-detected delta warning. Surfaces
+            inline when the user's typed distance produces a scale
+            that disagrees with the AI detector by more than 5%.
+            "Use detected" rewrites the typed distance so the
+            preview matches the detector exactly (we work back from
+            pxPerFoot using the captured pixel distance), letting
+            the existing Save flow run unmodified. Hidden as soon as
+            the deltas align — there's no lingering banner once the
+            user reconciles.
+          */}
+          {aiDetectedScale &&
+            !aiDeltaOverridden &&
+            previewScale !== null &&
+            aiDetectedScale.pxPerFoot > 0 &&
+            calibrationPoints.length === 2 &&
+            Math.abs(previewScale - aiDetectedScale.pxPerFoot) /
+              aiDetectedScale.pxPerFoot >
+              0.05 && (
+              <div
+                className="rounded border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs flex flex-col gap-1.5 text-amber-800 dark:text-amber-200"
+                data-testid="inline-calibration-ai-delta-warning"
+              >
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span data-testid="text-inline-calibration-ai-delta-message">
+                    Your typed distance produces{" "}
+                    <strong>{previewScale.toFixed(2)} px/ft</strong>, but the
+                    AI detector found{" "}
+                    <strong data-testid="text-inline-calibration-ai-scale-label">
+                      {aiDetectedScale.label}
+                    </strong>{" "}
+                    (
+                    <span className="font-mono">
+                      {aiDetectedScale.pxPerFoot.toFixed(2)} px/ft
+                    </span>
+                    ) — a{" "}
+                    <span data-testid="text-inline-calibration-ai-delta-percent">
+                      {(
+                        (Math.abs(previewScale - aiDetectedScale.pxPerFoot) /
+                          aiDetectedScale.pxPerFoot) *
+                        100
+                      ).toFixed(1)}
+                      %
+                    </span>{" "}
+                    difference.
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 ml-5">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-6 px-2 text-[11px]"
+                    onClick={() => {
+                      // Compute the typed distance that would make
+                      // the preview match the detector exactly.
+                      // Pixel distance is fixed by the captured
+                      // points; rewriting the typed feet value lets
+                      // every downstream code path (Save, Add region,
+                      // bulk propagate) consume the same parsed
+                      // grammar without a special "use detected" save
+                      // path.
+                      const px = pixelDistance(
+                        calibrationPoints[0],
+                        calibrationPoints[1],
+                      );
+                      if (px <= 0) return;
+                      const ftFromAi = px / aiDetectedScale.pxPerFoot;
+                      const display =
+                        units === "m"
+                          ? (ftFromAi / M_TO_FT).toFixed(3)
+                          : ftFromAi.toFixed(3);
+                      setDraftDistance(display);
+                    }}
+                    data-testid="button-inline-calibration-use-detected"
+                  >
+                    Use detected
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 px-2 text-[11px] text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40"
+                    onClick={() => setAiDeltaOverridden(true)}
+                    data-testid="button-inline-calibration-override-ai"
+                  >
+                    Override
+                  </Button>
+                </div>
+              </div>
+            )}
 
           <div className="flex flex-col gap-1">
             <Label

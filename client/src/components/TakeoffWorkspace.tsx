@@ -3595,9 +3595,25 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const handleAcceptDetectedScale = useCallback(async () => {
     if (!selectedSheet || !detectedScale) return;
     try {
+      // Task #2320 — accepting an auto-detected scale records source
+      // AI_DETECTED and maps the detector's qualitative confidence
+      // ("high"/"medium"/"low") onto the canonical
+      // HIGH/MEDIUM/LOW provenance enum. Unknown values fall back to
+      // UNVERIFIED so the drift banner still surfaces.
+      const detectorConfidence: string =
+        detectedScale.confidence === "high"
+          ? "HIGH"
+          : detectedScale.confidence === "medium"
+            ? "MEDIUM"
+            : detectedScale.confidence === "low"
+              ? "LOW"
+              : "UNVERIFIED";
       await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, {
         scalePxPerFoot: detectedScale.pxPerFoot,
         units: detectedScale.units,
+        scaleLabel: detectedScale.label,
+        scaleSource: "AI_DETECTED",
+        scaleConfidence: detectorConfidence,
       });
       queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
       toast({ title: "Scale Applied", description: `Auto-detected scale ${detectedScale.label} applied` });
@@ -3659,6 +3675,23 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     currentSheetIsSuperseded: !!currentSheetIsSuperseded,
     hasCompareNewSheet: !!compareNewSheet,
     onOpenCompareDialog: () => setCompareDialogOpen(true),
+    // Task #2320 — drift banner. The fields land on `currentSheet`
+    // via the `/api/takeoff/sheets` projection (extended above);
+    // when a sheet supersede copied scale forward without
+    // re-verification, source flips to `INHERITED_FROM_PARENT` and
+    // confidence to `UNVERIFIED` — that combination is what we
+    // surface here. Both CTAs route through the same calibration
+    // drawer entry point so the user lands in a Section-5 grammar
+    // flow either way; "Verify" is conceptually the same action,
+    // it just signals intent.
+    scaleDrift: {
+      visible:
+        currentSheet?.scaleSource === "INHERITED_FROM_PARENT" &&
+        currentSheet?.scaleConfidence === "UNVERIFIED",
+      scaleLabel: currentSheet?.scaleLabel ?? null,
+      onVerify: openCalibrationDrawer,
+      onRecalibrate: openCalibrationDrawer,
+    },
     selectorBar: {
       workspaceRef,
       sheets,
@@ -3774,6 +3807,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     handleAcceptDetectedScale, showStaleBanner, staleCanvasItemCount,
     repinStaleCanvasMutation.isPending, dismissStaleBanner,
     currentSheetIsSuperseded, compareNewSheet,
+    // Task #2320 — drift banner reads `currentSheet.scaleSource` /
+    // `scaleConfidence` (already covered by the `currentSheet`
+    // identity above) and routes both CTAs through
+    // `openCalibrationDrawer`, so the slice must rebuild when that
+    // callback's identity changes.
+    openCalibrationDrawer,
     sheets, selectedSheet, linkCountsBySheet, sheetLinks.length,
     duplicateSheetMutation, hasRevisionHistory, handleMoveSheet,
     pinControlsForSelectorBar, detectLinksMutation,
@@ -4379,7 +4418,16 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       onApplyScale: async (pxPerFoot, scaleUnits, label) => {
         if (!selectedSheet) return;
         try {
-          await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, { scalePxPerFoot: pxPerFoot, units: scaleUnits });
+          // Task #2320 — picking from the Standard Scales modal is a
+          // STANDARD_SCALE/HIGH calibration; the user is explicitly
+          // attesting the sheet is at this exact ratio.
+          await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, {
+            scalePxPerFoot: pxPerFoot,
+            units: scaleUnits,
+            scaleLabel: label,
+            scaleSource: "STANDARD_SCALE",
+            scaleConfidence: "HIGH",
+          });
           queryClient.invalidateQueries({ queryKey: sheetsQueryKey });
           toast({ title: "Scale Applied", description: `Scale set to ${label}` });
         } catch (error: any) {
@@ -5025,6 +5073,21 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         skipBulkScalePropagationConfirm={skipBulkScalePropagationConfirm}
         onSkipBulkScalePropagationConfirmChange={
           handleSkipBulkScalePropagationConfirmChange
+        }
+        aiDetectedScale={
+          // Task #2320 — Forward the live AI detector result so the
+          // drawer can compare it against the user's typed
+          // calibration distance and warn on a >5% delta. We only
+          // pass `label` + `pxPerFoot` (drawer doesn't need the raw
+          // text or confidence enum to compute the warning), and
+          // gate on a positive ratio so a malformed detector hit
+          // never trips the warning math.
+          detectedScale && detectedScale.pxPerFoot > 0
+            ? {
+                label: detectedScale.label,
+                pxPerFoot: detectedScale.pxPerFoot,
+              }
+            : null
         }
       />
 

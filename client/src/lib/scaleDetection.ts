@@ -156,7 +156,7 @@ function parseMixedNumber(str: string): number | null {
   return isNaN(num) ? null : num;
 }
 
-function findMatchingPreset(pxPerFoot: number): { label: string; pxPerFoot: number } | null {
+export function findMatchingPreset(pxPerFoot: number): { label: string; pxPerFoot: number } | null {
   const tolerance = 0.05;
   for (const [, scales] of Object.entries(COMMON_SCALES)) {
     for (const scale of scales) {

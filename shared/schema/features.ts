@@ -547,6 +547,32 @@ export const quantityCategories = pgTable("quantity_categories", {
   bidIdx: index("quantity_categories_bid_idx").on(table.bidId),
 }));
 
+// Task #2320 — Sheet-scale provenance + revision-drift detection.
+// `scaleSource` records HOW a sheet got its current calibration so
+// the bottom-bar chip + drift banner can speak to the user in the
+// same vocabulary the calibration UI used. `scaleConfidence` is a
+// coarsened version of the AI detector's confidence band; it's also
+// what the supersede flow downgrades to UNVERIFIED to force
+// re-verification on revisions. Defaults are UNVERIFIED so existing
+// rows + brand-new uncalibrated sheets never get a fake green dot.
+export const TAKEOFF_SCALE_SOURCES = [
+  "USER_TWO_POINT",
+  "STANDARD_SCALE",
+  "AI_DETECTED",
+  "INHERITED_FROM_PARENT",
+  "BULK_PROPAGATED",
+  "UNVERIFIED",
+] as const;
+export type TakeoffScaleSource = (typeof TAKEOFF_SCALE_SOURCES)[number];
+
+export const TAKEOFF_SCALE_CONFIDENCES = [
+  "HIGH",
+  "MEDIUM",
+  "LOW",
+  "UNVERIFIED",
+] as const;
+export type TakeoffScaleConfidence = (typeof TAKEOFF_SCALE_CONFIDENCES)[number];
+
 // Takeoff Sheets table (per-page images from PDFs)
 export const takeoffSheets = pgTable("takeoff_sheets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -564,6 +590,16 @@ export const takeoffSheets = pgTable("takeoff_sheets", {
   supersededById: varchar("superseded_by_id"),
   rotation: integer("rotation").notNull().default(0),
   scaleLabel: text("scale_label"),
+  // Task #2320 — Provenance + drift tracking. Stored as plain text
+  // (not pgEnum) so we don't have to thread an ALTER TYPE migration
+  // through every existing tenant the next time the source set
+  // grows. The whitelist lives in TAKEOFF_SCALE_SOURCES /
+  // TAKEOFF_SCALE_CONFIDENCES above; routes validate against those.
+  scaleSource: text("scale_source").notNull().default("UNVERIFIED"),
+  scaleConfidence: text("scale_confidence").notNull().default("UNVERIFIED"),
+  scaleCalibratedById: varchar("scale_calibrated_by_id").references(() => users.id, { onDelete: "set null" }),
+  scaleCalibratedAt: timestamp("scale_calibrated_at"),
+  scaleLockedToRevision: boolean("scale_locked_to_revision").notNull().default(false),
   assignedTo: varchar("assigned_to"),
   completionStatus: text("completion_status").notNull().default("not_started"),
   targetMeasurements: integer("target_measurements"),

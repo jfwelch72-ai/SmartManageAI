@@ -24,6 +24,45 @@ export interface WorkspaceBottomBarProps {
   currentSheet: TakeoffSheet | null | undefined;
 }
 
+// Task #2320 — central confidence-dot helper. The bottom-bar chip is
+// the only on-canvas surface that always shows the calibration's
+// provenance, so we keep the colour mapping here rather than letting
+// each call site reinvent it. UNVERIFIED is intentionally red so a
+// freshly-superseded revision (which copies the parent scale but is
+// not yet trusted) jumps out before the user starts measuring.
+function confidenceDotClass(confidence: string | null | undefined): string {
+  switch (confidence) {
+    case "HIGH":
+      return "bg-green-500 dark:bg-green-400";
+    case "MEDIUM":
+    case "LOW":
+      return "bg-amber-500 dark:bg-amber-400";
+    case "UNVERIFIED":
+    default:
+      return "bg-red-500 dark:bg-red-400";
+  }
+}
+
+function confidenceTooltip(
+  source: string | null | undefined,
+  confidence: string | null | undefined,
+): string {
+  const sourceText = (() => {
+    switch (source) {
+      case "USER_TWO_POINT": return "Calibrated by you (two-point ruler)";
+      case "STANDARD_SCALE": return "Standard scale applied";
+      case "AI_DETECTED": return "Auto-detected from sheet";
+      case "BULK_PROPAGATED": return "Applied to entire Sheet Set";
+      case "INHERITED_FROM_PARENT": return "Inherited from previous revision";
+      case "UNVERIFIED":
+      default:
+        return "Scale not yet verified";
+    }
+  })();
+  const confText = confidence ? ` · ${confidence.toLowerCase()} confidence` : "";
+  return `${sourceText}${confText}`;
+}
+
 function WorkspaceBottomBarInner(props: WorkspaceBottomBarProps) {
   const {
     selectedMeasurementCount, bulkDeletePending, onBulkDelete, onClearSelection,
@@ -31,6 +70,28 @@ function WorkspaceBottomBarInner(props: WorkspaceBottomBarProps) {
     showOverlaySlider, onToggleOverlaySlider, showMeasurementTable, onToggleMeasurementTable,
     stageScale, currentSheet,
   } = props;
+
+  // Read the scale-provenance fields the server now writes on every
+  // calibration. They're typed as optional on `TakeoffSheet` so the
+  // existing /api/takeoff/sheets/{id} response (which currently does
+  // not project these columns) still type-checks; when missing we
+  // fall back to UNVERIFIED so the chip renders red.
+  const sheetWithProvenance = currentSheet as
+    | (TakeoffSheet & {
+        scaleSource?: string | null;
+        scaleConfidence?: string | null;
+      })
+    | null
+    | undefined;
+  const scaleSource = sheetWithProvenance?.scaleSource ?? "UNVERIFIED";
+  const scaleConfidence = sheetWithProvenance?.scaleConfidence ?? "UNVERIFIED";
+  const dotClass = confidenceDotClass(scaleConfidence);
+  const chipTitle = confidenceTooltip(scaleSource, scaleConfidence);
+  const scaleLabelText = currentSheet?.scaleLabel
+    ? currentSheet.scaleLabel
+    : currentSheet?.scalePxPerFoot
+      ? `${Number(currentSheet.scalePxPerFoot).toFixed(2)} px/ft`
+      : "Not calibrated";
 
   return (
     <>
@@ -73,11 +134,14 @@ function WorkspaceBottomBarInner(props: WorkspaceBottomBarProps) {
         <div className="flex sm:hidden h-7 bg-card/95 backdrop-blur-sm border-t px-3 items-center justify-between text-[11px] text-muted-foreground shrink-0 tabular-nums" data-testid="takeoff-status-bar-mobile">
           <div className="flex items-center gap-3 min-w-0">
             <span className="font-medium text-foreground/80 shrink-0">{measurements.length} m</span>
-            {currentSheet?.scalePxPerFoot ? (
-              <span className="text-green-600 dark:text-green-400 shrink-0" data-testid="status-calibration-mobile">Calibrated</span>
-            ) : (
-              <span className="text-amber-600 dark:text-amber-400 shrink-0" data-testid="status-calibration-mobile">Uncalibrated</span>
-            )}
+            <span
+              className="flex items-center gap-1 shrink-0"
+              title={chipTitle}
+              data-testid="status-calibration-mobile"
+            >
+              <span className={cn("inline-block w-1.5 h-1.5 rounded-full", dotClass)} aria-hidden="true" />
+              <span className="truncate max-w-[8rem] text-foreground/80">{scaleLabelText}</span>
+            </span>
           </div>
           <span className="shrink-0" data-testid="status-zoom-mobile">{Math.round(stageScale * 100)}%</span>
         </div>
@@ -134,11 +198,14 @@ function WorkspaceBottomBarInner(props: WorkspaceBottomBarProps) {
               <span>Table</span>
             </button>
             <span>Zoom: {Math.round(stageScale * 100)}%</span>
-            {currentSheet?.scalePxPerFoot ? (
-              <span className="text-green-600 dark:text-green-400">Scale: {currentSheet.units || "ft"}</span>
-            ) : (
-              <span className="text-amber-600 dark:text-amber-400">Not Calibrated</span>
-            )}
+            <span
+              className="flex items-center gap-1.5"
+              title={chipTitle}
+              data-testid="status-calibration-chip"
+            >
+              <span className={cn("inline-block w-2 h-2 rounded-full", dotClass)} aria-hidden="true" />
+              <span className="text-foreground/80" data-testid="text-scale-label">{scaleLabelText}</span>
+            </span>
           </div>
         </div>
       )}

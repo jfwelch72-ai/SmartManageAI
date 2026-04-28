@@ -56,10 +56,15 @@ const moveMemberBodySchema = z.object({
   fromSetId: z.string().min(1),
 });
 
+// Task #2320 — apply-scale is the canonical "BULK_PROPAGATED" path.
+// Callers may pass through an explicit confidence (the parent sheet's
+// confidence, typically) but we never accept a source from the client
+// for this endpoint — it is, by definition, bulk-propagated.
 const applyScaleBodySchema = z.object({
   scalePxPerFoot: z.number().positive(),
   scaleLabel: z.string().max(64).optional().nullable(),
   saveAsDefault: z.boolean().optional(),
+  scaleConfidence: z.enum(["HIGH", "MEDIUM", "LOW", "UNVERIFIED"]).optional(),
 });
 
 // Task #2141 — Undo affordance for "Apply to entire Sheet Set". The
@@ -583,8 +588,19 @@ router.post(
         })
         .from(takeoffSheets)
         .where(inArray(takeoffSheets.id, sheetIds));
+      // Task #2320 — every sheet touched by apply-scale gets the
+      // BULK_PROPAGATED source so the bottom-bar chip and the audit
+      // trail can distinguish "calibrated by hand on this sheet" from
+      // "scale arrived here via Apply to Sheet Set". The confidence
+      // tracks the parent sheet (default UNVERIFIED if the caller
+      // doesn't tell us otherwise).
+      const propagatedConfidence: string = parsed.data.scaleConfidence ?? "UNVERIFIED";
       const updates: Partial<typeof takeoffSheets.$inferInsert> = {
         scalePxPerFoot: parsed.data.scalePxPerFoot,
+        scaleSource: "BULK_PROPAGATED",
+        scaleConfidence: propagatedConfidence,
+        scaleCalibratedById: ctx.userId,
+        scaleCalibratedAt: new Date(),
         updatedAt: new Date(),
       };
       if (parsed.data.scaleLabel !== undefined) {

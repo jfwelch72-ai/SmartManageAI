@@ -4,6 +4,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory } from "@shared/schema";
 import { canonicalTool, type Tool, type MeasurementType } from "@/components/takeoff/types";
 import { recordPalmReject, recordRotateGesture } from "@/lib/takeoffStylusTelemetry";
+import { findMatchingPreset } from "@/lib/scaleDetection";
 import {
   computePixelDistance,
   computeDistanceInFeet,
@@ -1234,14 +1235,27 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       return false;
     }
     try {
-      await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, { scalePxPerFoot, units });
+      // Task #2320 — calibrating via the two-point ruler is a
+      // first-party USER_TWO_POINT/HIGH calibration. We also try to
+      // snap to a known architectural/civil preset for the toast
+      // label so the user sees "Scale set: 1/4\" = 1'-0\"" rather
+      // than "Scale set: 96.00 px/ft" when a preset matches.
+      const matchedPreset = findMatchingPreset(scalePxPerFoot);
+      const humanLabel = matchedPreset?.label ?? `${scalePxPerFoot.toFixed(2)} px/ft`;
+      await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, {
+        scalePxPerFoot,
+        units,
+        scaleLabel: matchedPreset?.label ?? null,
+        scaleSource: "USER_TWO_POINT",
+        scaleConfidence: "HIGH",
+      });
       queryClient.invalidateQueries({ queryKey: sheetsQueryKey || ["/api/projects", projectId, "takeoff", "sheets"] });
       // Surface the resulting scale so the user can verify the
       // calibration landed where they expected (Task #2140 done
       // criteria: "Scale set: …").
       toast({
         title: "Scale set",
-        description: `Scale set: ${scalePxPerFoot.toFixed(2)} px/ft`,
+        description: `Scale set: ${humanLabel}`,
       });
       setCalibrationMode("idle");
       setCalibrationPoints([]);
@@ -1271,7 +1285,16 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       return;
     }
     try {
-      await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, { scalePxPerFoot: scale.pxPerFoot, units: "ft", scaleLabel: scale.label });
+      // Task #2320 — picking a preset from the standard-scale
+      // dropdown is a STANDARD_SCALE/HIGH calibration: the user is
+      // explicitly attesting the sheet is drawn at 1/4" = 1'-0" (etc).
+      await apiRequest("PATCH", `/api/takeoff/sheets/${selectedSheet}/calibration`, {
+        scalePxPerFoot: scale.pxPerFoot,
+        units: "ft",
+        scaleLabel: scale.label,
+        scaleSource: "STANDARD_SCALE",
+        scaleConfidence: "HIGH",
+      });
       queryClient.invalidateQueries({ queryKey: sheetsQueryKey || ["/api/projects", projectId, "takeoff", "sheets"] });
       toast({ title: "Success", description: `Applied scale: ${scale.label}` });
       resetScaleState();

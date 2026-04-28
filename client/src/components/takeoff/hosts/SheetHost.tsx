@@ -100,6 +100,50 @@ function SheetHostInner() {
           </Button>
         </div>
       )}
+      {ctx.scaleDrift.visible && (
+        // Task #2320 — drift banner. We surface it above the existing
+        // "this drawing has been updated" banner because, if both
+        // fire, the calibration warning is the more dangerous of the
+        // two: a wrong scale silently corrupts every measurement
+        // until somebody notices.
+        <div
+          className="bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 px-4 py-2 flex items-center gap-2 text-sm text-amber-800 dark:text-amber-200"
+          data-testid="banner-scale-drift"
+        >
+          <AlertTriangle className="w-4 h-4 shrink-0 text-amber-600 dark:text-amber-400" />
+          <span data-testid="text-scale-drift-message">
+            Scale on this revision is unverified
+            {ctx.scaleDrift.scaleLabel ? (
+              <>
+                {" "}— inherited <strong>{ctx.scaleDrift.scaleLabel}</strong> from previous revision
+              </>
+            ) : (
+              <> — inherited from previous revision</>
+            )}
+            .
+          </span>
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="default"
+              size="sm"
+              className="h-7 px-3 text-xs"
+              onClick={ctx.scaleDrift.onVerify}
+              data-testid="button-banner-verify-scale"
+            >
+              Verify dimension
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 px-3 text-xs text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/30"
+              onClick={ctx.scaleDrift.onRecalibrate}
+              data-testid="button-banner-recalibrate"
+            >
+              <Ruler className="w-3.5 h-3.5 mr-1" /> Re-calibrate
+            </Button>
+          </div>
+        </div>
+      )}
       {ctx.currentSheetIsSuperseded && (
         <div
           className="bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800 px-4 py-2 flex items-center gap-2 text-sm text-amber-800 dark:text-amber-200"

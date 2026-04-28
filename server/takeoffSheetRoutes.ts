@@ -480,6 +480,16 @@ router.get("/api/projects/:projectId/takeoff/sheets", requireAuth, async (req: A
         isActive: takeoffSheets.isActive,
         supersededById: takeoffSheets.supersededById,
         scaleLabel: takeoffSheets.scaleLabel,
+        // Task #2320 — scale provenance. The client renders the
+        // bottom-bar confidence dot, the inherited-scale drift
+        // banner, and the typed-vs-AI delta warning off these
+        // fields, so they must be in the sheet payload up front
+        // (no separate fetch on selection / banner mount).
+        scaleSource: takeoffSheets.scaleSource,
+        scaleConfidence: takeoffSheets.scaleConfidence,
+        scaleCalibratedById: takeoffSheets.scaleCalibratedById,
+        scaleCalibratedAt: takeoffSheets.scaleCalibratedAt,
+        scaleLockedToRevision: takeoffSheets.scaleLockedToRevision,
         createdAt: takeoffSheets.createdAt,
         updatedAt: takeoffSheets.updatedAt,
         documentId: projectPlans.documentId,
@@ -519,23 +529,60 @@ router.post("/api/takeoff/sheets/:sheetId/supersede", requireAuth, requireRole("
       return;
     }
 
+    // Read the parent sheet up front so we can inherit its scale onto
+    // the revision (and so we have an oldSheet snapshot for the audit
+    // event below, regardless of whether anything was inherited).
+    const [parentSheet] = await db
+      .select()
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.id, sheetId))
+      .limit(1);
+    const [revisionBefore] = await db
+      .select()
+      .from(takeoffSheets)
+      .where(eq(takeoffSheets.id, newSheetId))
+      .limit(1);
+
     // Mark old sheet as superseded by new sheet, and inactive
     await db.update(takeoffSheets)
       .set({ supersededById: newSheetId, isActive: false, updatedAt: new Date() })
       .where(eq(takeoffSheets.id, sheetId));
 
-    // Optionally set revision label on the new sheet
+    // Task #2320 — when a new revision supersedes an existing sheet,
+    // its scale provenance is intentionally pessimistic. We copy the
+    // parent's scale numbers across so measurements continue to render
+    // at a sensible size, but we mark the source as
+    // INHERITED_FROM_PARENT and the confidence as UNVERIFIED so the
+    // drift banner fires until a human re-calibrates. We also do NOT
+    // overwrite a scale the new sheet already had set explicitly.
+    const inheritedUpdates: Partial<typeof takeoffSheets.$inferInsert> = {
+      isActive: true,
+      updatedAt: new Date(),
+      scaleSource: "INHERITED_FROM_PARENT",
+      scaleConfidence: "UNVERIFIED",
+      scaleLockedToRevision: false,
+      scaleCalibratedById: null,
+      scaleCalibratedAt: null,
+    };
     if (revisionLabel) {
-      await db.update(takeoffSheets)
-        .set({ revisionLabel: sanitizeShortText(revisionLabel), isActive: true, updatedAt: new Date() })
-        .where(eq(takeoffSheets.id, newSheetId));
-    } else {
-      await db.update(takeoffSheets)
-        .set({ isActive: true, updatedAt: new Date() })
-        .where(eq(takeoffSheets.id, newSheetId));
+      inheritedUpdates.revisionLabel = sanitizeShortText(revisionLabel);
     }
+    if (parentSheet) {
+      if (revisionBefore?.scalePxPerFoot == null && parentSheet.scalePxPerFoot != null) {
+        inheritedUpdates.scalePxPerFoot = parentSheet.scalePxPerFoot;
+      }
+      if ((revisionBefore?.scaleLabel == null || revisionBefore?.scaleLabel === "") && parentSheet.scaleLabel) {
+        inheritedUpdates.scaleLabel = parentSheet.scaleLabel;
+      }
+      if ((revisionBefore?.units == null || revisionBefore?.units === "ft") && parentSheet.units) {
+        inheritedUpdates.units = parentSheet.units;
+      }
+    }
+    await db.update(takeoffSheets)
+      .set(inheritedUpdates)
+      .where(eq(takeoffSheets.id, newSheetId));
 
-    const [oldSheet] = await db.select().from(takeoffSheets).where(eq(takeoffSheets.id, sheetId)).limit(1);
+    const oldSheet = parentSheet;
     const [newSheet] = await db.select().from(takeoffSheets).where(eq(takeoffSheets.id, newSheetId)).limit(1);
 
     await logAudit({

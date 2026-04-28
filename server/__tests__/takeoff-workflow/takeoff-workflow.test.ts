@@ -776,4 +776,99 @@ describe("Takeoff Workflow E2E", () => {
       expect(measurements.length).toBeGreaterThan(0);
     });
   });
+
+  // Task #2320 — Supersede must mark the new revision's scale
+  // provenance as INHERITED_FROM_PARENT / UNVERIFIED so the drift
+  // banner fires on the client until somebody re-calibrates. The
+  // parent sheet's scale numbers (px/ft, label) should still copy
+  // forward when the revision didn't already have its own — that's
+  // the safety net so existing measurements don't render at the
+  // wrong size in between revision creation and re-calibration.
+  describe("13. Supersede — Scale Provenance (Task #2320)", () => {
+    let parentSheetId: string;
+    let revisionSheetId: string;
+
+    it("creates the parent + revision sheets and calibrates the parent", async () => {
+      const parentRes = await apiPost(`/api/bids/${orgA.bid.id}/takeoff/plans`, orgA.token, {
+        fileUrl: "https://example.com/parent-rev0.pdf",
+        fileName: "Drift Parent",
+      });
+      expect(parentRes.status).toBe(201);
+      parentSheetId = (parentRes.body.sheets as SheetResponse[])[0].id;
+
+      const revRes = await apiPost(`/api/bids/${orgA.bid.id}/takeoff/plans`, orgA.token, {
+        fileUrl: "https://example.com/parent-rev1.pdf",
+        fileName: "Drift Revision",
+      });
+      expect(revRes.status).toBe(201);
+      revisionSheetId = (revRes.body.sheets as SheetResponse[])[0].id;
+
+      const calRes = await apiPatch(`/api/takeoff/sheets/${parentSheetId}/calibration`, orgA.token, {
+        scalePxPerFoot: 12,
+        units: "ft",
+        scaleLabel: '1/8" = 1\'-0"',
+      });
+      expect(calRes.status).toBe(200);
+    });
+
+    it("supersede inherits parent scale onto the revision and marks it UNVERIFIED", async () => {
+      const supRes = await apiPost(
+        `/api/takeoff/sheets/${parentSheetId}/supersede`,
+        orgA.token,
+        { newSheetId: revisionSheetId, revisionLabel: "Rev 1" },
+      );
+      expect(supRes.status).toBe(200);
+
+      // The list endpoint is the surface the client actually reads,
+      // so assert the projection through it (rather than a direct DB
+      // read) — that's where the drift banner gets its data.
+      const listRes = await apiGet(`/api/bids/${orgA.bid.id}/takeoff/sheets`, orgA.token);
+      expect(listRes.status).toBe(200);
+      const sheets = listRes.body as Array<
+        SheetResponse & {
+          scaleSource?: string | null;
+          scaleConfidence?: string | null;
+          scaleLabel?: string | null;
+          scaleLockedToRevision?: boolean | null;
+          isActive?: boolean;
+        }
+      >;
+      const revision = sheets.find((s) => s.id === revisionSheetId);
+      const parent = sheets.find((s) => s.id === parentSheetId);
+      expect(revision).toBeDefined();
+      expect(parent).toBeDefined();
+
+      // Parent flips to inactive (superseded), revision goes active.
+      expect(parent!.isActive).toBe(false);
+      expect(revision!.isActive).toBe(true);
+
+      // Provenance: revision is now inheriting an unverified scale.
+      expect(revision!.scaleSource).toBe("INHERITED_FROM_PARENT");
+      expect(revision!.scaleConfidence).toBe("UNVERIFIED");
+      expect(revision!.scaleLockedToRevision).toBe(false);
+
+      // Parent's calibrated values copied forward so existing
+      // measurements still render at a sensible size.
+      expect(revision!.scalePxPerFoot).toBe(12);
+      expect(revision!.scaleLabel).toBe('1/8" = 1\'-0"');
+    });
+
+    it("re-calibrating the revision flips the source/confidence to USER_TWO_POINT/HIGH", async () => {
+      const calRes = await apiPatch(`/api/takeoff/sheets/${revisionSheetId}/calibration`, orgA.token, {
+        scalePxPerFoot: 14,
+        units: "ft",
+        scaleSource: "USER_TWO_POINT",
+        scaleConfidence: "HIGH",
+      });
+      expect(calRes.status).toBe(200);
+
+      const listRes = await apiGet(`/api/bids/${orgA.bid.id}/takeoff/sheets`, orgA.token);
+      const sheets = listRes.body as Array<
+        SheetResponse & { scaleSource?: string | null; scaleConfidence?: string | null }
+      >;
+      const revision = sheets.find((s) => s.id === revisionSheetId);
+      expect(revision!.scaleSource).toBe("USER_TWO_POINT");
+      expect(revision!.scaleConfidence).toBe("HIGH");
+    });
+  });
 });

@@ -307,6 +307,125 @@ describe("InlineCalibrationDrawer (Task #2140) — save contract", () => {
     ) as HTMLButtonElement;
     expect(checkbox.disabled).toBe(true);
   });
+
+  // Task #2320 — Typed-vs-AI delta warning. The drawer compares the
+  // user's preview scale against the detector's pxPerFoot and only
+  // surfaces the warning when the deltas disagree by more than 5%.
+  // "Use detected" rewrites the typed feet value so the preview
+  // realigns with the detector exactly.
+  it("does NOT show the AI-delta warning when typed and detected scales agree (<5%)", () => {
+    // 100 px / 12.5 ft = 8.00 px/ft. Detector at 8.20 px/ft → 2.5% delta.
+    renderDrawer({
+      calibrationPoints: [
+        { x: 100, y: 100 },
+        { x: 200, y: 100 },
+      ],
+      // @ts-expect-error overrides interface doesn't enumerate every prop
+      aiDetectedScale: { label: '1/8" = 1\'-0"', pxPerFoot: 8.2 },
+    });
+    fireEvent.change(
+      screen.getByTestId("input-inline-calibration-distance"),
+      { target: { value: `12'6"` } },
+    );
+    expect(
+      screen.queryByTestId("inline-calibration-ai-delta-warning"),
+    ).toBeNull();
+  });
+
+  it("renders the AI-delta warning when typed scale disagrees with detected by >5%", () => {
+    // 100 px / 10 ft = 10.00 px/ft. Detector at 8.00 px/ft → 25% delta.
+    renderDrawer({
+      calibrationPoints: [
+        { x: 100, y: 100 },
+        { x: 200, y: 100 },
+      ],
+      // @ts-expect-error overrides interface doesn't enumerate every prop
+      aiDetectedScale: { label: '1/8" = 1\'-0"', pxPerFoot: 8 },
+    });
+    fireEvent.change(
+      screen.getByTestId("input-inline-calibration-distance"),
+      { target: { value: "10" } },
+    );
+    expect(
+      screen.getByTestId("inline-calibration-ai-delta-warning"),
+    ).toBeTruthy();
+    expect(
+      screen.getByTestId("text-inline-calibration-ai-scale-label").textContent,
+    ).toBe('1/8" = 1\'-0"');
+    expect(
+      screen
+        .getByTestId("text-inline-calibration-ai-delta-percent")
+        .textContent?.replace(/\s/g, ""),
+    ).toMatch(/^25\.0%$/);
+  });
+
+  it('"Use detected" rewrites the typed distance so the preview matches the detector', () => {
+    // 100 px / 10 ft = 10.00 px/ft typed. Detector at 8 px/ft.
+    // After "Use detected" the typed distance should become 12.5 ft
+    // (100 / 8) so the preview re-aligns at 8.00 px/ft and the
+    // warning self-dismisses.
+    renderDrawer({
+      calibrationPoints: [
+        { x: 100, y: 100 },
+        { x: 200, y: 100 },
+      ],
+      // @ts-expect-error overrides interface doesn't enumerate every prop
+      aiDetectedScale: { label: '1/8" = 1\'-0"', pxPerFoot: 8 },
+    });
+    fireEvent.change(
+      screen.getByTestId("input-inline-calibration-distance"),
+      { target: { value: "10" } },
+    );
+    fireEvent.click(
+      screen.getByTestId("button-inline-calibration-use-detected"),
+    );
+    // Preview now reports 8.00 px/ft and the warning is gone.
+    expect(
+      screen.getByTestId("text-inline-calibration-preview-scale").textContent,
+    ).toMatch(/^8\.00 px\/ft$/);
+    expect(
+      screen.queryByTestId("inline-calibration-ai-delta-warning"),
+    ).toBeNull();
+  });
+
+  it('"Override" dismisses the AI delta warning while keeping the typed distance', () => {
+    // The warning is informational — once the user explicitly
+    // chooses to keep their typed value (e.g., they trust their own
+    // measurement), the banner stops nagging. The typed distance
+    // (and therefore the preview px/ft) does not change.
+    renderDrawer({
+      calibrationPoints: [
+        { x: 100, y: 100 },
+        { x: 200, y: 100 },
+      ],
+      // @ts-expect-error overrides interface doesn't enumerate every prop
+      aiDetectedScale: { label: '1/8" = 1\'-0"', pxPerFoot: 8 },
+    });
+    fireEvent.change(
+      screen.getByTestId("input-inline-calibration-distance"),
+      { target: { value: "10" } },
+    );
+    expect(
+      screen.queryByTestId("inline-calibration-ai-delta-warning"),
+    ).not.toBeNull();
+    fireEvent.click(
+      screen.getByTestId("button-inline-calibration-override-ai"),
+    );
+    // Warning gone, but the typed value (and preview at 10 px/ft) is preserved.
+    expect(
+      screen.queryByTestId("inline-calibration-ai-delta-warning"),
+    ).toBeNull();
+    expect(
+      (
+        screen.getByTestId(
+          "input-inline-calibration-distance",
+        ) as HTMLInputElement
+      ).value,
+    ).toBe("10");
+    expect(
+      screen.getByTestId("text-inline-calibration-preview-scale").textContent,
+    ).toMatch(/^10\.00 px\/ft$/);
+  });
 });
 
 describe("InlineCalibrationDrawer (Task #2228) — bulk-scale confirm", () => {
