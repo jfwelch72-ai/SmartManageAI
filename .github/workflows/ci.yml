@@ -207,6 +207,20 @@ jobs:
       # (Task #1897), now factored into a composite. Points triagers at the
       # `playwright-report` artifact uploaded just above so they can open the
       # HTML report straight from the run page.
+      #
+      # Task #2261 — Also pass the per-project test-count snippet that the
+      # `Verify every Playwright project discovers at least one test` step
+      # (Task #2235) writes to `playwright-project-counts.txt` (the script
+      # writes that file unconditionally — see
+      # `scripts/verify-playwright-projects-non-empty.mjs`). When the file
+      # exists and is non-empty the composite action appends it as an extra
+      # Slack section, so on-call sees which project(s) discovered which
+      # test counts — and the names of any project(s) with 0 tests — in
+      # the alert itself, without having to open the run page first. When
+      # the verify step never ran (e.g. `npm ci` failed before it) the
+      # file is absent and the composite silently omits the extra section,
+      # so the alert still fires and renders exactly as it did before
+      # this change.
       - name: Notify Slack on E2E failure (main only)
         if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: ./.github/actions/notify-slack-on-failure
@@ -214,6 +228,7 @@ jobs:
           webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
           job-name: E2E Tests (Playwright)
           artifact-name: playwright-report
+          extra-context-file: playwright-project-counts.txt
 
   e2e-canvas-firefox-webkit:
     # Task #1886 — Task #1867 refactored the canvas-heavy Konva specs to share

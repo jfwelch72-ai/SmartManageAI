@@ -42,7 +42,16 @@
 //       --list` failed to produce parseable JSON.
 
 import { spawnSync } from "node:child_process";
-import { appendFileSync } from "node:fs";
+import { appendFileSync, writeFileSync } from "node:fs";
+
+// Default location for the Slack-friendly per-project counts snippet (see
+// `writeSlackContext` below). Task #2261 wires this file into the e2e job's
+// `Notify Slack on E2E failure (main only)` step so the alert body shows
+// reviewers which Playwright projects discovered which test counts —
+// including the names of any project(s) with 0 tests — without making them
+// open the run page first. Override via the `PLAYWRIGHT_PROJECT_COUNTS_FILE`
+// env var (handy for local runs that don't want to litter the repo root).
+const DEFAULT_SLACK_CONTEXT_FILE = "playwright-project-counts.txt";
 
 function runPlaywrightList() {
   // `--list --reporter=json` makes Playwright enumerate tests without
@@ -166,6 +175,60 @@ function writeStepSummary(declared, counts) {
   appendFileSync(summaryPath, lines.join("\n") + "\n", "utf8");
 }
 
+// Task #2261 — Render a Slack-mrkdwn snippet with the per-project counts and
+// (when applicable) the names of any project(s) that discovered 0 tests, then
+// write it to a file the `Notify Slack on E2E failure (main only)` step can
+// pass to `.github/actions/notify-slack-on-failure` via its
+// `extra-context-file` input. Always writing the file (whether the assertion
+// passes or fails) means the Slack alert keeps the per-project breakdown
+// even when the actual failure is downstream — e.g. the real Playwright run
+// (not this gate) is what tripped, in which case knowing how many tests each
+// project owned is still useful triage context for on-call.
+//
+// Slack's section text limit is 3000 characters; the realistic payload here
+// is well under 200, but we cap conservatively to avoid surprising the
+// alerting pipeline if the project list grows unexpectedly.
+const SLACK_TEXT_HARD_CAP = 2800;
+function renderSlackContext(declared, counts, empty) {
+  // Right-pad project names so the code block aligns visually in Slack.
+  const widest = declared.reduce((max, n) => Math.max(max, n.length), 0);
+  const rows = declared.map((name) => {
+    const padded = name.padEnd(widest, " ");
+    const n = counts.get(name) ?? 0;
+    return `${padded} : ${n} test(s)`;
+  });
+
+  const headline =
+    empty.length > 0
+      ? `*Playwright project test discovery* — :warning: ${empty.length} project(s) with 0 tests: ${empty
+          .map((n) => `\`${n}\``)
+          .join(", ")}`
+      : "*Playwright project test discovery*";
+
+  // Triple backticks render as a fixed-width code block in Slack mrkdwn.
+  const body = ["```", ...rows, "```"].join("\n");
+  let snippet = `${headline}\n${body}`;
+  if (snippet.length > SLACK_TEXT_HARD_CAP) {
+    snippet = `${snippet.slice(0, SLACK_TEXT_HARD_CAP)}\n…(truncated)`;
+  }
+  return snippet;
+}
+
+function writeSlackContext(declared, counts, empty) {
+  const path =
+    process.env.PLAYWRIGHT_PROJECT_COUNTS_FILE || DEFAULT_SLACK_CONTEXT_FILE;
+  try {
+    writeFileSync(path, renderSlackContext(declared, counts, empty), "utf8");
+  } catch (err) {
+    // Don't let a sidecar-file write failure mask the real assertion result.
+    // The Slack notifier treats a missing/empty file as "no extra context"
+    // so the alert still fires; we just lose the per-project breakdown.
+    console.error(
+      `::warning::Failed to write Slack context file '${path}': ${err.message}`,
+    );
+  }
+}
+
 function main() {
   const stdout = runPlaywrightList();
   const report = parseListing(stdout);
@@ -182,6 +245,13 @@ function main() {
   writeStepSummary(declared, counts);
 
   const empty = declared.filter((name) => (counts.get(name) ?? 0) === 0);
+
+  // Always write the Slack-context sidecar file (Task #2261), regardless of
+  // whether the assertion below passes — the e2e job's Slack notifier reads
+  // it on any failure() in the job, and the per-project breakdown is useful
+  // triage context even when the failure is downstream of this gate.
+  writeSlackContext(declared, counts, empty);
+
   if (empty.length > 0) {
     // GitHub Actions surfaces `::error::` lines as annotations on the run
     // page, which is what the existing chromium-touch gate uses. Mirror

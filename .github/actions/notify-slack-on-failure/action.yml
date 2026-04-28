@@ -39,6 +39,30 @@ inputs:
       point at the run page only.
     required: false
     default: ''
+  extra-context:
+    description: >
+      Optional Slack mrkdwn snippet to append as an additional section in the
+      message body (e.g. per-project test counts written by
+      `scripts/verify-playwright-projects-non-empty.mjs`). Use this when the
+      caller already has the snippet in a workflow expression; for snippets
+      written to disk by an earlier step in the same job, prefer
+      `extra-context-file` so multi-line content doesn't have to be inlined
+      into a `with:` block. When both are supplied, `extra-context-file`
+      wins if its file exists and is non-empty.
+    required: false
+    default: ''
+  extra-context-file:
+    description: >
+      Optional path to a file whose contents should be appended as the Slack
+      mrkdwn snippet described above. When the file exists and is non-empty
+      its contents win over `extra-context`; when it is missing or empty,
+      this input is silently ignored — that lets a caller wire the file in
+      unconditionally without having to gate on whether the producer step
+      ran. Task #2261 uses this to surface the per-project Playwright test
+      counts (and the names of any zero-test projects) in the e2e Slack
+      alert without making on-call open the run page first.
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -49,6 +73,8 @@ runs:
         SLACK_WEBHOOK_URL: ${{ inputs.webhook-url }}
         ARTIFACT_NAME: ${{ inputs.artifact-name }}
         JOB: ${{ inputs.job-name }}
+        EXTRA_CONTEXT: ${{ inputs.extra-context }}
+        EXTRA_CONTEXT_FILE: ${{ inputs.extra-context-file }}
         RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         REPO: ${{ github.repository }}
         COMMIT_SHA: ${{ github.sha }}
@@ -72,40 +98,75 @@ runs:
           artifact_text="<${RUN_URL}|Open the failed run> — see the job log for details (no artifact is uploaded by this gate)."
         fi
 
-        # Block Kit payload — renders nicely in Slack incoming webhooks and
-        # also degrades to plain text in the notification preview via the
-        # top-level `text` field (required for accessibility / mobile).
-        payload=$(cat <<EOF
-        {
-          "text": ":rotating_light: ${JOB} failed on main — ${short_sha}",
-          "blocks": [
-            {
-              "type": "header",
-              "text": {
-                "type": "plain_text",
-                "text": ":rotating_light: ${JOB} failed on main"
-              }
-            },
-            {
-              "type": "section",
-              "fields": [
-                { "type": "mrkdwn", "text": "*Repo*\n${REPO}" },
-                { "type": "mrkdwn", "text": "*Job*\n${JOB}" },
-                { "type": "mrkdwn", "text": "*Commit*\n<${COMMIT_URL}|${short_sha}> by ${ACTOR}" },
-                { "type": "mrkdwn", "text": "*Workflow*\n${WORKFLOW}" }
+        # Resolve the optional extra-context block. A file-based input wins
+        # over the inline string so callers can hand off arbitrary multi-line
+        # snippets (e.g. the per-project Playwright counts from Task #2261)
+        # without having to inline them into a `with:` block. Both inputs
+        # are optional; when neither is supplied (or when the file is
+        # missing/empty), the message renders exactly as it did before
+        # Task #2261 introduced this support.
+        extra=""
+        if [ -n "${EXTRA_CONTEXT_FILE:-}" ] && [ -s "${EXTRA_CONTEXT_FILE}" ]; then
+          extra="$(cat "${EXTRA_CONTEXT_FILE}")"
+        elif [ -n "${EXTRA_CONTEXT:-}" ]; then
+          extra="${EXTRA_CONTEXT}"
+        fi
+
+        # Slack section text limit is 3000 characters; truncate defensively
+        # so an unexpectedly large snippet (e.g. a future producer that
+        # forgets its own cap) doesn't 400 the webhook and swallow the
+        # alert. The producer scripts cap at 2800 too — this is a second
+        # belt-and-braces guard at the consumer side.
+        if [ "${#extra}" -gt 2800 ]; then
+          extra="${extra:0:2800}…(truncated)"
+        fi
+
+        # Build the JSON payload with `jq` so every interpolated value is
+        # safely escaped. The previous heredoc-based construction would
+        # break if any input — job name, artifact name, or extra context —
+        # contained quotes, newlines, or backslashes (none of the existing
+        # callers happened to, but the new `extra-context` input from
+        # Task #2261 explicitly carries multi-line markdown). `jq` is
+        # preinstalled on `ubuntu-latest` runners.
+        payload=$(jq -n \
+          --arg short_sha "${short_sha}" \
+          --arg job "${JOB}" \
+          --arg repo "${REPO}" \
+          --arg commit_url "${COMMIT_URL}" \
+          --arg actor "${ACTOR}" \
+          --arg workflow "${WORKFLOW}" \
+          --arg artifact_text "${artifact_text}" \
+          --arg extra "${extra}" \
+          '
+          {
+            text: ":rotating_light: \($job) failed on main — \($short_sha)",
+            blocks: (
+              [
+                {
+                  type: "header",
+                  text: { type: "plain_text", text: ":rotating_light: \($job) failed on main" }
+                },
+                {
+                  type: "section",
+                  fields: [
+                    { type: "mrkdwn", text: "*Repo*\n\($repo)" },
+                    { type: "mrkdwn", text: "*Job*\n\($job)" },
+                    { type: "mrkdwn", text: "*Commit*\n<\($commit_url)|\($short_sha)> by \($actor)" },
+                    { type: "mrkdwn", text: "*Workflow*\n\($workflow)" }
+                  ]
+                },
+                {
+                  type: "section",
+                  text: { type: "mrkdwn", text: $artifact_text }
+                }
               ]
-            },
-            {
-              "type": "section",
-              "text": {
-                "type": "mrkdwn",
-                "text": "${artifact_text}"
-              }
-            }
-          ]
-        }
-        EOF
-        )
+              + ( if ($extra | length) > 0
+                  then [ { type: "section", text: { type: "mrkdwn", text: $extra } } ]
+                  else []
+                end )
+            )
+          }
+          ')
 
         # `--fail-with-body` so a non-2xx from Slack still surfaces the
         # response body in the job log, and the step exits non-zero — that
