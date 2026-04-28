@@ -12,6 +12,7 @@ import {
 } from "@shared/utils/geometry";
 import { commitMarkupBodyDrag, commitMarkupResize } from "../../markups/markup-drag-commit";
 import { TileLayer } from "../TileLayer";
+import { DimInputCursorBadge } from "./DimInputCursorBadge";
 import {
   type Tool,
   type MeasurementType,
@@ -1696,47 +1697,19 @@ function CanvasStageImpl(props: CanvasStageProps) {
                   />
                 )}
 
-                {/* Task #2203 — Active typed-dimension lock badge.
-                    Floats below the cursor while a draw is in progress
-                    so the user always sees the locked length without
-                    looking up at the ribbon. Chain mode swaps to an
-                    amber palette + "Chain" label. */}
-                {isDrawing &&
-                  cursorPosition &&
-                  pendingDimLengthFt != null &&
-                  pendingDimLengthFt > 0 &&
-                  (() => {
-                    const label = dimInputRepeat ? "Chain" : "Lock";
-                    const lengthText = `${label}: ${pendingDimLengthFt.toFixed(2)} ft`;
-                    const fill = dimInputRepeat
-                      ? "rgba(180, 83, 9, 0.9)"
-                      : "rgba(8, 145, 178, 0.9)";
-                    const textColor = "#ffffff";
-                    return (
-                      <Group listening={false} data-testid="dim-input-cursor-badge">
-                        <Rect
-                          x={cursorPosition.x + 18 / stageScale}
-                          y={cursorPosition.y + 10 / stageScale}
-                          width={Math.max(70, lengthText.length * 7) / stageScale}
-                          height={18 / stageScale}
-                          fill={fill}
-                          cornerRadius={3 / stageScale}
-                          shadowColor="rgba(0,0,0,0.3)"
-                          shadowBlur={3 / stageScale}
-                          shadowOffset={{ x: 0, y: 1 / stageScale }}
-                        />
-                        <Text
-                          x={cursorPosition.x + 24 / stageScale}
-                          y={cursorPosition.y + 13 / stageScale}
-                          text={lengthText}
-                          fontSize={11 / stageScale}
-                          fill={textColor}
-                          fontStyle="bold"
-                          fontFamily="monospace"
-                        />
-                      </Group>
-                    );
-                  })()}
+                {/* Task #2203 / #2227 — Active typed-dimension lock
+                    cursor badge. Hidden when not drawing or no length
+                    is locked. Chain mode swaps to an amber palette +
+                    "Chain" label. Extracted into `DimInputCursorBadge`
+                    so its conditional contract is unit-tested in
+                    `__tests__/DimInputCursorBadge.test.tsx`. */}
+                <DimInputCursorBadge
+                  isDrawing={isDrawing}
+                  cursorPosition={cursorPosition}
+                  pendingDimLengthFt={pendingDimLengthFt}
+                  dimInputRepeat={dimInputRepeat}
+                  stageScale={stageScale}
+                />
 
                 {issues.map((issue: any) => {
                   if (!issue.position) return null;
