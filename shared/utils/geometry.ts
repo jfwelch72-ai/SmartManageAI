@@ -1077,7 +1077,7 @@ export function applyOrthoLock(point: Point, anchor: Point | null): Point {
 }
 
 /**
- * Polar/angle constraint (Task #2192).
+ * Polar/angle constraint (Tasks #2191 & #2192).
  *
  * Rotates the cursor around `anchor` so the segment `anchor → point`
  * lies on the nearest multiple of `stepDeg` degrees, while preserving
@@ -1086,8 +1086,9 @@ export function applyOrthoLock(point: Point, anchor: Point | null): Point {
  * coordinate to the anchor — it preserves the cursor's reach so the
  * line follows the mouse's distance, just along a constrained bearing.
  *
- * Used by the unified-ribbon `ortho-angle` constraint mode, which
- * cycles through 15° / 30° / 45° / 90° presets via `Shift+O`.
+ * Used by the unified-ribbon `ortho-angle` constraint mode (which
+ * cycles through 15° / 30° / 45° / 90° presets via `Shift+O`) and by
+ * the `polar` constraint mode (default 15° step).
  *
  * Returns the input unchanged when `anchor` is null, when the cursor
  * sits on top of the anchor (no defined bearing), or when `stepDeg`
@@ -1111,4 +1112,23 @@ export function applyAngleConstraint(
     x: anchor.x + Math.cos(snapped) * dist,
     y: anchor.y + Math.sin(snapped) * dist,
   };
+}
+
+/** Project the cursor onto the ray from `anchor` toward `point` at exactly
+ *  `lengthPx` pixels. Used by typed-dimension input (Task #2191) to lock
+ *  the next segment length while preserving the user's cursor angle. */
+export function applyFixedLength(
+  point: Point,
+  anchor: Point | null,
+  lengthPx: number,
+): Point {
+  if (!anchor || lengthPx <= 0) return point;
+  const dx = point.x - anchor.x;
+  const dy = point.y - anchor.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+  if (dist < 1e-6) {
+    return { x: anchor.x + lengthPx, y: anchor.y };
+  }
+  const k = lengthPx / dist;
+  return { x: anchor.x + dx * k, y: anchor.y + dy * k };
 }

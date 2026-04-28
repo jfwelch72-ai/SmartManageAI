@@ -7,14 +7,18 @@ import {
 
 export type Tool =
   | "select"
+  | "lasso"
   | "pan"
   | "calibrate"
   | "linear"
   | "arc"
+  | "circle"
   | "area"
+  | "polygon"
   | "volume"
   | "count"
   | "note"
+  | "dimension"
   | "linear_with_drop"
   | "pitched_area"
   | "pitched_linear"
@@ -29,6 +33,29 @@ export type Tool =
   | "markup_highlight"
   | "markup_freehand"
   | "issue_pin";
+
+/** Tools whose canvas semantics are identical to a base tool but which
+ *  exist as separate ribbon entries so the user can distinguish intent
+ *  and the corresponding ribbon button highlights independently. The
+ *  canvas handlers branch on the canonical tool returned here.
+ *
+ *  `circle` is intentionally NOT aliased — although its result is
+ *  persisted as an AREA polygon (a 32-sided approximation), the
+ *  interaction (center + edge) differs from polygon click-to-add, so
+ *  the click handler keeps a dedicated branch.
+ */
+export function canonicalTool(tool: Tool): Tool {
+  switch (tool) {
+    case "lasso":
+      return "select";
+    case "polygon":
+      return "area";
+    case "dimension":
+      return "linear";
+    default:
+      return tool;
+  }
+}
 
 export type MarkupToolId = "markup_arrow" | "markup_text" | "markup_rectangle" | "markup_cloud" | "markup_highlight" | "markup_freehand";
 

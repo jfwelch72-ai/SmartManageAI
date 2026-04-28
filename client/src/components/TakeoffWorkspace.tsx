@@ -8,6 +8,14 @@ import {
 } from "@/components/markups/PlanMarkupToolbar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -542,6 +550,19 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       try { window.localStorage.setItem(key, mode); } catch { /* ignore */ }
     }
   }, [ribbonUserId]);
+
+  // Section 4 — typed-dimension input. The ribbon's "Dim Input" button
+  // opens a small modal. Submitting locks the next vertex placed during
+  // a drawing tool to the typed length (in feet). The hook clears the
+  // value through `onConsumeDimLength` after the next click.
+  const [pendingDimLengthFt, setPendingDimLengthFt] = useState<number | null>(null);
+  const [dimInputOpen, setDimInputOpen] = useState(false);
+  const [dimInputValue, setDimInputValue] = useState("");
+  // Polar-tracking step in degrees. 15° matches the cheat-sheet spec.
+  const polarAngleStep = 15;
+  // Layers popover open state — quick toggle of category visibility
+  // straight from the ribbon, complementing the sidebar's full UI.
+  const [layersPopoverOpen, setLayersPopoverOpen] = useState(false);
 
   const { toast } = useToast();
   const stageRef = useRef<any>(null);
@@ -1313,6 +1334,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     onRotateCCW: () => handleRotate(-90),
     structuralGridlines,
     showStructuralGridlines,
+    constraintMode,
+    polarAngleStep,
+    pendingDimLengthFt,
+    onConsumeDimLength: () => setPendingDimLengthFt(null),
     disableLegacyShortcuts: unifiedRibbon,
     // Task #2192 — When the unified ribbon is mounted, hand the
     // canvas drawing engine the granular snap-mode set, the
@@ -3964,6 +3989,25 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           dimHudActive={dimHudActive}
           dimHudUnits={units}
           onDimCommit={commitTypedDimension}
+          onStartVerifyScale={() => {
+            setVerifyMode("first-point");
+            toast({
+              title: "Verify Scale",
+              description: "Click two points of a known distance to check the current calibration.",
+            });
+          }}
+          verifyScaleActive={verifyMode !== "idle"}
+          onOpenDimInput={() => {
+            setDimInputValue(pendingDimLengthFt ? String(pendingDimLengthFt) : "");
+            setDimInputOpen(true);
+          }}
+          dimInputActive={!!pendingDimLengthFt && pendingDimLengthFt > 0}
+          onShowLayers={() => setLayersPopoverOpen((v) => !v)}
+          layersActive={layersPopoverOpen || hiddenCategoryIds.size > 0}
+          onToggleOverlay={() => setShowOverlaySlider((v) => !v)}
+          overlayActive={showOverlaySlider}
+          onShowVersions={() => setVersionHistoryOpen(true)}
+          versionsActive={versionHistoryOpen}
         />
       ) : (
         <RibbonHost />
@@ -4017,6 +4061,82 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         multiCalibPoints={multiCalibPoints}
         setMultiCalibPoints={setMultiCalibPoints}
       />
+
+      <Dialog open={dimInputOpen} onOpenChange={setDimInputOpen}>
+        <DialogContent className="sm:max-w-sm" data-testid="dialog-dim-input">
+          <DialogHeader>
+            <DialogTitle>Dimension Input</DialogTitle>
+            <DialogDescription>
+              Type the exact length (in feet) for the next vertex. The
+              segment will lock to that distance along your cursor
+              direction. Clears after one click.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="dim-input-length">Length (ft)</Label>
+            <Input
+              id="dim-input-length"
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="e.g. 12.5"
+              value={dimInputValue}
+              onChange={(e) => setDimInputValue(e.target.value)}
+              data-testid="input-dim-length"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  const v = parseFloat(dimInputValue);
+                  if (Number.isFinite(v) && v > 0) {
+                    setPendingDimLengthFt(v);
+                    setDimInputOpen(false);
+                    toast({
+                      title: "Length Locked",
+                      description: `Next vertex will commit at ${v.toFixed(2)} ft.`,
+                    });
+                  }
+                }
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setPendingDimLengthFt(null);
+                setDimInputValue("");
+                setDimInputOpen(false);
+              }}
+              data-testid="button-dim-clear"
+            >
+              Clear
+            </Button>
+            <Button
+              onClick={() => {
+                const v = parseFloat(dimInputValue);
+                if (!Number.isFinite(v) || v <= 0) {
+                  toast({
+                    title: "Invalid length",
+                    description: "Enter a positive number of feet.",
+                    variant: "destructive",
+                  });
+                  return;
+                }
+                setPendingDimLengthFt(v);
+                setDimInputOpen(false);
+                toast({
+                  title: "Length Locked",
+                  description: `Next vertex will commit at ${v.toFixed(2)} ft.`,
+                });
+              }}
+              data-testid="button-dim-apply"
+            >
+              Lock Length
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="flex-1 flex flex-col bg-muted/30 min-h-0 relative">
         <SheetHost />

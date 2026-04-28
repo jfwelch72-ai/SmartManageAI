@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { TakeoffSheet, TakeoffMeasurement, QuantityCategory } from "@shared/schema";
-import type { Tool, MeasurementType } from "@/components/takeoff/types";
+import { canonicalTool, type Tool, type MeasurementType } from "@/components/takeoff/types";
 import {
   computePixelDistance,
   computeDistanceInFeet,
@@ -24,6 +24,7 @@ import {
   findNearestSnapOnLine,
   applyOrthoLock,
   applyAngleConstraint,
+  applyFixedLength,
   type SnapResult,
   type SnapMode,
   type SnapModeConfig,
@@ -101,6 +102,15 @@ interface UseTakeoffInteractionsParams {
   };
   showStructuralGridlines?: boolean;
   gridlineSnapThreshold?: number;
+  /** Polar tracking step in degrees (used when
+   *  `constraintMode === 'polar'`). Defaults to 15°. */
+  polarAngleStep?: number;
+  /** Typed-dimension input (Section 4): when set, the next vertex
+   *  placed during a draw is locked to this length (in feet) along the
+   *  current cursor direction from the previous vertex. The hook
+   *  clears it after consumption via `onConsumeDimLength`. */
+  pendingDimLengthFt?: number | null;
+  onConsumeDimLength?: () => void;
   /** Task #2137 — When the standalone workspace mounts the unified
    *  ribbon, the new `useTakeoffShortcuts` hook becomes the single
    *  source of truth for tool / snap / constrain / navigation
@@ -208,6 +218,9 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     deleteMeasurementMutation, onZoomToFit,
     sheetRotation, imageWidth, imageHeight,
     onRotateCW, onRotateCCW,
+    polarAngleStep,
+    pendingDimLengthFt,
+    onConsumeDimLength,
     disableLegacyShortcuts,
     enabledSnapModes, constraintMode, orthoPresetIndex,
     allowTwoFingerRotate = false,
@@ -299,10 +312,13 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     }
     if (constraintMode === "ortho") return 90;
     if (constraintMode === "none") return null;
-    // `polar` is a placeholder in the ribbon today — treat as no
-    // constraint until the polar tracking implementation lands.
+    // Task #2191 — `polar` mode locks the in-progress vertex to
+    // multiples of `polarAngleStep` (default 15°) from the previous
+    // anchor. Mathematically identical to an angular constraint, so
+    // we route it through the same `applyAngleConstraint` path below.
+    if (constraintMode === "polar") return polarAngleStep ?? 15;
     return null;
-  }, [constraintMode, orthoPresetIndex, orthoLock]);
+  }, [constraintMode, orthoPresetIndex, orthoLock, polarAngleStep]);
 
   /* Task #2199 — Polar tracking guide rays. The canvas renders thin
    * dashed rays from the active anchor at every multiple of the
@@ -321,14 +337,24 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
   const resolvePoint = useCallback(
     (rawPoint: Point): Point => {
       let pt = rawPoint;
-      if (angleStep != null && drawingPoints.length > 0) {
-        const anchor = drawingPoints[drawingPoints.length - 1];
+      const anchor = drawingPoints.length > 0 ? drawingPoints[drawingPoints.length - 1] : null;
+      if (angleStep != null && anchor) {
         // 90° preserves the historical axis-aligned ortho lock; any
-        // other angle is a true polar/angular constraint that
-        // preserves cursor distance from the anchor.
+        // other angle (incl. polar's 15° step) is a true angular
+        // constraint that preserves cursor distance from the anchor.
         pt = angleStep === 90
           ? applyOrthoLock(pt, anchor)
           : applyAngleConstraint(pt, anchor, angleStep);
+      }
+      // Task #2191 — Typed-dimension input. When the user has typed a
+      // length, clamp the cursor to that length along the resolved
+      // direction so the next click commits at the exact distance.
+      // Applied BEFORE snapping so snap targets can still pull the
+      // length-locked cursor onto a meaningful endpoint when one is in
+      // range.
+      if (pendingDimLengthFt && pendingDimLengthFt > 0 && anchor && currentSheet?.scalePxPerFoot) {
+        const lengthPx = pendingDimLengthFt * currentSheet.scalePxPerFoot;
+        pt = applyFixedLength(pt, anchor, lengthPx);
       }
       if (effectiveSnapEnabled) {
         // 1) Endpoint / midpoint / intersection / center snap (highest
@@ -342,8 +368,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         //    segment. Requires an anchor (so it's only meaningful
         //    while drawing). Only active when the unified ribbon
         //    explicitly enables this mode.
-        if (snapModeConfig?.perpendicular && drawingPoints.length > 0) {
-          const anchor = drawingPoints[drawingPoints.length - 1];
+        if (snapModeConfig?.perpendicular && anchor) {
           const perp = findPerpendicularSnap(pt, anchor, measurements, 12, stageScale);
           if (perp.isSnapped) return perp.snappedPoint;
         }
@@ -392,7 +417,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       }
       return pt;
     },
-    [angleStep, effectiveSnapEnabled, snapTargets, snapModeConfig, drawingPoints, measurements, stageScale, params.showStructuralGridlines, params.structuralGridlines, params.gridlineSnapThreshold]
+    [angleStep, pendingDimLengthFt, currentSheet?.scalePxPerFoot, effectiveSnapEnabled, snapTargets, snapModeConfig, drawingPoints, measurements, stageScale, params.showStructuralGridlines, params.structuralGridlines, params.gridlineSnapThreshold]
   );
 
   const completePolygon = useCallback(() => {
@@ -404,7 +429,11 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     const areaFt2 = computePolygonAreaInFt2(drawingPoints, currentSheet.scalePxPerFoot);
     const perimeterFt = computePolygonPerimeterInFt(drawingPoints, currentSheet.scalePxPerFoot);
 
-    if (activeTool === "area") {
+    // Ribbon aliases (e.g. polygon → area) must commit through the
+    // canonical tool — otherwise closing a polygon would silently
+    // skip the mutation and leave the canvas in an in-progress state.
+    const completeTool = canonicalTool(activeTool);
+    if (completeTool === "area") {
       createMeasurementMutation.mutate({
         sheetId: selectedSheet,
         type: "AREA",
@@ -415,7 +444,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         metadata: JSON.stringify({ perimeterFt }),
       });
       toast({ title: "Area Measurement Created", description: `${areaFt2.toFixed(2)} SF | ${perimeterFt.toFixed(2)} LF perimeter` });
-    } else if (activeTool === "volume") {
+    } else if (completeTool === "volume") {
       const defaultDepthInches = 12;
       const depthFt = inchesToFeet(defaultDepthInches);
       const volumeCy = computeVolumeInCY(areaFt2, depthFt);
@@ -431,7 +460,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         metadata: JSON.stringify({ perimeterFt }),
       });
       toast({ title: "Volume Measurement Created", description: `${areaFt2.toFixed(2)} SF @ ${defaultDepthInches}" depth = ${volumeCy.toFixed(2)} CY` });
-    } else if (activeTool === "pitched_area") {
+    } else if (completeTool === "pitched_area") {
       const pitchedArea = computePitchedAreaFt2(areaFt2, pitchRatio);
       createMeasurementMutation.mutate({
         sheetId: selectedSheet,
@@ -445,7 +474,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         metadata: JSON.stringify({ perimeterFt }),
       });
       toast({ title: "Pitched Area Created", description: `Flat: ${areaFt2.toFixed(2)} SF → Pitched (${pitchRatio}): ${pitchedArea.toFixed(2)} SF` });
-    } else if (activeTool === "surface_area") {
+    } else if (completeTool === "surface_area") {
       const surfaceArea = computePitchedAreaFt2(areaFt2, pitchRatio);
       createMeasurementMutation.mutate({
         sheetId: selectedSheet,
@@ -505,13 +534,19 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     const transform = stage.getAbsoluteTransform().copy().invert();
     let point = inverseRotatePoint(transform.point(pointerPosition), sheetRotation, imageWidth, imageHeight);
 
-    const isDrawingTool = ["linear", "arc", "area", "volume", "count", "segment", "deduct"].includes(activeTool);
+    // Ribbon aliases (lasso → select, polygon → area, circle → arc,
+    // dimension → linear) share canvas behavior with their canonical
+    // tool. Compute once so every branch below dispatches on the
+    // canonical tool while the ribbon highlight tracks the user's
+    // explicit pick.
+    const tool = canonicalTool(activeTool);
+    const isDrawingTool = ["linear", "arc", "circle", "area", "volume", "count", "segment", "deduct"].includes(tool);
     if (isDrawingTool) {
       point = resolvePoint(point);
       if (navigator.vibrate) navigator.vibrate(10);
     }
 
-    if (activeTool === "select") {
+    if (tool === "select") {
       if (e.target === stage) {
         setSelectedMeasurementId(null);
         setSelectedSegmentIndex(null);
@@ -541,7 +576,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       return;
     }
 
-    if (activeTool === "calibrate") {
+    if (tool === "calibrate") {
       if (calibrationMode === "first-point") {
         setCalibrationPoints([point]);
         setCalibrationMode("second-point");
@@ -552,7 +587,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         const pixelDistance = computePixelDistance(newPoints[0], newPoints[1]);
         toast({ title: "Calibration Complete", description: `Enter the real-world distance (${pixelDistance.toFixed(2)} pixels measured)` });
       }
-    } else if (activeTool === "linear") {
+    } else if (tool === "linear") {
       if (!selectedSheet) { toast({ title: "Error", description: "Select a sheet first", variant: "destructive" }); return; }
       if (!currentSheet?.scalePxPerFoot) { toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" }); return; }
       if (!isDrawing) {
@@ -597,7 +632,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         setDrawingPoints([]);
         toast({ title: "Measurement Created", description: `${finalLength.toFixed(2)} LF (${activeTool === "linear_with_drop" ? `drop: ${dropDistance || 0} ft` : `pitch: ${pitchRatio}`})` });
       }
-    } else if (activeTool === "arc") {
+    } else if (tool === "arc") {
       if (!selectedSheet) { toast({ title: "Error", description: "Select a sheet first", variant: "destructive" }); return; }
       if (!currentSheet?.scalePxPerFoot) { toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" }); return; }
       if (!isDrawing) {
@@ -634,7 +669,49 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         setDrawingPoints([]);
         toast({ title: "Arc Created", description: `${arcSegment.arcLength.toFixed(2)} LF` });
       }
-    } else if (activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area") {
+    } else if (tool === "circle") {
+      // Center + radius circle. First click sets the center; second click
+      // sets a point on the edge. The result is persisted as an AREA
+      // measurement using a 32-sided polygon approximation so existing
+      // area math, deductions, and renderers all work unchanged.
+      if (!selectedSheet) { toast({ title: "Error", description: "Select a sheet first", variant: "destructive" }); return; }
+      if (!currentSheet?.scalePxPerFoot) { toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" }); return; }
+      if (!isDrawing) {
+        setIsDrawing(true);
+        setCurrentDrawingTool("arc");
+        setDrawingPoints([point]);
+        toast({ title: "Circle Tool", description: "Click the edge to set the radius." });
+      } else if (drawingPoints.length === 1) {
+        const center = drawingPoints[0];
+        const radiusPx = computePixelDistance(center, point);
+        if (radiusPx < 1) {
+          toast({ title: "Radius too small", description: "Click farther from the center to define a circle.", variant: "destructive" });
+          return;
+        }
+        const sides = 32;
+        const polygon: Point[] = [];
+        for (let i = 0; i < sides; i++) {
+          const theta = (i / sides) * 2 * Math.PI;
+          polygon.push({ x: center.x + radiusPx * Math.cos(theta), y: center.y + radiusPx * Math.sin(theta) });
+        }
+        const radiusFt = radiusPx / currentSheet.scalePxPerFoot;
+        const areaFt2 = Math.PI * radiusFt * radiusFt;
+        const perimeterFt = 2 * Math.PI * radiusFt;
+        createMeasurementMutation.mutate({
+          sheetId: selectedSheet,
+          type: "AREA",
+          points: polygon,
+          label: `Circle ${aggregatedMeasurements.byType.area.length + 1}`,
+          categoryId: selectedCategoryId,
+          computedAreaFt2: areaFt2,
+          metadata: JSON.stringify({ perimeterFt, shape: "circle", radiusFt, center }),
+        });
+        setIsDrawing(false);
+        setCurrentDrawingTool(null);
+        setDrawingPoints([]);
+        toast({ title: "Circle Created", description: `r = ${radiusFt.toFixed(2)} ft → ${areaFt2.toFixed(2)} SF` });
+      }
+    } else if (tool === "area" || tool === "volume" || tool === "pitched_area" || tool === "surface_area") {
       if (!selectedSheet) { toast({ title: "Error", description: "Select a sheet first", variant: "destructive" }); return; }
       if (!currentSheet?.scalePxPerFoot) { toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" }); return; }
       if (!isDrawing) {
@@ -649,7 +726,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         }
         setDrawingPoints([...drawingPoints, point]);
       }
-    } else if (activeTool === "deduct") {
+    } else if (tool === "deduct") {
       if (!selectedSheet) { toast({ title: "Error", description: "Select a sheet first", variant: "destructive" }); return; }
       if (!currentSheet?.scalePxPerFoot) { toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" }); return; }
       if (!selectedMeasurementId) { toast({ title: "Select Area First", description: "Select an area measurement to add a deduct polygon", variant: "destructive" }); return; }
@@ -713,7 +790,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         }
         setDrawingPoints([...drawingPoints, point]);
       }
-    } else if (activeTool === "segment") {
+    } else if (tool === "segment") {
       if (!selectedSheet) { toast({ title: "Error", description: "Select a sheet first", variant: "destructive" }); return; }
       if (!currentSheet?.scalePxPerFoot) { toast({ title: "Error", description: "Calibrate the sheet first", variant: "destructive" }); return; }
       if (!isDrawing) {
@@ -723,20 +800,27 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       } else {
         setDrawingPoints([...drawingPoints, point]);
       }
-    } else if (activeTool === "count") {
+    } else if (tool === "count") {
       if (!selectedSheet) { toast({ title: "Error", description: "Select a sheet first", variant: "destructive" }); return; }
       createMeasurementMutation.mutate({
         sheetId: selectedSheet, type: "COUNT", points: [point],
         label: `Count ${aggregatedMeasurements.byType.count.length + 1}`, categoryId: selectedCategoryId,
       });
-    } else if (activeTool === "note") {
+    } else if (tool === "note") {
       if (!selectedSheet) { toast({ title: "Error", description: "Select a sheet first", variant: "destructive" }); return; }
       setNotePosition(point);
       setNoteDialogOpen(true);
     }
+
+    // Section 4 — typed-dimension input is single-shot. Once a draw
+    // click has consumed the length lock, clear it so the next vertex
+    // is free.
+    if (isDrawingTool && pendingDimLengthFt && pendingDimLengthFt > 0) {
+      onConsumeDimLength?.();
+    }
   }, [activeTool, resolvePoint, verifyMode, verifyPoints, verifyExpectedDistance, calibrationMode, calibrationPoints,
     isDrawing, drawingPoints, selectedSheet, currentSheet, measurements, selectedCategoryId, pitchRatio, dropDistance,
-    aggregatedMeasurements, createMeasurementMutation, completePolygon,
+    aggregatedMeasurements, createMeasurementMutation, completePolygon, pendingDimLengthFt, onConsumeDimLength,
     setSelectedMeasurementId, setVerifyPoints, setVerifyMode, setVerifyResult,
     setCalibrationPoints, setCalibrationMode, setIsDrawing, setDrawingPoints, setCurrentDrawingTool,
     setNotePosition, setNoteDialogOpen, toast, sheetRotation, imageWidth, imageHeight]);
@@ -830,11 +914,14 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     // Mirror `resolvePoint`'s constraint resolution so the live cursor
     // preview, current-snap HUD, and running-measurement readout are
     // driven by the same unified-ribbon state as the committed point.
-    if (angleStep != null && drawingPoints.length > 0) {
-      const anchor = drawingPoints[drawingPoints.length - 1];
+    const moveAnchor = drawingPoints.length > 0 ? drawingPoints[drawingPoints.length - 1] : null;
+    if (angleStep != null && moveAnchor) {
       pt = angleStep === 90
-        ? applyOrthoLock(pt, anchor)
-        : applyAngleConstraint(pt, anchor, angleStep);
+        ? applyOrthoLock(pt, moveAnchor)
+        : applyAngleConstraint(pt, moveAnchor, angleStep);
+    }
+    if (pendingDimLengthFt && pendingDimLengthFt > 0 && moveAnchor && currentSheet?.scalePxPerFoot) {
+      pt = applyFixedLength(pt, moveAnchor, pendingDimLengthFt * currentSheet.scalePxPerFoot);
     }
     setCursorPosition(pt);
     // Mirror `resolvePoint`'s priority order so the HUD/badge highlight
@@ -862,16 +949,22 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     if (isDrawing && drawingPoints.length > 0 && currentSheet?.scalePxPerFoot) {
       const scale = currentSheet.scalePxPerFoot;
       const allPts = [...drawingPoints, pt];
-      if (activeTool === "linear" || activeTool === "linear_with_drop" || activeTool === "pitched_linear") {
+      const moveTool = canonicalTool(activeTool);
+      if (moveTool === "circle" && drawingPoints.length === 1) {
+        const radiusPx = computePixelDistance(drawingPoints[0], pt);
+        const radiusFt = radiusPx / scale;
+        const areaFt2 = Math.PI * radiusFt * radiusFt;
+        setRunningMeasurement({ value: areaFt2, unit: "SF", segments: 2 * Math.PI * radiusFt });
+      } else if (moveTool === "linear" || moveTool === "linear_with_drop" || moveTool === "pitched_linear") {
         const len = computeDistanceInFeet(allPts, scale);
         setRunningMeasurement({ value: len, unit: "LF" });
-      } else if (activeTool === "segment") {
+      } else if (moveTool === "segment") {
         let total = 0;
         for (let i = 0; i < allPts.length - 1; i++) {
           total += computeDistanceInFeet([allPts[i], allPts[i + 1]], scale);
         }
         setRunningMeasurement({ value: total, unit: "LF", segments: allPts.length - 1 });
-      } else if (activeTool === "area" || activeTool === "volume" || activeTool === "pitched_area" || activeTool === "surface_area") {
+      } else if (moveTool === "area" || moveTool === "volume" || moveTool === "pitched_area" || moveTool === "surface_area") {
         if (allPts.length >= 3) {
           const area = computePolygonAreaInFt2(allPts, scale);
           const perim = computePolygonPerimeterInFt(allPts, scale);
@@ -884,7 +977,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     } else if (!isDrawing && runningMeasurement) {
       setRunningMeasurement(null);
     }
-  }, [effectiveSnapEnabled, snapTargets, snapModeConfig, measurements, stageScale, angleStep, drawingPoints, sheetRotation, imageWidth, imageHeight, isDrawing, currentSheet, activeTool, runningMeasurement]);
+  }, [effectiveSnapEnabled, snapTargets, snapModeConfig, measurements, stageScale, angleStep, pendingDimLengthFt, drawingPoints, sheetRotation, imageWidth, imageHeight, isDrawing, currentSheet, activeTool, runningMeasurement]);
 
   const handleWheel = useCallback((e: any) => {
     e.evt.preventDefault();

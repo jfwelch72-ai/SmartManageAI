@@ -44,6 +44,22 @@ export interface UnifiedTakeoffRibbonProps {
   /** Verify > Calibrate. */
   onOpenCalibrate: () => void;
   isCalibrated: boolean;
+  /** Verify > Verify Scale — open the verify-scale dialog. */
+  onStartVerifyScale: () => void;
+  /** Verify > Dim Input — open the typed-dimension input dialog. */
+  onOpenDimInput: () => void;
+  /** View > Layers — open the categories visibility popover. */
+  onShowLayers: () => void;
+  /** View > Overlay — toggle the addenda overlay opacity panel. */
+  onToggleOverlay: () => void;
+  /** View > Versions — open the version history panel. */
+  onShowVersions: () => void;
+  /** Active states for the View action toggles. */
+  overlayActive?: boolean;
+  versionsActive?: boolean;
+  layersActive?: boolean;
+  verifyScaleActive?: boolean;
+  dimInputActive?: boolean;
   /** Cheat-sheet trigger (right-rail keyboard button + Cmd/Ctrl+/). */
   onOpenCheatSheet: () => void;
   /** Offline / autosave indicator state. */
@@ -138,6 +154,16 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
     setGridEnabled,
     onOpenCalibrate,
     isCalibrated,
+    onStartVerifyScale,
+    onOpenDimInput,
+    onShowLayers,
+    onToggleOverlay,
+    onShowVersions,
+    overlayActive,
+    versionsActive,
+    layersActive,
+    verifyScaleActive,
+    dimInputActive,
     onOpenCheatSheet,
     isOffline,
     pendingOutboxCount,
@@ -267,6 +293,7 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
       if (groupId === "constrain") {
         if (toolId === "ortho") return { active: constraintMode === "ortho", disabled: false };
         if (toolId === "ortho-angle") return { active: constraintMode === "ortho-angle", disabled: false };
+        if (toolId === "polar") return { active: constraintMode === "polar", disabled: false };
         if (toolId === "none") return { active: constraintMode === "none", disabled: false };
         return { active: false, disabled: false };
       }
@@ -276,9 +303,24 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
       if (action === "calibrate") {
         return { active: false, disabled: false };
       }
+      if (action === "verify-scale") return { active: !!verifyScaleActive, disabled: false };
+      if (action === "dim-input") return { active: !!dimInputActive, disabled: false };
+      if (action === "layers") return { active: !!layersActive, disabled: false };
+      if (action === "overlay") return { active: !!overlayActive, disabled: false };
+      if (action === "versions") return { active: !!versionsActive, disabled: false };
       return { active: !!tool && activeTool === tool, disabled: false };
     },
-    [enabledSnapModes, constraintMode, gridEnabled, activeTool],
+    [
+      enabledSnapModes,
+      constraintMode,
+      gridEnabled,
+      activeTool,
+      verifyScaleActive,
+      dimInputActive,
+      layersActive,
+      overlayActive,
+      versionsActive,
+    ],
   );
 
   const handleToolClick = useCallback(
@@ -323,6 +365,16 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
           }
           return;
         }
+        if (toolId === "polar") {
+          if (constraintMode === "polar") {
+            setConstraintMode("none");
+            setOrthoLock(false);
+          } else {
+            setConstraintMode("polar");
+            setOrthoLock(true);
+          }
+          return;
+        }
         return;
       }
       if (action === "calibrate") {
@@ -331,6 +383,26 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
       }
       if (action === "show-grid") {
         setGridEnabled(!gridEnabled);
+        return;
+      }
+      if (action === "verify-scale") {
+        onStartVerifyScale();
+        return;
+      }
+      if (action === "dim-input") {
+        onOpenDimInput();
+        return;
+      }
+      if (action === "layers") {
+        onShowLayers();
+        return;
+      }
+      if (action === "overlay") {
+        onToggleOverlay();
+        return;
+      }
+      if (action === "versions") {
+        onShowVersions();
         return;
       }
       if (tool) {
@@ -342,6 +414,7 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
       setEnabledSnapModes,
       orthoLock,
       orthoPresetIndex,
+      constraintMode,
       setConstraintMode,
       setOrthoLock,
       setOrthoPresetIndex,
@@ -349,6 +422,11 @@ export function UnifiedTakeoffRibbon(props: UnifiedTakeoffRibbonProps) {
       setGridEnabled,
       gridEnabled,
       onToolSelect,
+      onStartVerifyScale,
+      onOpenDimInput,
+      onShowLayers,
+      onToggleOverlay,
+      onShowVersions,
     ],
   );
 
