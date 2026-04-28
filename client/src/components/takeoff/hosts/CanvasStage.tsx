@@ -134,6 +134,14 @@ export interface CanvasStageProps {
   runningMeasurement: { value: number; unit: string; segments?: number } | null;
 
   orthoLock: boolean;
+  /**
+   * Task #2199 — When the ribbon's `ortho-angle` constraint is engaged
+   * with a non-null preset (15° / 30° / 45° / 90°), this is the step in
+   * degrees and the canvas paints CAD-style polar tracking guide rays
+   * from the active anchor. Null in every other constraint state
+   * (none / ortho / polar / null preset).
+   */
+  polarGuideStep: number | null;
   activeCondition: TakeoffCondition | null;
 
   issues: any[];
@@ -255,6 +263,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
     currentSnap,
     runningMeasurement,
     orthoLock,
+    polarGuideStep,
     activeCondition,
     issues,
     selectedIssueId,
@@ -1226,6 +1235,65 @@ function CanvasStageImpl(props: CanvasStageProps) {
                         opacity={flashPulse * 0.3}
                       />
                     </Group>
+                  );
+                })()}
+
+                {/* Task #2199 — Polar tracking guide rays. Painted UNDER
+                    the in-progress segment / fills so the bright preview
+                    line stays the most prominent stroke; the matching
+                    snapped ray is highlighted so users can see exactly
+                    which angle they'll commit to. */}
+                {polarGuideStep != null && isDrawing && drawingPoints.length > 0 && (() => {
+                  const anchor = drawingPoints[drawingPoints.length - 1];
+                  const step = polarGuideStep;
+                  const MAX_RAYS = 24;
+                  const rayCount = Math.min(MAX_RAYS, Math.max(1, Math.floor(360 / step)));
+                  const safeScale = stageScale > 0 ? stageScale : 1;
+                  // Viewport diagonal in stage units, doubled so a ray
+                  // from any anchor still covers the visible canvas
+                  // even under sheet rotation. Konva clips off-canvas
+                  // pixels so overshooting is harmless.
+                  const rayLen =
+                    (Math.sqrt(
+                      stageDimensions.width * stageDimensions.width +
+                        stageDimensions.height * stageDimensions.height,
+                    ) /
+                      safeScale) *
+                    2;
+                  let activeIdx = -1;
+                  if (cursorPosition) {
+                    const dx = cursorPosition.x - anchor.x;
+                    const dy = cursorPosition.y - anchor.y;
+                    if (dx !== 0 || dy !== 0) {
+                      const cursorDeg = (Math.atan2(dy, dx) * 180) / Math.PI;
+                      const idx = Math.round(cursorDeg / step);
+                      activeIdx = ((idx % rayCount) + rayCount) % rayCount;
+                    }
+                  }
+                  const baseStroke = 1 / safeScale;
+                  const baseDash = [4 / safeScale, 4 / safeScale];
+                  const activeStroke = 1.5 / safeScale;
+                  const activeDash = [8 / safeScale, 4 / safeScale];
+                  return (
+                    <>
+                      {Array.from({ length: rayCount }, (_, i) => {
+                        const angleRad = (i * step * Math.PI) / 180;
+                        const ex = anchor.x + Math.cos(angleRad) * rayLen;
+                        const ey = anchor.y + Math.sin(angleRad) * rayLen;
+                        const isActive = i === activeIdx;
+                        return (
+                          <Line
+                            key={`polar-guide-${i}`}
+                            points={[anchor.x, anchor.y, ex, ey]}
+                            stroke={isActive ? "#06b6d4" : "#94a3b8"}
+                            strokeWidth={isActive ? activeStroke : baseStroke}
+                            dash={isActive ? activeDash : baseDash}
+                            opacity={isActive ? 0.85 : 0.3}
+                            listening={false}
+                          />
+                        );
+                      })}
+                    </>
                   );
                 })()}
 

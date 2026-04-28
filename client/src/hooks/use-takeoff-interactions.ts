@@ -288,6 +288,20 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     return null;
   }, [constraintMode, orthoPresetIndex, orthoLock]);
 
+  /* Task #2199 — Polar tracking guide rays. The canvas renders thin
+   * dashed rays from the active anchor at every multiple of the
+   * `ortho-angle` preset so users can see which angle they're locked
+   * onto before clicking. We only emit a step here when the ribbon's
+   * angular constraint is engaged with a non-null preset; legacy
+   * `ortho` (axis lock) and the bare `orthoLock` boolean keep their
+   * existing single-line preview and do NOT produce polar guides. */
+  const polarGuideStep: number | null = useMemo(() => {
+    if (constraintMode !== "ortho-angle") return null;
+    if (orthoPresetIndex == null) return null;
+    const preset = ORTHO_PRESETS[orthoPresetIndex];
+    return preset ?? null;
+  }, [constraintMode, orthoPresetIndex]);
+
   const resolvePoint = useCallback(
     (rawPoint: Point): Point => {
       let pt = rawPoint;
@@ -1199,6 +1213,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     setOrthoLock,
     currentSnap,
     cursorPosition,
+    polarGuideStep,
     snapTargets,
     runningMeasurement,
     selectedMeasurementIds,

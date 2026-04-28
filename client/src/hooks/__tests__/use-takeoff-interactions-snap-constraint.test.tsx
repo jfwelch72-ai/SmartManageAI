@@ -555,3 +555,97 @@ describe("Task #2192 — useTakeoffInteractions wires unified-ribbon snap modes"
     expect(resolved).toEqual({ x: 30, y: 40 });
   });
 });
+
+/**
+ * Task #2199 — `polarGuideStep` is the single value the canvas reads to
+ * decide whether (and at what step) to paint the CAD-style polar
+ * tracking guide rays. It must light up ONLY when the unified ribbon's
+ * angular constraint is engaged with a non-null preset; legacy `ortho`
+ * (axis lock) keeps its single dashed preview line, and the bare
+ * `orthoLock` boolean is never enough on its own.
+ */
+describe("Task #2199 — polarGuideStep gates polar tracking guides", () => {
+  it("returns the preset degrees when constraintMode='ortho-angle' with a valid preset", () => {
+    // 15° / 30° / 45° / 90° all map to a usable step.
+    for (const [presetIndex, expected] of [
+      [0, 15],
+      [1, 30],
+      [2, 45],
+      [3, 90],
+    ] as const) {
+      const { result } = renderHook(() =>
+        useTakeoffInteractions(
+          buildParams({
+            enabledSnapModes: [],
+            constraintMode: "ortho-angle",
+            orthoPresetIndex: presetIndex,
+            drawingPoints: [{ x: 0, y: 0 }],
+          }),
+        ),
+      );
+      expect(result.current.polarGuideStep).toBe(expected);
+    }
+  });
+
+  it("is null when the active preset is 'off' (index 4 → null)", () => {
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: [],
+          constraintMode: "ortho-angle",
+          orthoPresetIndex: 4,
+          drawingPoints: [{ x: 0, y: 0 }],
+        }),
+      ),
+    );
+    expect(result.current.polarGuideStep).toBeNull();
+  });
+
+  it("is null for the legacy 90°-axis ortho mode (no polar fan for plain ortho)", () => {
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: [],
+          constraintMode: "ortho",
+          // orthoPresetIndex is irrelevant for 'ortho' — set to any
+          // valid index to confirm the gate is on constraintMode.
+          orthoPresetIndex: 2,
+          drawingPoints: [{ x: 0, y: 0 }],
+        }),
+      ),
+    );
+    expect(result.current.polarGuideStep).toBeNull();
+  });
+
+  it("is null for constraintMode='none'", () => {
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: [],
+          constraintMode: "none",
+          orthoPresetIndex: 2,
+          drawingPoints: [{ x: 0, y: 0 }],
+        }),
+      ),
+    );
+    expect(result.current.polarGuideStep).toBeNull();
+  });
+
+  it("is null when constraintMode is undefined (legacy callers without ribbon)", () => {
+    // Even with the legacy `takeoff-ortho-lock=true` flag persisted,
+    // pure-legacy callers must not get polar guides — they never had
+    // a preset to choose from in the first place.
+    window.localStorage.setItem("takeoff-ortho-lock", "true");
+    const { result } = renderHook(() =>
+      useTakeoffInteractions(
+        buildParams({
+          enabledSnapModes: [],
+          constraintMode: undefined,
+          orthoPresetIndex: undefined,
+          drawingPoints: [{ x: 0, y: 0 }],
+        }),
+      ),
+    );
+    expect(result.current.polarGuideStep).toBeNull();
+  });
+});
