@@ -78,8 +78,122 @@
  * disposed in a `finally` block so a synthesized-drop assertion
  * failure mid-flight doesn't leak handles to the next test.
  */
-import type { Locator } from "@playwright/test";
+import { test, type Locator, type Page } from "@playwright/test";
 import { getDragTuning } from "./canvasDrag";
+
+/**
+ * Task #2294 — every public helper below runs inside a descriptive
+ * `test.step` with a JSON attachment recording the resolved
+ * source/target locators, payload MIMEs, `effectAllowed`, and (for
+ * the reorder shape) the React-flush mode. The same step title is
+ * also opened as a `page.context().tracing.group(...)` so the
+ * Playwright trace viewer's left-hand action list shows the
+ * resolved gesture wrapping the inner `page.evaluate` rows instead
+ * of just opaque "page.evaluate" entries.
+ *
+ * Mirrors the treatment `canvasDrag.ts` already applies to its drag
+ * gestures — see `attachGesture` and `withTracingGroup` there for
+ * the reference implementation. Both wrappers are best-effort: when
+ * the helpers are called outside a Playwright test runtime (ad-hoc
+ * scripts, REPL exploration), the step / attachment / tracing-group
+ * calls swallow their errors and the underlying gesture still runs.
+ */
+
+/**
+ * Attach a JSON blob describing the gesture to the active test
+ * step. Wrapped in try/catch so the helpers stay usable from
+ * contexts where `test.info()` isn't available (e.g. global setup,
+ * ad-hoc scripts).
+ */
+async function attachGesture(name: string, payload: unknown): Promise<void> {
+  try {
+    await test.info().attach(name, {
+      body: JSON.stringify(payload, null, 2),
+      contentType: "application/json",
+    });
+  } catch {
+    // Outside a Playwright test runtime — skip the attachment silently.
+  }
+}
+
+/**
+ * Open a Playwright `tracing.group` named `title`, run `fn`, and
+ * make sure the matching `groupEnd()` runs even when `fn` throws.
+ * The group surfaces the resolved gesture in the trace viewer's
+ * left-hand action list, wrapping the raw `page.evaluate` rows
+ * underneath.
+ *
+ * `tracing.group` is a no-op when tracing isn't recording, but the
+ * surrounding `page.context()` lookup throws if the helper is
+ * called outside a real browser context. We swallow those errors so
+ * the gesture still runs — the trace just won't have the pretty
+ * group label.
+ */
+async function withTracingGroup<T>(
+  page: Page,
+  title: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  let opened = false;
+  let tracing: ReturnType<Page["context"]>["tracing"] | undefined;
+  try {
+    tracing = page.context().tracing;
+    await tracing.group(title);
+    opened = true;
+  } catch {
+    // Tracing API unavailable (no context, or the channel rejected) —
+    // run the gesture without a group rather than failing the test.
+  }
+  try {
+    return await fn();
+  } finally {
+    if (opened && tracing) {
+      try {
+        await tracing.groupEnd();
+      } catch {
+        // Best effort — never let a teardown failure mask the real error.
+      }
+    }
+  }
+}
+
+/**
+ * Run `fn` inside `test.step(title, ...)` with a `tracing.group`
+ * nested inside, falling back to running `fn` directly when there's
+ * no active TestInfo (e.g. ad-hoc scripts that import these
+ * helpers). Calling `test.step` outside a Playwright runtime throws
+ * synchronously, which we treat the same as the attachment helper:
+ * preserve the original behavior and let the gesture run.
+ */
+async function runStepped<T>(
+  page: Page,
+  title: string,
+  fn: () => Promise<T>,
+): Promise<T> {
+  let hasTestInfo = false;
+  try {
+    test.info();
+    hasTestInfo = true;
+  } catch {
+    // No active test runtime — fall back to running fn directly.
+  }
+  if (!hasTestInfo) {
+    return await fn();
+  }
+  return await test.step(title, async () => {
+    return await withTracingGroup(page, title, fn);
+  });
+}
+
+/**
+ * Compact, human-readable description of a Locator suitable for
+ * embedding in step titles and JSON attachments. Uses the Locator's
+ * default `toString()` (e.g. `getByTestId('chest-item-foo')`) so we
+ * don't pay an async DOM round-trip just to label the gesture.
+ */
+function describeLocator(locator: Locator): string {
+  return String(locator);
+}
 
 /**
  * Optional payload to load onto the synthesized DataTransfer. When
@@ -360,36 +474,53 @@ export async function dispatchHtml5Drop(
 ): Promise<void> {
   const { source, target, payload, payloads, effectAllowed } = options;
   const resolvedPayloads = resolvePayloads(payload, payloads);
-  const sourceHandle = await source.elementHandle();
-  const targetHandle = await target.elementHandle();
-  // Unique key per call so two specs running in parallel can't
-  // collide on `window.__htmlDragDt` (Playwright's worker isolation
-  // already prevents this, but the unique key keeps the helper
-  // robust against future contexts that share a Page).
-  const dtKey = `__htmlDragDt_${Math.random().toString(36).slice(2)}`;
-  try {
-    await fireDragEvents(
-      source,
-      sourceHandle,
-      targetHandle,
-      ["start", "enter", "over", "drop", "end"],
-      resolvedPayloads,
-      effectAllowed ?? null,
-      dtKey,
-    );
-  } finally {
-    // Best-effort cleanup of the stashed DataTransfer so we don't
-    // leak it onto `window` for the rest of the page's lifetime.
+  const sourceDesc = describeLocator(source);
+  const targetDesc = describeLocator(target);
+  const stepTitle =
+    `htmlDrag.dispatchHtml5Drop ${sourceDesc} → ${targetDesc} ` +
+    `[single-tick]`;
+
+  await runStepped(source.page(), stepTitle, async () => {
+    await attachGesture("html-drag.gesture", {
+      kind: "dispatchHtml5Drop",
+      source: sourceDesc,
+      target: targetDesc,
+      payloadMimes: resolvedPayloads?.map((p) => p.mime) ?? null,
+      effectAllowed: effectAllowed ?? null,
+      flushMode: "single-tick",
+    });
+
+    const sourceHandle = await source.elementHandle();
+    const targetHandle = await target.elementHandle();
+    // Unique key per call so two specs running in parallel can't
+    // collide on `window.__htmlDragDt` (Playwright's worker isolation
+    // already prevents this, but the unique key keeps the helper
+    // robust against future contexts that share a Page).
+    const dtKey = `__htmlDragDt_${Math.random().toString(36).slice(2)}`;
     try {
-      await source.page().evaluate((key) => {
-        delete (window as unknown as Record<string, unknown>)[key];
-      }, dtKey);
-    } catch {
-      // Page may have navigated mid-test; ignore.
+      await fireDragEvents(
+        source,
+        sourceHandle,
+        targetHandle,
+        ["start", "enter", "over", "drop", "end"],
+        resolvedPayloads,
+        effectAllowed ?? null,
+        dtKey,
+      );
+    } finally {
+      // Best-effort cleanup of the stashed DataTransfer so we don't
+      // leak it onto `window` for the rest of the page's lifetime.
+      try {
+        await source.page().evaluate((key) => {
+          delete (window as unknown as Record<string, unknown>)[key];
+        }, dtKey);
+      } catch {
+        // Page may have navigated mid-test; ignore.
+      }
+      await sourceHandle?.dispose();
+      await targetHandle?.dispose();
     }
-    await sourceHandle?.dispose();
-    await targetHandle?.dispose();
-  }
+  });
 }
 
 /**
@@ -445,51 +576,80 @@ export async function dispatchHtml5Reorder(
     (browserName
       ? getDragTuning(browserName).syntheticDragReactFlushWait
       : 50);
-  const sourceHandle = await source.elementHandle();
-  const targetHandle = await target.elementHandle();
-  const dtKey = `__htmlDragDt_${Math.random().toString(36).slice(2)}`;
-  const phaseSplit: { first: DragPhase[]; second: DragPhase[] } =
-    flushAfter === "dragover"
-      ? { first: ["start", "enter", "over"], second: ["drop", "end"] }
-      : { first: ["start"], second: ["enter", "over", "drop", "end"] };
-  try {
-    await fireDragEvents(
-      source,
-      sourceHandle,
-      targetHandle,
-      phaseSplit.first,
-      resolvedPayloads,
-      effectAllowed ?? null,
-      dtKey,
-    );
-    // Yield to React so the setState committed by the first-phase
-    // handler(s) commits before the second phase reads the closed-
-    // over state. Prefer the deterministic UI-signal callback when
-    // the spec can pin one (e.g. a drop-target ring class); fall
-    // back to the timed wait otherwise.
-    if (flushBetween) {
-      await flushBetween();
-    } else {
-      await source.page().waitForTimeout(resolvedFlushWaitMs);
-    }
-    await fireDragEvents(
-      source,
-      sourceHandle,
-      targetHandle,
-      phaseSplit.second,
-      resolvedPayloads,
-      effectAllowed ?? null,
-      dtKey,
-    );
-  } finally {
+  const sourceDesc = describeLocator(source);
+  const targetDesc = describeLocator(target);
+  // The React-flush gate is either a deterministic UI-signal
+  // callback the caller passed in, or a timed `waitForTimeout`. Both
+  // matter when triaging a flake — the trace title surfaces the
+  // mode so you can see at a glance whether the test relied on a
+  // signal or a timer (and which engine's tuning derived the timer).
+  const flushGate: "callback" | "timed" = flushBetween ? "callback" : "timed";
+  const stepTitle =
+    `htmlDrag.dispatchHtml5Reorder ${sourceDesc} → ${targetDesc} ` +
+    `[flushAfter=${flushAfter}, gate=${flushGate}]`;
+
+  await runStepped(source.page(), stepTitle, async () => {
+    await attachGesture("html-drag.gesture", {
+      kind: "dispatchHtml5Reorder",
+      source: sourceDesc,
+      target: targetDesc,
+      payloadMimes: resolvedPayloads?.map((p) => p.mime) ?? null,
+      effectAllowed: effectAllowed ?? null,
+      flushAfter,
+      flushGate,
+      // Surface the resolved wait so a flake on slow CI is easy to
+      // attribute (was the engine-aware tuning kicked in? was it
+      // overridden? was the callback path used instead?).
+      flushWaitMs: flushBetween ? null : resolvedFlushWaitMs,
+      browserName: browserName ?? null,
+    });
+
+    const sourceHandle = await source.elementHandle();
+    const targetHandle = await target.elementHandle();
+    const dtKey = `__htmlDragDt_${Math.random().toString(36).slice(2)}`;
+    const phaseSplit: { first: DragPhase[]; second: DragPhase[] } =
+      flushAfter === "dragover"
+        ? { first: ["start", "enter", "over"], second: ["drop", "end"] }
+        : { first: ["start"], second: ["enter", "over", "drop", "end"] };
     try {
-      await source.page().evaluate((key) => {
-        delete (window as unknown as Record<string, unknown>)[key];
-      }, dtKey);
-    } catch {
-      // ignore — page may have navigated
+      await fireDragEvents(
+        source,
+        sourceHandle,
+        targetHandle,
+        phaseSplit.first,
+        resolvedPayloads,
+        effectAllowed ?? null,
+        dtKey,
+      );
+      // Yield to React so the setState committed by the first-phase
+      // handler(s) commits before the second phase reads the closed-
+      // over state. Prefer the deterministic UI-signal callback when
+      // the spec can pin one (e.g. a drop-target ring class); fall
+      // back to the timed wait otherwise.
+      if (flushBetween) {
+        await flushBetween();
+      } else {
+        await source.page().waitForTimeout(resolvedFlushWaitMs);
+      }
+      await fireDragEvents(
+        source,
+        sourceHandle,
+        targetHandle,
+        phaseSplit.second,
+        resolvedPayloads,
+        effectAllowed ?? null,
+        dtKey,
+      );
+    } finally {
+      try {
+        await source.page().evaluate((key) => {
+          delete (window as unknown as Record<string, unknown>)[key];
+        }, dtKey);
+      } catch {
+        // ignore — page may have navigated
+      }
+      await sourceHandle?.dispose();
+      await targetHandle?.dispose();
     }
-    await sourceHandle?.dispose();
-    await targetHandle?.dispose();
-  }
+  });
 }
