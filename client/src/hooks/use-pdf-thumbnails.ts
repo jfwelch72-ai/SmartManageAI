@@ -1,7 +1,15 @@
+/**
+ * Task #2138 — Thumbnail strip rasterizer. After this task pdfjs lives
+ * exclusively in `client/src/workers/pdfTileWorker.ts`; this hook
+ * delegates every render through `getSharedScheduler().renderThumbnail`.
+ * Worker output is an `ImageBitmap`; we copy it once into a hidden
+ * canvas to produce a JPEG data URL so existing consumers (which expect
+ * `<img src="data:image/jpeg…">`) keep working unchanged.
+ */
+
 import { useState, useEffect, useRef, useCallback } from "react";
-import * as pdfjsLib from "pdfjs-dist";
-import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { TakeoffSheet } from "@shared/schema";
+import { getSharedScheduler } from "@/lib/takeoff/tileScheduler";
 
 interface UsePdfThumbnailsResult {
   thumbnails: Map<string, string>;
@@ -18,28 +26,34 @@ function evictOldest() {
   if (thumbnailCache.size <= MAX_CACHE_SIZE) return;
   const keysToRemove = Array.from(thumbnailCache.keys()).slice(
     0,
-    thumbnailCache.size - MAX_CACHE_SIZE
+    thumbnailCache.size - MAX_CACHE_SIZE,
   );
   keysToRemove.forEach((k) => thumbnailCache.delete(k));
 }
 
-let workerInitialized = false;
-function ensureWorker() {
-  if (workerInitialized) return;
-  if (!pdfjsLib.GlobalWorkerOptions.workerSrc) {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-      "pdfjs-dist/build/pdf.worker.min.mjs",
-      import.meta.url
-    ).toString();
-  }
-  workerInitialized = true;
-}
-
 let runIdCounter = 0;
+
+function bitmapToJpeg(bitmap: ImageBitmap): string | null {
+  const canvas = document.createElement("canvas");
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    canvas.width = 0;
+    canvas.height = 0;
+    return null;
+  }
+  ctx.drawImage(bitmap, 0, 0);
+  const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
+  canvas.width = 0;
+  canvas.height = 0;
+  try { bitmap.close(); } catch { /* noop */ }
+  return dataUrl;
+}
 
 export function usePdfThumbnails(
   sheets: TakeoffSheet[],
-  options?: { width?: number; height?: number }
+  options?: { width?: number; height?: number },
 ): UsePdfThumbnailsResult {
   const { width = 120, height = 90 } = options || {};
   const [thumbnails, setThumbnails] = useState<Map<string, string>>(new Map());
@@ -66,7 +80,7 @@ export function usePdfThumbnails(
             }
           });
         },
-        { threshold: 0.1 }
+        { threshold: 0.1 },
       );
     }
 
@@ -94,13 +108,20 @@ export function usePdfThumbnails(
   }, []);
 
   const generateThumbnails = useCallback(async () => {
-    ensureWorker();
+    const scheduler = getSharedScheduler();
+    if (!scheduler) {
+      // No `Worker` runtime — gracefully no-op so callers (sidebars,
+      // pickers) just show empty thumbnails instead of crashing.
+      setIsLoading(false);
+      setProgress(100);
+      return;
+    }
     const runId = ++runIdCounter;
     activeRunRef.current = runId;
     const isCurrent = () => activeRunRef.current === runId;
 
     const uncachedSheets = sheets.filter(
-      (s) => s.imageUrl && !thumbnailCache.has(s.id)
+      (s) => s.imageUrl && !thumbnailCache.has(s.id),
     );
 
     const cached = new Map<string, string>();
@@ -131,68 +152,25 @@ export function usePdfThumbnails(
       ...uncachedSheets.filter((s) => !visible.has(s.id)),
     ];
 
-    const pdfDocByPlanId = new Map<string, PDFDocumentProxy>();
-
-    async function loadPdfForSheet(sheet: TakeoffSheet): Promise<PDFDocumentProxy> {
-      const planKey = sheet.planId || sheet.id;
-      const existing = pdfDocByPlanId.get(planKey);
-      if (existing) return existing;
-
-      const pdfUrl = `/api/takeoff/sheets/${sheet.id}/pdf`;
-      const loadingTask = pdfjsLib.getDocument({
-        url: pdfUrl,
-        withCredentials: true,
-      });
-      const pdf = await loadingTask.promise;
-      pdfDocByPlanId.set(planKey, pdf);
-      return pdf;
-    }
-
+    const activeScheduler = scheduler;
     async function renderThumbnail(
-      sheet: TakeoffSheet
+      sheet: TakeoffSheet,
     ): Promise<{ id: string; dataUrl: string } | null> {
-      const pdf = await loadPdfForSheet(sheet);
-      const pageNumber = (sheet.sheetIndex || 0) + 1;
-      if (pageNumber > pdf.numPages) return null;
-
-      const page = await pdf.getPage(pageNumber);
-      const viewport = page.getViewport({ scale: 1 });
-
-      const scaleX = width / viewport.width;
-      const scaleY = height / viewport.height;
-      const scale = Math.min(scaleX, scaleY);
-
-      const scaledViewport = page.getViewport({ scale });
-
-      const canvas = document.createElement("canvas");
-      canvas.width = scaledViewport.width;
-      canvas.height = scaledViewport.height;
-      const context = canvas.getContext("2d");
-      if (!context) {
-        canvas.width = 0;
-        canvas.height = 0;
-        return null;
-      }
-
-      await page.render({
-        canvasContext: context,
-        viewport: scaledViewport,
-        canvas: canvas,
-      }).promise;
-
+      const pdfUrl = `/api/takeoff/sheets/${sheet.id}/pdf`;
+      const res = await activeScheduler.renderThumbnail(
+        pdfUrl,
+        sheet.sheetIndex || 0,
+        width,
+        height,
+      );
       if (!isCurrent()) {
-        canvas.width = 0;
-        canvas.height = 0;
+        try { res.bitmap.close(); } catch { /* noop */ }
         return null;
       }
-
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.7);
-      canvas.width = 0;
-      canvas.height = 0;
-
+      const dataUrl = bitmapToJpeg(res.bitmap);
+      if (!dataUrl) return null;
       thumbnailCache.set(sheet.id, dataUrl);
       evictOldest();
-
       return { id: sheet.id, dataUrl };
     }
 
@@ -204,7 +182,7 @@ export function usePdfThumbnails(
 
       const batch = visibleFirst.slice(i, i + batchSize);
       const results = await Promise.allSettled(
-        batch.map((sheet) => renderThumbnail(sheet))
+        batch.map((sheet) => renderThumbnail(sheet)),
       );
 
       if (!isCurrent()) break;
@@ -239,17 +217,9 @@ export function usePdfThumbnails(
 
       completed += batch.length;
       setProgress(
-        Math.round(((cached.size + completed) / sheets.length) * 100)
+        Math.round(((cached.size + completed) / sheets.length) * 100),
       );
     }
-
-    for (const pdf of pdfDocByPlanId.values()) {
-      try {
-        pdf.destroy();
-      } catch {
-      }
-    }
-    pdfDocByPlanId.clear();
 
     if (isCurrent()) {
       setIsLoading(false);

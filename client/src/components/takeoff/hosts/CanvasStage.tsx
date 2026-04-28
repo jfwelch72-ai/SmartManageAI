@@ -11,6 +11,7 @@ import {
   computeNetAreaInFt2,
 } from "@shared/utils/geometry";
 import { commitMarkupBodyDrag, commitMarkupResize } from "../../markups/markup-drag-commit";
+import { TileLayer } from "../TileLayer";
 import {
   type Tool,
   type MeasurementType,
@@ -62,7 +63,10 @@ export interface CanvasStageProps {
   selectedSheet: string | null;
   currentSheet: TakeoffSheet | null | undefined;
   sheetRotation: number;
-  pdfImage: HTMLImageElement | null;
+  pdfImage: HTMLImageElement | ImageBitmap | null;
+  pageDims: { width: number; height: number } | null;
+  tileRendererEnabled: boolean;
+  tiles: Array<{ coord: import("@/lib/takeoff/tileCoords").TileCoord; bitmap: ImageBitmap }>;
   isPdfLoading: boolean;
   pdfLoadProgress: number;
 
@@ -196,6 +200,9 @@ function CanvasStageImpl(props: CanvasStageProps) {
     currentSheet,
     sheetRotation,
     pdfImage,
+    pageDims,
+    tileRendererEnabled,
+    tiles,
     isPdfLoading,
     pdfLoadProgress,
     activeTool,
@@ -407,8 +414,8 @@ function CanvasStageImpl(props: CanvasStageProps) {
               <Layer>
                 <Group
                   rotation={sheetRotation}
-                  x={sheetRotation === 180 ? (pdfImage?.width || 0) : sheetRotation === 270 ? (pdfImage?.height || 0) : 0}
-                  y={sheetRotation === 90 ? (pdfImage?.width || 0) : sheetRotation === 180 ? (pdfImage?.height || 0) : 0}
+                  x={sheetRotation === 180 ? (pageDims?.width || 0) : sheetRotation === 270 ? (pageDims?.height || 0) : 0}
+                  y={sheetRotation === 90 ? (pageDims?.width || 0) : sheetRotation === 180 ? (pageDims?.height || 0) : 0}
                 >
                 {isPdfLoading ? (
                   <>
@@ -416,8 +423,23 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     <Rect x={20} y={20} width={Math.max(4, pdfLoadProgress * 2)} height={6} fill="#f97316" cornerRadius={3} />
                     <Text text={`Loading plan... ${pdfLoadProgress}%`} x={20} y={32} fontSize={12} fill="#888" />
                   </>
-                ) : pdfImage ? (
-                  <KonvaImage image={pdfImage} />
+                ) : pdfImage && pageDims ? (
+                  <>
+                    {/* Task #2138: low-res placeholder is stretched to world
+                        dimensions so markup math (which has always operated in
+                        world coords) keeps lining up perfectly. Detail tiles
+                        composited on top by `<TileLayer>` replace the blurry
+                        placeholder pixel-for-pixel as they stream in. */}
+                    <KonvaImage
+                      image={pdfImage as unknown as HTMLImageElement}
+                      width={pageDims.width}
+                      height={pageDims.height}
+                      listening={false}
+                    />
+                    {tileRendererEnabled && tiles.length > 0 ? (
+                      <TileLayer tiles={tiles} />
+                    ) : null}
+                  </>
                 ) : (
                   <Text text="Select a sheet to begin" x={20} y={20} fontSize={16} fill="#888" />
                 )}
@@ -435,8 +457,8 @@ function CanvasStageImpl(props: CanvasStageProps) {
                 })}
 
                 {showAiOverlays && pdfImage && preImportDetectedItems.filter(item => item.boundingBox).map((item) => {
-                  const imgW = pdfImage.width;
-                  const imgH = pdfImage.height;
+                  const imgW = (pageDims?.width || 0);
+                  const imgH = (pageDims?.height || 0);
                   const bbox = item.boundingBox!;
                   const rx = (bbox.x / 100) * imgW;
                   const ry = (bbox.y / 100) * imgH;
@@ -510,8 +532,8 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     const meta = m.metadata ? (typeof m.metadata === "string" ? JSON.parse(m.metadata) : m.metadata) : null;
                     const bbox = meta?.boundingBox;
                     if (!bbox || !bbox.w || !bbox.h) return null;
-                    const imgW = pdfImage.width;
-                    const imgH = pdfImage.height;
+                    const imgW = (pageDims?.width || 0);
+                    const imgH = (pageDims?.height || 0);
                     const rx = (bbox.x / 100) * imgW;
                     const ry = (bbox.y / 100) * imgH;
                     const rw = (bbox.w / 100) * imgW;
@@ -583,8 +605,8 @@ function CanvasStageImpl(props: CanvasStageProps) {
                 })}
 
                 {gridEnabled && currentSheet?.scalePxPerFoot && pdfImage && (() => {
-                  const imgW = pdfImage.width;
-                  const imgH = pdfImage.height;
+                  const imgW = (pageDims?.width || 0);
+                  const imgH = (pageDims?.height || 0);
                   const pxPerFoot = currentSheet.scalePxPerFoot;
                   let gridSpacingFt = 1;
                   const screenPxPerFoot = pxPerFoot * stageScale;
@@ -662,7 +684,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     const aiMeasurements = measurements.filter(mm => mm.source === "AI" && mm.type === "COUNT");
                     const aiIdx = aiMeasurements.findIndex(mm => mm.id === m.id);
                     if (aiIdx >= 0) {
-                      const pos = computeAiPosition(aiIdx, pdfImage?.width || 2000);
+                      const pos = computeAiPosition(aiIdx, pageDims?.width || 2000);
                       points = [pos];
                     }
                   }
@@ -1138,8 +1160,8 @@ function CanvasStageImpl(props: CanvasStageProps) {
                 })}
 
                 {showStructuralGridlines && pdfImage && (() => {
-                  const imgW = pdfImage.width;
-                  const imgH = pdfImage.height;
+                  const imgW = (pageDims?.width || 0);
+                  const imgH = (pageDims?.height || 0);
                   const elements: JSX.Element[] = [];
                   structuralGridlines.vertical.forEach((gl, i) => {
                     const x = gl.position;

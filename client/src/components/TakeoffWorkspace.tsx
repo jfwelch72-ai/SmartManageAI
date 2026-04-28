@@ -28,7 +28,10 @@ import {
   Loader2, Check
 } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
-import * as pdfjsLib from 'pdfjs-dist';
+import { getSharedScheduler } from "@/lib/takeoff/tileScheduler";
+import { isTileRendererEnabled } from "@/lib/takeoff/tileRendererFlag";
+import { usePdfTileRenderer } from "@/hooks/use-pdf-tile-renderer";
+import { rotateViewportToPageNative, viewportToWorldRect } from "@/lib/takeoff/tileCoords";
 import {
   createArcSegment,
   sampleArcPoints,
@@ -284,8 +287,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [selectedSegmentIndex, setSelectedSegmentIndex] = useState<number | null>(null);
   const [toolBeforeSpacebar, setToolBeforeSpacebar] = useState<Tool | null>(null);
   const [isSpacebarHeld, setIsSpacebarHeld] = useState(false);
-  const [pdfImage, setPdfImage] = useState<HTMLImageElement | null>(null);
+  const [pdfImage, setPdfImage] = useState<HTMLImageElement | ImageBitmap | null>(null);
+  const [pageDims, setPageDims] = useState<{ width: number; height: number } | null>(null);
   const [isPdfLoading, setIsPdfLoading] = useState(false);
+  const tileRendererEnabled = useMemo(() => isTileRendererEnabled(), []);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [stageDimensions, setStageDimensions] = useState({ width: 800, height: 600 });
   const [categoryDialogOpen, setCategoryDialogOpen] = useState(false);
@@ -523,8 +528,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const isMarkupTool = (tool: string) => tool.startsWith("markup_");
 
   const inverseRotate = (pt: { x: number; y: number }): { x: number; y: number } => {
-    const w = pdfImage?.width || 0;
-    const h = pdfImage?.height || 0;
+    const w = pageDims?.width || 0;
+    const h = pageDims?.height || 0;
     switch (sheetRotation) {
       case 90: return { x: w - pt.y, y: pt.x };
       case 180: return { x: w - pt.x, y: h - pt.y };
@@ -1245,8 +1250,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     deleteMeasurementMutation,
     onZoomToFit: () => zoomToFitRef.current(),
     sheetRotation,
-    imageWidth: pdfImage?.width || 0,
-    imageHeight: pdfImage?.height || 0,
+    imageWidth: pageDims?.width || 0,
+    imageHeight: pageDims?.height || 0,
     onRotateCW: () => handleRotate(90),
     onRotateCCW: () => handleRotate(-90),
     structuralGridlines,
@@ -1653,7 +1658,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       const aiCountMeasurements = measurements.filter(mm => mm.source === "AI" && mm.type === "COUNT");
       const aiIdx = aiCountMeasurements.findIndex(mm => mm.id === m.id);
       if (aiIdx >= 0) {
-        pts = [computeAiPosition(aiIdx, pdfImage?.width || 2000)];
+        pts = [computeAiPosition(aiIdx, pageDims?.width || 2000)];
       }
     }
     if (pts.length === 0) return null;
@@ -1686,7 +1691,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
   const backfilledAiIdsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
-    if (!measurements.length || !pdfImage?.width) return;
+    if (!measurements.length || !pageDims?.width) return;
     const legacyAiMeasurements = measurements.filter(m => {
       if (m.source !== "AI" || m.type !== "COUNT") return false;
       if (backfilledAiIdsRef.current.has(m.id)) return false;
@@ -1698,7 +1703,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     legacyAiMeasurements.forEach(m => {
       const aiIdx = allAiCount.findIndex(mm => mm.id === m.id);
       if (aiIdx < 0) return;
-      const pos = computeAiPosition(aiIdx, pdfImage.width);
+      const pos = computeAiPosition(aiIdx, (pageDims?.width || 0));
       const mId = m.id;
       backfilledAiIdsRef.current.add(mId);
       updateMeasurementMutation.mutate(
@@ -1749,12 +1754,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     const sw = stageDimensions.width;
     const sh = stageDimensions.height;
     const padding = 0.05;
-    const scaleX = sw / (pdfImage.width * (1 + padding * 2));
-    const scaleY = sh / (pdfImage.height * (1 + padding * 2));
+    const scaleX = sw / ((pageDims?.width || 0) * (1 + padding * 2));
+    const scaleY = sh / ((pageDims?.height || 0) * (1 + padding * 2));
     const targetScale = Math.min(scaleX, scaleY, 10);
     const targetPos = {
-      x: (sw - pdfImage.width * targetScale) / 2,
-      y: (sh - pdfImage.height * targetScale) / 2,
+      x: (sw - (pageDims?.width || 0) * targetScale) / 2,
+      y: (sh - (pageDims?.height || 0) * targetScale) / 2,
     };
     animateToPosition(targetScale, targetPos);
   };
@@ -2026,70 +2031,64 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     });
   };
 
-  useEffect(() => {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-      'pdfjs-dist/build/pdf.worker.min.mjs',
-      import.meta.url
-    ).toString();
-  }, []);
-
-  const pdfImageCacheRef = useRef<Map<string, HTMLImageElement>>(new Map());
-  const pdfDocCacheRef = useRef<Map<string, any>>(new Map());
+  // Task #2138: pdfjs lives ONLY in the dedicated worker after this task.
+  // The shared scheduler owns the worker pool and orchestrates page loads,
+  // tile renders, thumbnail renders, and text extraction.
+  //
+  // `getSharedScheduler()` returns null in environments that don't expose
+  // `Worker` (jsdom unit tests, very old browsers). In that case the
+  // workspace surfaces an error toast on first sheet load instead of
+  // crashing — there is no main-thread pdfjs path because the task
+  // explicitly requires pdfjs to live only in the worker.
+  const tileScheduler = useMemo(() => getSharedScheduler(), []);
+  const placeholderCacheRef = useRef<Map<string, ImageBitmap>>(new Map());
   const sheetsRef = useRef(sheets);
   sheetsRef.current = sheets;
   const [pdfLoadProgress, setPdfLoadProgress] = useState(0);
 
-  const renderPdfPage = useCallback(async (sheetId: string, pdfUrl: string, pageIndex: number): Promise<HTMLImageElement> => {
-    const cacheKey = `${sheetId}-${pageIndex}`;
-    const cached = pdfImageCacheRef.current.get(cacheKey);
-    if (cached) {
-      pdfImageCacheRef.current.delete(cacheKey);
-      pdfImageCacheRef.current.set(cacheKey, cached);
-      return cached;
+  // Legacy fallback path only: when the tile flag is OFF we still need a
+  // full-page bitmap so the canvas has something to draw. When the flag
+  // is ON, `usePdfTileRenderer` owns the placeholder lifecycle (single
+  // 0.25× bucket render) and we forward its bitmap into `pdfImage` via
+  // an effect below — no second worker call. pdfjs runs in the worker
+  // either way (task constraint).
+  const renderFullPagePlaceholder = useCallback(async (
+    sheetId: string,
+    pdfUrl: string,
+    pageIndex: number,
+  ): Promise<{ bitmap: ImageBitmap; width: number; height: number }> => {
+    if (!tileScheduler) {
+      throw new Error("PDF worker is not supported in this browser.");
     }
-
-    let pdf = pdfDocCacheRef.current.get(pdfUrl);
-    if (!pdf) {
-      const loadingTask = pdfjsLib.getDocument({ url: pdfUrl, withCredentials: true });
-      pdf = await loadingTask.promise;
-      pdfDocCacheRef.current.set(pdfUrl, pdf);
-      if (pdfDocCacheRef.current.size > 20) {
-        const firstKey = pdfDocCacheRef.current.keys().next().value;
-        if (firstKey) pdfDocCacheRef.current.delete(firstKey);
+    const cacheKey = `${sheetId}-${pageIndex}`;
+    const cached = placeholderCacheRef.current.get(cacheKey);
+    if (cached) {
+      placeholderCacheRef.current.delete(cacheKey);
+      placeholderCacheRef.current.set(cacheKey, cached);
+      const dims = await tileScheduler.getPageDims(pdfUrl, pageIndex);
+      return { bitmap: cached, width: dims.width, height: dims.height };
+    }
+    const res = await tileScheduler.renderPlaceholder(pdfUrl, pageIndex, 1);
+    placeholderCacheRef.current.set(cacheKey, res.bitmap);
+    if (placeholderCacheRef.current.size > 12) {
+      const firstKey = placeholderCacheRef.current.keys().next().value;
+      if (firstKey) {
+        const stale = placeholderCacheRef.current.get(firstKey);
+        placeholderCacheRef.current.delete(firstKey);
+        try { stale?.close(); } catch { /* noop */ }
       }
     }
-
-    const page = await pdf.getPage(pageIndex + 1);
-    const scale = 1.5;
-    const viewport = page.getViewport({ scale });
-    const canvas = document.createElement("canvas");
-    const context = canvas.getContext("2d");
-    if (!context) throw new Error("Canvas context unavailable");
-    canvas.height = viewport.height;
-    canvas.width = viewport.width;
-    await page.render({ canvasContext: context, viewport }).promise;
-
-    return new Promise<HTMLImageElement>((resolve, reject) => {
-      const img = new window.Image();
-      img.onload = () => {
-        pdfImageCacheRef.current.set(cacheKey, img);
-        if (pdfImageCacheRef.current.size > 50) {
-          const firstKey = pdfImageCacheRef.current.keys().next().value;
-          if (firstKey) pdfImageCacheRef.current.delete(firstKey);
-        }
-        resolve(img);
-      };
-      img.onerror = reject;
-      img.src = canvas.toDataURL();
-    });
-  }, []);
+    return { bitmap: res.bitmap, width: res.width, height: res.height };
+  }, [tileScheduler]);
 
   useEffect(() => {
     if (!currentSheet?.imageUrl) {
       setPdfImage(null);
+      setPageDims(null);
       return;
     }
 
+    let cancelled = false;
     const loadPDF = async () => {
       try {
         setIsPdfLoading(true);
@@ -2097,64 +2096,99 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         const pdfUrl = `/api/takeoff/sheets/${currentSheet.id}/pdf`;
         setPdfLoadProgress(30);
 
-        const img = await renderPdfPage(currentSheet.id, pdfUrl, currentSheet.sheetIndex || 0);
-        setPdfLoadProgress(80);
-        setPdfImage(img);
-        setPdfLoadProgress(100);
-        setIsPdfLoading(false);
+        if (tileRendererEnabled) {
+          // Tile mode: don't render the placeholder here — the hook
+          // does it. We only need page dims so the rest of this effect
+          // (text extraction, prewarm) and downstream code that reads
+          // `pageDims` can proceed without waiting for the bitmap.
+          if (!tileScheduler) {
+            throw new Error("PDF worker is not supported in this browser.");
+          }
+          const dims = await tileScheduler.getPageDims(
+            pdfUrl,
+            currentSheet.sheetIndex || 0,
+          );
+          if (cancelled) return;
+          setPageDims({ width: dims.width, height: dims.height });
+          setPdfLoadProgress(80);
+          // `pdfImage` and `setIsPdfLoading(false)` are driven by the
+          // mirroring effect below once `tileRenderer.placeholder`
+          // arrives.
+        } else {
+          const res = await renderFullPagePlaceholder(
+            currentSheet.id,
+            pdfUrl,
+            currentSheet.sheetIndex || 0,
+          );
+          if (cancelled) {
+            // Bitmap is owned by `placeholderCacheRef`; closing here
+            // would invalidate the cached entry.
+            return;
+          }
+          setPdfLoadProgress(80);
+          setPdfImage(res.bitmap);
+          setPageDims({ width: res.width, height: res.height });
+          setPdfLoadProgress(100);
+          setIsPdfLoading(false);
+        }
 
         if (!currentSheet.scalePxPerFoot) {
           try {
             const latestSheets = sheetsRef.current;
             const uncalibratedSheets = latestSheets.filter((s: any) => !s.scalePxPerFoot && s.imageUrl);
             const batchInput: Array<{ id: string; textItems: string[] }> = [];
-
-            for (const s of uncalibratedSheets) {
-              try {
-                const sPdfUrl = `/api/takeoff/sheets/${s.id}/pdf`;
-                let sPdf = pdfDocCacheRef.current.get(sPdfUrl);
-                if (!sPdf) {
-                  const loadTask = pdfjsLib.getDocument({ url: sPdfUrl, withCredentials: true });
-                  sPdf = await loadTask.promise;
-                  if (pdfDocCacheRef.current.size >= 20) {
-                    const oldest = pdfDocCacheRef.current.keys().next().value;
-                    if (oldest) pdfDocCacheRef.current.delete(oldest);
-                  }
-                  pdfDocCacheRef.current.set(sPdfUrl, sPdf);
+            const textResults = await Promise.all(
+              uncalibratedSheets.map(async (s: any) => {
+                try {
+                  if (!tileScheduler) return null;
+                  const sPdfUrl = `/api/takeoff/sheets/${s.id}/pdf`;
+                  const r = await tileScheduler.getTextItems(sPdfUrl, s.sheetIndex || 0);
+                  return { id: s.id as string, textItems: r.items };
+                } catch (err) {
+                  console.warn(`[Takeoff] Failed to extract text for scale detection:`, err);
+                  return null;
                 }
-                const page = await sPdf.getPage((s.sheetIndex || 0) + 1);
-                const textContent = await page.getTextContent();
-                const textItems = textContent.items
-                  .filter((item: any) => item.str && item.str.trim())
-                  .map((item: any) => item.str as string);
-                batchInput.push({ id: s.id, textItems });
-              } catch (err) {
-                console.warn(`[Takeoff] Failed to load sheet for scale detection:`, err);
-              }
+              }),
+            );
+            for (const r of textResults) {
+              if (r) batchInput.push(r);
             }
-
-            if (batchInput.length > 0) {
+            if (!cancelled && batchInput.length > 0) {
               const batchResults = detectScaleBatch(batchInput);
               const currentResult = batchResults.get(currentSheet.id);
-              if (currentResult) {
-                setDetectedScale(currentResult);
-              }
+              if (currentResult) setDetectedScale(currentResult);
             }
           } catch (textErr) {
             console.warn("Could not extract text from PDF for scale detection:", textErr);
           }
         }
 
+        // Pre-warm placeholders for adjacent sheets so a sheet flip is
+        // instant. The 30-second grace clock stops any prefetch that
+        // hasn't started yet — bounded so we don't keep paying for
+        // unused work after the user has settled on a sheet.
         const latestSheets = sheetsRef.current;
         const currentIdx = latestSheets.findIndex((s: TakeoffSheet) => s.id === currentSheet.id);
         const adjacentIndices = [currentIdx - 1, currentIdx + 1, currentIdx + 2].filter(i => i >= 0 && i < latestSheets.length);
         for (const idx of adjacentIndices) {
           const adjSheet = latestSheets[idx] as any;
-          if (adjSheet && adjSheet.imageUrl && !pdfImageCacheRef.current.has(`${adjSheet.id}-${adjSheet.sheetIndex || 0}`)) {
-            renderPdfPage(adjSheet.id, `/api/takeoff/sheets/${adjSheet.id}/pdf`, adjSheet.sheetIndex || 0).catch(() => {});
+          if (!adjSheet?.imageUrl) continue;
+          const adjPdfUrl = `/api/takeoff/sheets/${adjSheet.id}/pdf`;
+          const adjPageIndex = adjSheet.sheetIndex || 0;
+          if (tileRendererEnabled) {
+            // Prime the worker doc/page cache cheaply so the hook's
+            // 0.25× placeholder render is fast on visit. No bitmap is
+            // produced here — that would duplicate the hook's work.
+            tileScheduler?.getPageDims(adjPdfUrl, adjPageIndex).catch(() => undefined);
+          } else {
+            const k = `${adjSheet.id}-${adjPageIndex}`;
+            if (!placeholderCacheRef.current.has(k)) {
+              renderFullPagePlaceholder(adjSheet.id, adjPdfUrl, adjPageIndex).catch(() => undefined);
+            }
           }
         }
       } catch (error) {
+        if (cancelled) return;
         console.error("Error loading PDF:", error);
         setIsPdfLoading(false);
         setPdfLoadProgress(0);
@@ -2168,7 +2202,8 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
 
     loadPDF();
     setDetectedScale(null);
-  }, [currentSheet?.id, currentSheet?.imageUrl, toast, renderPdfPage]);
+    return () => { cancelled = true; };
+  }, [currentSheet?.id, currentSheet?.imageUrl, toast, renderFullPagePlaceholder, tileScheduler, tileRendererEnabled]);
 
   const autoDetectedSheetsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
@@ -2504,6 +2539,52 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     activeTool === "pan" ? "grab" :
     activeTool === "select" ? "default" :
     "crosshair";
+  // Task #2138 — viewport rect in world coords drives the tile renderer's
+  // priority queue. Computed inline (not memoized) because it changes on
+  // every pan/zoom and dependencies are already tracked downstream.
+  const tileViewport = useMemo(() => {
+    if (!pageDims || !tileRendererEnabled) return null;
+    const stageRect = viewportToWorldRect({
+      stageWidth: stageDimensions.width,
+      stageHeight: stageDimensions.height,
+      stagePosition,
+      stageScale,
+    });
+    // CanvasStage draws tiles inside the rotated `<Group>`, so the
+    // tile grid lives in page-native (pre-rotation) coords. Map the
+    // stage-world viewport back through `sheetRotation` so the
+    // scheduler picks the right tile set on rotated sheets.
+    const rot = ((sheetRotation % 360) + 360) % 360;
+    const validRot = (rot === 0 || rot === 90 || rot === 180 || rot === 270 ? rot : 0) as 0 | 90 | 180 | 270;
+    return rotateViewportToPageNative({
+      rect: stageRect,
+      rotation: validRot,
+      pageDims,
+    });
+  }, [pageDims, tileRendererEnabled, stageDimensions.width, stageDimensions.height, stagePosition, stageScale, sheetRotation]);
+  const tileRenderer = usePdfTileRenderer({
+    sheetId: tileRendererEnabled && currentSheet?.imageUrl ? currentSheet.id : null,
+    sheetUrl: tileRendererEnabled && currentSheet?.imageUrl ? `/api/takeoff/sheets/${currentSheet.id}/pdf` : null,
+    pageIndex: currentSheet?.sheetIndex || 0,
+    viewport: tileViewport,
+    stageScale,
+    enabled: tileRendererEnabled,
+  });
+
+  // Tile mode owns the placeholder bitmap inside the hook. Forward it
+  // into `pdfImage` so all the existing render paths (CanvasStage,
+  // PdfPreview, etc.) see the same source of truth.
+  useEffect(() => {
+    if (!tileRendererEnabled) return;
+    if (tileRenderer.placeholder) {
+      setPdfImage(tileRenderer.placeholder);
+      setPdfLoadProgress(100);
+      setIsPdfLoading(false);
+    } else {
+      setPdfImage(null);
+    }
+  }, [tileRendererEnabled, tileRenderer.placeholder]);
+
   // NOTE: Intentionally NOT memoized. The slice references 100+ pieces of
   // state and ~20 mutations/handlers; an exhaustive useMemo dependency
   // array is impractical to keep correct, and a stale dep silently breaks
@@ -2524,6 +2605,9 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     currentSheet,
     sheetRotation,
     pdfImage,
+    pageDims,
+    tileRendererEnabled,
+    tiles: tileRenderer.visibleTiles,
     isPdfLoading,
     pdfLoadProgress,
     activeTool,

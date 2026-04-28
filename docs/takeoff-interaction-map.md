@@ -187,8 +187,69 @@ A user-pinned shelf of frequently-used tools / conditions / assemblies.
 - **Version overlay** (Step 9): `,` / `.` cycle versions; the canvas
   controller always merges the active version's transform with the live
   draw.
-- **Heavy-project rendering** (Step 8): tile renderer + worker; controller
-  must not assume synchronous draw.
+- **Heavy-project rendering** (Step 8 — **Implemented**, Task #2138):
+  - Architecture: a tile-based PDF renderer that owns `pdfjs` inside a
+    dedicated worker (`client/src/workers/pdfTileWorker.ts`). The main
+    thread never imports `pdfjs-dist`; it sends typed messages for
+    `getPageDims`, `renderPlaceholder`, `renderTile`, `getTextItems`,
+    `renderThumbnail`, and `evictSheet`, and receives `ImageBitmap`s
+    transferred zero-copy. This keeps sheet switches and zoom changes
+    off the main thread (the controller animates Konva at the same
+    cadence regardless of what pdfjs is doing).
+  - Tile contract (`client/src/lib/takeoff/tileCoords.ts`):
+    - `TILE_SIZE_PX = 512`, `BASE_RENDER_SCALE = 1.5`.
+    - Zoom buckets: `[0.25, 0.5, 1, 2, 4]`. The renderer picks the
+      smallest bucket whose pixel density meets the current
+      `stageScale`, then crossfades to the next bucket as the user
+      zooms in/out so there is no resolution pop.
+    - **World coordinates are unchanged.** Markup, measurement, snap,
+      and calibration math still operate against the page rendered at
+      `BASE_RENDER_SCALE`. The KonvaImage that fronts the placeholder
+      is stretched to `pageDims.{width,height}` so a tile at any bucket
+      ends up in the same world-space rectangle calibration recorded.
+  - LRU cache (`client/src/lib/takeoff/tileCache.ts`): byte-budgeted at
+    ~600 MB by default (`MAX_TILE_CACHE_BYTES_DEFAULT`), 4 bytes/pixel
+    estimate per tile. Evictions call `ImageBitmap.close()` so GPU
+    memory is returned. `invalidateSheet()` is fired when a sheet is
+    deleted/replaced.
+  - Scheduler (`client/src/lib/takeoff/tileScheduler.ts`): worker pool
+    sized at `min(navigator.hardwareConcurrency, 4)` with a
+    distance-from-viewport-center priority queue, so what the user is
+    looking at draws first. On viewport / sheet change the scheduler
+    not only prunes the queue but posts `cancelTile` to the worker so
+    `RenderTask.cancel()` aborts any in-flight pdfjs render that no
+    longer matters — fast pans no longer burn CPU on stale tiles.
+  - Hook (`client/src/hooks/use-pdf-tile-renderer.ts`) is the single
+    owner of the placeholder bitmap; `TakeoffWorkspace` mirrors it into
+    `pdfImage` via an effect so there is exactly one 0.25× worker
+    render per sheet (no double-paint with the workspace). Tile
+    arrivals are RAF-coalesced into one re-render per frame instead of
+    one re-render per resolved tile.
+  - Rotation: tile coords live in page-native (pre-rotation) space
+    because pdfjs renders the page natively and CanvasStage applies
+    the rotation on a wrapping `<Group>`. Stage-world viewport rects
+    are mapped back through `sheetRotation` via
+    `rotateViewportToPageNative` before being handed to the scheduler,
+    so 90/180/270° sheets pick the correct tile set (no missing or
+    misaligned high-res tiles).
+  - Feature flag: **`takeoff_tile_renderer`** — default **on**. Toggle
+    via `localStorage["takeoff_tile_renderer"] = "off"` or
+    `window.__TAKEOFF_TILE_RENDERER__ = false` for the escape-hatch
+    fallback (a single full-resolution worker render per sheet, no tile
+    streaming, no zoom-bucket crossfade). The flag also auto-disables
+    when `Worker` or `OffscreenCanvas` are unavailable. Per task
+    constraint, **pdfjs always runs in the worker** — both paths route
+    through `pdfTileWorker.ts`; the flag controls only whether tile
+    streaming is on top of that. Flag plumbing lives in
+    `client/src/lib/takeoff/tileRendererFlag.ts`; both code paths
+    coexist so a regression can be flipped without a deploy. If the
+    runtime exposes no `Worker` at all the workspace surfaces an error
+    state instead of silently breaking calibration.
+  - Perf budget (Playwright harness
+    `e2e/takeoff-tile-renderer-perf.spec.ts`): a 300+ sheet civil
+    planset must hold p95 frame time < 33 ms (>30 fps) during pan/zoom
+    and complete a sheet switch in < 250 ms median, with no main-thread
+    task > 100 ms. Budget violations fail CI.
 - **Offline autosave** (Step 11): every committed mutation goes into an
   IndexedDB outbox. The canvas controller publishes a `pending` count for
   the ribbon to surface.
