@@ -1,6 +1,7 @@
 /**
- * Task #2222 — End-to-end touch-emulation coverage for the takeoff
- * stylus / palm-rejection / two-finger-rotate contract.
+ * Task #2222 / #2221 — End-to-end touch-emulation coverage for the
+ * takeoff stylus / palm-rejection / two-finger-rotate / narrow-ribbon
+ * contract.
  *
  * Task #2205 added vitest+jsdom integration tests that drive synthetic
  * `PointerEvent`s through `PlanMarkupLayer` (palm rejection), the long
@@ -13,7 +14,9 @@
  *     harness because TakeoffWorkspace is too large to unit-mount).
  *   • Assert visual outcomes — the snap HUD popover content, the
  *     marquee rectangle's anchor position, the sheet rotating on
- *     screen — because jsdom has no Konva canvas pipeline.
+ *     screen, the ribbon collapsing on a narrow viewport — because
+ *     jsdom has no Konva canvas pipeline and no real
+ *     `window.matchMedia` viewport contract.
  *
  * This spec runs in a dedicated `chromium-touch` Playwright project
  * (declared in `playwright.config.ts`) which sets `hasTouch: true` so
@@ -21,14 +24,10 @@
  * stylus-flavoured `PointerEvent` fields (`pointerType: "pen"`,
  * `width`, `height`) that the production code reads.
  *
- * Coverage:
+ * Coverage — mirrors the four scenarios in
+ * `docs/runbooks/takeoff-stylus-hardware-qa.md`:
  *
- *   1. **Stylus long-press → snap HUD** in the standalone takeoff
- *      workspace. Dispatches a `pointerdown` with `pointerType: "pen"`
- *      on the canvas viewport, holds without moving for the configured
- *      `stylusLongPressMs`, and asserts the `snap-hud` popover opens.
- *
- *   2. **Palm rejection** in the plan-side `PlanMarkupLayer`. Dispatches
+ *   1. **Palm rejection** in the plan-side `PlanMarkupLayer`. Dispatches
  *      a pen `pointerdown` (which arms the SELECT-mode marquee at the
  *      pen position) followed by a fat-finger `pointerdown`
  *      (`pointerType: "touch"`, `width`/`height` > the palm rejection
@@ -36,26 +35,42 @@
  *      position — the palm touch is dropped before the SELECT branch
  *      can re-anchor.
  *
- *   3. **Two-finger rotate** in the takeoff canvas. With the per-user
- *      `allowTwoFingerRotate` preference enabled, dispatches a
- *      `touchstart` followed by a `touchmove` whose two touches have
- *      been rotated by ≥ π/2 around the pinch center. Asserts the
- *      sheet's persisted `rotation` field advances from 0° to 90°
- *      (the production code fires `onRotateCW` once per quarter turn
- *      of accumulated rotation, which patches the sheet via
- *      `PATCH /api/takeoff/sheets/:id/rotation`).
+ *   2. **Stylus long-press → snap HUD** in the standalone takeoff
+ *      workspace. Dispatches a `pointerdown` with `pointerType: "pen"`
+ *      on the canvas viewport, holds without moving for the configured
+ *      `stylusLongPressMs`, and asserts the `snap-hud` popover opens.
+ *
+ *   3. **Two-finger rotate gating** in the takeoff canvas — the
+ *      gesture rotates the sheet 90° when the per-user
+ *      `allowTwoFingerRotate` toggle is **on**, and is a complete
+ *      no-op when the toggle is **off** (Task #2221's regression
+ *      guard for the runbook's "rotate stays off when toggle is off"
+ *      check).
+ *
+ *   4. **Narrow-viewport ribbon** in `UnifiedTakeoffRibbon`. Mounts the
+ *      takeoff workspace at a sub-768px viewport and asserts the
+ *      low-priority groups (snap / constrain / view / verify) start
+ *      collapsed while the primary groups (select / measure /
+ *      annotate) stay expanded — the contract documented as
+ *      `NARROW_DEFAULT_COLLAPSED_GROUPS` in the ribbon source.
  *
  * Dispatch strategy: every gesture is dispatched via `page.evaluate`
- * so the `PointerEvent` / `TouchEvent` constructors run inside the
- * real Chromium page context. Konva attaches its native event
- * listeners to `stage.container()`; pointer events bubble from the
- * `<canvas>` up to that container, and the long-press hook listens on
- * the takeoff `containerRef` div which sits above the Konva canvas in
- * the DOM tree, so events bubble straight to it as well.
+ * (see `helpers/syntheticPointer.ts`) so the `PointerEvent` /
+ * `TouchEvent` constructors run inside the real Chromium page context.
+ * Konva attaches its native event listeners to `stage.container()`;
+ * pointer events bubble from the `<canvas>` up to that container, and
+ * the long-press hook listens on the takeoff `containerRef` div which
+ * sits above the Konva canvas in the DOM tree, so events bubble
+ * straight to it as well.
  */
 import { test, expect, type Page } from "@playwright/test";
 import { authedRequest, installCsrf } from "./helpers/csrf";
 import { getMinimalPdf, uploadFixturePdf } from "./helpers/uploadFixturePdf";
+import {
+  dispatchPointer,
+  dispatchTouch,
+  synthesizeTwoFingerRotate,
+} from "./helpers/syntheticPointer";
 
 const BASE_URL =
   process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
@@ -106,104 +121,6 @@ async function suppressBidPlansTour(page: Page) {
   await page.evaluate((tourKey) => {
     localStorage.setItem(tourKey, "1");
   }, `bid-plans-tour-completed-${userId}`);
-}
-
-/**
- * Dispatch a synthetic `PointerEvent` on the first matching CSS
- * selector. Runs entirely inside the page context so Chromium
- * builds a real `PointerEvent` (with `pointerType` honored) that
- * bubbles through the real DOM tree to whichever production listener
- * is registered upstream.
- */
-async function dispatchPointer(
-  page: Page,
-  selector: string,
-  type: "pointerdown" | "pointermove" | "pointerup" | "pointercancel",
-  init: {
-    pointerId: number;
-    pointerType: "pen" | "touch" | "mouse";
-    clientX: number;
-    clientY: number;
-    width?: number;
-    height?: number;
-    isPrimary?: boolean;
-  },
-): Promise<void> {
-  await page.evaluate(
-    ({ selector, type, init }) => {
-      const target = document.querySelector(selector);
-      if (!target) {
-        throw new Error(`dispatchPointer: no element matched ${selector}`);
-      }
-      // Build a PointerEvent the production handlers can read. Setting
-      // `bubbles: true` ensures the event reaches Konva's listener on
-      // `stage.container()` and the takeoff long-press listener on
-      // `containerRef`, both of which live on ancestor elements.
-      const evt = new PointerEvent(type, {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        pointerId: init.pointerId,
-        pointerType: init.pointerType,
-        clientX: init.clientX,
-        clientY: init.clientY,
-        width: init.width ?? 1,
-        height: init.height ?? 1,
-        isPrimary: init.isPrimary ?? true,
-      });
-      target.dispatchEvent(evt);
-    },
-    { selector, type, init },
-  );
-}
-
-/**
- * Dispatch a synthetic `TouchEvent` carrying two touches at the given
- * client coordinates. Mirrors the "pinch + rotate" gesture that the
- * `useTakeoffInteractions` `handleTouchMove` hook reads via
- * `e.evt.touches[0..1]`.
- */
-async function dispatchTwoFingerTouch(
-  page: Page,
-  selector: string,
-  type: "touchstart" | "touchmove" | "touchend",
-  touches: Array<{ identifier: number; clientX: number; clientY: number }>,
-): Promise<void> {
-  await page.evaluate(
-    ({ selector, type, touches }) => {
-      const target = document.querySelector(selector) as Element | null;
-      if (!target) {
-        throw new Error(`dispatchTwoFingerTouch: no element matched ${selector}`);
-      }
-      const builtTouches = touches.map(
-        (t) =>
-          new Touch({
-            identifier: t.identifier,
-            target,
-            clientX: t.clientX,
-            clientY: t.clientY,
-            screenX: t.clientX,
-            screenY: t.clientY,
-            pageX: t.clientX,
-            pageY: t.clientY,
-            radiusX: 5,
-            radiusY: 5,
-            force: 1,
-          }),
-      );
-      const list = type === "touchend" ? [] : builtTouches;
-      const evt = new TouchEvent(type, {
-        bubbles: true,
-        cancelable: true,
-        composed: true,
-        touches: list as unknown as Touch[],
-        targetTouches: list as unknown as Touch[],
-        changedTouches: builtTouches as unknown as Touch[],
-      });
-      target.dispatchEvent(evt);
-    },
-    { selector, type, touches },
-  );
 }
 
 // Top-level — Playwright forbids `test.use({ video })` inside a describe
@@ -598,14 +515,14 @@ test.describe("Takeoff touch-emulation gestures (Task #2222)", () => {
 
     // Frame 1: baseline (no rotation accumulated). Touches lie on the
     // horizontal axis through the pinch center: angle = 0.
-    await dispatchTwoFingerTouch(page, ".konvajs-content canvas", "touchstart", [
+    await dispatchTouch(page, ".konvajs-content canvas", "touchstart", [
       { identifier: 1, clientX: cx - radius, clientY: cy },
       { identifier: 2, clientX: cx + radius, clientY: cy },
     ]);
     // The hook only does its rotate accumulator on `touchmove` (it
     // needs a `lastPinchAngleRef` baseline first), so we send the same
     // baseline as a touchmove to seed the angle reference.
-    await dispatchTwoFingerTouch(page, ".konvajs-content canvas", "touchmove", [
+    await dispatchTouch(page, ".konvajs-content canvas", "touchmove", [
       { identifier: 1, clientX: cx - radius, clientY: cy },
       { identifier: 2, clientX: cx + radius, clientY: cy },
     ]);
@@ -615,13 +532,13 @@ test.describe("Takeoff touch-emulation gestures (Task #2222)", () => {
     // and the hook fires `onRotateCW` exactly once. (The signed delta
     // is positive because clientY grows downward in screen space, so
     // the canvas-frame rotation is interpreted as CW.)
-    await dispatchTwoFingerTouch(page, ".konvajs-content canvas", "touchmove", [
+    await dispatchTouch(page, ".konvajs-content canvas", "touchmove", [
       { identifier: 1, clientX: cx, clientY: cy - radius },
       { identifier: 2, clientX: cx, clientY: cy + radius },
     ]);
 
     // Release both touches so the workspace state is clean.
-    await dispatchTwoFingerTouch(page, ".konvajs-content canvas", "touchend", [
+    await dispatchTouch(page, ".konvajs-content canvas", "touchend", [
       { identifier: 1, clientX: cx, clientY: cy - radius },
       { identifier: 2, clientX: cx, clientY: cy + radius },
     ]);
@@ -648,5 +565,232 @@ test.describe("Takeoff touch-emulation gestures (Task #2222)", () => {
         },
       )
       .toBe(90);
+  });
+
+  // -------------------------------------------------------------------
+  // 4. Two-finger rotate gating — when the per-user toggle is OFF the
+  //    same gesture must be a complete no-op (Task #2221).
+  //
+  //    The runbook calls this out as a hard contract because rotating
+  //    the sheet while a user is actually mid-pinch-to-zoom would
+  //    silently corrupt their measurements. The gate already had unit
+  //    coverage in `pointerInput.test.ts`, but only an end-to-end check
+  //    can prove the consumer (TakeoffWorkspace + use-takeoff-
+  //    interactions) honors the preference value coming from
+  //    `useTakeoffStylusPrefs` against the real DOM tree.
+  // -------------------------------------------------------------------
+  test("two-finger rotate gesture is a no-op when the rotate toggle is off", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    await devLogin(page, "ADMIN");
+
+    // Defensively clear the toggle in case a previous test (notably the
+    // sibling rotate-on case above) left it enabled on the shared
+    // ADMIN account that `devLogin` hands back.
+    const prefRes = await authedRequest(
+      page,
+      "PATCH",
+      `${BASE_URL}/api/user-settings`,
+      { data: { allowTwoFingerRotate: false } },
+    );
+    expect(prefRes.status()).toBe(200);
+
+    const fixtureRes = await authedRequest(
+      page,
+      "POST",
+      `${BASE_URL}/api/dev/seed-takeoff-fixture`,
+      { data: { sheetCount: 1, versionCount: 1, measurementCount: 0 } },
+    );
+    expect(fixtureRes.status()).toBe(200);
+    const fixture = (await fixtureRes.json()) as {
+      bid: BidResponse;
+      sheetIds: string[];
+    };
+    const sheetId = fixture.sheetIds[0];
+
+    const initialSheets = await page.request.get(
+      `${BASE_URL}/api/bids/${fixture.bid.id}/takeoff/sheets`,
+    );
+    expect(initialSheets.status()).toBe(200);
+    const initialRows = (await initialSheets.json()) as TakeoffSheet[];
+    expect(initialRows.find((s) => s.id === sheetId)?.rotation ?? 0).toBe(0);
+
+    await page.goto(`${BASE_URL}/bids/${fixture.bid.code}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await suppressBidPlansTour(page);
+    await page.evaluate(
+      ({ key, value }) => {
+        sessionStorage.setItem(key, value);
+      },
+      {
+        key: `takeoff-sheet-${fixture.bid.id}`,
+        value: sheetId,
+      },
+    );
+
+    // Capture every PATCH issued against the rotation endpoint while
+    // the test runs. With the toggle off there should be zero — that
+    // is the canonical signal the consumer respected the preference.
+    const rotationPatches: string[] = [];
+    page.on("request", (req) => {
+      if (
+        req.method() === "PATCH" &&
+        /\/api\/takeoff\/sheets\/[^/]+\/rotation$/.test(req.url())
+      ) {
+        rotationPatches.push(req.url());
+      }
+    });
+
+    await page.goto(`${BASE_URL}/takeoff/${fixture.bid.code}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(page.getByTestId("unified-takeoff-ribbon")).toBeVisible({
+      timeout: 30_000,
+    });
+    const canvas = page.locator(".konvajs-content canvas").first();
+    await canvas.waitFor({ state: "visible", timeout: 30_000 });
+
+    const box = await canvas.boundingBox();
+    expect(box).not.toBeNull();
+    const cx = box!.x + box!.width / 2;
+    const cy = box!.y + box!.height / 2;
+
+    // Use the shared rotate-gesture helper so the dispatch sequence
+    // stays in lockstep with the rotate-on test above. Same magnitude
+    // (π/2 = one quarter turn) so any consumer-side regression would
+    // be just as visible here as in test 3 — only the toggle differs.
+    await synthesizeTwoFingerRotate(page, ".konvajs-content canvas", {
+      centerX: cx,
+      centerY: cy,
+      radius: 200,
+      angleRadians: Math.PI / 2,
+    });
+
+    // Hold the assertion window open long enough for any debounced
+    // PATCH or async rotation update to land. The rotate-on case
+    // typically settles within ~1 s; 1.5 s gives us margin without
+    // bloating the suite.
+    await page.waitForTimeout(1500);
+
+    // No rotation PATCH should have fired.
+    expect(rotationPatches).toEqual([]);
+
+    // And the persisted rotation must still be the original 0.
+    const finalSheets = await page.request.get(
+      `${BASE_URL}/api/bids/${fixture.bid.id}/takeoff/sheets`,
+    );
+    expect(finalSheets.status()).toBe(200);
+    const finalRows = (await finalSheets.json()) as TakeoffSheet[];
+    expect(finalRows.find((s) => s.id === sheetId)?.rotation ?? 0).toBe(0);
+  });
+
+  // -------------------------------------------------------------------
+  // 5. Narrow-viewport ribbon — when the workspace mounts at <768 px
+  //    the low-priority groups (snap / constrain / view / verify) must
+  //    start collapsed so the ribbon stays one comfortable row of
+  //    primary tools (select / measure / annotate). Mirrors Test 4 of
+  //    the hardware QA runbook (Task #2221).
+  //
+  //    The contract lives in `NARROW_DEFAULT_COLLAPSED_GROUPS` inside
+  //    `UnifiedTakeoffRibbon.tsx`, gated by a `matchMedia` listener on
+  //    `(max-width: 767px)`. jsdom can't fake `matchMedia` against the
+  //    real Vite-bundled hook tree, so we drive a Chromium page with
+  //    a narrow viewport and read the rendered `data-collapsed`
+  //    attribute on each `ribbon-group-*` section.
+  // -------------------------------------------------------------------
+  test("narrow viewport collapses snap/constrain/view/verify and keeps select/measure/annotate expanded", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    // Hand-tuned narrow viewport: phone-landscape / tablet-half-screen.
+    // Anything strictly below 768 px will trigger the collapse rule.
+    await page.setViewportSize({ width: 600, height: 900 });
+
+    await devLogin(page, "ADMIN");
+
+    // Wipe any persisted ribbon collapse state from previous test runs
+    // on this shared ADMIN account so the assertion measures the
+    // narrow-viewport *default* — not whatever a teammate (or earlier
+    // test) might have left in localStorage. The key shape comes from
+    // `ribbonGroupsStorageKey` in
+    // `client/src/components/takeoff/hosts/takeoff-shortcuts.ts`.
+    const meRes = await page.request.get(`${BASE_URL}/api/auth/me`);
+    expect(meRes.status()).toBe(200);
+    const userId = ((await meRes.json()) as { user: { id: string } })
+      .user.id;
+
+    const fixtureRes = await authedRequest(
+      page,
+      "POST",
+      `${BASE_URL}/api/dev/seed-takeoff-fixture`,
+      { data: { sheetCount: 1, versionCount: 1, measurementCount: 0 } },
+    );
+    expect(fixtureRes.status()).toBe(200);
+    const fixture = (await fixtureRes.json()) as {
+      bid: BidResponse;
+      sheetIds: string[];
+    };
+
+    await page.goto(`${BASE_URL}/bids/${fixture.bid.code}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await suppressBidPlansTour(page);
+    await page.evaluate(
+      ({ ribbonKey, sheetKey, sheetValue }) => {
+        localStorage.removeItem(ribbonKey);
+        sessionStorage.setItem(sheetKey, sheetValue);
+      },
+      {
+        ribbonKey: `takeoff-ribbon-groups-${userId}`,
+        sheetKey: `takeoff-sheet-${fixture.bid.id}`,
+        sheetValue: fixture.sheetIds[0],
+      },
+    );
+
+    await page.goto(`${BASE_URL}/takeoff/${fixture.bid.code}`, {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(page.getByTestId("unified-takeoff-ribbon")).toBeVisible({
+      timeout: 30_000,
+    });
+    // Sanity: the ribbon should report it sees a narrow viewport. The
+    // attribute is set from the `useIsNarrowViewport` matchMedia hook
+    // — if this fails it means matchMedia did not pick up the
+    // setViewportSize change, which would invalidate every collapse
+    // assertion below.
+    await expect(page.getByTestId("unified-takeoff-ribbon")).toHaveAttribute(
+      "data-narrow",
+      "true",
+    );
+
+    // Primary groups remain expanded.
+    for (const id of ["select", "measure", "annotate"] as const) {
+      await expect(page.getByTestId(`ribbon-group-${id}`)).toHaveAttribute(
+        "data-collapsed",
+        "false",
+      );
+      await expect(
+        page.getByTestId(`ribbon-group-tools-${id}`),
+      ).toBeVisible();
+    }
+
+    // Low-priority groups start collapsed. The collapsed branch removes
+    // the `ribbon-group-tools-*` div from the DOM entirely (see
+    // `{!isCollapsed && (...)}` in UnifiedTakeoffRibbon.tsx), so we
+    // assert both the marker attribute *and* the absence of the tools
+    // container — either alone could regress without the other.
+    for (const id of ["snap", "constrain", "view", "verify"] as const) {
+      await expect(page.getByTestId(`ribbon-group-${id}`)).toHaveAttribute(
+        "data-collapsed",
+        "true",
+      );
+      await expect(
+        page.getByTestId(`ribbon-group-tools-${id}`),
+      ).toHaveCount(0);
+    }
   });
 });
