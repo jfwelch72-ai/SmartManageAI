@@ -433,7 +433,8 @@ router.patch("/api/quantity-categories/:id", requireAuth, async (req: AuthReques
       description: req.body.description ? sanitizeText(req.body.description) : undefined,
     };
 
-    const validated = insertQuantityCategorySchema.partial().parse(sanitizedBody);
+    const validated = parseOrRespond(insertQuantityCategorySchema.partial(), sanitizedBody, res);
+    if (!validated) return;
 
     const [updated] = await db
       .update(quantityCategories)

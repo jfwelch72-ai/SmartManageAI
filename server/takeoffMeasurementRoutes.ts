@@ -673,7 +673,8 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
       points: Array.isArray(req.body.points) ? JSON.stringify(req.body.points) : req.body.points,
     };
 
-    const validated = insertTakeoffMeasurementSchema.partial().parse(sanitizedBody);
+    const validated = parseOrRespond(insertTakeoffMeasurementSchema.partial(), sanitizedBody, res);
+    if (!validated) return;
 
     const effectiveType = (validated.type || existingMeasurement.type) as string;
     let finalValues: Record<string, unknown> = { ...validated };

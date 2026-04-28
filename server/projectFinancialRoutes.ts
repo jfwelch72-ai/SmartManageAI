@@ -7,6 +7,7 @@ import { type AuthRequest, requireAuth, requireRole } from "./auth";
 import { verifyOrgAccess } from "./orgFilter";
 import { sanitizeShortText, sanitizeText } from "./sanitization";
 import { logUpdate, logDelete, logCreate, logApprove } from "./auditLogger";
+import { parseOrRespond } from "./utils/validation";
 
 const router = Router();
 
@@ -205,7 +206,8 @@ router.patch("/api/time-entries/:id", requireAuth, async (req: AuthRequest, res,
       adminOverride: z.boolean().optional(),
     });
 
-    const data = schema.parse(sanitizedBody);
+    const data = parseOrRespond(schema, sanitizedBody, res);
+    if (!data) return;
 
     const [existingEntry] = await db
       .select()
