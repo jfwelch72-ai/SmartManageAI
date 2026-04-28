@@ -1,9 +1,27 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip as RechartsTooltip,
+  CartesianGrid,
+  Legend,
+} from "recharts";
 import { Link } from "wouter";
 import { formatDistanceToNow } from "date-fns";
 import {
@@ -18,6 +36,10 @@ import {
   Phone,
   Shield,
   Activity,
+  Sparkles,
+  ThumbsUp,
+  ThumbsDown,
+  Pencil,
 } from "lucide-react";
 
 interface ProjectSummary {
@@ -33,8 +55,21 @@ interface ActivityLogEntry {
   createdAt: string;
 }
 
+interface MyAiAccuracyResponse {
+  windowDays: number;
+  totals: { PENDING: number; ACCEPTED: number; REJECTED: number; EDITED: number };
+  reviewed: number;
+  accuracy: number;
+  trend: Array<{ day: string; accepted: number; rejected: number; accuracy: number }>;
+}
+
+function pct(n: number) {
+  return `${Math.round(n * 100)}%`;
+}
+
 export default function ProfilePage() {
   const { user } = useAuth();
+  const [aiWindowDays, setAiWindowDays] = useState<string>("30");
 
   const { data: projectsData, isLoading: projectsLoading } = useQuery<{ data: ProjectSummary[] }>({
     queryKey: ["/api/projects"],
@@ -51,6 +86,12 @@ export default function ProfilePage() {
     activeDelaysCount: number;
   }>({
     queryKey: ["/api/dashboard/stats"],
+  });
+
+  // Task #2341 — Personal AI takeoff accuracy panel. Calls the per-user
+  // endpoint so each estimator sees their own accept/edit/reject mix.
+  const { data: myAiAccuracy, isLoading: myAiAccuracyLoading } = useQuery<MyAiAccuracyResponse>({
+    queryKey: ["/api/ai-features/takeoff/accuracy/me", { days: aiWindowDays }],
   });
 
   const projects = projectsData?.data || [];
@@ -185,6 +226,119 @@ export default function ProfilePage() {
           </CardContent>
         </Card>
       </div>
+
+      <Card data-testid="card-my-ai-accuracy">
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Sparkles className="w-5 h-5 text-primary" />
+                My AI Accuracy
+              </CardTitle>
+              <CardDescription className="mt-1">
+                How often the AI takeoff suggestions you review pan out. Edits count as accepted because the model identified the right item.
+              </CardDescription>
+            </div>
+            <div className="w-40">
+              <Select value={aiWindowDays} onValueChange={setAiWindowDays}>
+                <SelectTrigger data-testid="select-ai-window-days">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="30">Last 30 days</SelectItem>
+                  <SelectItem value="90">Last 90 days</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {myAiAccuracyLoading ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                {[0, 1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-20 w-full" />
+                ))}
+              </div>
+              <Skeleton className="h-48 w-full" />
+            </div>
+          ) : !myAiAccuracy || myAiAccuracy.reviewed === 0 ? (
+            <div className="text-center py-8" data-testid="empty-my-ai-accuracy">
+              <Sparkles className="w-12 h-12 mx-auto text-muted-foreground/40 mb-3" />
+              <p className="text-sm text-muted-foreground">
+                You haven't reviewed any AI takeoff suggestions in the last {aiWindowDays} days.
+              </p>
+              <p className="text-xs text-muted-foreground mt-1">
+                Accept, edit, or reject suggestions on a takeoff sheet to start tracking your accuracy.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div className="p-3 rounded-lg border" data-testid="stat-my-ai-accuracy">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <TrendingUp className="w-3.5 h-3.5" /> Accuracy
+                  </p>
+                  <p className="text-2xl font-bold mt-1">{pct(myAiAccuracy.accuracy)}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {myAiAccuracy.reviewed} reviewed
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg border" data-testid="stat-my-ai-accepted">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <ThumbsUp className="w-3.5 h-3.5" /> Accepted
+                  </p>
+                  <p className="text-2xl font-bold mt-1">{myAiAccuracy.totals.ACCEPTED}</p>
+                </div>
+                <div className="p-3 rounded-lg border" data-testid="stat-my-ai-edited">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <Pencil className="w-3.5 h-3.5" /> Edited
+                  </p>
+                  <p className="text-2xl font-bold mt-1">{myAiAccuracy.totals.EDITED}</p>
+                </div>
+                <div className="p-3 rounded-lg border" data-testid="stat-my-ai-rejected">
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                    <ThumbsDown className="w-3.5 h-3.5" /> Rejected
+                  </p>
+                  <p className="text-2xl font-bold mt-1">{myAiAccuracy.totals.REJECTED}</p>
+                </div>
+              </div>
+
+              {myAiAccuracy.trend.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Trend chart will appear once you have reviews on multiple days.
+                </p>
+              ) : (
+                <div className="h-56" data-testid="chart-my-ai-trend">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={myAiAccuracy.trend}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="day" tick={{ fontSize: 10 }} />
+                      <YAxis tick={{ fontSize: 10 }} />
+                      <RechartsTooltip />
+                      <Legend />
+                      <Line
+                        type="monotone"
+                        dataKey="accepted"
+                        stroke="#16a34a"
+                        strokeWidth={2}
+                        name="Accepted (incl. edited)"
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="rejected"
+                        stroke="#ef4444"
+                        strokeWidth={2}
+                        name="Rejected"
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <Card data-testid="card-assigned-projects">
         <CardHeader>

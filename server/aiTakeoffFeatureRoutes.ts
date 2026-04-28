@@ -28,6 +28,7 @@ import {
   buildScaleGroundingClause,
   type SheetCalibration,
 } from "./aiTakeoffHelpers";
+import { computeAiTakeoffAccuracy } from "./aiTakeoffAccuracy";
 
 // Re-export for callers that historically reached for these via the routes
 // module (kept stable for tests and any future consumers).
@@ -1485,6 +1486,10 @@ router.post(
 // Returns per-org accuracy stats for the admin dashboard. Aggregates
 // (status counts, accuracy %, accuracy-by-trade, accuracy-by-confidence-bucket,
 // 7-day trendline) over the last `days` days (default 30, max 180).
+//
+// Task #2341 — the SQL/aggregation here lives in `aiTakeoffAccuracy.ts` so the
+// per-user "My AI accuracy" panel can call the same code with a
+// `reviewedByUserId` filter.
 router.get(
   "/ai-features/takeoff/accuracy",
   requireAuth,
@@ -1495,156 +1500,35 @@ router.get(
       if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
 
       const days = Math.min(Math.max(Number(req.query.days ?? 30) || 30, 1), 180);
-      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+      const result = await computeAiTakeoffAccuracy({ organizationId, days });
+      res.json(result);
+    } catch (error) { next(error); }
+  },
+);
 
-      const baseWhere = and(
-        eq(aiTakeoffSuggestions.organizationId, organizationId),
-        gte(aiTakeoffSuggestions.createdAt, since),
-      );
-
-      // Status breakdown
-      const statusRows = await db.select({
-        status: aiTakeoffSuggestions.status,
-        count: sql<number>`count(*)::int`,
-      })
-        .from(aiTakeoffSuggestions)
-        .where(baseWhere)
-        .groupBy(aiTakeoffSuggestions.status);
-
-      const totals = { PENDING: 0, ACCEPTED: 0, REJECTED: 0, EDITED: 0 };
-      for (const r of statusRows) {
-        if (r.status in totals) totals[r.status as keyof typeof totals] = Number(r.count);
+// GET /api/ai-features/takeoff/accuracy/me?days=30
+// Task #2341 — Personal accuracy panel for estimators. Same shape as the
+// admin endpoint above, but scoped to suggestions reviewed by the calling
+// user. Available to any signed-in user (no admin gate) so estimators get a
+// direct feedback loop on their own accept/edit/reject behavior.
+router.get(
+  "/ai-features/takeoff/accuracy/me",
+  requireAuth,
+  async (req: AuthRequest, res, next) => {
+    try {
+      const organizationId = req.user?.organizationId;
+      const userId = req.user?.id;
+      if (!organizationId || !userId) {
+        return res.status(401).json({ error: "Unauthorized" });
       }
-      const reviewed = totals.ACCEPTED + totals.REJECTED + totals.EDITED;
-      // Accuracy = (accepted + edited) / reviewed. Edits still count as
-      // "model was directionally right" — they're not full rejects.
-      const accuracy = reviewed > 0
-        ? (totals.ACCEPTED + totals.EDITED) / reviewed
-        : 0;
 
-      // Per-trade
-      const tradeRows = await db.select({
-        tradeType: aiTakeoffSuggestions.tradeType,
-        status: aiTakeoffSuggestions.status,
-        count: sql<number>`count(*)::int`,
-      })
-        .from(aiTakeoffSuggestions)
-        .where(baseWhere)
-        .groupBy(aiTakeoffSuggestions.tradeType, aiTakeoffSuggestions.status);
-
-      const byTrade = new Map<string, { accepted: number; edited: number; rejected: number; pending: number }>();
-      for (const r of tradeRows) {
-        const t = r.tradeType as string;
-        if (!byTrade.has(t)) byTrade.set(t, { accepted: 0, edited: 0, rejected: 0, pending: 0 });
-        const slot = byTrade.get(t)!;
-        const c = Number(r.count);
-        if (r.status === "ACCEPTED") slot.accepted = c;
-        else if (r.status === "EDITED") slot.edited = c;
-        else if (r.status === "REJECTED") slot.rejected = c;
-        else if (r.status === "PENDING") slot.pending = c;
-      }
-      const accuracyByTrade = Array.from(byTrade.entries()).map(([tradeType, s]) => {
-        const r = s.accepted + s.edited + s.rejected;
-        return {
-          tradeType,
-          accepted: s.accepted,
-          edited: s.edited,
-          rejected: s.rejected,
-          pending: s.pending,
-          accuracy: r > 0 ? (s.accepted + s.edited) / r : 0,
-        };
-      }).sort((a, b) => b.accepted + b.edited + b.rejected - (a.accepted + a.edited + a.rejected));
-
-      // Per-confidence-bucket. We use the same 60/70/80/90 buckets as
-      // the calibration table so the dashboard maps 1:1 to what the job
-      // writes.
-      const bucketRows = await db.execute(sql`
-        SELECT CASE
-                 WHEN confidence >= 90 THEN 90
-                 WHEN confidence >= 80 THEN 80
-                 WHEN confidence >= 70 THEN 70
-                 ELSE 60
-               END AS bucket,
-               status,
-               count(*)::int AS count
-          FROM ai_takeoff_suggestions
-         WHERE organization_id = ${organizationId}
-           AND created_at >= ${since}
-         GROUP BY bucket, status
-      `);
-      const byBucket = new Map<number, { accepted: number; edited: number; rejected: number; pending: number }>();
-      for (const r of (bucketRows.rows as Array<{ bucket: number; status: string; count: number }>)) {
-        const b = Number(r.bucket);
-        if (!byBucket.has(b)) byBucket.set(b, { accepted: 0, edited: 0, rejected: 0, pending: 0 });
-        const slot = byBucket.get(b)!;
-        const c = Number(r.count);
-        if (r.status === "ACCEPTED") slot.accepted = c;
-        else if (r.status === "EDITED") slot.edited = c;
-        else if (r.status === "REJECTED") slot.rejected = c;
-        else if (r.status === "PENDING") slot.pending = c;
-      }
-      const accuracyByBucket = [60, 70, 80, 90].map((b) => {
-        const s = byBucket.get(b) ?? { accepted: 0, edited: 0, rejected: 0, pending: 0 };
-        const r = s.accepted + s.edited + s.rejected;
-        return {
-          bucket: b,
-          accepted: s.accepted,
-          edited: s.edited,
-          rejected: s.rejected,
-          accuracy: r > 0 ? (s.accepted + s.edited) / r : 0,
-        };
+      const days = Math.min(Math.max(Number(req.query.days ?? 30) || 30, 1), 180);
+      const result = await computeAiTakeoffAccuracy({
+        organizationId,
+        days,
+        reviewedByUserId: userId,
       });
-
-      // Daily trendline (reviewed only).
-      const trendRows = await db.execute(sql`
-        SELECT to_char(date_trunc('day', reviewed_at), 'YYYY-MM-DD') AS day,
-               sum(CASE WHEN status IN ('ACCEPTED', 'EDITED') THEN 1 ELSE 0 END)::int AS accepted,
-               sum(CASE WHEN status = 'REJECTED' THEN 1 ELSE 0 END)::int AS rejected
-          FROM ai_takeoff_suggestions
-         WHERE organization_id = ${organizationId}
-           AND reviewed_at IS NOT NULL
-           AND reviewed_at >= ${since}
-         GROUP BY day
-         ORDER BY day ASC
-      `);
-      const trend = (trendRows.rows as Array<{ day: string; accepted: number; rejected: number }>)
-        .map((r) => {
-          const total = Number(r.accepted) + Number(r.rejected);
-          return {
-            day: r.day,
-            accepted: Number(r.accepted),
-            rejected: Number(r.rejected),
-            accuracy: total > 0 ? Number(r.accepted) / total : 0,
-          };
-        });
-
-      // Top reject reasons
-      const reasonRows = await db.select({
-        reason: aiTakeoffSuggestions.rejectReason,
-        count: sql<number>`count(*)::int`,
-      })
-        .from(aiTakeoffSuggestions)
-        .where(and(
-          baseWhere,
-          eq(aiTakeoffSuggestions.status, "REJECTED"),
-          isNotNull(aiTakeoffSuggestions.rejectReason),
-        ))
-        .groupBy(aiTakeoffSuggestions.rejectReason);
-      const rejectReasons = reasonRows
-        .filter((r) => r.reason !== null)
-        .map((r) => ({ reason: r.reason as string, count: Number(r.count) }))
-        .sort((a, b) => b.count - a.count);
-
-      res.json({
-        windowDays: days,
-        totals,
-        reviewed,
-        accuracy,
-        accuracyByTrade,
-        accuracyByBucket,
-        trend,
-        rejectReasons,
-      });
+      res.json(result);
     } catch (error) { next(error); }
   },
 );
