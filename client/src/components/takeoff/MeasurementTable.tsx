@@ -4,7 +4,22 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowUpDown, ArrowUp, ArrowDown, Search, X, Trash2, Edit2, Check, Eye } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { ArrowUpDown, ArrowUp, ArrowDown, Search, X, Trash2, Edit2, Check, Eye, Flag } from "lucide-react";
+
+// Task #2319 — Source column visual language. Each calibration source
+// gets a stable dot colour so estimators can scan a long list and
+// triage at a glance: green = trusted user calibration, blue =
+// standard scale (e.g. ARCH 1/4"=1'-0"), amber = AI-detected (review
+// before billing), red = uncalibrated (geometry is in pixels, not
+// feet — never bill from these). The same labels feed the tooltip
+// so colour-blind users get the text affordance.
+const CALIBRATION_SOURCE_PRESENTATION: Record<string, { color: string; label: string }> = {
+  USER_TWO_POINT: { color: "bg-green-500", label: "User two-point calibration" },
+  STANDARD_SCALE: { color: "bg-blue-500", label: "Standard architectural scale" },
+  AI_DETECTED: { color: "bg-amber-500", label: "AI-detected scale (review recommended)" },
+  UNCALIBRATED: { color: "bg-red-500", label: "Uncalibrated — quantities are in pixels" },
+};
 
 interface MeasurementTableProps {
   measurements: any[];
@@ -186,6 +201,12 @@ export function MeasurementTable({
               <TableHead className="cursor-pointer select-none px-2 w-[80px]" onClick={() => handleSort("type")}>
                 <div className="flex items-center gap-1">Type <SortIcon field="type" /></div>
               </TableHead>
+              {/* Task #2319 — Provenance "Source" column. Narrow on
+                  purpose: it's a dot + flag glyph, never text. The dot
+                  shows calibration source colour; the flag appears
+                  only when needsReview is true. Tooltip carries the
+                  exact label for accessibility / colour-blind users. */}
+              <TableHead className="w-[44px] px-1 text-center">Source</TableHead>
               <TableHead className="cursor-pointer select-none px-2 w-[70px] text-right" onClick={() => handleSort("length")}>
                 <div className="flex items-center gap-1 justify-end">Qty <SortIcon field="length" /></div>
               </TableHead>
@@ -229,6 +250,39 @@ export function MeasurementTable({
                     {m.type?.replace(/_/g, " ")}
                   </Badge>
                 </TableCell>
+                {/* Task #2319 — Provenance dot + needs-review flag.
+                    Falls back to UNCALIBRATED presentation when an
+                    older row has no `calibrationSource` so the column
+                    never renders an empty cell during the rollout
+                    window. Tooltip composes both signals so a user
+                    can hover once instead of decoding two glyphs. */}
+                <TableCell className="px-1 text-center">
+                  {(() => {
+                    const sourceKey = (m.calibrationSource as string) || "UNCALIBRATED";
+                    const presentation = CALIBRATION_SOURCE_PRESENTATION[sourceKey] ?? CALIBRATION_SOURCE_PRESENTATION.UNCALIBRATED;
+                    const tooltipText = m.needsReview
+                      ? `${presentation.label} • Flagged for review`
+                      : presentation.label;
+                    return (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <div
+                              className="inline-flex items-center gap-0.5"
+                              data-testid={`source-indicator-${m.id}`}
+                              data-source={sourceKey}
+                              data-needs-review={m.needsReview ? "true" : "false"}
+                            >
+                              <span className={`inline-block w-2 h-2 rounded-full ${presentation.color}`} aria-label={presentation.label} />
+                              {m.needsReview ? <Flag className="w-2.5 h-2.5 text-amber-600 dark:text-amber-400" aria-label="Needs review" /> : null}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" className="text-[11px]">{tooltipText}</TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    );
+                  })()}
+                </TableCell>
                 <TableCell className="px-2 text-right font-mono text-[10px]">
                   {getQty(m) > 0 ? getQty(m).toFixed(1) : "—"}
                 </TableCell>
@@ -252,7 +306,9 @@ export function MeasurementTable({
             ))}
             {sortedFiltered.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-xs text-muted-foreground py-8">
+                {/* Task #2319 — colSpan bumped 7→8 to cover the new
+                    Source column inserted between Type and Qty. */}
+                <TableCell colSpan={8} className="text-center text-xs text-muted-foreground py-8">
                   {measurements.length === 0 ? "No measurements yet" : "No matches found"}
                 </TableCell>
               </TableRow>

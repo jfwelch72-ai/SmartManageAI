@@ -94,6 +94,14 @@ export const organizations = pgTable("organizations", {
   storageQuotaBytes: bigint("storage_quota_bytes", { mode: "number" })
     .notNull()
     .default(107374182400),
+  // Task #2319 — per-org dollar threshold above which a freshly created
+  // takeoff measurement automatically flips `needs_review = true`. The
+  // default mirrors the plan-level constant
+  // (MEASUREMENT_NEEDS_REVIEW_DEFAULT_VALUE_THRESHOLD = $25,000) so
+  // upgrading is a no-op for existing orgs; admins can dial this up
+  // (e.g. mega-projects where every takeoff line is six figures) or
+  // down per organization without redeploying.
+  takeoffReviewValueThreshold: decimal("takeoff_review_value_threshold", { precision: 12, scale: 2 }).notNull().default("25000"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

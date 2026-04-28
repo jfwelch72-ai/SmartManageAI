@@ -482,6 +482,14 @@ export function useTakeoffData({
       metadata?: string;
       lineStyle?: string;
       lineWidth?: number;
+      // Task #2319 — provenance fields the canvas commit wrapper
+      // (`commitMeasurement` in `use-takeoff-interactions`) computes
+      // from the per-vertex snap log. Both are optional so callers
+      // that bypass the wrapper (note dialog, Ctrl+D duplicate)
+      // continue to type-check; the server's needs_review rule treats
+      // a null `snapHitRatio` as "no signal", not as "low snap".
+      snapHitRatio?: number;
+      snapModesUsed?: string[];
     }) => {
       if (selectedVersionId && (!selectedVersionData || selectedVersionData.status === "LOCKED")) {
         throw new Error("Cannot create measurements while viewing a locked version");

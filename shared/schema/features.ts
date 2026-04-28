@@ -705,6 +705,34 @@ export const takeoffMeasurements = pgTable("takeoff_measurements", {
   installedById: varchar("installed_by_id").references(() => users.id, { onDelete: "set null" }),
   installedAt: timestamp("installed_at"),
   photoUrls: text("photo_urls"),
+  // Task #2319 — provenance: how this measurement's geometry was captured.
+  // Enum-like text column (kept as text rather than a pgEnum so AI/import
+  // pipelines can introduce new sources without requiring an enum
+  // migration). Values: USER_TWO_POINT, STANDARD_SCALE, AI_DETECTED,
+  // INHERITED_FROM_PARENT, BULK_PROPAGATED, UNCALIBRATED. Existing rows
+  // backfill to UNCALIBRATED.
+  calibrationSource: text("calibration_source").notNull().default("UNCALIBRATED"),
+  // Task #2319 — immutable copy of the sheet-level scale at the moment
+  // the measurement was committed. A re-calibration of the sheet does
+  // NOT mutate these values, so historical quantities stay stable even
+  // when the sheet's `scalePxPerFoot` is later corrected.
+  scaleAtCaptureLabel: text("scale_at_capture_label"),
+  scaleAtCapturePxPerFoot: doublePrecision("scale_at_capture_px_per_foot"),
+  // Task #2319 — JSON array of the snap-mode strings actually hit on
+  // each committed vertex during the draft (e.g. ["endpoint","midpoint",
+  // null]). Stored as text to mirror `metadata`.
+  snapModesUsed: text("snap_modes_used"),
+  // Task #2319 — fraction of vertices (0..1) that landed on a real snap.
+  // The reviewer threshold defaults to 0.6 below.
+  snapHitRatio: doublePrecision("snap_hit_ratio"),
+  // Task #2319 — review queue plumbing. `needsReview` is flipped at
+  // insert by the server-side rule (uncalibrated/AI source, low snap
+  // ratio, or measurement $-value above the per-org threshold) and
+  // cleared by a reviewer through the per-id PATCH.
+  needsReview: boolean("needs_review").notNull().default(false),
+  reviewedById: varchar("reviewed_by_id").references(() => users.id, { onDelete: "set null" }),
+  reviewedAt: timestamp("reviewed_at"),
+  reviewNote: text("review_note"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
@@ -715,7 +743,29 @@ export const takeoffMeasurements = pgTable("takeoff_measurements", {
   typeIdx: index("takeoff_measurements_type_idx").on(table.type),
   statusIdx: index("takeoff_measurements_status_idx").on(table.status),
   versionIdx: index("takeoff_measurements_version_idx").on(table.takeoffVersionId),
+  // Task #2319 — partial index so the upcoming review-queue lookup
+  // (separate task) is a B-tree probe instead of a full table scan.
+  needsReviewIdx: index("takeoff_measurements_needs_review_idx")
+    .on(table.sheetId)
+    .where(sql`${table.needsReview} = true`),
 }));
+
+// Task #2319 — Provenance constants. `MEASUREMENT_CALIBRATION_SOURCES`
+// is the closed set of values a client/server can write into
+// `calibration_source`; anything else is rejected by the route. The
+// snap-hit and review-value defaults are the server-side thresholds
+// that flip `needsReview` at insert.
+export const MEASUREMENT_CALIBRATION_SOURCES = [
+  "USER_TWO_POINT",
+  "STANDARD_SCALE",
+  "AI_DETECTED",
+  "INHERITED_FROM_PARENT",
+  "BULK_PROPAGATED",
+  "UNCALIBRATED",
+] as const;
+export type MeasurementCalibrationSource = typeof MEASUREMENT_CALIBRATION_SOURCES[number];
+export const MEASUREMENT_NEEDS_REVIEW_SNAP_RATIO_THRESHOLD = 0.6;
+export const MEASUREMENT_NEEDS_REVIEW_DEFAULT_VALUE_THRESHOLD = 25_000;
 
 // Takeoff Markup Tool enum
 export const takeoffMarkupToolEnum = pgEnum("takeoff_markup_tool", ["ARROW", "TEXT", "RECTANGLE", "CLOUD", "HIGHLIGHT", "FREEHAND"]);
@@ -2213,7 +2263,43 @@ export const insertTakeoffVersionSchema = createInsertSchema(takeoffVersions).om
 export type InsertTakeoffVersion = z.infer<typeof insertTakeoffVersionSchema>;
 export type TakeoffVersion = typeof takeoffVersions.$inferSelect;
 
-export const insertTakeoffMeasurementSchema = createInsertSchema(takeoffMeasurements).omit({ id: true, createdAt: true, updatedAt: true });
+// Task #2319 — Base ZodObject (no transform) so the route handler can
+// call `.partial()` on it for the per-id PATCH path. The transform
+// that normalizes `snapModesUsed` from string[] → JSON-string lives
+// on the exported schema below.
+export const takeoffMeasurementSchemaBase = createInsertSchema(takeoffMeasurements).omit({ id: true, createdAt: true, updatedAt: true }).extend({
+  // `calibrationSource` is constrained to the closed enum so a typo
+  // on the client doesn't silently land garbage in the column.
+  // `snapHitRatio` is clamped to 0..1 so a miscount on the client
+  // can't accidentally write a value that breaks the >= threshold
+  // rule. `snapModesUsed` is accepted as either a string-array
+  // (preferred client shape) or a pre-stringified text payload
+  // (mirrors how `metadata` and `points` are normalized on the
+  // route boundary).
+  calibrationSource: z.enum(MEASUREMENT_CALIBRATION_SOURCES).optional(),
+  scaleAtCaptureLabel: z.string().max(64).nullish(),
+  scaleAtCapturePxPerFoot: z.number().positive().finite().nullish(),
+  snapModesUsed: z.union([z.string(), z.array(z.string().nullable())]).nullish(),
+  snapHitRatio: z.number().min(0).max(1).nullish(),
+});
+
+const normalizeSnapModesUsed = <T extends { snapModesUsed?: unknown }>(value: T): T => {
+  // Normalize `snapModesUsed` to its on-disk text representation so the
+  // route handler doesn't have to special-case the array shape and the
+  // db insert always sees a string. Handles the same array→json shape
+  // the route already does for `points` and `metadata`.
+  if (Array.isArray(value.snapModesUsed)) {
+    return { ...value, snapModesUsed: JSON.stringify(value.snapModesUsed) };
+  }
+  return value;
+};
+
+export const insertTakeoffMeasurementSchema = takeoffMeasurementSchemaBase.transform(normalizeSnapModesUsed);
+// Partial variant for PATCH: same field constraints, but every key
+// optional and the transform reapplied so per-id edits that *do*
+// include `snapModesUsed` (rare but possible from re-trace flows)
+// land as a string in the DB.
+export const updateTakeoffMeasurementSchema = takeoffMeasurementSchemaBase.partial().transform(normalizeSnapModesUsed);
 export type InsertTakeoffMeasurement = z.infer<typeof insertTakeoffMeasurementSchema>;
 export type TakeoffMeasurement = typeof takeoffMeasurements.$inferSelect;
 

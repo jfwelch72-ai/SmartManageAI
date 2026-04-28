@@ -221,6 +221,15 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
   });
   useEffect(() => { try { localStorage.setItem("takeoff-ortho-lock", String(orthoLock)); } catch {} }, [orthoLock]);
   const [currentSnap, setCurrentSnap] = useState<SnapResult | null>(null);
+  // Task #2319 — Snap-hit log for measurement provenance. One entry per
+  // committed vertex (resolvePoint is called exactly once per click in
+  // a draft); `mode === null` means the click landed at the raw cursor
+  // position with no snap target winning. The log is consumed on
+  // commit to derive `snapHitRatio` (hits / vertices) and the unique
+  // `snapModesUsed` set, then cleared. Cleared automatically whenever
+  // a draft starts fresh (drawingPoints empties) so an aborted draft
+  // doesn't poison the next measurement's provenance.
+  const snapLogRef = useRef<Array<{ mode: string | null }>>([]);
   const [cursorPosition, setCursorPosition] = useState<Point | null>(null);
   const [runningMeasurement, setRunningMeasurement] = useState<{ value: number; unit: string; segments?: number } | null>(null);
   const [selectedMeasurementIds, setSelectedMeasurementIds] = useState<Set<string>>(new Set());
@@ -383,6 +392,48 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     return null;
   }, [constraintMode, orthoPresetIndex, polarAngleStep]);
 
+  // Task #2319 — Reset the snap log whenever the active draft empties
+  // (Escape key, tool change, post-commit cleanup, etc.) so an
+  // aborted draft cannot poison the next measurement's provenance.
+  // commitMeasurement also drains the log on commit, but the user can
+  // reach an empty `drawingPoints` without ever calling commit (e.g.
+  // hitting Escape mid-line, switching tools), and without this guard
+  // those orphaned snap entries would silently merge into the next
+  // measurement's snapHitRatio / snapModesUsed.
+  useEffect(() => {
+    if (drawingPoints.length === 0) {
+      snapLogRef.current = [];
+    }
+  }, [drawingPoints.length]);
+
+  // Task #2319 — Read the per-vertex snap log accumulated during the
+  // current draft and convert it into the two provenance fields the
+  // server expects. `snapHitRatio` is hits/total (0..1, undefined when
+  // no vertices were logged so the server's null-aware low-snap rule
+  // doesn't accidentally flip needs_review on a 1-click count). The
+  // unique mode set is sent as a string array; the server-side zod
+  // transform stringifies it to JSON for the text column.
+  const consumeSnapProvenance = useCallback((): { snapHitRatio?: number; snapModesUsed?: string[] } => {
+    const log = snapLogRef.current;
+    snapLogRef.current = [];
+    if (log.length === 0) return {};
+    const hits = log.filter((e) => e.mode != null).length;
+    const modes = Array.from(new Set(log.map((e) => e.mode).filter((m): m is string => m != null)));
+    return {
+      snapHitRatio: hits / log.length,
+      snapModesUsed: modes,
+    };
+  }, []);
+
+  // Wrapper around `createMeasurementMutation.mutate` that auto-attaches
+  // snap provenance for draft commits. Replaces N call sites with one
+  // chokepoint so a future provenance addition (e.g. tool-time, undo
+  // count) doesn't have to touch every commit branch.
+  const commitMeasurement = useCallback((payload: Record<string, unknown>) => {
+    const provenance = consumeSnapProvenance();
+    createMeasurementMutation.mutate({ ...payload, ...provenance });
+  }, [createMeasurementMutation, consumeSnapProvenance]);
+
   const resolvePoint = useCallback(
     (rawPoint: Point): Point => {
       let pt = rawPoint;
@@ -405,12 +456,28 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         const lengthPx = pendingDimLengthFt * currentSheet.scalePxPerFoot;
         pt = applyFixedLength(pt, anchor, lengthPx);
       }
+      // Task #2319 — single record-and-return helper so every snap
+      // branch logs *exactly one* entry per call (including the no-snap
+      // fall-through at the bottom). Pushing inline at every branch
+      // would risk a double-log if the branching ever grows; keeping
+      // it centralized makes the invariant "one resolvePoint call =
+      // one snap-log entry" easy to maintain.
+      const recordAndReturn = (mode: string | null, value: Point): Point => {
+        snapLogRef.current.push({ mode });
+        return value;
+      };
       if (effectiveSnapEnabled) {
         // 1) Endpoint / midpoint / intersection / center snap (highest
         //    priority — matches the legacy behaviour exactly).
         if (snapTargets.length > 0) {
           const snap = findNearestSnap(pt, snapTargets, 12, stageScale);
-          if (snap.isSnapped) return snap.snappedPoint;
+          if (snap.isSnapped) {
+            // SnapResult.snapTarget.type ("endpoint" / "midpoint" /
+            // "intersection" / "center") tells us *which* high-priority
+            // snap won; fall back to a generic label if the upstream
+            // result ever returns isSnapped=true with no target shape.
+            return recordAndReturn(snap.snapTarget?.type ?? "endpoint", snap.snappedPoint);
+          }
         }
         // 2) Task #2198 — Perpendicular snap. Drops the perpendicular
         //    foot from the in-progress draw anchor onto a nearby
@@ -419,7 +486,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         //    explicitly enables this mode.
         if (snapModeConfig?.perpendicular && anchor) {
           const perp = findPerpendicularSnap(pt, anchor, measurements, 12, stageScale);
-          if (perp.isSnapped) return perp.snappedPoint;
+          if (perp.isSnapped) return recordAndReturn("perpendicular", perp.snappedPoint);
         }
         // 3) Task #2198 — Nearest-on-line snap. Lower priority than
         //    perpendicular because it always matches near any line;
@@ -428,7 +495,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         //    explicitly enables this mode.
         if (snapModeConfig?.nearest) {
           const near = findNearestSnapOnLine(pt, measurements, 12, stageScale);
-          if (near.isSnapped) return near.snappedPoint;
+          if (near.isSnapped) return recordAndReturn("nearest", near.snappedPoint);
         }
       }
       // Structural gridline snap is gated on the `grid` snap mode when
@@ -461,10 +528,10 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
           }
         }
         if (snappedX !== pt.x || snappedY !== pt.y) {
-          return { x: snappedX, y: snappedY };
+          return recordAndReturn("grid", { x: snappedX, y: snappedY });
         }
       }
-      return pt;
+      return recordAndReturn(null, pt);
     },
     [angleStep, pendingDimLengthFt, currentSheet?.scalePxPerFoot, effectiveSnapEnabled, snapTargets, snapModeConfig, drawingPoints, measurements, stageScale, params.showStructuralGridlines, params.structuralGridlines, params.gridlineSnapThreshold]
   );
@@ -483,7 +550,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
     // skip the mutation and leave the canvas in an in-progress state.
     const completeTool = canonicalTool(activeTool);
     if (completeTool === "area") {
-      createMeasurementMutation.mutate({
+      commitMeasurement({
         sheetId: selectedSheet,
         type: "AREA",
         points: drawingPoints,
@@ -497,7 +564,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       const defaultDepthInches = 12;
       const depthFt = inchesToFeet(defaultDepthInches);
       const volumeCy = computeVolumeInCY(areaFt2, depthFt);
-      createMeasurementMutation.mutate({
+      commitMeasurement({
         sheetId: selectedSheet,
         type: "VOLUME",
         points: drawingPoints,
@@ -511,7 +578,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       toast({ title: "Volume Measurement Created", description: `${areaFt2.toFixed(2)} SF @ ${defaultDepthInches}" depth = ${volumeCy.toFixed(2)} CY` });
     } else if (completeTool === "pitched_area") {
       const pitchedArea = computePitchedAreaFt2(areaFt2, pitchRatio);
-      createMeasurementMutation.mutate({
+      commitMeasurement({
         sheetId: selectedSheet,
         type: "PITCHED_AREA",
         points: drawingPoints,
@@ -525,7 +592,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       toast({ title: "Pitched Area Created", description: `Flat: ${areaFt2.toFixed(2)} SF → Pitched (${pitchRatio}): ${pitchedArea.toFixed(2)} SF` });
     } else if (completeTool === "surface_area") {
       const surfaceArea = computePitchedAreaFt2(areaFt2, pitchRatio);
-      createMeasurementMutation.mutate({
+      commitMeasurement({
         sheetId: selectedSheet,
         type: "SURFACE_AREA",
         points: drawingPoints,
@@ -562,7 +629,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       });
     }
 
-    createMeasurementMutation.mutate({
+    commitMeasurement({
       sheetId: selectedSheet,
       type: "SEGMENT",
       points: drawingPoints,
@@ -645,7 +712,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       } else {
         const newPoints = [...drawingPoints, point];
         const lengthFt = computeDistanceInFeet(newPoints, currentSheet.scalePxPerFoot);
-        createMeasurementMutation.mutate({
+        commitMeasurement({
           sheetId: selectedSheet, type: "LINEAR", points: newPoints,
           label: `Line ${measurements.length + 1}`, categoryId: selectedCategoryId,
         });
@@ -670,7 +737,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         } else {
           finalLength = computePitchedLinearFt(baseLengthFt, pitchRatio);
         }
-        createMeasurementMutation.mutate({
+        commitMeasurement({
           sheetId: selectedSheet, type: measureType, points: newPoints,
           label: `${activeTool === "linear_with_drop" ? "Drop" : "Pitched"} Line ${measurements.length + 1}`,
           categoryId: selectedCategoryId,
@@ -708,7 +775,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
           const pts = typeof m.points === 'string' ? JSON.parse(m.points) : m.points;
           return pts.length === 3;
         });
-        createMeasurementMutation.mutate({
+        commitMeasurement({
           sheetId: selectedSheet, type: "LINEAR" as const,
           points: [startPoint, middlePoint, endPoint],
           label: `Arc ${existingArcs.length + 1}`, categoryId: selectedCategoryId,
@@ -746,7 +813,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
         const radiusFt = radiusPx / currentSheet.scalePxPerFoot;
         const areaFt2 = Math.PI * radiusFt * radiusFt;
         const perimeterFt = 2 * Math.PI * radiusFt;
-        createMeasurementMutation.mutate({
+        commitMeasurement({
           sheetId: selectedSheet,
           type: "AREA",
           points: polygon,
@@ -851,7 +918,7 @@ export function useTakeoffInteractions(params: UseTakeoffInteractionsParams) {
       }
     } else if (tool === "count") {
       if (!selectedSheet) { toast({ title: "Error", description: "Select a sheet first", variant: "destructive" }); return; }
-      createMeasurementMutation.mutate({
+      commitMeasurement({
         sheetId: selectedSheet, type: "COUNT", points: [point],
         label: `Count ${aggregatedMeasurements.byType.count.length + 1}`, categoryId: selectedCategoryId,
       });

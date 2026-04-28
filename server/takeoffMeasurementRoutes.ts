@@ -1,7 +1,14 @@
 import { Router, NextFunction } from "express";
 import { db } from "./db";
-import { bids, takeoffSheets, projects } from "@shared/schema";
-import { eq, and, inArray } from "drizzle-orm";
+import {
+  bids,
+  takeoffSheets,
+  projects,
+  organizations,
+  MEASUREMENT_NEEDS_REVIEW_DEFAULT_VALUE_THRESHOLD,
+  MEASUREMENT_NEEDS_REVIEW_SNAP_RATIO_THRESHOLD,
+} from "@shared/schema";
+import { eq, and, inArray, isNull } from "drizzle-orm";
 import { z, ZodError } from "zod";
 import { requireAuth, type AuthRequest } from "./auth";
 import { sanitizeShortText } from "./sanitization";
@@ -221,17 +228,134 @@ router.get("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req:
   }
 });
 
+// Task #2319 — Provenance helper. Stamps the immutable
+// `scale_at_capture_*` snapshot from the sheet (so a later
+// re-calibration leaves historical quantities untouched), normalizes
+// the calibration source, and applies the server-side `needs_review`
+// rule. The rule is a server-side guarantee: the client cannot opt out
+// by omitting the field, because the four flip conditions
+// (uncalibrated capture, AI source, low snap, high $ value) are all
+// re-derived from authoritative inputs (sheet scale, payload source,
+// payload snapHitRatio, sheet→bid→org threshold) before insert.
+async function applyProvenanceForInsert(
+  validated: Record<string, unknown>,
+  sheet: { scalePxPerFoot: number | null; scaleLabel: string | null; bidId: string | null; projectId: string | null },
+): Promise<Record<string, unknown>> {
+  const next: Record<string, unknown> = { ...validated };
+
+  // Snapshot the sheet's scale onto the row at insert time. Once
+  // stamped, these two columns are immutable for the lifetime of the
+  // measurement (PATCH strips them, the calibration endpoint skips
+  // them) so historical rows always know what scale they were captured
+  // against.
+  if (next.scaleAtCapturePxPerFoot == null && sheet.scalePxPerFoot != null) {
+    next.scaleAtCapturePxPerFoot = sheet.scalePxPerFoot;
+  }
+  if (next.scaleAtCaptureLabel == null && sheet.scaleLabel) {
+    next.scaleAtCaptureLabel = sheet.scaleLabel;
+  }
+
+  // Default the calibration source explicitly when callers omit it so
+  // the server, not the db default, owns this decision. UNCALIBRATED
+  // when there's no scale to stamp; otherwise USER_TWO_POINT (the
+  // current calibration UX). AI/STANDARD_SCALE values are accepted
+  // verbatim from the client and re-validated by the zod enum.
+  if (!next.calibrationSource) {
+    next.calibrationSource = sheet.scalePxPerFoot != null ? "USER_TWO_POINT" : "UNCALIBRATED";
+  }
+
+  // Resolve the org's $-value threshold for needs_review via the
+  // gcOrganizationId column on whichever owning entity the sheet
+  // hangs off (bids and projects each carry their own gcOrganizationId;
+  // there's no FK chain between them that we can rely on for sheets
+  // created against a bid that hasn't been converted to a project
+  // yet). Falls back to the plan-level constant for orphan sheets
+  // used in tests/demos.
+  let orgThreshold = MEASUREMENT_NEEDS_REVIEW_DEFAULT_VALUE_THRESHOLD;
+  let ownerOrgId: string | null = null;
+  if (sheet.bidId) {
+    const [bidRow] = await db
+      .select({ orgId: bids.gcOrganizationId })
+      .from(bids)
+      .where(eq(bids.id, sheet.bidId))
+      .limit(1);
+    ownerOrgId = bidRow?.orgId ?? null;
+  } else if (sheet.projectId) {
+    const [projectRow] = await db
+      .select({ orgId: projects.gcOrganizationId })
+      .from(projects)
+      .where(eq(projects.id, sheet.projectId))
+      .limit(1);
+    ownerOrgId = projectRow?.orgId ?? null;
+  }
+  if (ownerOrgId) {
+    const [orgRow] = await db
+      .select({ threshold: organizations.takeoffReviewValueThreshold })
+      .from(organizations)
+      .where(eq(organizations.id, ownerOrgId))
+      .limit(1);
+    if (orgRow?.threshold) {
+      const parsed = Number(orgRow.threshold);
+      if (Number.isFinite(parsed) && parsed > 0) orgThreshold = parsed;
+    }
+  }
+
+  // The four needs_review conditions. Any one flips the flag — the
+  // review queue (out of scope for this task) will surface them later.
+  const calibrationSource = next.calibrationSource as string;
+  const isUncalibrated = calibrationSource === "UNCALIBRATED" || next.scaleAtCapturePxPerFoot == null;
+  const isAIDetected = calibrationSource === "AI_DETECTED" || next.source === "AI";
+  const snapRatio = typeof next.snapHitRatio === "number" ? next.snapHitRatio : null;
+  // Low snap only triggers when we actually have a snap signal; a
+  // null ratio (e.g. count measurements with one click, or legacy
+  // clients that haven't shipped the snap log yet) is not a flip.
+  const isLowSnap = snapRatio != null && snapRatio < MEASUREMENT_NEEDS_REVIEW_SNAP_RATIO_THRESHOLD;
+  const totalCost = (() => {
+    const unit = Number(next.unitCost ?? 0);
+    if (!Number.isFinite(unit) || unit <= 0) return 0;
+    // Use whichever quantity column the row populated; we don't try to
+    // recompute geometry here because that ran upstream.
+    const qty =
+      Number(next.computedAreaFt2 ?? 0) ||
+      Number(next.computedLengthFt ?? 0) ||
+      Number(next.computedVolumeCy ?? 0) ||
+      Number(next.count ?? 0);
+    return unit * qty;
+  })();
+  const isHighValue = totalCost > orgThreshold;
+
+  if (isUncalibrated || isAIDetected || isLowSnap || isHighValue) {
+    next.needsReview = true;
+  }
+
+  return next;
+}
+
 async function computeMeasurementGeometry(
   validated: Record<string, unknown>,
   scalePxPerFoot: number | null,
 ): Promise<Record<string, unknown>> {
   const finalValues = { ...validated };
-  if (!scalePxPerFoot) return finalValues;
+  // Task #2319 — provenance: when the row carries an immutable
+  // `scale_at_capture_px_per_foot` snapshot, every quantity computation
+  // for this measurement uses the captured scale instead of the live
+  // sheet scale. This is what makes a sheet-level re-calibration leave
+  // historical quantities untouched even though every row still
+  // references the same `sheet_id`.
+  const captureScale = typeof finalValues.scaleAtCapturePxPerFoot === "number"
+    ? finalValues.scaleAtCapturePxPerFoot
+    : null;
+  const effectiveScale = captureScale ?? scalePxPerFoot;
+  if (!effectiveScale) return finalValues;
 
   const points = safeParsePoints(validated.points);
   if (!points || points.length === 0) return finalValues;
 
   const mType = validated.type as string;
+  // Re-bind for the closures below so the rest of the function reads
+  // unchanged. Captured-scale rows compute against the snapshot;
+  // legacy rows compute against the live sheet scale.
+  scalePxPerFoot = effectiveScale;
 
   if (mType === "LINEAR" && points.length === 3) {
     try {
@@ -315,14 +439,38 @@ router.post("/api/takeoff/sheets/:sheetId/measurements", requireAuth, async (req
     if (!validated) return;
 
     const [sheet] = await db
-      .select({ scalePxPerFoot: takeoffSheets.scalePxPerFoot })
+      .select({
+        scalePxPerFoot: takeoffSheets.scalePxPerFoot,
+        scaleLabel: takeoffSheets.scaleLabel,
+        bidId: takeoffSheets.bidId,
+        projectId: takeoffSheets.projectId,
+      })
       .from(takeoffSheets)
       .where(eq(takeoffSheets.id, sheetId))
       .limit(1);
 
-    const finalValues = await computeMeasurementGeometry(validated, sheet?.scalePxPerFoot ?? null);
+    // Task #2319 — provenance must run BEFORE geometry so the captured
+    // scale (snapshotted from the sheet here) is what geometry uses.
+    // Also enables the needs_review rule to see the unit/qty produced
+    // by geometry below for the high-$ check.
+    const provenanced = await applyProvenanceForInsert(validated, {
+      scalePxPerFoot: sheet?.scalePxPerFoot ?? null,
+      scaleLabel: sheet?.scaleLabel ?? null,
+      bidId: sheet?.bidId ?? null,
+      projectId: sheet?.projectId ?? null,
+    });
+    const computed = await computeMeasurementGeometry(provenanced, sheet?.scalePxPerFoot ?? null);
+    // Re-run the high-$ check now that geometry has populated quantity
+    // columns. Cheaper than a second full provenance pass and only
+    // adds the one rule that depends on computed values.
+    const finalValues = await applyProvenanceForInsert(computed, {
+      scalePxPerFoot: sheet?.scalePxPerFoot ?? null,
+      scaleLabel: sheet?.scaleLabel ?? null,
+      bidId: sheet?.bidId ?? null,
+      projectId: sheet?.projectId ?? null,
+    });
 
-    const [measurement] = await db.insert(takeoffMeasurements).values(finalValues).returning();
+    const [measurement] = await db.insert(takeoffMeasurements).values(finalValues as typeof takeoffMeasurements.$inferInsert).returning();
 
     await logCreate(req.user!.id, "takeoff_measurement", measurement.id, { type: measurement.type, sheetId, label: measurement.label }, req);
 
@@ -673,8 +821,30 @@ router.patch("/api/takeoff/measurements/:id", requireAuth, async (req: AuthReque
       points: Array.isArray(req.body.points) ? JSON.stringify(req.body.points) : req.body.points,
     };
 
-    const validated = parseOrRespond(insertTakeoffMeasurementSchema.partial(), sanitizedBody, res);
+    const { updateTakeoffMeasurementSchema } = await import("@shared/schema");
+    const validated = parseOrRespond(updateTakeoffMeasurementSchema, sanitizedBody, res);
     if (!validated) return;
+
+    // Task #2319 — `scaleAtCapture*` and the review-audit columns are
+    // server-owned and immutable through the generic per-id PATCH.
+    // The capture scale must stay frozen for the lifetime of the
+    // measurement (that's the whole point of the snapshot — survives
+    // sheet re-calibration), and `reviewedBy/At/Note + needsReview`
+    // belong to the (out-of-scope) review-queue endpoint, not a free
+    // edit. Strip them defensively here even though the client doesn't
+    // send them, so a future curl-wielding caller can't bypass it.
+    const STRIPPED_PROVENANCE_KEYS = [
+      "scaleAtCapturePxPerFoot",
+      "scaleAtCaptureLabel",
+      "calibrationSource",
+      "needsReview",
+      "reviewedById",
+      "reviewedAt",
+      "reviewNote",
+    ] as const;
+    for (const key of STRIPPED_PROVENANCE_KEYS) {
+      delete (validated as Record<string, unknown>)[key];
+    }
 
     const effectiveType = (validated.type || existingMeasurement.type) as string;
     let finalValues: Record<string, unknown> = { ...validated };
@@ -764,14 +934,30 @@ router.post("/api/takeoff/measurements", requireAuth, async (req: AuthRequest, r
     if (!validated) return;
 
     const [sheet] = await db
-      .select({ scalePxPerFoot: takeoffSheets.scalePxPerFoot })
+      .select({
+        scalePxPerFoot: takeoffSheets.scalePxPerFoot,
+        scaleLabel: takeoffSheets.scaleLabel,
+        bidId: takeoffSheets.bidId,
+        projectId: takeoffSheets.projectId,
+      })
       .from(takeoffSheets)
       .where(eq(takeoffSheets.id, validated.sheetId))
       .limit(1);
 
-    const finalValues = await computeMeasurementGeometry(validated, sheet?.scalePxPerFoot ?? null);
+    // Task #2319 — same provenance-then-geometry-then-rule sequence as
+    // the sheet-scoped POST. Re-run the helper after geometry so the
+    // high-$ rule sees the freshly computed quantity columns.
+    const sheetCtx = {
+      scalePxPerFoot: sheet?.scalePxPerFoot ?? null,
+      scaleLabel: sheet?.scaleLabel ?? null,
+      bidId: sheet?.bidId ?? null,
+      projectId: sheet?.projectId ?? null,
+    };
+    const provenanced = await applyProvenanceForInsert(validated, sheetCtx);
+    const computed = await computeMeasurementGeometry(provenanced, sheet?.scalePxPerFoot ?? null);
+    const finalValues = await applyProvenanceForInsert(computed, sheetCtx);
 
-    const [measurement] = await db.insert(takeoffMeasurements).values(finalValues).returning();
+    const [measurement] = await db.insert(takeoffMeasurements).values(finalValues as typeof takeoffMeasurements.$inferInsert).returning();
 
     await logCreate(req.user!.id, "takeoff_measurement", measurement.id, { type: measurement.type, sheetId: validated.sheetId, label: measurement.label }, req);
 
@@ -1155,10 +1341,21 @@ router.patch("/api/takeoff/sheets/:id/calibration", requireAuth, async (req: Aut
       .where(eq(takeoffSheets.id, id))
       .returning();
 
+    // Task #2319 — re-calibration recomputes legacy rows only. Rows
+    // that already carry an immutable `scale_at_capture_px_per_foot`
+    // snapshot are intentionally left alone: their quantities should
+    // continue to reflect the scale they were captured against, even
+    // when an estimator later corrects the sheet scale. The partial
+    // index `takeoff_measurements_needs_review_idx` (created in this
+    // task) lets the future review UI find the rows that should be
+    // re-examined; this loop just refuses to silently mutate them.
     const measurements = await db
       .select()
       .from(takeoffMeasurements)
-      .where(eq(takeoffMeasurements.sheetId, id));
+      .where(and(
+        eq(takeoffMeasurements.sheetId, id),
+        isNull(takeoffMeasurements.scaleAtCapturePxPerFoot),
+      ));
 
     for (const measurement of measurements) {
       if (!measurement.points) continue;
@@ -1337,10 +1534,19 @@ router.patch("/api/takeoff/sheets/batch-calibration", requireAuth, async (req: A
           updatedCount++;
           results.push(updated);
 
+          // Task #2319 — same carve-out as the per-sheet calibration
+          // route: rows with an immutable scaleAtCapturePxPerFoot
+          // snapshot are intentionally skipped so historical
+          // quantities don't drift when an estimator re-calibrates
+          // weeks later. Only legacy rows (snapshot still NULL) get
+          // their geometry recomputed against the new scale.
           const measurements = await tx
             .select()
             .from(takeoffMeasurements)
-            .where(eq(takeoffMeasurements.sheetId, sheetId));
+            .where(and(
+              eq(takeoffMeasurements.sheetId, sheetId),
+              isNull(takeoffMeasurements.scaleAtCapturePxPerFoot),
+            ));
 
           for (const measurement of measurements) {
             if (!measurement.points) continue;
