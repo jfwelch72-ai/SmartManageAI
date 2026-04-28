@@ -221,6 +221,66 @@ const docCache = new Map<string, Promise<PDFDocumentProxy>>();
 const pageCache = new Map<string, Promise<PDFPageProxy>>();
 const MAX_DOC_CACHE = 24;
 
+/**
+ * pdfjs-dist's default `DOMCanvasFactory` calls
+ * `globalThis.document.createElement("canvas")` whenever the renderer
+ * needs an internal scratch canvas (transparency layers, pattern fills,
+ * tiling helpers, etc.). In a Web Worker there is no `document`, so the
+ * call throws `TypeError: Cannot read properties of undefined (reading
+ * 'createElement')` — surfaced to the user as the
+ * "Couldn't load <sheet>" toast with no other context.
+ *
+ * `OffscreenCanvas` is the worker-native equivalent and exposes the
+ * same `getContext("2d")` + `width`/`height` API that
+ * `BaseCanvasFactory.create/reset/destroy` need, so we provide our own
+ * factory and hand it to `getDocument({ CanvasFactory })`. pdfjs
+ * `new`s the class internally with `{ ownerDocument, enableHWA }`,
+ * which we accept for forward compatibility but ignore.
+ */
+class WorkerCanvasFactory {
+  private enableHWA = false;
+  constructor(opts?: { enableHWA?: boolean }) {
+    this.enableHWA = !!opts?.enableHWA;
+  }
+  create(width: number, height: number): {
+    canvas: OffscreenCanvas;
+    context: OffscreenCanvasRenderingContext2D;
+  } {
+    if (width <= 0 || height <= 0) {
+      throw new Error("Invalid canvas size");
+    }
+    const canvas = new OffscreenCanvas(
+      Math.max(1, Math.floor(width)),
+      Math.max(1, Math.floor(height)),
+    );
+    const context = canvas.getContext("2d", {
+      willReadFrequently: !this.enableHWA,
+    }) as OffscreenCanvasRenderingContext2D | null;
+    if (!context) throw new Error("OffscreenCanvas 2D context unavailable");
+    return { canvas, context };
+  }
+  reset(
+    canvasAndContext: { canvas: OffscreenCanvas | null; context: unknown },
+    width: number,
+    height: number,
+  ): void {
+    if (!canvasAndContext.canvas) throw new Error("Canvas is not specified");
+    if (width <= 0 || height <= 0) throw new Error("Invalid canvas size");
+    canvasAndContext.canvas.width = Math.max(1, Math.floor(width));
+    canvasAndContext.canvas.height = Math.max(1, Math.floor(height));
+  }
+  destroy(canvasAndContext: {
+    canvas: OffscreenCanvas | null;
+    context: unknown;
+  }): void {
+    if (!canvasAndContext.canvas) throw new Error("Canvas is not specified");
+    canvasAndContext.canvas.width = 0;
+    canvasAndContext.canvas.height = 0;
+    canvasAndContext.canvas = null;
+    canvasAndContext.context = null;
+  }
+}
+
 async function loadDoc(sheetUrl: string): Promise<PDFDocumentProxy> {
   let p = docCache.get(sheetUrl);
   if (p) return p;
@@ -229,6 +289,10 @@ async function loadDoc(sheetUrl: string): Promise<PDFDocumentProxy> {
     const task = pdfjsLib.getDocument({
       url: sheetUrl,
       withCredentials: true,
+      // See WorkerCanvasFactory above — without this, pdfjs falls back
+      // to `DOMCanvasFactory` and crashes the first time it needs a
+      // scratch canvas in this worker context.
+      CanvasFactory: WorkerCanvasFactory,
     });
     return await task.promise;
   })();
