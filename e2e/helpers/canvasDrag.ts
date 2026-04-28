@@ -68,6 +68,21 @@
  * spec would time out 15s later on an unrelated `waitForRequest` and
  * the failure mode would not be obvious from the report.
  *
+ * Task #2306 covers the second silent-drop pitfall the visible-region
+ * check can't see: the Konva stage's canvas DOM extends *under* the
+ * left navigation sidebar (and any other overlay panel), so a
+ * resolved viewport point can lie inside the canvas bounding box yet
+ * still be swallowed by an overlay sitting on top of it in z-order.
+ * After the visible-region check passes, the helpers now run
+ * `document.elementFromPoint(resolved.x, resolved.y)` via
+ * `canvas.evaluate(...)` and verify the topmost element is the
+ * canvas, a descendant, or another element inside the same Konva
+ * stage container. When something else intercepts (the sidebar nav, a
+ * dropdown, an open dialog, …), the helper throws naming the
+ * intercepting element's tag/test-id/id/class and attaches the same
+ * info to the trace so the spec author can see which overlay to
+ * dismiss instead of waiting out a downstream timeout.
+ *
  * Task #1885 finishes the centralization for the plan-side specs by
  * adding three small siblings:
  *
@@ -361,6 +376,169 @@ function describeOffCanvasPoint(
       "pick canvas-relative coordinates whose resolved viewport position is fully inside it.",
   );
   return parts.join(". ");
+}
+
+/**
+ * Tag/identifier metadata for an element returned by
+ * `document.elementFromPoint`. Kept small so it serializes cleanly
+ * across the Playwright bridge and into the trace JSON attachment.
+ */
+interface InterceptingElementInfo {
+  tag: string;
+  id: string | null;
+  testId: string | null;
+  className: string | null;
+}
+
+/**
+ * Result of probing the topmost element at a viewport point. `ok`
+ * means the point will reach the target canvas (the topmost element
+ * is the canvas, a descendant, or another element inside the same
+ * Konva stage container). `info` is `null` when no element is
+ * returned at all (rare — usually means the coordinate is off-screen
+ * or hidden behind an iframe boundary the bridge can't see through).
+ */
+interface TopmostElementResult {
+  ok: boolean;
+  info: InterceptingElementInfo | null;
+}
+
+/**
+ * Build a single-line description of the intercepting element for
+ * inclusion in error messages. Includes only the identifiers a spec
+ * author would actually use to find the offending node — tag plus
+ * `data-testid` / `id` / `class` when they are set.
+ */
+function fmtInterceptingElement(info: InterceptingElementInfo | null): string {
+  if (!info) return "<no element>";
+  const parts: string[] = [`<${info.tag}`];
+  if (info.testId) parts.push(` data-testid="${info.testId}"`);
+  if (info.id) parts.push(` id="${info.id}"`);
+  if (info.className) parts.push(` class="${info.className}"`);
+  parts.push(">");
+  return parts.join("");
+}
+
+/**
+ * Probe the topmost element at `point` (viewport coordinates) via
+ * `document.elementFromPoint` and decide whether it will route a
+ * pointer event to the target canvas.
+ *
+ * "Routes to the canvas" is satisfied when the topmost element is:
+ *   - the canvas itself,
+ *   - a descendant of the canvas (rare — canvases are leaf nodes,
+ *     but be permissive),
+ *   - another element inside the same Konva stage container (e.g.
+ *     a sibling layer canvas under `.konvajs-content`, or the
+ *     stage container div itself when the layer canvas is fully
+ *     transparent at that pixel).
+ *
+ * Anything else — the left navigation sidebar, an open dropdown, a
+ * dialog overlay — is treated as occluding and the surrounding guard
+ * throws a descriptive error.
+ *
+ * Run via `canvas.evaluate(...)` so the lookup happens in the page
+ * context with a direct reference to the canvas DOM node (no need to
+ * round-trip another locator query for the topmost element).
+ */
+async function probeTopmostElement(
+  canvas: Locator,
+  point: Point,
+): Promise<TopmostElementResult> {
+  return canvas.evaluate((canvasEl, p) => {
+    const top = document.elementFromPoint(p.x, p.y) as Element | null;
+    if (!top) {
+      return { ok: false, info: null };
+    }
+    // Find the Konva stage container so sibling layer canvases (and
+    // the container div itself) count as "inside the same stage".
+    const stage =
+      (canvasEl as HTMLElement).closest(".konvajs-content") ??
+      (canvasEl as HTMLElement).parentElement ??
+      (canvasEl as Element);
+    const ok =
+      top === canvasEl ||
+      canvasEl.contains(top) ||
+      stage.contains(top);
+    const rawClassName =
+      typeof (top as HTMLElement).className === "string"
+        ? (top as HTMLElement).className.trim()
+        : null;
+    const info = {
+      tag: top.tagName.toLowerCase(),
+      id: (top as HTMLElement).id ? (top as HTMLElement).id : null,
+      testId: top.getAttribute("data-testid"),
+      className: rawClassName && rawClassName.length > 0 ? rawClassName : null,
+    };
+    return { ok, info };
+  }, point);
+}
+
+/**
+ * Build a descriptive error message for the overlay-occlusion guard.
+ * Mirrors the format of `describeOffCanvasPoint` so a spec author who
+ * has seen one error knows how to read the other.
+ */
+function describeOccludedPoint(
+  kind: string,
+  relative: Point,
+  resolved: Point,
+  geometry: CanvasGeometry,
+  intercepting: InterceptingElementInfo | null,
+): string {
+  const parts: string[] = [
+    `${kind}: canvas-relative ${fmtPoint(relative)} resolved to ${fmtPoint(resolved)} ` +
+      `but the topmost element at that viewport coordinate is ` +
+      `${fmtInterceptingElement(intercepting)}, not the target canvas`,
+  ];
+  if (geometry.box) {
+    parts.push(`canvas bounding box ${fmtBox(geometry.box)}`);
+  }
+  if (geometry.visible) {
+    parts.push(`visible region ${fmtBox(geometry.visible)}`);
+  }
+  parts.push(
+    "An overlay (e.g. the left navigation sidebar, an open dropdown, or a dialog) " +
+      "is sitting on top of the Konva stage in z-order and will silently swallow the click — " +
+      "dismiss the overlay or pick canvas-relative coordinates whose resolved viewport position is past it.",
+  );
+  return parts.join(". ");
+}
+
+/**
+ * Throw a descriptive error when the topmost element at any of
+ * `points` is something other than the target canvas (or part of the
+ * same Konva stage). Used by `clickOnCanvas` / `dragOnCanvas` to
+ * surface the second silent-drop pitfall (Task #2306): a click whose
+ * resolved viewport coordinate lands inside the canvas bounding box
+ * but is occluded by an overlay panel above the stage in z-order.
+ *
+ * Attaches the intercepting element's tag/test-id/id/class to the
+ * trace before throwing so the failure shows up inline in the
+ * Playwright HTML report — no need to re-run with extra logging to
+ * figure out which overlay swallowed the click.
+ */
+async function assertPointsNotOccluded(
+  kind: string,
+  geometry: CanvasGeometry,
+  canvas: Locator,
+  points: Array<{ relative: Point; resolved: Point }>,
+): Promise<void> {
+  for (const p of points) {
+    const probe = await probeTopmostElement(canvas, p.resolved);
+    if (probe.ok) continue;
+    await attachGesture("canvas-drag.occlusion", {
+      kind,
+      relative: p.relative,
+      resolved: p.resolved,
+      intercepting: probe.info,
+      canvasBoundingBox: geometry.box,
+      visibleCanvasRegion: geometry.visible,
+    });
+    throw new Error(
+      describeOccludedPoint(kind, p.relative, p.resolved, geometry, probe.info),
+    );
+  }
 }
 
 /**
@@ -675,6 +853,14 @@ export async function dragOnCanvas(
     }
     assertPointsInsideVisibleRegion("dragOnCanvas", geometry, checkedPoints);
 
+    // Task #2306 — after the visible-region check passes, verify the
+    // resolved viewport coordinates actually reach the canvas instead
+    // of being swallowed by an overlay (sidebar nav, dropdown, dialog,
+    // …) sitting on top of the Konva stage in z-order. Throws a
+    // descriptive error naming the intercepting element so a spec
+    // author knows which overlay to dismiss.
+    await assertPointsNotOccluded("dragOnCanvas", geometry, canvas, checkedPoints);
+
     // Trace-viewer group title now that we know the canvas bounding box —
     // having the box inline makes it possible to tell at a glance whether
     // the canvas-relative coordinates resolved to the expected viewport
@@ -763,6 +949,16 @@ export async function clickOnCanvas(
     // the resolved viewport coordinate, the visible region, and the
     // raw bounding box so the offending coordinate is easy to spot.
     assertPointsInsideVisibleRegion("clickOnCanvas", geometry, [
+      { relative: point, resolved },
+    ]);
+
+    // Task #2306 — verify the resolved viewport coordinate actually
+    // reaches the canvas instead of being swallowed by an overlay
+    // (sidebar nav, dropdown, dialog, …) sitting on top of the Konva
+    // stage in z-order. Throws a descriptive error naming the
+    // intercepting element so a spec author knows which overlay to
+    // dismiss instead of waiting out a downstream timeout.
+    await assertPointsNotOccluded("clickOnCanvas", geometry, canvas, [
       { relative: point, resolved },
     ]);
 

@@ -227,15 +227,6 @@ test.describe("Takeoff Dim Input — chain mode on ARC + AREA (Task #2269)", () 
     // toward the anchor along the cursor ray, so we deliberately
     // place the cursors well past EXPECTED_PX in distinct directions
     // to keep the resolved triple non-collinear.
-    //
-    // Cursor x is kept ≥ 300 so the resolved viewport coordinate is
-    // safely past the left navigation sidebar — the sidebar overlay
-    // sits on top of the Konva stage's full-viewport-width canvas in
-    // z-order and silently swallows clicks whose viewport x lands
-    // inside its footprint (~200 px wide). The visible-canvas region
-    // check in `clickOnCanvas` (Task #2302) only catches points that
-    // miss the canvas bounding box itself, not points that hit the
-    // canvas-but-are-occluded-by-an-overlay.
     const firstArcCommit = captureNextCommit(page);
     await clickOnCanvas(page, canvas, { x: 300, y: 100 });
     await expectChipStillChained(page);
