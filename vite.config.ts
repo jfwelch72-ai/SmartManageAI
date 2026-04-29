@@ -3,10 +3,29 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
+// Filter out the transient "image source is detached" error that
+// Konva can throw between an `ImageBitmap` cache eviction and the
+// next batchDraw RAF in the takeoff workspace. The cache already
+// defers every `bitmap.close()` past Konva's draw cycle (1.5s
+// wall-clock, see `client/src/lib/takeoff/tileCache.ts`) and
+// `<TileLayer>` skips bitmaps that report `width === 0` — but rare
+// browser/HMR/timing races can still leak a single transient throw
+// into the dev runtime overlay, blocking the entire workspace until
+// the user dismisses the popup. Konva redraws cleanly on the next
+// frame, so the visual outcome is fine; we only need to silence the
+// disruptive overlay. This server-side filter runs after the error
+// arrives via WebSocket but before the overlay HMR message is
+// dispatched, so it cannot lose any client-side listener race.
+const DETACHED_BITMAP_RE = /image source is detached/i;
+const isTransientDetachedBitmap = (err: { message?: string }) =>
+  typeof err?.message === "string" && DETACHED_BITMAP_RE.test(err.message);
+
 export default defineConfig({
   plugins: [
     react(),
-    runtimeErrorOverlay(),
+    runtimeErrorOverlay({
+      filter: (err) => !isTransientDetachedBitmap(err),
+    }),
     ...(process.env.NODE_ENV !== "production" &&
     process.env.REPL_ID !== undefined
       ? [
