@@ -104,8 +104,8 @@ export function usePdfTileRenderer(
   // that `scheduleFlush()` forces a fresh cache read after every tile
   // arrival or eviction. Without this, the memo returned the STALE
   // tile array (which still contained the just-evicted bitmap) and
-  // `deferredCloseBitmap` closed that bitmap two RAF ticks later while
-  // Konva was still drawing it — producing the
+  // `deferredCloseBitmap` could close that bitmap while Konva was
+  // still drawing it — producing the
   // "Failed to execute 'drawImage'… image source is detached" crash.
   const [tick, setTick] = useState(0);
   const [loadingPlaceholder, setLoadingPlaceholder] = useState(false);

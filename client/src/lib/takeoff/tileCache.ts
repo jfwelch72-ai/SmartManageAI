@@ -22,22 +22,36 @@ import {
 
 export const MAX_TILE_CACHE_BYTES_DEFAULT = 600 * 1024 * 1024;
 
+/** How long an evicted bitmap stays alive before we explicitly close it.
+ *  See `deferredCloseBitmap` for rationale. Exported so tests can read
+ *  the same constant. */
+export const EVICTED_BITMAP_GRACE_MS = 1500;
+
 /**
- * Defer an `ImageBitmap.close()` past the current React commit + the
- * next Konva animation frame.
+ * Defer an `ImageBitmap.close()` past every plausible Konva draw cycle.
  *
  * The cache hands bitmaps to consumers via `get()` and they may already
  * be embedded in the current render tree (Konva tile layer). If we
- * close synchronously when evicting/replacing/clearing, Konva's
- * already-scheduled RAF tick can still call
- * `drawImage(detachedBitmap)` and throw
+ * close synchronously — or even within the next few RAFs — when
+ * evicting/replacing/clearing, Konva's already-scheduled batchDraw
+ * tick can still call `drawImage(detachedBitmap)` and throw
  * "Failed to execute 'drawImage' on 'CanvasRenderingContext2D':
  *  The image source is detached".
  *
- * Two RAF ticks (or a setTimeout fallback for non-DOM environments)
- * is enough for React to commit the cache-driven re-render AND for
- * Konva to draw at least one frame from the new state, after which
- * no live reference to the evicted bitmap remains.
+ * We tried 2 RAFs, then 3 RAFs — both still raced in production.
+ * The race is fundamentally that React's setState (from
+ * `scheduleFlush`) is async in concurrent mode, Konva's own batchDraw
+ * uses its own RAF queue, and the eviction's RAFs were registered in
+ * the same frame and fire BEFORE Konva's draw RAF when ordering goes
+ * the wrong way. Adding more RAFs is a losing arms race.
+ *
+ * Switching to a generous wall-clock timeout (1.5s, ~90 frames at
+ * 60fps) guarantees the evicted bitmap is gone from every Konva node
+ * before we free it. The cost is a temporary memory overhang
+ * (recently-evicted tiles stay in GPU memory for up to 1.5s) which
+ * is bounded by the cache turnover rate and never grows unboundedly:
+ * normal interaction evicts at most a few tiles per second, so the
+ * worst-case overhang is a handful of extra MB.
  */
 export function deferredCloseBitmap(bm: ImageBitmap | null | undefined): void {
   if (!bm) return;
@@ -48,11 +62,7 @@ export function deferredCloseBitmap(bm: ImageBitmap | null | undefined): void {
       /* noop — best-effort, older browsers may noop entirely */
     }
   };
-  if (typeof requestAnimationFrame === "function") {
-    requestAnimationFrame(() => requestAnimationFrame(close));
-  } else {
-    setTimeout(close, 32);
-  }
+  setTimeout(close, EVICTED_BITMAP_GRACE_MS);
 }
 
 export interface CachedTile {
@@ -195,10 +205,10 @@ export class TileCache {
       this.map.delete(victimKey);
       this.bytes -= e.bytes;
       this.evictions++;
-      // Defer past the next two RAFs — see `deferredCloseBitmap`.
-      // Konva may still hold a reference to this bitmap from the
-      // current render and would otherwise throw "image source is
-      // detached" the next time it ticks.
+      // Defer the close past Konva's next draw cycle — see
+      // `deferredCloseBitmap`. Konva may still hold a reference to
+      // this bitmap from the current render and would otherwise throw
+      // "image source is detached" the next time it ticks.
       deferredCloseBitmap(e.bitmap);
     }
   }
