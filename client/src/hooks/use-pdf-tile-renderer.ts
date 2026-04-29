@@ -100,7 +100,14 @@ export function usePdfTileRenderer(
   const [placeholder, setPlaceholder] = useState<ImageBitmap | null>(null);
   const [placeholderError, setPlaceholderError] =
     useState<PdfPlaceholderError | null>(null);
-  const [, setTick] = useState(0);
+  // `tick` is exposed to visibleTiles useMemo (see dep list below) so
+  // that `scheduleFlush()` forces a fresh cache read after every tile
+  // arrival or eviction. Without this, the memo returned the STALE
+  // tile array (which still contained the just-evicted bitmap) and
+  // `deferredCloseBitmap` closed that bitmap two RAF ticks later while
+  // Konva was still drawing it — producing the
+  // "Failed to execute 'drawImage'… image source is detached" crash.
+  const [tick, setTick] = useState(0);
   const [loadingPlaceholder, setLoadingPlaceholder] = useState(false);
   const [loadingTileCount, setLoadingTileCount] = useState(0);
   const lastSheetRef = useRef<string | null>(null);
@@ -319,6 +326,13 @@ export function usePdfTileRenderer(
     }
     return out;
   }, [
+    // `tick` is intentionally first — `scheduleFlush()` bumps it on
+    // every tile arrival AND after every cache eviction so this memo
+    // always reads a fresh slice from the cache. Without it the memo
+    // returned a stale array that still referenced an already-evicted
+    // (and deferredClosed) bitmap, which Konva would then try to
+    // drawImage two frames later → "image source is detached".
+    tick,
     enabled,
     args.sheetId,
     args.pageIndex,
