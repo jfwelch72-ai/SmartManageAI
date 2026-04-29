@@ -511,12 +511,22 @@ function CanvasStageImpl(props: CanvasStageProps) {
                   <Text text="Select a sheet to begin" x={20} y={20} fontSize={16} fill="#888" />
                 )}
 
-                {Object.entries(addendaOverlays).map(([addendumId, overlay]) => {
+                {pageDims && Object.entries(addendaOverlays).map(([addendumId, overlay]) => {
                   if (!overlay.visible || !addendaImages[addendumId]) return null;
+                  // Stretch the addenda image to the same world dimensions
+                  // as the underlying sheet placeholder so it lines up
+                  // pixel-for-pixel with the PDF render. Without explicit
+                  // width/height, KonvaImage falls back to the bitmap's
+                  // natural pixel size at world (0,0), which renders the
+                  // overlay as a smaller "ghost" image stuck in the upper
+                  // area of the canvas (the placeholder render is at a
+                  // higher scale than the addenda preview image).
                   return (
                     <KonvaImage
                       key={`addenda-overlay-${addendumId}`}
                       image={addendaImages[addendumId]}
+                      width={pageDims.width}
+                      height={pageDims.height}
                       opacity={showOverlaySlider ? (overlayOpacity / 100) * overlay.opacity : overlay.opacity}
                       listening={false}
                     />
