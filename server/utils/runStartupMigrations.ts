@@ -25,6 +25,7 @@ import { ensureNullablePermissions } from "./ensureNullablePermissions";
 import { ensurePermissionPresetsTable } from "./ensurePermissionPresetsTable";
 import { ensureAccessRequestsTable } from "./ensureAccessRequestsTable";
 import { ensureAiTakeoffSuggestionsTables } from "./ensureAiTakeoffSuggestionsTables";
+import { ensureAiEstimatorProvenanceTables } from "./ensureAiEstimatorProvenanceTables";
 import { ensureLidarTables } from "./ensureLidarTables";
 import { ensureErrorLogsTable } from "./ensureErrorLogsTable";
 import { ensureScopeModifierTables } from "./ensureScopeModifierTables";
@@ -243,6 +244,7 @@ const migrations: MigrationStep[] = [
   // organizations, users, ai_takeoff_analyses, takeoff_measurements,
   // and the trade_type enum — all in place by this point.
   { name: "ai_takeoff_suggestions_tables", category: "CREATE_TABLE", fn: ensureAiTakeoffSuggestionsTables },
+  { name: "ai_estimator_provenance_tables", category: "CREATE_TABLE", fn: ensureAiEstimatorProvenanceTables },
   { name: "lidar_tables", category: "CREATE_TABLE", fn: ensureLidarTables },
   { name: "error_logs_table", category: "CREATE_TABLE", fn: ensureErrorLogsTable },
   { name: "scope_modifier_tables", category: "CREATE_TABLE", fn: ensureScopeModifierTables },

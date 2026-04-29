@@ -1,8 +1,8 @@
 import { Router, type Response } from "express";
 import { z } from "zod";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "./db";
-import { users } from "@shared/schema";
+import { users, bids, projects, aiEstimatorRateSamples } from "@shared/schema";
 import {
   type AuthRequest,
   requireAuth,
@@ -21,6 +21,12 @@ import {
 import {
   listLearnedRatesForOrg,
   getLearnedRate,
+  listExcludedSources,
+  addExcludedSource,
+  removeExcludedSource,
+  listRateSamples,
+  recomputeLearnedRate,
+  confidenceBucket,
 } from "./services/aiEstimator/learnedRates";
 import {
   recordFeedback,
@@ -33,6 +39,7 @@ import {
   listIngestRuns,
   runIngestion,
 } from "./services/aiEstimator/ingestion";
+import { logCreate, logDelete } from "./auditLogger";
 import { suggestInline } from "./services/aiEstimator/inlineSuggest";
 import { generateDraftEstimate } from "./services/aiEstimator/draftEstimate";
 import { draftTakeoffFromPlans } from "./services/aiEstimator/takeoffDraft";
@@ -220,8 +227,221 @@ router.get(
   requireAuth,
   requireFeaturePermission("canManageAiEstimator"),
   async (req: AuthRequest, res: Response) => {
-    const rates = await listLearnedRatesForOrg(req.user!.organizationId!);
-    res.json({ rates });
+    const orgId = req.user!.organizationId!;
+    const rates = await listLearnedRatesForOrg(orgId);
+
+    const excludedSources = await listExcludedSources(orgId);
+    const excludedProjectIds = new Set(excludedSources.map((e) => e.projectId).filter(Boolean) as string[]);
+
+    const enriched = await Promise.all(rates.map(async (r) => {
+      const [sampleCountRow, excludedSampleCountRow] = await Promise.all([
+        db.select({ count: sql<number>`count(*)::int` })
+          .from(aiEstimatorRateSamples)
+          .where(and(
+            eq(aiEstimatorRateSamples.learnedRateId, r.id),
+            eq(aiEstimatorRateSamples.organizationId, orgId),
+          )),
+        excludedProjectIds.size > 0
+          ? db.select({ count: sql<number>`count(*)::int` })
+              .from(aiEstimatorRateSamples)
+              .where(and(
+                eq(aiEstimatorRateSamples.learnedRateId, r.id),
+                eq(aiEstimatorRateSamples.organizationId, orgId),
+                sql`${aiEstimatorRateSamples.projectId} = ANY(${Array.from(excludedProjectIds)})`,
+              ))
+          : Promise.resolve([{ count: 0 }]),
+      ]);
+
+      const confidence = confidenceBucket(r.sampleSize, r.p25Value, r.p75Value, r.medianValue);
+      const excludedSampleCount = excludedSampleCountRow[0]?.count ?? 0;
+
+      return {
+        ...r,
+        mean: r.meanValue,
+        median: r.medianValue,
+        p25: r.p25Value,
+        p75: r.p75Value,
+        confidence,
+        excludedSampleCount,
+        sampleCount: sampleCountRow[0]?.count ?? r.sampleSize,
+      };
+    }));
+
+    res.json({ rates: enriched });
+  },
+);
+
+router.get(
+  `${estimatorBase}/admin/learned-rates/export.csv`,
+  requireAuth,
+  requireFeaturePermission("canManageAiEstimator"),
+  async (req: AuthRequest, res: Response) => {
+    const orgId = req.user!.organizationId!;
+    const rates = await listLearnedRatesForOrg(orgId);
+    const header = "id,costCode,metric,unit,sampleSize,mean,median,p25,p75,confidence,lastUpdatedAt\n";
+    const rows = rates.map((r) => {
+      const confidence = confidenceBucket(r.sampleSize, r.p25Value, r.p75Value, r.medianValue);
+      return [r.id, r.costCode, r.metric, r.unit, r.sampleSize, r.meanValue ?? "", r.medianValue ?? "", r.p25Value ?? "", r.p75Value ?? "", confidence, r.lastUpdatedAt.toISOString()].join(",");
+    });
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="learned-rates.csv"`);
+    res.send(header + rows.join("\n"));
+  },
+);
+
+router.get(
+  `${estimatorBase}/admin/learned-rates/:id/samples`,
+  requireAuth,
+  requireFeaturePermission("canManageAiEstimator"),
+  async (req: AuthRequest, res: Response) => {
+    const orgId = req.user!.organizationId!;
+    const limit = Math.min(Number(req.query.limit) || 50, 200);
+    const offset = Number(req.query.offset) || 0;
+    const { samples, total } = await listRateSamples({ organizationId: orgId, learnedRateId: req.params.id, limit, offset });
+
+    const projectIds = Array.from(new Set(samples.map((s) => s.projectId).filter(Boolean) as string[]));
+    const bidIds = Array.from(new Set(samples.map((s) => s.bidId).filter(Boolean) as string[]));
+
+    const [projectRows, bidRows] = await Promise.all([
+      projectIds.length ? db.select({ id: projects.id, name: projects.name, code: projects.code }).from(projects).where(sql`${projects.id} = ANY(${projectIds})`) : Promise.resolve([]),
+      bidIds.length ? db.select({ id: bids.id, name: bids.name, code: bids.code }).from(bids).where(sql`${bids.id} = ANY(${bidIds})`) : Promise.resolve([]),
+    ]);
+
+    const projectMap = new Map(projectRows.map((p) => [p.id, p]));
+    const bidMap = new Map(bidRows.map((b) => [b.id, b]));
+
+    const enrichedSamples = samples.map((s) => ({
+      ...s,
+      project: s.projectId ? projectMap.get(s.projectId) ?? null : null,
+      bid: s.bidId ? bidMap.get(s.bidId) ?? null : null,
+    }));
+
+    res.json({ samples: enrichedSamples, total, limit, offset });
+  },
+);
+
+router.get(
+  `${estimatorBase}/admin/learned-rates/:id/samples/export.csv`,
+  requireAuth,
+  requireFeaturePermission("canManageAiEstimator"),
+  async (req: AuthRequest, res: Response) => {
+    const orgId = req.user!.organizationId!;
+    const { samples } = await listRateSamples({ organizationId: orgId, learnedRateId: req.params.id, limit: 2000, offset: 0 });
+    const header = "id,costCode,metric,unit,value,sourceType,sourceRowId,projectId,bidId,recordedAt\n";
+    const rows = samples.map((s) => [s.id, s.costCode, s.metric, s.unit, s.value, s.sourceType, s.sourceRowId ?? "", s.projectId ?? "", s.bidId ?? "", s.recordedAt.toISOString()].join(","));
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="rate-samples.csv"`);
+    res.send(header + rows.join("\n"));
+  },
+);
+
+router.get(
+  `${estimatorBase}/admin/excluded-sources`,
+  requireAuth,
+  requireFeaturePermission("canManageAiEstimator"),
+  async (req: AuthRequest, res: Response) => {
+    const orgId = req.user!.organizationId!;
+    const excluded = await listExcludedSources(orgId);
+
+    const projectIds = Array.from(new Set(excluded.map((e) => e.projectId).filter(Boolean) as string[]));
+    const bidIds = Array.from(new Set(excluded.map((e) => e.bidId).filter(Boolean) as string[]));
+    const userIds = Array.from(new Set(excluded.map((e) => e.excludedById).filter(Boolean) as string[]));
+
+    const [projectRows, bidRows, userRows] = await Promise.all([
+      projectIds.length ? db.select({ id: projects.id, name: projects.name, code: projects.code }).from(projects).where(sql`${projects.id} = ANY(${projectIds})`) : Promise.resolve([]),
+      bidIds.length ? db.select({ id: bids.id, name: bids.name, code: bids.code }).from(bids).where(sql`${bids.id} = ANY(${bidIds})`) : Promise.resolve([]),
+      userIds.length ? db.select({ id: users.id, firstName: users.firstName, lastName: users.lastName, email: users.email }).from(users).where(sql`${users.id} = ANY(${userIds})`) : Promise.resolve([]),
+    ]);
+
+    const projectMap = new Map(projectRows.map((p) => [p.id, p]));
+    const bidMap = new Map(bidRows.map((b) => [b.id, b]));
+    const userMap = new Map(userRows.map((u) => [u.id, u]));
+
+    const enriched = excluded.map((e) => ({
+      ...e,
+      project: e.projectId ? projectMap.get(e.projectId) ?? null : null,
+      bid: e.bidId ? bidMap.get(e.bidId) ?? null : null,
+      excludedBy: e.excludedById ? userMap.get(e.excludedById) ?? null : null,
+    }));
+
+    res.json({ excludedSources: enriched });
+  },
+);
+
+const excludeSourceSchema = z.object({
+  projectId: z.string().min(1).optional(),
+  bidId: z.string().min(1).optional(),
+  reason: z.string().max(500).optional(),
+});
+
+router.post(
+  `${estimatorBase}/admin/excluded-sources`,
+  requireAuth,
+  requireFeaturePermission("canManageAiEstimator"),
+  async (req: AuthRequest, res: Response) => {
+    const data = validateBody(excludeSourceSchema, req.body, res);
+    if (!data) return;
+    if (!data.projectId && !data.bidId) {
+      return res.status(400).json({ error: "projectId or bidId required" });
+    }
+    const orgId = req.user!.organizationId!;
+    try {
+      const row = await addExcludedSource({
+        organizationId: orgId,
+        projectId: data.projectId,
+        bidId: data.bidId,
+        reason: data.reason,
+        excludedById: req.user!.id,
+      });
+      await logCreate(req.user!.id, "ai_estimator_excluded_source", row.id, { projectId: data.projectId, bidId: data.bidId, reason: data.reason }, req);
+
+      if (data.projectId || data.bidId) {
+        const affectedRates = await listLearnedRatesForOrg(orgId);
+        const recomputeErrors: string[] = [];
+        for (const rate of affectedRates) {
+          await recomputeLearnedRate(orgId, rate.costCode, rate.metric, rate.unit).catch((e) => {
+            recomputeErrors.push(`${rate.costCode}/${rate.metric}: ${String(e)}`);
+          });
+        }
+        if (recomputeErrors.length > 0) {
+          logError("Partial recompute failures after exclusion add", { orgId, errors: recomputeErrors });
+        }
+      }
+
+      res.status(201).json(row);
+    } catch (err) {
+      logError("Failed to add excluded source", { error: String(err) });
+      res.status(500).json({ error: "Failed to add excluded source" });
+    }
+  },
+);
+
+router.delete(
+  `${estimatorBase}/admin/excluded-sources/:id`,
+  requireAuth,
+  requireFeaturePermission("canManageAiEstimator"),
+  async (req: AuthRequest, res: Response) => {
+    const orgId = req.user!.organizationId!;
+    try {
+      await logDelete(req.user!.id, "ai_estimator_excluded_source", req.params.id, {}, req);
+      await removeExcludedSource(req.params.id, orgId);
+
+      const affectedRates = await listLearnedRatesForOrg(orgId);
+      const recomputeErrors: string[] = [];
+      for (const rate of affectedRates) {
+        await recomputeLearnedRate(orgId, rate.costCode, rate.metric, rate.unit).catch((e) => {
+          recomputeErrors.push(`${rate.costCode}/${rate.metric}: ${String(e)}`);
+        });
+      }
+      if (recomputeErrors.length > 0) {
+        logError("Partial recompute failures after exclusion remove", { orgId, errors: recomputeErrors });
+      }
+
+      res.status(204).end();
+    } catch (err) {
+      logError("Failed to remove excluded source", { error: String(err) });
+      res.status(500).json({ error: "Failed to remove excluded source" });
+    }
   },
 );
 

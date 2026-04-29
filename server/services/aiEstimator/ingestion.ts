@@ -128,6 +128,7 @@ export async function runIngestion(
     }
     // 2. Estimates + line items — drive learned-rates and retrieval.
     const bidIds = orgBids.map((b) => b.id);
+    const bidById = new Map(orgBids.map((b) => [b.id, b]));
     const orgEstimates = bidIds.length
       ? await db
           .select()
@@ -142,6 +143,9 @@ export async function runIngestion(
       unit: string;
       value: number;
       sourceType: "estimate_line_item";
+      sourceRowId?: string;
+      projectId?: string | null;
+      bidId?: string | null;
     }> = [];
 
     for (const est of orgEstimates) {
@@ -163,6 +167,7 @@ export async function runIngestion(
         .select()
         .from(estimateLineItems)
         .where(eq(estimateLineItems.estimateId, est.id));
+      const bid = est.bidId ? bidById.get(est.bidId) : null;
       for (const li of items) {
         counters.lineItemsIngested++;
         const qty = Number(li.quantity ?? 0);
@@ -178,6 +183,9 @@ export async function runIngestion(
             unit: li.unit,
             value: unitCost,
             sourceType: "estimate_line_item",
+            sourceRowId: li.id,
+            projectId: null,
+            bidId: est.bidId ?? null,
           });
         }
         if (code && laborPerUnit > 0) {
@@ -187,6 +195,9 @@ export async function runIngestion(
             unit: li.unit,
             value: laborPerUnit,
             sourceType: "estimate_line_item",
+            sourceRowId: li.id,
+            projectId: null,
+            bidId: est.bidId ?? null,
           });
         }
         await upsertKnowledgeRow({
@@ -259,7 +270,10 @@ export async function runIngestion(
           metric: "unit_cost",
           unit: h.unit,
           value: total / qty,
-          sourceType: "estimate_line_item",
+          sourceType: "historical_actual",
+          sourceRowId: h.id,
+          projectId: h.projectId ?? null,
+          bidId: null,
         });
       }
     }

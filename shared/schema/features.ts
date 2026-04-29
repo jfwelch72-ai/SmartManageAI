@@ -11487,3 +11487,49 @@ export const aiEstimatorIngestRuns = pgTable("ai_estimator_ingest_runs", {
 export const insertAiEstimatorIngestRunSchema = createInsertSchema(aiEstimatorIngestRuns).omit({ id: true, startedAt: true });
 export type InsertAiEstimatorIngestRun = z.infer<typeof insertAiEstimatorIngestRunSchema>;
 export type AiEstimatorIngestRun = typeof aiEstimatorIngestRuns.$inferSelect;
+
+// Per-sample provenance table. One row per contributing sample so
+// senior estimators can drill down to see which project / bid / line
+// item each learned-rate value came from.
+export const aiEstimatorRateSamples = pgTable("ai_estimator_rate_samples", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  learnedRateId: varchar("learned_rate_id").references(() => aiEstimatorLearnedRates.id, { onDelete: "cascade" }),
+  costCode: text("cost_code").notNull(),
+  metric: text("metric").notNull(), // 'unit_cost' | 'labor_hours_per_unit' | 'production_rate'
+  unit: text("unit").notNull(),
+  value: decimal("value", { precision: 14, scale: 4 }).notNull(),
+  sourceType: text("source_type").notNull(), // 'historical_actual' | 'estimate_line_item' | 'feedback_event' | 'legacy'
+  sourceRowId: varchar("source_row_id"), // estimate line item id, historical cost id, feedback event id, etc.
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "set null" }),
+  recordedAt: timestamp("recorded_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("ai_estimator_rate_samples_org_idx").on(table.organizationId),
+  rateIdx: index("ai_estimator_rate_samples_rate_idx").on(table.learnedRateId),
+  projectIdx: index("ai_estimator_rate_samples_project_idx").on(table.projectId),
+  costCodeIdx: index("ai_estimator_rate_samples_cost_code_idx").on(table.organizationId, table.costCode, table.metric, table.unit),
+}));
+export const insertAiEstimatorRateSampleSchema = createInsertSchema(aiEstimatorRateSamples).omit({ id: true, recordedAt: true });
+export type InsertAiEstimatorRateSample = z.infer<typeof insertAiEstimatorRateSampleSchema>;
+export type AiEstimatorRateSample = typeof aiEstimatorRateSamples.$inferSelect;
+
+// Projects (and optionally bids) excluded from the learning pool.
+// When a project is excluded its samples are removed from recompute and
+// any new samples from that project are silently skipped.
+export const aiEstimatorExcludedSources = pgTable("ai_estimator_excluded_sources", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "cascade" }),
+  reason: text("reason"),
+  excludedById: varchar("excluded_by_id").references(() => users.id, { onDelete: "set null" }),
+  excludedAt: timestamp("excluded_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("ai_estimator_excluded_sources_org_idx").on(table.organizationId),
+  projectIdx: index("ai_estimator_excluded_sources_project_idx").on(table.projectId),
+  uniq: uniqueIndex("ai_estimator_excluded_sources_uniq").on(table.organizationId, table.projectId),
+}));
+export const insertAiEstimatorExcludedSourceSchema = createInsertSchema(aiEstimatorExcludedSources).omit({ id: true, excludedAt: true });
+export type InsertAiEstimatorExcludedSource = z.infer<typeof insertAiEstimatorExcludedSourceSchema>;
+export type AiEstimatorExcludedSource = typeof aiEstimatorExcludedSources.$inferSelect;
