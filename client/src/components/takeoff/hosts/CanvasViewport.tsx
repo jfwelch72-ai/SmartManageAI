@@ -40,6 +40,15 @@ export interface CanvasViewportProps {
   // calibration banner
   calibrationMode: "idle" | "first-point" | "second-point";
 
+  // Persistent banner that surfaces when a measure tool is selected
+  // on an uncalibrated sheet. Without this, the canvas click handler
+  // silently rejects every click with a transient toast and the user
+  // sees no visual feedback (no preview line, no point markers,
+  // nothing) — they think the measurement tool itself is broken.
+  // `onOpenCalibrate` switches the active tool to calibrate and opens
+  // the calibration drawer so the user can fix it in one click.
+  onOpenCalibrate?: () => void;
+
   // mobile drawing bar
   isDrawing: boolean;
   isMobile: boolean;
@@ -145,10 +154,25 @@ export interface CanvasViewportProps {
   onDismissAiCta?: () => void;
 }
 
+// Tools that hit the `if (!currentSheet?.scalePxPerFoot) { toast(...); return; }`
+// guard in `use-takeoff-interactions`. Pre-click feedback (point markers,
+// rubber-band line, drawing-guide bar) is gated on `isDrawing`, which never
+// flips because the guard returns before `setIsDrawing(true)` fires — so the
+// user sees no canvas response at all. Keep this list aligned with the
+// guarded branches in `handleStageClick`.
+const MEASURE_TOOLS_REQUIRING_CALIBRATION: Tool[] = [
+  "linear", "linear_with_drop", "pitched_linear",
+  "arc", "circle",
+  "area", "pitched_area", "surface_area",
+  "volume",
+  "segment", "deduct",
+];
+
 function CanvasViewportInner(props: CanvasViewportProps) {
   const {
     containerRef, cursor, onContextMenu, onClick, selectedSheet,
-    calibrationMode, isDrawing, isMobile, drawingPoints, activeTool, activeCondition,
+    calibrationMode, onOpenCalibrate,
+    isDrawing, isMobile, drawingPoints, activeTool, activeCondition,
     showMobileGestureGuide, onDismissGestureGuide,
     showMobileToolPicker, onToggleMobileToolPicker, onSelectMobileTool,
     openSheetIds, sheets, onSelectSheet, onCloseSheetTab,
@@ -201,6 +225,39 @@ function CanvasViewportInner(props: CanvasViewportProps) {
         <div className="absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-primary text-primary-foreground px-4 py-2 rounded-full shadow-lg text-sm font-medium flex items-center gap-2 pointer-events-none" data-testid="calibration-mode-banner">
           <span className="inline-block w-2 h-2 rounded-full bg-primary-foreground animate-pulse" />
           {calibrationMode === "first-point" ? "Click first point on a known distance" : "Click second point to complete"}
+        </div>
+      )}
+      {/*
+        Surfaces the silent rejection that happens when a measure tool is
+        active on an uncalibrated sheet. The canvas click handler bails on
+        `if (!currentSheet?.scalePxPerFoot)` BEFORE setting `isDrawing`, so
+        none of the existing in-progress feedback (point markers, rubber-band
+        line, "Click start point" guide) ever appears — every click flashes a
+        toast and the user sees nothing on the canvas. Only show while the
+        user is NOT mid-calibration to avoid stacking with the calibration
+        banner above.
+      */}
+      {selectedSheet
+        && calibrationMode === "idle"
+        && !currentSheet?.scalePxPerFoot
+        && MEASURE_TOOLS_REQUIRING_CALIBRATION.includes(activeTool) && (
+        <div
+          className="absolute top-12 left-1/2 -translate-x-1/2 z-40 bg-amber-500 text-white px-4 py-2 rounded-md shadow-lg text-sm font-medium flex items-center gap-3 max-w-[90%]"
+          data-testid="needs-calibration-banner"
+        >
+          <Ruler className="w-4 h-4 shrink-0" />
+          <span>Set the sheet scale before measuring — clicks won't register until the plan is calibrated.</span>
+          {onOpenCalibrate && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-7 px-2 text-xs shrink-0"
+              onClick={onOpenCalibrate}
+              data-testid="button-open-calibrate-from-banner"
+            >
+              Calibrate now
+            </Button>
+          )}
         </div>
       )}
       {isDrawing && isMobile && (

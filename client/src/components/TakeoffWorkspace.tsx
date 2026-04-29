@@ -4317,6 +4317,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       },
       selectedSheet,
       calibrationMode,
+      onOpenCalibrate: openCalibrationDrawer,
       isDrawing,
       isMobile,
       drawingPoints,
