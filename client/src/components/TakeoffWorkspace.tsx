@@ -39,7 +39,6 @@ import { useAuth } from "@/hooks/use-auth";
 import { getSharedScheduler } from "@/lib/takeoff/tileScheduler";
 import { deferredCloseBitmap } from "@/lib/takeoff/tileCache";
 import { isTileRendererEnabled } from "@/lib/takeoff/tileRendererFlag";
-import { installDetachedBitmapOverlaySuppressor } from "@/lib/takeoff/suppressDetachedBitmapOverlay";
 import { usePdfTileRenderer } from "@/hooks/use-pdf-tile-renderer";
 import { rotateViewportToPageNative, viewportToWorldRect } from "@/lib/takeoff/tileCoords";
 import { useTakeoffStylusPrefs } from "@/hooks/use-takeoff-stylus-prefs";
@@ -192,20 +191,6 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     }
     mql.addListener(handler);
     return () => mql.removeListener(handler);
-  }, []);
-  // Defense-in-depth (dev only): suppress the transient
-  // "image source is detached" overlay that Konva can throw between
-  // a cache eviction and the next batchDraw. The cache already defers
-  // every `bitmap.close()` past Konva's draw cycle (1.5s wall-clock,
-  // see `tileCache.deferredCloseBitmap`) and `<TileLayer>` skips
-  // detached bitmaps at render — but rare browser/HMR/timing races
-  // can still leak a single transient throw into the dev overlay,
-  // blocking the workspace until the user dismisses it. Konva
-  // redraws cleanly on the next frame, so we silence the overlay
-  // (with a one-time console.warn) instead of trapping the user.
-  // Production is unaffected — the suppressor is a no-op there.
-  useEffect(() => {
-    return installDetachedBitmapOverlaySuppressor();
   }, []);
   // Task #2312 — Drawer-mode visibility for the inspector on <lg
   // viewports. Auto-opens when the user picks a measurement (so the

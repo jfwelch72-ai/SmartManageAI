@@ -24,16 +24,30 @@
  * event as a fatal popup, blocking the entire workspace until the
  * user clicks "fix the code or press Esc".
  *
+ * Specifically: `@replit/vite-plugin-runtime-error-modal` injects
+ * a `<script type="module">` into the HTML head that does
+ *   window.addEventListener("error", evt => sendError(evt.error));
+ * forwarding every uncaught error to the dev server, which echoes
+ * it back as a Vite HMR `error` message that triggers the overlay.
+ *
  * This suppressor:
  *   • Only activates in development (`import.meta.env.DEV`).
+ *   • Auto-installs at module-load time (top-level side effect)
+ *     so it is active before any takeoff component mounts. Importing
+ *     this module from `main.tsx` guarantees it is registered before
+ *     React even mounts the tree.
  *   • Only suppresses errors whose message matches the exact
  *     `image source is detached` substring — it never swallows other
  *     drawImage failures, type errors, or anything unrelated.
  *   • Logs a single console.warn per session so the underlying race
  *     is still discoverable in support sessions.
  *   • Calls `event.preventDefault()` + `stopImmediatePropagation()`
- *     and registers in the CAPTURE phase so it runs before Vite's
- *     overlay handler attaches in bubble phase.
+ *     and registers in the CAPTURE phase so it runs before the
+ *     plugin's bubble-phase listener and stops it from forwarding
+ *     the error to the dev server.
+ *   • Never uninstalls — the listener is harmless when no detached
+ *     bitmap error fires, and keeping it permanent avoids any gap
+ *     during React StrictMode unmount/remount cycles.
  *
  * In production the function is a no-op — production builds don't
  * have the dev overlay and `console.error`s from Konva are still
@@ -82,6 +96,11 @@ function onUnhandledRejection(event: PromiseRejectionEvent): void {
   logOnce("unhandledrejection", event.reason);
 }
 
+/**
+ * Idempotent install. Safe to call multiple times — only the first
+ * call registers listeners. Returns a no-op disposer; we deliberately
+ * never uninstall (see header comment).
+ */
 export function installDetachedBitmapOverlaySuppressor(): () => void {
   if (typeof window === "undefined") return () => undefined;
   // Only suppress in dev — production has no Vite overlay and
@@ -93,13 +112,11 @@ export function installDetachedBitmapOverlaySuppressor(): () => void {
   window.addEventListener("unhandledrejection", onUnhandledRejection, {
     capture: true,
   });
-  return () => {
-    installed = false;
-    window.removeEventListener("error", onError, { capture: true });
-    window.removeEventListener(
-      "unhandledrejection",
-      onUnhandledRejection,
-      { capture: true },
-    );
-  };
+  return () => undefined;
 }
+
+// Auto-install side effect: ensures the suppressor is active as soon
+// as this module is evaluated (i.e. as soon as `main.tsx` imports
+// it), before React mounts and well before any takeoff component
+// could trigger a Konva draw.
+installDetachedBitmapOverlaySuppressor();

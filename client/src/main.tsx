@@ -4,6 +4,11 @@ import "./index.css";
 import "./override-style.css";
 import "./uppy-core.css";
 import "./uppy-dashboard.css";
+// Side-effect import: installs the takeoff "image source is detached"
+// dev-overlay suppressor at module-load time, before React mounts and
+// before any takeoff component can trigger a Konva draw. Production
+// builds get a no-op. See module header for the full rationale.
+import "./lib/takeoff/suppressDetachedBitmapOverlay";
 
 // Fix for double-encoded URLs (e.g., /login%3Fredirect=%2Fdashboard)
 // This happens when opening the app in a new tab with encoded query params
