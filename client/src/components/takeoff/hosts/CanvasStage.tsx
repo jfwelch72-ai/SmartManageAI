@@ -68,7 +68,7 @@ export interface CanvasStageProps {
   currentSheet: TakeoffSheet | null | undefined;
   sheetRotation: number;
   pdfImage: HTMLImageElement | ImageBitmap | null;
-  pageDims: { width: number; height: number } | null;
+  pageDims: { width: number; height: number; sheetId?: string } | null;
   tileRendererEnabled: boolean;
   tiles: Array<{ coord: import("@/lib/takeoff/tileCoords").TileCoord; bitmap: ImageBitmap }>;
   isPdfLoading: boolean;
@@ -478,7 +478,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     <Rect x={20} y={20} width={Math.max(4, pdfLoadProgress * 2)} height={6} fill="#f97316" cornerRadius={3} />
                     <Text text={`Loading plan... ${pdfLoadProgress}%`} x={20} y={32} fontSize={12} fill="#888" />
                   </>
-                ) : pdfImage && pageDims ? (
+                ) : pdfImage && pageDims && pageDims.sheetId === currentSheet?.id ? (
                   <>
                     {/* Task #2138: low-res placeholder is stretched to world
                         dimensions so markup math (which has always operated in
@@ -494,7 +494,21 @@ function CanvasStageImpl(props: CanvasStageProps) {
                         the new zoom level while the placeholder reloads.
                         Without this, zooming felt "stuck" because a detached
                         placeholder dropped both layers and the user saw an
-                        empty stage. */}
+                        empty stage.
+
+                        Sheet-match guard (`pageDims.sheetId === currentSheet.id`):
+                        TakeoffWorkspace updates `pdfImage` and `pageDims` from
+                        two independent async paths (the worker's placeholder
+                        bitmap arrives via the mirror effect; pageDims arrives
+                        via `getPageDims` in the loadPDF effect). On a sheet
+                        swap A→B those paths can briefly land in a state where
+                        `pdfImage` already points at B's bitmap while `pageDims`
+                        is still A's smaller dimensions (or vice-versa) — which
+                        renders the new sheet at the previous sheet's size,
+                        producing the duplicate-image / "ghost at wrong scale"
+                        artifact the user reported. The `Loading plan…`
+                        skeleton above takes over until both halves agree on
+                        the same sheet, then this branch paints once. */}
                     {(pdfImage as { width?: number }).width ? (
                       <KonvaImage
                         image={pdfImage as unknown as HTMLImageElement}
@@ -507,11 +521,24 @@ function CanvasStageImpl(props: CanvasStageProps) {
                       <TileLayer tiles={tiles} />
                     ) : null}
                   </>
+                ) : currentSheet ? (
+                  /* Sheet is selected but pdfImage / pageDims haven't
+                     converged on `currentSheet.id` yet (mid-swap window).
+                     Show the same loading skeleton the explicit
+                     `isPdfLoading` branch above renders — anything else
+                     would either flash "Select a sheet" at the user
+                     (jarring) or paint the prior sheet at the wrong
+                     dimensions (the original duplicate-image bug). */
+                  <>
+                    <Rect x={20} y={20} width={200} height={6} fill="#e5e7eb" cornerRadius={3} />
+                    <Rect x={20} y={20} width={4} height={6} fill="#f97316" cornerRadius={3} />
+                    <Text text="Loading plan..." x={20} y={32} fontSize={12} fill="#888" />
+                  </>
                 ) : (
                   <Text text="Select a sheet to begin" x={20} y={20} fontSize={16} fill="#888" />
                 )}
 
-                {pageDims && Object.entries(addendaOverlays).map(([addendumId, overlay]) => {
+                {pageDims && pageDims.sheetId === currentSheet?.id && Object.entries(addendaOverlays).map(([addendumId, overlay]) => {
                   if (!overlay.visible || !addendaImages[addendumId]) return null;
                   // Stretch the addenda image to the same world dimensions
                   // as the underlying sheet placeholder so it lines up
@@ -521,6 +548,15 @@ function CanvasStageImpl(props: CanvasStageProps) {
                   // overlay as a smaller "ghost" image stuck in the upper
                   // area of the canvas (the placeholder render is at a
                   // higher scale than the addenda preview image).
+                  //
+                  // The outer `pageDims.sheetId === currentSheet?.id` gate
+                  // matches the placeholder branch above: if pageDims is
+                  // still the previous sheet's during a swap, the addendum
+                  // image would stretch to the wrong sheet's world box and
+                  // the user sees the same "ghost at wrong scale" duplicate
+                  // overlapping the new sheet. Suppressing addenda until
+                  // pageDims catches up keeps the overlay aligned with the
+                  // sheet it was authored against.
                   return (
                     <KonvaImage
                       key={`addenda-overlay-${addendumId}`}
