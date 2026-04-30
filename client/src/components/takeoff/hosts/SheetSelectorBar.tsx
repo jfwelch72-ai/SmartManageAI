@@ -1,7 +1,7 @@
 import { memo, type ReactNode, type RefObject } from "react";
 import {
   AlertCircle, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpCircle,
-  CheckCircle2, Copy, GalleryHorizontal, GitCompare, History, Keyboard,
+  CheckCircle2, Copy, FolderOpen, GalleryHorizontal, GitCompare, History, Keyboard,
   Layers, Link2, List, Maximize, Maximize2, Minimize, MoreVertical, PanelRight, Pencil,
   Pin, PinOff, Plus, Search, Sparkles, Trash2, Zap,
 } from "lucide-react";
@@ -102,6 +102,13 @@ export interface SheetSelectorBarProps {
   sheetSetsPanelOpen?: boolean;
   onToggleSheetSetsPanel?: () => void;
   activeSheetSetName?: string | null;
+  /** Project Files drawer toggle (mounted alongside Sheet Sets). Opens
+   *  the slide-out drawer that lists the project's / bid's documents
+   *  inline so estimators can preview, import-to-takeoff, or open files
+   *  without leaving the canvas. */
+  showProjectFilesToggle?: boolean;
+  projectFilesPanelOpen?: boolean;
+  onToggleProjectFilesPanel?: () => void;
   /** Number of sheets in the active set membership the current sheet
    *  belongs to. Surfaced inline in the badge so the user knows the
    *  scope of "next/prev sheet" without opening the panel. */
@@ -243,6 +250,9 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
     showSheetSetsToggle = false,
     sheetSetsPanelOpen = false,
     onToggleSheetSetsPanel,
+    showProjectFilesToggle = false,
+    projectFilesPanelOpen = false,
+    onToggleProjectFilesPanel,
     activeSheetSetName = null,
     activeSheetSetMemberCount = 0,
     currentSheetIndexInSet = null,
@@ -802,6 +812,23 @@ function SheetSelectorBarInner(props: SheetSelectorBarProps) {
             </TooltipTrigger>
             <TooltipContent>
               <p>{sheetSetsPanelOpen ? "Hide Sheet Sets" : "Sheet Sets"}</p>
+            </TooltipContent>
+          </Tooltip>
+        )}
+        {showProjectFilesToggle && onToggleProjectFilesPanel && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant={projectFilesPanelOpen ? "secondary" : "ghost"}
+                size="icon"
+                onClick={onToggleProjectFilesPanel}
+                data-testid="button-toggle-project-files"
+              >
+                <FolderOpen className="w-5 h-5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{projectFilesPanelOpen ? "Hide Project Files" : "Project Files"}</p>
             </TooltipContent>
           </Tooltip>
         )}

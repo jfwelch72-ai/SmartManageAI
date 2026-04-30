@@ -92,6 +92,7 @@ import { InlineCalibrationDrawer } from "./takeoff/InlineCalibrationDrawer";
 import { computeSheetCalibrationConfidence } from "./takeoff/sheetCalibrationConfidence";
 import { ScaleHistoryPanel } from "./takeoff/ScaleHistoryPanel";
 import { SheetSetsPanel } from "./takeoff/SheetSetsPanel";
+import { ProjectFilesPanel } from "./takeoff/ProjectFilesPanel";
 import { ToastAction } from "@/components/ui/toast";
 import type { ParsedDimension } from "@/lib/takeoffTypedInput";
 import { TakeoffSheetCompareDialog } from "./takeoff/TakeoffSheetCompareDialog";
@@ -610,6 +611,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     ? `takeoff-active-sheet-set-${sheetSetsCtxId}`
     : null;
   const [sheetSetsPanelOpen, setSheetSetsPanelOpen] = useState(false);
+  // Project Files drawer — slide-out alongside Sheet Sets that lists
+  // the bid's / project's documents inline, with preview + import-to-
+  // takeoff actions. Mounted only when we have a context (bid or
+  // project) since both code paths need a code/id to talk to the
+  // documents endpoints.
+  const [projectFilesPanelOpen, setProjectFilesPanelOpen] = useState(false);
   const [activeSheetSetId, setActiveSheetSetIdState] = useState<string | null>(() => {
     if (!sheetSetsStorageKey) return null;
     try {
@@ -3977,6 +3984,18 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
       showSheetSetsToggle: !!sheetSetsCtxId,
       sheetSetsPanelOpen,
       onToggleSheetSetsPanel: () => setSheetSetsPanelOpen((v) => !v),
+      // Project Files drawer toggle — mirrors the Sheet Sets gating
+      // (only shown when a context is bound). Opening Project Files
+      // closes Sheet Sets so the two slide-outs don't stack.
+      showProjectFilesToggle: !!context,
+      projectFilesPanelOpen,
+      onToggleProjectFilesPanel: () => {
+        setProjectFilesPanelOpen((v) => {
+          const next = !v;
+          if (next) setSheetSetsPanelOpen(false);
+          return next;
+        });
+      },
       activeSheetSetName: activeSheetSetId ? activeSheetSetDetail?.name ?? null : null,
       activeSheetSetMemberCount: activeSheetSetId
         ? activeSheetSetDetail?.members?.length ?? 0
@@ -4066,6 +4085,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     issues.length, hideResolvedIssues, context?.type, crossModulePanelOpen,
     isFullscreen, toggleFullscreen,
     sheetSetsCtxId, sheetSetsPanelOpen, activeSheetSetId, activeSheetSetDetail,
+    projectFilesPanelOpen, context,
     // Task #2332 — `selectorBar.calibrationConfidence` reads the
     // sheet's measurement list to detect drift between captured
     // scale labels and to surface the measurement count, so the
@@ -5718,6 +5738,19 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           onCalibrateSet={handleCalibrateSet}
           multiSelection={multiSheetSelection}
           onClearMultiSelection={() => setMultiSheetSelection(new Set())}
+        />
+      )}
+      {context && (
+        <ProjectFilesPanel
+          open={projectFilesPanelOpen}
+          onClose={() => setProjectFilesPanelOpen(false)}
+          contextType={context.type}
+          contextId={context.type === "bid" ? context.bidId : context.projectId}
+          contextCode={context.type === "bid" ? context.bidCode : context.projectCode}
+          contextLabel={context.type === "bid" ? context.bidCode : context.projectCode}
+          sheets={sheets}
+          selectedSheet={selectedSheet}
+          onSelectSheet={setSelectedSheet}
         />
       )}
     </div>
