@@ -68,6 +68,18 @@ export interface CanvasStageProps {
   currentSheet: TakeoffSheet | null | undefined;
   sheetRotation: number;
   pdfImage: HTMLImageElement | ImageBitmap | null;
+  /**
+   * `pdfImageSheetId` — sheet provenance for the bitmap currently in
+   * `pdfImage`. The placeholder is set from two independent code paths
+   * in TakeoffWorkspace (the legacy non-tile loader and the tile
+   * renderer mirror effect) and on a fast sheet swap A → B the
+   * mirror effect can briefly hold A's bitmap while `pageDims` has
+   * already advanced to B's tagged dims. A pageDims-only check would
+   * pass and paint A stretched into B's page rectangle (the
+   * "duplicate / ghost plan" artifact). We require both fields to
+   * match `currentSheet.id` before drawing.
+   */
+  pdfImageSheetId: string | null;
   pageDims: { width: number; height: number; sheetId?: string } | null;
   tileRendererEnabled: boolean;
   tiles: Array<{ coord: import("@/lib/takeoff/tileCoords").TileCoord; bitmap: ImageBitmap }>;
@@ -250,6 +262,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
     currentSheet,
     sheetRotation,
     pdfImage,
+    pdfImageSheetId,
     pageDims,
     tileRendererEnabled,
     tiles,
@@ -478,7 +491,7 @@ function CanvasStageImpl(props: CanvasStageProps) {
                     <Rect x={20} y={20} width={Math.max(4, pdfLoadProgress * 2)} height={6} fill="#f97316" cornerRadius={3} />
                     <Text text={`Loading plan... ${pdfLoadProgress}%`} x={20} y={32} fontSize={12} fill="#888" />
                   </>
-                ) : pdfImage && pageDims && pageDims.sheetId === currentSheet?.id ? (
+                ) : pdfImage && pageDims && pageDims.sheetId === currentSheet?.id && pdfImageSheetId === currentSheet?.id ? (
                   <>
                     {/* Task #2138: low-res placeholder is stretched to world
                         dimensions so markup math (which has always operated in

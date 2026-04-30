@@ -373,6 +373,21 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   const [toolBeforeSpacebar, setToolBeforeSpacebar] = useState<Tool | null>(null);
   const [isSpacebarHeld, setIsSpacebarHeld] = useState(false);
   const [pdfImage, setPdfImage] = useState<HTMLImageElement | ImageBitmap | null>(null);
+  // Ghost-render guard: tag the currently-loaded `pdfImage` with the
+  // `sheetId` it was rendered for. The placeholder bitmap is set from
+  // two separate code paths (the legacy non-tile loader and the tile
+  // renderer mirror effect) and neither used to carry sheet
+  // provenance. On a fast sheet swap A → B, the mirror effect can
+  // briefly hold A's bitmap while `pageDims` has already advanced to
+  // B's tagged dims, causing CanvasStage's previous gate
+  // (`pageDims.sheetId === currentSheet.id`) to pass while
+  // `pdfImage` still points at A — which renders A's content
+  // stretched into B's page rectangle, producing the duplicate /
+  // ghost-image artifact reported on the takeoff canvas. Tagging the
+  // bitmap lets CanvasStage cross-check provenance against
+  // `currentSheet.id` and fall through to the loading skeleton until
+  // both sources agree.
+  const [pdfImageSheetId, setPdfImageSheetId] = useState<string | null>(null);
   // Task #2310 — pageDims carries the owning `sheetId` so the
   // auto-fit effect (and any other consumer that needs to know
   // "are these dims for the sheet currently selected?") can
@@ -3337,9 +3352,23 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
   useEffect(() => {
     if (!currentSheet?.imageUrl) {
       setPdfImage(null);
+      setPdfImageSheetId(null);
       setPageDims(null);
       return;
     }
+
+    // Ghost-render guard: synchronously drop any prior sheet's bitmap
+    // and dims at the very top of every load. Without this, switching
+    // from sheet A to sheet B leaves A's `pdfImage` and `pageDims` in
+    // scope for the entire async window (getPageDims → tile placeholder
+    // arrival), and the canvas keeps painting A under B's loading
+    // indicators. The downstream `setIsPdfLoading(true)` only paints a
+    // *progress bar* over the stale bitmap; it does not blank the
+    // canvas. Clearing here guarantees the loading skeleton path in
+    // CanvasStage takes over immediately on sheet swap.
+    setPdfImage(null);
+    setPdfImageSheetId(null);
+    setPageDims(null);
 
     let cancelled = false;
     const loadPDF = async () => {
@@ -3380,6 +3409,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
           }
           setPdfLoadProgress(80);
           setPdfImage(res.bitmap);
+          setPdfImageSheetId(currentSheet.id);
           setPageDims({ width: res.width, height: res.height, sheetId: currentSheet.id });
           setPdfLoadProgress(100);
           setIsPdfLoading(false);
@@ -4130,6 +4160,10 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     if (tileRenderer.placeholder) {
       lastPlaceholderErrorSheetRef.current = null;
       setPdfImage(tileRenderer.placeholder);
+      // Tag the bitmap with the sheet it belongs to so CanvasStage can
+      // refuse to draw it when the user has already advanced to a
+      // different sheet in the same render commit.
+      setPdfImageSheetId(currentSheet?.id ?? null);
       setPdfLoadProgress(100);
       setIsPdfLoading(false);
     } else if (tileRenderer.placeholderError && currentSheet?.id) {
@@ -4158,10 +4192,12 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
         });
       }
       setPdfImage(null);
+      setPdfImageSheetId(null);
       setIsPdfLoading(false);
       setPdfLoadProgress(0);
     } else {
       setPdfImage(null);
+      setPdfImageSheetId(null);
     }
   }, [
     tileRendererEnabled,
@@ -4192,6 +4228,7 @@ export default function TakeoffWorkspace({ projectId = "", projectCode = "", con
     currentSheet,
     sheetRotation,
     pdfImage,
+    pdfImageSheetId,
     pageDims,
     tileRendererEnabled,
     tiles: tileRenderer.visibleTiles,
