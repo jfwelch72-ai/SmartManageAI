@@ -1,0 +1,50 @@
+Here's an honest read on where you stand and what would actually move the needle. The good news: your takeoff PDF stack is already well-architected (worker pool, tile cache, range requests, resumable uploads). The bad news: a few specific bottlenecks will bite hard at 25GB and on a heavily-loaded server.
+
+To load 25GB PDFs seamlessly
+1. Raise the hard cap and split the page-count path (must-do)
+
+Today's hard limit is 20GB and the server-side page-count helper caps at 8GB. A 25GB PDF will be rejected outright. Lift these to 32GB, and stop ever streaming a >100MB PDF to a server /tmp file just to count pages — page count should always come from byte-range reads, never a full download.
+2. Add HTTP Range request support to object storage serving
+
+The streaming endpoint pipes the whole file and never honors Range headers. PDF.js can do partial fetches, but only if the server returns 206 Partial Content. Without it, opening a 25GB plan set silently downloads the entire file before the first page renders. This is the single biggest win.
+3. Front the object store with a CDN + signed URLs
+
+Right now every byte flows through your Express process from the local GCS sidecar. For multi-GB files, serve them via signed GCS URLs directly to the browser (with Range support), so your Node server is never in the data path.
+4. Pre-extract a lightweight "sheet manifest" on import
+
+On upload, run a one-time background job that extracts per-page dimensions, page labels, and a 256px thumbnail per page, and stores them as a separate JSON manifest + thumbnail sprite. Sheet bar opens instantly even before the first byte of the actual PDF is fetched.
+5. Optional but powerful: split very large plansets into per-page PDFs server-side
+
+For files over ~2GB, materialize per-page PDFs lazily on first access (cached in object storage). Switching sheets becomes a 5MB fetch instead of a range read into a 25GB file. This trades storage cost for huge UX wins.
+6. Tune the tile cache for big sessions
+
+The 600MB byte budget is fine for one document, but switching between several 25GB plansets in a session will thrash. Make the budget device-aware (use navigator.deviceMemory) and add a per-document soft cap so one giant document can't starve the others.
+To make the rest of the app faster
+7. Fix the worst N+1 hot paths first
+
+takeoffMeasurementRoutes.ts (sheet-by-sheet org lookups) and projectFinancialRoutes.ts (time-entries → users) — both should be single joins. These get exponentially slower as projects grow.
+8. Move the Levenshtein vendor-pricing match off the request path
+
+The fuzzy match in estimateRoutes.ts is O(N×M) and runs inline. On large estimates it pegs the event loop and blocks every other request. Move it to a background job and store match results, or use Postgres pg_trgm for indexed fuzzy search.
+9. Run PDF generation (Playwright/Chromium) out-of-process
+
+Estimate and portfolio PDF exports run inside the Express process. One concurrent large export can stall the whole API. Move to a worker queue with a hard concurrency cap (e.g., 2).
+10. Add the missing composite indexes
+
+Most WHERE organizationId = ? AND status = ? AND date BETWEEN ? AND ? patterns lack composite indexes. A handful of well-chosen indexes will cut p95 latency on the busiest list endpoints.
+11. Defer non-critical startup work
+
+Cold starts run seeds + migrations + scheduler init sequentially before the port opens. Move anything that doesn't have to block startup to a "ready after first request" phase. Cuts cold-boot time substantially.
+12. Tighten the TanStack Query staleTime: Infinity default
+
+It feels fast but can show stale budgets/financials between mutations. Override per-query for financial/scheduling data to a short stale time (30–60s), keep Infinity for catalogs.
+13. Stream the AI ingestion pipeline
+
+runIngestion currently loads everything into memory. As your data grows, this will OOM. Switch to cursor-based streaming with batch flushes.
+My recommended sequencing
+If you want a single Phase to bundle this into, I'd group it as three tasks:
+
+Task A — "Load 25GB PDFs seamlessly": items 1, 2, 3, 4, 6 above. This is the user-visible win you asked for.
+Task B — "Server hot-path cleanup": items 7, 8, 9, 10, 11. Backend latency + stability.
+Task C — "Frontend caching & ingestion polish": items 5, 12, 13. Smaller wins, less urgent.
+Want me to draft Task A as a project task and propose it? That's the one with the biggest bang for the buck and the most direct answer to your question. I can also draft B and C as separate tasks if you want all three queued.
