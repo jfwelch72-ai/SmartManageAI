@@ -1,0 +1,84 @@
+You are performing a complete technical audit of this codebase. I want you to thoroughly examine everything in this project and produce a structured audit report. Here is what I need you to cover:
+
+1. PROJECT OVERVIEW
+- What does this application do?
+- What is the tech stack (languages, frameworks, runtime versions)?
+- What is the overall architecture (monolith, microservices, frontend/backend split, etc.)?
+
+2. FILE & FOLDER STRUCTURE
+- List every file and directory and explain the purpose of each
+- Identify entry points (main files, index files, server startup)
+- Flag any orphaned, unused, or duplicate files
+
+3. CODE INVENTORY
+- List every module, class, function, and component
+- Document what each one does and where it is used
+- Identify dead code, commented-out blocks, or unused exports
+
+4. DATA LAYER
+- Describe all data models, schemas, and database tables
+- Identify the database(s) used (SQL, NoSQL, in-memory, etc.)
+- List all queries, migrations, and seeds
+- Flag any missing indexes, N+1 query risks, or data integrity issues
+
+5. INTEGRATIONS & EXTERNAL SERVICES
+- List every third-party API, SDK, or external service connected
+- Identify how credentials and API keys are managed (env vars, hardcoded, secrets manager)
+- Note any webhooks, callbacks, or event listeners tied to external services
+
+6. ENVIRONMENT & CONFIGURATION
+- List every environment variable used and what it controls
+- Identify any hardcoded values that should be env vars
+- Document all config files (.env, .env.example, config.json, etc.)
+
+7. DEPENDENCIES
+- List all packages and libraries from package.json / requirements.txt / etc.
+- Flag outdated, deprecated, or vulnerable packages
+- Identify unused dependencies
+
+8. FEATURES & FUNCTIONALITY
+- List every user-facing feature and the code that powers it
+- Map out the full user flow from entry to exit
+- Identify any incomplete, broken, or partially implemented features
+
+9. APIs & ROUTES
+- List every route, endpoint, or API method (GET, POST, PUT, DELETE, etc.)
+- Document what each route does, what inputs it expects, and what it returns
+- Flag unprotected routes, missing validation, or inconsistent error handling
+
+10. AUTHENTICATION & AUTHORIZATION
+- How is authentication implemented (JWT, sessions, OAuth, etc.)?
+- What roles or permission levels exist?
+- Flag any auth gaps, insecure patterns, or exposed sensitive routes
+
+11. ERROR HANDLING & LOGGING
+- How are errors caught and handled throughout the app?
+- What logging is in place (console.log, structured logging, monitoring tools)?
+- Identify silent failures, unhandled promise rejections, or missing try/catch blocks
+
+12. PERFORMANCE & SCALABILITY
+- Identify bottlenecks, heavy computations, or blocking operations
+- Flag missing caching, pagination, or rate limiting where it would help
+- Note any memory leaks, large payloads, or inefficient loops
+
+13. SECURITY
+- Flag SQL injection, XSS, CSRF, or other vulnerability risks
+- Check for exposed secrets, insecure headers, or missing input sanitization
+- Review CORS settings and authentication middleware
+
+14. TESTING
+- What tests exist (unit, integration, end-to-end)?
+- What is the test coverage and what is untested?
+- Are there testing utilities, mocks, or fixtures?
+
+15. DEPLOYMENT & INFRASTRUCTURE
+- How is this app deployed (Replit, Docker, CI/CD, manual)?
+- What does the build process look like?
+- Identify any deployment risks or missing steps
+
+16. SUMMARY & PRIORITY ISSUES
+- Summarize the overall health of the codebase
+- List the top 10 issues ranked by severity (critical, high, medium, low)
+- Provide specific, actionable recommendations for each issue
+
+Please be exhaustive. Do not skip files or sections. If something is missing (e.g., no tests, no error handling), explicitly call it out as a gap. Output the full audit in structured sections as described above.
