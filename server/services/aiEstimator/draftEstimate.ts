@@ -1,8 +1,10 @@
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../../db";
 import { takeoffMeasurements, takeoffSheets } from "@shared/schema";
-import { openai, AI_MODEL_GPT5 } from "../../ai/openaiClient";
 import { governedAiCall } from "../aiGovernance";
+// Task #2413 — Routed through provider abstraction so this draft path runs on
+// Claude when `AI_PROVIDER_TAKEOFF` is enabled for the org, with OpenAI fallback.
+import { routedChatCompletion } from "../../ai/providers";
 import { listLearnedRatesForOrg, summarizeRate } from "./learnedRates";
 import { retrieveContext, citationsFromRows } from "./retrieval";
 import { logError } from "../../utils/logger";
@@ -135,14 +137,17 @@ Return strict JSON: {
     actionType: "ai_estimator.estimate_generate",
     inputRefs: { bidId: opts.bidId, sheetCount: sheetIds.length, measurementCount: measurementSummaries.length },
     fn: async () => {
-      const completion = await openai.chat.completions.create({
-        model: AI_MODEL_GPT5,
-        messages: [
-          { role: "system", content: sysPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        max_completion_tokens: 4000,
-        response_format: { type: "json_object" },
+      const completion = await routedChatCompletion({
+        orgId: opts.organizationId,
+        featureKey: "ai_estimator.estimate_generate",
+        request: {
+          messages: [
+            { role: "system", content: sysPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          max_completion_tokens: 4000,
+          response_format: { type: "json_object" },
+        },
       });
       return { result: completion.choices[0]?.message?.content ?? null, completion };
     },

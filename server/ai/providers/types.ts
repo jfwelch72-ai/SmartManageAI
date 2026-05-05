@@ -86,6 +86,7 @@ export type TakeoffFeatureKey =
   | "heavy_civil.mass_haul.analyze"
   | "ai_estimator.takeoff_draft"
   | "ai_estimator.chat"
+  | "ai_estimator.estimate_generate"
   // Task #2414 — Claude-written narrative summary for each indexed
   // knowledge row. Runs at the end of `runIngestion()` for orgs that
   // have AI_PROVIDER_TAKEOFF enabled.
