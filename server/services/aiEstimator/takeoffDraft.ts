@@ -7,6 +7,7 @@ import { governedAiCall } from "../aiGovernance";
 // Claude when `AI_PROVIDER_TAKEOFF` is enabled for the org.
 import { routedChatCompletion } from "../../ai/providers";
 import type { AiContentPart } from "../../ai/providers/types";
+import { formatLessonsForPrompt, retrieveLessons } from "./retrieval";
 import { logError, logWarn } from "../../utils/logger";
 
 export interface DraftTakeoffMeasurement {
@@ -94,6 +95,20 @@ export async function draftTakeoffFromPlans(opts: {
 
   const sysPrompt = `You are a senior estimator drafting an initial takeoff from construction drawings. Identify quantifiable items (areas in SF/SY, lengths in LF, volumes in CY, counts in EA). Be conservative — never invent measurements that are not visible. ${opts.scopeNotes ? `Scope notes: ${opts.scopeNotes}.` : ""} Respond with strict JSON: { "measurements": [{ "label": string, "type": "AREA|LINEAR|COUNT|VOLUME|ANGULAR|DIAMETER", "value": number, "unit": string, "costCode": string|null, "rationale": string }], "notes": string, "confidence": number }.`;
 
+  // Task #2415 — qualitative lessons (org-wide + takeoff-surface scoped).
+  // Best-effort: any retrieval failure simply means no lesson block is added.
+  let lessonRows: Awaited<ReturnType<typeof retrieveLessons>> = [];
+  try {
+    lessonRows = await retrieveLessons({
+      organizationId: opts.organizationId,
+      surface: "takeoff_draft",
+      limit: 8,
+    });
+  } catch {
+    lessonRows = [];
+  }
+  const lessonsBlock = formatLessonsForPrompt(lessonRows);
+
   const gov = await governedAiCall<string | null>({
     orgId: opts.organizationId,
     userId: opts.userId,
@@ -106,6 +121,9 @@ export async function draftTakeoffFromPlans(opts: {
         request: {
           messages: [
             { role: "system", content: sysPrompt },
+            ...(lessonsBlock
+              ? ([{ role: "system", content: lessonsBlock }] as const)
+              : []),
             {
               role: "user",
               content: [

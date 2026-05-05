@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { and, desc, eq, ilike, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
 import { db } from "../../db";
 import {
   aiEstimatorKnowledgeIndex,
@@ -134,6 +134,13 @@ export async function upsertKnowledgeRow(
         indexedAt: new Date(),
         enrichedSummary: null,
         enrichedAt: null,
+        // Task #2415 — preserve lesson-specific fields on upsert. For
+        // non-lesson sources these are simply null on both sides.
+        lessonScope: row.lessonScope ?? null,
+        lessonStatus: row.lessonStatus ?? null,
+        lessonSurface: row.lessonSurface ?? null,
+        supersedesRowId: row.supersedesRowId ?? null,
+        derivedFromFeedbackIds: row.derivedFromFeedbackIds ?? null,
       },
     })
     .returning({ id: aiEstimatorKnowledgeIndex.id });
@@ -170,11 +177,20 @@ export interface RetrievalQuery {
  * then ILIKE-rank rows whose title/content snippet/enriched summary
  * contains query terms. Vector search is intentionally deferred — the
  * data model here keeps the door open without requiring a vector DB.
+ *
+ * Task #2415 — qualitative-lesson rows are excluded here so retrieval
+ * stays focused on historical bids/estimates/takeoffs. Lessons are pulled
+ * separately via `retrieveLessons` and injected under their own clearly
+ * labelled prompt section so the model treats them as guidance rather
+ * than mixed in with historical evidence.
  */
 export async function retrieveContext(
   q: RetrievalQuery,
 ): Promise<AiEstimatorKnowledgeIndex[]> {
-  const conditions = [eq(aiEstimatorKnowledgeIndex.organizationId, q.organizationId)];
+  const conditions = [
+    eq(aiEstimatorKnowledgeIndex.organizationId, q.organizationId),
+    ne(aiEstimatorKnowledgeIndex.sourceType, "qualitative_lesson"),
+  ];
   if (q.bidId) conditions.push(eq(aiEstimatorKnowledgeIndex.bidId, q.bidId));
   if (q.projectId) conditions.push(eq(aiEstimatorKnowledgeIndex.projectId, q.projectId));
   if (q.costCode) conditions.push(eq(aiEstimatorKnowledgeIndex.costCode, q.costCode));
@@ -206,6 +222,87 @@ export function knowledgeRowBody(row: AiEstimatorKnowledgeIndex): string {
   const enriched = row.enrichedSummary?.trim();
   if (enriched) return enriched;
   return row.contentSnippet;
+}
+
+// =====================================================================
+// Task #2415 — qualitative lesson retrieval.
+// =====================================================================
+
+export interface LessonRetrievalQuery {
+  organizationId: string;
+  costCode?: string | null;
+  tradeType?: string | null;
+  surface?: string | null;
+  limit?: number;
+}
+
+/**
+ * Pull the most relevant active qualitative lessons for the current call
+ * site. We OR-match on (costCode | tradeType | surface) and always
+ * include `lessonScope = 'global'` rows so org-wide guidance is always
+ * present. Stale and deleted rows are excluded.
+ */
+export async function retrieveLessons(
+  q: LessonRetrievalQuery,
+): Promise<AiEstimatorKnowledgeIndex[]> {
+  const orConds: any[] = [eq(aiEstimatorKnowledgeIndex.lessonScope, "global")];
+  if (q.costCode) {
+    orConds.push(
+      and(
+        eq(aiEstimatorKnowledgeIndex.lessonScope, "cost_code"),
+        eq(aiEstimatorKnowledgeIndex.costCode, q.costCode),
+      ),
+    );
+  }
+  if (q.tradeType) {
+    orConds.push(
+      and(
+        eq(aiEstimatorKnowledgeIndex.lessonScope, "trade"),
+        eq(aiEstimatorKnowledgeIndex.tradeType, q.tradeType),
+      ),
+    );
+  }
+  if (q.surface) {
+    orConds.push(
+      and(
+        eq(aiEstimatorKnowledgeIndex.lessonScope, "surface"),
+        eq(aiEstimatorKnowledgeIndex.lessonSurface, q.surface),
+      ),
+    );
+  }
+
+  const matchScope = orConds.length === 1 ? orConds[0] : or(...orConds);
+  const conditions = [
+    eq(aiEstimatorKnowledgeIndex.organizationId, q.organizationId),
+    eq(aiEstimatorKnowledgeIndex.sourceType, "qualitative_lesson"),
+    eq(aiEstimatorKnowledgeIndex.lessonStatus, "active"),
+  ];
+  if (matchScope) conditions.push(matchScope);
+
+  return db
+    .select()
+    .from(aiEstimatorKnowledgeIndex)
+    .where(and(...conditions))
+    .orderBy(desc(aiEstimatorKnowledgeIndex.indexedAt))
+    .limit(Math.min(q.limit ?? 10, 25));
+}
+
+/** Render an array of lesson rows into a prompt section the model can read. */
+export function formatLessonsForPrompt(
+  lessons: AiEstimatorKnowledgeIndex[],
+): string {
+  if (lessons.length === 0) return "";
+  const lines = lessons.map((l) => {
+    const tag = l.costCode
+      ? `[cost_code ${l.costCode}]`
+      : l.tradeType
+        ? `[trade ${l.tradeType}]`
+        : l.lessonSurface
+          ? `[surface ${l.lessonSurface}]`
+          : "[org-wide]";
+    return `- ${tag} ${l.contentSnippet}`;
+  });
+  return `Lessons from your team's prior edits (treat as soft guidance, not hard rules):\n${lines.join("\n")}`;
 }
 
 export function citationsFromRows(

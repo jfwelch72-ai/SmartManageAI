@@ -11391,7 +11391,7 @@ export type AiEstimatorLearnedRate = typeof aiEstimatorLearnedRates.$inferSelect
 export const aiEstimatorKnowledgeIndex = pgTable("ai_estimator_knowledge_index", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
-  sourceType: text("source_type").notNull(), // 'bid' | 'estimate' | 'estimate_line_item' | 'takeoff_measurement' | 'cost_ledger_posting' | 'historical_cost'
+  sourceType: text("source_type").notNull(), // 'bid' | 'estimate' | 'estimate_line_item' | 'takeoff_measurement' | 'cost_ledger_posting' | 'historical_cost' | 'qualitative_lesson'
   sourceId: varchar("source_id").notNull(),
   bidId: varchar("bid_id").references(() => bids.id, { onDelete: "set null" }),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "set null" }),
@@ -11412,6 +11412,27 @@ export const aiEstimatorKnowledgeIndex = pgTable("ai_estimator_knowledge_index",
   // enrichment call errored, fall back to `contentSnippet`.
   enrichedSummary: text("enriched_summary"),
   enrichedAt: timestamp("enriched_at"),
+  // Task #2415 — qualitative-lesson rows ride on the same knowledge index
+  // so retrieval can pull them alongside historical bids/estimates without
+  // a separate table. These fields are nullable for every other source
+  // type and only populated when sourceType = 'qualitative_lesson'.
+  // lessonScope: which dimension the lesson applies to. Drives retrieval
+  // matching alongside costCode/tradeType/surface.
+  lessonScope: text("lesson_scope"), // 'global' | 'cost_code' | 'trade' | 'surface'
+  // lessonStatus: lifecycle. 'active' rows are injected into prompts; 'stale'
+  // rows are kept for audit but not retrieved; 'deleted' rows are soft-deleted
+  // by an admin and never retrieved.
+  lessonStatus: text("lesson_status"), // 'active' | 'stale' | 'deleted'
+  // surface (e.g. 'chat_answer', 'inline_unit_cost') the lesson was learned
+  // from, so retrieval can prefer lessons relevant to the current call site.
+  lessonSurface: text("lesson_surface"),
+  // When this lesson supersedes an older one in the same bucket, points at
+  // that older row's id; the older row gets lessonStatus='stale'.
+  supersedesRowId: varchar("supersedes_row_id"),
+  // List of feedback-event ids this lesson was synthesized from. Used to
+  // dedupe (no second lesson for the same event) and to display provenance
+  // in the admin panel.
+  derivedFromFeedbackIds: jsonb("derived_from_feedback_ids"),
 }, (table) => ({
   orgIdx: index("ai_estimator_knowledge_org_idx").on(table.organizationId),
   sourceIdx: index("ai_estimator_knowledge_source_idx").on(table.sourceType, table.sourceId),
@@ -11421,6 +11442,9 @@ export const aiEstimatorKnowledgeIndex = pgTable("ai_estimator_knowledge_index",
     table.sourceType,
     table.sourceId,
   ),
+  // Task #2415 — fast lookup of active lessons by bucket for retrieval and
+  // for dedup checks before insert.
+  lessonStatusIdx: index("ai_estimator_knowledge_lesson_status_idx").on(table.lessonStatus),
 }));
 export const insertAiEstimatorKnowledgeIndexSchema = createInsertSchema(aiEstimatorKnowledgeIndex).omit({ id: true, indexedAt: true });
 export type InsertAiEstimatorKnowledgeIndex = z.infer<typeof insertAiEstimatorKnowledgeIndexSchema>;

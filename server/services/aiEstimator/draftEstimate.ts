@@ -6,7 +6,12 @@ import { governedAiCall } from "../aiGovernance";
 // Claude when `AI_PROVIDER_TAKEOFF` is enabled for the org, with OpenAI fallback.
 import { routedChatCompletion } from "../../ai/providers";
 import { listLearnedRatesForOrg, summarizeRate } from "./learnedRates";
-import { retrieveContext, citationsFromRows } from "./retrieval";
+import {
+  citationsFromRows,
+  formatLessonsForPrompt,
+  retrieveContext,
+  retrieveLessons,
+} from "./retrieval";
 import { logError } from "../../utils/logger";
 import {
   assertBidInOrg,
@@ -106,6 +111,19 @@ export async function generateDraftEstimate(opts: {
     limit: 12,
   });
 
+  // Task #2415 — pull qualitative lessons. Best-effort; never fails the draft.
+  let lessonRows: Awaited<ReturnType<typeof retrieveLessons>> = [];
+  try {
+    lessonRows = await retrieveLessons({
+      organizationId: opts.organizationId,
+      surface: "estimate_draft",
+      limit: 10,
+    });
+  } catch {
+    lessonRows = [];
+  }
+  const lessonsBlock = formatLessonsForPrompt(lessonRows);
+
   const sysPrompt = `You are a senior construction estimator drafting a working estimate for a contractor in their own workspace.
 You ONLY use the data provided: the takeoff measurements, the org's learned cost rates, and prior bids/estimates from this org.
 Never invent unit costs that are not anchored in the provided rates or context. If a rate is missing, set unitCost to 0 and note it in rationale.
@@ -143,6 +161,9 @@ Return strict JSON: {
         request: {
           messages: [
             { role: "system", content: sysPrompt },
+            // Task #2415 — qualitative lessons learned from prior EDIT feedback,
+            // injected as soft guidance just below the main system prompt.
+            ...(lessonsBlock ? [{ role: "system" as const, content: lessonsBlock }] : []),
             { role: "user", content: userPrompt },
           ],
           max_completion_tokens: 4000,

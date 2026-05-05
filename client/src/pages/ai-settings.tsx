@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { Settings, Save, Filter } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Settings, Save, Filter, Lightbulb, Trash2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import type { AISettings } from "@shared/schema";
 
@@ -18,6 +19,23 @@ interface TakeoffOrgSettingsResponse {
   suppressionFloor: number | null;
   defaults: { recommended: number; minSamples: number };
   bounds: { min: number; max: number };
+}
+
+// Task #2415 — lesson rows surfaced on the admin panel. Mirrors the
+// shape returned by GET /api/ai-estimator/admin/lessons.
+interface LessonRow {
+  id: string;
+  title: string;
+  contentSnippet: string;
+  scope: "global" | "cost_code" | "trade" | "surface" | string | null;
+  status: "active" | "stale" | "deleted" | string | null;
+  surface: string | null;
+  costCode: string | null;
+  tradeType: string | null;
+  numericFacets: Record<string, unknown> | null;
+  derivedFromFeedbackIds: string[] | null;
+  supersedesRowId: string | null;
+  indexedAt: string;
 }
 
 export default function AISettingsPage() {
@@ -104,6 +122,40 @@ export default function AISettingsPage() {
       });
     }
   }, [settings]);
+
+  // Task #2415 — qualitative lessons learned by the AI Estimator.
+  // Admin-only list/delete view; the panel is hidden when the org has
+  // never produced a lesson (the endpoint just returns an empty array).
+  const {
+    data: lessonsData,
+    isLoading: lessonsLoading,
+  } = useQuery<{ lessons: LessonRow[] }>({
+    queryKey: ["/api/ai-estimator/admin/lessons"],
+    enabled: !!user && user.role === "ADMIN",
+  });
+
+  const deleteLessonMutation = useMutation({
+    mutationFn: async (lessonId: string) => {
+      await apiRequest("DELETE", `/api/ai-estimator/admin/lessons/${lessonId}`);
+      return lessonId;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["/api/ai-estimator/admin/lessons"],
+      });
+      toast({
+        title: "Lesson deleted",
+        description: "The lesson will no longer be injected into AI prompts.",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Delete failed",
+        description: error.message || "Failed to delete lesson",
+      });
+    },
+  });
 
   const updateMutation = useMutation({
     mutationFn: async (data: Partial<typeof formData>) => {
@@ -461,6 +513,109 @@ export default function AISettingsPage() {
                     : "Save Takeoff Settings"}
                 </Button>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Task #2415 — Qualitative lessons learned from edits. */}
+          <Card data-testid="card-lessons-learned">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Lightbulb className="h-5 w-5 text-primary" />
+                Lessons learned (AI Estimator)
+              </CardTitle>
+              <CardDescription>
+                Short, structured notes the AI captures whenever someone
+                edits an AI suggestion. Active lessons are injected as
+                guidance into future AI Estimator prompts. Delete a
+                lesson to stop using it.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {lessonsLoading ? (
+                <Skeleton className="h-24 w-full" data-testid="skeleton-lessons" />
+              ) : !lessonsData || lessonsData.lessons.length === 0 ? (
+                <p
+                  className="text-sm text-muted-foreground"
+                  data-testid="text-lessons-empty"
+                >
+                  No lessons yet. They will appear here automatically as
+                  the AI learns from your edits.
+                </p>
+              ) : (
+                <ul className="space-y-3">
+                  {lessonsData.lessons.map((lesson) => (
+                    <li
+                      key={lesson.id}
+                      className="rounded-md border p-3"
+                      data-testid={`row-lesson-${lesson.id}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div
+                            className="font-medium"
+                            data-testid={`text-lesson-title-${lesson.id}`}
+                          >
+                            {lesson.title}
+                          </div>
+                          <p
+                            className="mt-1 text-sm text-muted-foreground"
+                            data-testid={`text-lesson-snippet-${lesson.id}`}
+                          >
+                            {lesson.contentSnippet}
+                          </p>
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                            {lesson.scope && (
+                              <Badge
+                                variant="secondary"
+                                data-testid={`badge-lesson-scope-${lesson.id}`}
+                              >
+                                scope: {lesson.scope}
+                              </Badge>
+                            )}
+                            {lesson.surface && (
+                              <Badge
+                                variant="outline"
+                                data-testid={`badge-lesson-surface-${lesson.id}`}
+                              >
+                                {lesson.surface}
+                              </Badge>
+                            )}
+                            {lesson.costCode && (
+                              <Badge
+                                variant="outline"
+                                data-testid={`badge-lesson-costcode-${lesson.id}`}
+                              >
+                                cost code: {lesson.costCode}
+                              </Badge>
+                            )}
+                            {lesson.tradeType && (
+                              <Badge
+                                variant="outline"
+                                data-testid={`badge-lesson-trade-${lesson.id}`}
+                              >
+                                trade: {lesson.tradeType}
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() =>
+                            deleteLessonMutation.mutate(lesson.id)
+                          }
+                          disabled={deleteLessonMutation.isPending}
+                          aria-label="Delete lesson"
+                          data-testid={`button-delete-lesson-${lesson.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </CardContent>
           </Card>
         </div>

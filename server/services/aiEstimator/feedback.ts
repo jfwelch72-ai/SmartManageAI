@@ -6,6 +6,7 @@ import {
   type InsertAiEstimatorFeedbackEvent,
 } from "@shared/schema";
 import { recordRateSample, type RateMetric } from "./learnedRates";
+import { maybeEnqueueLessonGeneration } from "./lessons";
 import { logError } from "../../utils/logger";
 
 export type FeedbackOutcome =
@@ -79,6 +80,27 @@ export async function recordFeedback(
       logError("Failed to update learned rate from feedback", { error: String(err) });
     }
   }
+
+  // Task #2415 — when this feedback was an EDIT, fire-and-forget a Claude
+  // summarizer that turns the correction into a short qualitative lesson
+  // for the org's knowledge index. Gated by AI_PROVIDER_TAKEOFF inside the
+  // helper; never throws back to the API caller.
+  if (input.outcome === "EDITED") {
+    void maybeEnqueueLessonGeneration({
+      id: event.id,
+      organizationId: event.organizationId,
+      userId: event.userId ?? null,
+      surface: event.surface,
+      outcome: event.outcome,
+      costCode: event.costCode ?? null,
+      tradeType: event.tradeType ?? null,
+      originalValue: event.originalValue,
+      finalValue: event.finalValue,
+      comment: event.comment ?? null,
+      aiAuditId: event.aiAuditId ?? null,
+    });
+  }
+
   return event;
 }
 

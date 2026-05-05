@@ -9,7 +9,12 @@ import {
 import { governedAiCall } from "../aiGovernance";
 // Task #2410 — Estimator chat is part of the Takeoff family routing decision.
 import { routedChatCompletion } from "../../ai/providers";
-import { citationsFromRows, retrieveContext } from "./retrieval";
+import {
+  citationsFromRows,
+  formatLessonsForPrompt,
+  retrieveContext,
+  retrieveLessons,
+} from "./retrieval";
 import { listLearnedRatesForOrg, summarizeRate } from "./learnedRates";
 import {
   assertBidInOrg,
@@ -126,6 +131,19 @@ export async function sendChatTurn(opts: {
     limit: 8,
   });
 
+  // Task #2415 — pull qualitative lessons (org-wide + chat-surface scoped).
+  // Best-effort: failures must not break the chat turn.
+  let lessonRows: Awaited<ReturnType<typeof retrieveLessons>> = [];
+  try {
+    lessonRows = await retrieveLessons({
+      organizationId: opts.organizationId,
+      surface: "chat_answer",
+      limit: 8,
+    });
+  } catch {
+    lessonRows = [];
+  }
+
   const rates = await listLearnedRatesForOrg(opts.organizationId);
   const rateSummary = rates.slice(0, 30).map((r) => ({
     costCode: r.costCode,
@@ -143,6 +161,7 @@ export async function sendChatTurn(opts: {
 Answer using ONLY the provided context (org's bids, estimates, takeoffs, learned rates) and prior chat turns.
 If the answer is not in the context, say so plainly. Never invent costs that aren't in the rates table.
 Cite the source rows you used by their id when relevant. Reply in plain prose with short bullet points.`;
+  const lessonsBlock = formatLessonsForPrompt(lessonRows);
   const contextBlock = `Context:\n` +
     contextRows
       .map(
@@ -174,6 +193,9 @@ Cite the source rows you used by their id when relevant. Reply in plain prose wi
         request: {
           messages: [
             { role: "system", content: sysPrompt },
+            ...(lessonsBlock
+              ? ([{ role: "system", content: lessonsBlock }] as const)
+              : []),
             { role: "system", content: contextBlock },
             ...historyTurns,
             { role: "user", content: trimmed },

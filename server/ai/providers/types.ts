@@ -90,4 +90,8 @@ export type TakeoffFeatureKey =
   // Task #2414 — Claude-written narrative summary for each indexed
   // knowledge row. Runs at the end of `runIngestion()` for orgs that
   // have AI_PROVIDER_TAKEOFF enabled.
-  | "ai_estimator.enrichment";
+  | "ai_estimator.enrichment"
+  // Task #2415 — Claude-powered summarizer that turns EDIT-type feedback
+  // events into short qualitative "lessons" written into the knowledge
+  // index. Uses JSON mode + ≤300 tokens, fire-and-forget.
+  | "ai_estimator.lesson";
