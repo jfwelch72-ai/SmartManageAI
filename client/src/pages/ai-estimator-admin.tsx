@@ -311,6 +311,15 @@ export default function AiEstimatorAdminPage() {
 
   const [excludeDialogOpen, setExcludeDialogOpen] = useState(false);
   const [pendingExclude, setPendingExclude] = useState<{ projectId: string; projectName: string } | null>(null);
+  const [expandedRunIds, setExpandedRunIds] = useState<Set<string>>(new Set());
+  const toggleRunExpanded = (id: string) => {
+    setExpandedRunIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const updateAccess = useMutation({
     mutationFn: async (vars: { userId: string; enabled: boolean; canTrain?: boolean }) =>
@@ -492,21 +501,60 @@ export default function AiEstimatorAdminPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {runsQuery.data?.runs.map((r) => (
-                      <TableRow key={r.id} data-testid={`row-run-${r.id}`}>
-                        <TableCell className="whitespace-nowrap">{new Date(r.startedAt).toLocaleString()}</TableCell>
-                        <TableCell>
-                          <Badge variant={r.status === "SUCCESS" || r.status === "SUCCEEDED" ? "default" : r.status === "FAILED" ? "destructive" : "secondary"}>
-                            {r.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>{r.trigger}</TableCell>
-                        <TableCell>{r.bidsIngested}</TableCell>
-                        <TableCell>{r.estimatesIngested}</TableCell>
-                        <TableCell>{r.takeoffsIngested}</TableCell>
-                        <TableCell>{r.ratesUpdated}</TableCell>
-                      </TableRow>
-                    ))}
+                    {runsQuery.data?.runs.flatMap((r) => {
+                      const isFailed = r.status === "FAILED";
+                      const hasError = isFailed && !!r.errorMessage;
+                      const isExpanded = expandedRunIds.has(r.id);
+                      const rows = [
+                        <TableRow key={r.id} data-testid={`row-run-${r.id}`}>
+                          <TableCell className="whitespace-nowrap">{new Date(r.startedAt).toLocaleString()}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={r.status === "SUCCESS" || r.status === "SUCCEEDED" ? "default" : isFailed ? "destructive" : "secondary"}>
+                                {r.status}
+                              </Badge>
+                              {hasError && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 px-1.5 text-destructive hover:text-destructive"
+                                  onClick={() => toggleRunExpanded(r.id)}
+                                  aria-label={isExpanded ? "Hide error details" : "Show error details"}
+                                  data-testid={`button-toggle-error-${r.id}`}
+                                >
+                                  {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                                  <AlertCircle className="h-3.5 w-3.5 ml-0.5" />
+                                </Button>
+                              )}
+                            </div>
+                          </TableCell>
+                          <TableCell>{r.trigger}</TableCell>
+                          <TableCell>{r.bidsIngested}</TableCell>
+                          <TableCell>{r.estimatesIngested}</TableCell>
+                          <TableCell>{r.takeoffsIngested}</TableCell>
+                          <TableCell>{r.ratesUpdated}</TableCell>
+                        </TableRow>,
+                      ];
+                      if (hasError && isExpanded) {
+                        rows.push(
+                          <TableRow key={`${r.id}-error`} className="bg-destructive/5 hover:bg-destructive/5">
+                            <TableCell colSpan={7} className="py-3">
+                              <div className="flex items-start gap-2 text-sm" data-testid={`text-run-error-${r.id}`}>
+                                <AlertCircle className="h-4 w-4 mt-0.5 text-destructive shrink-0" />
+                                <div className="space-y-1 min-w-0 flex-1">
+                                  <div className="font-medium text-destructive">Run failed</div>
+                                  <pre className="whitespace-pre-wrap break-words font-mono text-xs text-muted-foreground bg-background/60 rounded border border-destructive/20 p-2 max-h-48 overflow-auto">
+                                    {r.errorMessage}
+                                  </pre>
+                                </div>
+                              </div>
+                            </TableCell>
+                          </TableRow>,
+                        );
+                      }
+                      return rows;
+                    })}
                     {runsQuery.data?.runs.length === 0 && (
                       <TableRow>
                         <TableCell colSpan={7} className="text-center text-sm text-muted-foreground py-8">

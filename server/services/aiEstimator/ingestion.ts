@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { db } from "../../db";
 import {
   aiEstimatorIngestRuns,
@@ -196,7 +196,7 @@ export async function runIngestion(
       ? await db
           .select()
           .from(estimates)
-          .where(sql`${estimates.bidId} = ANY(${bidIds})`)
+          .where(inArray(estimates.bidId, bidIds))
       : [];
     counters.estimatesIngested = orgEstimates.length;
 
@@ -287,7 +287,7 @@ export async function runIngestion(
       ? await db
           .select()
           .from(takeoffSheets)
-          .where(sql`${takeoffSheets.bidId} = ANY(${bidIds})`)
+          .where(inArray(takeoffSheets.bidId, bidIds))
       : [];
     for (const sheet of orgTakeoffs) {
       const measurements = await db
@@ -387,7 +387,7 @@ export async function runIngestion(
           ? await db
               .select()
               .from(aiEstimatorKnowledgeIndex)
-              .where(sql`${aiEstimatorKnowledgeIndex.id} = ANY(${targetIds})`)
+              .where(inArray(aiEstimatorKnowledgeIndex.id, targetIds))
           : [];
         const rowById = new Map(rows.map((r) => [r.id, r]));
 
