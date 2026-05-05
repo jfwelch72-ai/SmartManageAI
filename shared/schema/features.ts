@@ -11406,6 +11406,12 @@ export const aiEstimatorKnowledgeIndex = pgTable("ai_estimator_knowledge_index",
   numericFacets: jsonb("numeric_facets"),
   indexedAt: timestamp("indexed_at").notNull().defaultNow(),
   contentHash: text("content_hash"),
+  // Task #2414 — Claude-written narrative summary for the row, written by
+  // the post-ingestion enrichment pass (see server/services/aiEstimator/enrichment.ts).
+  // Nullable: rows whose org doesn't have AI_PROVIDER_TAKEOFF, or whose
+  // enrichment call errored, fall back to `contentSnippet`.
+  enrichedSummary: text("enriched_summary"),
+  enrichedAt: timestamp("enriched_at"),
 }, (table) => ({
   orgIdx: index("ai_estimator_knowledge_org_idx").on(table.organizationId),
   sourceIdx: index("ai_estimator_knowledge_source_idx").on(table.sourceType, table.sourceId),
@@ -11497,6 +11503,9 @@ export const aiEstimatorIngestRuns = pgTable("ai_estimator_ingest_runs", {
   takeoffsIngested: integer("takeoffs_ingested").notNull().default(0),
   costPostingsIngested: integer("cost_postings_ingested").notNull().default(0),
   ratesUpdated: integer("rates_updated").notNull().default(0),
+  // Task #2414 — knowledge-index rows for which the post-ingestion
+  // enrichment pass produced a Claude-written narrative summary.
+  rowsEnriched: integer("rows_enriched").notNull().default(0),
   errorMessage: text("error_message"),
   startedAt: timestamp("started_at").notNull().defaultNow(),
   completedAt: timestamp("completed_at"),

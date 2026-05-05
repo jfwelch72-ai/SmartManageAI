@@ -147,7 +147,11 @@ Cite the source rows you used by their id when relevant. Reply in plain prose wi
     contextRows
       .map(
         (r) =>
-          `- [${r.sourceType}#${r.sourceId.slice(0, 8)}] ${r.title}\n  ${r.contentSnippet.slice(0, 280)}`,
+          // Task #2414 — surface the Claude-written narrative when the
+          // enrichment pass produced one; fall back to the mechanical
+          // snippet so orgs without AI_PROVIDER_TAKEOFF (or rows whose
+          // enrichment hasn't run yet) keep the prior behaviour.
+          `- [${r.sourceType}#${r.sourceId.slice(0, 8)}] ${r.title}\n  ${(r.enrichedSummary ?? r.contentSnippet).slice(0, 280)}`,
       )
       .join("\n") +
     `\n\nLearned rates (most-relevant 30):\n` +

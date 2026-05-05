@@ -120,7 +120,11 @@ Return strict JSON: {
       id: r.sourceId,
       type: r.sourceType,
       title: r.title,
-      snippet: r.contentSnippet,
+      // Task #2414 — prefer the Claude-written narrative when present;
+      // fall back to the mechanical snippet so orgs without
+      // AI_PROVIDER_TAKEOFF (and not-yet-enriched rows) behave exactly
+      // as they did before this task.
+      snippet: r.enrichedSummary ?? r.contentSnippet,
       facets: r.numericFacets,
     })),
   });

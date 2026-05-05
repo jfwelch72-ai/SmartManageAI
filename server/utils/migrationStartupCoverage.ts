@@ -392,4 +392,14 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
     helper: "ensureAiTakeoffSuggestionsTables",
     note: "Task #2323 — also runs the one-shot suggestion-row backfill from existing detected_items_json blobs.",
   },
+  // Task #2414 — Claude knowledge-index enrichment pass. Adds
+  // ai_estimator_knowledge_index.enriched_summary + enriched_at and
+  // ai_estimator_ingest_runs.rows_enriched. All idempotent ADD COLUMN
+  // IF NOT EXISTS — `reconcileSchemaDrift` (Task #1075) auto-applies
+  // the nullable text/timestamp columns and the rows_enriched counter
+  // (NOT NULL DEFAULT 0) on dev DBs, and `npx drizzle-kit push` covers
+  // production.
+  "0077_ai_estimator_enrichment_columns.sql": {
+    skip: "(A) idempotent ADD COLUMN IF NOT EXISTS — reconcileSchemaDrift auto-adds (Task #1075). The NOT NULL DEFAULT 0 on rows_enriched is rendered by the synthesizer the same way as ratesUpdated, so fresh DBs and existing DBs converge.",
+  },
 };
