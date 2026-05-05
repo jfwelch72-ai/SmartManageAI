@@ -28,6 +28,7 @@
     "test:e2e:headed": "playwright test --headed"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.92.0",
     "@google-cloud/storage": "^7.17.3",
     "@hookform/resolvers": "^3.10.0",
     "@jridgewell/trace-mapping": "^0.3.25",

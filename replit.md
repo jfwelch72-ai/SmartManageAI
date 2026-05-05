@@ -52,11 +52,13 @@ The platform utilizes a modern web stack within a multi-tenant architecture, pri
 *   **Native Mobile Field App**: Expo + React Native field app with offline-first SQLite cache, sync coordinator, and push notifications, supporting daily reports, time clock (GPS), photos, punch list, RFI, inspections, drawings, and conflicts.
 *   **Drawings & Markup at Scale**: Includes plan-document markups with various tools, carryover-on-revision functionality, burned-in PDF export, searchable sheet navigation, and virtualization for efficient rendering.
 *   **Submittals & RFI Production Field Workflow**: Automated escalations, external document email service, PDF log endpoints, and scheduled log emails. Mobile app supports field stamping and updates.
+*   **AI Provider Routing (Task #2410)**: The Takeoff family of AI calls (`aiTakeoffFeatureRoutes`, `aiHeavyCivilFeatureRoutes`, AI Estimator's `takeoffDraft` + `chat`) flows through a provider abstraction at `server/ai/providers/` that wraps both OpenAI and Anthropic Claude (`claude-sonnet-4-5`). Routing is per-org via the `AI_PROVIDER_TAKEOFF` feature flag (off by default — existing tenants stay on GPT-5.2). When the flag is on, calls go to Claude with automatic single-retry fallback to OpenAI on 5xx/408/429/529 or network errors; the audit row stamps `provider`, `fallback_used`, `latencyMs`, input/output token counts so the Super Admin dashboard can prove which model answered each call. Embeddings, daily-run AI, hiring scoring, and every other AI feature continue to use OpenAI directly. Vision parity preserved — image_url parts auto-convert to Anthropic image/document blocks; JSON-mode is replicated via system-prompt nudge plus assistant `{` prefill. Toggle lives in the existing Super Admin → Organization → Feature Flags UI (auto-rendered from `FEATURE_FLAG_KEYS`). Regression scorecard at `scripts/ai-takeoff-provider-scorecard.ts` runs a fixed bench against both providers for cutover decisions.
 
 ## External Dependencies
 *   PostgreSQL (Neon)
 *   Replit Object Storage (Google Cloud Storage backend)
 *   OpenAI via Replit AI Integrations
+*   Anthropic Claude (`@anthropic-ai/sdk`, requires `ANTHROPIC_API_KEY` secret) — used only by the Takeoff family routing path (Task #2410)
 *   Resend
 *   JWT
 *   Bcrypt

@@ -16,8 +16,12 @@ import {
 import { type AuthRequest, requireAuth, requireFeaturePermission } from "./auth";
 import { sensitiveLimiter } from "./rateLimiter";
 import { logError, logWarn } from "./utils/logger";
-import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { governedAiCall } from "./services/aiGovernance";
+// Task #2410 — All heavy-civil AI calls flow through the provider router so
+// orgs on `AI_PROVIDER_TAKEOFF` get Anthropic Claude with OpenAI fallback.
+// The router picks the per-provider model so we no longer pin AI_MODEL_GPT5
+// here; the unrouted `openai` client is no longer referenced in this file.
+import { routedChatCompletion } from "./ai/providers";
 import { extractDocumentContent } from "./ai/documentExtractor";
 import { isFeatureEnabled } from "./services/featureFlagService";
 import { validateBody } from "./utils/validation";
@@ -102,23 +106,26 @@ router.post(
         actionType: "heavy_civil.bid_tab.extract",
         inputRefs: { documentId: data.documentId, agency: data.agencyName ?? null },
         fn: async () => {
-          const completion = await openai.chat.completions.create({
-            model: AI_MODEL_GPT5,
-            messages: [
-              {
-                role: "system",
-                content: `You are an estimator extracting pay items from a state-DOT bid tabulation. ${data.agencyName ? `Agency: ${data.agencyName}. ` : ""}${data.specBookEdition ? `Spec book: ${data.specBookEdition}. ` : ""}Output strict JSON: { "items": [{ "itemNumber": "string", "description": "string", "unit": "string", "quantity": number, "specSection": "string|null" }], "confidence": number (0-100), "notes": "string" }. Use AASHTOWare-style item numbers when visible (e.g. "203.20100"). Keep units in the bid-tab's native form (TON, CY, LF, EA, SF, AC, LS, ETC).`,
-              },
-              {
-                role: "user",
-                content: [
-                  ...blocks,
-                  { type: "text", text: "Extract every pay item visible. Do not invent rows. If a row is illegible mark its description as \"UNREADABLE\"." },
-                ],
-              },
-            ],
-            max_completion_tokens: 4000,
-            response_format: { type: "json_object" },
+          const completion = await routedChatCompletion({
+            orgId: req.user!.organizationId!,
+            featureKey: "heavy_civil.bid_tab.extract",
+            request: {
+              messages: [
+                {
+                  role: "system",
+                  content: `You are an estimator extracting pay items from a state-DOT bid tabulation. ${data.agencyName ? `Agency: ${data.agencyName}. ` : ""}${data.specBookEdition ? `Spec book: ${data.specBookEdition}. ` : ""}Output strict JSON: { "items": [{ "itemNumber": "string", "description": "string", "unit": "string", "quantity": number, "specSection": "string|null" }], "confidence": number (0-100), "notes": "string" }. Use AASHTOWare-style item numbers when visible (e.g. "203.20100"). Keep units in the bid-tab's native form (TON, CY, LF, EA, SF, AC, LS, ETC).`,
+                },
+                {
+                  role: "user",
+                  content: [
+                    ...blocks,
+                    { type: "text", text: "Extract every pay item visible. Do not invent rows. If a row is illegible mark its description as \"UNREADABLE\"." },
+                  ],
+                },
+              ],
+              max_completion_tokens: 4000,
+              response_format: { type: "json_object" },
+            },
           });
           return { result: completion.choices[0]?.message?.content ?? null, completion };
         },
@@ -183,23 +190,26 @@ router.post(
         actionType: "heavy_civil.haul_ticket.ocr",
         inputRefs: { documentId: data.documentId },
         fn: async () => {
-          const completion = await openai.chat.completions.create({
-            model: AI_MODEL_GPT5,
-            messages: [
-              {
-                role: "system",
-                content: `Read a haul-truck delivery ticket photo. Output strict JSON: { "ticketNumber": "string|null", "ticketDate": "YYYY-MM-DD|null", "materialClass": "string|null", "source": "string|null", "destination": "string|null", "truckNumber": "string|null", "driverName": "string|null", "quantity": "string|null", "unit": "TON|CY|LF|EA|LOAD|null", "unitCost": "string|null", "confidence": number (0-100), "notes": "string" }. Use null when illegible. Quantities and costs as decimal strings without currency symbols.`,
-              },
-              {
-                role: "user",
-                content: [
-                  ...blocks,
-                  { type: "text", text: "Extract the ticket fields. Do not guess; use null for unreadable fields." },
-                ],
-              },
-            ],
-            max_completion_tokens: 800,
-            response_format: { type: "json_object" },
+          const completion = await routedChatCompletion({
+            orgId: req.user!.organizationId!,
+            featureKey: "heavy_civil.haul_ticket.ocr",
+            request: {
+              messages: [
+                {
+                  role: "system",
+                  content: `Read a haul-truck delivery ticket photo. Output strict JSON: { "ticketNumber": "string|null", "ticketDate": "YYYY-MM-DD|null", "materialClass": "string|null", "source": "string|null", "destination": "string|null", "truckNumber": "string|null", "driverName": "string|null", "quantity": "string|null", "unit": "TON|CY|LF|EA|LOAD|null", "unitCost": "string|null", "confidence": number (0-100), "notes": "string" }. Use null when illegible. Quantities and costs as decimal strings without currency symbols.`,
+                },
+                {
+                  role: "user",
+                  content: [
+                    ...blocks,
+                    { type: "text", text: "Extract the ticket fields. Do not guess; use null for unreadable fields." },
+                  ],
+                },
+              ],
+              max_completion_tokens: 800,
+              response_format: { type: "json_object" },
+            },
           });
           return { result: completion.choices[0]?.message?.content ?? null, completion };
         },
@@ -245,20 +255,23 @@ router.post(
         actionType: "heavy_civil.idr.summarize",
         inputRefs: { length: data.rawNotes.length },
         fn: async () => {
-          const completion = await openai.chat.completions.create({
-            model: AI_MODEL_GPT5,
-            messages: [
-              {
-                role: "system",
-                content: `Rewrite raw inspector field notes into a clean state-DOT-style "Work Performed" narrative. Output strict JSON: { "workPerformed": "string", "delaysEncountered": "string", "safetyIncidents": "string", "confidence": number (0-100) }. Keep facts only — never invent quantities, names, or stations. Use past-tense, third-person, 1-3 short paragraphs.`,
-              },
-              {
-                role: "user",
-                content: `Weather: ${data.weather ?? "n/a"}\nCrew: ${data.crewCount ?? "?"} workers, ${data.crewHours ?? "?"} hrs\nStations: ${data.stationsWorked ?? "n/a"}\n\nRaw field notes:\n${data.rawNotes}`,
-              },
-            ],
-            max_completion_tokens: 1200,
-            response_format: { type: "json_object" },
+          const completion = await routedChatCompletion({
+            orgId: req.user!.organizationId!,
+            featureKey: "heavy_civil.idr.summarize",
+            request: {
+              messages: [
+                {
+                  role: "system",
+                  content: `Rewrite raw inspector field notes into a clean state-DOT-style "Work Performed" narrative. Output strict JSON: { "workPerformed": "string", "delaysEncountered": "string", "safetyIncidents": "string", "confidence": number (0-100) }. Keep facts only — never invent quantities, names, or stations. Use past-tense, third-person, 1-3 short paragraphs.`,
+                },
+                {
+                  role: "user",
+                  content: `Weather: ${data.weather ?? "n/a"}\nCrew: ${data.crewCount ?? "?"} workers, ${data.crewHours ?? "?"} hrs\nStations: ${data.stationsWorked ?? "n/a"}\n\nRaw field notes:\n${data.rawNotes}`,
+                },
+              ],
+              max_completion_tokens: 1200,
+              response_format: { type: "json_object" },
+            },
           });
           return { result: completion.choices[0]?.message?.content ?? null, completion };
         },
@@ -302,20 +315,23 @@ router.post(
         actionType: "heavy_civil.swppp.draft_corrective",
         inputRefs: { length: data.deficienciesFound.length },
         fn: async () => {
-          const completion = await openai.chat.completions.create({
-            model: AI_MODEL_GPT5,
-            messages: [
-              {
-                role: "system",
-                content: `Draft NPDES/CGP-compliant corrective-action language for a SWPPP inspection. Reference the BMP that failed (silt fence, inlet protection, stabilized construction entrance, sediment basin, etc.) and the corrective step required by EPA 2022 CGP. Output strict JSON: { "correctiveActions": "string", "recommendedDueDays": number, "bmpReferences": ["string"], "confidence": number (0-100) }. Be specific and field-actionable. Never invent rainfall data or timelines outside CGP standards (typically 7 calendar days; 24 hours for discharge-causing failures).`,
-              },
-              {
-                role: "user",
-                content: `Inspection type: ${data.inspectionType ?? "ROUTINE"}\n24-hr rainfall: ${data.rainfall24hrInches ?? "n/a"} in\n\nDeficiencies found:\n${data.deficienciesFound}`,
-              },
-            ],
-            max_completion_tokens: 800,
-            response_format: { type: "json_object" },
+          const completion = await routedChatCompletion({
+            orgId: req.user!.organizationId!,
+            featureKey: "heavy_civil.swppp.draft_corrective",
+            request: {
+              messages: [
+                {
+                  role: "system",
+                  content: `Draft NPDES/CGP-compliant corrective-action language for a SWPPP inspection. Reference the BMP that failed (silt fence, inlet protection, stabilized construction entrance, sediment basin, etc.) and the corrective step required by EPA 2022 CGP. Output strict JSON: { "correctiveActions": "string", "recommendedDueDays": number, "bmpReferences": ["string"], "confidence": number (0-100) }. Be specific and field-actionable. Never invent rainfall data or timelines outside CGP standards (typically 7 calendar days; 24 hours for discharge-causing failures).`,
+                },
+                {
+                  role: "user",
+                  content: `Inspection type: ${data.inspectionType ?? "ROUTINE"}\n24-hr rainfall: ${data.rainfall24hrInches ?? "n/a"} in\n\nDeficiencies found:\n${data.deficienciesFound}`,
+                },
+              ],
+              max_completion_tokens: 800,
+              response_format: { type: "json_object" },
+            },
           });
           return { result: completion.choices[0]?.message?.content ?? null, completion };
         },
@@ -490,20 +506,23 @@ export async function computeDbeRiskAssessment(
         actionType: "heavy_civil.dbe.risk_score",
         inputRefs: { projectId, projectCode: project.code },
         fn: async () => {
-          const completion = await openai.chat.completions.create({
-            model: AI_MODEL_GPT5,
-            messages: [
-              {
-                role: "system",
-                content: `You analyze DBE participation risk on a federally-funded construction project. Output strict JSON: { "commentary": "string (2-3 sentences)", "recommendations": ["string", ...] (1-5 specific actions to close shortfalls) }. Recommend mining the firm's existing CRM directory of certified subs/vendors before sourcing new ones. Never claim certification on behalf of any specific firm.`,
-              },
-              {
-                role: "user",
-                content: `Project ${project.code} — ${project.name}\nContract: $${contractAmount.toLocaleString()}\n\n${goalRows.map(g => `${g.certificationType}: goal ${g.goalPercent}%, committed $${g.committedDollars.toLocaleString()} (${(contractAmount > 0 ? (g.committedDollars / contractAmount) * 100 : 0).toFixed(2)}%), paid $${g.actualDollars.toLocaleString()} (${g.actualPercent.toFixed(2)}%) — risk ${g.riskScore}/100 (${g.riskBand})`).join("\n")}`,
-              },
-            ],
-            max_completion_tokens: 600,
-            response_format: { type: "json_object" },
+          const completion = await routedChatCompletion({
+            orgId: organizationId,
+            featureKey: "heavy_civil.dbe.risk_score",
+            request: {
+              messages: [
+                {
+                  role: "system",
+                  content: `You analyze DBE participation risk on a federally-funded construction project. Output strict JSON: { "commentary": "string (2-3 sentences)", "recommendations": ["string", ...] (1-5 specific actions to close shortfalls) }. Recommend mining the firm's existing CRM directory of certified subs/vendors before sourcing new ones. Never claim certification on behalf of any specific firm.`,
+                },
+                {
+                  role: "user",
+                  content: `Project ${project.code} — ${project.name}\nContract: $${contractAmount.toLocaleString()}\n\n${goalRows.map(g => `${g.certificationType}: goal ${g.goalPercent}%, committed $${g.committedDollars.toLocaleString()} (${(contractAmount > 0 ? (g.committedDollars / contractAmount) * 100 : 0).toFixed(2)}%), paid $${g.actualDollars.toLocaleString()} (${g.actualPercent.toFixed(2)}%) — risk ${g.riskScore}/100 (${g.riskBand})`).join("\n")}`,
+                },
+              ],
+              max_completion_tokens: 600,
+              response_format: { type: "json_object" },
+            },
           });
           return { result: completion.choices[0]?.message?.content ?? null, completion };
         },
@@ -639,20 +658,23 @@ router.post(
         actionType: "heavy_civil.mass_haul.analyze",
         inputRefs: { projectId: data.projectId, movementCount: movements.length },
         fn: async () => {
-          const completion = await openai.chat.completions.create({
-            model: AI_MODEL_GPT5,
-            messages: [
-              {
-                role: "system",
-                content: `You are a heavy-civil earthwork analyst. Given haul-ticket movements (and optional cut/fill summary), suggest mass-haul optimizations: balance points, free-haul vs over-haul splits, and re-routing opportunities to cut cost or trips. Output strict JSON: { "summary": "string (2-4 sentences)", "imbalances": [{ "material": "string", "issue": "string", "estimatedSavings": "string|null" }], "recommendations": ["string"], "confidence": number (0-100) }. Use only the data given — never invent volumes or distances.`,
-              },
-              {
-                role: "user",
-                content: `${data.cutFillSummary ? `Cut/fill summary:\n${data.cutFillSummary}\n\n` : ""}Haul movement totals:\n${summaryLines}`,
-              },
-            ],
-            max_completion_tokens: 1200,
-            response_format: { type: "json_object" },
+          const completion = await routedChatCompletion({
+            orgId,
+            featureKey: "heavy_civil.mass_haul.analyze",
+            request: {
+              messages: [
+                {
+                  role: "system",
+                  content: `You are a heavy-civil earthwork analyst. Given haul-ticket movements (and optional cut/fill summary), suggest mass-haul optimizations: balance points, free-haul vs over-haul splits, and re-routing opportunities to cut cost or trips. Output strict JSON: { "summary": "string (2-4 sentences)", "imbalances": [{ "material": "string", "issue": "string", "estimatedSavings": "string|null" }], "recommendations": ["string"], "confidence": number (0-100) }. Use only the data given — never invent volumes or distances.`,
+                },
+                {
+                  role: "user",
+                  content: `${data.cutFillSummary ? `Cut/fill summary:\n${data.cutFillSummary}\n\n` : ""}Haul movement totals:\n${summaryLines}`,
+                },
+              ],
+              max_completion_tokens: 1200,
+              response_format: { type: "json_object" },
+            },
           });
           return { result: completion.choices[0]?.message?.content ?? null, completion };
         },

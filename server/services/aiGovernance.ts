@@ -178,7 +178,21 @@ export async function governedAiCall<T>(opts: {
   userId: string | null;
   actionType: string;
   inputRefs?: Record<string, any>;
-  fn: () => Promise<{ result: T; completion: { usage?: { prompt_tokens?: number; completion_tokens?: number }; model?: string } }>;
+  // Task #2410: callers that route through `routedChatCompletion` populate
+  // `provider`, `fallbackUsed` and `latencyMs` on the completion shape so we
+  // can record per-call attribution. Legacy callers omit them; we record null
+  // / false in that case (which is correct — those calls went straight to
+  // OpenAI without going through the router).
+  fn: () => Promise<{
+    result: T;
+    completion: {
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+      model?: string;
+      provider?: string;
+      fallbackUsed?: boolean;
+      latencyMs?: number;
+    };
+  }>;
 }): Promise<{ result: T; blocked?: boolean; reason?: string }> {
   const tier = await getOrgPlanTier(opts.orgId);
   const limitCheck = await checkOrgLimits(opts.orgId, tier);
@@ -195,6 +209,8 @@ export async function governedAiCall<T>(opts: {
   const tokensOut = completion.usage?.completion_tokens || 0;
   const model = completion.model || AI_MODEL_GPT5;
   const cost = estimateCost(model, tokensIn, tokensOut);
+  const provider = completion.provider ?? null;
+  const fallbackUsed = completion.fallbackUsed === true;
 
   try {
     await db.insert(aiActionAudit).values({
@@ -211,9 +227,24 @@ export async function governedAiCall<T>(opts: {
       approvalRequired: false,
       approvalStatus: null,
       durationMs,
+      provider,
+      fallbackUsed,
     });
   } catch (err) {
     logError("Failed to record AI audit", { error: String(err) });
+  }
+
+  if (provider) {
+    logInfo("AI action routed", {
+      orgId: opts.orgId,
+      actionType: opts.actionType,
+      provider,
+      model,
+      tokensIn,
+      tokensOut,
+      latencyMs: completion.latencyMs ?? durationMs,
+      fallbackUsed,
+    });
   }
 
   return { result };

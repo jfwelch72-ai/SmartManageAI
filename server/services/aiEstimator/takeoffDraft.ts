@@ -1,10 +1,12 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { planDocuments, projects } from "@shared/schema";
-import { openai, AI_MODEL_GPT5 } from "../../ai/openaiClient";
-import type { ChatCompletionContentPart } from "openai/resources/chat/completions";
 import { extractDocumentContent } from "../../ai/documentExtractor";
 import { governedAiCall } from "../aiGovernance";
+// Task #2410 — Routed through provider abstraction so this draft path runs on
+// Claude when `AI_PROVIDER_TAKEOFF` is enabled for the org.
+import { routedChatCompletion } from "../../ai/providers";
+import type { AiContentPart } from "../../ai/providers/types";
 import { logError, logWarn } from "../../utils/logger";
 
 export interface DraftTakeoffMeasurement {
@@ -98,24 +100,27 @@ export async function draftTakeoffFromPlans(opts: {
     actionType: "ai_estimator.takeoff_draft",
     inputRefs: { planCount: urls.length, scopeNotes: opts.scopeNotes ?? null },
     fn: async () => {
-      const completion = await openai.chat.completions.create({
-        model: AI_MODEL_GPT5,
-        messages: [
-          { role: "system", content: sysPrompt },
-          {
-            role: "user",
-            content: [
-              ...blocks.map<ChatCompletionContentPart>((b) =>
-                b.type === "image_url"
-                  ? { type: "image_url", image_url: { url: b.image_url.url, detail: "auto" } }
-                  : { type: "text", text: b.text },
-              ),
-              { type: "text", text: "Draft the takeoff." },
-            ],
-          },
-        ],
-        max_completion_tokens: 4000,
-        response_format: { type: "json_object" },
+      const completion = await routedChatCompletion({
+        orgId: opts.organizationId,
+        featureKey: "ai_estimator.takeoff_draft",
+        request: {
+          messages: [
+            { role: "system", content: sysPrompt },
+            {
+              role: "user",
+              content: [
+                ...blocks.map<AiContentPart>((b) =>
+                  b.type === "image_url"
+                    ? { type: "image_url", image_url: { url: b.image_url.url, detail: "auto" } }
+                    : { type: "text", text: b.text },
+                ),
+                { type: "text", text: "Draft the takeoff." },
+              ],
+            },
+          ],
+          max_completion_tokens: 4000,
+          response_format: { type: "json_object" },
+        },
       });
       return { result: completion.choices[0]?.message?.content ?? null, completion };
     },

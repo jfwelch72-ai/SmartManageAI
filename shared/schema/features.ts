@@ -66,6 +66,12 @@ export const FEATURE_FLAG_KEYS = [
   // generation, inline suggestions, chat, web research). Off by default;
   // org admins flip on per-org and then per-user.
   "AI_ESTIMATOR",
+  // Task #2410: routes the Takeoff family of AI calls (aiTakeoffFeatureRoutes,
+  // aiHeavyCivilFeatureRoutes, aiEstimator/takeoffDraft, aiEstimator/chat) to
+  // Anthropic Claude when ON; OpenAI when OFF. Default OFF so existing tenants
+  // keep their current GPT-5.2 behavior until a Super Admin flips them over.
+  // New trial orgs can be flipped on at provisioning time.
+  "AI_PROVIDER_TAKEOFF",
 ] as const;
 
 export type FeatureFlagKey = (typeof FEATURE_FLAG_KEYS)[number];
@@ -117,6 +123,7 @@ export const FEATURE_FLAG_LABELS: Record<FeatureFlagKey, string> = {
   EXTERNAL_DOC_EMAIL: "External Document Email Delivery",
   AI_TAKEOFF_FEW_SHOT: "AI Takeoff – Few-shot Corrections",
   AI_ESTIMATOR: "AI Estimator (takeoff, estimate, chat)",
+  AI_PROVIDER_TAKEOFF: "AI Provider — Takeoff family on Claude",
 };
 
 export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
@@ -166,6 +173,7 @@ export const FEATURE_FLAG_DESCRIPTIONS: Record<FeatureFlagKey, string> = {
   EXTERNAL_DOC_EMAIL: "Send Resend emails to external architects/engineers for submittal reviews and forwarded RFIs, including a secure tokenized portal link.",
   AI_TAKEOFF_FEW_SHOT: "Inject up to five recent EDITED takeoff suggestions per trade into the next AI takeoff prompt as a 'Recent corrections' few-shot block.",
   AI_ESTIMATOR: "AI Estimator workspace: AI-drafted takeoffs, draft estimates, inline cost suggestions, an Ask the Estimator chat, and learning from your historical bids.",
+  AI_PROVIDER_TAKEOFF: "Route the Takeoff/Heavy-Civil/AI-Estimator calls to Anthropic Claude instead of OpenAI GPT. Falls back to OpenAI automatically if Claude errors.",
 };
 
 export const FEATURE_FLAG_CATEGORIES = [
@@ -234,6 +242,7 @@ export const FEATURE_FLAG_CATEGORY_MAP: Record<FeatureFlagKey, FeatureFlagCatego
   EXTERNAL_DOC_EMAIL: "Core Platform",
   AI_TAKEOFF_FEW_SHOT: "Advanced Tech",
   AI_ESTIMATOR: "Advanced Tech",
+  AI_PROVIDER_TAKEOFF: "Advanced Tech",
 };
 
 export const HEAVY_CIVIL_TRADE_TYPES: readonly string[] = [
@@ -287,6 +296,10 @@ export const DISABLED_BY_DEFAULT_FLAGS: readonly FeatureFlagKey[] = [
   // Task #2324: AI Estimator is off by default; org admins enable per
   // org and then per user.
   "AI_ESTIMATOR",
+  // Task #2410: Existing orgs stay on OpenAI GPT-5.2 until a Super Admin
+  // explicitly flips them to Claude. Default-OFF preserves the current
+  // behavior for every tenant on rollout day.
+  "AI_PROVIDER_TAKEOFF",
 ] as const;
 
 export const aiSettings = pgTable("ai_settings", {
@@ -7905,12 +7918,19 @@ export const aiActionAudit = pgTable("ai_action_audit", {
   approvedByUserId: varchar("approved_by_user_id").references(() => users.id),
   approvedAt: timestamp("approved_at"),
   durationMs: integer("duration_ms"),
+  // Task #2410: per-call provider attribution + fallback audit. `provider`
+  // and `fallbackUsed` are nullable for backward compatibility with rows
+  // written before the multi-provider rollout (those rows are openai by
+  // construction since the router didn't exist yet).
+  provider: text("provider"),
+  fallbackUsed: boolean("fallback_used").notNull().default(false),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 }, (table) => ({
   orgIdx: index("ai_action_audit_org_idx").on(table.organizationId),
   actorIdx: index("ai_action_audit_actor_idx").on(table.actorUserId),
   actionTypeIdx: index("ai_action_audit_action_type_idx").on(table.actionType),
   createdAtIdx: index("ai_action_audit_created_at_idx").on(table.createdAt),
+  providerIdx: index("ai_action_audit_provider_idx").on(table.provider),
 }));
 
 export const insertAiActionAuditSchema = createInsertSchema(aiActionAudit).omit({ id: true, createdAt: true });

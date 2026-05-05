@@ -19,6 +19,10 @@ import { logError, logInfo } from "./utils/logger";
 import { openai, AI_MODEL_GPT5 } from "./ai/openaiClient";
 import { objectStorageClient, ObjectStorageService } from "./objectStorage";
 import { governedAiCall } from "./services/aiGovernance";
+// Task #2410 — Takeoff family AI calls flow through the provider router so
+// they can be routed to Anthropic Claude per-org. The router preserves
+// OpenAI-shaped responses, so call sites only swap the function name.
+import { routedChatCompletion } from "./ai/providers";
 import { isFeatureEnabled } from "./services/featureFlagService";
 import {
   VALID_DB_TRADE_TYPES,
@@ -200,12 +204,15 @@ async function classifyTradeType(imageUrl: string, orgId: string, userId: string
       actionType: "takeoff_analysis",
       inputRefs: {},
       fn: async () => {
-        const completion = await openai.chat.completions.create({
+        const completion = await routedChatCompletion({
+          orgId,
+          featureKey: "takeoff.classify_trade",
+          request: {
           // Task #2322 — Trade classifier was running on gpt-4o while every
           // downstream prompt runs on gpt-5.2; a wrong classification cascades
           // into the wrong per-trade prompt and the wrong items, so put the
-          // gate on the same model as the heavy passes.
-          model: AI_MODEL_GPT5,
+          // gate on the same model as the heavy passes. When routed to Claude
+          // we let the provider pick its own default (claude-sonnet-4-5).
           messages: [
             {
               role: "system",
@@ -255,6 +262,7 @@ Return JSON: { "trade": "TRADE_TYPE", "confidence": number (0-100), "reasoning":
           // a longer reasoning string before emitting the closing brace.
           max_completion_tokens: 512,
           response_format: { type: "json_object" },
+          },
         });
         return { result: completion.choices[0]?.message?.content, completion };
       },
@@ -696,8 +704,10 @@ async function processAiTakeoff(analysisId: string, tradeType: string, focusArea
           actionType: "takeoff_analysis",
           inputRefs: { projectId: analysis.projectId },
           fn: async () => {
-            const completion = await openai.chat.completions.create({
-              model: AI_MODEL_GPT5,
+            const completion = await routedChatCompletion({
+              orgId: analysis.organizationId,
+              featureKey: "takeoff.analyze",
+              request: {
               messages: [
                 {
                   role: "system",
@@ -763,6 +773,7 @@ Return your analysis as JSON with this exact structure:
               ],
               max_completion_tokens: 8192,
               response_format: { type: "json_object" },
+              },
             });
             return { result: completion.choices[0]?.message?.content, completion };
           },
@@ -861,8 +872,10 @@ Return your analysis as JSON with this exact structure:
               actionType: "takeoff_analysis",
               inputRefs: { projectId: analysis.projectId },
               fn: async () => {
-                const verifyCompletion = await openai.chat.completions.create({
-                  model: AI_MODEL_GPT5,
+                const verifyCompletion = await routedChatCompletion({
+                  orgId: analysis.organizationId,
+                  featureKey: "takeoff.verify_detailed",
+                  request: {
                   messages: [
                     {
                       role: "system",
@@ -892,6 +905,7 @@ Return JSON with:
                   ],
                   max_completion_tokens: 8192,
                   response_format: { type: "json_object" },
+                  },
                 });
                 return { result: verifyCompletion.choices[0]?.message?.content, completion: verifyCompletion };
               },

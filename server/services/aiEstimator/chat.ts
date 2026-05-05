@@ -6,8 +6,9 @@ import {
   type AiEstimatorChatMessage,
   type AiEstimatorChatSession,
 } from "@shared/schema";
-import { openai, AI_MODEL_GPT5 } from "../../ai/openaiClient";
 import { governedAiCall } from "../aiGovernance";
+// Task #2410 — Estimator chat is part of the Takeoff family routing decision.
+import { routedChatCompletion } from "../../ai/providers";
 import { citationsFromRows, retrieveContext } from "./retrieval";
 import { listLearnedRatesForOrg, summarizeRate } from "./learnedRates";
 import {
@@ -163,15 +164,18 @@ Cite the source rows you used by their id when relevant. Reply in plain prose wi
     actionType: "ai_estimator.chat",
     inputRefs: { sessionId: opts.session.id, contextRowCount: contextRows.length },
     fn: async () => {
-      const completion = await openai.chat.completions.create({
-        model: AI_MODEL_GPT5,
-        messages: [
-          { role: "system", content: sysPrompt },
-          { role: "system", content: contextBlock },
-          ...historyTurns,
-          { role: "user", content: trimmed },
-        ],
-        max_completion_tokens: 1500,
+      const completion = await routedChatCompletion({
+        orgId: opts.organizationId,
+        featureKey: "ai_estimator.chat",
+        request: {
+          messages: [
+            { role: "system", content: sysPrompt },
+            { role: "system", content: contextBlock },
+            ...historyTurns,
+            { role: "user", content: trimmed },
+          ],
+          max_completion_tokens: 1500,
+        },
       });
       return { result: completion.choices[0]?.message?.content ?? null, completion };
     },
