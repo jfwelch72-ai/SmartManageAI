@@ -28,7 +28,8 @@ import {
   Line,
   Legend,
 } from "recharts";
-import { Sparkles, TrendingUp, ThumbsUp, ThumbsDown, Pencil, Clock } from "lucide-react";
+import { Sparkles, TrendingUp, ThumbsUp, ThumbsDown, Pencil, Clock, AlertTriangle } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 
 interface AccuracyResponse {
   windowDays: number;
@@ -52,7 +53,10 @@ interface AccuracyResponse {
   }>;
   trend: Array<{ day: string; accepted: number; rejected: number; accuracy: number }>;
   rejectReasons: Array<{ reason: string; count: number }>;
+  lastCalibratedAt: string | null;
 }
+
+const STALE_CALIBRATION_MS = 48 * 60 * 60 * 1000;
 
 const REASON_LABELS: Record<string, string> = {
   WRONG_TRADE: "Wrong trade",
@@ -111,6 +115,7 @@ export default function AiTakeoffAccuracyPage() {
 
       {!isLoading && data && (
         <>
+          <CalibrationFreshness lastCalibratedAt={data.lastCalibratedAt} />
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <Card data-testid="card-overall-accuracy">
               <CardHeader className="pb-2">
@@ -250,5 +255,80 @@ export default function AiTakeoffAccuracyPage() {
         </>
       )}
     </div>
+  );
+}
+
+function CalibrationFreshness({ lastCalibratedAt }: { lastCalibratedAt: string | null }) {
+  if (!lastCalibratedAt) {
+    return (
+      <Card
+        className="border-dashed"
+        data-testid="card-calibration-freshness"
+      >
+        <CardContent className="py-3 px-4 flex items-center gap-2 text-sm text-muted-foreground">
+          <Clock className="w-4 h-4" />
+          <span data-testid="text-calibration-status">
+            Confidence calibration has not run yet for this organization.
+          </span>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const updated = new Date(lastCalibratedAt);
+  const ageMs = Date.now() - updated.getTime();
+  const isStale = ageMs > STALE_CALIBRATION_MS;
+  const relative = formatDistanceToNow(updated, { addSuffix: true });
+  const absolute = updated.toLocaleString();
+
+  return (
+    <Card
+      className={
+        isStale
+          ? "border-amber-300 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/40"
+          : undefined
+      }
+      data-testid="card-calibration-freshness"
+    >
+      <CardContent className="py-3 px-4 flex items-center justify-between gap-3 text-sm">
+        <div className="flex items-center gap-2">
+          {isStale ? (
+            <AlertTriangle
+              className="w-4 h-4 text-amber-600 dark:text-amber-400"
+              aria-hidden="true"
+            />
+          ) : (
+            <Clock className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
+          )}
+          <span
+            className={
+              isStale
+                ? "text-amber-800 dark:text-amber-200"
+                : "text-muted-foreground"
+            }
+            data-testid="text-calibration-status"
+          >
+            Confidence calibration last updated{" "}
+            <span
+              className="font-medium"
+              title={absolute}
+              data-testid="text-calibration-relative"
+            >
+              {relative}
+            </span>
+            .
+          </span>
+        </div>
+        {isStale && (
+          <Badge
+            variant="outline"
+            className="border-amber-400 text-amber-800 dark:border-amber-600 dark:text-amber-200"
+            data-testid="badge-calibration-stale"
+          >
+            Stale
+          </Badge>
+        )}
+      </CardContent>
+    </Card>
   );
 }

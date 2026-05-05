@@ -5,7 +5,7 @@
 
 import { and, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { db } from "./db";
-import { aiTakeoffSuggestions } from "@shared/schema";
+import { aiTakeoffSuggestions, aiTakeoffConfidenceCalibration } from "@shared/schema";
 
 export interface AccuracyAggregateOptions {
   organizationId: string;
@@ -63,6 +63,11 @@ export interface AccuracyAggregate {
   accuracyByBucket: AccuracyByBucket[];
   trend: AccuracyTrendPoint[];
   rejectReasons: AccuracyRejectReason[];
+  // Task #2391 — most recent `updated_at` across the org's confidence
+  // calibration rows, so the dashboard can render "last calibrated 2h ago"
+  // and visually flag stale calibrations (>48h) when the nightly job has
+  // failed to run. `null` means the org has never been calibrated.
+  lastCalibratedAt: string | null;
 }
 
 // In org-wide mode the existing dashboard buckets by `created_at` so the
@@ -250,6 +255,22 @@ export async function computeAiTakeoffAccuracy(
     .map((r) => ({ reason: r.reason as string, count: Number(r.count) }))
     .sort((a, b) => b.count - a.count);
 
+  // Task #2391 — surface the most recent calibration `updated_at` so the
+  // dashboard can render "last calibrated Xh ago" and badge stale rows.
+  // Org-wide max is sufficient for the headline indicator; per-trade
+  // freshness can layer on top of `accuracyByTrade` later if the design
+  // calls for it.
+  const [calibRow] = await db
+    .select({
+      lastCalibratedAt: sql<Date | null>`max(${aiTakeoffConfidenceCalibration.updatedAt})`,
+    })
+    .from(aiTakeoffConfidenceCalibration)
+    .where(eq(aiTakeoffConfidenceCalibration.organizationId, organizationId));
+  const lastCalibratedAt =
+    calibRow?.lastCalibratedAt instanceof Date
+      ? calibRow.lastCalibratedAt.toISOString()
+      : null;
+
   return {
     windowDays: days,
     totals,
@@ -259,5 +280,6 @@ export async function computeAiTakeoffAccuracy(
     accuracyByBucket,
     trend,
     rejectReasons,
+    lastCalibratedAt,
   };
 }
