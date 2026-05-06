@@ -781,7 +781,7 @@ router.get("/sov/:id/pdf", requireAuth, async (req: AuthRequest, res: Response, 
     pdfStream.on('error', (err) => {
       logError("PDF stream error:", {}, err instanceof Error ? err : new Error(String(err)));
       if (!res.headersSent) {
-        next(error);
+        next(err instanceof Error ? err : new Error(String(err)));
       }
     });
 
@@ -892,7 +892,7 @@ router.post("/sov/:id/send", requireAuth, async (req: AuthRequest, res: Response
     });
 
     if (!sent) {
-      return next(error);
+      return next(new Error(`Failed to send SOV PDF email to ${email}`));
     }
 
     res.json({ success: true, message: `PDF sent to ${email}` });

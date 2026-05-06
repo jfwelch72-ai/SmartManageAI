@@ -1177,7 +1177,7 @@ router.post("/projects/:code/schedule/export-pdf", requireAuth, async (req: Auth
           message: err.message,
         });
       }
-      logError("Server-side Gantt PDF render failed", err as Error);
+      logError("Server-side Gantt PDF render failed", {}, err instanceof Error ? err : new Error(String(err)));
       return res.status(503).json({
         error: "Server-side Gantt rendering is unavailable",
         message: (err as Error).message,
@@ -1300,7 +1300,7 @@ async function dispatchGanttPdfAlert(event: GanttPdfAlertEvent): Promise<void> {
         eq(users.isActive, true),
       ));
   } catch (err) {
-    logError("Gantt PDF alert: failed to load admin recipients", err as Error);
+    logError("Gantt PDF alert: failed to load admin recipients", {}, err instanceof Error ? err : new Error(String(err)));
   }
 
   const emailAddresses = Array.from(
@@ -1321,7 +1321,7 @@ async function dispatchGanttPdfAlert(event: GanttPdfAlertEvent): Promise<void> {
         "Open Gantt PDF health",
       );
     } catch (err) {
-      logError("Gantt PDF alert email failed", err as Error);
+      logError("Gantt PDF alert email failed", {}, err instanceof Error ? err : new Error(String(err)));
     }
   }
 
@@ -1339,7 +1339,7 @@ async function dispatchGanttPdfAlert(event: GanttPdfAlertEvent): Promise<void> {
         })),
       );
     } catch (err) {
-      logError("Gantt PDF alert in-app notification failed", err as Error);
+      logError("Gantt PDF alert in-app notification failed", {}, err instanceof Error ? err : new Error(String(err)));
     }
   }
 }
@@ -1347,7 +1347,7 @@ async function dispatchGanttPdfAlert(event: GanttPdfAlertEvent): Promise<void> {
 setGanttPdfAlertDispatcher((event) => {
   // Run async without blocking the render path.
   dispatchGanttPdfAlert(event).catch((err) =>
-    logError("Gantt PDF alert dispatch unhandled rejection", err as Error),
+    logError("Gantt PDF alert dispatch unhandled rejection", {}, err instanceof Error ? err : new Error(String(err))),
   );
 });
 

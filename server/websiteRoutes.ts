@@ -1318,7 +1318,7 @@ router.post("/upload-image", requireAuth, sensitiveLimiter, upload.single("image
 
     const publicPaths = objectStorage.getPublicObjectSearchPaths();
     if (publicPaths.length === 0) {
-      return next(error);
+      return next(new Error("No public object storage paths configured"));
     }
 
     const basePath = publicPaths[0];
@@ -1575,7 +1575,7 @@ router.delete("/media/:fileName", requireAuth, async (req: AuthRequest, res: Res
 
     const publicPaths = objectStorage.getPublicObjectSearchPaths();
     if (publicPaths.length === 0) {
-      return next(error);
+      return next(new Error("No public object storage paths configured"));
     }
 
     const basePath = publicPaths[0];
@@ -3442,18 +3442,18 @@ Return a JSON object with:
 
     const rawContent = govResult;
     if (!rawContent) {
-            return next(error);
+      return next(new Error("AI government content generation returned no data"));
     }
 
     let content;
     try {
       content = JSON.parse(rawContent);
     } catch (parseError) {
-            return next(parseError);
+      return next(parseError instanceof Error ? parseError : new Error(String(parseError)));
     }
 
     if (!content.title || !content.content) {
-            return next(error);
+      return next(new Error("AI government content missing required title/content fields"));
     }
 
     res.json({ 
@@ -3518,14 +3518,14 @@ router.post("/blog/generate-image", requireAuth, sensitiveLimiter, async (req: A
     }
 
     if (!b64Data) {
-      return next(error);
+      return next(new Error("AI image generation returned no data"));
     }
 
     const imageBuffer = Buffer.from(b64Data, "base64");
 
     const publicPaths = objectStorage.getPublicObjectSearchPaths();
     if (publicPaths.length === 0) {
-      return next(error);
+      return next(new Error("No public object storage paths configured"));
     }
 
     const basePath = publicPaths[0];

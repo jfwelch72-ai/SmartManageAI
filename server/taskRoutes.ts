@@ -747,7 +747,7 @@ router.post("/api/tasks/:taskId/attachments/upload", requireAuth, sensitiveLimit
       headers: { "Content-Type": file.mimetype },
     });
     if (!uploadRes.ok) {
-      return next(error);
+      return next(new Error(`Task attachment upload failed: ${uploadRes.status} ${uploadRes.statusText}`));
     }
     const fileUrl = objectKey;
 

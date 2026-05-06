@@ -243,7 +243,7 @@ Requirements:
 
     const parseResult = digestOutputSchema.safeParse(aiResult.result);
     if (!parseResult.success) {
-            return next(error);
+      return next(new Error(`Failed to parse executive digest AI output: ${JSON.stringify(parseResult.error.format())}`));
     }
 
     const digestData = parseResult.data;

@@ -598,7 +598,7 @@ router.post("/api/documents/from-url", requireAuth, requireRole("SUPER_ADMIN", "
     });
 
     if (!uploadResponse.ok) {
-      next(error);
+      next(new Error(`Object storage upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`));
       return;
     }
 
@@ -787,7 +787,7 @@ router.post("/api/documents/from-cloud", requireAuth, requireRole("SUPER_ADMIN",
     });
 
     if (!uploadResponse.ok) {
-      next(error);
+      next(new Error(`Object storage upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`));
       return;
     }
 

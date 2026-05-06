@@ -790,13 +790,13 @@ ${colorPreference ? `Color Preference: ${colorPreference}` : ""}`;
     }
 
     if (!aiResult) {
-      return next(error);
+      return next(new Error("AI website wizard returned no result"));
     }
 
     const { siteSettings, pages: aiPages } = aiResult;
 
     if (!siteSettings || !aiPages || !Array.isArray(aiPages)) {
-      return next(error);
+      return next(new Error("AI website wizard returned malformed payload"));
     }
 
     await db.update(organizationWebsites).set({

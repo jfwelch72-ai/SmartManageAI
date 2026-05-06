@@ -214,7 +214,7 @@ router.post("/posts/generate-image", requireAuth, sensitiveLimiter, async (req: 
     }
 
     if (!b64Data) {
-      return next(error);
+      return next(new Error("AI image generation returned no data"));
     }
 
     const imageBuffer = Buffer.from(b64Data, "base64");
@@ -241,7 +241,7 @@ router.post("/posts/generate-image", requireAuth, sensitiveLimiter, async (req: 
 
     const publicPaths = objectStorage.getPublicObjectSearchPaths();
     if (publicPaths.length === 0) {
-      return next(error);
+      return next(new Error("No public object storage paths configured"));
     }
 
     const basePath = publicPaths[0];

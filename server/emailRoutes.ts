@@ -647,7 +647,9 @@ router.delete("/accounts/:id", requireAuth, requireInternalRole, async (req: Aut
         }
       }
       const [summaryCount] = await db.select({ count: sql<number>`count(*)` }).from(emailSummaries).where(and(eq(emailSummaries.userId, existing.userId), eq(emailSummaries.organizationId, existing.organizationId)));
-            return next(error);
+      return next(new Error(
+        `Email account ${existing.id} still exists after delete (messages=${messageCount?.count ?? 0}, tasks=${taskCount}, emailTasks=${emailTaskCount}, attachments=${attachmentCount}, summaries=${summaryCount?.count ?? 0})`,
+      ));
     }
 
     // Audit log (isolated so failures don't affect the success response)

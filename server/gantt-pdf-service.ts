@@ -48,7 +48,7 @@ function emitQueueFull(): void {
     try {
       fn();
     } catch (err) {
-      logError("Gantt PDF queue-full listener threw", err as Error);
+      logError("Gantt PDF queue-full listener threw", {}, err instanceof Error ? err : new Error(String(err)));
     }
   }
 }
@@ -58,7 +58,7 @@ function emitBrowserDisconnected(at: number): void {
     try {
       fn(at);
     } catch (err) {
-      logError("Gantt PDF browser-disconnect listener threw", err as Error);
+      logError("Gantt PDF browser-disconnect listener threw", {}, err instanceof Error ? err : new Error(String(err)));
     }
   }
 }
@@ -89,7 +89,7 @@ interface CachedBrowser {
 function maybeCloseRetired(cached: CachedBrowser): void {
   if (!cached.recycling || cached.inFlight > 0) return;
   cached.browser.close().catch((err) => {
-    logError("Failed to close retired Gantt browser", err as Error);
+    logError("Failed to close retired Gantt browser", {}, err instanceof Error ? err : new Error(String(err)));
   });
 }
 
@@ -308,7 +308,7 @@ async function persistSample(sample: RenderSample): Promise<void> {
       success: sample.success,
     });
   } catch (err) {
-    logError("Failed to persist Gantt PDF render sample", err as Error);
+    logError("Failed to persist Gantt PDF render sample", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }
 
@@ -318,7 +318,7 @@ async function pruneDbHistory(): Promise<void> {
     const cutoff = new Date(Date.now() - HISTORY_RETENTION_MS);
     await db.delete(ganttPdfRenderSamples).where(lt(ganttPdfRenderSamples.startedAt, cutoff));
   } catch (err) {
-    logError("Failed to prune Gantt PDF render history", err as Error);
+    logError("Failed to prune Gantt PDF render history", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }
 
@@ -355,7 +355,7 @@ async function hydrateFromDb(): Promise<void> {
     renderHistory.sort((a, b) => a.startedAt - b.startedAt);
     pruneHistory(Date.now());
   } catch (err) {
-    logError("Failed to hydrate Gantt PDF render history", err as Error);
+    logError("Failed to hydrate Gantt PDF render history", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }
 
@@ -384,7 +384,7 @@ function recordRenderSample(sample: RenderSample): void {
   try {
     evaluateGanttPdfAlerts(now);
   } catch (err) {
-    logError("Gantt PDF alert evaluation failed", err as Error);
+    logError("Gantt PDF alert evaluation failed", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }
 
@@ -723,11 +723,11 @@ export function evaluateGanttPdfAlerts(now: number = Date.now()): GanttPdfAlertE
       const result = alertDispatcher(event);
       if (result && typeof (result as Promise<void>).then === "function") {
         (result as Promise<void>).catch((err) => {
-          logError("Gantt PDF alert dispatcher failed", err as Error);
+          logError("Gantt PDF alert dispatcher failed", {}, err instanceof Error ? err : new Error(String(err)));
         });
       }
     } catch (err) {
-      logError("Gantt PDF alert dispatcher threw", err as Error);
+      logError("Gantt PDF alert dispatcher threw", {}, err instanceof Error ? err : new Error(String(err)));
     }
   }
   return event;
@@ -900,7 +900,7 @@ export async function shutdownGanttBrowser(): Promise<void> {
     const current = await promise;
     await current.browser.close();
   } catch (err) {
-    logError("Failed to close gantt browser", err as Error);
+    logError("Failed to close gantt browser", {}, err instanceof Error ? err : new Error(String(err)));
   }
 }
 

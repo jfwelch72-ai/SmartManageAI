@@ -106,7 +106,7 @@ const swaggerOptions: swaggerJsdoc.Options = {
     "./server/timeClockRoutes.ts",
     "./server/payrollRoutes.ts",
     "./server/crmRoutes.ts",
-    "./server/bidRoutes2.ts",
+    "./server/bidRoutes.ts",
     "./server/projectCrudRoutes.ts",
     "./server/procurementModuleRoutes.ts",
     "./server/equipmentRoutes.ts",

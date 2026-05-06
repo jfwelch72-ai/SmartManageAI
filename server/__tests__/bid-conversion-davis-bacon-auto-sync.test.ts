@@ -67,7 +67,7 @@ beforeAll(async () => {
   }).returning();
   token = generateToken(user.id, user.tokenVersion ?? 0);
 
-  const bidRoutes = (await import("../bidRoutes2")).default;
+  const bidRoutes = (await import("../bidRoutes")).default;
   app = express();
   app.use(express.json({ limit: "5mb" }));
   app.use(cookieParser());
