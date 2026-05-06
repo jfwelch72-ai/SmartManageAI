@@ -892,7 +892,15 @@ export const media = pgTable("media", {
 
 // Change Orders table
 // Simplified workflow: DRAFT → SUBMITTED → APPROVED/REJECTED
-export const changeOrders = pgTable("change_orders", {
+// Task #2461 — `changeOrders` forward-references `orgCostCodes` (defined
+// later in this file) and cross-file-references `rfis` (which is in the
+// `features` barrel that imports back from `operations`). The `(): AnyPgColumn`
+// casts on `linkedRfiId` and `costCodeId` break the column-level cycles and
+// the explicit `typeof _changeOrders` annotation on the export pins the
+// table-level inference so Drizzle's `PgTableWithColumns<...>` type isn't
+// circular (TS7022 / TS7024). Downstream `ChangeOrder` `$inferSelect` is
+// preserved because the annotation is the inferred shape.
+const _changeOrders = pgTable("change_orders", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
   changeOrderNumber: text("change_order_number").notNull(),
@@ -923,7 +931,7 @@ export const changeOrders = pgTable("change_orders", {
   canonicalName: text("canonical_name"),
   scopeUnit: text("scope_unit"),
   scopeQuantity: text("scope_quantity"),
-  costCodeId: integer("cost_code_id").references(() => orgCostCodes.id, { onDelete: "set null" }),
+  costCodeId: integer("cost_code_id").references((): AnyPgColumn => orgCostCodes.id, { onDelete: "set null" }),
   costBreakdownJson: text("cost_breakdown_json"),
   source: text("source").default("MANUAL"),
   takeoffDeltaJson: text("takeoff_delta_json"),
@@ -937,6 +945,7 @@ export const changeOrders = pgTable("change_orders", {
   projectIdIdx: index("change_orders_project_id_idx").on(table.projectId),
   workTypeCodeIdx: index("change_orders_work_type_code_idx").on(table.workTypeCode),
 }));
+export const changeOrders: typeof _changeOrders = _changeOrders;
 
 // Change Order Line Items - Labor Entries
 export const changeOrderLaborEntries = pgTable("change_order_labor_entries", {
@@ -2822,7 +2831,7 @@ export const orgCostCodes = pgTable("org_cost_codes", {
   unique("org_cost_codes_org_code_uniq").on(table.organizationId, table.code),
 ]);
 
-export const insertOrgCostCodeSchema = createInsertSchema(orgCostCodes).omit({ id: true, createdAt: true, updatedAt: true });
+export const insertOrgCostCodeSchema = createInsertSchema(orgCostCodes).omit({ createdAt: true, updatedAt: true });
 export type InsertOrgCostCode = z.infer<typeof insertOrgCostCodeSchema>;
 export type OrgCostCode = typeof orgCostCodes.$inferSelect;
 
@@ -2837,7 +2846,7 @@ export const projectCostCodes = pgTable("project_cost_codes", {
   unique("project_cost_codes_project_code_uniq").on(table.projectId, table.costCode),
 ]);
 
-export const insertProjectCostCodeSchema = createInsertSchema(projectCostCodes).omit({ id: true, assignedAt: true });
+export const insertProjectCostCodeSchema = createInsertSchema(projectCostCodes).omit({ assignedAt: true });
 export type InsertProjectCostCode = z.infer<typeof insertProjectCostCodeSchema>;
 export type ProjectCostCode = typeof projectCostCodes.$inferSelect;
 

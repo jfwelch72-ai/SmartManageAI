@@ -15,7 +15,14 @@ import { subcontractorContracts } from "./subcontractor";
 // ============================================================
 // RFI (Request for Information) System
 // ============================================================
-export const rfis = pgTable("rfis", {
+// Task #2461 — `rfis` and `submittals` mutually reference each other via
+// `linkedSubmittalId` / `linkedRfiId`. The `(): AnyPgColumn` casts on those
+// columns break the column-level cycle, and the explicit `typeof _rfis` /
+// `typeof _submittals` annotations on the exports below pin the table-level
+// inference so Drizzle's `PgTableWithColumns<...>` type isn't circular
+// (TS7022 / TS7024). Downstream `Rfi` / `Submittal` `$inferSelect` types are
+// preserved because the annotation is the inferred shape.
+const _rfis = pgTable("rfis", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
@@ -71,6 +78,7 @@ export const rfis = pgTable("rfis", {
   contractIdx: index("rfis_contract_idx").on(table.contractId),
   subIdx: index("rfis_sub_idx").on(table.subcontractorId),
 }));
+export const rfis: typeof _rfis = _rfis;
 
 export const rfiActivity = pgTable("rfi_activity", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -169,7 +177,7 @@ export type TransmittalRecipient = typeof transmittalRecipients.$inferSelect;
 // ============================================================
 // Submittal System
 // ============================================================
-export const submittals = pgTable("submittals", {
+const _submittals = pgTable("submittals", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
   projectId: varchar("project_id").notNull().references(() => projects.id, { onDelete: "cascade" }),
@@ -208,6 +216,7 @@ export const submittals = pgTable("submittals", {
   contractIdx: index("submittals_contract_idx").on(table.contractId),
   subIdx: index("submittals_sub_idx").on(table.subcontractorId),
 }));
+export const submittals: typeof _submittals = _submittals;
 
 export const submittalActivity = pgTable("submittal_activity", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
