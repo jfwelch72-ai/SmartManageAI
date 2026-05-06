@@ -87,6 +87,19 @@ export interface UsePdfTileRendererArgs {
 // stays at the 256 MB floor. Per-call `cache` overrides still win.
 const DEFAULT_CACHE = new TileCache(computeDeviceAwareTileBudget());
 
+// Task #2446 — Expose the shared cache on `window` in non-production
+// builds so the env-gated 25 GB e2e spec (`takeoff-large-pdf.spec.ts`)
+// can poll `stats()` to assert the byte budget holds across a 10-sheet
+// flip sequence. Production builds skip this so the cache stays
+// internal. Type-only declaration keeps the hook self-contained.
+if (
+  typeof window !== "undefined" &&
+  import.meta.env.MODE !== "production"
+) {
+  (window as unknown as { __takeoffDefaultTileCache?: TileCache }).__takeoffDefaultTileCache =
+    DEFAULT_CACHE;
+}
+
 export function usePdfTileRenderer(
   args: UsePdfTileRendererArgs,
 ): PdfTileRendererState & {
