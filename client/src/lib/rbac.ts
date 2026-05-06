@@ -596,7 +596,7 @@ export interface WorkflowGroup {
 
 const ADMIN_WORKFLOW: WorkflowGroup[] = [
   { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications', '/portfolio', '/executive-digest'] },
-  { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/sequences', '/bids', '/takeoff', '/bid-network', '/historical-costs', '/marketplace'] },
+  { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/sequences', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages', '/email-assistant'] },
   { key: 'team', label: 'Team', itemHrefs: ['/users', '/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/safety', '/safety-training'] },
   { key: 'time', label: 'Time', itemHrefs: ['/time-clock', '/time-clock-manager', '/tm-daily'] },
@@ -605,7 +605,7 @@ const ADMIN_WORKFLOW: WorkflowGroup[] = [
   { key: 'field_compliance', label: 'Field Compliance', itemHrefs: ['/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
   { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/ai-settings', '/ai-estimator/admin', '/audit-logs', '/reports', '/admin/log-email-failures'] },
   { key: 'marketing', label: 'Marketing', itemHrefs: ['/website-builder', '/social-media', '/email-campaigns'] },
-  { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
+  { key: 'tools', label: 'Tools', itemHrefs: ['/calculator', '/takeoff'] },
 ];
 
 const HUSTLER_WORKFLOW: WorkflowGroup[] = [
@@ -615,7 +615,7 @@ const HUSTLER_WORKFLOW: WorkflowGroup[] = [
 
 const MANAGER_WORKFLOW: WorkflowGroup[] = [
   { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications', '/portfolio'] },
-  { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/sequences', '/bids', '/takeoff', '/marketplace'] },
+  { key: 'sales', label: 'Sales', itemHrefs: ['/crm', '/sequences', '/bids', '/marketplace'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages', '/email-assistant'] },
   { key: 'time', label: 'Time', itemHrefs: ['/time-clock', '/time-clock-manager', '/tm-daily'] },
   { key: 'team', label: 'Team', itemHrefs: ['/manage-workers', '/crews', '/hiring', '/payroll-management', '/leave-management', '/safety', '/safety-training'] },
@@ -624,7 +624,7 @@ const MANAGER_WORKFLOW: WorkflowGroup[] = [
   { key: 'field_compliance', label: 'Field Compliance', itemHrefs: ['/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
   { key: 'settings', label: 'Settings', itemHrefs: ['/company-settings', '/scope-settings', '/reports'] },
   { key: 'marketing', label: 'Marketing', itemHrefs: ['/social-media'] },
-  { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
+  { key: 'tools', label: 'Tools', itemHrefs: ['/calculator', '/takeoff'] },
 ];
 
 const SUPERINTENDENT_WORKFLOW: WorkflowGroup[] = [
@@ -639,13 +639,13 @@ const SUPERINTENDENT_WORKFLOW: WorkflowGroup[] = [
 
 const ESTIMATOR_WORKFLOW: WorkflowGroup[] = [
   { key: 'home', label: 'Home', itemHrefs: ['/dashboard', '/communications'] },
-  { key: 'bids', label: 'Bids', itemHrefs: ['/crm', '/sequences', '/bids', '/takeoff', '/bid-network', '/historical-costs', '/marketplace'] },
+  { key: 'bids', label: 'Bids', itemHrefs: ['/crm', '/sequences', '/bids', '/bid-network', '/historical-costs', '/marketplace'] },
   { key: 'costs', label: 'Costs', itemHrefs: ['/cost-rates', '/production-rates', '/scope-settings'] },
   { key: 'projects', label: 'Projects', itemHrefs: ['/projects', '/calendar', '/tasks', '/messages'] },
   { key: 'field_ops', label: 'Field Ops', itemHrefs: ['/equipment', '/procurement-module', '/lidar-scans'] },
   { key: 'field_compliance', label: 'Field Compliance', itemHrefs: ['/dot-library', '/haul-tickets', '/daily-inspector-reports', '/swppp-inspections', '/surety-bonds', '/dbe-goals', '/material-certifications'] },
   { key: 'reports', label: 'Reports', itemHrefs: ['/reports'] },
-  { key: 'tools', label: 'Tools', itemHrefs: ['/calculator'] },
+  { key: 'tools', label: 'Tools', itemHrefs: ['/calculator', '/takeoff'] },
 ];
 
 const FIELD_WORKER_WORKFLOW: WorkflowGroup[] = [
