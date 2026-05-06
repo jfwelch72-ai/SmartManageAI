@@ -131,6 +131,7 @@ import PermitsTab from "@/components/PermitsTab";
 import { useFeaturePermission } from "@/hooks/use-dashboard-customization";
 import HealthScoreBadge from "@/components/HealthScoreBadge";
 import { ComplianceBadge } from "@/components/ComplianceBadge";
+import { SuggestedTakeoffsCard } from "@/components/SuggestedTakeoffsCard";
 import type { LucideIcon } from "lucide-react";
 
 interface ProjectFinancials {
@@ -983,6 +984,8 @@ export default function ProjectDetailPage() {
               financialsLoading={financialsLoading}
               setActiveTab={handleSetActiveTab}
             />
+            {/* Task #2404 — Auto-pickup of standalone takeoffs that match this project. */}
+            <SuggestedTakeoffsCard destinationKind="project" destinationId={project.id as string} />
             <GeofenceEnforcementCard project={project} projectCode={projectCode} />
             {hasManagementAccess(user?.role) && (
               <GeofenceZonesPanel projectId={project.id as string} />

@@ -1640,6 +1640,10 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   userAdjusted: boolean("user_adjusted").notNull().default(false),
   notes: text("notes"),
   metadata: text("metadata"),
+  // Task #2404 — Send-to-Estimate soft-delete. Replace mode marks
+  // stale rows here instead of hard-deleting so undo / audit /
+  // accidental-resend protection still works.
+  deletedAt: timestamp("deleted_at"),
   
   // Material Calculator Fields - Concrete
   concreteDepthInches: decimal("concrete_depth_inches", { precision: 6, scale: 2 }),
@@ -1725,12 +1729,23 @@ export const estimateLineItems = pgTable("estimate_line_items", {
   photoUrl: text("photo_url"),
   photoUrls: text("photo_urls").array().notNull().default(sql`ARRAY[]::text[]`),
 
+  // Task #2404 — Send-to-Estimate provenance. When a line item was
+  // pushed in from a takeoff, `sourceType` is "takeoff_send", with
+  // `sourceTakeoffId` keyed to the takeoff (standalone or otherwise)
+  // and `sourceMeasurementId` to the specific measurement that
+  // produced this line. The pair (estimateId, sourceMeasurementId)
+  // serves as the idempotency key for re-send.
+  sourceType: text("source_type"),
+  sourceTakeoffId: varchar("source_takeoff_id"),
+  sourceMeasurementId: varchar("source_measurement_id"),
+
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 }, (table) => ({
   estimateIdx: index("estimate_line_items_estimate_idx").on(table.estimateId),
   categoryIdx: index("estimate_line_items_category_idx").on(table.category),
   sourceIdx: index("estimate_line_items_source_idx").on(table.source),
+  takeoffSendIdx: index("estimate_line_items_source_measurement_idx").on(table.estimateId, table.sourceMeasurementId),
   scopeWorkTypeIdx: index("estimate_line_items_scope_work_type_idx").on(table.scopeWorkTypeId),
   workTypeCodeIdx: index("estimate_line_items_work_type_code_idx").on(table.workTypeCode),
   subcontractorQuoteIdx: index("estimate_line_items_subcontractor_quote_idx").on(table.subcontractorQuoteId),

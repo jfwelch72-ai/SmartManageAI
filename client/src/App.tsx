@@ -132,6 +132,7 @@ const BidEstimate = lazy(() => import("@/pages/bid-estimate"));
 // Task #2067 — Standalone full-page Takeoff workspace + index landing page.
 const TakeoffWorkspacePage = lazy(() => import("@/pages/takeoff-workspace"));
 const TakeoffIndexPage = lazy(() => import("@/pages/takeoff-index"));
+const TakeoffStandalonePage = lazy(() => import("@/pages/takeoff-standalone"));
 // Task #2321 — Second-eye review queue page.
 const TakeoffReviewQueuePage = lazy(() => import("@/pages/takeoff-review-queue"));
 // Task #2335 — AI takeoff dashboard surfaces persisted scale-mismatch
@@ -481,6 +482,7 @@ function Router() {
           /takeoff/:bidCode workspace route, otherwise wouter would
           treat "review-queue" as a bid code and 404. */}
       <Route path="/takeoff/review-queue" component={() => <ProtectedRoute component={TakeoffReviewQueuePage} permission={RoutePermissions.TAKEOFF} />} />
+      <Route path="/takeoff/standalone/:id" component={() => <ProtectedRoute component={TakeoffStandalonePage} permission={RoutePermissions.TAKEOFF} />} />
       {/* Task #2335 — AI takeoff dashboard surfaces persisted scale-mismatch
           rollups so estimators can spot calibration drift across sheets. */}
       <Route path="/takeoff/ai-dashboard" component={() => <ProtectedRoute component={AiTakeoffDashboardPage} permission={RoutePermissions.TAKEOFF} />} />

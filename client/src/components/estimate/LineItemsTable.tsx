@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -175,6 +176,21 @@ export function LineItemsTable({
                           {item.quantity.toLocaleString()} {item.unit}
                         </p>
                         <SourceBadge source={item.source} />
+                        {item.sourceType === "takeoff_send" && item.sourceTakeoffId && (
+                          <Link
+                            href={`/takeoff/standalone/${item.sourceTakeoffId}`}
+                            data-testid={`link-from-takeoff-${item.id}`}
+                            title="Open the source takeoff"
+                          >
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-300 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950"
+                              data-testid={`badge-from-takeoff-${item.id}`}
+                            >
+                              From takeoff →
+                            </Badge>
+                          </Link>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -310,7 +326,24 @@ export function LineItemsTable({
                       </div>
                     </TableCell>
                     <TableCell>
-                      <SourceBadge source={item.source} />
+                      <div className="flex items-center gap-1.5">
+                        <SourceBadge source={item.source} />
+                        {item.sourceType === "takeoff_send" && item.sourceTakeoffId && (
+                          <Link
+                            href={`/takeoff/standalone/${item.sourceTakeoffId}`}
+                            data-testid={`link-from-takeoff-${item.id}`}
+                            title="Open the source takeoff"
+                          >
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-300 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950"
+                              data-testid={`badge-from-takeoff-${item.id}`}
+                            >
+                              From takeoff →
+                            </Badge>
+                          </Link>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="text-xs whitespace-nowrap">{item.category}</Badge>

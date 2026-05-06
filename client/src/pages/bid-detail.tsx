@@ -57,6 +57,7 @@ import BidSubcontractorsStep from "@/components/bid/BidSubcontractorsStep";
 import BidSummaryStep from "@/components/bid/BidSummaryStep";
 import CostBuilderSidebar from "@/components/bid/CostBuilderSidebar";
 import BidLevelingSection from "@/components/bid/BidLevelingSection";
+import { SuggestedTakeoffsCard } from "@/components/SuggestedTakeoffsCard";
 import {
   BidEditDialog,
   SubcontractorQuoteDialog,
@@ -852,6 +853,8 @@ export default function BidDetailPage() {
                   when the bid has at least one measurement, so a fresh
                   bid doesn't get a confusing "Reviewed: 0/0" pill. */}
               <BidReviewSummaryChip bidId={bid.id} bidCode={bid.code} />
+              {/* Task #2404 — Auto-pickup of standalone takeoffs that match this bid. */}
+              <SuggestedTakeoffsCard destinationKind="bid" destinationId={bid.id} />
               {bid.status === "AWARDED" && bid.convertedToProjectId ? (
                 <Badge
                   className="bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 cursor-pointer hover:bg-green-200 dark:hover:bg-green-900/50 transition-colors"

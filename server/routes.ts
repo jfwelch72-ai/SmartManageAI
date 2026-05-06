@@ -92,6 +92,8 @@ import notesRoutes from "./notesRoutes";
 import projectNotePagesRoutes from "./projectNotePagesRoutes";
 import taskRoutes from "./taskRoutes";
 import estimateRoutes from "./estimateRoutes";
+import standaloneTakeoffRoutes from "./standaloneTakeoffRoutes";
+import takeoffSendToEstimateRoutes from "./takeoffSendToEstimateRoutes";
 import { registerTMTicketRoutes } from "./tmRoutes";
 import paymentRoutes from "./paymentRoutes";
 import platformRoutes, { trackApiRequest } from "./platformRoutes";
@@ -611,6 +613,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Bid Routes
   app.use(bidRoutes2);
   app.use(takeoffSheetRoutes);
+  app.use(standaloneTakeoffRoutes);
+  app.use(takeoffSendToEstimateRoutes);
   app.use(takeoffIssueRoutes);
   app.use(takeoffMeasurementRoutes);
   app.use(takeoffCategoryRoutes);

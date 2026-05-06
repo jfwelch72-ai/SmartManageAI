@@ -76,6 +76,10 @@ export const takeoffSheets = pgTable("takeoff_sheets", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
   bidId: varchar("bid_id").references(() => bids.id, { onDelete: "cascade" }),
+  // Task #2403 — Standalone Takeoff Tool. When non-null, the sheet
+  // belongs to a standalone takeoff (no bid/project required); the
+  // forward reference is enforced via FK installed at startup.
+  standaloneTakeoffId: varchar("standalone_takeoff_id"),
   planId: varchar("plan_id").references(() => projectPlans.id, { onDelete: "cascade" }),
   imageUrl: text("image_url").notNull(),
   sheetIndex: integer("sheet_index").notNull().default(0),
@@ -1105,3 +1109,100 @@ export const takeoffRecents = pgTable("takeoff_recents", {
 export const insertTakeoffRecentSchema = createInsertSchema(takeoffRecents).omit({ id: true, updatedAt: true });
 export type InsertTakeoffRecent = z.infer<typeof insertTakeoffRecentSchema>;
 export type TakeoffRecent = typeof takeoffRecents.$inferSelect;
+
+// ==================================================
+// Task #2403 + #2404 — Standalone Takeoff Tool
+// ==================================================
+// Phase 1: anyone can open Takeoff and start measuring without first
+// creating a bid or project. Phase 2: same takeoff can be tagged to many
+// bids/projects, suggested when a new bid/project is created, and pushed
+// into an estimate as line items.
+
+export const standaloneTakeoffs = pgTable("standalone_takeoffs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  ownerUserId: varchar("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  title: text("title").notNull(),
+  tradeType: tradeTypeEnum("trade_type"),
+  // Free-form context the ranker uses (client name, address, notes).
+  clientName: text("client_name"),
+  locationAddress: text("location_address"),
+  notes: text("notes"),
+  settings: text("settings").notNull().default("{}"),
+  archivedAt: timestamp("archived_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("standalone_takeoffs_org_idx").on(table.organizationId),
+  ownerIdx: index("standalone_takeoffs_owner_idx").on(table.ownerUserId, table.updatedAt),
+}));
+
+// Multi-link tagging: same standalone takeoff can be tagged to many bids
+// and many projects simultaneously. Exactly-one-of-(bidId, projectId) is
+// enforced via a CHECK constraint installed at startup.
+export const takeoffTags = pgTable("takeoff_tags", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  standaloneTakeoffId: varchar("standalone_takeoff_id").notNull().references(() => standaloneTakeoffs.id, { onDelete: "cascade" }),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  taggedById: varchar("tagged_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  takeoffIdx: index("takeoff_tags_takeoff_idx").on(table.standaloneTakeoffId),
+  bidIdx: index("takeoff_tags_bid_idx").on(table.bidId),
+  projectIdx: index("takeoff_tags_project_idx").on(table.projectId),
+  uniqBid: uniqueIndex("takeoff_tags_takeoff_bid_unique").on(table.standaloneTakeoffId, table.bidId).where(sql`${table.bidId} IS NOT NULL`),
+  uniqProj: uniqueIndex("takeoff_tags_takeoff_project_unique").on(table.standaloneTakeoffId, table.projectId).where(sql`${table.projectId} IS NOT NULL`),
+}));
+
+// Per-takeoff private files (PDFs/docs uploaded into the standalone
+// workspace before any bid/project is in scope).
+export const standaloneTakeoffFiles = pgTable("standalone_takeoff_files", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  standaloneTakeoffId: varchar("standalone_takeoff_id").notNull().references(() => standaloneTakeoffs.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  uploadedById: varchar("uploaded_by_id").references(() => users.id, { onDelete: "set null" }),
+  fileName: text("file_name").notNull(),
+  fileUrl: text("file_url").notNull(),
+  objectKey: text("object_key"),
+  mimeType: text("mime_type"),
+  fileSize: integer("file_size"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  takeoffIdx: index("standalone_takeoff_files_takeoff_idx").on(table.standaloneTakeoffId),
+}));
+
+// Per-user dismissals of "Suggested takeoffs" entries on a bid/project
+// home. Keyed on (userId, standaloneTakeoffId, destinationKind, destinationId).
+export const takeoffSuggestionDismissals = pgTable("takeoff_suggestion_dismissals", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  standaloneTakeoffId: varchar("standalone_takeoff_id").notNull().references(() => standaloneTakeoffs.id, { onDelete: "cascade" }),
+  destinationKind: text("destination_kind").notNull(), // "bid" | "project"
+  destinationId: varchar("destination_id").notNull(),
+  // Task #2404 — also captures accept events as a training signal so
+  // the ranker can learn which suggestions actually got attached.
+  outcome: text("outcome").notNull().default("DISMISSED"), // "DISMISSED" | "ACCEPTED"
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  userDestIdx: index("takeoff_suggestion_dismissals_user_dest_idx").on(table.userId, table.destinationKind, table.destinationId),
+  uniq: uniqueIndex("takeoff_suggestion_dismissals_unique").on(table.userId, table.standaloneTakeoffId, table.destinationKind, table.destinationId),
+}));
+
+export const insertStandaloneTakeoffSchema = createInsertSchema(standaloneTakeoffs).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertStandaloneTakeoff = z.infer<typeof insertStandaloneTakeoffSchema>;
+export type StandaloneTakeoff = typeof standaloneTakeoffs.$inferSelect;
+
+export const insertTakeoffTagSchema = createInsertSchema(takeoffTags).omit({ id: true, createdAt: true });
+export type InsertTakeoffTag = z.infer<typeof insertTakeoffTagSchema>;
+export type TakeoffTag = typeof takeoffTags.$inferSelect;
+
+export const insertStandaloneTakeoffFileSchema = createInsertSchema(standaloneTakeoffFiles).omit({ id: true, createdAt: true });
+export type InsertStandaloneTakeoffFile = z.infer<typeof insertStandaloneTakeoffFileSchema>;
+export type StandaloneTakeoffFile = typeof standaloneTakeoffFiles.$inferSelect;
+
+export const insertTakeoffSuggestionDismissalSchema = createInsertSchema(takeoffSuggestionDismissals).omit({ id: true, createdAt: true });
+export type InsertTakeoffSuggestionDismissal = z.infer<typeof insertTakeoffSuggestionDismissalSchema>;
+export type TakeoffSuggestionDismissal = typeof takeoffSuggestionDismissals.$inferSelect;

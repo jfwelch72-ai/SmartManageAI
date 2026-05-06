@@ -1,5 +1,6 @@
 import { useMemo, useState, type MouseEvent } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import {
   ArrowRight,
   Clock,
@@ -13,9 +14,22 @@ import {
   Search,
   Trash2,
   X,
+  Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -73,12 +87,50 @@ function formatRelativeTime(timestamp: number): string {
   return `${years}y ago`;
 }
 
+interface MyStandaloneTakeoff {
+  id: string;
+  title: string;
+  tradeType: string | null;
+  clientName: string | null;
+  updatedAt: string;
+}
+
 export default function TakeoffIndexPage() {
   const { data: bids = [], isLoading: bidsLoading } = useBids();
   const { data: projects = [], isLoading: projectsLoading } = useProjects();
   const { user } = useAuth();
   const recents = useRecentTakeoffs(user?.id, RECENTS_LIMIT);
   const [search, setSearch] = useState("");
+  const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const [newOpen, setNewOpen] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+
+  // Task #2403 — My standalone takeoffs (Phase 1 entry point).
+  const myTakeoffs = useQuery<MyStandaloneTakeoff[]>({
+    queryKey: ["/api/takeoff/standalone", "list", "mine"],
+    queryFn: async () => (await fetch("/api/takeoff/standalone?scope=mine", { credentials: "include" })).json(),
+  });
+
+  const createTakeoff = useMutation({
+    mutationFn: async (title: string) => {
+      const res = await apiRequest("POST", "/api/takeoff/standalone", { title });
+      return res.json();
+    },
+    onSuccess: (data: { id: string }) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/takeoff/standalone", "list", "mine"] });
+      toast({ title: "Takeoff created" });
+      setNewOpen(false);
+      setNewTitle("");
+      setLocation(`/takeoff/standalone/${data.id}`);
+    },
+    onError: (err: unknown) =>
+      toast({
+        title: "Create failed",
+        description: err instanceof Error ? err.message : "Unknown error",
+        variant: "destructive",
+      }),
+  });
 
   const isLoading = bidsLoading || projectsLoading;
 
@@ -188,10 +240,75 @@ export default function TakeoffIndexPage() {
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
             Open a bid or project to launch its dedicated full-screen takeoff
-            workspace — measure quantities, mark up plans, and calibrate scale.
+            workspace, or start a standalone takeoff for early measurements
+            before there is a bid or project.
           </p>
         </div>
+        <Dialog open={newOpen} onOpenChange={setNewOpen}>
+          <DialogTrigger asChild>
+            <Button data-testid="button-new-standalone-takeoff">
+              <Plus className="w-4 h-4 mr-1.5" /> New Takeoff
+            </Button>
+          </DialogTrigger>
+          <DialogContent data-testid="dialog-new-standalone-takeoff">
+            <DialogHeader>
+              <DialogTitle>New standalone takeoff</DialogTitle>
+              <DialogDescription>
+                Standalone takeoffs are not yet attached to a bid or project. You
+                can tag them later, or send measurements directly into an estimate.
+              </DialogDescription>
+            </DialogHeader>
+            <div>
+              <Label htmlFor="new-takeoff-title">Title</Label>
+              <Input
+                id="new-takeoff-title"
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder="e.g. ACME Industrial — early budget pass"
+                data-testid="input-new-takeoff-title"
+              />
+            </div>
+            <DialogFooter>
+              <Button
+                onClick={() => createTakeoff.mutate(newTitle.trim())}
+                disabled={!newTitle.trim() || createTakeoff.isPending}
+                data-testid="button-create-standalone-takeoff"
+              >
+                {createTakeoff.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Create"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
+
+      {(myTakeoffs.data?.length ?? 0) > 0 && (
+        <section className="space-y-2" data-testid="my-takeoffs-section">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            My Takeoffs
+          </h2>
+          <div className="grid gap-2">
+            {myTakeoffs.data!.map((t) => (
+              <Link key={t.id} href={`/takeoff/standalone/${t.id}`} data-testid={`link-my-takeoff-${t.id}`}>
+                <Card className="hover-elevate active-elevate-2 transition-colors cursor-pointer">
+                  <CardContent className="flex items-center gap-3 p-4">
+                    <Layers className="w-5 h-5 text-muted-foreground shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium truncate">{t.title}</span>
+                        {t.tradeType && <Badge variant="outline" className="text-[10px]">{t.tradeType}</Badge>}
+                      </div>
+                      {t.clientName && (
+                        <p className="text-xs text-muted-foreground truncate mt-0.5">{t.clientName}</p>
+                      )}
+                    </div>
+                    <ArrowRight className="w-4 h-4 text-muted-foreground shrink-0" />
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {hasRecents && (
         <section className="space-y-4" data-testid="takeoff-index-recents">

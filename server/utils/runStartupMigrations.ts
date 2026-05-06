@@ -101,6 +101,7 @@ import { ensureUsersCrmAlertFailureFallbackColumns } from "./ensureUsersCrmAlert
 import { ensurePendingContactReassignmentTable } from "./ensurePendingContactReassignmentTable";
 import { ensureCrmOrganisationOwnerColumn } from "./ensureCrmOrganisationOwnerColumn";
 import { ensureSchedulingModuleEnhancements } from "./ensureSchedulingModuleEnhancements";
+import { ensureStandaloneTakeoffTables } from "./ensureStandaloneTakeoffTables";
 import { ensureStatusPageTables } from "./ensureStatusPageTables";
 import { backfillStatusProbeDailyHistory } from "./backfillStatusProbeDailyHistory";
 import { ensureMobileOfflineEnumValues } from "./ensureMobileOfflineEnumValues";
@@ -369,6 +370,7 @@ const migrations: MigrationStep[] = [
   { name: "pending_contact_reassignment_notifications_table", category: "CREATE_TABLE", fn: ensurePendingContactReassignmentTable },
   { name: "crm_organisation_owner_column", category: "ADD_COLUMN", fn: ensureCrmOrganisationOwnerColumn },
   { name: "scheduling_module_enhancements", category: "CREATE_TABLE", fn: ensureSchedulingModuleEnhancements },
+  { name: "standalone_takeoff_tables", category: "CREATE_TABLE", fn: ensureStandaloneTakeoffTables },
   { name: "status_page_tables", category: "CREATE_TABLE", fn: ensureStatusPageTables },
   { name: "status_probe_daily_history_backfill", category: "ALTER_TABLE", fn: backfillStatusProbeDailyHistory },
   { name: "mobile_offline_enum_values", category: "ADD_ENUM", fn: ensureMobileOfflineEnumValues },
