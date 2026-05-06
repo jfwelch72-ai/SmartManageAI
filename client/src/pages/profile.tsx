@@ -18,6 +18,7 @@ import {
   Line,
   BarChart,
   Bar,
+  Cell,
   XAxis,
   YAxis,
   Tooltip as RechartsTooltip,
@@ -94,6 +95,7 @@ function pct(n: number) {
 export default function ProfilePage() {
   const { user } = useAuth();
   const [aiWindowDays, setAiWindowDays] = useState<string>("30");
+  const [selectedTrade, setSelectedTrade] = useState<string | null>(null);
 
   const { data: projectsData, isLoading: projectsLoading } = useQuery<{ data: ProjectSummary[] }>({
     queryKey: ["/api/projects"],
@@ -388,9 +390,19 @@ export default function ProfilePage() {
                           (lo, r) => (r.accuracy < lo.accuracy ? r : lo),
                           eligible[0],
                         );
+                        const isActive = selectedTrade === weakest.tradeType;
                         return (
-                          <div
-                            className="mb-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40 p-2.5"
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedTrade(isActive ? null : weakest.tradeType)
+                            }
+                            aria-pressed={isActive}
+                            className={`mb-3 flex w-full items-start gap-2 rounded-md border p-2.5 text-left transition-colors hover-elevate active-elevate-2 ${
+                              isActive
+                                ? "border-amber-400 bg-amber-100 dark:border-amber-700 dark:bg-amber-900/60"
+                                : "border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40"
+                            }`}
                             data-testid="callout-weakest-trade"
                           >
                             <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
@@ -409,9 +421,12 @@ export default function ProfilePage() {
                               >
                                 {weakest.tradeType}
                               </span>{" "}
-                              suggestions ({weakest.reviewed} reviewed).
+                              suggestions ({weakest.reviewed} reviewed).{" "}
+                              <span className="underline">
+                                {isActive ? "Clear filter" : "Highlight on chart"}
+                              </span>
                             </p>
-                          </div>
+                          </button>
                         );
                       })()}
                       <div className="h-56">
@@ -433,7 +448,24 @@ export default function ProfilePage() {
                             />
                             <YAxis tick={{ fontSize: 10 }} domain={[0, 100]} unit="%" />
                             <RechartsTooltip formatter={(v: number) => `${v}%`} />
-                            <Bar dataKey="accuracyPct" fill="#7c3aed" name="Accuracy" />
+                            <Bar dataKey="accuracyPct" fill="#7c3aed" name="Accuracy">
+                              {myAiAccuracy.accuracyByTrade.map((r) => {
+                                const dim =
+                                  selectedTrade !== null &&
+                                  selectedTrade !== r.tradeType;
+                                const highlight =
+                                  selectedTrade === r.tradeType;
+                                return (
+                                  <Cell
+                                    key={r.tradeType}
+                                    data-testid={`bar-trade-${r.tradeType}`}
+                                    data-active={highlight ? "true" : "false"}
+                                    fill={highlight ? "#f59e0b" : "#7c3aed"}
+                                    fillOpacity={dim ? 0.25 : 1}
+                                  />
+                                );
+                              })}
+                            </Bar>
                           </BarChart>
                         </ResponsiveContainer>
                       </div>
