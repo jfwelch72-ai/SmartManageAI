@@ -35,14 +35,15 @@ interface AccessRow {
 interface IngestRun {
   id: string;
   startedAt: string;
-  finishedAt: string | null;
+  completedAt: string | null;
   status: string;
   bidsIngested: number;
   estimatesIngested: number;
+  lineItemsIngested: number;
   takeoffsIngested: number;
   costPostingsIngested: number;
   ratesUpdated: number;
-  trigger: string;
+  triggerType: string;
   errorMessage: string | null;
 }
 
@@ -365,6 +366,13 @@ export default function AiEstimatorAdminPage() {
   const excludedSources = excludedQuery.data?.excludedSources ?? [];
   const excludedProjectIds = new Set(excludedSources.map((e) => e.projectId).filter(Boolean) as string[]);
 
+  const allRuns = runsQuery.data?.runs ?? [];
+  const lastScheduledRun = allRuns.find((r) => r.triggerType === "SCHEDULED") ?? null;
+  const lastSuccessfulScheduledRun = allRuns.find(
+    (r) => r.triggerType === "SCHEDULED" && (r.status === "SUCCESS" || r.status === "SUCCEEDED"),
+  ) ?? null;
+  const lastRun = allRuns[0] ?? null;
+
   const allRates = ratesQuery.data?.rates ?? [];
   const filteredRates = allRates.filter((r) => {
     if (rateFilter && !r.costCode.toLowerCase().includes(rateFilter.toLowerCase())) return false;
@@ -474,7 +482,120 @@ export default function AiEstimatorAdminPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="ingest">
+        <TabsContent value="ingest" className="space-y-4">
+          <Card data-testid="card-schedule-status">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Info className="h-5 w-5" /> Nightly schedule status
+              </CardTitle>
+              <CardDescription>
+                The ingestion job runs automatically once per day per organization. This panel shows whether the latest scheduled run completed successfully.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {runsQuery.isLoading ? (
+                <Loader2 className="animate-spin h-5 w-5" />
+              ) : !lastScheduledRun ? (
+                <div className="flex items-start gap-2 text-sm text-muted-foreground" data-testid="text-no-scheduled-runs">
+                  <Info className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>No scheduled runs recorded yet. The nightly job will record its first run here automatically.</span>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-3" data-testid="summary-last-scheduled-run">
+                    <Badge
+                      variant={
+                        lastScheduledRun.status === "SUCCESS" || lastScheduledRun.status === "SUCCEEDED"
+                          ? "default"
+                          : lastScheduledRun.status === "FAILED"
+                            ? "destructive"
+                            : "secondary"
+                      }
+                      className="gap-1"
+                      data-testid="badge-last-scheduled-status"
+                    >
+                      {lastScheduledRun.status === "SUCCESS" || lastScheduledRun.status === "SUCCEEDED" ? (
+                        <CheckCircle2 className="h-3 w-3" />
+                      ) : lastScheduledRun.status === "FAILED" ? (
+                        <AlertCircle className="h-3 w-3" />
+                      ) : (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      )}
+                      {lastScheduledRun.status}
+                    </Badge>
+                    <span className="text-sm">
+                      Last scheduled run:{" "}
+                      <strong data-testid="text-last-scheduled-started">
+                        {new Date(lastScheduledRun.startedAt).toLocaleString()}
+                      </strong>
+                      {lastScheduledRun.completedAt && (
+                        <span className="text-muted-foreground">
+                          {" "}
+                          (finished {new Date(lastScheduledRun.completedAt).toLocaleString()})
+                        </span>
+                      )}
+                    </span>
+                  </div>
+
+                  {lastScheduledRun.status === "FAILED" && lastSuccessfulScheduledRun && (
+                    <div className="text-sm text-muted-foreground" data-testid="text-last-successful-scheduled">
+                      Last successful scheduled run:{" "}
+                      <strong>{new Date(lastSuccessfulScheduledRun.startedAt).toLocaleString()}</strong>
+                    </div>
+                  )}
+
+                  {lastScheduledRun.status === "FAILED" && !lastSuccessfulScheduledRun && (
+                    <div className="text-sm text-amber-700" data-testid="text-no-successful-scheduled">
+                      No successful scheduled run on record yet.
+                    </div>
+                  )}
+
+                  {lastScheduledRun.status === "FAILED" && lastScheduledRun.errorMessage && (
+                    <div
+                      className="flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm"
+                      data-testid="text-last-scheduled-error"
+                    >
+                      <AlertTriangle className="h-4 w-4 mt-0.5 text-destructive shrink-0" />
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="font-medium text-destructive">Error from last scheduled run</div>
+                        <pre className="whitespace-pre-wrap break-words font-mono text-xs text-muted-foreground bg-background/60 rounded border border-destructive/20 p-2 max-h-40 overflow-auto">
+                          {lastScheduledRun.errorMessage}
+                        </pre>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6" data-testid="grid-last-scheduled-counters">
+                    {[
+                      { label: "Bids", value: lastScheduledRun.bidsIngested, testId: "counter-bids" },
+                      { label: "Estimates", value: lastScheduledRun.estimatesIngested, testId: "counter-estimates" },
+                      { label: "Line items", value: lastScheduledRun.lineItemsIngested, testId: "counter-line-items" },
+                      { label: "Takeoffs", value: lastScheduledRun.takeoffsIngested, testId: "counter-takeoffs" },
+                      { label: "Cost postings", value: lastScheduledRun.costPostingsIngested, testId: "counter-cost-postings" },
+                      { label: "Rates updated", value: lastScheduledRun.ratesUpdated, testId: "counter-rates" },
+                    ].map((c) => (
+                      <div
+                        key={c.label}
+                        className="rounded-md border bg-muted/30 px-3 py-2"
+                        data-testid={c.testId}
+                      >
+                        <div className="text-xs text-muted-foreground">{c.label}</div>
+                        <div className="text-lg font-semibold tabular-nums">{(c.value ?? 0).toLocaleString()}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {lastRun && lastRun.id !== lastScheduledRun.id && (
+                    <div className="text-xs text-muted-foreground" data-testid="text-most-recent-run-note">
+                      Most recent run overall was a {lastRun.triggerType.toLowerCase()} run on{" "}
+                      {new Date(lastRun.startedAt).toLocaleString()} ({lastRun.status}).
+                    </div>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -529,7 +650,9 @@ export default function AiEstimatorAdminPage() {
                               )}
                             </div>
                           </TableCell>
-                          <TableCell>{r.trigger}</TableCell>
+                          <TableCell>
+                            <Badge variant="outline" className="text-[10px]">{r.triggerType}</Badge>
+                          </TableCell>
                           <TableCell>{r.bidsIngested}</TableCell>
                           <TableCell>{r.estimatesIngested}</TableCell>
                           <TableCell>{r.takeoffsIngested}</TableCell>
