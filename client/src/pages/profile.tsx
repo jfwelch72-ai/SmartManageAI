@@ -42,7 +42,14 @@ import {
   ThumbsUp,
   ThumbsDown,
   Pencil,
+  AlertTriangle,
 } from "lucide-react";
+
+// Task #2383 — Minimum reviewed suggestions in a single trade before we'll
+// surface a "weakest trade" callout. Below this we don't have enough signal
+// to confidently say a trade is the user's worst, and the call-out would
+// flap as a single accept/reject swings the percentage wildly.
+const WEAKEST_TRADE_MIN_REVIEWED = 5;
 
 interface ProjectSummary {
   code: string;
@@ -364,6 +371,49 @@ export default function ProfilePage() {
                       <p className="text-xs text-muted-foreground mb-2">
                         Where you accept the AI most often vs. where you push back.
                       </p>
+                      {(() => {
+                        // Task #2383 — Surface the lowest-accuracy trade as a
+                        // one-line callout so estimators don't have to scan the
+                        // chart. Only show it if at least one trade has enough
+                        // reviewed suggestions (>= WEAKEST_TRADE_MIN_REVIEWED)
+                        // to be statistically meaningful.
+                        const eligible = myAiAccuracy.accuracyByTrade
+                          .map(r => ({
+                            ...r,
+                            reviewed: r.accepted + r.edited + r.rejected,
+                          }))
+                          .filter(r => r.reviewed >= WEAKEST_TRADE_MIN_REVIEWED);
+                        if (eligible.length === 0) return null;
+                        const weakest = eligible.reduce(
+                          (lo, r) => (r.accuracy < lo.accuracy ? r : lo),
+                          eligible[0],
+                        );
+                        return (
+                          <div
+                            className="mb-3 flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/40 p-2.5"
+                            data-testid="callout-weakest-trade"
+                          >
+                            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                            <p className="text-xs text-amber-900 dark:text-amber-100">
+                              Heads up — you only accept{" "}
+                              <span
+                                className="font-semibold"
+                                data-testid="text-weakest-trade-accuracy"
+                              >
+                                {pct(weakest.accuracy)}
+                              </span>{" "}
+                              of{" "}
+                              <span
+                                className="font-semibold"
+                                data-testid="text-weakest-trade-name"
+                              >
+                                {weakest.tradeType}
+                              </span>{" "}
+                              suggestions ({weakest.reviewed} reviewed).
+                            </p>
+                          </div>
+                        );
+                      })()}
                       <div className="h-56">
                         <ResponsiveContainer width="100%" height="100%">
                           <BarChart
