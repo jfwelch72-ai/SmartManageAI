@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, boolean, timestamp, date, decimal, integer, pgEnum, doublePrecision, index, unique, json, jsonb, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { z } from "zod";
 import { aiNoteInsightCategoryEnum, aiNoteInsightSeverityEnum, aiNoteInsightSourceTypeEnum, aiTaskPriorityEnum, aiTaskStatusEnum, auditActionEnum, billingStatusEnum, calendarEventTypeEnum, changeOrderStatusEnum, clockEventTypeEnum, dailyReportLockStatusEnum, delayClaimStatusEnum, delayClaimTypeEnum, delayNotificationRecipientTypeEnum, delayNotificationStatusEnum, delayReasonEnum, delayResponsibilityEnum, delayStatusEnum, documentTypeEnum, domainEventStatusEnum, dowelSizeEnum, estimateItemCategoryEnum, estimateLineItemSourceEnum, estimateStatusEnum, fileTypeEnum, inspectionRequestMethodEnum, inspectionStatusEnum, inspectionTypeEnum, invoiceMatchStatusEnum, materialResponsibilityEnum, mediaTypeEnum, noteBlockTypeEnum, noteTypeEnum, notificationTypeEnum, birthdayReminderCadenceEnum, overageActionStatusEnum, overtimeRequestStatusEnum, photoCustodyActionEnum, poReceiptItemConditionEnum, poReceiptStatusEnum, procurementStatusEnum, purchaseOrderStatusEnum, purchaseRequestStatusEnum, rebarSizeEnum, salaryTypeEnum, sealerTypeEnum, shiftApprovalStatusEnum, stoneTypeEnum, taskSourceTypeEnum, tmBillingStatusEnum, tmInvoiceStatusEnum, tmTicketStatusEnum, underlaymentTypeEnum, vendorInvoiceStatusEnum, wireMeshTypeEnum, punchListTradeEnum, punchListPriorityEnum, punchListStatusEnum, warrantyCaseTypeEnum, warrantyCaseStatusEnum, warrantyPriorityEnum, warrantyTaskStatusEnum, warrantyDocumentTypeEnum, leaveRequestStatusEnum, handoverItemStatusEnum, handoverSignoffRoleEnum, assetMaintenanceTypeEnum, maintenanceSystemEnum, recurringFrequencyEnum, costSourceCategoryEnum, costOriginModuleEnum, costTransactionStatusEnum, mobilizationChecklistStatusEnum, mobilizationItemStatusEnum, methodStatementStatusEnum, permitStatusEnum, permitTypeEnum, materialTestStatusEnum, materialTestTypeEnum, ppeTypeEnum, ppeComplianceStatusEnum, projectReportTypeEnum, projectReportStatusEnum } from "./enums";
@@ -909,7 +909,7 @@ export const changeOrders = pgTable("change_orders", {
   clientResponseDueDate: timestamp("client_response_due_date"),
   contractId: varchar("contract_id").references(() => contracts.id, { onDelete: "set null" }),
   linkedTmTicketId: varchar("linked_tm_ticket_id").references(() => tmTickets.id, { onDelete: "set null" }),
-  linkedRfiId: varchar("linked_rfi_id").references(() => rfis.id, { onDelete: "set null" }),
+  linkedRfiId: varchar("linked_rfi_id").references((): AnyPgColumn => rfis.id, { onDelete: "set null" }),
   voidedAt: timestamp("voided_at"),
   voidedById: varchar("voided_by_id").references(() => users.id, { onDelete: "set null" }),
   voidReason: text("void_reason"),
