@@ -14,7 +14,8 @@
  */
 
 import { Router } from "express";
-import { and, desc, eq, gte, lte, inArray, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, gte, lt, lte, or, inArray, sql, type SQL } from "drizzle-orm";
+import { parsePagination, setNextLinkHeader, buildPage, PaginationError } from "./utils/pagination";
 import { z } from "zod";
 import twilio from "twilio";
 import { db } from "./db";
@@ -3869,8 +3870,30 @@ router.get(
         scopedOrgId = orgId;
       }
 
-      const limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "20"), 10) || 20, 1), 100);
-      const offset = Math.max(parseInt(String(req.query.offset ?? "0"), 10) || 0, 0);
+      // Opt into the shared cursor envelope when the client sends
+      // `cursor` or `pageSize`; legacy `page=N&limit=M` callers keep
+      // the offset behavior and un-aliased body.
+      const useEnvelope =
+        typeof req.query.cursor === "string" ||
+        typeof req.query.pageSize === "string";
+      let limit: number;
+      let offset = 0;
+      let cursor: { ts: string; id: string } | null = null;
+      if (useEnvelope) {
+        try {
+          const p = parsePagination(req.query);
+          limit = p.pageSize;
+          cursor = p.cursor;
+        } catch (e) {
+          if (e instanceof PaginationError) {
+            return res.status(e.status).json({ error: e.message, details: e.details });
+          }
+          throw e;
+        }
+      } else {
+        limit = Math.min(Math.max(parseInt(String(req.query.limit ?? "20"), 10) || 20, 1), 100);
+        offset = Math.max(parseInt(String(req.query.offset ?? "0"), 10) || 0, 0);
+      }
 
       // Status filter: accept a single value or a comma-separated list. Only
       // forward known statuses so a typo in the query string can't degrade the
@@ -3912,8 +3935,11 @@ router.get(
 
       const { rows, total } = await listCrmTranscriptBackfillJobs({
         organizationId: scopedOrgId,
-        limit,
-        offset,
+        // Fetch one extra row in cursor mode so buildPage can detect a real
+        // next page (the off-by-one fix from the shared contract).
+        limit: useEnvelope ? limit + 1 : limit,
+        offset: cursor ? 0 : offset,
+        cursor: cursor ?? undefined,
         statuses: statuses.length > 0 ? statuses : undefined,
         operator,
         startedById,
@@ -3937,12 +3963,7 @@ router.get(
         rows.map((r) => r.id),
       );
 
-      res.json({
-        total,
-        limit,
-        offset,
-        crossOrg: superAdmin && !scopedOrgId,
-        jobs: rows.map((row) => {
+      const jobs = rows.map((row) => {
           const rootId = jobToRoot.get(row.id) ?? row.id;
           const lineage = lineagesByRoot.get(rootId) ?? [];
           const note = notificationsByJob.get(row.id);
@@ -4003,7 +4024,36 @@ router.get(
                 }
               : null,
           };
-        }),
+        });
+
+      // Envelope path: delegate to the shared `buildPage` helper so
+      // cursor encoding lives in exactly one place.
+      if (useEnvelope) {
+        const page = buildPage(
+          jobs,
+          limit,
+          (j) => ({ ts: j.startedAt, id: j.id }),
+          total,
+        );
+        setNextLinkHeader(res, req.originalUrl, page.nextCursor);
+        res.json({
+          ...page,
+          // Back-compat aliases for the legacy "page=N" UI during the
+          // rolling client migration.
+          jobs: page.items,
+          limit,
+          offset: 0,
+          crossOrg: superAdmin && !scopedOrgId,
+        });
+        return;
+      }
+
+      res.json({
+        total,
+        limit,
+        offset,
+        crossOrg: superAdmin && !scopedOrgId,
+        jobs,
       });
     } catch (e) {
       next(e);

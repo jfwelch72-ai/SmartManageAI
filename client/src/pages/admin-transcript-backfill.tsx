@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "wouter";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useInfiniteQuery } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -354,6 +355,10 @@ const TEST_ALERT_USAGE_BUCKETS_KEY_BASE = [
 ] as const;
 const TEST_ALERT_SPARKLINE_DAYS = 30;
 const PAGE_SIZE = 20;
+// History uses the shared cursor envelope's maximum (`MAX_PAGE_SIZE` on
+// the server). Kept separate from `PAGE_SIZE` so the unrelated
+// "pending recordings" list keeps its smaller offset paging.
+const HISTORY_PAGE_SIZE = 200;
 // Task #1057 — surface CANCELLED in the history filter so admins can isolate
 // deliberately-stopped runs from crashes.
 const STATUS_OPTIONS = ["RUNNING", "COMPLETED", "FAILED", "CANCELLED"] as const;
@@ -497,7 +502,8 @@ export default function AdminTranscriptBackfillPage() {
   // cross-org view so platform support sees the full picture immediately;
   // they can narrow to a single org from this picker.
   const [orgFilter, setOrgFilter] = useState<string>(CROSS_ORG_VALUE);
-  const [page, setPage] = useState(0);
+  // History uses cursor-driven `useInfiniteQuery`; reads are against
+  // `historyJobs`. Legacy `page` state is no longer used.
   const [isExporting, setIsExporting] = useState(false);
   const [pendingPage, setPendingPage] = useState(0);
 
@@ -515,21 +521,20 @@ export default function AdminTranscriptBackfillPage() {
     }
   }, [isSuperAdmin, startTargetOrgId, user?.organizationId]);
 
-  // Reset to the first page whenever filters change so users don't end up
-  // staring at an empty page because their previous offset is past the new
-  // total.
+  // Filter changes reset useInfiniteQuery via its queryKey. The
+  // suppress ref is preserved for the locate-jump path.
   useEffect(() => {
     if (suppressFilterPageReset.current) {
       suppressFilterPageReset.current = false;
       return;
     }
-    setPage(0);
   }, [statusFilter, appliedOperator, operatorId, cancellerId, startedAfter, startedBefore, orgFilter]);
 
   const historyFilters = useMemo(() => {
+    // Pass `pageSize` to opt into the cursor envelope; the cursor
+    // itself is appended per-page by useInfiniteQuery.
     const params: Record<string, string> = {
-      limit: String(PAGE_SIZE),
-      offset: String(page * PAGE_SIZE),
+      pageSize: String(HISTORY_PAGE_SIZE),
     };
     if (statusFilter !== "ALL") params.status = statusFilter;
     if (operatorId !== "ALL") {
@@ -556,7 +561,7 @@ export default function AdminTranscriptBackfillPage() {
       params.organizationId = orgFilter;
     }
     return params;
-  }, [page, statusFilter, appliedOperator, operatorId, cancellerId, startedAfter, startedBefore, orgFilter, isSuperAdmin]);
+  }, [statusFilter, appliedOperator, operatorId, cancellerId, startedAfter, startedBefore, orgFilter, isSuperAdmin]);
 
   const hasActiveFilters =
     statusFilter !== "ALL" ||
@@ -631,10 +636,55 @@ export default function AdminTranscriptBackfillPage() {
     }
   }, [jobQuery.data?.status]);
 
-  const historyQuery = useQuery<BackfillHistoryResponse>({
+  // Cursor-paginated history; each page is `{ items, nextCursor, total }`
+  // (server also includes a legacy `jobs` alias during migration).
+  type HistoryPage = {
+    items: BackfillHistoryEntry[];
+    jobs?: BackfillHistoryEntry[];
+    nextCursor: string | null;
+    total: number;
+  };
+  const historyInfinite = useInfiniteQuery<HistoryPage>({
     queryKey: [HISTORY_PATH, historyFilters],
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam }) => {
+      const usp = new URLSearchParams(historyFilters);
+      if (pageParam) usp.set("cursor", pageParam as string);
+      const res = await apiRequest("GET", `${HISTORY_PATH}?${usp.toString()}`);
+      return (await res.json()) as HistoryPage;
+    },
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
     refetchInterval: activeJobId ? 5_000 : 30_000,
   });
+  const historyJobs = useMemo<BackfillHistoryEntry[]>(
+    () =>
+      (historyInfinite.data?.pages ?? []).flatMap(
+        (p) => p.items ?? p.jobs ?? [],
+      ),
+    [historyInfinite.data],
+  );
+  const historyTotal = historyInfinite.data?.pages?.[0]?.total ?? 0;
+  // Variable-height rows (expanded section shows errors/lineage), so
+  // estimate 96px and let `measureElement` correct after first paint.
+  const historyScrollRef = useRef<HTMLDivElement>(null);
+  const historyRowVirtualizer = useVirtualizer({
+    count: historyJobs.length,
+    getScrollElement: () => historyScrollRef.current,
+    estimateSize: () => 96,
+    overscan: 8,
+  });
+  // Provide a `historyQuery`-shaped facade so the rest of the component
+  // (status flags, refetch button, jump-target effect) keeps reading the
+  // same fields without churn.
+  const historyQuery = {
+    data: historyInfinite.data
+      ? { jobs: historyJobs, total: historyTotal }
+      : undefined,
+    isLoading: historyInfinite.isLoading,
+    isFetching: historyInfinite.isFetching,
+    isError: historyInfinite.isError,
+    refetch: historyInfinite.refetch,
+  };
 
   // Task #1010 — drill-down list of recordings still missing transcripts.
   // Refresh whenever a job completes so admins see the surviving rows
@@ -707,11 +757,21 @@ export default function AdminTranscriptBackfillPage() {
   // chain so we can disable jump links pointing to jobs that aren't on this
   // page (rather than silently no-op'ing).
   const visibleHistoryIds = useMemo(
-    () => new Set((historyQuery.data?.jobs ?? []).map((j) => j.id)),
-    [historyQuery.data],
+    () => new Set(historyJobs.map((j) => j.id)),
+    [historyJobs],
   );
 
   const scrollHistoryRowIntoView = (jobId: string) => {
+    // Under virtualization, off-viewport rows aren't mounted, so a DOM
+    // query by data-testid would miss them. Drive the virtualizer
+    // directly via its row index — it mounts the row and scrolls in
+    // one call. We still try a DOM-based smooth scroll afterwards
+    // for the "row is already on screen" case so the animation stays
+    // pleasant.
+    const idx = historyJobs.findIndex((j) => j.id === jobId);
+    if (idx >= 0) {
+      historyRowVirtualizer.scrollToIndex(idx, { align: "center" });
+    }
     requestAnimationFrame(() => {
       const el = document.querySelector(`[data-testid="history-row-${jobId}"]`);
       if (el && "scrollIntoView" in el) {
@@ -834,10 +894,8 @@ export default function AdminTranscriptBackfillPage() {
         // even when the target's org isn't loaded in the dropdown yet.
         setOrgFilter(CROSS_ORG_VALUE);
       }
-      const pageSize = data.pageSize > 0 ? data.pageSize : PAGE_SIZE;
-      const targetPage = Math.max(0, Math.floor(data.offset / pageSize));
-      // Set the suppress flag *before* mutating filters so the filter-change
-      // effect skips its page-reset and our setPage(targetPage) wins.
+      // No addressable offsets under cursor pagination, so the
+      // post-fetch effect walks fetchNextPage until the row appears.
       if (data.filteredOut || (isSuperAdmin && data.orgScopeChanged)) {
         suppressFilterPageReset.current = true;
       }
@@ -845,7 +903,6 @@ export default function AdminTranscriptBackfillPage() {
         clearAllFilters();
       }
       setPendingJumpId(jobId);
-      setPage(targetPage);
     } catch (err) {
       toast({
         title: "Couldn't jump to that run",
@@ -857,31 +914,39 @@ export default function AdminTranscriptBackfillPage() {
     }
   };
 
-  // Once the history fetch settles, expand and scroll to the pending jump
-  // target. We wait for `isFetching` to become false so the effect runs after
-  // the new page's rows have actually rendered.
+  // Walk the infinite query forward until the target row materializes
+  // or the cursor stream ends. Derived from page size so the 10k row
+  // ceiling is honored regardless of `HISTORY_PAGE_SIZE`.
+  const MAX_JUMP_PAGES = Math.ceil(10_000 / HISTORY_PAGE_SIZE);
   useEffect(() => {
     if (!pendingJumpId) return;
-    if (historyQuery.isFetching) return;
+    if (historyInfinite.isFetching || historyInfinite.isFetchingNextPage) return;
     if (visibleHistoryIds.has(pendingJumpId)) {
       setExpandedHistoryId(pendingJumpId);
       scrollHistoryRowIntoView(pendingJumpId);
       setPendingJumpId(null);
-    } else {
-      // The target didn't materialize (e.g. it was deleted between the
-      // locate call and the page fetch). Surface a toast and bail rather
-      // than silently leaving the jump marker hanging.
-      toast({
-        title: "Run no longer available",
-        description: "The related run couldn't be located on the destination page.",
-        variant: "destructive",
-      });
-      setPendingJumpId(null);
+      return;
     }
-    // visibleHistoryIds is derived from historyQuery.data; depending on it
-    // ensures we re-check after the new page is loaded.
+    const loadedPages = historyInfinite.data?.pages.length ?? 0;
+    if (historyInfinite.hasNextPage && loadedPages < MAX_JUMP_PAGES) {
+      historyInfinite.fetchNextPage();
+      return;
+    }
+    toast({
+      title: "Run no longer available",
+      description: "The related run couldn't be located on the destination page.",
+      variant: "destructive",
+    });
+    setPendingJumpId(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pendingJumpId, historyQuery.isFetching, visibleHistoryIds]);
+  }, [
+    pendingJumpId,
+    historyInfinite.isFetching,
+    historyInfinite.isFetchingNextPage,
+    historyInfinite.hasNextPage,
+    historyInfinite.data?.pages.length,
+    visibleHistoryIds,
+  ]);
 
   const retryMutation = useMutation({
     mutationFn: async (parentJobId: string) => {
@@ -2066,15 +2131,42 @@ export default function AdminTranscriptBackfillPage() {
             <div className="text-sm text-destructive" data-testid="text-history-error">
               Failed to load backfill history.
             </div>
-          ) : !historyQuery.data || historyQuery.data.jobs.length === 0 ? (
+          ) : !historyQuery.data || historyJobs.length === 0 ? (
             <div className="text-sm text-muted-foreground" data-testid="text-history-empty">
               {hasActiveFilters
                 ? "No backfill runs match the current filters."
                 : "No backfill runs yet."}
             </div>
           ) : (
-            <ul className="divide-y rounded-md border" data-testid="list-history">
-              {historyQuery.data.jobs.map((entry) => {
+            <div
+              ref={historyScrollRef}
+              className="rounded-md border overflow-auto"
+              style={{ maxHeight: "70vh" }}
+              data-testid="scroll-history"
+              onScroll={() => {
+                // Prefetch the next page when the visible tail is
+                // within ~10 rows of the loaded data.
+                const items = historyRowVirtualizer.getVirtualItems();
+                const last = items[items.length - 1];
+                if (
+                  last &&
+                  historyInfinite.hasNextPage &&
+                  !historyInfinite.isFetchingNextPage &&
+                  last.index >= historyJobs.length - 10
+                ) {
+                  historyInfinite.fetchNextPage();
+                }
+              }}
+            >
+              <ul
+                className="divide-y relative"
+                data-testid="list-history"
+                style={{
+                  height: `${historyRowVirtualizer.getTotalSize()}px`,
+                }}
+              >
+                {historyRowVirtualizer.getVirtualItems().map((vRow) => {
+                const entry = historyJobs[vRow.index];
                 const isExpanded = expandedHistoryId === entry.id;
                 const operatorName = formatOperator(entry.startedBy);
                 const duration = entry.completedAt
@@ -2093,7 +2185,23 @@ export default function AdminTranscriptBackfillPage() {
                 const retryingThisRow =
                   retryMutation.isPending && retryMutation.variables === entry.id;
                 return (
-                  <li key={entry.id} data-testid={`history-row-${entry.id}`}>
+                  <li
+                    key={entry.id}
+                    ref={(el) => {
+                      // measureElement keeps row height accurate for
+                      // variable-height rows.
+                      if (el) historyRowVirtualizer.measureElement(el);
+                    }}
+                    data-index={vRow.index}
+                    data-testid={`history-row-${entry.id}`}
+                    style={{
+                      position: "absolute",
+                      top: 0,
+                      left: 0,
+                      width: "100%",
+                      transform: `translateY(${vRow.start}px)`,
+                    }}
+                  >
                     <div className="flex items-start gap-2 p-1.5">
                     <button
                       type="button"
@@ -2341,16 +2449,37 @@ export default function AdminTranscriptBackfillPage() {
                   </li>
                 );
               })}
-            </ul>
+              </ul>
+            </div>
           )}
-          {historyQuery.data && historyQuery.data.total > 0 && (
-            <HistoryPagination
-              total={historyQuery.data.total}
-              page={page}
-              pageSize={PAGE_SIZE}
-              isFetching={historyQuery.isFetching}
-              onPageChange={setPage}
-            />
+          {historyQuery.data && historyJobs.length > 0 && (
+            <div
+              className="mt-3 flex flex-wrap items-center justify-between gap-3"
+              data-testid="history-pagination"
+            >
+              <div className="text-xs text-muted-foreground" data-testid="text-history-range">
+                Showing <span className="font-medium">{historyJobs.length.toLocaleString()}</span>
+                {historyTotal > 0 && (
+                  <>
+                    {" "}of <span className="font-medium">{historyTotal.toLocaleString()}</span>
+                  </>
+                )}
+              </div>
+              {historyInfinite.hasNextPage && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={historyInfinite.isFetchingNextPage}
+                  onClick={() => historyInfinite.fetchNextPage()}
+                  data-testid="button-history-load-more"
+                >
+                  {historyInfinite.isFetchingNextPage ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : null}
+                  Load more
+                </Button>
+              )}
+            </div>
           )}
         </CardContent>
       </Card>

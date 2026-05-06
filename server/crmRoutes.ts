@@ -200,7 +200,8 @@ import { Router } from "express";
 import { validateBody } from "./utils/validation";
 import { db } from "./db";
 import { crmOrganisations, crmContacts, crmOrganisationNotes, insertCrmOrganisationSchema, insertCrmOrganisationNoteSchema, auditLog, users, emailThreads, emailMessages, calendarEvents, projects, crmOpportunities, vendorPricingCatalogs, vendorPricebooks, vendorPricebookItems, subcontractorContracts, rentalVendors, rentalEquipmentCatalog, vendorEnrollments, vendorUsers, websiteContactSubmissions, emailTasks, pricebookImportJobs, vendorScores, materialPriceIndex, rfis, transmittalRecipients, submittals, subcontractorPortalTokens, bidDocumentDistributions, insertCrmContactSchema, crmOpportunityActivities, insertCrmOpportunitySchema, insertCrmOpportunityActivitySchema, notifications, organizationNetworkSettings } from "@shared/schema";
-import { eq, and, sql, desc, or, lte, gte, isNotNull, isNull, inArray, ilike, ne, type SQL, asc } from "drizzle-orm";
+import { eq, and, sql, desc, or, lt, lte, gte, isNotNull, isNull, inArray, ilike, ne, type SQL, asc } from "drizzle-orm";
+import { parsePagination, setNextLinkHeader, buildPage, PaginationError, MAX_PAGE_SIZE } from "./utils/pagination";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
 import { insertNotification, queueContactReassignmentNotification, queueOwnerReassignmentNotification } from "./services/notificationService";
@@ -1547,15 +1548,47 @@ router.get("/api/crm/contacts", requireAuth, requireRole(...CONTACT_READ_ROLES),
       );
     }
 
+    // Opt into the shared cursor envelope when the client sends `cursor`
+    // or `pageSize`; legacy callers still receive the full sorted array.
+    const useEnvelope =
+      typeof req.query.cursor === "string" || typeof req.query.pageSize === "string";
+    let pageSize = 0;
+    let cursor: { ts: string; id: string } | null = null;
+    if (useEnvelope) {
+      try {
+        const p = parsePagination(req.query);
+        pageSize = p.pageSize;
+        cursor = p.cursor;
+      } catch (e) {
+        if (e instanceof PaginationError) {
+          return res.status(e.status).json({ error: e.message, details: e.details });
+        }
+        throw e;
+      }
+    }
+
     if (orgId) {
       const cfFilter = await getEntityIdsMatchingCustomFieldFilters(orgId, "CONTACT", req.query as Record<string, any>);
       if (cfFilter.applies) {
-        if (cfFilter.ids.length === 0) return res.json([]);
+        if (cfFilter.ids.length === 0) {
+          if (useEnvelope) return res.json({ items: [], nextCursor: null });
+          return res.json([]);
+        }
         conditions.push(inArray(crmContacts.id, cfFilter.ids));
       }
     }
 
-    const contacts = await db
+    if (cursor) {
+      const ts = new Date(cursor.ts);
+      conditions.push(
+        or(
+          lt(crmContacts.updatedAt, ts),
+          and(eq(crmContacts.updatedAt, ts), lt(crmContacts.id, cursor.id)),
+        ) as SQL,
+      );
+    }
+
+    let q = db
       .select({
         id: crmContacts.id,
         organisationId: crmContacts.organisationId,
@@ -1582,13 +1615,55 @@ router.get("/api/crm/contacts", requireAuth, requireRole(...CONTACT_READ_ROLES),
       .from(crmContacts)
       .leftJoin(crmOrganisations, eq(crmOrganisations.id, crmContacts.organisationId))
       .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(desc(crmContacts.isPrimary), asc(crmContacts.lastName), asc(crmContacts.firstName));
+      .$dynamic();
 
+    let contacts;
+    if (useEnvelope) {
+      // Fetch pageSize+1 so buildPage can detect a real next row.
+      contacts = await q
+        .orderBy(desc(crmContacts.updatedAt), desc(crmContacts.id))
+        .limit(pageSize + 1);
+    } else {
+      // Even legacy callers are now bounded — the heavy contacts list
+      // never returns more than the shared cap (200) in a single
+      // response. Migrated UIs use the cursor envelope above to
+      // page beyond this.
+      contacts = await q
+        .orderBy(
+          desc(crmContacts.isPrimary),
+          asc(crmContacts.lastName),
+          asc(crmContacts.firstName),
+        )
+        .limit(MAX_PAGE_SIZE);
+    }
+
+    type ContactRow = (typeof contacts)[number];
+    type ContactWithCustomFields = ContactRow & {
+      customFields?: Record<string, unknown>;
+    };
+    let withCustomFields: ContactWithCustomFields[] = contacts;
     if (orgId && contacts.length) {
       const cfMap = await getCustomFieldsMapBatch(orgId, "CONTACT", contacts.map(c => c.id));
-      return res.json(contacts.map(c => ({ ...c, customFields: cfMap[c.id] ?? {} })));
+      withCustomFields = contacts.map((c) => ({
+        ...c,
+        customFields: cfMap[c.id] ?? {},
+      }));
     }
-    res.json(contacts);
+
+    if (!useEnvelope) {
+      return res.json(withCustomFields);
+    }
+
+    const page = buildPage(
+      withCustomFields,
+      pageSize,
+      (row) => ({
+        ts: (row.updatedAt instanceof Date ? row.updatedAt : new Date(row.updatedAt)).toISOString(),
+        id: row.id,
+      }),
+    );
+    setNextLinkHeader(res, req.originalUrl, page.nextCursor);
+    res.json(page);
   } catch (error) {
     next(error);
   }

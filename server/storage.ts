@@ -21,7 +21,7 @@ import {
   type InsertCrmTranscriptBackfillTestAlert,
   type DotPayItemPickerFacets,
 } from "@shared/schema";
-import { eq, and, desc, sql, ilike, or, gte, lte, inArray, type SQL } from "drizzle-orm";
+import { eq, and, desc, sql, ilike, or, gte, lt, lte, inArray, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 
 export interface ExecutiveDigestInsert {
@@ -143,6 +143,14 @@ export type ListCrmTranscriptBackfillJobsFilters = {
   limit?: number;
   offset?: number;
   /**
+   * Keyset cursor for the shared pagination contract. When supplied,
+   * rows are filtered to those AFTER this `(startedAt, id)` pair under
+   * the natural `(startedAt DESC, id DESC)` ordering. Mutually
+   * exclusive with `offset`; if both are supplied,
+   * the cursor wins.
+   */
+  cursor?: { ts: string; id: string };
+  /**
    * Restrict to a single organization. When omitted (undefined), the listing is
    * unscoped — used by SUPER_ADMIN to view backfill history across every org.
    * Org-scoped admins always pass their own organizationId.
@@ -169,7 +177,8 @@ export type ListCrmTranscriptBackfillJobsFilters = {
 export async function listCrmTranscriptBackfillJobs(
   opts: ListCrmTranscriptBackfillJobsFilters = {},
 ): Promise<{ rows: CrmTranscriptBackfillJobWithOperator[]; total: number }> {
-  const limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
+  // Cap matches `MAX_PAGE_SIZE` in `server/utils/pagination.ts`.
+  const limit = Math.min(Math.max(opts.limit ?? 20, 1), 200);
   const offset = Math.max(opts.offset ?? 0, 0);
 
   const conditions: SQL[] = [];
@@ -209,6 +218,19 @@ export async function listCrmTranscriptBackfillJobs(
   }
   if (opts.startedBefore) {
     conditions.push(lte(crmTranscriptBackfillJobs.startedAt, opts.startedBefore));
+  }
+  if (opts.cursor) {
+    const cts = new Date(opts.cursor.ts);
+    if (!Number.isNaN(cts.getTime())) {
+      const cursorClause = or(
+        lt(crmTranscriptBackfillJobs.startedAt, cts),
+        and(
+          eq(crmTranscriptBackfillJobs.startedAt, cts),
+          lt(crmTranscriptBackfillJobs.id, opts.cursor.id),
+        ),
+      );
+      if (cursorClause) conditions.push(cursorClause);
+    }
   }
 
   const whereClause =

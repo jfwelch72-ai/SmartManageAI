@@ -3,17 +3,28 @@ import { Router } from "express";
 import { db } from "./db";
 import { users, auditLog, billingEvents } from "@shared/schema";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
-import { eq, desc, and, inArray, type SQL } from "drizzle-orm";
+import { eq, desc, and, inArray, lt, or, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { validateBody } from "./utils/validation";
 import { logCreate } from "./auditLogger";
 import { getOrgIdForFilter } from "./orgFilter";
+import {
+  parsePagination,
+  setNextLinkHeader,
+  buildPage,
+  PaginationError,
+  MAX_PAGE_SIZE,
+} from "./utils/pagination";
 
 const router = Router();
 
+// Legacy schema kept for non-migrated callers. The max is the shared
+// `MAX_PAGE_SIZE` (200) so even the legacy path can never return more
+// than the contract allows. Migrated routes use the shared
+// `paginationSchema` from `./utils/pagination`.
 const paginationQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(500).default(100),
+  pageSize: z.coerce.number().int().min(1).max(MAX_PAGE_SIZE).default(100),
 });
 
 const multipartParamsSchema = z.object({
@@ -121,10 +132,39 @@ router.get("/api/audit-logs", requireAuth, requireRole("ADMIN", "MANAGER"), asyn
   try {
     const { entityType, entityId, userId, action } = req.query;
 
-    const pq = paginationQuerySchema.safeParse(req.query);
-    if (!pq.success) { res.status(400).json({ error: "Invalid pagination parameters", details: pq.error.errors }); return; }
-    const { page: pageNum, pageSize: pageSizeNum } = pq.data;
-    const offset = (pageNum - 1) * pageSizeNum;
+    // Per the shared contract, the envelope is opt-in via `cursor` OR
+    // `pageSize`. Pure-`page` callers (no `pageSize`) keep the legacy
+    // offset+array shape so their existing pagination semantics aren't
+    // silently changed.
+    const useEnvelope =
+      typeof req.query.cursor === "string" || typeof req.query.pageSize === "string";
+
+    let pageSize: number;
+    let cursor: { ts: string; id: string } | null = null;
+    let legacyOffset = 0;
+    let legacyPage = 1;
+    try {
+      if (useEnvelope) {
+        const p = parsePagination(req.query);
+        pageSize = p.pageSize;
+        cursor = p.cursor;
+      } else {
+        const pq = paginationQuerySchema.safeParse(req.query);
+        if (!pq.success) {
+          res.status(400).json({ error: "Invalid pagination parameters", details: pq.error.errors });
+          return;
+        }
+        legacyPage = pq.data.page;
+        pageSize = pq.data.pageSize;
+        legacyOffset = (legacyPage - 1) * pageSize;
+      }
+    } catch (e) {
+      if (e instanceof PaginationError) {
+        res.status(e.status).json({ error: e.message, details: e.details });
+        return;
+      }
+      throw e;
+    }
 
     const validActions = ["CREATE", "READ", "UPDATE", "DELETE", "APPROVE", "REJECT", "LOGIN", "LOGOUT", "STATUS_CHANGE"];
     if (action && !validActions.includes(action as string)) {
@@ -133,7 +173,10 @@ router.get("/api/audit-logs", requireAuth, requireRole("ADMIN", "MANAGER"), asyn
     }
 
     const { shouldFilter, orgId, mustDenyAccess } = getOrgIdForFilter(req);
-    if (mustDenyAccess) return res.json([]);
+    if (mustDenyAccess) {
+      if (useEnvelope) return res.json({ items: [], nextCursor: null });
+      return res.json([]);
+    }
 
     const conditions: SQL[] = [];
     if (entityType) conditions.push(eq(auditLog.entityType, entityType as string));
@@ -147,21 +190,54 @@ router.get("/api/audit-logs", requireAuth, requireRole("ADMIN", "MANAGER"), asyn
       if (orgUserIds.length > 0) {
         conditions.push(inArray(auditLog.userId, orgUserIds));
       } else {
+        if (useEnvelope) return res.json({ items: [], nextCursor: null });
         return res.json([]);
       }
     }
 
-    let query = db.select().from(auditLog);
+    if (cursor) {
+      const ts = new Date(cursor.ts);
+      conditions.push(
+        or(
+          lt(auditLog.createdAt, ts),
+          and(eq(auditLog.createdAt, ts), lt(auditLog.id, cursor.id)),
+        ) as SQL,
+      );
+    }
+
+    // Drizzle query builders are immutable — every method returns a new
+    // builder. The previous code dropped the `.where(...)` result on the
+    // floor, which silently bypassed entity/action/user filters AND the
+    // org-scoping clause above (cross-org data leak). Reassign so the
+    // predicate actually lands on the executed query.
+    let query = db.select().from(auditLog).$dynamic();
     if (conditions.length > 0) {
-      query = query.where(and(...conditions)) as any;
+      query = query.where(and(...conditions));
     }
 
     const logs = await query
-      .orderBy(desc(auditLog.createdAt))
-      .limit(pageSizeNum)
-      .offset(offset);
+      .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
+      .limit(useEnvelope ? pageSize + 1 : pageSize)
+      .offset(useEnvelope ? 0 : legacyOffset);
 
-    res.json(logs);
+    if (!useEnvelope) {
+      res.json(logs);
+      return;
+    }
+
+    const page = buildPage(
+      logs,
+      pageSize,
+      (row) => ({
+        ts: (row.createdAt instanceof Date
+          ? row.createdAt
+          : new Date(row.createdAt)
+        ).toISOString(),
+        id: row.id,
+      }),
+    );
+    setNextLinkHeader(res, req.originalUrl, page.nextCursor);
+    res.json(page);
   } catch (error) {
     next(error);
   }

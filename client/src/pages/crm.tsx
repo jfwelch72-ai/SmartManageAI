@@ -7,7 +7,8 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList,
 } from "recharts";
 import { useAuth } from "@/hooks/use-auth";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { AIAnalysisButton } from "@/components/AIAnalysisButton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1041,18 +1042,34 @@ export default function CRMPage() {
     orgType?: string | null;
     ownerId?: string | null;
   }
-  const { data: allContacts = [], isLoading: contactsLoading } = useQuery<AllContact[]>({
-    queryKey: ["/api/crm/contacts", { search: contactSearch, owner: contactOwnerFilter }],
-    queryFn: async () => {
+  // Cursor pagination + TanStack Virtual for the contacts table.
+  // Fetches the next page only when the virtualizer reports the last
+  // rendered row is near the loaded tail. `enabled` is gated on the
+  // active tab so we don't kick off a request (or any
+  // follow-on pages) while the user is on Pipeline / Orgs / etc.
+  const CONTACTS_PAGE_SIZE = 200;
+  type ContactsPage = { items: AllContact[]; nextCursor: string | null; total?: number };
+  const contactsInfinite = useInfiniteQuery<ContactsPage>({
+    queryKey: ["/api/crm/contacts", { search: contactSearch, owner: contactOwnerFilter, paginated: true }],
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    enabled: crmTab === "contacts",
+    queryFn: async ({ pageParam }) => {
       const params = new URLSearchParams();
       if (contactSearch) params.set("search", contactSearch);
       if (contactOwnerFilter && contactOwnerFilter !== "all") params.set("ownerId", contactOwnerFilter);
+      params.set("pageSize", String(CONTACTS_PAGE_SIZE));
+      if (pageParam) params.set("cursor", String(pageParam));
       const res = await fetch(`/api/crm/contacts?${params}`);
-      if (!res.ok) return [];
-      return res.json();
+      if (!res.ok) return { items: [], nextCursor: null };
+      return (await res.json()) as ContactsPage;
     },
-    enabled: crmTab === "contacts",
   });
+  const allContacts = useMemo<AllContact[]>(
+    () => contactsInfinite.data?.pages.flatMap((p) => p.items) ?? [],
+    [contactsInfinite.data],
+  );
+  const contactsLoading = contactsInfinite.isLoading;
 
   // Task #701: org users feed the owner column, owner filter, and bulk re-assign action.
   interface OrgUserOption {
@@ -1130,6 +1147,27 @@ export default function CRMPage() {
 
   type ContactSortKey = "name" | "role" | "orgName" | "email" | "phone" | "owner";
   const [contactSort, setContactSort] = useState<{ key: ContactSortKey; dir: "asc" | "desc" }>({ key: "name", dir: "asc" });
+  const contactsTabActive = crmTab === "contacts";
+
+  // Client-side column sort only makes sense over the *complete* result
+  // set; if we sort just the rows loaded so far, additional pages would
+  // jump around as they stream in. The server returns rows in
+  // `(updatedAt DESC, id DESC)` order, which is the only ordering safe
+  // to display while pages are still being fetched. When the user
+  // picks a different column we eagerly drain the cursor stream so the
+  // sort applies to everything (10k row ceiling enforced server-side).
+  const sortIsServerOrder = contactSort.key === "name" && contactSort.dir === "asc";
+  useEffect(() => {
+    if (sortIsServerOrder) return;
+    if (!contactsTabActive) return;
+    if (!contactsInfinite.hasNextPage || contactsInfinite.isFetchingNextPage) return;
+    contactsInfinite.fetchNextPage();
+  }, [
+    sortIsServerOrder,
+    contactsTabActive,
+    contactsInfinite.hasNextPage,
+    contactsInfinite.isFetchingNextPage,
+  ]);
 
   const sortedContacts = [...allContacts].sort((a, b) => {
     const dir = contactSort.dir === "asc" ? 1 : -1;
@@ -1151,7 +1189,35 @@ export default function CRMPage() {
     setContactSort((prev) => prev.key === key ? { key, dir: prev.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" });
   };
 
-  const contactsTabActive = crmTab === "contacts";
+  // ~52px per row, overscan 8 so PageUp/Down doesn't blank rows.
+  const contactsScrollRef = useRef<HTMLDivElement>(null);
+  const contactsRowVirtualizer = useVirtualizer({
+    count: contactsTabActive ? sortedContacts.length : 0,
+    getScrollElement: () => contactsScrollRef.current,
+    estimateSize: () => 52,
+    overscan: 8,
+  });
+  // Fetch the next page only when the virtualizer has actually scrolled
+  // close to the end of the loaded rows. This is the "true incremental
+  // loading" pattern: nothing is fetched until the user scrolls within
+  // ~10 rows of the bottom, so memory/network footprint scales with
+  // what's been viewed rather than with the entire dataset.
+  useEffect(() => {
+    if (!contactsTabActive) return;
+    if (!contactsInfinite.hasNextPage || contactsInfinite.isFetchingNextPage) return;
+    const items = contactsRowVirtualizer.getVirtualItems();
+    const last = items[items.length - 1];
+    if (!last) return;
+    if (last.index >= sortedContacts.length - 10) {
+      contactsInfinite.fetchNextPage();
+    }
+  }, [
+    contactsTabActive,
+    contactsInfinite.hasNextPage,
+    contactsInfinite.isFetchingNextPage,
+    contactsRowVirtualizer.getVirtualItems(),
+    sortedContacts.length,
+  ]);
   const { getRowProps: getContactRowProps } = useTableKeyboardNav({
     rowCount: contactsTabActive ? sortedContacts.length : 0,
     onActivate: (idx) => {
@@ -1611,7 +1677,12 @@ export default function CRMPage() {
                     description={contactSearch ? "Try a different search term." : "Add contacts inside an organization to see them here."}
                   />
                 ) : (
-                  <div className="overflow-x-auto">
+                  <div
+                    ref={contactsScrollRef}
+                    className="overflow-auto"
+                    style={{ maxHeight: "70vh", contain: "strict" }}
+                    data-testid="contacts-virtual-scroll"
+                  >
                     <table className="w-full text-sm" data-testid="table-contacts">
                       <thead>
                         <tr className="border-b bg-muted/40">
@@ -1675,7 +1746,26 @@ export default function CRMPage() {
                         </tr>
                       </thead>
                       <tbody className="divide-y">
-                        {sortedContacts.map((contact, contactIdx) => (
+                        {(() => {
+                          const virtualItems = contactsRowVirtualizer.getVirtualItems();
+                          const totalSize = contactsRowVirtualizer.getTotalSize();
+                          const paddingTop = virtualItems.length > 0 ? virtualItems[0].start : 0;
+                          const paddingBottom =
+                            virtualItems.length > 0
+                              ? totalSize - virtualItems[virtualItems.length - 1].end
+                              : 0;
+                          return (
+                            <>
+                              {paddingTop > 0 && (
+                                <tr aria-hidden="true">
+                                  <td colSpan={8} style={{ height: paddingTop, padding: 0, border: 0 }} />
+                                </tr>
+                              )}
+                              {virtualItems.map((vi) => {
+                                const contact = sortedContacts[vi.index];
+                                if (!contact) return null;
+                                const contactIdx = vi.index;
+                                return (
                           <tr
                             key={contact.id}
                             className="cursor-pointer hover:bg-muted/40 transition-colors data-[focused=true]:bg-muted/60 data-[focused=true]:shadow-[inset_2px_0_0_0_hsl(var(--primary))]"
@@ -1793,7 +1883,16 @@ export default function CRMPage() {
                               />
                             </td>
                           </tr>
-                        ))}
+                                );
+                              })}
+                              {paddingBottom > 0 && (
+                                <tr aria-hidden="true">
+                                  <td colSpan={8} style={{ height: paddingBottom, padding: 0, border: 0 }} />
+                                </tr>
+                              )}
+                            </>
+                          );
+                        })()}
                       </tbody>
                     </table>
                   </div>
