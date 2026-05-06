@@ -360,6 +360,17 @@ router.post("/api/objects/multipart", requireAuth, async (req: AuthRequest, res,
       return;
     }
 
+    // Optional client-provided chunk size. Persisting it at create-time makes
+    // signPart deterministic and avoids a race where the smallest (last) part
+    // arrives first and "poisons" intent.chunkSize for all subsequent parts,
+    // resulting in incorrect byte ranges and an incomplete upload (409 on
+    // /complete because GCS only received part of the file).
+    const rawClientChunk = (req.body as { chunkSize?: unknown })?.chunkSize;
+    const parsedClientChunk =
+      typeof rawClientChunk === "number" && Number.isFinite(rawClientChunk) && rawClientChunk > 0
+        ? Math.floor(rawClientChunk)
+        : null;
+
     const { ObjectStorageService } = await objectStoragePromise;
     const objectStorageService = new ObjectStorageService();
     const { resumableUri, objectKey } = await objectStorageService.initiateResumableUpload(organizationId, contentType);
@@ -367,7 +378,15 @@ router.post("/api/objects/multipart", requireAuth, async (req: AuthRequest, res,
     const { uploadIntents } = await import("@shared/schema");
     const [intent] = await db
       .insert(uploadIntents)
-      .values({ organizationId, uploadedById: req.user!.id, objectKey, contentType, fileSize, resumableUri })
+      .values({
+        organizationId,
+        uploadedById: req.user!.id,
+        objectKey,
+        contentType,
+        fileSize,
+        resumableUri,
+        chunkSize: parsedClientChunk,
+      })
       .returning();
 
     res.json({ uploadId: intent.id, key: objectKey });
@@ -433,9 +452,14 @@ router.get("/api/objects/multipart/:uploadId/:partNumber", requireAuth, async (r
     const partNum = mpParams.data.partNumber;
     const mqParsed = multipartQuerySchema.safeParse(req.query);
     const clientChunkSize = mqParsed.success ? (mqParsed.data.chunkSize ?? null) : null;
-    const resolvedChunkSize = intent.chunkSize ?? clientChunkSize ?? 8 * 1024 * 1024;
+    // Take max() of any chunk size we've seen rather than first-wins. signPart
+    // requests for the parts of a single file run in parallel (Uppy `limit`),
+    // so the smallest (last) part can otherwise arrive first and poison the
+    // stored chunkSize, producing wrong byte ranges for every part.
+    const candidateChunkSize = Math.max(intent.chunkSize ?? 0, clientChunkSize ?? 0);
+    const resolvedChunkSize = candidateChunkSize > 0 ? candidateChunkSize : 8 * 1024 * 1024;
 
-    if (!intent.chunkSize && clientChunkSize) {
+    if (clientChunkSize && clientChunkSize > (intent.chunkSize ?? 0)) {
       await db.update(uploadIntents).set({ chunkSize: clientChunkSize }).where(eq(uploadIntents.id, uploadId));
     }
 

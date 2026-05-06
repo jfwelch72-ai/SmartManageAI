@@ -300,10 +300,22 @@ export function ObjectUploader({
           }
         }
 
+        // Pre-compute the chunk size and send it at create time so the server
+        // can persist it authoritatively. Without this, parallel signPart
+        // requests race and the smallest (last) part can poison intent.chunkSize,
+        // causing wrong byte ranges and an incomplete upload (409 on /complete).
+        const fileSize = file.size ?? 0;
+        const computedChunkSize = (() => {
+          if (fileSize > 5 * 1024 * 1024 * 1024) return 64 * 1024 * 1024;
+          if (fileSize > 1024 * 1024 * 1024) return 32 * 1024 * 1024;
+          if (fileSize > 256 * 1024 * 1024) return 16 * 1024 * 1024;
+          return 8 * 1024 * 1024;
+        })();
         const res = await apiRequest("POST", "/api/objects/multipart", {
           contentType: file.type ?? "application/octet-stream",
-          fileSize: file.size ?? 0,
+          fileSize,
           fileType: resolvedFileType,
+          chunkSize: computedChunkSize,
         });
         const data = (await res.json()) as { uploadId: string; key: string };
 
