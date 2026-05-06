@@ -69,6 +69,11 @@ let crmBirthdayDailyTask: ReturnType<typeof cron.schedule> | null = null;
 let jobMetricsPruneTask: ReturnType<typeof cron.schedule> | null = null;
 let jobMetricAlertsTask: ReturnType<typeof cron.schedule> | null = null;
 let jobMetricQuietDigestTask: ReturnType<typeof cron.schedule> | null = null;
+// Task #2439 — hourly sweep of `rate_limit_state` rows whose window
+// expired more than an hour ago. The pruner itself was added in Task
+// #2427 (`pruneExpiredRateLimitCounters`); without this scheduled tick
+// the counter table grows unboundedly under autoscale traffic.
+let rateLimitCounterPruneTask: ReturnType<typeof cron.schedule> | null = null;
 // Task #1957 — per-minute pg pool health sampler. Polls
 // `getPoolStats()` and publishes `pool_health` job metrics so the
 // existing alert engine can page Super Admins when `waiting` stays > 0
@@ -309,6 +314,22 @@ export function startJobRunner() {
       });
     } catch (err) {
       logError("Job metric quiet-hours digest failed", { error: String(err) });
+    }
+  });
+
+  // Task #2439 — every hour, prune `rate_limit_state` rows whose window
+  // expired more than an hour ago. The pruner is idempotent and uses
+  // the predicate index from migration 0075, so the tick is cheap even
+  // when nothing needs to be deleted.
+  rateLimitCounterPruneTask = cron.schedule("0 * * * *", async () => {
+    try {
+      await withSchedulerLock("job:rateLimitCounterPrune", async () => {
+        const mod = await import("../utils/expressRateLimitPgStore");
+        const deleted = await mod.pruneExpiredRateLimitCounters();
+        if (deleted > 0) logInfo("Pruned expired rate-limit counters", { deleted });
+      });
+    } catch (err) {
+      logError("Rate-limit counter prune failed", { error: String(err) });
     }
   });
 
@@ -1324,6 +1345,10 @@ export function stopJobRunner() {
   if (jobMetricQuietDigestTask) {
     jobMetricQuietDigestTask.stop();
     jobMetricQuietDigestTask = null;
+  }
+  if (rateLimitCounterPruneTask) {
+    rateLimitCounterPruneTask.stop();
+    rateLimitCounterPruneTask = null;
   }
   if (poolHealthSampleTask) {
     poolHealthSampleTask.stop();

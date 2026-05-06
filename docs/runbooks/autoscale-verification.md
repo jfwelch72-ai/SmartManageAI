@@ -192,8 +192,9 @@ any peer will re-acquire cleanly.
 
 `pruneExpiredRateLimitCounters()` (defined in
 `server/utils/expressRateLimitPgStore.ts`) deletes rows older than
-1 hour past their window. It should be invoked from a scheduled job.
-Confirm the row count is bounded:
+1 hour past their window. It is invoked hourly from
+`server/jobs/jobRunner.ts` under the `job:rateLimitCounterPrune`
+scheduler lock (Task #2439). Confirm the row count is bounded:
 
 ```sql
 SELECT count(*) FROM rate_limit_state WHERE window_expires_at < now();
