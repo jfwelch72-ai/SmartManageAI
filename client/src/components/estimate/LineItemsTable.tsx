@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link } from "wouter";
+import { useQuery } from "@tanstack/react-query";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,8 +18,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { FileText, Pencil, Trash2, Layers, Ruler, Wrench, Camera } from "lucide-react";
-import type { EstimateLineItem } from "@shared/schema";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { FileText, Pencil, Trash2, Layers, Ruler, Wrench, Camera, ExternalLink } from "lucide-react";
+import type { EstimateLineItem, StandaloneTakeoff } from "@shared/schema";
 
 function PhotoThumbnail({
   photoUrl,
@@ -87,6 +94,53 @@ interface LineItemsTableProps {
 
 function fmt(val: number) {
   return val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function FromTakeoffBadge({ itemId, takeoffId }: { itemId: string; takeoffId: string }) {
+  const { data, isLoading, isError } = useQuery<StandaloneTakeoff>({
+    queryKey: ["/api/takeoff/standalone", takeoffId],
+  });
+
+  const title = data?.title;
+  const tooltipLabel = isLoading
+    ? "Loading source takeoff…"
+    : isError || !title
+    ? "Source takeoff (open to view)"
+    : `From: ${title}`;
+
+  return (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Link
+            href={`/takeoff/standalone/${takeoffId}`}
+            data-testid={`link-from-takeoff-${itemId}`}
+            aria-label={tooltipLabel}
+          >
+            <Badge
+              variant="outline"
+              className="text-[10px] border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-300 cursor-pointer gap-0.5 hover:bg-blue-50 dark:hover:bg-blue-950"
+              data-testid={`badge-from-takeoff-${itemId}`}
+            >
+              <Ruler className="h-2.5 w-2.5" />
+              From takeoff
+            </Badge>
+          </Link>
+        </TooltipTrigger>
+        <TooltipContent side="top" className="max-w-xs">
+          <div className="flex flex-col gap-1" data-testid={`tooltip-from-takeoff-${itemId}`}>
+            <span className="text-xs font-medium" data-testid={`text-from-takeoff-title-${itemId}`}>
+              {tooltipLabel}
+            </span>
+            <span className="text-[10px] inline-flex items-center gap-1 text-muted-foreground">
+              <ExternalLink className="h-2.5 w-2.5" />
+              Open source takeoff
+            </span>
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
 
 function SourceBadge({ source }: { source: string }) {
@@ -177,19 +231,7 @@ export function LineItemsTable({
                         </p>
                         <SourceBadge source={item.source} />
                         {item.sourceType === "takeoff_send" && item.sourceTakeoffId && (
-                          <Link
-                            href={`/takeoff/standalone/${item.sourceTakeoffId}`}
-                            data-testid={`link-from-takeoff-${item.id}`}
-                            title="Open the source takeoff"
-                          >
-                            <Badge
-                              variant="outline"
-                              className="text-[10px] border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-300 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950"
-                              data-testid={`badge-from-takeoff-${item.id}`}
-                            >
-                              From takeoff →
-                            </Badge>
-                          </Link>
+                          <FromTakeoffBadge itemId={item.id} takeoffId={item.sourceTakeoffId} />
                         )}
                       </div>
                     </div>
@@ -329,19 +371,7 @@ export function LineItemsTable({
                       <div className="flex items-center gap-1.5">
                         <SourceBadge source={item.source} />
                         {item.sourceType === "takeoff_send" && item.sourceTakeoffId && (
-                          <Link
-                            href={`/takeoff/standalone/${item.sourceTakeoffId}`}
-                            data-testid={`link-from-takeoff-${item.id}`}
-                            title="Open the source takeoff"
-                          >
-                            <Badge
-                              variant="outline"
-                              className="text-[10px] border-blue-300 text-blue-700 dark:border-blue-700 dark:text-blue-300 cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950"
-                              data-testid={`badge-from-takeoff-${item.id}`}
-                            >
-                              From takeoff →
-                            </Badge>
-                          </Link>
+                          <FromTakeoffBadge itemId={item.id} takeoffId={item.sourceTakeoffId} />
                         )}
                       </div>
                     </TableCell>
