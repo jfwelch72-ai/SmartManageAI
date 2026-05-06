@@ -1,6 +1,12 @@
 node_modules
 dist
 .DS_Store
+
+# Stale Vite build artifacts must never be committed at the repo root
+# (Task #2432). Real build output lives in dist/ and server/public/.
+/new-*.js
+/new-*.css
+/new-*.map
 test-results/
 playwright-report/
 playwright/.cache/
