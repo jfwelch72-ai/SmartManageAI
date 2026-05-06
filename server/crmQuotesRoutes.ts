@@ -5,6 +5,7 @@ import { crmQuotes, crmQuoteLineItems, insertCrmQuoteSchema, insertCrmQuoteLineI
 import { and, eq, desc, sql } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { getOrgIdForFilter } from "./orgFilter";
+import { validateOrgRefs } from "./utils/orgRefValidator";
 import { generateQuotePdf } from "./quote-pdf-service";
 import crypto from "crypto";
 import { crmQuoteAcceptanceTokens, crmQuoteTemplates, crmQuoteTemplateItems } from "@shared/schema";

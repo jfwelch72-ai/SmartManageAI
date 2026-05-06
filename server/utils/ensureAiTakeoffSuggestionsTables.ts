@@ -1,4 +1,3 @@
-import { logInfo } from "./logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { logError, logInfo } from "./logger";

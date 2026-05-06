@@ -1,5 +1,5 @@
 import { logError, logInfo } from "./utils/logger";
-import type { Express, NextFunction } from "express";
+import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { setupSwagger } from "./swagger";
 import crypto from "crypto";
@@ -237,7 +237,6 @@ import assetManagementRoutes from "./assetManagementRoutes";
 import revenueRecognitionRoutes from "./revenueRecognitionRoutes";
 import riskRoutes from "./riskRoutes";
 import userSettingsRoutes from "./userSettingsRoutes";
-import takeoffRecentsRoutes from "./takeoffRecentsRoutes";
 import executiveDigestRoutes from "./executiveDigestRoutes";
 import emailCampaignRoutes from "./emailCampaignRoutes";
 import savedViewsRoutes from "./savedViewsRoutes";

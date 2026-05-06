@@ -1,6 +1,6 @@
 import { logError } from "./utils/logger";
 import { AI_MODEL_GPT5 } from "./ai/openaiClient";
-import { Router, NextFunction } from "express";
+import { Router, type Response, type NextFunction } from "express";
 import { randomUUID } from "crypto";
 import { db } from "./db";
 import { eq, and, desc, asc, sql } from "drizzle-orm";

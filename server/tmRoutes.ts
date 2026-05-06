@@ -21,6 +21,28 @@ import {
   auditLog,
 } from "@shared/schema";
 
+const signedDocumentSchema = z.object({
+  url: z.string().min(1).max(2000),
+  fileName: z.string().min(1).max(500),
+  objectKey: z.string().min(1).max(1000),
+});
+
+const createInvoiceSchema = z.object({
+  ticketIds: z.array(z.string().uuid()).min(1, "At least one ticket is required"),
+  projectId: z.string().uuid().optional(),
+  clientName: z.string().max(500).optional(),
+  clientAddress: z.string().max(1000).optional().nullable(),
+  clientEmail: z.string().email().max(320).optional().nullable(),
+  dueDate: z.string().optional().nullable(),
+  notes: z.string().max(5000).optional().nullable(),
+  taxRate: z.union([z.string(), z.number()]).optional(),
+});
+
+const clientSignoffSchema = z.object({
+  clientName: z.string().min(1).max(200),
+  signature: z.string().min(1).max(500000),
+});
+
 const laborEntrySchema = z.object({
   employeeName: z.string().min(1).max(500).optional(),
   workerName: z.string().min(1).max(500).optional(),
@@ -351,28 +373,6 @@ function registerTMApprovalRoutes(app: Express) {
     } catch (error) {
       next(error);
     }
-  });
-
-  const signedDocumentSchema = z.object({
-    url: z.string().min(1).max(2000),
-    fileName: z.string().min(1).max(500),
-    objectKey: z.string().min(1).max(1000),
-  });
-
-  const createInvoiceSchema = z.object({
-    ticketIds: z.array(z.string().uuid()).min(1, "At least one ticket is required"),
-    projectId: z.string().uuid().optional(),
-    clientName: z.string().max(500).optional(),
-    clientAddress: z.string().max(1000).optional().nullable(),
-    clientEmail: z.string().email().max(320).optional().nullable(),
-    dueDate: z.string().optional().nullable(),
-    notes: z.string().max(5000).optional().nullable(),
-    taxRate: z.union([z.string(), z.number()]).optional(),
-  });
-
-  const clientSignoffSchema = z.object({
-    clientName: z.string().min(1).max(200),
-    signature: z.string().min(1).max(500000),
   });
 
   app.post("/api/tm-tickets/:ticketId/signed-document", requireAuth, async (req: AuthRequest, res, next) => {
