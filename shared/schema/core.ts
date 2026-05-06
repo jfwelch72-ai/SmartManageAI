@@ -120,6 +120,13 @@ export const organizations = pgTable("organizations", {
   // Suppression is purely presentational; the suggestion rows still exist
   // in `ai_takeoff_suggestions` so the calibration job stays accurate.
   aiTakeoffSuppressionFloor: decimal("ai_takeoff_suppression_floor", { precision: 5, scale: 4 }),
+  // Task #2464 — per-org minimum reviewed-suggestion count before the
+  // "weakest trade" callout on /profile is shown. Replaces the
+  // hardcoded `WEAKEST_TRADE_MIN_REVIEWED = 5` constant in profile.tsx
+  // so a small GC can lower it to surface signal earlier and a large
+  // estimating shop can raise it to suppress noise. Default mirrors
+  // the historical constant so existing orgs see no behavior change.
+  weakestTradeMinReviewed: integer("weakest_trade_min_reviewed").notNull().default(5),
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -139,6 +146,15 @@ export const AI_TAKEOFF_SUPPRESSION_FLOOR_MAX = 0.5;
 // 30-sample threshold the calibration job uses (see
 // `CALIBRATION_MIN_SAMPLES` in server/aiTakeoffFeatureRoutes.ts).
 export const AI_TAKEOFF_SUPPRESSION_MIN_SAMPLES = 30;
+
+// Task #2464 — bounds for the per-org "weakest trade" callout threshold.
+// Default of 5 mirrors the historical hardcoded value. Floor of 1 lets a
+// small GC see the callout as soon as a single trade has any reviewed
+// suggestion; ceiling of 100 keeps the value bounded so a typo can't
+// silently turn the callout off forever.
+export const WEAKEST_TRADE_MIN_REVIEWED_DEFAULT = 5;
+export const WEAKEST_TRADE_MIN_REVIEWED_MIN = 1;
+export const WEAKEST_TRADE_MIN_REVIEWED_MAX = 100;
 
 // Task #1955 — quota constants. Kept alongside the column definition so
 // the same fallback is used by the runtime enforcement helper, the

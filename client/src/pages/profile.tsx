@@ -50,7 +50,11 @@ import {
 // surface a "weakest trade" callout. Below this we don't have enough signal
 // to confidently say a trade is the user's worst, and the call-out would
 // flap as a single accept/reject swings the percentage wildly.
-const WEAKEST_TRADE_MIN_REVIEWED = 5;
+//
+// Task #2464 — the live threshold is now sourced per-org from the accuracy
+// endpoint (`weakestTradeMinReviewed`); this constant is only the fallback
+// used when the response is missing the field (older server build, etc.).
+const WEAKEST_TRADE_MIN_REVIEWED_FALLBACK = 5;
 
 interface ProjectSummary {
   code: string;
@@ -86,6 +90,10 @@ interface MyAiAccuracyResponse {
     accuracy: number;
   }>;
   trend: Array<{ day: string; accepted: number; rejected: number; accuracy: number }>;
+  // Task #2464 — per-org configurable threshold for the "weakest trade"
+  // callout. Optional so old server responses still render (we fall back
+  // to WEAKEST_TRADE_MIN_REVIEWED_FALLBACK).
+  weakestTradeMinReviewed?: number;
 }
 
 function pct(n: number) {
@@ -384,7 +392,12 @@ export default function ProfilePage() {
                             ...r,
                             reviewed: r.accepted + r.edited + r.rejected,
                           }))
-                          .filter(r => r.reviewed >= WEAKEST_TRADE_MIN_REVIEWED);
+                          .filter(
+                            r =>
+                              r.reviewed >=
+                              (myAiAccuracy.weakestTradeMinReviewed ??
+                                WEAKEST_TRADE_MIN_REVIEWED_FALLBACK),
+                          );
                         if (eligible.length === 0) return null;
                         const weakest = eligible.reduce(
                           (lo, r) => (r.accuracy < lo.accuracy ? r : lo),

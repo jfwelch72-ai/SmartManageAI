@@ -5,7 +5,7 @@
 
 import { and, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { db } from "./db";
-import { aiTakeoffSuggestions, aiTakeoffConfidenceCalibration } from "@shared/schema";
+import { aiTakeoffSuggestions, aiTakeoffConfidenceCalibration, organizations, WEAKEST_TRADE_MIN_REVIEWED_DEFAULT } from "@shared/schema";
 
 export interface AccuracyAggregateOptions {
   organizationId: string;
@@ -68,6 +68,11 @@ export interface AccuracyAggregate {
   // and visually flag stale calibrations (>48h) when the nightly job has
   // failed to run. `null` means the org has never been calibrated.
   lastCalibratedAt: string | null;
+  // Task #2464 — per-org minimum reviewed-suggestion count required before
+  // the "weakest trade" callout on /profile is shown. Surfaced here so the
+  // per-user accuracy panel can read the org's tuned threshold without a
+  // separate fetch.
+  weakestTradeMinReviewed: number;
 }
 
 // In org-wide mode the existing dashboard buckets by `created_at` so the
@@ -271,6 +276,17 @@ export async function computeAiTakeoffAccuracy(
       ? calibRow.lastCalibratedAt.toISOString()
       : null;
 
+  // Task #2464 — pull the org's per-tenant "weakest trade" callout
+  // threshold so the per-user /profile panel can render the callout using
+  // the org-tuned signal floor instead of the historical hardcoded 5.
+  const [orgRow] = await db
+    .select({ weakestTradeMinReviewed: organizations.weakestTradeMinReviewed })
+    .from(organizations)
+    .where(eq(organizations.id, organizationId))
+    .limit(1);
+  const weakestTradeMinReviewed =
+    orgRow?.weakestTradeMinReviewed ?? WEAKEST_TRADE_MIN_REVIEWED_DEFAULT;
+
   return {
     windowDays: days,
     totals,
@@ -281,5 +297,6 @@ export async function computeAiTakeoffAccuracy(
     trend,
     rejectReasons,
     lastCalibratedAt,
+    weakestTradeMinReviewed,
   };
 }

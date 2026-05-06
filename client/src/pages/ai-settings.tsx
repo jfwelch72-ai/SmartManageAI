@@ -17,8 +17,19 @@ import type { AISettings } from "@shared/schema";
 // endpoint. `suppressionFloor` is a 0..1 decimal; `null` means "off".
 interface TakeoffOrgSettingsResponse {
   suppressionFloor: number | null;
-  defaults: { recommended: number; minSamples: number };
-  bounds: { min: number; max: number };
+  // Task #2464 — per-org threshold for the /profile "weakest trade" callout.
+  weakestTradeMinReviewed: number;
+  defaults: {
+    recommended: number;
+    minSamples: number;
+    weakestTradeMinReviewed: number;
+  };
+  bounds: {
+    min: number;
+    max: number;
+    weakestTradeMinReviewedMin: number;
+    weakestTradeMinReviewedMax: number;
+  };
 }
 
 // Task #2415 — lesson rows surfaced on the admin panel. Mirrors the
@@ -58,6 +69,11 @@ export default function AISettingsPage() {
 
   // Empty string = "off" / not set, otherwise a percentage 0..50.
   const [suppressionFloorPct, setSuppressionFloorPct] = useState<string>("");
+  // Task #2464 — local edit buffer for the /profile "weakest trade"
+  // callout threshold. String so the input can be cleared without
+  // immediately validating (admins often clear-then-retype).
+  const [weakestTradeMinReviewedStr, setWeakestTradeMinReviewedStr] =
+    useState<string>("");
   useEffect(() => {
     if (takeoffOrgSettings) {
       setSuppressionFloorPct(
@@ -65,11 +81,17 @@ export default function AISettingsPage() {
           ? ""
           : (takeoffOrgSettings.suppressionFloor * 100).toFixed(0),
       );
+      setWeakestTradeMinReviewedStr(
+        String(takeoffOrgSettings.weakestTradeMinReviewed),
+      );
     }
   }, [takeoffOrgSettings]);
 
   const takeoffSettingsMutation = useMutation({
-    mutationFn: async (input: { suppressionFloor: number | null }) => {
+    mutationFn: async (input: {
+      suppressionFloor: number | null;
+      weakestTradeMinReviewed?: number;
+    }) => {
       const res = await apiRequest(
         "PUT",
         "/api/ai-features/takeoff/org-settings",
@@ -469,39 +491,132 @@ export default function AISettingsPage() {
                   %.
                 </p>
               </div>
+              {/* Task #2464 — per-org "weakest trade" callout threshold. */}
+              <div className="space-y-2 pt-4 border-t">
+                <Label htmlFor="weakest-trade-min-reviewed">
+                  "Weakest trade" callout threshold (reviewed suggestions)
+                </Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="weakest-trade-min-reviewed"
+                    type="number"
+                    min={
+                      takeoffOrgSettings?.bounds.weakestTradeMinReviewedMin ?? 1
+                    }
+                    max={
+                      takeoffOrgSettings?.bounds.weakestTradeMinReviewedMax ??
+                      100
+                    }
+                    step={1}
+                    value={weakestTradeMinReviewedStr}
+                    onChange={(e) =>
+                      setWeakestTradeMinReviewedStr(e.target.value)
+                    }
+                    placeholder="5"
+                    className="w-32"
+                    data-testid="input-weakest-trade-min-reviewed"
+                  />
+                  <span className="text-sm text-muted-foreground">
+                    reviewed
+                  </span>
+                  {takeoffOrgSettings && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        setWeakestTradeMinReviewedStr(
+                          String(
+                            takeoffOrgSettings.defaults.weakestTradeMinReviewed,
+                          ),
+                        )
+                      }
+                      data-testid="button-weakest-trade-default"
+                    >
+                      Use default (
+                      {takeoffOrgSettings.defaults.weakestTradeMinReviewed})
+                    </Button>
+                  )}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Minimum number of reviewed AI suggestions a trade needs in
+                  the selected window before the /profile "weakest trade"
+                  heads-up is shown. Lower it (small teams) to surface signal
+                  earlier; raise it (large estimating shops) to suppress
+                  noise.
+                </p>
+              </div>
               <div>
                 <Button
                   type="button"
                   onClick={() => {
-                    const trimmed = suppressionFloorPct.trim();
-                    if (trimmed === "") {
-                      takeoffSettingsMutation.mutate({
-                        suppressionFloor: null,
+                    // Validate suppression floor
+                    const trimmedFloor = suppressionFloorPct.trim();
+                    let nextFloor: number | null = null;
+                    if (trimmedFloor !== "") {
+                      const pct = Number(trimmedFloor);
+                      if (!Number.isFinite(pct)) {
+                        toast({
+                          variant: "destructive",
+                          title: "Invalid value",
+                          description: "Enter a number between 0 and 50.",
+                        });
+                        return;
+                      }
+                      const min =
+                        (takeoffOrgSettings?.bounds.min ?? 0) * 100;
+                      const max =
+                        (takeoffOrgSettings?.bounds.max ?? 0.5) * 100;
+                      if (pct < min || pct > max) {
+                        toast({
+                          variant: "destructive",
+                          title: "Out of range",
+                          description: `Floor must be between ${min}% and ${max}%.`,
+                        });
+                        return;
+                      }
+                      nextFloor = pct / 100;
+                    }
+
+                    // Task #2464 — validate the callout threshold.
+                    const trimmedMin = weakestTradeMinReviewedStr.trim();
+                    if (trimmedMin === "") {
+                      toast({
+                        variant: "destructive",
+                        title: "Missing value",
+                        description:
+                          'Enter a "weakest trade" callout threshold.',
                       });
                       return;
                     }
-                    const pct = Number(trimmed);
-                    if (!Number.isFinite(pct)) {
+                    const minN = Number(trimmedMin);
+                    if (!Number.isFinite(minN) || !Number.isInteger(minN)) {
                       toast({
                         variant: "destructive",
                         title: "Invalid value",
-                        description: "Enter a number between 0 and 50.",
+                        description:
+                          "Callout threshold must be a whole number.",
                       });
                       return;
                     }
-                    const min = (takeoffOrgSettings?.bounds.min ?? 0) * 100;
-                    const max =
-                      (takeoffOrgSettings?.bounds.max ?? 0.5) * 100;
-                    if (pct < min || pct > max) {
+                    const lo =
+                      takeoffOrgSettings?.bounds
+                        .weakestTradeMinReviewedMin ?? 1;
+                    const hi =
+                      takeoffOrgSettings?.bounds
+                        .weakestTradeMinReviewedMax ?? 100;
+                    if (minN < lo || minN > hi) {
                       toast({
                         variant: "destructive",
                         title: "Out of range",
-                        description: `Floor must be between ${min}% and ${max}%.`,
+                        description: `Callout threshold must be between ${lo} and ${hi}.`,
                       });
                       return;
                     }
+
                     takeoffSettingsMutation.mutate({
-                      suppressionFloor: pct / 100,
+                      suppressionFloor: nextFloor,
+                      weakestTradeMinReviewed: minN,
                     });
                   }}
                   disabled={takeoffSettingsMutation.isPending}

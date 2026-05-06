@@ -11,6 +11,9 @@ import {
   AI_TAKEOFF_SUPPRESSION_FLOOR_MIN,
   AI_TAKEOFF_SUPPRESSION_FLOOR_MAX,
   AI_TAKEOFF_SUPPRESSION_MIN_SAMPLES,
+  WEAKEST_TRADE_MIN_REVIEWED_DEFAULT,
+  WEAKEST_TRADE_MIN_REVIEWED_MIN,
+  WEAKEST_TRADE_MIN_REVIEWED_MAX,
 } from "@shared/schema";
 import { eq, desc, and, gte, lte, sql, inArray, isNotNull } from "drizzle-orm";
 import { z } from "zod";
@@ -1672,6 +1675,16 @@ const aiTakeoffOrgSettingsUpsertSchema = z.object({
     .min(AI_TAKEOFF_SUPPRESSION_FLOOR_MIN)
     .max(AI_TAKEOFF_SUPPRESSION_FLOOR_MAX)
     .nullable(),
+  // Task #2464 — per-org minimum reviewed-suggestion count for the
+  // /profile "weakest trade" callout. Optional on update so existing
+  // clients (and the takeoff-suppression-only AI settings PUT) keep
+  // working unchanged.
+  weakestTradeMinReviewed: z
+    .number()
+    .int()
+    .min(WEAKEST_TRADE_MIN_REVIEWED_MIN)
+    .max(WEAKEST_TRADE_MIN_REVIEWED_MAX)
+    .optional(),
 });
 
 router.get(
@@ -1683,7 +1696,10 @@ router.get(
       if (!organizationId) return res.status(401).json({ error: "Unauthorized" });
 
       const [row] = await db
-        .select({ floor: organizations.aiTakeoffSuppressionFloor })
+        .select({
+          floor: organizations.aiTakeoffSuppressionFloor,
+          weakestTradeMinReviewed: organizations.weakestTradeMinReviewed,
+        })
         .from(organizations)
         .where(eq(organizations.id, organizationId))
         .limit(1);
@@ -1695,13 +1711,18 @@ router.get(
 
       res.json({
         suppressionFloor,
+        weakestTradeMinReviewed:
+          row.weakestTradeMinReviewed ?? WEAKEST_TRADE_MIN_REVIEWED_DEFAULT,
         defaults: {
           recommended: AI_TAKEOFF_SUPPRESSION_FLOOR_DEFAULT,
           minSamples: AI_TAKEOFF_SUPPRESSION_MIN_SAMPLES,
+          weakestTradeMinReviewed: WEAKEST_TRADE_MIN_REVIEWED_DEFAULT,
         },
         bounds: {
           min: AI_TAKEOFF_SUPPRESSION_FLOOR_MIN,
           max: AI_TAKEOFF_SUPPRESSION_FLOOR_MAX,
+          weakestTradeMinReviewedMin: WEAKEST_TRADE_MIN_REVIEWED_MIN,
+          weakestTradeMinReviewedMax: WEAKEST_TRADE_MIN_REVIEWED_MAX,
         },
       });
     } catch (error) { next(error); }
@@ -1733,23 +1754,48 @@ router.put(
           ? null
           : String(parsed.data.suppressionFloor);
 
+      // Task #2464 — only overwrite the callout threshold when the
+      // client actually supplied one, so the existing suppression-floor
+      // editor in AI settings doesn't accidentally clobber it back to
+      // the default. Built as a strongly-typed partial update so we
+      // don't have to escape Drizzle's typing.
+      const updates: Partial<typeof organizations.$inferInsert> = {
+        aiTakeoffSuppressionFloor: persistValue,
+        updatedAt: new Date(),
+      };
+      if (parsed.data.weakestTradeMinReviewed !== undefined) {
+        updates.weakestTradeMinReviewed = parsed.data.weakestTradeMinReviewed;
+      }
+
       await db
         .update(organizations)
-        .set({
-          aiTakeoffSuppressionFloor: persistValue as any,
-          updatedAt: new Date(),
-        })
+        .set(updates)
         .where(eq(organizations.id, organizationId));
+
+      // Re-read so the response always reflects the persisted value
+      // (including the threshold the caller may not have touched).
+      const [row] = await db
+        .select({
+          weakestTradeMinReviewed: organizations.weakestTradeMinReviewed,
+        })
+        .from(organizations)
+        .where(eq(organizations.id, organizationId))
+        .limit(1);
 
       res.json({
         suppressionFloor: parsed.data.suppressionFloor,
+        weakestTradeMinReviewed:
+          row?.weakestTradeMinReviewed ?? WEAKEST_TRADE_MIN_REVIEWED_DEFAULT,
         defaults: {
           recommended: AI_TAKEOFF_SUPPRESSION_FLOOR_DEFAULT,
           minSamples: AI_TAKEOFF_SUPPRESSION_MIN_SAMPLES,
+          weakestTradeMinReviewed: WEAKEST_TRADE_MIN_REVIEWED_DEFAULT,
         },
         bounds: {
           min: AI_TAKEOFF_SUPPRESSION_FLOOR_MIN,
           max: AI_TAKEOFF_SUPPRESSION_FLOOR_MAX,
+          weakestTradeMinReviewedMin: WEAKEST_TRADE_MIN_REVIEWED_MIN,
+          weakestTradeMinReviewedMax: WEAKEST_TRADE_MIN_REVIEWED_MAX,
         },
       });
     } catch (error) { next(error); }
