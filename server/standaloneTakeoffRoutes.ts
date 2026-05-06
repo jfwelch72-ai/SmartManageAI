@@ -23,6 +23,10 @@ import { requireAuth, type AuthRequest, type SanitizedUser } from "./auth";
 import { logError } from "./utils/logger";
 import { sanitizeShortText, sanitizeText } from "./sanitization";
 import { logAudit } from "./auditLogger";
+import {
+  indexStandaloneTakeoffSafe,
+  emitLibraryAssignmentSamplesSafe,
+} from "./services/aiEstimator/standaloneIngestion";
 
 const router = Router();
 
@@ -102,6 +106,7 @@ router.post("/api/takeoff/standalone", requireAuth, async (req: AuthRequest, res
       { userId: user.id, action: "CREATE", entityType: "standalone_takeoff", entityId: row.id, newValue: row.title },
       req,
     );
+    indexStandaloneTakeoffSafe(row.id);
     res.status(201).json(row);
   } catch (err) {
     next(err);
@@ -143,6 +148,7 @@ router.patch("/api/takeoff/standalone/:id", requireAuth, async (req: AuthRequest
       .set(updates)
       .where(eq(standaloneTakeoffs.id, row.id))
       .returning();
+    indexStandaloneTakeoffSafe(updated.id);
     res.json(updated);
   } catch (err) {
     next(err);
@@ -335,6 +341,14 @@ router.post("/api/takeoff/standalone/:id/tags", requireAuth, async (req: AuthReq
           outcome: "ACCEPTED",
         })
         .onConflictDoNothing();
+      // Task #2443 — emit library_assignment rate samples + ensure the
+      // takeoff (and its measurements) are indexed so the AI Estimator
+      // can surface them for similar trades.
+      indexStandaloneTakeoffSafe(row.id);
+      emitLibraryAssignmentSamplesSafe(row.id, {
+        bidId: parsed.data.bidId ?? null,
+        projectId: parsed.data.projectId ?? null,
+      });
       res.status(201).json(tag);
     } catch (err: unknown) {
       if (err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "23505") {

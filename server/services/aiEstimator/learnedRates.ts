@@ -24,7 +24,15 @@ export interface RateLookup {
 
 export interface RateUpdate extends RateLookup {
   value: number;
-  sourceType?: "historical_actual" | "estimate_line_item" | "feedback_event" | "legacy";
+  sourceType?:
+    | "historical_actual"
+    | "estimate_line_item"
+    | "feedback_event"
+    | "legacy"
+    // Task #2443 — sample contributed when a standalone takeoff is
+    // tagged to a bid/project. Treats prior speculative takeoffs as a
+    // soft signal in the learned-rates pool for that org's library.
+    | "library_assignment";
   sourceRowId?: string;
   projectId?: string | null;
   bidId?: string | null;
