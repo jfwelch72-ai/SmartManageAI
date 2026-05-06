@@ -1,4 +1,4 @@
-import { eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { db } from "../../db";
 import {
   aiEstimatorIngestRuns,
@@ -12,8 +12,13 @@ import {
   type AiEstimatorIngestRun,
   type AiEstimatorKnowledgeIndex,
   type AiEstimatorLearnedRate,
+  type InsertAiEstimatorKnowledgeIndex,
 } from "@shared/schema";
-import { upsertKnowledgeRow, setKnowledgeRowEnrichment } from "./retrieval";
+import {
+  bulkUpsertKnowledgeRows,
+  setKnowledgeRowEnrichment,
+  type UpsertKnowledgeRowResult,
+} from "./retrieval";
 import {
   bulkRecordRateSamples,
   listLearnedRatesForOrg,
@@ -150,21 +155,63 @@ export async function runIngestion(
   // text. The (id, costCode) shape lets the post-loop enrichment fetch
   // the matching rate slice with a single per-code lookup.
   const changedRows: Array<{ id: string; costCode: string | null }> = [];
-  const recordChange = (
-    result: { id: string; changed: boolean },
-    costCode: string | null,
+  const recordChanges = (
+    results: UpsertKnowledgeRowResult[],
+    codes: Array<string | null>,
   ): void => {
-    if (result.changed) changedRows.push({ id: result.id, costCode });
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      if (r.changed) changedRows.push({ id: r.id, costCode: codes[i] ?? null });
+    }
   };
   try {
-    // 1. Bids — index by name + description for retrieval.
-    const orgBids = await db
-      .select()
+    // Task #2396 — Incremental window. We pull the most recent
+    // SUCCEEDED ingest for this org and only re-walk source rows that
+    // were created/updated since its `completedAt`. The first ever run
+    // (or a recovery after a long failure streak) finds no prior
+    // success and falls back to a full scan, so initial-population
+    // semantics are unchanged.
+    const [lastSuccess] = await db
+      .select({ completedAt: aiEstimatorIngestRuns.completedAt })
+      .from(aiEstimatorIngestRuns)
+      .where(and(
+        eq(aiEstimatorIngestRuns.organizationId, organizationId),
+        eq(aiEstimatorIngestRuns.status, "SUCCEEDED"),
+        sql`${aiEstimatorIngestRuns.completedAt} IS NOT NULL`,
+      ))
+      .orderBy(sql`${aiEstimatorIngestRuns.completedAt} desc`)
+      .limit(1);
+    // Re-walk a small overlap window (5 minutes) before the prior
+    // completion so rows whose updated_at landed mid-flight aren't
+    // missed because of clock skew or the prior run's read snapshot.
+    const since = lastSuccess?.completedAt
+      ? new Date(lastSuccess.completedAt.getTime() - 5 * 60 * 1000)
+      : null;
+
+    // 1. Bids — index by name + description for retrieval. We always
+    // need the full set of (id) for the org so estimates/line items
+    // below can be filtered to this org, but we only re-ingest the
+    // bids whose content actually changed since `since`.
+    const orgBidIdRows = await db
+      .select({ id: bids.id })
       .from(bids)
       .where(eq(bids.gcOrganizationId, organizationId));
-    for (const b of orgBids) {
-      counters.bidsIngested++;
-      const upsert = await upsertKnowledgeRow({
+    const allBidIds = orgBidIdRows.map((r) => r.id);
+
+    const changedBids = await db
+      .select()
+      .from(bids)
+      .where(
+        since
+          ? and(
+              eq(bids.gcOrganizationId, organizationId),
+              gte(bids.updatedAt, since),
+            )
+          : eq(bids.gcOrganizationId, organizationId),
+      );
+    counters.bidsIngested = changedBids.length;
+    if (changedBids.length > 0) {
+      const bidRows: InsertAiEstimatorKnowledgeIndex[] = changedBids.map((b) => ({
         organizationId,
         sourceType: "bid",
         sourceId: b.id,
@@ -186,19 +233,30 @@ export async function runIngestion(
         tags: [b.status, b.state].filter((v): v is string => !!v),
         numericFacets: b.bidAmount ? { bidAmount: Number(b.bidAmount) } : null,
         contentHash: null,
-      });
-      recordChange(upsert, null);
+      }));
+      const upserts = await bulkUpsertKnowledgeRows(bidRows);
+      recordChanges(upserts, bidRows.map(() => null));
     }
+
     // 2. Estimates + line items — drive learned-rates and retrieval.
-    const bidIds = orgBids.map((b) => b.id);
-    const bidById = new Map(orgBids.map((b) => [b.id, b]));
-    const orgEstimates = bidIds.length
+    // Estimates are scoped via `bidId IN (org bids)`. Only estimates
+    // updated since `since` get re-ingested; line items are pulled in a
+    // single query filtered by org-scoped estimate ids + `updated_at`,
+    // avoiding the per-estimate SELECT loop the previous version used.
+    const changedEstimates = allBidIds.length
       ? await db
           .select()
           .from(estimates)
-          .where(inArray(estimates.bidId, bidIds))
+          .where(
+            since
+              ? and(
+                  inArray(estimates.bidId, allBidIds),
+                  gte(estimates.updatedAt, since),
+                )
+              : inArray(estimates.bidId, allBidIds),
+          )
       : [];
-    counters.estimatesIngested = orgEstimates.length;
+    counters.estimatesIngested = changedEstimates.length;
 
     const rateUpdates: Array<{
       costCode: string;
@@ -211,8 +269,8 @@ export async function runIngestion(
       bidId?: string | null;
     }> = [];
 
-    for (const est of orgEstimates) {
-      const estUpsert = await upsertKnowledgeRow({
+    if (changedEstimates.length > 0) {
+      const estRows: InsertAiEstimatorKnowledgeIndex[] = changedEstimates.map((est) => ({
         organizationId,
         sourceType: "estimate",
         sourceId: est.id,
@@ -225,14 +283,52 @@ export async function runIngestion(
         tags: [],
         numericFacets: est.baseBidAmount ? { baseBidAmount: Number(est.baseBidAmount) } : null,
         contentHash: null,
-      });
-      recordChange(estUpsert, null);
-      const items = await db
+      }));
+      const estUpserts = await bulkUpsertKnowledgeRows(estRows);
+      recordChanges(estUpserts, estRows.map(() => null));
+    }
+
+    // For line items we need the full org-estimate set so we can map
+    // each line item back to its bidId for sample provenance, even when
+    // only a subset of estimates is "changed" this run.
+    const allEstimateIds: string[] = [];
+    const estimateBidByEstimateId = new Map<string, string | null>();
+    if (allBidIds.length) {
+      const allEsts = await db
+        .select({ id: estimates.id, bidId: estimates.bidId })
+        .from(estimates)
+        .where(inArray(estimates.bidId, allBidIds));
+      for (const e of allEsts) {
+        allEstimateIds.push(e.id);
+        estimateBidByEstimateId.set(e.id, e.bidId ?? null);
+      }
+    }
+
+    // Pull only line items that changed in the window. For very large
+    // orgs we chunk the IN-list to keep each query reasonable; the
+    // database's `estimate_line_items_estimate_idx` covers the join.
+    const ESTIMATE_ID_CHUNK = 500;
+    const changedLineItems: typeof estimateLineItems.$inferSelect[] = [];
+    for (let i = 0; i < allEstimateIds.length; i += ESTIMATE_ID_CHUNK) {
+      const slice = allEstimateIds.slice(i, i + ESTIMATE_ID_CHUNK);
+      const rows = await db
         .select()
         .from(estimateLineItems)
-        .where(eq(estimateLineItems.estimateId, est.id));
-      const bid = est.bidId ? bidById.get(est.bidId) : null;
-      for (const li of items) {
+        .where(
+          since
+            ? and(
+                inArray(estimateLineItems.estimateId, slice),
+                gte(estimateLineItems.updatedAt, since),
+              )
+            : inArray(estimateLineItems.estimateId, slice),
+        );
+      for (const r of rows) changedLineItems.push(r);
+    }
+
+    if (changedLineItems.length > 0) {
+      const liRows: InsertAiEstimatorKnowledgeIndex[] = [];
+      const liCodes: Array<string | null> = [];
+      for (const li of changedLineItems) {
         counters.lineItemsIngested++;
         const qty = Number(li.quantity ?? 0);
         const totalCost = Number(li.totalCost ?? 0);
@@ -240,6 +336,7 @@ export async function runIngestion(
         const unitCost = qty > 0 ? totalCost / qty : 0;
         const laborPerUnit = qty > 0 ? labor / qty : 0;
         const code = li.workTypeCode ?? null;
+        const bidId = estimateBidByEstimateId.get(li.estimateId) ?? null;
         if (code && unitCost > 0) {
           rateUpdates.push({
             costCode: code,
@@ -249,7 +346,7 @@ export async function runIngestion(
             sourceType: "estimate_line_item",
             sourceRowId: li.id,
             projectId: null,
-            bidId: est.bidId ?? null,
+            bidId,
           });
         }
         if (code && laborPerUnit > 0) {
@@ -261,14 +358,14 @@ export async function runIngestion(
             sourceType: "estimate_line_item",
             sourceRowId: li.id,
             projectId: null,
-            bidId: est.bidId ?? null,
+            bidId,
           });
         }
-        const liUpsert = await upsertKnowledgeRow({
+        liRows.push({
           organizationId,
           sourceType: "estimate_line_item",
           sourceId: li.id,
-          bidId: est.bidId ?? null,
+          bidId,
           projectId: null,
           costCode: code,
           tradeType: null,
@@ -278,54 +375,85 @@ export async function runIngestion(
           numericFacets: { qty, totalCost, unitCost, laborHours: labor },
           contentHash: null,
         });
-        recordChange(liUpsert, code);
+        liCodes.push(code);
       }
+      // Chunked bulk upsert keeps a single statement size sane even on
+      // a five-figure delta — the helper itself further chunks under
+      // the hood at 500 rows / statement.
+      const liUpserts = await bulkUpsertKnowledgeRows(liRows);
+      recordChanges(liUpserts, liCodes);
     }
 
-    // 3. Takeoff measurements — light retrieval index.
-    const orgTakeoffs = bidIds.length
+    // 3. Takeoff measurements — light retrieval index. Only re-walk
+    // sheets whose `updated_at` is newer than the window; for each
+    // such sheet we still cap to 200 measurements per sheet (matches
+    // prior behaviour). Bulk upsert across all changed sheets in one
+    // go so we pay one round trip rather than one per measurement.
+    const orgTakeoffs = allBidIds.length
       ? await db
           .select()
           .from(takeoffSheets)
-          .where(inArray(takeoffSheets.bidId, bidIds))
+          .where(
+            since
+              ? and(
+                  inArray(takeoffSheets.bidId, allBidIds),
+                  gte(takeoffSheets.updatedAt, since),
+                )
+              : inArray(takeoffSheets.bidId, allBidIds),
+          )
       : [];
-    for (const sheet of orgTakeoffs) {
-      const measurements = await db
-        .select()
-        .from(takeoffMeasurements)
-        .where(eq(takeoffMeasurements.sheetId, sheet.id));
-      counters.takeoffsIngested += measurements.length;
-      for (const m of measurements.slice(0, 200)) {
-        const v =
-          m.computedAreaFt2 ??
-          m.computedLengthFt ??
-          m.computedVolumeCy ??
-          m.count ??
-          0;
-        const mUpsert = await upsertKnowledgeRow({
-          organizationId,
-          sourceType: "takeoff_measurement",
-          sourceId: m.id,
-          bidId: sheet.bidId ?? null,
-          projectId: null,
-          costCode: null,
-          tradeType: null,
-          title: `Takeoff: ${m.label}`,
-          contentSnippet: `${m.type} value=${v}`,
-          tags: [m.type],
-          numericFacets: { value: Number(v) },
-          contentHash: null,
-        });
-        recordChange(mUpsert, null);
+    if (orgTakeoffs.length > 0) {
+      const measRows: InsertAiEstimatorKnowledgeIndex[] = [];
+      for (const sheet of orgTakeoffs) {
+        const measurements = await db
+          .select()
+          .from(takeoffMeasurements)
+          .where(eq(takeoffMeasurements.sheetId, sheet.id));
+        counters.takeoffsIngested += measurements.length;
+        for (const m of measurements.slice(0, 200)) {
+          const v =
+            m.computedAreaFt2 ??
+            m.computedLengthFt ??
+            m.computedVolumeCy ??
+            m.count ??
+            0;
+          measRows.push({
+            organizationId,
+            sourceType: "takeoff_measurement",
+            sourceId: m.id,
+            bidId: sheet.bidId ?? null,
+            projectId: null,
+            costCode: null,
+            tradeType: null,
+            title: `Takeoff: ${m.label}`,
+            contentSnippet: `${m.type} value=${v}`,
+            tags: [m.type],
+            numericFacets: { value: Number(v) },
+            contentHash: null,
+          });
+        }
+      }
+      if (measRows.length > 0) {
+        const mUpserts = await bulkUpsertKnowledgeRows(measRows);
+        recordChanges(mUpserts, measRows.map(() => null));
       }
     }
 
     // 4. Historical costs — completed-project actuals feed the learned-rates store.
-    const hist = await db
+    // `historical_costs` only has `created_at`, not `updated_at`, so we
+    // window on `created_at >= since` for incremental runs and fall
+    // back to the prior 2000-row cap on the first ever run.
+    const histQuery = db
       .select()
-      .from(historicalCosts)
-      .where(eq(historicalCosts.organizationId, organizationId))
-      .limit(2000);
+      .from(historicalCosts);
+    const hist = since
+      ? await histQuery.where(and(
+          eq(historicalCosts.organizationId, organizationId),
+          gte(historicalCosts.createdAt, since),
+        ))
+      : await histQuery
+          .where(eq(historicalCosts.organizationId, organizationId))
+          .limit(2000);
     for (const h of hist) {
       const code = h.costCode ?? null;
       const qty = Number(h.quantity ?? 0);

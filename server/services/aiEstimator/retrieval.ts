@@ -1,5 +1,5 @@
 import crypto from "crypto";
-import { and, desc, eq, ilike, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, ilike, inArray, ne, or, sql } from "drizzle-orm";
 import { db } from "../../db";
 import {
   aiEstimatorKnowledgeIndex,
@@ -146,6 +146,187 @@ export async function upsertKnowledgeRow(
     .returning({ id: aiEstimatorKnowledgeIndex.id });
 
   return { id: upserted.id, changed: true, contentHash };
+}
+
+/**
+ * Task #2396 — Batched variant of `upsertKnowledgeRow` for the nightly
+ * ingestion path. Big tenants have tens of thousands of indexable rows;
+ * the per-row SELECT + UPDATE/INSERT loop in `upsertKnowledgeRow` makes
+ * each ingest minutes-to-hours of round-trips. This helper:
+ *
+ *   1. Pre-fetches `(id, contentHash)` for every (org, sourceType, sourceId)
+ *      tuple in the batch with a single SELECT.
+ *   2. Computes the new content hash per row.
+ *   3. Skips rows whose hash matches what's already stored — those rows
+ *      are returned as `changed: false` so the enrichment pass knows to
+ *      leave their existing `enrichedSummary` alone.
+ *   4. Issues a single bulk INSERT … ON CONFLICT DO UPDATE for everything
+ *      that's new or genuinely changed, in chunks to keep parameter
+ *      counts well under Postgres' limit. Updates clear `enrichedSummary`
+ *      so the post-ingest enrichment pass repopulates it (matching the
+ *      semantics of the per-row variant — see its branch-3 comment).
+ *
+ * The returned array preserves caller order so ingestion can correlate
+ * each result back to its input row's `costCode` for the enrichment cap.
+ */
+export async function bulkUpsertKnowledgeRows(
+  rows: InsertAiEstimatorKnowledgeIndex[],
+): Promise<UpsertKnowledgeRowResult[]> {
+  if (rows.length === 0) return [];
+
+  // Compute (or carry) a hash per input row up-front so the existence
+  // check below can answer "is this a no-op?" without re-walking the row.
+  const hashed = rows.map((row) => ({
+    row,
+    contentHash: row.contentHash ?? computeKnowledgeContentHash(row),
+  }));
+
+  // All rows in the batch must share the same organizationId — the
+  // ingestion path always feeds one org at a time, and the existence
+  // lookup keys on `(organizationId, sourceType, sourceId)`.
+  const organizationId = hashed[0].row.organizationId;
+
+  // Pre-fetch existing rows for the batch in chunks, keyed by
+  // `${sourceType}:${sourceId}` so caller-order can be reconstructed
+  // cheaply. The unique index `ai_estimator_knowledge_uniq_source` makes
+  // this lookup index-served.
+  const existingByKey = new Map<string, { id: string; contentHash: string | null }>();
+  const sourceIds = Array.from(new Set(hashed.map((h) => h.row.sourceId)));
+  const LOOKUP_CHUNK = 1000;
+  for (let i = 0; i < sourceIds.length; i += LOOKUP_CHUNK) {
+    const slice = sourceIds.slice(i, i + LOOKUP_CHUNK);
+    const found = await db
+      .select({
+        id: aiEstimatorKnowledgeIndex.id,
+        sourceType: aiEstimatorKnowledgeIndex.sourceType,
+        sourceId: aiEstimatorKnowledgeIndex.sourceId,
+        contentHash: aiEstimatorKnowledgeIndex.contentHash,
+      })
+      .from(aiEstimatorKnowledgeIndex)
+      .where(
+        and(
+          eq(aiEstimatorKnowledgeIndex.organizationId, organizationId),
+          inArray(aiEstimatorKnowledgeIndex.sourceId, slice),
+        ),
+      );
+    for (const f of found) {
+      existingByKey.set(`${f.sourceType}:${f.sourceId}`, {
+        id: f.id,
+        contentHash: f.contentHash,
+      });
+    }
+  }
+
+  // Decide per-row what to do. Skipped rows return immediately with
+  // `changed: false` and the existing id so the enrichment pass can
+  // leave them alone. Changed/new rows get queued for the bulk write.
+  type Pending = {
+    index: number;
+    row: InsertAiEstimatorKnowledgeIndex;
+    contentHash: string;
+    existingId: string | null;
+  };
+  const results: UpsertKnowledgeRowResult[] = new Array(hashed.length);
+  const toWrite: Pending[] = [];
+  for (let i = 0; i < hashed.length; i++) {
+    const { row, contentHash } = hashed[i];
+    const key = `${row.sourceType}:${row.sourceId}`;
+    const existing = existingByKey.get(key);
+    if (existing && existing.contentHash === contentHash) {
+      results[i] = { id: existing.id, changed: false, contentHash };
+      continue;
+    }
+    toWrite.push({
+      index: i,
+      row,
+      contentHash,
+      existingId: existing?.id ?? null,
+    });
+  }
+
+  if (toWrite.length === 0) return results;
+
+  // Bulk INSERT … ON CONFLICT DO UPDATE in chunks. Postgres caps
+  // parameters at 65 535 — knowledge rows have ~17 columns so 1000 rows
+  // per batch (~17 000 params) leaves plenty of headroom.
+  const WRITE_CHUNK = 500;
+  for (let i = 0; i < toWrite.length; i += WRITE_CHUNK) {
+    const slice = toWrite.slice(i, i + WRITE_CHUNK);
+    const values = slice.map(({ row, contentHash }) => ({
+      ...row,
+      contentHash,
+    }));
+    const upserted = await db
+      .insert(aiEstimatorKnowledgeIndex)
+      .values(values)
+      .onConflictDoUpdate({
+        target: [
+          aiEstimatorKnowledgeIndex.organizationId,
+          aiEstimatorKnowledgeIndex.sourceType,
+          aiEstimatorKnowledgeIndex.sourceId,
+        ],
+        set: {
+          // Pull updated values from the EXCLUDED pseudo-row that
+          // Postgres exposes during ON CONFLICT — this lets one bulk
+          // statement update each conflicting row to its own values
+          // rather than to a single shared scalar.
+          title: sql`excluded.title`,
+          contentSnippet: sql`excluded.content_snippet`,
+          tags: sql`excluded.tags`,
+          numericFacets: sql`excluded.numeric_facets`,
+          contentHash: sql`excluded.content_hash`,
+          bidId: sql`excluded.bid_id`,
+          projectId: sql`excluded.project_id`,
+          costCode: sql`excluded.cost_code`,
+          tradeType: sql`excluded.trade_type`,
+          indexedAt: new Date(),
+          // Drop stale Claude narrative — the post-ingest enrichment
+          // pass will repopulate it for changed rows. Mirrors the
+          // per-row variant's branch-3 contract so retrieval keeps
+          // falling back to `contentSnippet` until enrichment lands.
+          enrichedSummary: null,
+          enrichedAt: null,
+          // Lesson fields are only ever set for sourceType='qualitative_lesson'.
+          // Ingestion never writes lesson rows, but we still mirror the
+          // per-row helper's behaviour so a future caller can use this
+          // bulk helper for lessons too.
+          lessonScope: sql`excluded.lesson_scope`,
+          lessonStatus: sql`excluded.lesson_status`,
+          lessonSurface: sql`excluded.lesson_surface`,
+          supersedesRowId: sql`excluded.supersedes_row_id`,
+          derivedFromFeedbackIds: sql`excluded.derived_from_feedback_ids`,
+        },
+      })
+      .returning({
+        id: aiEstimatorKnowledgeIndex.id,
+        sourceType: aiEstimatorKnowledgeIndex.sourceType,
+        sourceId: aiEstimatorKnowledgeIndex.sourceId,
+      });
+
+    const idByKey = new Map(
+      upserted.map((r) => [`${r.sourceType}:${r.sourceId}`, r.id] as const),
+    );
+    for (const pending of slice) {
+      const id =
+        idByKey.get(`${pending.row.sourceType}:${pending.row.sourceId}`) ??
+        pending.existingId;
+      if (!id) {
+        // Should never happen — RETURNING gives one row per inserted/
+        // updated tuple. Keep the result well-typed so the caller's
+        // `recordChange` doesn't crash.
+        throw new Error(
+          `bulkUpsertKnowledgeRows: missing returned id for ${pending.row.sourceType}:${pending.row.sourceId}`,
+        );
+      }
+      results[pending.index] = {
+        id,
+        changed: true,
+        contentHash: pending.contentHash,
+      };
+    }
+  }
+
+  return results;
 }
 
 /**
