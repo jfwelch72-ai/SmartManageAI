@@ -87,6 +87,7 @@ export type TakeoffFeatureKey =
   | "ai_estimator.takeoff_draft"
   | "ai_estimator.chat"
   | "ai_estimator.estimate_generate"
+  | "ai_estimator.sheet_index"
   // Task #2414 — Claude-written narrative summary for each indexed
   // knowledge row. Runs at the end of `runIngestion()` for orgs that
   // have AI_PROVIDER_TAKEOFF enabled.

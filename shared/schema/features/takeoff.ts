@@ -102,6 +102,16 @@ export const takeoffSheets = pgTable("takeoff_sheets", {
   scaleCalibratedById: varchar("scale_calibrated_by_id").references(() => users.id, { onDelete: "set null" }),
   scaleCalibratedAt: timestamp("scale_calibrated_at"),
   scaleLockedToRevision: boolean("scale_locked_to_revision").notNull().default(false),
+  // Task #2466 Phase 1 — Sheet indexing & trade routing. AIA-style
+  // discipline classification (A, S, M, E, P, C, L, FP, T, Q, G, O...)
+  // and the sheet number ("M-101", "S2.01"). Populated by the AI sheet
+  // index pass; nullable for un-indexed sheets and overridable by users.
+  discipline: text("discipline"),
+  sheetNumber: text("sheet_number"),
+  // Coarse confidence band ("HIGH" | "MEDIUM" | "LOW") and provenance
+  // ("AI_DETECTED" | "USER" | "FILENAME_HEURISTIC").
+  disciplineConfidence: text("discipline_confidence"),
+  disciplineSource: text("discipline_source"),
   assignedTo: varchar("assigned_to"),
   completionStatus: text("completion_status").notNull().default("not_started"),
   targetMeasurements: integer("target_measurements"),

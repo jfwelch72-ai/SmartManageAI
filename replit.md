@@ -46,6 +46,7 @@ SmartManageAI is a white-label SaaS platform that centralizes and streamlines th
 *   **Domain-Specific Storage Seams**: Gradually breaking up monolithic storage logic into domain-specific modules to improve maintainability and enforce access control (e.g., `server/bids/storage.ts`).
 *   **Scalable PDF Handling for Takeoffs**: Implemented range-based GCS downloads and device-aware tile caching to efficiently manage large (up to 32 GB) PDF plans.
 *   **Express Async Error Shim**: `server/utils/expressAsyncShim.ts` patches `Layer.prototype.handle_request` at boot so async route handlers that throw without try/catch are forwarded to the central error middleware (Express 4 does not do this natively). `asyncHandler` is still exported for explicit, self-documenting wrapping.
+*   **AI Estimator Sheet Indexing & Assemblies (Phase 1)**: `server/services/aiEstimator/sheetIndex.ts` classifies each plan sheet by discipline (G/A/S/M/E/P/C/L/FP/T/Q/I/O) using AI + filename heuristics; persisted on `takeoff_sheets`. `draftTakeoffFromPlans` accepts `disciplines`/`tradeFilter` to scope plan docs per trade and supports up to 8 docs (was 4). Org-level factors, assemblies catalog, and legend symbols live in `ai_estimator_org_factors`, `ai_estimator_assemblies(_components)`, `ai_estimator_legend_symbols`.
 
 ## Product
 

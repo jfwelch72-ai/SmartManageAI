@@ -329,3 +329,170 @@ export const aiEstimatorExcludedSources = pgTable("ai_estimator_excluded_sources
 export const insertAiEstimatorExcludedSourceSchema = createInsertSchema(aiEstimatorExcludedSources).omit({ id: true, excludedAt: true });
 export type InsertAiEstimatorExcludedSource = z.infer<typeof insertAiEstimatorExcludedSourceSchema>;
 export type AiEstimatorExcludedSource = typeof aiEstimatorExcludedSources.$inferSelect;
+// =====================================================================
+// Task #2466 — AI Estimator real-world upgrade.
+// Phase 1 + Phase 2 schema groundwork:
+//   - sheet-index discipline routing (columns added directly to
+//     `takeoff_sheets` in shared/schema/features/takeoff.ts)
+//   - legend-symbol parsing scaffold
+//   - assemblies catalog (org-level, with components)
+//   - org-level estimating factors (waste %, productivity, city cost
+//     index, prevailing wage)
+// =====================================================================
+
+// Per-project parsed legend symbols. Populated by the legend-parsing
+// pass; counts are aggregated across the relevant sheets and persisted
+// here so the estimate generator can quote symbol-driven counts (doors,
+// fixtures, devices) with a clickable source.
+export const aiEstimatorLegendSymbols = pgTable("ai_estimator_legend_symbols", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  projectId: varchar("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  bidId: varchar("bid_id").references(() => bids.id, { onDelete: "cascade" }),
+  // The sheet the legend was parsed FROM (a legend page) and an
+  // optional bbox of the glyph in image coordinates so the UI can
+  // crop & display it.
+  legendSheetId: varchar("legend_sheet_id").references(() => takeoffSheets.id, { onDelete: "set null" }),
+  glyphBbox: jsonb("glyph_bbox"), // { x, y, w, h }
+  // The glyph's symbol code (e.g. "D-1", "FX-A") and the legend's
+  // human-readable definition ("Door type 1, 3'-0"x7'-0" HM").
+  symbolCode: text("symbol_code").notNull(),
+  definition: text("definition").notNull(),
+  trade: text("trade"), // 'A' | 'M' | 'E' | 'P' | 'S' | 'C' | etc.
+  // Aggregated count across the project's sheets (or a single-sheet
+  // count when the legend is per-sheet).
+  count: integer("count").notNull().default(0),
+  // JSON list of { sheetId, regionBbox } occurrences for click-through.
+  occurrences: jsonb("occurrences"),
+  source: text("source").notNull().default("AI_DETECTED"), // 'AI_DETECTED' | 'USER'
+  confidence: text("confidence").notNull().default("MEDIUM"), // HIGH | MEDIUM | LOW
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("ai_estimator_legend_symbols_org_idx").on(table.organizationId),
+  projectIdx: index("ai_estimator_legend_symbols_project_idx").on(table.projectId),
+  bidIdx: index("ai_estimator_legend_symbols_bid_idx").on(table.bidId),
+  uniq: uniqueIndex("ai_estimator_legend_symbols_uniq").on(
+    table.organizationId,
+    table.bidId,
+    table.symbolCode,
+  ),
+}));
+export const insertAiEstimatorLegendSymbolSchema = createInsertSchema(aiEstimatorLegendSymbols).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAiEstimatorLegendSymbol = z.infer<typeof insertAiEstimatorLegendSymbolSchema>;
+export type AiEstimatorLegendSymbol = typeof aiEstimatorLegendSymbols.$inferSelect;
+
+// Org-level Assemblies catalog. An assembly maps a takeoff measurement
+// type (e.g. "8\" CMU wall", an AREA in SF) to a bundle of materials,
+// labor and equipment. The draft estimate generator looks up an
+// assembly by (org, label/cost code, measurement type) and emits one
+// component line per child instead of a single raw line item.
+export const aiEstimatorAssemblies = pgTable("ai_estimator_assemblies", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  // Null `organizationId` would represent a platform default; for now
+  // every assembly is org-scoped — defaults are seeded per org on
+  // first use. (Platform-wide defaults are a follow-up.)
+  name: text("name").notNull(),
+  description: text("description"),
+  costCode: text("cost_code"),
+  tradeType: text("trade_type"),
+  // The takeoff measurement type this assembly is driven by.
+  // 'AREA' | 'LINEAR' | 'COUNT' | 'VOLUME'
+  drivingMeasurementType: text("driving_measurement_type").notNull(),
+  // The unit of the driving quantity ('SF','LF','EA','CY' ...).
+  drivingUnit: text("driving_unit").notNull(),
+  // Org-level waste % to apply to the driving qty. 0..1.
+  wasteFactor: doublePrecision("waste_factor").notNull().default(0),
+  // Productivity of the controlling crew, expressed in driving units
+  // per crew-hour. Used to derive activity duration on schedule push.
+  productionRatePerHour: doublePrecision("production_rate_per_hour"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdById: varchar("created_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  orgIdx: index("ai_estimator_assemblies_org_idx").on(table.organizationId),
+  costCodeIdx: index("ai_estimator_assemblies_cost_code_idx").on(table.organizationId, table.costCode),
+  uniqName: uniqueIndex("ai_estimator_assemblies_uniq_name").on(table.organizationId, table.name),
+}));
+export const insertAiEstimatorAssemblySchema = createInsertSchema(aiEstimatorAssemblies).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAiEstimatorAssembly = z.infer<typeof insertAiEstimatorAssemblySchema>;
+export type AiEstimatorAssembly = typeof aiEstimatorAssemblies.$inferSelect;
+
+export const aiEstimatorAssemblyComponents = pgTable("ai_estimator_assembly_components", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  assemblyId: varchar("assembly_id").notNull().references(() => aiEstimatorAssemblies.id, { onDelete: "cascade" }),
+  // 'MATERIAL' | 'LABOR' | 'EQUIPMENT' | 'SUB'
+  componentType: text("component_type").notNull(),
+  description: text("description").notNull(),
+  costCode: text("cost_code"),
+  // Quantity per ONE driving unit (e.g. 1.05 block per SF of wall when
+  // already including waste). The draft generator multiplies this by
+  // the takeoff's measured quantity * (1 + wasteFactor).
+  qtyPerDrivingUnit: doublePrecision("qty_per_driving_unit").notNull().default(1),
+  unit: text("unit").notNull(), // 'EA','LF','SF','CY','HR','LB' ...
+  // Optional default unit cost; resolver still prefers vendor quote ->
+  // learned rate -> published index -> this value -> AI fallback.
+  defaultUnitCost: decimal("default_unit_cost", { precision: 14, scale: 4 }),
+  // Component-level waste %. Stacks multiplicatively with assembly waste.
+  wasteFactor: doublePrecision("waste_factor").notNull().default(0),
+  sortOrder: integer("sort_order").notNull().default(0),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+}, (table) => ({
+  assemblyIdx: index("ai_estimator_assembly_components_assembly_idx").on(table.assemblyId),
+}));
+export const insertAiEstimatorAssemblyComponentSchema = createInsertSchema(aiEstimatorAssemblyComponents).omit({ id: true, createdAt: true });
+export type InsertAiEstimatorAssemblyComponent = z.infer<typeof insertAiEstimatorAssemblyComponentSchema>;
+export type AiEstimatorAssemblyComponent = typeof aiEstimatorAssemblyComponents.$inferSelect;
+
+// Org-level estimating factors — single row per org. Holds the
+// configurable inputs that the draft generator applies automatically:
+//   - waste_factors_by_category: jsonb map { CONCRETE: 0.05, ... }
+//   - productivity_overrides: jsonb map { '03-30-00': { unit:'CY', perHour:1.2 } }
+//   - city_cost_index_default: number multiplier (1.00 = national avg)
+//   - prevailing_wage_default: boolean
+// Per-project overrides live on the project row (out of scope this task).
+export const aiEstimatorOrgFactors = pgTable("ai_estimator_org_factors", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  wasteFactorsByCategory: jsonb("waste_factors_by_category").default(sql`'{}'::jsonb`),
+  productivityOverrides: jsonb("productivity_overrides").default(sql`'{}'::jsonb`),
+  cityCostIndexDefault: doublePrecision("city_cost_index_default").notNull().default(1.0),
+  prevailingWageDefault: boolean("prevailing_wage_default").notNull().default(false),
+  notes: text("notes"),
+  updatedById: varchar("updated_by_id").references(() => users.id, { onDelete: "set null" }),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  uniqOrg: uniqueIndex("ai_estimator_org_factors_uniq_org").on(table.organizationId),
+}));
+export const insertAiEstimatorOrgFactorsSchema = createInsertSchema(aiEstimatorOrgFactors).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertAiEstimatorOrgFactors = z.infer<typeof insertAiEstimatorOrgFactorsSchema>;
+export type AiEstimatorOrgFactors = typeof aiEstimatorOrgFactors.$inferSelect;
+
+// Sheet-discipline whitelist for prompt validation. Anything else is
+// stored as 'O' (other). Matches the AIA convention.
+export const SHEET_DISCIPLINES = [
+  "G", // General
+  "A", // Architectural
+  "S", // Structural
+  "M", // Mechanical
+  "E", // Electrical
+  "P", // Plumbing
+  "C", // Civil
+  "L", // Landscape
+  "FP", // Fire Protection
+  "T", // Telecom / Low Voltage
+  "Q", // Equipment
+  "I", // Interiors
+  "O", // Other
+] as const;
+export type SheetDiscipline = (typeof SHEET_DISCIPLINES)[number];
+
+export const SHEET_DISCIPLINE_SOURCES = [
+  "AI_DETECTED",
+  "FILENAME_HEURISTIC",
+  "USER",
+] as const;
+export type SheetDisciplineSource = (typeof SHEET_DISCIPLINE_SOURCES)[number];

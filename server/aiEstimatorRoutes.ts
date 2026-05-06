@@ -68,6 +68,33 @@ import {
   listLessons,
   softDeleteLesson,
 } from "./services/aiEstimator/lessons";
+import {
+  indexPlanSheetsForBid,
+  getSheetIndexForBid,
+} from "./services/aiEstimator/sheetIndex";
+import {
+  listAssemblies,
+  getAssembly,
+  createAssembly,
+  updateAssembly,
+  deleteAssembly,
+} from "./services/aiEstimator/assemblies";
+import {
+  getOrgFactors,
+  upsertOrgFactors,
+} from "./services/aiEstimator/orgFactors";
+import {
+  listLegendSymbolsForBid,
+  upsertLegendSymbol,
+  deleteLegendSymbol,
+} from "./services/aiEstimator/legendSymbols";
+import {
+  insertAiEstimatorAssemblySchema,
+  insertAiEstimatorAssemblyComponentSchema,
+  insertAiEstimatorOrgFactorsSchema,
+  insertAiEstimatorLegendSymbolSchema,
+  SHEET_DISCIPLINES,
+} from "@shared/schema";
 
 const router = Router();
 
@@ -893,6 +920,229 @@ router.get(
   requireEstimatorAccess,
   (_req, res) => {
     res.json({ allowList: WEB_RESEARCH_ALLOWLIST });
+  },
+);
+
+// =====================================================================
+// Task #2466 Phase 1 — Sheet indexing & trade routing.
+// =====================================================================
+router.post(
+  `${estimatorBase}/bids/:bidId/sheet-index`,
+  requireAuth,
+  requireEstimatorAccess,
+  sensitiveLimiter,
+  async (req: AuthRequest, res: Response) => {
+    const orgId = req.user!.organizationId!;
+    try {
+      const out = await indexPlanSheetsForBid({
+        organizationId: orgId,
+        userId: req.user!.id,
+        bidId: req.params.bidId,
+      });
+      if (out.aiBlocked) return blockedResponse(res, out.reason);
+      res.json(out);
+    } catch (err) {
+      logError("AI Estimator sheet-index failed", { error: String(err) });
+      res.status(500).json({ error: "Sheet index failed" });
+    }
+  },
+);
+
+router.get(
+  `${estimatorBase}/bids/:bidId/sheet-index`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const rows = await getSheetIndexForBid({
+      organizationId: req.user!.organizationId!,
+      bidId: req.params.bidId,
+    });
+    const byDiscipline: Record<string, typeof rows> = {};
+    for (const r of rows) {
+      const k = r.discipline ?? "UNCLASSIFIED";
+      (byDiscipline[k] ??= []).push(r);
+    }
+    res.json({
+      sheets: rows,
+      byDiscipline,
+      disciplines: SHEET_DISCIPLINES,
+    });
+  },
+);
+
+// =====================================================================
+// Task #2466 Phase 2 (groundwork) — Assemblies catalog CRUD.
+// =====================================================================
+router.get(
+  `${estimatorBase}/assemblies`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const search = typeof req.query.search === "string" ? req.query.search : undefined;
+    const out = await listAssemblies(req.user!.organizationId!, { search });
+    res.json({ assemblies: out });
+  },
+);
+
+router.get(
+  `${estimatorBase}/assemblies/:id`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const out = await getAssembly(req.user!.organizationId!, req.params.id);
+    if (!out) return res.status(404).json({ error: "Assembly not found" });
+    res.json(out);
+  },
+);
+
+const createAssemblyBodySchema = z.object({
+  assembly: insertAiEstimatorAssemblySchema.omit({ organizationId: true }),
+  components: z
+    .array(insertAiEstimatorAssemblyComponentSchema.omit({ assemblyId: true }))
+    .default([]),
+});
+router.post(
+  `${estimatorBase}/assemblies`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const data = validateBody(createAssemblyBodySchema, req.body, res);
+    if (!data) return;
+    try {
+      const out = await createAssembly(
+        {
+          ...data.assembly,
+          organizationId: req.user!.organizationId!,
+          createdById: req.user!.id,
+        },
+        data.components,
+      );
+      await logCreate(
+        req.user!.id,
+        "ai_estimator_assembly",
+        out.id,
+        { name: out.name },
+        req,
+      );
+      res.status(201).json(out);
+    } catch (err) {
+      logError("createAssembly failed", { error: String(err) });
+      res.status(500).json({ error: "Could not create assembly" });
+    }
+  },
+);
+
+router.put(
+  `${estimatorBase}/assemblies/:id`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const patch = validateBody(
+      insertAiEstimatorAssemblySchema.partial().omit({ organizationId: true }),
+      req.body,
+      res,
+    );
+    if (!patch) return;
+    const out = await updateAssembly(
+      req.user!.organizationId!,
+      req.params.id,
+      patch,
+    );
+    if (!out) return res.status(404).json({ error: "Assembly not found" });
+    res.json(out);
+  },
+);
+
+router.delete(
+  `${estimatorBase}/assemblies/:id`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    await deleteAssembly(req.user!.organizationId!, req.params.id);
+    await logDelete(req.user!.id, "ai_estimator_assembly", req.params.id, {}, req);
+    res.status(204).send();
+  },
+);
+
+// =====================================================================
+// Task #2466 Phase 2 (groundwork) — Org-level estimating factors.
+// =====================================================================
+router.get(
+  `${estimatorBase}/org-factors`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const row = await getOrgFactors(req.user!.organizationId!);
+    res.json(row);
+  },
+);
+
+router.put(
+  `${estimatorBase}/org-factors`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const patch = validateBody(
+      insertAiEstimatorOrgFactorsSchema.partial().omit({ organizationId: true }),
+      req.body,
+      res,
+    );
+    if (!patch) return;
+    const row = await upsertOrgFactors(
+      req.user!.organizationId!,
+      patch,
+      req.user!.id,
+    );
+    res.json(row);
+  },
+);
+
+// =====================================================================
+// Task #2466 Phase 1 — Legend symbols storage (parser is a follow-up).
+// =====================================================================
+router.get(
+  `${estimatorBase}/bids/:bidId/legend-symbols`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const rows = await listLegendSymbolsForBid(
+      req.user!.organizationId!,
+      req.params.bidId,
+    );
+    res.json({ symbols: rows });
+  },
+);
+
+router.post(
+  `${estimatorBase}/bids/:bidId/legend-symbols`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    const body = validateBody(
+      insertAiEstimatorLegendSymbolSchema.omit({
+        organizationId: true,
+        bidId: true,
+      }),
+      req.body,
+      res,
+    );
+    if (!body) return;
+    const row = await upsertLegendSymbol({
+      ...body,
+      organizationId: req.user!.organizationId!,
+      bidId: req.params.bidId,
+    });
+    res.status(201).json(row);
+  },
+);
+
+router.delete(
+  `${estimatorBase}/legend-symbols/:id`,
+  requireAuth,
+  requireEstimatorAccess,
+  async (req: AuthRequest, res: Response) => {
+    await deleteLegendSymbol(req.user!.organizationId!, req.params.id);
+    res.status(204).send();
   },
 );
 
