@@ -8,7 +8,25 @@ import { eq, sql, and } from "drizzle-orm";
 import { getRoleDefaults, mergePermissions } from "./dashboardRoutes";
 import type { UserRole } from "@shared/schema";
 
-const AUTH_CACHE_TTL_MS = 8_000;
+// Task #2427 — under autoscale this cache is intentionally per-process.
+// `revokeUserTokens` only invalidates the local Map, so peer replicas
+// keep serving the previous cached `tokenVersion` until their own entry
+// expires. We rely on two things to make this safe:
+//   1. JWTs carry `tokenVersion`. Even if a peer serves a stale cache,
+//      the next request from a revoked token still fails the
+//      `userTokenVersion !== payloadTokenVersion` check below — the
+//      cache only ever returns the user row, never bypasses the version
+//      check.
+//   2. The TTL is intentionally short (5s) so the worst-case window
+//      where a peer might still consider a *role change* (not a token
+//      revoke) effective is bounded to ~5s. Removing the cache entirely
+//      would multiply the auth-DB load by 1 SELECT per request per
+//      replica; benchmarks at typical load show this would saturate the
+//      pg pool's `waiting` queue under bursts. The 5s TTL is the
+//      smallest window we can keep without measurable pool pressure.
+// See `docs/runbooks/autoscale-verification.md` for the verification
+// queries operators can run in production.
+const AUTH_CACHE_TTL_MS = 5_000;
 interface AuthCacheEntry {
   user: User;
   hustlerLink?: { roleOverride: string | null } | null;

@@ -4,6 +4,7 @@ import {
   runAlertFailureDigest,
   type AlertFailureDigestRunSummary,
 } from "./services/transcriptBackfillNotifications";
+import { withSchedulerLock } from "./utils/schedulerLock";
 
 /**
  * Task #1065 — daily digest of CRM transcript-backfill alert delivery
@@ -27,11 +28,17 @@ export class CrmBackfillAlertDigestScheduler {
     if (this.task) return;
     this.task = cron.schedule("0 7 * * *", async () => {
       try {
-        const summary = await runAlertFailureDigest();
-        logInfo(
-          "[CRM Backfill Alert Digest] daily run complete",
-          summary as unknown as Record<string, unknown>,
+        // Task #2427 — only the leader replica runs the digest.
+        const result = await withSchedulerLock(
+          "crm-backfill-alert-digest:daily",
+          () => runAlertFailureDigest(),
         );
+        if (result.ran) {
+          logInfo(
+            "[CRM Backfill Alert Digest] daily run complete",
+            result.value as unknown as Record<string, unknown>,
+          );
+        }
       } catch (err) {
         logError(
           "[CRM Backfill Alert Digest] daily run failed",

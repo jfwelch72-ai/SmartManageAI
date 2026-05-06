@@ -84,6 +84,7 @@ import { ensureProjectLogEmailFailureThresholdSetting } from "./ensureProjectLog
 import { ensureProjectLogEmailFailuresDigestSchedule } from "./ensureProjectLogEmailFailuresDigestSchedule";
 import { ensureProjectLogEmailScheduleAttemptsTable } from "./ensureProjectLogEmailScheduleAttemptsTable";
 import { ensureRateLimitStateTable } from "./ensureRateLimitStateTable";
+import { ensureRateLimitStateCounters } from "./ensureRateLimitStateCounters";
 import { ensureOauthStateTable } from "./ensureOauthStateTable";
 import { ensureGanttPdfRenderSamplesTable } from "./ensureGanttPdfRenderSamplesTable";
 import { ensurePortfolioPdfRenderSamplesTable } from "./ensurePortfolioPdfRenderSamplesTable";
@@ -341,6 +342,12 @@ const migrations: MigrationStep[] = [
   // attempt on the schedule row.
   { name: "project_log_email_schedule_attempts_table", category: "CREATE_TABLE", fn: ensureProjectLogEmailScheduleAttemptsTable },
   { name: "rate_limit_state_table", category: "CREATE_TABLE", fn: ensureRateLimitStateTable },
+  // Task #2427 — autoscale safety. Adds the `hit_count` and
+  // `window_expires_at` counter columns + partial index used by
+  // `PgExpressRateLimitStore` so all 5 express-rate-limit limiters in
+  // `server/rateLimiter.ts` share state across replicas instead of
+  // tracking buckets in per-process memory.
+  { name: "rate_limit_state_counters", category: "ADD_COLUMN", fn: ensureRateLimitStateCounters },
   // Task #2056 — persistent, cross-replica backing store for the
   // short-lived Apple Sign-In OAuth state values issued by
   // `/api/auth/apple` and consumed by the cross-site form_post callback

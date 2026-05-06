@@ -3,6 +3,7 @@ import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { logInfo, logError } from "./utils/logger";
 import { evaluateAlertsAfterSweep } from "./statusAlertService";
+import { withSchedulerLock } from "./utils/schedulerLock";
 
 type ComponentRow = {
   id: string;
@@ -283,14 +284,27 @@ export function startStatusProbeScheduler() {
   // Run every minute
   probeTask = cron.schedule("* * * * *", async () => {
     try {
-      await runProbeSweep();
+      // Task #2427 — only one replica probes per minute. Probe results
+      // already write to a shared `status_probes` table, so duplicate
+      // ticks would inflate the per-day counters and skew the SLA chart.
+      await withSchedulerLock("status-probe:sweep", () => runProbeSweep());
     } catch (err) {
       logError("Status probe sweep failed", {}, err instanceof Error ? err : new Error(String(err)));
     }
   });
-  // Kick off an initial sweep shortly after startup so the page has data immediately
+  // Kick off an initial sweep shortly after startup so the page has
+  // data immediately. Task #2427 — wrapped in the same advisory lock
+  // as the per-minute tick so only the leader replica performs the
+  // boot sweep under autoscale.
   setTimeout(() => {
-    runProbeSweep().catch((err) => logError("Initial status probe sweep failed", {}, err instanceof Error ? err : new Error(String(err))));
+    withSchedulerLock("status-probe:sweep", () => runProbeSweep()).catch(
+      (err) =>
+        logError(
+          "Initial status probe sweep failed",
+          {},
+          err instanceof Error ? err : new Error(String(err)),
+        ),
+    );
   }, 5_000).unref?.();
   logInfo("Status page probe scheduler started (every 60s)");
 }

@@ -1,6 +1,7 @@
 import { logError } from "./utils/logger";
 import * as cron from "node-cron";
 import { aiNotesService } from "./aiNotesService";
+import { withSchedulerLock } from "./utils/schedulerLock";
 
 /**
  * AI Notes Scheduler
@@ -22,10 +23,14 @@ export class AINotesScheduler {
     // Analyzes notes from the last 2 hours to catch urgent items quickly
     this.hourlyTask = cron.schedule("0 * * * *", async () => {
       try {
-        console.log("[AI Notes Scheduler] Running hourly note analysis...");
-        const cutoffDate = new Date(Date.now() - 2 * 60 * 60 * 1000); // Last 2 hours
-        const result = await aiNotesService.analyzeRecentNotes(undefined, cutoffDate);
-        console.log(`[AI Notes Scheduler] Hourly analysis complete: ${result.insightsCount} insights generated`);
+        // Task #2427 — only the leader replica runs the work; peers
+        // observe `ran=false` and skip silently.
+        await withSchedulerLock("ai-notes:hourly", async () => {
+          console.log("[AI Notes Scheduler] Running hourly note analysis...");
+          const cutoffDate = new Date(Date.now() - 2 * 60 * 60 * 1000); // Last 2 hours
+          const result = await aiNotesService.analyzeRecentNotes(undefined, cutoffDate);
+          console.log(`[AI Notes Scheduler] Hourly analysis complete: ${result.insightsCount} insights generated`);
+        });
       } catch (error) {
         logError("[AI Notes Scheduler] Hourly analysis failed:", {}, error instanceof Error ? error : new Error(String(error)));
       }
@@ -35,10 +40,12 @@ export class AINotesScheduler {
     // Comprehensive analysis of the day's notes
     this.dailyTask = cron.schedule("0 18 * * *", async () => {
       try {
-        console.log("[AI Notes Scheduler] Running daily note analysis...");
-        const cutoffDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24 hours
-        const result = await aiNotesService.analyzeRecentNotes(undefined, cutoffDate);
-        console.log(`[AI Notes Scheduler] Daily analysis complete: ${result.insightsCount} insights generated`);
+        await withSchedulerLock("ai-notes:daily", async () => {
+          console.log("[AI Notes Scheduler] Running daily note analysis...");
+          const cutoffDate = new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24 hours
+          const result = await aiNotesService.analyzeRecentNotes(undefined, cutoffDate);
+          console.log(`[AI Notes Scheduler] Daily analysis complete: ${result.insightsCount} insights generated`);
+        });
       } catch (error) {
         logError("[AI Notes Scheduler] Daily analysis failed:", {}, error instanceof Error ? error : new Error(String(error)));
       }

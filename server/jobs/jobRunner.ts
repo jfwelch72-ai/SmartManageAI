@@ -1,4 +1,5 @@
 import cron from "node-cron";
+import { withSchedulerLock } from "../utils/schedulerLock";
 import crypto from "crypto";
 import * as outboxService from "../integrations/outboxService";
 import * as webhookService from "../integrations/webhookService";
@@ -262,8 +263,10 @@ export function startJobRunner() {
   // bounded by the retention window (24h) regardless of job volume.
   jobMetricsPruneTask = cron.schedule("0 * * * *", async () => {
     try {
-      const deleted = await pruneJobMetricsDb();
-      if (deleted > 0) logInfo("Pruned old job metric samples", { deleted });
+      await withSchedulerLock("job:jobMetricsPruneTask", async () => {
+        const deleted = await pruneJobMetricsDb();
+        if (deleted > 0) logInfo("Pruned old job metric samples", { deleted });
+      });
     } catch (err) {
       logError("Job metric DB prune failed", { error: String(err) });
     }
@@ -275,13 +278,15 @@ export function startJobRunner() {
   // a row in `job_metric_alert_events` for the dashboard.
   jobMetricAlertsTask = cron.schedule("*/15 * * * *", async () => {
     try {
-      const result = await evaluateJobMetricAlerts();
-      if (result.alertsFired.length > 0) {
-        logInfo("Job metric alerts fired", {
-          fired: result.alertsFired.length,
-          suppressed: result.alertsSuppressed,
-        });
-      }
+      await withSchedulerLock("job:jobMetricAlertsTask", async () => {
+        const result = await evaluateJobMetricAlerts();
+        if (result.alertsFired.length > 0) {
+          logInfo("Job metric alerts fired", {
+            fired: result.alertsFired.length,
+            suppressed: result.alertsSuppressed,
+          });
+        }
+      });
     } catch (err) {
       logError("Job metric alert evaluation failed", { error: String(err) });
     }
@@ -293,13 +298,15 @@ export function startJobRunner() {
   // window or with no events to summarize.
   jobMetricQuietDigestTask = cron.schedule("*/15 * * * *", async () => {
     try {
-      const result = await sendJobMetricAlertQuietHoursDigests({ recordSends: true });
-      if (result.digestsSent > 0) {
-        logInfo("Job metric quiet-hours digest sent", {
-          digestsSent: result.digestsSent,
-          recipientsConsidered: result.recipientsConsidered,
-        });
-      }
+      await withSchedulerLock("job:jobMetricQuietDigestTask", async () => {
+        const result = await sendJobMetricAlertQuietHoursDigests({ recordSends: true });
+        if (result.digestsSent > 0) {
+          logInfo("Job metric quiet-hours digest sent", {
+            digestsSent: result.digestsSent,
+            recipientsConsidered: result.recipientsConsidered,
+          });
+        }
+      });
     } catch (err) {
       logError("Job metric quiet-hours digest failed", { error: String(err) });
     }
@@ -316,8 +323,10 @@ export function startJobRunner() {
   // `logJobErrorWithKind` above).
   poolHealthSampleTask = cron.schedule("* * * * *", async () => {
     try {
-      const mod = await import("../utils/poolHealth");
-      mod.samplePoolHealth();
+      await withSchedulerLock("job:poolHealthSampleTask", async () => {
+        const mod = await import("../utils/poolHealth");
+        mod.samplePoolHealth();
+      });
     } catch (err) {
       logError("Pool health sample failed", { error: String(err) });
     }
@@ -337,7 +346,9 @@ export function startJobRunner() {
     }
     outboxTickRunning = true;
     try {
-      await processOutbox();
+      await withSchedulerLock("job:outboxTask", async () => {
+        await processOutbox();
+      });
     } catch (err) {
       logJobErrorWithKind("outbox", "Outbox processing failed", err);
     } finally {
@@ -347,8 +358,10 @@ export function startJobRunner() {
 
   retentionTask = cron.schedule("0 2 * * *", async () => {
     try {
-      await processRetentionPolicies();
-      recordJobOutcome("retention_policy_sweep", true);
+      await withSchedulerLock("job:retentionTask", async () => {
+        await processRetentionPolicies();
+        recordJobOutcome("retention_policy_sweep", true);
+      });
     } catch (err) {
       recordJobOutcome("retention_policy_sweep", false);
       logError("Retention processing failed", { error: String(err) });
@@ -368,7 +381,9 @@ export function startJobRunner() {
     }
     syncScheduleTickRunning = true;
     try {
-      await processSyncSchedules();
+      await withSchedulerLock("job:syncScheduleTask", async () => {
+        await processSyncSchedules();
+      });
     } catch (err) {
       logJobErrorWithKind("sync_schedules", "Sync schedule processing failed", err);
     } finally {
@@ -387,7 +402,9 @@ export function startJobRunner() {
     }
     socialPostTickRunning = true;
     try {
-      await processScheduledSocialPosts();
+      await withSchedulerLock("job:socialPostTask", async () => {
+        await processScheduledSocialPosts();
+      });
     } catch (err) {
       logJobErrorWithKind("social_posts", "Social post processing failed", err);
     } finally {
@@ -397,8 +414,10 @@ export function startJobRunner() {
 
   tokenExpiryTask = cron.schedule("0 3 * * *", async () => {
     try {
-      await checkSocialTokenExpiry();
-      recordJobOutcome("social_token_expiry_check", true);
+      await withSchedulerLock("job:tokenExpiryTask", async () => {
+        await checkSocialTokenExpiry();
+        recordJobOutcome("social_token_expiry_check", true);
+      });
     } catch (err) {
       recordJobOutcome("social_token_expiry_check", false);
       logError("Token expiry check failed", { error: String(err) });
@@ -407,8 +426,10 @@ export function startJobRunner() {
 
   complianceCheckTask = cron.schedule("0 7 * * *", async () => {
     try {
-      await processComplianceExpirations();
-      recordJobOutcome("compliance_expiration_check", true);
+      await withSchedulerLock("job:complianceCheckTask", async () => {
+        await processComplianceExpirations();
+        recordJobOutcome("compliance_expiration_check", true);
+      });
     } catch (err) {
       recordJobOutcome("compliance_expiration_check", false);
       logError("Compliance expiration check failed", { error: String(err) });
@@ -428,7 +449,9 @@ export function startJobRunner() {
     }
     profitabilityMonitorTickRunning = true;
     try {
-      await processProfitabilityMonitor();
+      await withSchedulerLock("job:profitabilityMonitorTask", async () => {
+        await processProfitabilityMonitor();
+      });
     } catch (err) {
       logJobErrorWithKind("profitability", "Profitability monitor failed", err);
     } finally {
@@ -441,8 +464,10 @@ export function startJobRunner() {
   // reflect real direction-of-travel instead of created-RFI counts.
   portfolioKpiSnapshotTask = cron.schedule("15 2 * * *", async () => {
     try {
-      await captureWeeklyKpiSnapshots();
-      recordJobOutcome("portfolio_kpi_snapshot", true);
+      await withSchedulerLock("job:portfolioKpiSnapshotTask", async () => {
+        await captureWeeklyKpiSnapshots();
+        recordJobOutcome("portfolio_kpi_snapshot", true);
+      });
     } catch (err) {
       recordJobOutcome("portfolio_kpi_snapshot", false);
       logError("Portfolio KPI snapshot capture failed", { error: String(err) });
@@ -451,8 +476,10 @@ export function startJobRunner() {
 
   idleOpportunityTask = cron.schedule("0 8 * * *", async () => {
     try {
-      await processIdleOpportunities();
-      recordJobOutcome("idle_opportunity_check", true);
+      await withSchedulerLock("job:idleOpportunityTask", async () => {
+        await processIdleOpportunities();
+        recordJobOutcome("idle_opportunity_check", true);
+      });
     } catch (err) {
       recordJobOutcome("idle_opportunity_check", false);
       logError("Idle opportunity check failed", { error: String(err) });
@@ -461,7 +488,9 @@ export function startJobRunner() {
 
   orphanUploadTask = cron.schedule("*/30 * * * *", async () => {
     try {
-      await processOrphanUploads();
+      await withSchedulerLock("job:orphanUploadTask", async () => {
+        await processOrphanUploads();
+      });
     } catch (err) {
       logError("Orphan upload cleanup failed", { error: String(err) });
     }
@@ -469,7 +498,9 @@ export function startJobRunner() {
 
   bidDueDateTask = cron.schedule("0 * * * *", async () => {
     try {
-      await processBidDueDateApproaching();
+      await withSchedulerLock("job:bidDueDateTask", async () => {
+        await processBidDueDateApproaching();
+      });
     } catch (err) {
       logError("Bid due date check failed", { error: String(err) });
     }
@@ -477,7 +508,9 @@ export function startJobRunner() {
 
   imapSyncTask = cron.schedule("*/15 * * * *", async () => {
     try {
-      await processImapEmailSync();
+      await withSchedulerLock("job:imapSyncTask", async () => {
+        await processImapEmailSync();
+      });
     } catch (err) {
       logError("IMAP email sync failed", { error: String(err) });
     }
@@ -489,7 +522,9 @@ export function startJobRunner() {
   // for missed events and accounts where push isn't configured.
   providerSyncTask = cron.schedule("*/5 * * * *", async () => {
     try {
-      await processProviderEmailSync();
+      await withSchedulerLock("job:providerSyncTask", async () => {
+        await processProviderEmailSync();
+      });
     } catch (err) {
       logError("Provider email sync failed", { error: String(err) });
     }
@@ -504,7 +539,9 @@ export function startJobRunner() {
   // promptly even when the safety-net poller is busy.
   providerPushDrainTask = cron.schedule("*/2 * * * *", async () => {
     try {
-      await processProviderPushDrain();
+      await withSchedulerLock("job:providerPushDrainTask", async () => {
+        await processProviderPushDrain();
+      });
     } catch (err) {
       logError("Provider push-back drain failed", { error: String(err) });
     }
@@ -515,24 +552,32 @@ export function startJobRunner() {
   // hours. Renewing every 15 minutes leaves comfortable headroom.
   emailPushRenewalTask = cron.schedule("*/15 * * * *", async () => {
     try {
-      await ensureAllEmailPushSubscriptions();
+      await withSchedulerLock("job:emailPushRenewalTask", async () => {
+        await ensureAllEmailPushSubscriptions();
+      });
     } catch (err) {
       logError("Email push subscription renewal failed", { error: String(err) });
     }
   });
 
   // Run once shortly after startup so newly deployed instances catch up
-  // without waiting for the first cron tick.
+  // without waiting for the first cron tick. Task #2427 — wrapped in
+  // the same advisory lock as the cron tick so only the leader replica
+  // performs the boot sweep under autoscale.
   setTimeout(() => {
-    ensureAllEmailPushSubscriptions().catch((err) =>
+    withSchedulerLock("job:emailPushRenewalTask", () =>
+      ensureAllEmailPushSubscriptions(),
+    ).catch((err) =>
       logError("Initial email push subscription sweep failed", { error: String(err) }),
     );
   }, 30_000).unref?.();
 
   weeklyReportTask = cron.schedule("0 7 * * 1", async () => {
     try {
-      await processPeriodicReports("WEEKLY");
-      recordJobOutcome("periodic_report_weekly", true);
+      await withSchedulerLock("job:weeklyReportTask", async () => {
+        await processPeriodicReports("WEEKLY");
+        recordJobOutcome("periodic_report_weekly", true);
+      });
     } catch (err) {
       recordJobOutcome("periodic_report_weekly", false);
       logError("Weekly report generation failed", { error: String(err) });
@@ -541,8 +586,10 @@ export function startJobRunner() {
 
   monthlyReportTask = cron.schedule("0 7 1 * *", async () => {
     try {
-      await processPeriodicReports("MONTHLY");
-      recordJobOutcome("periodic_report_monthly", true);
+      await withSchedulerLock("job:monthlyReportTask", async () => {
+        await processPeriodicReports("MONTHLY");
+        recordJobOutcome("periodic_report_monthly", true);
+      });
     } catch (err) {
       recordJobOutcome("periodic_report_monthly", false);
       logError("Monthly report generation failed", { error: String(err) });
@@ -551,8 +598,10 @@ export function startJobRunner() {
 
   dbHealthCheckTask = cron.schedule("0 */6 * * *", async () => {
     try {
-      await runDbHealthCheck();
-      recordJobOutcome("db_health_check", true);
+      await withSchedulerLock("job:dbHealthCheckTask", async () => {
+        await runDbHealthCheck();
+        recordJobOutcome("db_health_check", true);
+      });
     } catch (err) {
       recordJobOutcome("db_health_check", false);
       logError("DB health check failed", { error: String(err) });
@@ -571,7 +620,9 @@ export function startJobRunner() {
     }
     socialEngagementTickRunning = true;
     try {
-      await processSocialEngagement();
+      await withSchedulerLock("job:socialEngagementTask", async () => {
+        await processSocialEngagement();
+      });
     } catch (err) {
       logJobErrorWithKind("social_engagement", "Social engagement sync failed", err);
     } finally {
@@ -591,7 +642,9 @@ export function startJobRunner() {
     }
     scheduledCampaignTickRunning = true;
     try {
-      await processScheduledCampaigns();
+      await withSchedulerLock("job:scheduledCampaignTask", async () => {
+        await processScheduledCampaigns();
+      });
     } catch (err) {
       logJobErrorWithKind("scheduled_campaigns", "Scheduled campaign processing failed", err);
     } finally {
@@ -612,7 +665,9 @@ export function startJobRunner() {
     }
     sequenceCadenceTickRunning = true;
     try {
-      await processDueExecutions();
+      await withSchedulerLock("job:sequenceCadenceTask", async () => {
+        await processDueExecutions();
+      });
     } catch (err) {
       logJobErrorWithKind("sequence_cadences", "Sequence cadence runner failed", err);
     } finally {
@@ -624,8 +679,10 @@ export function startJobRunner() {
   // so they appear on the Projects map view automatically.
   projectGeocodeTask = cron.schedule("30 4 * * *", async () => {
     try {
-      await geocodePendingProjects();
-      recordJobOutcome("project_geocode", true);
+      await withSchedulerLock("job:projectGeocodeTask", async () => {
+        await geocodePendingProjects();
+        recordJobOutcome("project_geocode", true);
+      });
     } catch (err) {
       recordJobOutcome("project_geocode", false);
       logError("Project geocoding job failed", { error: String(err) });
@@ -647,7 +704,9 @@ export function startJobRunner() {
     }
     crmSlaBreachTickRunning = true;
     try {
-      await processCrmSlaBreaches();
+      await withSchedulerLock("job:crmSlaBreachTask", async () => {
+        await processCrmSlaBreaches();
+      });
     } catch (err) {
       logJobErrorWithKind("crm_sla_breaches", "CRM SLA breach sweep failed", err);
     } finally {
@@ -669,7 +728,9 @@ export function startJobRunner() {
     }
     crmIdleAutomationTickRunning = true;
     try {
-      await processCrmIdleAutomations();
+      await withSchedulerLock("job:crmIdleAutomationTask", async () => {
+        await processCrmIdleAutomations();
+      });
     } catch (err) {
       logJobErrorWithKind("crm_idle_automations", "CRM idle automation tick failed", err);
     } finally {
@@ -694,7 +755,9 @@ export function startJobRunner() {
     }
     crmBirthdayDigestTickRunning = true;
     try {
-      await processCrmContactBirthdayDigest();
+      await withSchedulerLock("job:crmBirthdayDigestTask", async () => {
+        await processCrmContactBirthdayDigest();
+      });
     } catch (err) {
       logJobErrorWithKind("crm_birthday_digest", "CRM contact birthday digest failed", err);
     } finally {
@@ -718,7 +781,9 @@ export function startJobRunner() {
     }
     certifiedPayrollDigestTickRunning = true;
     try {
-      await processCertifiedPayrollWeeklyDigest();
+      await withSchedulerLock("job:certifiedPayrollDigestTask", async () => {
+        await processCertifiedPayrollWeeklyDigest();
+      });
     } catch (err) {
       logJobErrorWithKind("certified_payroll_digest", "Certified payroll weekly digest failed", err);
     } finally {
@@ -743,8 +808,10 @@ export function startJobRunner() {
     }
     projectLogEmailScheduleTickRunning = true;
     try {
-      await processProjectLogEmailSchedules();
-      recordJobOutcome("project_log_email_schedules", true);
+      await withSchedulerLock("job:projectLogEmailScheduleTask", async () => {
+        await processProjectLogEmailSchedules();
+        recordJobOutcome("project_log_email_schedules", true);
+      });
     } catch (err) {
       recordJobOutcome("project_log_email_schedules", false);
       logJobErrorWithKind("project_log_email_schedules", "Project log email schedule sweep failed", err);
@@ -779,8 +846,10 @@ export function startJobRunner() {
     }
     projectLogEmailFailuresDigestTickRunning = true;
     try {
-      await processProjectLogEmailFailuresDigest();
-      recordJobOutcome("project_log_email_failures_digest", true);
+      await withSchedulerLock("job:projectLogEmailFailuresDigestTask", async () => {
+        await processProjectLogEmailFailuresDigest();
+        recordJobOutcome("project_log_email_failures_digest", true);
+      });
     } catch (err) {
       recordJobOutcome("project_log_email_failures_digest", false);
       logJobErrorWithKind("project_log_email_failures_digest", "Project log email failures digest sweep failed", err);
@@ -795,8 +864,10 @@ export function startJobRunner() {
   // alongside the existing compliance/expiration checks.
   swpppOverdueTask = cron.schedule("0 7 * * *", async () => {
     try {
-      await processSwpppOverdueCorrectiveActions();
-      recordJobOutcome("swppp_overdue_corrective_actions", true);
+      await withSchedulerLock("job:swpppOverdueTask", async () => {
+        await processSwpppOverdueCorrectiveActions();
+        recordJobOutcome("swppp_overdue_corrective_actions", true);
+      });
     } catch (err) {
       recordJobOutcome("swppp_overdue_corrective_actions", false);
       logError("SWPPP overdue corrective action sweep failed", { error: String(err) });
@@ -810,8 +881,10 @@ export function startJobRunner() {
   // fanout plus N follow-up reminders (per-org cap).
   rfiOverdueTask = cron.schedule("0 7 * * *", async () => {
     try {
-      await processRfiOverdueNotifications();
-      recordJobOutcome("rfi_overdue_notifications", true);
+      await withSchedulerLock("job:rfiOverdueTask", async () => {
+        await processRfiOverdueNotifications();
+        recordJobOutcome("rfi_overdue_notifications", true);
+      });
     } catch (err) {
       recordJobOutcome("rfi_overdue_notifications", false);
       logError("RFI overdue notification sweep failed", { error: String(err) });
@@ -824,8 +897,10 @@ export function startJobRunner() {
   // manager get the fanout.
   submittalReviewOverdueTask = cron.schedule("0 7 * * *", async () => {
     try {
-      await processSubmittalReviewOverdueNotifications();
-      recordJobOutcome("submittal_overdue_notifications", true);
+      await withSchedulerLock("job:submittalReviewOverdueTask", async () => {
+        await processSubmittalReviewOverdueNotifications();
+        recordJobOutcome("submittal_overdue_notifications", true);
+      });
     } catch (err) {
       recordJobOutcome("submittal_overdue_notifications", false);
       logError("Submittal review overdue notification sweep failed", { error: String(err) });
@@ -839,11 +914,13 @@ export function startJobRunner() {
   // shows up in tomorrow's metrics.
   certifiedPayrollPurgeTask = cron.schedule("30 3 * * *", async () => {
     try {
-      const result = await processArchivedCertifiedPayrollPurge();
-      if (result.rowsPurged > 0) {
-        logInfo("Archived certified payroll auto-purge run", result);
-      }
-      recordJobOutcome("certified_payroll_purge", true);
+      await withSchedulerLock("job:certifiedPayrollPurgeTask", async () => {
+        const result = await processArchivedCertifiedPayrollPurge();
+        if (result.rowsPurged > 0) {
+          logInfo("Archived certified payroll auto-purge run", result);
+        }
+        recordJobOutcome("certified_payroll_purge", true);
+      });
     } catch (err) {
       recordJobOutcome("certified_payroll_purge", false);
       logError("Archived certified payroll auto-purge failed", { error: String(err) });
@@ -856,8 +933,10 @@ export function startJobRunner() {
   // notificationTypePrefs (email channel for REMINDER notifications).
   crmBirthdayDailyTask = cron.schedule("0 7 * * *", async () => {
     try {
-      await processCrmContactBirthdayDailyDigest();
-      recordJobOutcome("crm_birthday_daily_digest", true);
+      await withSchedulerLock("job:crmBirthdayDailyTask", async () => {
+        await processCrmContactBirthdayDailyDigest();
+        recordJobOutcome("crm_birthday_daily_digest", true);
+      });
     } catch (err) {
       recordJobOutcome("crm_birthday_daily_digest", false);
       logError("CRM contact birthday daily digest failed", { error: String(err) });
@@ -883,10 +962,12 @@ export function startJobRunner() {
     }
     integrationSyncRetryTickRunning = true;
     try {
-      const out = await processIntegrationSyncRetries();
-      if (out.attempted > 0) {
-        logInfo("Integration sync retry sweep", out);
-      }
+      await withSchedulerLock("job:wageDecisionRetryTask", async () => {
+        const out = await processIntegrationSyncRetries();
+        if (out.attempted > 0) {
+          logInfo("Integration sync retry sweep", out);
+        }
+      });
     } catch (err) {
       logJobErrorWithKind("integration_sync_retry", "Integration sync retry sweep failed", err);
     } finally {
@@ -903,10 +984,12 @@ export function startJobRunner() {
   // attempts failed.
   wageDecisionStaleRefreshTask = cron.schedule("0 6 * * *", async () => {
     try {
-      const out = await processStaleWageDecisions();
-      if (out.candidates > 0) {
-        logInfo("Davis-Bacon stale wage decision refresh sweep", out);
-      }
+      await withSchedulerLock("job:wageDecisionStaleRefreshTask", async () => {
+        const out = await processStaleWageDecisions();
+        if (out.candidates > 0) {
+          logInfo("Davis-Bacon stale wage decision refresh sweep", out);
+        }
+      });
     } catch (err) {
       logError("Davis-Bacon stale wage decision refresh failed", { error: String(err) });
     }
@@ -920,11 +1003,13 @@ export function startJobRunner() {
   // orgs. Runs at 03:45 UTC alongside the other nightly cleanup jobs.
   suppressionResetPruneTask = cron.schedule("45 3 * * *", async () => {
     try {
-      const deleted = await pruneSuppressionResets();
-      if (deleted > 0) {
-        logInfo("Suppression-reset retention sweep", { deleted });
-      }
-      recordJobOutcome("suppression_reset_prune", true);
+      await withSchedulerLock("job:suppressionResetPruneTask", async () => {
+        const deleted = await pruneSuppressionResets();
+        if (deleted > 0) {
+          logInfo("Suppression-reset retention sweep", { deleted });
+        }
+        recordJobOutcome("suppression_reset_prune", true);
+      });
     } catch (err) {
       recordJobOutcome("suppression_reset_prune", false);
       logError("Suppression-reset retention sweep failed", { error: String(err) });
@@ -941,15 +1026,17 @@ export function startJobRunner() {
   // nightly cleanup jobs.
   projectLogEmailAttemptPruneTask = cron.schedule("0 4 * * *", async () => {
     try {
-      const result = await pruneProjectLogEmailScheduleAttempts();
-      if (result.deleted > 0 || result.cappedAtMaxBatches) {
-        logInfo("Project log email attempt-history retention sweep", {
-          deleted: result.deleted,
-          batches: result.batches,
-          cappedAtMaxBatches: result.cappedAtMaxBatches,
-        });
-      }
-      recordJobOutcome("project_log_email_attempt_prune", true);
+      await withSchedulerLock("job:projectLogEmailAttemptPruneTask", async () => {
+        const result = await pruneProjectLogEmailScheduleAttempts();
+        if (result.deleted > 0 || result.cappedAtMaxBatches) {
+          logInfo("Project log email attempt-history retention sweep", {
+            deleted: result.deleted,
+            batches: result.batches,
+            cappedAtMaxBatches: result.cappedAtMaxBatches,
+          });
+        }
+        recordJobOutcome("project_log_email_attempt_prune", true);
+      });
     } catch (err) {
       recordJobOutcome("project_log_email_attempt_prune", false);
       logError("Project log email attempt-history retention sweep failed", { error: String(err) });
@@ -964,16 +1051,18 @@ export function startJobRunner() {
   // a large tenant can't hold long row-level locks.
   planDocumentMarkupTrashPurgeTask = cron.schedule("15 4 * * *", async () => {
     try {
-      const result = await purgePlanDocumentMarkupTrash();
-      if (result.deleted > 0 || result.cappedAtMaxBatches) {
-        logInfo("Plan document markup trash purge sweep", {
-          deleted: result.deleted,
-          batches: result.batches,
-          cappedAtMaxBatches: result.cappedAtMaxBatches,
-          durationMs: result.durationMs,
-        });
-      }
-      recordJobOutcome("plan_document_markup_trash_purge", true);
+      await withSchedulerLock("job:planDocumentMarkupTrashPurgeTask", async () => {
+        const result = await purgePlanDocumentMarkupTrash();
+        if (result.deleted > 0 || result.cappedAtMaxBatches) {
+          logInfo("Plan document markup trash purge sweep", {
+            deleted: result.deleted,
+            batches: result.batches,
+            cappedAtMaxBatches: result.cappedAtMaxBatches,
+            durationMs: result.durationMs,
+          });
+        }
+        recordJobOutcome("plan_document_markup_trash_purge", true);
+      });
     } catch (err) {
       recordJobOutcome("plan_document_markup_trash_purge", false);
       logError("Plan document markup trash purge sweep failed", { error: String(err) });
@@ -993,19 +1082,21 @@ export function startJobRunner() {
   // silently regresses (a sustained non-zero count is the signal).
   takeoffRecentsOrphanPruneTask = cron.schedule("45 4 * * *", async () => {
     try {
-      const out = await pruneOrphanedTakeoffRecents();
-      // Log every tick — including the "nothing to prune" path — so
-      // ops have a visible per-run heartbeat in the logs and a
-      // sustained non-zero count is immediately spottable as a
-      // regressed delete hook (rather than being inferred from the
-      // absence of a "0 rows" line).
-      logInfo("Takeoff recents orphan sweep", {
-        bidRowsPruned: out.bidRowsPruned,
-        projectRowsPruned: out.projectRowsPruned,
-        totalPruned: out.totalPruned,
-        durationMs: out.durationMs,
+      await withSchedulerLock("job:takeoffRecentsOrphanPruneTask", async () => {
+        const out = await pruneOrphanedTakeoffRecents();
+        // Log every tick — including the "nothing to prune" path — so
+        // ops have a visible per-run heartbeat in the logs and a
+        // sustained non-zero count is immediately spottable as a
+        // regressed delete hook (rather than being inferred from the
+        // absence of a "0 rows" line).
+        logInfo("Takeoff recents orphan sweep", {
+          bidRowsPruned: out.bidRowsPruned,
+          projectRowsPruned: out.projectRowsPruned,
+          totalPruned: out.totalPruned,
+          durationMs: out.durationMs,
+        });
+        recordJobOutcome("takeoff_recents_orphan_prune", true);
       });
-      recordJobOutcome("takeoff_recents_orphan_prune", true);
     } catch (err) {
       recordJobOutcome("takeoff_recents_orphan_prune", false);
       logError("Takeoff recents orphan sweep failed", { error: String(err) });
@@ -1021,18 +1112,20 @@ export function startJobRunner() {
   // drops below its `AGENCY_MIN_ITEMS` threshold.
   dotPayItemsRefreshTask = cron.schedule("0 4 1 1,4,7,10 *", async () => {
     try {
-      // Task #1962 — `processDotPayItemsRefresh` now records its own
-      // per-tick `job_metric_samples` row (with both numeric counters
-      // *and* per-agency / regression detail in the JSONB column) so the
-      // Super Admin DOT pay-item refresh history page can render run
-      // history. We no longer need to double-record numeric counters here.
-      const out = await processDotPayItemsRefresh();
-      logInfo("DOT pay-item quarterly refresh tick", {
-        agenciesProcessed: out.agenciesProcessed,
-        successes: out.successes,
-        failures: out.failures,
-        regressions: out.regressions,
-        alertsSent: out.alertsSent,
+      await withSchedulerLock("job:dotPayItemsRefreshTask", async () => {
+        // Task #1962 — `processDotPayItemsRefresh` now records its own
+        // per-tick `job_metric_samples` row (with both numeric counters
+        // *and* per-agency / regression detail in the JSONB column) so the
+        // Super Admin DOT pay-item refresh history page can render run
+        // history. We no longer need to double-record numeric counters here.
+        const out = await processDotPayItemsRefresh();
+        logInfo("DOT pay-item quarterly refresh tick", {
+          agenciesProcessed: out.agenciesProcessed,
+          successes: out.successes,
+          failures: out.failures,
+          regressions: out.regressions,
+          alertsSent: out.alertsSent,
+        });
       });
     } catch (err) {
       recordJobOutcome("dot_pay_items_refresh", false);
@@ -1046,11 +1139,13 @@ export function startJobRunner() {
   // daily cadence is the right responsiveness without spamming admins.
   wageDecisionMissingReminderTask = cron.schedule("0 8 * * *", async () => {
     try {
-      const out = await processMissingWageDecisionReminders();
-      if (out.remindersSent > 0) {
-        logInfo("Wage decision missing reminder sweep", out);
-      }
-      recordJobOutcome("wage_decision_missing_reminder", true);
+      await withSchedulerLock("job:wageDecisionMissingReminderTask", async () => {
+        const out = await processMissingWageDecisionReminders();
+        if (out.remindersSent > 0) {
+          logInfo("Wage decision missing reminder sweep", out);
+        }
+        recordJobOutcome("wage_decision_missing_reminder", true);
+      });
     } catch (err) {
       recordJobOutcome("wage_decision_missing_reminder", false);
       logError("Wage decision missing reminder sweep failed", { error: String(err) });
@@ -1064,10 +1159,12 @@ export function startJobRunner() {
   // typical orgs, so we don't bother with overlap guards.
   aiTakeoffCalibrationTask = cron.schedule("30 3 * * *", async () => {
     try {
-      const { runAiTakeoffCalibrationJob } = await import("../aiTakeoffFeatureRoutes");
-      const out = await runAiTakeoffCalibrationJob();
-      logInfo("AI takeoff calibration tick", { rowsUpserted: out.rowsUpserted });
-      recordJobOutcome("ai_takeoff_calibration", true);
+      await withSchedulerLock("job:aiTakeoffCalibrationTask", async () => {
+        const { runAiTakeoffCalibrationJob } = await import("../aiTakeoffFeatureRoutes");
+        const out = await runAiTakeoffCalibrationJob();
+        logInfo("AI takeoff calibration tick", { rowsUpserted: out.rowsUpserted });
+        recordJobOutcome("ai_takeoff_calibration", true);
+      });
     } catch (err) {
       recordJobOutcome("ai_takeoff_calibration", false);
       logError("AI takeoff calibration failed", { error: String(err) });
@@ -1092,15 +1189,17 @@ export function startJobRunner() {
     }
     aiEstimatorIngestionTickRunning = true;
     try {
-      const out = await processAiEstimatorScheduledIngestion();
-      recordJobMetrics("ai_estimator_ingestion", {
-        succeeded: out.orgsSucceeded,
-        failed: out.orgsFailed,
-        triggered: out.orgsTriggered,
-        skippedRecent: out.orgsSkippedRecent,
-        skippedInFlight: out.orgsSkippedInFlight,
-        skippedNotEnabled: out.orgsSkippedNotEnabled,
-        durationMs: out.durationMs,
+      await withSchedulerLock("job:aiEstimatorIngestionTask", async () => {
+        const out = await processAiEstimatorScheduledIngestion();
+        recordJobMetrics("ai_estimator_ingestion", {
+          succeeded: out.orgsSucceeded,
+          failed: out.orgsFailed,
+          triggered: out.orgsTriggered,
+          skippedRecent: out.orgsSkippedRecent,
+          skippedInFlight: out.orgsSkippedInFlight,
+          skippedNotEnabled: out.orgsSkippedNotEnabled,
+          durationMs: out.durationMs,
+        });
       });
     } catch (err) {
       recordJobOutcome("ai_estimator_ingestion", false);

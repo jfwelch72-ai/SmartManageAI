@@ -392,6 +392,14 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
     helper: "ensureAiTakeoffSuggestionsTables",
     note: "Task #2323 — also runs the one-shot suggestion-row backfill from existing detected_items_json blobs.",
   },
+  // Task #2427 — autoscale safety. Adds the `hit_count` /
+  // `window_expires_at` counter columns + partial index used by
+  // `PgExpressRateLimitStore` so the 5 express-rate-limit limiters in
+  // `server/rateLimiter.ts` share buckets across replicas.
+  "0078_rate_limit_state_counters.sql": {
+    helper: "ensureRateLimitStateCounters",
+    note: "Task #2427 — counter columns + partial index for express-rate-limit's Postgres-backed store.",
+  },
   // Task #2414 — Claude knowledge-index enrichment pass. Adds
   // ai_estimator_knowledge_index.enriched_summary + enriched_at and
   // ai_estimator_ingest_runs.rows_enriched. All idempotent ADD COLUMN

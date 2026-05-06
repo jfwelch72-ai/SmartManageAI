@@ -7,6 +7,7 @@ import { sql, eq, and, inArray } from 'drizzle-orm';
 import { insertNotifications } from "../services/notificationService";
 import { computeDbeRiskAssessment } from "../aiHeavyCivilFeatureRoutes";
 import { isFeatureEnabled } from "../services/featureFlagService";
+import { withSchedulerLock } from "../utils/schedulerLock";
 
 let scheduledTask: cron.ScheduledTask | null = null;
 let weeklyAlertTask: cron.ScheduledTask | null = null;
@@ -49,11 +50,13 @@ export async function initializeAIScheduler() {
   }
 
   scheduledTask = cron.schedule(cronExpression, async () => {
-    console.log('🚀 Triggering scheduled AI PM + CFO analysis...');
-    
     try {
-      await runAIAnalysis(null);
-      console.log('✅ Scheduled AI analysis completed successfully');
+      // Task #2427 — only the leader replica runs the daily AI orchestrator.
+      await withSchedulerLock('ai:pm-cfo-daily', async () => {
+        console.log('🚀 Triggering scheduled AI PM + CFO analysis...');
+        await runAIAnalysis(null);
+        console.log('✅ Scheduled AI analysis completed successfully');
+      });
     } catch (error) {
       logError('❌ Scheduled AI analysis failed:', {}, error instanceof Error ? error : new Error(String(error)));
     }
@@ -77,7 +80,8 @@ function initializeDailyDbeRiskJob() {
   console.log('📊 Scheduling daily DBE risk job (06:00 EST)...');
   dailyDbeRiskTask = cron.schedule('0 6 * * *', async () => {
     try {
-      await runDailyDbeRiskJob();
+      // Task #2427 — single-leader so DBE alerts aren't duplicated.
+      await withSchedulerLock('ai:dbe-risk-daily', () => runDailyDbeRiskJob());
     } catch (err) {
       logError('❌ Daily DBE risk job failed', {}, err instanceof Error ? err : new Error(String(err)));
     }
@@ -158,11 +162,13 @@ async function initializeWeeklyChangeOrderAlerts() {
   
   // Run every Monday at 8:00 AM EST
   weeklyAlertTask = cron.schedule('0 8 * * 1', async () => {
-    console.log('📋 Running weekly change order status check...');
-    
     try {
-      await checkStaleChangeOrders();
-      console.log('✅ Weekly change order check completed');
+      // Task #2427 — leader-only so the weekly alert isn't fanned out.
+      await withSchedulerLock('ai:change-order-weekly', async () => {
+        console.log('📋 Running weekly change order status check...');
+        await checkStaleChangeOrders();
+        console.log('✅ Weekly change order check completed');
+      });
     } catch (error) {
       logError('❌ Weekly change order check failed:', {}, error instanceof Error ? error : new Error(String(error)));
     }

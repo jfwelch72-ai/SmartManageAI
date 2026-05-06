@@ -4,6 +4,7 @@ import { crmTasks, crmOpportunities, organizationNetworkSettings } from "@shared
 import { and, eq, lte, gte, isNull, ne } from "drizzle-orm";
 import { insertNotification } from "./services/notificationService";
 import { logError, logInfo } from "./utils/logger";
+import { withSchedulerLock } from "./utils/schedulerLock";
 
 /**
  * CRM Task Reminder Scheduler
@@ -18,7 +19,9 @@ export class CrmTaskReminderScheduler {
   start() {
     this.task = cron.schedule("0 * * * *", async () => {
       try {
-        await this.runOnce();
+        // Task #2427 — leader election so reminders aren't fanned out
+        // N times under autoscale.
+        await withSchedulerLock("crm-task-reminder:hourly", () => this.runOnce());
       } catch (err) {
         logError("[CRM Task Reminder] hourly run failed", {}, err instanceof Error ? err : new Error(String(err)));
       }
