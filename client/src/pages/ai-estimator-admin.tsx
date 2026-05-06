@@ -73,6 +73,9 @@ interface RateSample {
   recordedAt: string;
   project: { id: string; name: string; code: string } | null;
   bid: { id: string; name: string; code: string } | null;
+  // Task #2453 — populated for `library_assignment` rows so the drill-down
+  // can show the contributing standalone takeoff.
+  standaloneTakeoff: { id: string; title: string } | null;
 }
 
 interface ExcludedSource {
@@ -248,7 +251,25 @@ function SamplesDrawer({
                       <div className="font-medium">{Number(s.value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}</div>
                       <div className="text-xs text-muted-foreground">
                         <Badge variant="outline" className="text-[10px] mr-1">{s.sourceType.replace(/_/g, " ")}</Badge>
-                        {s.project ? (
+                        {s.standaloneTakeoff ? (
+                          <span>
+                            Standalone takeoff:{" "}
+                            <a
+                              href={`/takeoff/standalone/${s.standaloneTakeoff.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-semibold hover:underline"
+                              data-testid={`link-sample-standalone-takeoff-${s.standaloneTakeoff.id}`}
+                            >
+                              {s.standaloneTakeoff.title}
+                            </a>
+                            {s.project ? (
+                              <span> &middot; Project: <strong>{s.project.name}</strong> ({s.project.code})</span>
+                            ) : s.bid ? (
+                              <span> &middot; Bid: <strong>{s.bid.name}</strong> ({s.bid.code})</span>
+                            ) : null}
+                          </span>
+                        ) : s.project ? (
                           <span>Project: <strong>{s.project.name}</strong> ({s.project.code})</span>
                         ) : s.bid ? (
                           <span>Bid: <strong>{s.bid.name}</strong> ({s.bid.code})</span>

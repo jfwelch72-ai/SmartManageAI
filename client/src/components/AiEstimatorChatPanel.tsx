@@ -152,11 +152,34 @@ export default function AiEstimatorChatPanel({ bidId, estimateId, projectId, ena
                       {m.citations && m.citations.length > 0 && (
                         <div className="mt-2 space-y-1">
                           <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Sources</div>
-                          {m.citations.map((c) => (
-                            <Badge key={c.id} variant="outline" className="text-[10px] mr-1">
-                              {c.sourceType}: {c.title}
-                            </Badge>
-                          ))}
+                          {m.citations.map((c) => {
+                            // Task #2453 — friendly label + click-through for
+                            // standalone-takeoff sources. The retrieval layer
+                            // already prefixes the title with
+                            // "Standalone takeoff: …", so we strip the raw
+                            // sourceType to avoid double-labelling.
+                            if (c.sourceType === "standalone_takeoff") {
+                              return (
+                                <a
+                                  key={c.id}
+                                  href={`/takeoff/standalone/${c.sourceId}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-block mr-1"
+                                  data-testid={`citation-standalone-takeoff-${c.sourceId}`}
+                                >
+                                  <Badge variant="outline" className="text-[10px] hover:bg-muted">
+                                    {c.title.startsWith("Standalone takeoff:") ? c.title : `Standalone takeoff: ${c.title}`}
+                                  </Badge>
+                                </a>
+                              );
+                            }
+                            return (
+                              <Badge key={c.id} variant="outline" className="text-[10px] mr-1">
+                                {c.sourceType}: {c.title}
+                              </Badge>
+                            );
+                          })}
                         </div>
                       )}
                       {m.role === "assistant" && (

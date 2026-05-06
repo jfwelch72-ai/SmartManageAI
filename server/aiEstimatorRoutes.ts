@@ -2,7 +2,15 @@ import { Router, type Response } from "express";
 import { z } from "zod";
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "./db";
-import { users, bids, projects, aiEstimatorRateSamples } from "@shared/schema";
+import {
+  users,
+  bids,
+  projects,
+  aiEstimatorRateSamples,
+  takeoffMeasurements,
+  takeoffSheets,
+  standaloneTakeoffs,
+} from "@shared/schema";
 import {
   type AuthRequest,
   requireAuth,
@@ -305,19 +313,48 @@ router.get(
 
     const projectIds = Array.from(new Set(samples.map((s) => s.projectId).filter(Boolean) as string[]));
     const bidIds = Array.from(new Set(samples.map((s) => s.bidId).filter(Boolean) as string[]));
+    // Task #2453 — for `library_assignment` samples, the sourceRowId is the
+    // standalone-takeoff measurement id. Resolve back to the parent
+    // standalone takeoff so the drill-down can show its title and link.
+    const libraryMeasurementIds = Array.from(
+      new Set(
+        samples
+          .filter((s) => s.sourceType === "library_assignment" && s.sourceRowId)
+          .map((s) => s.sourceRowId as string),
+      ),
+    );
 
-    const [projectRows, bidRows] = await Promise.all([
+    const [projectRows, bidRows, takeoffRows] = await Promise.all([
       projectIds.length ? db.select({ id: projects.id, name: projects.name, code: projects.code }).from(projects).where(sql`${projects.id} = ANY(${projectIds})`) : Promise.resolve([]),
       bidIds.length ? db.select({ id: bids.id, name: bids.name, code: bids.code }).from(bids).where(sql`${bids.id} = ANY(${bidIds})`) : Promise.resolve([]),
+      libraryMeasurementIds.length
+        ? db
+            .select({
+              measurementId: takeoffMeasurements.id,
+              standaloneTakeoffId: standaloneTakeoffs.id,
+              standaloneTakeoffTitle: standaloneTakeoffs.title,
+            })
+            .from(takeoffMeasurements)
+            .innerJoin(takeoffSheets, eq(takeoffSheets.id, takeoffMeasurements.sheetId))
+            .innerJoin(standaloneTakeoffs, eq(standaloneTakeoffs.id, takeoffSheets.standaloneTakeoffId))
+            .where(sql`${takeoffMeasurements.id} = ANY(${libraryMeasurementIds})`)
+        : Promise.resolve([]),
     ]);
 
     const projectMap = new Map(projectRows.map((p) => [p.id, p]));
     const bidMap = new Map(bidRows.map((b) => [b.id, b]));
+    const standaloneTakeoffByMeasurement = new Map(
+      takeoffRows.map((r) => [r.measurementId, { id: r.standaloneTakeoffId, title: r.standaloneTakeoffTitle }]),
+    );
 
     const enrichedSamples = samples.map((s) => ({
       ...s,
       project: s.projectId ? projectMap.get(s.projectId) ?? null : null,
       bid: s.bidId ? bidMap.get(s.bidId) ?? null : null,
+      standaloneTakeoff:
+        s.sourceType === "library_assignment" && s.sourceRowId
+          ? standaloneTakeoffByMeasurement.get(s.sourceRowId) ?? null
+          : null,
     }));
 
     res.json({ samples: enrichedSamples, total, limit, offset });
