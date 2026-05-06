@@ -24,8 +24,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Task #2428 — Use the canonical `npm run check` script (= `tsc`) so the
+      # PR gate exercises the same command developers run locally. The
+      # tsconfig now includes `**/*.test.ts` (Task #2428), so test code is
+      # typechecked alongside production code and can no longer drift.
       - name: Run TypeScript type checking
-        run: npm run typecheck || npx tsc --noEmit
+        run: npm run check
 
       # Task #1294 — run the jsdom-based estimate-component vitest suite on
       # every PR so regressions to the BidTabImportDialog suggestion-reason
@@ -56,6 +60,79 @@ jobs:
         with:
           webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
           job-name: Build & Test
+
+  unit-tests:
+    # Task #2428 — Full `npm test` (vitest) suite on every PR/main push, so
+    # server + shared + client unit tests gate merges (the existing `build`
+    # job only runs the estimate-component slice). Mirrors the `e2e` job's
+    # postgres service because vitest's `server/__tests__/globalSetup.ts`
+    # pushes the Drizzle schema before the suites run.
+    name: Unit Tests (vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: app_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      NODE_ENV: test
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/app_test
+      SESSION_SECRET: ci-session-secret-do-not-use-in-prod
+      JWT_SECRET: ci-jwt-secret-do-not-use-in-prod
+      EMAIL_TRANSPORT: noop
+      CI: "true"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Task #2428 — Use `npm run test:coverage` (not bare `npm test`) so the
+      # `coverage/` directory is always produced and the artifact uploaded
+      # below is non-empty on both pass and fail. The script is just
+      # `vitest run --coverage` (see package.json) so the same suite runs
+      # as `npm test` — only the v8 reporter is added.
+      - name: Run vitest suite (with coverage)
+        run: npm run test:coverage
+
+      # Always upload the coverage report so reviewers can open the HTML
+      # from the run page on green builds too (trend visibility), and
+      # triagers can read the v8 report on failures without re-running.
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vitest-coverage
+          path: coverage/
+          retention-days: 14
+          if-no-files-found: ignore
+
+      - name: Notify Slack on unit-test failure (main only)
+        if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: ./.github/actions/notify-slack-on-failure
+        with:
+          webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          job-name: Unit Tests (vitest)
 
   e2e:
     name: E2E Tests (Playwright)
@@ -179,9 +256,14 @@ jobs:
       # CI file to grep for. Adding a new engine to
       # `playwright.config.ts` now requires a matching edit here, which
       # is the trade-off we want.
+      # Task #2428 — Invoke via the canonical `npm run test:e2e` script (=
+      # `playwright test`) so the gate matches the developer-facing contract
+      # in package.json + README. The explicit `--project` enumeration is
+      # preserved (Task #2233 audit guard) by passing the flags through to
+      # the script with `--`.
       - name: Run E2E tests (chromium, firefox, webkit, chromium-touch)
         run: |
-          npx playwright test \
+          npm run test:e2e -- \
             --project=chromium \
             --project=firefox \
             --project=webkit \

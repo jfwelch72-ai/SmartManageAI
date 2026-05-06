@@ -53,8 +53,14 @@ export default defineConfig({
   globalSetup: "./playwright.global-setup.ts",
   timeout: 60_000,
   expect: { timeout: 10_000 },
-  fullyParallel: false,
-  workers: 1,
+  // Task #2428 — Parallelize Playwright runs in CI to keep PR feedback under
+  // budget. Locally we keep `workers: 1` because the dev server is single-
+  // tenant and many specs share seeded fixtures; CI gets 4 workers since each
+  // CI job spins up its own ephemeral postgres + dev server. `fullyParallel`
+  // is also enabled in CI so multiple specs in the same file can run in
+  // parallel — Playwright still respects per-file ordering when needed.
+  fullyParallel: !!process.env.CI,
+  workers: process.env.CI ? 4 : 1,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : [["list"]],
   use: {
