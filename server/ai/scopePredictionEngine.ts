@@ -1,5 +1,6 @@
 import { logError, logInfo } from "../utils/logger";
 import { openai, AI_MODEL_GPT5 } from './openaiClient';
+import { routedChatCompletion } from './providers';
 import { governedAiCall } from '../services/aiGovernance';
 import { db } from '../db';
 import { masterSowItems, masterModifiers, masterModifierCategories, organizationSowItems } from '@shared/schema';
@@ -194,14 +195,22 @@ Rank the top ${limit} most relevant items and identify any missing scope areas.`
 
   try {
     const aiCallFn = async () => {
-      const completion = await openai.chat.completions.create({
-        model: AI_MODEL_GPT5,
-        messages: [
-          { role: 'system', content: SCOPE_PREDICTION_PROMPT },
-          { role: 'user', content: userPrompt },
-        ],
-        response_format: { type: 'json_object' },
-        max_completion_tokens: 2048,
+      // Task #2423 — route through provider abstraction. Falls back to OpenAI
+      // automatically when ANTHROPIC_API_KEY missing or Claude errors.
+      const completion = await routedChatCompletion({
+        orgId: govContext?.orgId ?? "system",
+        featureKey: "estimation.scope_predict",
+        priorContext: govContext
+          ? { orgId: govContext.orgId, scopeId: `trade:${context.tradeType}` }
+          : undefined,
+        request: {
+          messages: [
+            { role: 'system', content: SCOPE_PREDICTION_PROMPT },
+            { role: 'user', content: userPrompt },
+          ],
+          response_format: { type: 'json_object' },
+          max_completion_tokens: 2048,
+        },
       });
       return {
         result: completion.choices[0]?.message?.content,

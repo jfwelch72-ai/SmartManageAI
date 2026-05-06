@@ -32,6 +32,7 @@ import { computeNetAreaInFt2 } from "@shared/utils/geometry";
 import { eq, and, desc, sql, or, isNull, inArray } from "drizzle-orm";
 import { requireAuth, requireRole, type AuthRequest } from "./auth";
 import { openai } from "./ai/openaiClient";
+import { routedChatCompletion } from "./ai/providers";
 import { governedAiCall } from "./services/aiGovernance";
 import { 
   calculateMaterials, 
@@ -3413,9 +3414,15 @@ router.get("/api/projects/:projectId/estimate", requireAuth, async (req: AuthReq
         userId: req.user!.id,
         actionType: "estimate_analyze",
         inputRefs: { estimateId },
+        // Task #2423 — route through provider abstraction so Claude can take
+        // over for orgs with AI_PROVIDER_TAKEOFF on, and so the prior-context
+        // bridge stitches this analysis into the rest of the estimate session.
         fn: async () => {
-          const completion = await openai.chat.completions.create({
-            model: "gpt-4",
+          const completion = await routedChatCompletion({
+            orgId: govOrgId,
+            featureKey: "estimation.analyze",
+            priorContext: { orgId: govOrgId, scopeId: `estimate:${estimateId}` },
+            request: {
             messages: [
               {
                 role: "system",
@@ -3460,6 +3467,7 @@ Provide comprehensive financial analysis and recommendations.`
               }
             ],
             max_completion_tokens: 1500,
+            },
           });
           return {
             result: completion.choices[0]?.message?.content,

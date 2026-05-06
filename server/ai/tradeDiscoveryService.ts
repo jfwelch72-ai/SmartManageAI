@@ -1,5 +1,6 @@
 import { logError, logInfo } from "../utils/logger";
 import { openai, AI_MODEL_GPT5 } from './openaiClient';
+import { routedChatCompletion } from './providers';
 import { governedAiCall } from '../services/aiGovernance';
 import { db } from '../db';
 import { masterSowItems, masterModifierCategories, masterModifiers, tradeTypeEnum } from '@shared/schema';
@@ -150,14 +151,23 @@ Identify the primary trade and all related trades that would be involved in this
 
   try {
     const aiCallFn = async () => {
-      const completion = await openai.chat.completions.create({
-        model: AI_MODEL_GPT5,
-        messages: [
-          { role: 'system', content: TRADE_DISCOVERY_PROMPT },
-          { role: 'user', content: userPrompt },
-        ],
-        response_format: { type: 'json_object' },
-        max_completion_tokens: 2048,
+      // Task #2423 — route through provider abstraction. Trade discovery is
+      // typically the FIRST estimation-family call for a project, so it
+      // bootstraps the prior-context bridge ring keyed by project name.
+      const completion = await routedChatCompletion({
+        orgId: govContext?.orgId ?? "system",
+        featureKey: "estimation.trade_discovery",
+        priorContext: govContext && context.projectName
+          ? { orgId: govContext.orgId, scopeId: `project-name:${context.projectName}` }
+          : undefined,
+        request: {
+          messages: [
+            { role: 'system', content: TRADE_DISCOVERY_PROMPT },
+            { role: 'user', content: userPrompt },
+          ],
+          response_format: { type: 'json_object' },
+          max_completion_tokens: 2048,
+        },
       });
       return {
         result: completion.choices[0]?.message?.content,

@@ -1,4 +1,5 @@
 import { openai, AI_MODEL_GPT5 } from "./openaiClient";
+import { routedChatCompletion } from "./providers";
 import { governedAiCall, estimateCost } from "../services/aiGovernance";
 import { logInfo, logError } from "../utils/logger";
 
@@ -58,12 +59,17 @@ export async function extractPricingFromPDF(
       const base64Content = buffer.toString("base64");
       
       const visionFn = async () => {
-        const visionResponse = await openai.chat.completions.create({
-          model: AI_MODEL_GPT5,
-          messages: [
-            {
-              role: "system",
-              content: `You are an expert at extracting pricing data from vendor price lists and catalogs. 
+        // Task #2423 — route through provider abstraction. Vision parity is
+        // preserved: anthropicProvider auto-converts the `image_url` part
+        // (base64 PDF) into an Anthropic `document` block.
+        const visionResponse = await routedChatCompletion({
+          orgId: govContext?.orgId ?? "system",
+          featureKey: "estimation.vendor_price_extract",
+          request: {
+            messages: [
+              {
+                role: "system",
+                content: `You are an expert at extracting pricing data from vendor price lists and catalogs. 
 Extract all pricing items from the document into structured data.
 
 For each item found, extract:
@@ -77,26 +83,27 @@ For each item found, extract:
 - deliveryFee: Delivery fee (if specified)
 
 Return a JSON array of items. Be thorough and extract ALL pricing items visible in the document.`
-            },
-            {
-              role: "user",
-              content: [
-                {
-                  type: "image_url",
-                  image_url: {
-                    url: `data:application/pdf;base64,${base64Content}`,
-                    detail: "high"
+              },
+              {
+                role: "user",
+                content: [
+                  {
+                    type: "image_url",
+                    image_url: {
+                      url: `data:application/pdf;base64,${base64Content}`,
+                      detail: "high"
+                    }
+                  },
+                  {
+                    type: "text",
+                    text: `Extract all pricing items from this vendor price list. The effective quarter is ${effectiveQuarter}. Return as JSON array.`
                   }
-                },
-                {
-                  type: "text",
-                  text: `Extract all pricing items from this vendor price list. The effective quarter is ${effectiveQuarter}. Return as JSON array.`
-                }
-              ]
-            }
-          ],
-          response_format: { type: "json_object" },
-          max_completion_tokens: 4096,
+                ]
+              }
+            ],
+            response_format: { type: "json_object" },
+            max_completion_tokens: 4096,
+          },
         });
         return {
           result: visionResponse.choices[0]?.message?.content || "{}",
@@ -150,12 +157,15 @@ async function extractWithTextFallback(
   logInfo(`[VendorPriceExtractor] Attempting text-based extraction fallback`);
   
   const fallbackFn = async () => {
-    const response = await openai.chat.completions.create({
-      model: AI_MODEL_GPT5,
-      messages: [
-        {
-          role: "system",
-          content: `You are extracting pricing data from a construction vendor price list.
+    // Task #2423 — route through provider abstraction.
+    const response = await routedChatCompletion({
+      orgId: govContext?.orgId ?? "system",
+      featureKey: "estimation.vendor_price_extract_fallback",
+      request: {
+        messages: [
+          {
+            role: "system",
+            content: `You are extracting pricing data from a construction vendor price list.
 Generate realistic pricing items based on common construction materials.
 
 Return JSON with an "items" array containing objects with:
@@ -163,14 +173,15 @@ Return JSON with an "items" array containing objects with:
 
 Categories: ${MATERIAL_CATEGORIES.slice(0, 10).join(", ")}
 Units: ${UNIT_TYPES.slice(0, 10).join(", ")}`
-        },
-        {
-          role: "user",
-          content: `Generate 10-15 sample pricing items for a construction vendor catalog, effective ${effectiveQuarter}.`
-        }
-      ],
-      response_format: { type: "json_object" },
-      max_completion_tokens: 2048,
+          },
+          {
+            role: "user",
+            content: `Generate 10-15 sample pricing items for a construction vendor catalog, effective ${effectiveQuarter}.`
+          }
+        ],
+        response_format: { type: "json_object" },
+        max_completion_tokens: 2048,
+      },
     });
     return {
       result: response.choices[0]?.message?.content || "{}",

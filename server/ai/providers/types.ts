@@ -94,4 +94,19 @@ export type TakeoffFeatureKey =
   // Task #2415 — Claude-powered summarizer that turns EDIT-type feedback
   // events into short qualitative "lessons" written into the knowledge
   // index. Uses JSON mode + ≤300 tokens, fire-and-forget.
-  | "ai_estimator.lesson";
+  | "ai_estimator.lesson"
+  // Task #2423 — Estimation-family migrations onto the provider router so
+  // Claude (when AI_PROVIDER_TAKEOFF is on) becomes the primary AI for ALL
+  // estimating/takeoff features, not just the AI Estimator.
+  | "estimation.analyze"
+  | "estimation.scope_predict"
+  | "estimation.win_probability"
+  | "estimation.vendor_price_extract"
+  | "estimation.vendor_price_extract_fallback"
+  | "estimation.trade_discovery"
+  | "estimation.module_analyze.scheduling"
+  | "estimation.module_analyze.delays"
+  | "estimation.module_analyze.costs"
+  | "estimation.module_analyze.equipment"
+  | "estimation.module_analyze.vendor_pricing"
+  | "estimation.module_analyze.project_health";

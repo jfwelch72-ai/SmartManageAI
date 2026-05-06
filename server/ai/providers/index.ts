@@ -17,15 +17,22 @@ import { logWarn, logInfo } from "../../utils/logger";
 import { openaiProvider } from "./openaiProvider";
 import { anthropicProvider } from "./anthropicProvider";
 import { isFeatureEnabled } from "../../services/featureFlagService";
+import {
+  buildPriorContextSystemMessage,
+  capturePriorContext,
+  type PriorContextScope,
+} from "../priorContextBridge";
 import type {
   AiChatRequest,
   AiChatResponse,
+  AiMessage,
   AiProvider,
   AiProviderName,
   TakeoffFeatureKey,
 } from "./types";
 
 export type { AiChatRequest, AiChatResponse, AiProviderName, TakeoffFeatureKey } from "./types";
+export type { PriorContextScope } from "../priorContextBridge";
 
 interface ResolvedRouting {
   primary: AiProvider;
@@ -93,10 +100,29 @@ export interface RouteOptions {
    * secondary provider. Tests can pass false to assert raw provider behavior.
    */
   allowFallback?: boolean;
+  /**
+   * Task #2423 — opt-in OpenAI→Claude prior-context bridge. When provided,
+   * successful responses are captured into an in-memory ring keyed by
+   * (orgId, scopeId), and Anthropic-routed calls get the trail prepended as
+   * a system message so Claude can orchestrate across sibling features.
+   * Omit when the call has no meaningful project/bid scope (e.g. trade
+   * discovery before a project exists, vendor PDF extraction).
+   */
+  priorContext?: PriorContextScope;
+}
+
+function withPriorContextSystem(
+  request: AiChatRequest,
+  scope: PriorContextScope,
+): AiChatRequest {
+  const priorMsg = buildPriorContextSystemMessage(scope);
+  if (!priorMsg) return request;
+  const injected: AiMessage = { role: "system", content: priorMsg };
+  return { ...request, messages: [injected, ...request.messages] };
 }
 
 export async function routedChatCompletion(opts: RouteOptions): Promise<AiChatResponse> {
-  const { orgId, featureKey, request } = opts;
+  const { orgId, featureKey, priorContext } = opts;
   const allowFallback = opts.allowFallback !== false;
   const routing = await resolveRouting(orgId);
 
@@ -107,9 +133,15 @@ export async function routedChatCompletion(opts: RouteOptions): Promise<AiChatRe
     });
   }
 
+  // Inject prior-context only when the resolved primary is Anthropic. This
+  // keeps existing OpenAI-default tenants on a byte-identical request shape.
+  const primaryRequest = priorContext && routing.primary.name === "anthropic"
+    ? withPriorContextSystem(opts.request, priorContext)
+    : opts.request;
+
+  let result: AiChatResponse;
   try {
-    const result = await routing.primary.chatCompletion(request);
-    return result;
+    result = await routing.primary.chatCompletion(primaryRequest);
   } catch (primaryErr) {
     if (!allowFallback || !routing.secondary || !isRetryableError(primaryErr)) {
       throw primaryErr;
@@ -121,16 +153,33 @@ export async function routedChatCompletion(opts: RouteOptions): Promise<AiChatRe
       secondary: routing.secondary.name,
       error: primaryErr instanceof Error ? primaryErr.message : String(primaryErr),
     });
-    const secondaryResult = await routing.secondary.chatCompletion(request);
-    secondaryResult.fallbackUsed = true;
+    // The secondary call uses the original (un-injected) request unless the
+    // secondary itself is Anthropic — in practice it never is (secondary is
+    // always OpenAI today), but we keep the conditional for symmetry.
+    const secondaryRequest = priorContext && routing.secondary.name === "anthropic"
+      ? withPriorContextSystem(opts.request, priorContext)
+      : opts.request;
+    result = await routing.secondary.chatCompletion(secondaryRequest);
+    result.fallbackUsed = true;
     logInfo("AI fallback succeeded", {
       orgId,
       featureKey,
-      provider: secondaryResult.provider,
-      latencyMs: secondaryResult.latencyMs,
+      provider: result.provider,
+      latencyMs: result.latencyMs,
     });
-    return secondaryResult;
   }
+
+  if (priorContext) {
+    capturePriorContext({
+      scope: priorContext,
+      featureKey,
+      provider: result.provider,
+      model: result.model,
+      responseText: result.choices[0]?.message?.content ?? null,
+    });
+  }
+
+  return result;
 }
 
 /**

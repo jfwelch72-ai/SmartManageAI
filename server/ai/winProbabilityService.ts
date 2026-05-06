@@ -3,6 +3,7 @@ import { db } from "../db";
 import { crmOpportunities, crmOpportunityActivities, bids, type CrmOpportunity } from "@shared/schema";
 import { eq, and, sql, count } from "drizzle-orm";
 import { openai, AI_MODEL_GPT5 } from "./openaiClient";
+import { routedChatCompletion } from "./providers";
 import { governedAiCall } from "../services/aiGovernance";
 
 interface WinProbabilityResult {
@@ -108,17 +109,23 @@ Respond ONLY with valid JSON: {"score": <number>, "rationale": "<string>"}`;
       actionType: "crm_win_probability",
       inputRefs: { opportunityId },
       fn: async () => {
-        const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT5,
-          messages: [
-            { role: "system", content: systemContent },
-            { role: "user", content: `Score this deal:\n${JSON.stringify(dealAttributes, null, 2)}` },
-          ],
-          response_format: { type: "json_object" },
-          max_completion_tokens: 200,
+        // Task #2423 — route through provider abstraction (Claude primary
+        // when AI_PROVIDER_TAKEOFF is on for this org).
+        const completion = await routedChatCompletion({
+          orgId,
+          featureKey: "estimation.win_probability",
+          priorContext: { orgId, scopeId: `opportunity:${opportunityId}` },
+          request: {
+            messages: [
+              { role: "system", content: systemContent },
+              { role: "user", content: `Score this deal:\n${JSON.stringify(dealAttributes, null, 2)}` },
+            ],
+            response_format: { type: "json_object" },
+            max_completion_tokens: 200,
+          },
         });
         const content = completion.choices[0]?.message?.content;
-        if (!content) throw new Error("No response from OpenAI");
+        if (!content) throw new Error("No response from AI");
         return { result: JSON.parse(content), completion };
       },
     });

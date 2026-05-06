@@ -20,6 +20,7 @@ import {
 } from "@shared/schema";
 import { eq, desc, sql, and, gte, lte, isNull } from "drizzle-orm";
 import { openai, AI_MODEL_GPT5 } from "./openaiClient";
+import { routedChatCompletion } from "./providers";
 
 export interface ModuleAnalysisResult {
   insights: {
@@ -170,18 +171,25 @@ Respond with JSON in this format:
       actionType: "module_analyze_scheduling",
       inputRefs: { projectId },
       fn: async () => {
-        const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT5,
-          messages: [
-            { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
-            { role: 'user', content: userPrompt },
-          ],
-          response_format: { type: 'json_object' },
-          max_completion_tokens: 4096,
+        // Task #2423 — route through provider abstraction.
+        const completion = await routedChatCompletion({
+          orgId: organizationId,
+          featureKey: "estimation.module_analyze.scheduling",
+          priorContext: projectId
+            ? { orgId: organizationId, scopeId: `project:${projectId}` }
+            : { orgId: organizationId },
+          request: {
+            messages: [
+              { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
+              { role: 'user', content: userPrompt },
+            ],
+            response_format: { type: 'json_object' },
+            max_completion_tokens: 4096,
+          },
         });
 
         const content = completion.choices[0]?.message?.content;
-        if (!content) throw new Error('No response from OpenAI');
+        if (!content) throw new Error('No response from AI');
 
         return { result: JSON.parse(content), completion };
       },
@@ -308,17 +316,24 @@ Respond with JSON in this format:
       actionType: "module_analyze_delays",
       inputRefs: { projectId },
       fn: async () => {
-        const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT5,
-          messages: [
-            { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
-            { role: 'user', content: userPrompt },
-          ],
-          response_format: { type: 'json_object' },
-          max_completion_tokens: 4096,
+        // Task #2423 — route through provider abstraction.
+        const completion = await routedChatCompletion({
+          orgId: organizationId!,
+          featureKey: "estimation.module_analyze.delays",
+          priorContext: projectId
+            ? { orgId: organizationId!, scopeId: `project:${projectId}` }
+            : { orgId: organizationId! },
+          request: {
+            messages: [
+              { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
+              { role: 'user', content: userPrompt },
+            ],
+            response_format: { type: 'json_object' },
+            max_completion_tokens: 4096,
+          },
         });
         const content = completion.choices[0]?.message?.content;
-        if (!content) throw new Error('No response from OpenAI');
+        if (!content) throw new Error('No response from AI');
         return { result: JSON.parse(content), completion };
       },
     });
@@ -463,17 +478,24 @@ Respond with JSON in this format:
       actionType: "module_analyze_costs",
       inputRefs: { projectId },
       fn: async () => {
-        const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT5,
-          messages: [
-            { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
-            { role: 'user', content: userPrompt },
-          ],
-          response_format: { type: 'json_object' },
-          max_completion_tokens: 4096,
+        // Task #2423 — route through provider abstraction.
+        const completion = await routedChatCompletion({
+          orgId: organizationId!,
+          featureKey: "estimation.module_analyze.costs",
+          priorContext: projectId
+            ? { orgId: organizationId!, scopeId: `project:${projectId}` }
+            : { orgId: organizationId! },
+          request: {
+            messages: [
+              { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
+              { role: 'user', content: userPrompt },
+            ],
+            response_format: { type: 'json_object' },
+            max_completion_tokens: 4096,
+          },
         });
         const content = completion.choices[0]?.message?.content;
-        if (!content) throw new Error('No response from OpenAI');
+        if (!content) throw new Error('No response from AI');
         return { result: JSON.parse(content), completion };
       },
     });
@@ -604,17 +626,22 @@ Respond with JSON in this format:
       actionType: "module_analyze_equipment",
       inputRefs: {},
       fn: async () => {
-        const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT5,
-          messages: [
-            { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
-            { role: 'user', content: userPrompt },
-          ],
-          response_format: { type: 'json_object' },
-          max_completion_tokens: 4096,
+        // Task #2423 — route through provider abstraction.
+        const completion = await routedChatCompletion({
+          orgId: organizationId!,
+          featureKey: "estimation.module_analyze.equipment",
+          priorContext: { orgId: organizationId! },
+          request: {
+            messages: [
+              { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
+              { role: 'user', content: userPrompt },
+            ],
+            response_format: { type: 'json_object' },
+            max_completion_tokens: 4096,
+          },
         });
         const content = completion.choices[0]?.message?.content;
-        if (!content) throw new Error('No response from OpenAI');
+        if (!content) throw new Error('No response from AI');
         return { result: JSON.parse(content), completion };
       },
     });
@@ -748,17 +775,22 @@ Respond with JSON in this format:
       actionType: "module_analyze_vendor_pricing",
       inputRefs: {},
       fn: async () => {
-        const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT5,
-          messages: [
-            { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
-            { role: 'user', content: userPrompt },
-          ],
-          response_format: { type: 'json_object' },
-          max_completion_tokens: 4096,
+        // Task #2423 — route through provider abstraction.
+        const completion = await routedChatCompletion({
+          orgId: organizationId!,
+          featureKey: "estimation.module_analyze.vendor_pricing",
+          priorContext: { orgId: organizationId! },
+          request: {
+            messages: [
+              { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
+              { role: 'user', content: userPrompt },
+            ],
+            response_format: { type: 'json_object' },
+            max_completion_tokens: 4096,
+          },
         });
         const content = completion.choices[0]?.message?.content;
-        if (!content) throw new Error('No response from OpenAI');
+        if (!content) throw new Error('No response from AI');
         return { result: JSON.parse(content), completion };
       },
     });
@@ -891,17 +923,24 @@ Respond with JSON in this format:
       actionType: "module_analyze_project_health",
       inputRefs: { projectId },
       fn: async () => {
-        const completion = await openai.chat.completions.create({
-          model: AI_MODEL_GPT5,
-          messages: [
-            { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
-            { role: 'user', content: userPrompt },
-          ],
-          response_format: { type: 'json_object' },
-          max_completion_tokens: 4096,
+        // Task #2423 — route through provider abstraction.
+        const completion = await routedChatCompletion({
+          orgId: orgId || "unknown",
+          featureKey: "estimation.module_analyze.project_health",
+          priorContext: orgId
+            ? { orgId, scopeId: `project:${projectId}` }
+            : undefined,
+          request: {
+            messages: [
+              { role: 'system', content: AI_MODULE_SYSTEM_PROMPT },
+              { role: 'user', content: userPrompt },
+            ],
+            response_format: { type: 'json_object' },
+            max_completion_tokens: 4096,
+          },
         });
         const content = completion.choices[0]?.message?.content;
-        if (!content) throw new Error('No response from OpenAI');
+        if (!content) throw new Error('No response from AI');
         return { result: JSON.parse(content), completion };
       },
     });
