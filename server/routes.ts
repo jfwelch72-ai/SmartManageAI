@@ -156,7 +156,7 @@ import { createArcSegment } from "@shared/utils/geometry";
 import { seedCoreTradeModifierCategories } from "./seedTradeExpansion";
 import { generateInternalBidSummaryPDF, generateCustomerQuotePDF } from "./pdf-service";
 import { getOrgIdForFilter, verifyOrgAccess, verifyUserOrgAccess, isSuperAdmin } from "./orgFilter";
-import bidRoutes2 from "./bidRoutes2";
+import bidRoutes2 from "./bidRoutes";
 import takeoffSheetRoutes from "./takeoffSheetRoutes";
 import takeoffIssueRoutes from "./takeoffIssueRoutes";
 import takeoffMeasurementRoutes from "./takeoffMeasurementRoutes";

@@ -158,8 +158,11 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   },
   "0042_swppp_corrective_action_status.sql": { helper: "ensureSwpppCorrectiveActionStatus" },
   "0043_certified_payroll_archive_columns.sql": { helper: "ensureCertifiedPayrollArchiveColumns" },
-  "0044_dot_pay_item_match_history.sql": { helper: "ensureDotPayItemMatchHistory" },
-  "0044_swppp_overdue_notification_marker.sql": { helper: "ensureSwpppOverdueNotificationColumn" },
+  // Task #2432 — renamed 0044_dot_pay_item_match_history.sql → 0085 to
+  // resolve a 0044 filename collision left over from parallel branches.
+  "0085_dot_pay_item_match_history.sql": { helper: "ensureDotPayItemMatchHistory" },
+  // Task #2432 — renamed 0044_swppp_overdue_notification_marker.sql → 0086.
+  "0086_swppp_overdue_notification_marker.sql": { helper: "ensureSwpppOverdueNotificationColumn" },
   "0044_certified_payroll_archived_retention.sql": { helper: "ensureCertifiedPayrollArchivedRetention" },
   // Task #1247 — batch_id column + (organization_id, batch_id) index on
   // dot_pay_item_match_history so the post-import toast can one-click
@@ -173,14 +176,16 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   // nullable notification_type_prefs.in_app_enabled column. The enum
   // value is added by ensureNotificationEnumValues; the nullable
   // ADD COLUMN is auto-applied by reconcileSchemaDrift (Task #1075).
-  "0045_swppp_overdue_notification_pref.sql": {
+  // Task #2432 — renamed 0045_swppp_overdue_notification_pref.sql → 0087.
+  "0087_swppp_overdue_notification_pref.sql": {
     helper: "ensureNotificationEnumValues",
     note: "Task #1260 — SWPPP_OVERDUE_CORRECTIVE_ACTION added to ensureNotificationEnumValues; companion notification_type_prefs.in_app_enabled nullable ADD COLUMN auto-applied by reconcileSchemaDrift",
   },
   // Task #1259 — swppp_inspections.overdue_reminder_count counter for
   // the follow-up reminder cap. Idempotent ADD COLUMN with a default so
   // reconcileSchemaDrift (Task #1075) auto-applies it on fresh dev DBs.
-  "0045_swppp_overdue_reminder_count.sql": {
+  // Task #2432 — renamed 0045_swppp_overdue_reminder_count.sql → 0088.
+  "0088_swppp_overdue_reminder_count.sql": {
     skip: "(A) idempotent ADD COLUMN with default — reconcileSchemaDrift auto-adds (Task #1075)",
   },
   // Task #491 — plan_documents org scope (new enum, scope/organization_id
@@ -195,12 +200,14 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   // Task #494 — nullable projects.wage_decision text column used by the
   // WH-347 generator to fall back to cached DOL prevailing-wage rates.
   // Idempotent ADD COLUMN auto-applied by reconcileSchemaDrift.
-  "0046_projects_wage_decision.sql": {
+  // Task #2432 — renamed 0046_projects_wage_decision.sql → 0089.
+  "0089_projects_wage_decision.sql": {
     skip: "(A) idempotent nullable ADD COLUMN — reconcileSchemaDrift auto-adds (Task #1075)",
   },
   // Task #1286 — per-org SWPPP overdue reminder cap + interval columns
   // on the organizations table. See ensureSwpppOverdueReminderSettings.
-  "0046_swppp_overdue_reminder_settings.sql": { helper: "ensureSwpppOverdueReminderSettings" },
+  // Task #2432 — renamed 0046_swppp_overdue_reminder_settings.sql → 0090.
+  "0090_swppp_overdue_reminder_settings.sql": { helper: "ensureSwpppOverdueReminderSettings" },
   // Task #1314 — extend feature_flag_preset_applications with kind +
   // flag_keys columns so drift-reset audit rows surface in the Preset
   // history card. Idempotent ADD COLUMN IF NOT EXISTS handled by the
@@ -260,17 +267,20 @@ export const migrationStartupCoverage: Record<string, MigrationCoverageEntry> = 
   // overdue escalation sweep, plus an external-assignee email column
   // for the EXTERNAL_DOC_EMAIL fanout. Mirrored at boot by
   // ensureRfiOverdueColumns so fresh checkouts don't need drizzle-kit.
-  "0057_rfi_overdue_columns.sql": { helper: "ensureRfiOverdueColumns" },
+  // Task #2432 — renamed 0057_rfi_overdue_columns.sql → 0091.
+  "0091_rfi_overdue_columns.sql": { helper: "ensureRfiOverdueColumns" },
   // Task #1599 — same per-row bookkeeping for submittal_reviews + a
   // reviewer_email column for external A/E reviewers.
-  "0057_submittal_review_overdue_columns.sql": { helper: "ensureSubmittalReviewOverdueColumns" },
+  // Task #2432 — renamed 0057_submittal_review_overdue_columns.sql → 0093.
+  "0093_submittal_review_overdue_columns.sql": { helper: "ensureSubmittalReviewOverdueColumns" },
   // Task #1599 — per-org cap + cadence for the document-control overdue
   // sweeps (mirrors the SWPPP per-org policy column pair).
   "0057_doc_overdue_reminder_settings.sql": { helper: "ensureDocOverdueReminderSettings" },
   // Task #1600 — Sage Intacct chart-of-accounts mapping table that
   // backs the admin Sage mapping panel and the periodic XML Gateway
   // sync. Mirrored at boot by ensureSageAccountMappingsTable.
-  "0057_sage_account_mappings.sql": { helper: "ensureSageAccountMappingsTable" },
+  // Task #2432 — renamed 0057_sage_account_mappings.sql → 0092.
+  "0092_sage_account_mappings.sql": { helper: "ensureSageAccountMappingsTable" },
   // Task #1614 — adds subcontractor_portal_tokens.token_lookup_hash +
   // a btree index on it so requirePortalAuth can index-fetch the single
   // candidate row instead of bcrypt-scanning every active token.
