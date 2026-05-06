@@ -203,14 +203,49 @@ SELECT count(*) FROM rate_limit_state WHERE window_expires_at < now();
 If this number grows over hours/days, the prune is not running. Check
 the Super Admin job-metrics dashboard for the pruner's name.
 
+## Cross-replica messaging fan-out (Task #2440)
+
+The unified messaging SSE rooms in `server/messagingEvents.ts` are
+in-process maps. Under autoscale, every emit is now mirrored across
+pods via Postgres LISTEN/NOTIFY (`server/messagingBus.ts`):
+
+- Each pod generates a unique `PEER_POD_ID` at boot.
+- `emit*` functions deliver locally first, then call
+  `publishMessagingEvent(...)`, which executes `pg_notify('messaging_events', json)`.
+- A dedicated `pg.Client` LISTENs on `messaging_events` per pod. The
+  envelope's `podId` is checked so the originator ignores its own echo.
+- Typing exclusion (`__excludeUserId`) is encoded in the payload so peers
+  honour the same suppression rule.
+- Oversized envelopes (>7800 bytes) are dropped cross-pod with a warning;
+  local delivery still succeeds. (Chat messages comfortably fit.)
+
+### Verifying fan-out on a 2-pod deployment
+
+1. Open the messaging UI as user A on pod-1 (force-refresh until
+   `x-served-by` or similar header confirms the pod).
+2. Open the same conversation as user B on pod-2.
+3. Send a message from user A → user B should see it in <500 ms.
+4. Begin typing as user A → user B sees the typing indicator (and
+   user A does not echo).
+5. Start a call (`emitCallStarted`) → both users see it ringing.
+
+To trace a single envelope from the DB side, attach `psql` to the same
+DB and run:
+
+```sql
+LISTEN messaging_events;
+```
+
+Every published event will print as an asynchronous notification
+(`Asynchronous notification "messaging_events" with payload "..."`).
+
+The regression suite lives at
+`server/__tests__/multi-instance/messaging-bus.test.ts`.
+
 ## Deferred / out-of-scope items
 
 These are not blockers for autoscale but are worth knowing:
 
-- **WebSocket fan-out.** The unified messaging system uses in-process
-  WS rooms. Two replicas hosting two halves of a conversation will
-  not see each other's messages until a pub/sub bus is added. Tracked
-  separately.
 - **In-process LRU caches** beyond `authUserCache` (e.g. feature-flag
   cache) still have per-process TTLs. They self-correct within their
   TTL window and do not affect correctness.

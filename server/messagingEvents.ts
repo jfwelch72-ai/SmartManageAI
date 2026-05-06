@@ -1,5 +1,11 @@
 import { logWarn } from "./utils/logger";
 import type { Response } from "express";
+import {
+  publishMessagingEvent,
+  setMessagingBusHandler,
+  type MessagingBusEnvelope,
+  type MessagingBusEvent,
+} from "./messagingBus";
 
 interface SseClient {
   id: string;
@@ -51,6 +57,82 @@ function sendEvent(client: SseClient, event: string, data: unknown): void {
 }
 
 /**
+ * Local fan-out: deliver `event`/`payload` to every locally-connected
+ * SSE client in `participantUserIds` whose orgId matches.
+ *
+ * Used by both the direct emit* helpers (originating-pod path) and the
+ * cross-pod LISTEN/NOTIFY subscriber in `messagingBus.ts`. The optional
+ * `excludeUserId` skips one user (typing indicator suppresses echo to
+ * the typer).
+ */
+function deliverLocally(
+  event: string,
+  orgId: string,
+  participantUserIds: Iterable<string>,
+  payload: unknown,
+  excludeUserId?: string,
+): void {
+  const ids = Array.isArray(participantUserIds)
+    ? participantUserIds
+    : Array.from(participantUserIds);
+  for (const uid of ids) {
+    if (excludeUserId && uid === excludeUserId) continue;
+    for (const client of getClientsForUser(uid)) {
+      if (client.orgId === orgId) {
+        sendEvent(client, event, payload);
+      }
+    }
+  }
+}
+
+/**
+ * Fan out an event:
+ *  1. Deliver immediately to local SSE clients (no DB hop).
+ *  2. Publish to the cross-pod bus so peers can deliver to their
+ *     own connected clients. Peers ignore the echo via `podId`.
+ *
+ * `excludeUserId` (typing indicator) is encoded into the bus payload so
+ * peers honour the same suppression rule.
+ */
+function fanout(
+  busEvent: MessagingBusEvent,
+  sseEvent: string,
+  orgId: string,
+  conversationId: string,
+  participantUserIds: ReadonlySet<string>,
+  payload: Record<string, unknown>,
+  excludeUserId?: string,
+): void {
+  const ids = Array.from(participantUserIds);
+  deliverLocally(sseEvent, orgId, ids, payload, excludeUserId);
+  void publishMessagingEvent(
+    busEvent,
+    orgId,
+    conversationId,
+    ids,
+    excludeUserId ? { ...payload, __excludeUserId: excludeUserId } : payload,
+  );
+}
+
+/** Map a bus event back to the SSE event name and excludeUserId hint. */
+function dispatchBusEnvelope(env: MessagingBusEnvelope): void {
+  const { event, orgId, participantUserIds, payload } = env;
+  const excludeUserId =
+    typeof payload.__excludeUserId === "string" ? payload.__excludeUserId : undefined;
+  const cleanPayload: Record<string, unknown> = { ...payload };
+  delete cleanPayload.__excludeUserId;
+  // Ensure conversationId is present in the SSE payload (every emitter
+  // includes it). It already lives on the envelope, so add it here for
+  // safety in case a future event ships only payload-side fields.
+  if (!("conversationId" in cleanPayload)) {
+    cleanPayload.conversationId = env.conversationId;
+  }
+  deliverLocally(event, orgId, participantUserIds, cleanPayload, excludeUserId);
+}
+
+setMessagingBusHandler(dispatchBusEnvelope);
+
+/**
  * Emit a new message event.
  * Only delivered to clients whose userId is in `participantUserIds` (conversation membership check).
  * This prevents cross-conversation data leakage within the same org.
@@ -61,13 +143,10 @@ export function emitMessageNew(
   participantUserIds: ReadonlySet<string>,
   message: unknown,
 ): void {
-  for (const uid of participantUserIds) {
-    for (const client of getClientsForUser(uid)) {
-      if (client.orgId === orgId) {
-        sendEvent(client, "message_new", { conversationId, message });
-      }
-    }
-  }
+  fanout("message_new", "message_new", orgId, conversationId, participantUserIds, {
+    conversationId,
+    message,
+  });
 }
 
 export function emitMessageEdited(
@@ -76,13 +155,10 @@ export function emitMessageEdited(
   participantUserIds: ReadonlySet<string>,
   message: unknown,
 ): void {
-  for (const uid of participantUserIds) {
-    for (const client of getClientsForUser(uid)) {
-      if (client.orgId === orgId) {
-        sendEvent(client, "message_edited", { conversationId, message });
-      }
-    }
-  }
+  fanout("message_edited", "message_edited", orgId, conversationId, participantUserIds, {
+    conversationId,
+    message,
+  });
 }
 
 export function emitMessageDeleted(
@@ -91,13 +167,10 @@ export function emitMessageDeleted(
   participantUserIds: ReadonlySet<string>,
   messageId: string,
 ): void {
-  for (const uid of participantUserIds) {
-    for (const client of getClientsForUser(uid)) {
-      if (client.orgId === orgId) {
-        sendEvent(client, "message_deleted", { conversationId, messageId });
-      }
-    }
-  }
+  fanout("message_deleted", "message_deleted", orgId, conversationId, participantUserIds, {
+    conversationId,
+    messageId,
+  });
 }
 
 export function emitMessageReaction(
@@ -107,13 +180,11 @@ export function emitMessageReaction(
   messageId: string,
   reactions: unknown,
 ): void {
-  for (const uid of participantUserIds) {
-    for (const client of getClientsForUser(uid)) {
-      if (client.orgId === orgId) {
-        sendEvent(client, "message_reaction", { conversationId, messageId, reactions });
-      }
-    }
-  }
+  fanout("message_reaction", "message_reaction", orgId, conversationId, participantUserIds, {
+    conversationId,
+    messageId,
+    reactions,
+  });
 }
 
 export function emitTyping(
@@ -124,14 +195,15 @@ export function emitTyping(
   firstName: string,
   lastName: string,
 ): void {
-  for (const uid of participantUserIds) {
-    if (uid === senderUserId) continue;
-    for (const client of getClientsForUser(uid)) {
-      if (client.orgId === orgId) {
-        sendEvent(client, "user_typing", { conversationId, userId: senderUserId, firstName, lastName });
-      }
-    }
-  }
+  fanout(
+    "user_typing",
+    "user_typing",
+    orgId,
+    conversationId,
+    participantUserIds,
+    { conversationId, userId: senderUserId, firstName, lastName },
+    senderUserId,
+  );
 }
 
 export function emitCallStarted(
@@ -140,13 +212,10 @@ export function emitCallStarted(
   participantUserIds: ReadonlySet<string>,
   call: unknown,
 ): void {
-  for (const uid of participantUserIds) {
-    for (const client of getClientsForUser(uid)) {
-      if (client.orgId === orgId) {
-        sendEvent(client, "call_started", { conversationId, call });
-      }
-    }
-  }
+  fanout("call_started", "call_started", orgId, conversationId, participantUserIds, {
+    conversationId,
+    call,
+  });
 }
 
 export function emitCallJoined(
@@ -157,13 +226,12 @@ export function emitCallJoined(
   userId: string,
   userName: string,
 ): void {
-  for (const uid of participantUserIds) {
-    for (const client of getClientsForUser(uid)) {
-      if (client.orgId === orgId) {
-        sendEvent(client, "call_joined", { conversationId, callId, userId, userName });
-      }
-    }
-  }
+  fanout("call_joined", "call_joined", orgId, conversationId, participantUserIds, {
+    conversationId,
+    callId,
+    userId,
+    userName,
+  });
 }
 
 export function emitCallLeft(
@@ -173,13 +241,11 @@ export function emitCallLeft(
   callId: string,
   userId: string,
 ): void {
-  for (const uid of participantUserIds) {
-    for (const client of getClientsForUser(uid)) {
-      if (client.orgId === orgId) {
-        sendEvent(client, "call_left", { conversationId, callId, userId });
-      }
-    }
-  }
+  fanout("call_left", "call_left", orgId, conversationId, participantUserIds, {
+    conversationId,
+    callId,
+    userId,
+  });
 }
 
 export function emitCallEnded(
@@ -188,12 +254,8 @@ export function emitCallEnded(
   participantUserIds: ReadonlySet<string>,
   callId: string,
 ): void {
-  for (const uid of participantUserIds) {
-    for (const client of getClientsForUser(uid)) {
-      if (client.orgId === orgId) {
-        sendEvent(client, "call_ended", { conversationId, callId });
-      }
-    }
-  }
+  fanout("call_ended", "call_ended", orgId, conversationId, participantUserIds, {
+    conversationId,
+    callId,
+  });
 }
-

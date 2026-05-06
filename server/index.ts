@@ -20,6 +20,7 @@ import { crmTaskReminderScheduler } from "./crmTaskReminderScheduler";
 import { crmBackfillAlertDigestScheduler } from "./crmBackfillAlertDigestScheduler";
 import { startCrmCsvImportWorker } from "./crmCsvImportWorker";
 import { initializeEventBus } from "./events";
+import { startMessagingBus } from "./messagingBus";
 import { startOrphanScanScheduler } from "./storageOrphanScanJob";
 import { startJobRunner } from "./jobs";
 import { startStatusProbeScheduler, runProbeSweep } from "./statusProbeScheduler";
@@ -321,6 +322,17 @@ app.use((req, res, next) => {
   // Initialize the internal domain event bus before listening to eliminate any
   // theoretical startup race where a request could arrive before listeners are wired.
   initializeEventBus();
+
+  // Task #2440 — wire the cross-replica messaging bus before any SSE
+  // client can connect, so the very first message published from this
+  // pod is also visible on peers.
+  startMessagingBus().catch((err) => {
+    logError(
+      "Failed to start cross-replica messaging bus",
+      {},
+      err instanceof Error ? err : new Error(String(err)),
+    );
+  });
 
   // Wire Gantt PDF queue/browser events to the alerter and start its monitor.
   onGanttPdfQueueFull(() => reportGanttPdfQueueFull());
