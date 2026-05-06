@@ -93,13 +93,60 @@ export class ObjectStorageService {
       const [metadata] = await file.getMetadata();
       const aclPolicy = await getObjectAclPolicy(file);
       const isPublic = aclPolicy?.visibility === "public";
-      
+      const totalSize = metadata.size != null ? Number(metadata.size) : NaN;
+      const contentType = metadata.contentType || "application/octet-stream";
+      const cacheControl = `${isPublic ? "public" : "private"}, max-age=${cacheTtlSec}`;
+
+      // Task #2405 — HTTP Range support so 25 GB takeoff PDFs stream
+      // through pdfjs's range loader without us forcing a full
+      // re-download for each byte window. We always advertise
+      // Accept-Ranges: bytes; if the request includes a satisfiable
+      // single-range header we reply 206 with Content-Range and pipe
+      // only the requested slice.
+      const rangeHeader = res.req?.headers?.range;
+      const parsedRange = parseSingleByteRange(rangeHeader, totalSize);
+
+      if (parsedRange) {
+        const { start, end } = parsedRange;
+        res.status(206);
+        res.set({
+          "Content-Type": contentType,
+          "Content-Length": String(end - start + 1),
+          "Content-Range": `bytes ${start}-${end}/${totalSize}`,
+          "Accept-Ranges": "bytes",
+          "Cache-Control": cacheControl,
+        });
+        const stream = file.createReadStream({ start, end });
+        stream.on("error", (err: Error) => {
+          logError("Stream error:", {}, err instanceof Error ? err : new Error(String(err)));
+          if (!res.headersSent) {
+            res.status(500).json({ error: "Failed to stream file" });
+          } else {
+            try { res.destroy(err); } catch { /* noop */ }
+          }
+        });
+        stream.pipe(res);
+        return;
+      }
+
+      // Reject malformed/unsatisfiable range requests with 416 so
+      // pdfjs (and other range-aware clients) fall back cleanly
+      // instead of receiving the whole file under a 200.
+      if (rangeHeader && Number.isFinite(totalSize)) {
+        res.status(416);
+        res.set({
+          "Content-Range": `bytes */${totalSize}`,
+          "Accept-Ranges": "bytes",
+        });
+        res.end();
+        return;
+      }
+
       res.set({
-        "Content-Type": metadata.contentType || "application/octet-stream",
+        "Content-Type": contentType,
         "Content-Length": metadata.size,
-        "Cache-Control": `${
-          isPublic ? "public" : "private"
-        }, max-age=${cacheTtlSec}`,
+        "Accept-Ranges": "bytes",
+        "Cache-Control": cacheControl,
       });
 
       const stream = file.createReadStream();
@@ -297,6 +344,40 @@ export class ObjectStorageService {
       aclPolicy,
     });
   }
+}
+
+/**
+ * Task #2405 — Parse a single-range `Range: bytes=start-end` header.
+ * Returns `null` for absent, malformed, multi-range, or unsatisfiable
+ * requests. The caller decides whether to reply 416 (range header
+ * present but not parseable) or 200 (no header at all).
+ */
+export function parseSingleByteRange(
+  header: string | undefined | null,
+  totalSize: number,
+): { start: number; end: number } | null {
+  if (!header || !Number.isFinite(totalSize) || totalSize <= 0) return null;
+  const match = /^bytes=(\d*)-(\d*)$/i.exec(header.trim());
+  if (!match) return null;
+  const startStr = match[1];
+  const endStr = match[2];
+  let start: number;
+  let end: number;
+  if (startStr === "" && endStr === "") return null;
+  if (startStr === "") {
+    // Suffix range: last N bytes.
+    const suffix = parseInt(endStr, 10);
+    if (!Number.isFinite(suffix) || suffix <= 0) return null;
+    start = Math.max(0, totalSize - suffix);
+    end = totalSize - 1;
+  } else {
+    start = parseInt(startStr, 10);
+    end = endStr === "" ? totalSize - 1 : parseInt(endStr, 10);
+  }
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  if (start < 0 || end < start || start >= totalSize) return null;
+  end = Math.min(end, totalSize - 1);
+  return { start, end };
 }
 
 export function parseObjectPath(path: string): {

@@ -72,10 +72,11 @@ export const ALLOWED_RECEIPT_TYPES = [
 // flow uses chunked/resumable uploads above 10 MB, so multi-GB uploads are
 // supported. Anything below this threshold should pass server-side validation
 // for every user-storage file type. Keep this large enough to cover huge
-// drawing sets (10+ GB) without ever silently rejecting a legitimate upload —
+// drawing sets (25+ GB) without ever silently rejecting a legitimate upload —
 // construction projects routinely upload many large plans, BIM, and LiDAR
-// files in the Plans & Takeoff step.
-export const MAX_STORAGE_FILE_SIZE = 20 * 1024 * 1024 * 1024; // 20 GB
+// files in the Plans & Takeoff step. Task #2405 lifted this from 20 → 32 GB
+// to cover full civil planset bundles up to 25 GB with headroom.
+export const MAX_STORAGE_FILE_SIZE = 32 * 1024 * 1024 * 1024; // 32 GB
 
 export const MAX_MEDIA_SIZE = MAX_STORAGE_FILE_SIZE;
 export const MAX_DOCUMENT_SIZE = MAX_STORAGE_FILE_SIZE;

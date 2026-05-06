@@ -281,14 +281,48 @@ class WorkerCanvasFactory {
   }
 }
 
+/**
+ * Task #2405 — When the URL points at our `/api/takeoff/sheets/:id/pdf`
+ * endpoint, first try the sibling `/pdf-url` endpoint to obtain a
+ * short-TTL signed GCS URL. That lets pdfjs's range loader talk to GCS
+ * directly (which natively supports HTTP Range) and bypass our Express
+ * proxy entirely, so a 25 GB planset isn't streamed through Node just
+ * for the trailer dictionary. On any failure we fall back to the
+ * authenticated proxy URL — `withCredentials: true` keeps the session
+ * cookie attached so range support in `downloadObject` kicks in.
+ */
+async function resolvePdfFetchUrl(
+  sheetUrl: string,
+): Promise<{ url: string; useCredentials: boolean }> {
+  const takeoffMatch = /\/api\/takeoff\/sheets\/([^/?#]+)\/pdf(?:[?#].*)?$/.exec(sheetUrl);
+  if (!takeoffMatch) return { url: sheetUrl, useCredentials: true };
+  const signedEndpoint = sheetUrl.replace(/\/pdf(?=[?#]|$)/, "/pdf-url");
+  try {
+    const res = await fetch(signedEndpoint, {
+      credentials: "include",
+      headers: { Accept: "application/json" },
+    });
+    if (res.ok) {
+      const body = (await res.json()) as { url?: string };
+      if (body && typeof body.url === "string" && body.url.length > 0) {
+        return { url: body.url, useCredentials: false };
+      }
+    }
+  } catch {
+    /* network/CORS — fall through to the authenticated proxy URL. */
+  }
+  return { url: sheetUrl, useCredentials: true };
+}
+
 async function loadDoc(sheetUrl: string): Promise<PDFDocumentProxy> {
   let p = docCache.get(sheetUrl);
   if (p) return p;
   p = (async () => {
     const pdfjsLib = await pdfjsLibPromise;
+    const resolved = await resolvePdfFetchUrl(sheetUrl);
     const task = pdfjsLib.getDocument({
-      url: sheetUrl,
-      withCredentials: true,
+      url: resolved.url,
+      withCredentials: resolved.useCredentials,
       // See WorkerCanvasFactory above — without this, pdfjs falls back
       // to `DOMCanvasFactory` and crashes the first time it needs a
       // scratch canvas in this worker context.

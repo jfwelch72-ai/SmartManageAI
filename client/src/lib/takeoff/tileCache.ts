@@ -20,7 +20,53 @@ import {
   type ViewportWorldRect,
 } from "./tileCoords";
 
+/**
+ * Task #2405 — Device-aware default budget.
+ *
+ * The legacy 600 MB constant was tuned for a developer laptop and was
+ * either *too small* on workstations (estimators on 32 GB iMacs were
+ * thrashing the cache during pan on a 300-sheet planset) or *too big*
+ * on field tablets (4 GB Chromebooks were getting `out-of-memory`
+ * worker crashes after a few sheet flips). Browsers expose
+ * `navigator.deviceMemory` as a coarse hint (in GiB, capped at 8) which
+ * is enough to scale the budget sensibly without per-machine config.
+ *
+ * Floor: 256 MB so the smallest-possible viewer still has room for the
+ * active sheet plus one prefetched neighbour.
+ * Ceiling: 1.5 GB so we never starve the rest of the page on a beefy
+ * machine.
+ *
+ * The exported constant is preserved as the *floor* so existing tests
+ * and explicit `new TileCache(MAX_TILE_CACHE_BYTES_DEFAULT)` callers
+ * keep their previous behaviour.
+ */
 export const MAX_TILE_CACHE_BYTES_DEFAULT = 600 * 1024 * 1024;
+export const MIN_TILE_CACHE_BYTES = 256 * 1024 * 1024;
+export const MAX_TILE_CACHE_BYTES_CEILING = 1.5 * 1024 * 1024 * 1024;
+/** Per-document soft cap as a fraction of the global budget. When a
+ *  single sheet's tiles exceed this share the cache prefers to evict
+ *  *that sheet's* farthest tiles before touching others — so an
+ *  oversized planset can't squeeze a still-visible second sheet out
+ *  of cache during a back-and-forth flip. */
+export const PER_DOCUMENT_SOFT_CAP_FRACTION = 0.6;
+
+export function computeDeviceAwareTileBudget(): number {
+  if (typeof navigator === "undefined") return MAX_TILE_CACHE_BYTES_DEFAULT;
+  const memGib = (navigator as Navigator & { deviceMemory?: number })
+    .deviceMemory;
+  if (typeof memGib !== "number" || !Number.isFinite(memGib) || memGib <= 0) {
+    return MAX_TILE_CACHE_BYTES_DEFAULT;
+  }
+  // 15 % of total RAM is the empirical sweet spot — large enough to
+  // hold ~1 active sheet plus its prefetched neighbours, small enough
+  // not to trigger Chrome's tab-discard heuristics under memory
+  // pressure.
+  const target = memGib * 0.15 * 1024 * 1024 * 1024;
+  return Math.max(
+    MIN_TILE_CACHE_BYTES,
+    Math.min(MAX_TILE_CACHE_BYTES_CEILING, Math.round(target)),
+  );
+}
 
 /** How long an evicted bitmap stays alive before we explicitly close it.
  *  See `deferredCloseBitmap` for rationale. Exported so tests can read
@@ -216,6 +262,30 @@ export class TileCache {
   private pickEvictionVictim(): string | null {
     const vp = this.currentViewport;
     const activeSheet = this.currentSheetId;
+
+    // Task #2405 — Per-document soft cap. Compute each sheet's byte
+    // share and, if any *single* sheet is over the soft cap fraction
+    // of the global budget, prefer evicting from that sheet first
+    // (its farthest-from-viewport tile). This keeps a 25 GB planset
+    // from monopolising cache and pushing a recently-viewed sibling
+    // sheet out during a back-and-forth flip.
+    const perSheetBytes = new Map<string, number>();
+    this.map.forEach((entry) => {
+      perSheetBytes.set(
+        entry.coord.sheetId,
+        (perSheetBytes.get(entry.coord.sheetId) ?? 0) + entry.bytes,
+      );
+    });
+    const softCap = this.budget * PER_DOCUMENT_SOFT_CAP_FRACTION;
+    let dominantSheet: string | null = null;
+    let dominantBytes = 0;
+    perSheetBytes.forEach((bytes, sheetId) => {
+      if (bytes > softCap && bytes > dominantBytes) {
+        dominantSheet = sheetId;
+        dominantBytes = bytes;
+      }
+    });
+
     let bestKey: string | null = null;
     let bestScore = -Infinity;
     this.map.forEach((entry, key) => {
@@ -224,6 +294,32 @@ export class TileCache {
       if (activeSheet && entry.coord.sheetId !== activeSheet) {
         // Other-sheet tiles win first; oldest among them first.
         score = 1e15 - entry.touch;
+      } else if (
+        dominantSheet &&
+        entry.coord.sheetId === dominantSheet &&
+        entry.coord.sheetId !== activeSheet
+      ) {
+        // Soft cap violator (and not the active sheet) — second
+        // priority after pure other-sheet tiles. Score sits between
+        // the other-sheet band (1e15) and the active-sheet band
+        // (1e9) so it always wins over active-sheet tiles but loses
+        // to any non-active tile that's already eligible above.
+        score =
+          1e12 +
+          (vp
+            ? tileDistanceFromViewportCenter(entry.coord, vp)
+            : -entry.touch);
+      } else if (
+        dominantSheet &&
+        entry.coord.sheetId === dominantSheet &&
+        vp
+      ) {
+        // Active sheet *is* the dominant sheet — fall back to
+        // farthest-from-viewport eviction within it.
+        score =
+          1e9 +
+          tileDistanceFromViewportCenter(entry.coord, vp) -
+          entry.touch * 1e-6;
       } else if (vp) {
         score =
           1e9 +

@@ -996,6 +996,126 @@ router.get(
   },
 );
 
+// Task #2405 — Resolve a sheet's PDF to a short-TTL signed GCS URL so the
+// browser can fetch the (potentially 25 GB) file directly from GCS using
+// HTTP Range requests, bypassing the Express server entirely. The PDF
+// worker hits this first and falls back to /pdf if the signed URL flow
+// is unavailable. Same auth/access checks as `/pdf` below.
+router.get(
+  "/api/takeoff/sheets/:sheetId/pdf-url",
+  requireAuth,
+  async (req: AuthRequest, res, next) => {
+    try {
+      const { sheetId } = req.params;
+      const { takeoffSheets, projectPlans, planDocuments, bidDocuments, bids } = await import("@shared/schema");
+      const orgId = req.user!.organizationId;
+      const isSuperAdmin = req.user!.role === "SUPER_ADMIN";
+
+      const access = await verifySheetAccess(sheetId, req.user!);
+      if (!access.allowed) {
+        res.status(access.sheet ? 403 : 404).json({ error: access.reason || "Sheet not found" });
+        return;
+      }
+
+      const [sheet] = await db.select().from(takeoffSheets).where(eq(takeoffSheets.id, sheetId)).limit(1);
+      if (!sheet) {
+        res.status(404).json({ error: "Sheet not found" });
+        return;
+      }
+
+      const { ObjectStorageService, objectStorageClient } = await import("./objectStorage");
+      const objectStorageService = new ObjectStorageService();
+
+      const resolveGcsFile = async (objectKey: string | null | undefined, gcsUrl: string | null | undefined) => {
+        if (objectKey && objectKey.startsWith("/objects/")) {
+          return objectStorageService.getObjectEntityFile(objectKey);
+        }
+        const rawUrl = objectKey || gcsUrl;
+        if (!rawUrl) return null;
+        if (rawUrl.startsWith("https://storage.googleapis.com/")) {
+          const url = new URL(rawUrl);
+          const parts = url.pathname.split("/").filter(Boolean);
+          if (parts.length < 2) return null;
+          const bucketName = parts[0];
+          const objectName = parts.slice(1).join("/");
+          const file = objectStorageClient.bucket(bucketName).file(objectName);
+          const [exists] = await file.exists();
+          return exists ? file : null;
+        }
+        try {
+          return await objectStorageService.getObjectEntityFile(rawUrl);
+        } catch {
+          return null;
+        }
+      };
+
+      let gcsFile: Awaited<ReturnType<typeof resolveGcsFile>> = null;
+      if (sheet.bidId) {
+        const bidConditions = isSuperAdmin
+          ? [eq(bids.id, sheet.bidId)]
+          : [eq(bids.id, sheet.bidId), eq(bids.gcOrganizationId, orgId!)];
+        const [bid] = await db.select({ id: bids.id }).from(bids).where(and(...bidConditions)).limit(1);
+        if (!bid) {
+          res.status(403).json({ error: "Access denied" });
+          return;
+        }
+        const [bidDoc] = await db.select({ objectKey: bidDocuments.objectKey, fileUrl: bidDocuments.fileUrl })
+          .from(bidDocuments)
+          .where(and(eq(bidDocuments.bidId, sheet.bidId), eq(bidDocuments.fileUrl, sheet.imageUrl)))
+          .limit(1);
+        gcsFile = await resolveGcsFile(bidDoc?.objectKey, bidDoc?.fileUrl ?? sheet.imageUrl);
+      } else if (sheet.projectId) {
+        const projectConditions = isSuperAdmin
+          ? [eq(projects.id, sheet.projectId)]
+          : [eq(projects.id, sheet.projectId), eq(projects.gcOrganizationId, orgId!)];
+        const [project] = await db.select({ id: projects.id }).from(projects).where(and(...projectConditions)).limit(1);
+        if (!project) {
+          res.status(404).json({ error: "Project not found" });
+          return;
+        }
+        if (sheet.planId) {
+          const [sheetWithDoc] = await db
+            .select({ objectKey: planDocuments.objectKey, fileUrl: planDocuments.fileUrl })
+            .from(takeoffSheets)
+            .leftJoin(projectPlans, eq(takeoffSheets.planId, projectPlans.id))
+            .leftJoin(planDocuments, eq(projectPlans.documentId, planDocuments.id))
+            .where(eq(takeoffSheets.id, sheetId))
+            .limit(1);
+          gcsFile = await resolveGcsFile(sheetWithDoc?.objectKey, sheetWithDoc?.fileUrl);
+        }
+        if (!gcsFile && sheet.imageUrl) {
+          gcsFile = await resolveGcsFile(sheet.imageUrl, null);
+        }
+      } else {
+        res.status(404).json({ error: "Sheet has no parent" });
+        return;
+      }
+
+      if (!gcsFile) {
+        res.status(404).json({ error: "No PDF file available for this sheet. Please re-import the document." });
+        return;
+      }
+
+      const ttlSec = 600;
+      const [signedUrl, metadata] = await Promise.all([
+        objectStorageService.getSignedDownloadUrl(gcsFile, ttlSec),
+        gcsFile.getMetadata().then(([m]) => m).catch(() => ({} as Record<string, unknown>)),
+      ]);
+      const size = metadata?.size != null ? Number(metadata.size) : null;
+      const contentType = (metadata?.contentType as string | undefined) || "application/pdf";
+      res.set("Cache-Control", "private, max-age=60");
+      res.json({
+        url: signedUrl,
+        size: Number.isFinite(size) ? size : null,
+        contentType,
+        expiresIn: ttlSec,
+      });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 // Stream PDF directly for a takeoff sheet (with authorization)
 router.get("/api/takeoff/sheets/:sheetId/pdf", requireAuth, async (req: AuthRequest, res, next) => {
   try {

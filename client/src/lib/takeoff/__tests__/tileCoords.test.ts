@@ -358,3 +358,72 @@ describe("TileCache viewport-aware eviction (Task #2138)", () => {
     expect(cache.has(farTile)).toBe(false);
   });
 });
+
+describe("Tile cache device-aware budget (Task #2405)", () => {
+  it("computes a budget within the [256 MB, 1.5 GB] band based on deviceMemory", async () => {
+    const { computeDeviceAwareTileBudget } = await import("../tileCache");
+    const g = globalThis as unknown as { navigator?: { deviceMemory?: number } };
+    const hadNavigator = "navigator" in g;
+    const originalNavigator = g.navigator;
+    try {
+      g.navigator = { deviceMemory: 32 };
+      const big = computeDeviceAwareTileBudget();
+      expect(big).toBeGreaterThanOrEqual(256 * 1024 * 1024);
+      expect(big).toBeLessThanOrEqual(1.5 * 1024 * 1024 * 1024);
+
+      g.navigator = { deviceMemory: 1 };
+      const small = computeDeviceAwareTileBudget();
+      expect(small).toBe(256 * 1024 * 1024);
+    } finally {
+      if (hadNavigator) {
+        g.navigator = originalNavigator;
+      } else {
+        delete g.navigator;
+      }
+    }
+  });
+});
+
+describe("TileCache per-document soft cap (Task #2405)", () => {
+  function makeFakeBitmap(): ImageBitmap {
+    return { width: 512, height: 512, close: () => undefined } as unknown as ImageBitmap;
+  }
+  function coord(sheetId: string, tileX: number, tileY = 0): TileCoord {
+    return { sheetId, pageIndex: 0, zoomBucket: 1, tileX, tileY };
+  }
+
+  it("prefers evicting tiles from a single sheet that exceeds the soft cap fraction", async () => {
+    const { TileCache, PER_DOCUMENT_SOFT_CAP_FRACTION } = await import(
+      "../tileCache"
+    );
+    const tileBytes = 512 * 512 * 4;
+    // Budget = 5 tiles. Soft cap = 60% × 5 = 3 tiles. We seed sheet A
+    // with 3 tiles and sheet B with 1 tile (no active sheet set), then
+    // add a 5th tile to A. Without per-doc soft cap, plain-LRU would
+    // evict the older "A" tile or B's tile arbitrarily. With the soft
+    // cap, A is dominant (4 > 3) so its farthest tile gets evicted
+    // before B's lone tile.
+    expect(PER_DOCUMENT_SOFT_CAP_FRACTION).toBeGreaterThan(0);
+    const cache = new TileCache(tileBytes * 5);
+    cache.setViewport({ x: 0, y: 0, w: 512, h: 512 }, null);
+
+    cache.set(coord("A", 0), makeFakeBitmap());
+    cache.set(coord("A", 1), makeFakeBitmap());
+    cache.set(coord("A", 2), makeFakeBitmap());
+    cache.set(coord("B", 0), makeFakeBitmap());
+    // 4 tiles cached — under budget.
+    expect(cache.has(coord("B", 0))).toBe(true);
+
+    // 5th + 6th A tiles push A to 5 of 6 — over the 60% soft cap on
+    // a 5-tile budget. Eviction should target A's farthest tile, not B.
+    cache.set(coord("A", 16), makeFakeBitmap());
+    cache.set(coord("A", 17), makeFakeBitmap());
+
+    expect(cache.has(coord("B", 0))).toBe(true);
+    // A lost at least one tile to eviction.
+    const remainingA = [0, 1, 2, 16, 17].filter((x) =>
+      cache.has(coord("A", x)),
+    ).length;
+    expect(remainingA).toBeLessThan(5);
+  });
+});

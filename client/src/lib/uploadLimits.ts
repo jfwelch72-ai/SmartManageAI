@@ -5,7 +5,11 @@
 // previews a file the server would later reject. Construction projects
 // routinely upload large drawing sets and BIM/LiDAR files, especially in the
 // Plans & Takeoff step, so this stays generous on purpose.
-export const MAX_STORAGE_FILE_SIZE = 20 * 1024 * 1024 * 1024; // 20 GB
+// Task #2405 — bumped from 20 GB to 32 GB so estimators can drop in 25 GB
+// civil plansets without the client previewing a file the server would later
+// reject. Keep this in lock-step with MAX_STORAGE_FILE_SIZE in
+// server/fileValidation.ts.
+export const MAX_STORAGE_FILE_SIZE = 32 * 1024 * 1024 * 1024; // 32 GB
 
 // Per-batch file count cap shared by every multi-file ObjectUploader call site
 // (bid plans, project plans, change orders, document attachments, submittals,

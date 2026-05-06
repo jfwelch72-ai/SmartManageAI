@@ -1,16 +1,32 @@
-import { promises as fsp, createWriteStream } from "fs";
-import { pipeline } from "stream/promises";
-import { tmpdir } from "os";
-import path from "path";
-import { randomUUID } from "crypto";
 import type { File as GcsFile } from "@google-cloud/storage";
 import { logError } from "./logger";
 
+/**
+ * Task #2405 — Range-only PDF opener.
+ *
+ * Previously this module had two paths:
+ *   1. Buffer the entire file into memory if ≤ 100 MB.
+ *   2. Stream the entire file to /tmp and then range-read from disk.
+ * Both paths capped out at an 8 GB hard limit. That cap blocked 25 GB
+ * civil plansets entirely, and the /tmp streaming path required pulling
+ * every byte over the wire just to read the page count from the trailer
+ * dictionary — which is the *last* few KB of the file.
+ *
+ * The new implementation uses pdfjs's `PDFDataRangeTransport` directly
+ * against GCS via `file.download({ start, end })` so we only pay for the
+ * bytes pdfjs actually asks for (typically <1 MB even on a 25 GB file).
+ * No /tmp file, no full-buffer fallback, no hard cap.
+ *
+ * `PDF_BUFFERED_PARSE_MAX_BYTES` is preserved as a public export at the
+ * 100 MB sentinel because `aiTakeoffFeatureRoutes` still uses it as the
+ * inline-base64 size guard for vision calls (a model context limit, not
+ * a page-count limit).
+ */
+
 export const PDF_BUFFERED_PARSE_MAX_BYTES = 100 * 1024 * 1024;
 
-export const PDF_PAGE_COUNT_HARD_MAX_BYTES = 8 * 1024 * 1024 * 1024;
-
 const RANGE_REQUEST_TIMEOUT_MS = 30_000;
+const INITIAL_HEAD_BYTES = 64 * 1024;
 
 export interface PdfOpenOptions {
   fileSize: number;
@@ -38,45 +54,15 @@ export async function openPdfFromGcs(
     return null;
   }
 
-  if (fileSize > PDF_PAGE_COUNT_HARD_MAX_BYTES) {
-    logError("Skipping PDF open: file exceeds hard cap", baseContext);
-    return null;
-  }
-
-  if (fileSize <= PDF_BUFFERED_PARSE_MAX_BYTES) {
-    try {
-      const [pdfBuffer] = await file.download();
-      return await openFromBuffer(new Uint8Array(pdfBuffer));
-    } catch (error) {
-      logError(
-        "Buffered PDF open failed (will retry via streaming):",
-        baseContext,
-        error instanceof Error ? error : new Error(String(error)),
-      );
-    }
-  }
-
-  const tempPath = path.join(tmpdir(), `pdf-open-${randomUUID()}.pdf`);
-  let opened: OpenedPdf | null = null;
   try {
-    await pipeline(file.createReadStream(), createWriteStream(tempPath));
-    const stat = await fsp.stat(tempPath);
-    opened = await openFromTempFile(tempPath, stat.size);
-    return opened;
+    return await openFromGcsRanges(file, fileSize);
   } catch (error) {
     logError(
-      "Streaming PDF open failed:",
+      "Range-transport PDF open failed:",
       baseContext,
       error instanceof Error ? error : new Error(String(error)),
     );
     return null;
-  } finally {
-    if (!opened) {
-      try {
-        await fsp.unlink(tempPath);
-      } catch {
-      }
-    }
   }
 }
 
@@ -93,10 +79,76 @@ export async function getPdfPageCountFromGcs(
   }
 }
 
-async function openFromBuffer(data: Uint8Array): Promise<OpenedPdf> {
+async function openFromGcsRanges(
+  file: GcsFile,
+  fileSize: number,
+): Promise<OpenedPdf> {
   const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const loadingTask = pdfjsLib.getDocument({ data, useSystemFonts: true });
-  const pdfDoc = await loadingTask.promise;
+
+  const initialChunkSize = Math.min(INITIAL_HEAD_BYTES, fileSize);
+  const initialChunk =
+    initialChunkSize > 0
+      ? await downloadRangeFromGcs(file, 0, initialChunkSize - 1, fileSize)
+      : new Uint8Array(0);
+
+  const transport = new pdfjsLib.PDFDataRangeTransport(
+    fileSize,
+    initialChunk,
+    false,
+  );
+
+  let rangeReadError: Error | null = null;
+  let abortLoadingTask: ((reason: Error) => void) | null = null;
+
+  transport.requestDataRange = (begin: number, end: number) => {
+    void downloadRangeFromGcs(file, begin, Math.min(end, fileSize) - 1, fileSize)
+      .then((chunk) => {
+        transport.onDataRange(begin, chunk);
+      })
+      .catch((error) => {
+        const wrapped = error instanceof Error ? error : new Error(String(error));
+        logError("PDF range read failed:", { begin, end, fileSize }, wrapped);
+        rangeReadError = wrapped;
+        abortLoadingTask?.(wrapped);
+      });
+  };
+
+  const loadingTask = pdfjsLib.getDocument({
+    range: transport,
+    useSystemFonts: true,
+    disableAutoFetch: true,
+    disableStream: true,
+  });
+
+  abortLoadingTask = (_reason: Error) => {
+    void loadingTask.destroy?.().catch(() => undefined);
+    try {
+      transport.abort();
+    } catch {
+      /* noop */
+    }
+  };
+
+  let pdfDoc: any;
+  try {
+    pdfDoc = await loadingTask.promise;
+  } catch (error) {
+    try {
+      transport.abort();
+    } catch {
+      /* noop */
+    }
+    throw error;
+  }
+  if (rangeReadError) {
+    try {
+      await pdfDoc.destroy();
+    } catch {
+      /* noop */
+    }
+    throw rangeReadError;
+  }
+
   return {
     pdfDoc,
     numPages: pdfDoc.numPages,
@@ -104,135 +156,46 @@ async function openFromBuffer(data: Uint8Array): Promise<OpenedPdf> {
       try {
         await pdfDoc.destroy();
       } catch {
+        /* noop */
       }
       try {
         await loadingTask.destroy?.();
       } catch {
+        /* noop */
+      }
+      try {
+        transport.abort();
+      } catch {
+        /* noop */
       }
     },
   };
 }
 
-async function openFromTempFile(
-  filePath: string,
-  fileSize: number,
-): Promise<OpenedPdf> {
-  const pdfjsLib = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const fd = await fsp.open(filePath, "r");
-
-  let initialized = false;
-  try {
-    const initialChunkSize = Math.min(64 * 1024, fileSize);
-    const initialBuffer = Buffer.alloc(initialChunkSize);
-    if (initialChunkSize > 0) {
-      await fd.read(initialBuffer, 0, initialChunkSize, 0);
-    }
-
-    const transport = new pdfjsLib.PDFDataRangeTransport(
-      fileSize,
-      new Uint8Array(initialBuffer),
-      false,
-    );
-
-    let rangeReadError: Error | null = null;
-    let abortLoadingTask: ((reason: Error) => void) | null = null;
-
-    transport.requestDataRange = (begin: number, end: number) => {
-      void readRange(fd, begin, end, fileSize)
-        .then((chunk) => {
-          transport.onDataRange(begin, chunk);
-        })
-        .catch((error) => {
-          const wrapped = error instanceof Error ? error : new Error(String(error));
-          logError(
-            "PDF range read failed:",
-            { begin, end, fileSize },
-            wrapped,
-          );
-          rangeReadError = wrapped;
-          abortLoadingTask?.(wrapped);
-        });
-    };
-
-    const loadingTask = pdfjsLib.getDocument({
-      range: transport,
-      useSystemFonts: true,
-      disableAutoFetch: true,
-      disableStream: true,
-    });
-
-    abortLoadingTask = (_reason: Error) => {
-      void loadingTask.destroy?.().catch(() => {
-      });
-      try {
-        transport.abort();
-      } catch {
-      }
-    };
-
-    const pdfDoc = await loadingTask.promise;
-    if (rangeReadError) throw rangeReadError;
-    initialized = true;
-
-    return {
-      pdfDoc,
-      numPages: pdfDoc.numPages,
-      close: async () => {
-        try {
-          await pdfDoc.destroy();
-        } catch {
-        }
-        try {
-          await loadingTask.destroy?.();
-        } catch {
-        }
-        try {
-          transport.abort();
-        } catch {
-        }
-        try {
-          await fd.close();
-        } catch {
-        }
-        try {
-          await fsp.unlink(filePath);
-        } catch {
-        }
-      },
-    };
-  } finally {
-    if (!initialized) {
-      try {
-        await fd.close();
-      } catch {
-      }
-    }
-  }
-}
-
-async function readRange(
-  fd: import("fs/promises").FileHandle,
-  begin: number,
-  end: number,
+async function downloadRangeFromGcs(
+  file: GcsFile,
+  start: number,
+  endInclusive: number,
   fileSize: number,
 ): Promise<Uint8Array> {
-  const clampedEnd = Math.min(end, fileSize);
-  const length = Math.max(0, clampedEnd - begin);
-  const buffer = Buffer.alloc(length);
-  if (length === 0) return new Uint8Array(0);
+  if (endInclusive < start) return new Uint8Array(0);
+  const clampedEnd = Math.min(endInclusive, fileSize - 1);
 
   const timeoutHandle: { id?: NodeJS.Timeout } = {};
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutHandle.id = setTimeout(() => {
-      reject(new Error(`PDF range read timed out after ${RANGE_REQUEST_TIMEOUT_MS}ms`));
+      reject(
+        new Error(`PDF range read timed out after ${RANGE_REQUEST_TIMEOUT_MS}ms`),
+      );
     }, RANGE_REQUEST_TIMEOUT_MS);
   });
 
   try {
-    const readPromise = fd
-      .read(buffer, 0, length, begin)
-      .then(({ bytesRead }) => new Uint8Array(buffer.buffer, buffer.byteOffset, bytesRead));
-    return await Promise.race([readPromise, timeoutPromise]);
+    const downloadPromise = (async () => {
+      const [buffer] = await file.download({ start, end: clampedEnd });
+      return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+    })();
+    return await Promise.race([downloadPromise, timeoutPromise]);
   } finally {
     if (timeoutHandle.id) clearTimeout(timeoutHandle.id);
   }

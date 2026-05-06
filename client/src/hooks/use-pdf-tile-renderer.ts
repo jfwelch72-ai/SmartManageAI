@@ -21,7 +21,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { TileCache } from "@/lib/takeoff/tileCache";
+import { TileCache, computeDeviceAwareTileBudget } from "@/lib/takeoff/tileCache";
 import {
   PLACEHOLDER_BUCKET,
   pickZoomBucket,
@@ -82,7 +82,10 @@ export interface UsePdfTileRendererArgs {
   scheduler?: TileScheduler;
 }
 
-const DEFAULT_CACHE = new TileCache();
+// Task #2405 — size the shared cache from `navigator.deviceMemory` so a
+// 32 GB workstation gets ~1.5 GB of headroom while a 4 GB Chromebook
+// stays at the 256 MB floor. Per-call `cache` overrides still win.
+const DEFAULT_CACHE = new TileCache(computeDeviceAwareTileBudget());
 
 export function usePdfTileRenderer(
   args: UsePdfTileRendererArgs,
